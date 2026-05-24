@@ -1,0 +1,4 @@
+constitution_version = "0.1.0"
+project_root = "/home/werner-wsl/Development/tools/aether/.worktrees/feat/001-deviate-cli-bootstrapping/000-project-bootstrap"
+llm_backend = "droid"
+timeout_seconds = 30
