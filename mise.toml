@@ -1,0 +1,17 @@
+[env]
+Python = "3.13"
+
+[tools]
+python = "3.13"
+uv = "latest"
+
+[tasks.test]
+run = "pytest tests/ -v"
+description = "Run unit tests"
+
+[tasks.test-e2e]
+run = "bats tests/e2e/"
+description = "Run E2E tests with bats"
+
+[tasks.fix]
+run = ["ruff check --fix", "ruff format"]
