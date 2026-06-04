@@ -9,7 +9,7 @@
 - **Three-Layer Architecture**: Macro (feature scoping), Meso (issue engineering), Micro (TDD sandbox). Each layer has strict phase gates — no layer may be skipped.
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing.
 - **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
-- **Tamper Guard**: GREEN phase resets test directories to post-RED commit state before evaluation. Unauthorized writes outside implementation targets trigger rollback.
+- **Tamper Guard & Micro-Sandboxing**: GREEN phase resets test directories to post-RED commit state before evaluation. Micro-layer LLM execution (Aider) is strictly sandboxed: it is granted write access **only** to files matching `src/**/*.py`. All `tests/`, `specs/`, and configuration files are strictly read-only during Micro-layer execution. Any mutation outside this allow-list triggers an immediate rollback.
 - **Human-in-the-Loop (HITL)**: Three mandatory gates (Design Approval, Contract Sign-Off, Final Merge Audit) prevent autonomous drift. No gate may be programmatically bypassed.
 - **Session Continuity**: Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases. Model switching mid-task is prohibited.
 - **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance (JUDGE, YELLOW); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`).
