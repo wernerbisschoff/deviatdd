@@ -24,12 +24,6 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 </system_instructions>
 
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
-
 <domain_context>AGENTIC_SOFTWARE_ENGINEERING</domain_context>
 
 <objective>
@@ -138,4 +132,10 @@ Process fully; do not truncate. Base predicates strictly on observable signals.
 Apply precedence order defined in decision_matrix.
 </case>
 </edge_case_protocols>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>
 

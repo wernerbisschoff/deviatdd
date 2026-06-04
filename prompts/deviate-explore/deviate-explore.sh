@@ -13,7 +13,7 @@
 #   - Atomic git commit
 #
 # Usage:
-#   explore.sh pre "<problem-statement>"
+#   explore.sh pre "<problem-statement>" [--slug <slug>]
 #   explore.sh post
 #
 # The 'pre' subcommand emits a JSON contract to stdout. The contract carries
@@ -785,14 +785,15 @@ resolve_skill_dir
 
 # Derive kebab-case slug from a freeform problem statement.
 # Strips non-alphanumeric characters, squeezes whitespace to single hyphens,
-# lowercases, and trims leading/trailing hyphens. Caps length to 60 chars.
+# lowercases, and trims leading/trailing hyphens. Keeps at most 3 words, caps at 30 chars.
 derive_feature_slug() {
 	local input="$1"
 	printf '%s' "$input" |
 		tr '[:upper:]' '[:lower:]' |
 		sed -E 's/[^a-z0-9]+/-/g' |
 		sed -E 's/^-+|-+$//g' |
-		cut -c1-60 |
+		cut -d- -f1-3 |
+		cut -c1-30 |
 		sed -E 's/-+$//g'
 }
 
@@ -846,10 +847,18 @@ append_issue_ledger() {
 cmd_pre() {
 	if [ $# -lt 1 ]; then
 		log_err "Missing problem statement"
-		log_err "Usage: $SCRIPT_NAME pre \"<problem-statement>\""
+		log_err "Usage: $SCRIPT_NAME pre \"<problem-statement>\" [--slug <slug>]"
 		exit 1
 	fi
 	local problem="$1"
+	shift
+	local explicit_slug=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--slug) explicit_slug="$2"; shift 2 ;;
+		*) log_err "Unknown flag: $1"; exit 1 ;;
+		esac
+	done
 
 	local repo_root
 	repo_root=$(find_repo_root "$(pwd)") || {
@@ -905,9 +914,13 @@ cmd_pre() {
 	local next_index
 	next_index=$(printf "%03d" "$next_num")
 
-	# Derive slug from problem statement; guarantee non-empty
+	# Use explicit slug if provided, otherwise derive from problem statement
 	local slug
-	slug=$(derive_feature_slug "$problem")
+	if [ -n "$explicit_slug" ]; then
+		slug=$(printf '%s' "$explicit_slug" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
+	else
+		slug=$(derive_feature_slug "$problem")
+	fi
 	[ -z "$slug" ] && slug="feature"
 
 	local feature_dir="${specs_directory}/${next_index}-${slug}"
@@ -1108,7 +1121,7 @@ post) cmd_post "$@" ;;
 	cat <<EOF
 $SCRIPT_NAME - Orchestrator for the /deviate-explore macro layer (PHASE_EXPLORE)
 
-  $SCRIPT_NAME pre "<problem-statement>"
+  $SCRIPT_NAME pre "<problem-statement>" [--slug <slug>]
   $SCRIPT_NAME post
 EOF
 	exit 0

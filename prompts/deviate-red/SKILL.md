@@ -197,12 +197,6 @@ next_phase: "/deviate-green"
 ```
 </output_format_schemas>
 
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
-
 <edge_case_handling>
 
 | Condition | Action |
@@ -216,4 +210,10 @@ $ARGUMENTS
 | Test file already exists | Read it, understand current state, add new failing tests |
 
 </edge_case_handling>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>
 

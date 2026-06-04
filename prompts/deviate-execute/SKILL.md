@@ -230,12 +230,6 @@ Read from post-script stdout:
 
 </edge_case_handling>
 
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
-
 <aliases>
 
 | Alias | Command |
@@ -259,4 +253,10 @@ $ARGUMENTS
 This skill is for **DIRECT execution only**. For TDD cycles, use the separate TDD phase skills.
 
 </integration>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>
 

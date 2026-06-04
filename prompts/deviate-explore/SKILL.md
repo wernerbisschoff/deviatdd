@@ -28,7 +28,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **Single File Output Mandate**: The ONLY file written to disk by this entire engine (including all subagents) is `<spec_target>`. Subagents MUST NOT create, write, or touch any artifact files, temporary files, or summary files — they return text fragments to the orchestrator only.
 3. **Constitutional Validation Gate**: If the pre-script emits `STATUS: MALFORMED_CONSTITUTION` or returns an empty `constitution_path`, terminate immediately and surface the diagnostic to the human operator. The constitution is the authoritative architectural gatekeeper.
 4. **Factual-Only Discipline**: This is a cheap scan — emit only what EXISTS. Trade-off analysis, recommendations, design decisions, and risk evaluations are explicitly deferred to the `deviate-research` skill. Avoid prescriptive language ("we should", "we recommend", "the best approach"). Prefer observational language ("the project contains", "the manifest declares", "the directory holds").
-5. **Single-Subagent Delegation Boundary**: For non-trivial repos (>20 source files OR mixed-language manifests OR multi-module layout), spawn exactly ONE structural subagent (the Codebase Scanner blueprint below). For trivial repos (one-file, one-script, single-language micro-projects), collapse to a single linear pass and skip the fork. Do NOT spawn multiple subagents — heavy multi-viewpoint reasoning (failure modes, contrarian analysis, risk evaluation) belongs to `deviate-research`.
+5. **Dual-Subagent Delegation Boundary**: For non-trivial repos (>20 source files OR mixed-language manifests OR multi-module layout), spawn exactly TWO read-only discovery subagents in parallel: the Codebase Scanner and the Ecosystem Researcher. For trivial repos (one-file, one-script, single-language micro-projects), collapse to a single linear pass and skip the fork. Do NOT spawn additional subagents — heavy multi-viewpoint reasoning (failure modes, contrarian analysis, risk evaluation) belongs to `deviate-research`.
 6. **Grounding & Source Capture Rule**: Every structural claim written into the output MUST contain a verbatim text or code signature snippet (≤ 10 lines) captured at the exact moment of tool extraction. Anchored facts destroy retroactive memory hallucination. The FILE_REGISTRY is the enforcement surface: every row MUST carry its verbatim quote.
 7. **Relative Path Normalization**: All paths written into the output MUST be strictly relative to `repo_root` (e.g., `src/core/main.py`). Absolute machine-specific directory structures are forbidden.
 8. **Prefix Invariance Placement Rule**: All static role definitions, subagent blueprints, formatting parameters, and operational directives sit rigidly at the head of the prompt. Volatile runtime attributes (`spec_target`, `feature_slug`, `git_branch`) arrive in the JSON contract — never inline them into static sections.
@@ -55,7 +55,35 @@ Instructions:
 - For every entry captured for the FILE_REGISTRY, capture a verbatim snippet (≤ 10 lines) at the moment of tool extraction.
 - NEVER run test, lint, type-check, build, or formatting commands. These are implementation-phase operations.
 - NEVER create, write, modify, or patch any source file, test file, configuration, or script.
+
+**Targeted Architectural Baselines (Hunt for these 5 categories):**
+1. **Existing Architectural Patterns**: Routing/entry points, domain models, error handling patterns (e.g., Railway pattern, global handlers).
+2. **Infrastructure & Operations**: CI/CD pipelines, environment configuration (`.env.example`), deployment targets (Docker, K8s, serverless).
+3. **Data & State Management**: Database/ORM conventions, migration files, caching/async patterns (Redis, message queues, background workers).
+4. **Quality, Safety & Observability**: Testing patterns (factories, mocking), logging/metrics setup, auth/RBAC middleware.
+5. **External Integrations**: Third-party API clients, webhooks, or SDKs already in use.
+
+**Context Bounding Rules (Keep it NOT overwhelming):**
+- **Pointer + Snippet Only**: Never dump full files. Use the ≤ 10 lines verbatim snippet rule for every finding.
+- **Relative Paths Only**: All paths must be strictly relative to `repo_root`.
+- **Pattern Over Instance**: If there are 50 controllers, find the *base* controller or *one* representative example, not all 50.
+- **Explicit Exclusions**: Ignore `node_modules`, `vendor`, `dist`, `build`, `.git`, and generated code.
 </subagent_scanner_prompt>
+
+<subagent_ecosystem_prompt>
+Persona: Senior Ecosystem Researcher & Web Discovery Subagent.
+
+ABSOLUTE RULE: This agent is DISCOVERY ONLY. It searches the web for factual information about best practices, common use cases, and standard tools. It does NOT write, edit, create, or modify ANY file. It returns ONLY text fragments to the orchestrator.
+
+Objective: Perform targeted web searches to identify industry best practices, common architectural patterns, and standard tooling relevant to the problem statement and the local codebase baselines.
+Output Scope: Populate fragments for `## [ECOSYSTEM_RESEARCH]`. Return these as text fragments only — do NOT write any files.
+Instructions:
+- Use available web search or web fetch tools to query documentation, authoritative blogs, and standard library references.
+- Focus on: (1) Best practices for the specific problem domain, (2) Common use cases and pitfalls, (3) Standard tools/libraries that solve this problem in the language/framework identified in the constitution.
+- For every finding, capture the source URL and a brief verbatim snippet (≤ 10 lines) or a precise summary of the finding.
+- Do NOT make architectural recommendations or trade-off evaluations. Simply catalog what the ecosystem says.
+- If web search tools are unavailable, report `WEB_SEARCH_UNAVAILABLE` and skip this subagent; the orchestrator will proceed with local findings only.
+</subagent_ecosystem_prompt>
 </subagent_blueprint_directory>
 
 <prerequisites>
@@ -66,9 +94,9 @@ Instructions:
 <execution_sequence>
 
 <step id="pre_script">
-Run the pre-script to allocate the feature bucket, validate the constitution, and emit a JSON contract:
+Derive a concise 2-3 word kebab-case slug from the problem statement (e.g. "auth-jwt", "worker-pool", "liveview-optimize"). Then run the pre-script to allocate the feature bucket, validate the constitution, and emit a JSON contract:
 ```bash
-<SKILL_DIR>/deviate-explore.sh pre "<problem-statement>"
+<SKILL_DIR>/deviate-explore.sh pre "<problem-statement>" --slug "<your-concise-slug>"
 ```
 
 The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, and `skill_dir`.
@@ -91,13 +119,13 @@ The pre-script has already created `<repo_root>/<specs_directory>/<feature_dir>`
 </step>
 
 <step id="exploratory_scan">
-For non-trivial repos, invoke the single structural subagent defined in `<subagent_blueprint_directory>`. The subagent returns fragments for `## [DISCOVERY_AUDIT_RESULTS]`, `## [FILE_REGISTRY]`, and `## [CONSTITUTION_QUOTES]`.
+For non-trivial repos, invoke the TWO structural subagents defined in `<subagent_blueprint_directory>` in parallel:
+- **Codebase Scanner**: Returns fragments for `## [DISCOVERY_AUDIT_RESULTS]`, `## [FILE_REGISTRY]`, `## [CONSTITUTION_QUOTES]`, and `## [ARCHITECTURAL_BASELINES]`.
+- **Ecosystem Researcher**: Returns fragments for `## [ECOSYSTEM_RESEARCH]`.
 
 For trivial repos (one-file, one-script, single-language micro-projects), collapse to a single linear pass: walk the tree yourself, read the manifest(s), and produce the same fragments inline.
 
-The subagent is read-only. It does NOT write files, generate code, run tests, or make any modifications.
-
-Do NOT spawn multiple subagents. Heavy multi-viewpoint reasoning (failure modes, contrarian viewpoints, risk evaluation) belongs to `deviate-research`.
+Both subagents are read-only. They do NOT write files, generate code, run tests, or make any modifications.
 </step>
 
 <step id="evidence_compilation">
@@ -150,6 +178,21 @@ The post-script reads `<spec_target>`, validates the required section headers an
 - [Runtime]: "<verbatim quote>"
 - [Constraints]: "<verbatim quote>"
 - [Test]: "<verbatim quote>"
+
+## [ARCHITECTURAL_BASELINES]
+[Pattern_Over_Instance]: Only representative examples or base classes are listed, not every instance. All paths are strictly relative to `repo_root`.
+- **Existing Architectural Patterns**: [Routing/entry points, domain models, error handling patterns] [≤ 10 line snippet or pointer]
+- **Infrastructure & Operations**: [CI/CD, env config, deployment targets] [≤ 10 line snippet or pointer]
+- **Data & State Management**: [DB/ORM conventions, caching, async workers] [≤ 10 line snippet or pointer]
+- **Quality, Safety & Observability**: [Testing patterns, logging/metrics, auth/RBAC] [≤ 10 line snippet or pointer]
+- **External Integrations**: [Third-party API clients, webhooks, SDKs] [≤ 10 line snippet or pointer]
+
+## [ECOSYSTEM_RESEARCH]
+[Web_Discovery]: Factual cataloging of industry best practices, common use cases, and standard tools relevant to the problem domain.
+- **Best Practices**: [Finding] [Source URL + ≤ 10 line snippet]
+- **Common Use Cases & Pitfalls**: [Finding] [Source URL + ≤ 10 line snippet]
+- **Standard Tooling**: [Finding] [Source URL + ≤ 10 line snippet]
+*(If web search tools were unavailable, this section will state `WEB_SEARCH_UNAVAILABLE`)*
 
 ## [FILE_REGISTRY]
 | Path (Strictly Relative to Repo Root) | Type | Purpose | Verbatim Snippet (≤10 lines) |

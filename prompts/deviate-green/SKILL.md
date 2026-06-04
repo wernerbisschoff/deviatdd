@@ -188,12 +188,6 @@ next_phase: "/deviate-refactor"
 ```
 </output_format_schemas>
 
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
-
 <edge_case_handling>
 
 | Condition | Action |
@@ -207,4 +201,10 @@ $ARGUMENTS
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
 
 </edge_case_handling>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>
 
