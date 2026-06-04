@@ -1,5 +1,5 @@
 [env]
-Python = "3.13"
+python = "3.13"
 
 [tools]
 python = "3.13"
@@ -11,7 +11,44 @@ description = "Run unit tests"
 
 [tasks.test-e2e]
 run = "bats tests/e2e/"
-description = "Run E2E tests with bats"
+description = "Run E2E tests via bats"
+
+[tasks.lint]
+run = "ruff check"
+description = "Lint Python"
+
+[tasks.lint-fix]
+run = "ruff check --fix"
+description = "Apply lint fixes"
+
+[tasks.format]
+run = "ruff format"
+description = "Format Python"
+
+[tasks.format-check]
+run = "ruff format --check"
+description = "Check formatting"
+
+[tasks.check-types]
+run = 'echo "No type checker configured"'
+description = "Type check"
+
+[tasks.check]
+depends = ["lint", "format-check", "test"]
+description = "All validation checks"
 
 [tasks.fix]
-run = ["ruff check --fix", "ruff format"]
+depends = ["lint-fix", "format"]
+description = "Format + lint fix"
+
+[tasks.setup]
+run = "uv sync"
+description = "Install deps"
+
+[tasks.clean]
+run = "rm -rf .ruff_cache/ .pytest_cache/ __pycache__/ .mypy_cache/ dist/ build/ *.egg-info/"
+description = "Remove artifacts"
+
+[tasks.help]
+run = "mise tasks"
+description = "List tasks"

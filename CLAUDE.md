@@ -24,11 +24,11 @@
 |------|---------|
 | `mise run test` | Run unit tests |
 | `mise run test-e2e` | Run E2E tests via bats |
-| `mise run lint-py` | Lint Python |
-| `mise run lint-fix-py` | Apply lint fixes |
-| `mise run format-py` | Format Python |
-| `mise run format-check-py` | Check formatting |
-| `mise run check-types-py` | Type check |
+| `mise run lint` | Lint Python |
+| `mise run lint-fix` | Apply lint fixes |
+| `mise run format` | Format Python |
+| `mise run format-check` | Check formatting |
+| `mise run check-types` | Type check |
 | `mise run fix` | Format + lint fix |
 | `mise run check` | All validation checks |
 | `mise run setup` | Install deps + hooks |
