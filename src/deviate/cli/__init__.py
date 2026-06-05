@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.resources
 import re
 from pathlib import Path
 
@@ -76,31 +77,43 @@ def _resolve_seed(content: str) -> str:
     return re.sub(r"\$\{(\w+)\}", _resolve_placeholder, content)
 
 
+def _read_seed(module: str, filename: str) -> str | None:
+    try:
+        seed = importlib.resources.files(module).joinpath(filename)
+        return seed.read_text(encoding="utf-8")
+    except (ModuleNotFoundError, FileNotFoundError):
+        console.print(f"  [red]ERROR[/] {filename} not found in package")
+        return None
+
+
 def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
-    if not target_path.exists() or target_path.read_text().strip() == "":
+    if not target_path.exists():
         target_path.write_text(seed_content)
         console.print(f"  [green]CREATE[/] {target_path.name}")
         return
 
     existing = target_path.read_text()
+
+    if not existing.strip():
+        target_path.write_text(seed_content)
+        console.print(f"  [green]CREATE[/] {target_path.name}")
+        return
+
     section_header = "## DeviaTDD Orchestration Rules"
 
-    if section_header in existing:
-        pattern = re.compile(
-            r"^## DeviaTDD Orchestration Rules.*?(?=^## |\Z)",
-            re.MULTILINE | re.DOTALL,
-        )
-        if pattern.search(existing):
-            existing = pattern.sub(seed_content.strip(), existing)
-            target_path.write_text(existing)
-            console.print(f"  [green]UPDATE[/] {target_path.name} block replaced")
-        else:
-            target_path.write_text(existing + "\n\n" + seed_content)
-            console.print(f"  [green]APPEND[/] {target_path.name}")
-    else:
+    if section_header not in existing:
         with open(target_path, "a") as f:
             f.write("\n\n" + seed_content)
         console.print(f"  [green]APPEND[/] {target_path.name}")
+        return
+
+    pattern = re.compile(
+        r"^## DeviaTDD Orchestration Rules.*?(?=^## |\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    existing = pattern.sub(seed_content.strip(), existing)
+    target_path.write_text(existing)
+    console.print(f"  [green]UPDATE[/] {target_path.name} block replaced")
 
 
 def _scaffold_dotfiles(workdir: Path) -> None:
@@ -117,8 +130,6 @@ def _scaffold_dotfiles(workdir: Path) -> None:
 
 
 def _provision_constitution(workdir: Path) -> None:
-    import importlib.resources
-
     spec_dir = workdir / "specs"
     _ensure_dir(spec_dir)
 
@@ -127,13 +138,8 @@ def _provision_constitution(workdir: Path) -> None:
         console.print("  [yellow]SKIP[/] specs/constitution.md already exists")
         return
 
-    try:
-        seed = importlib.resources.files("deviate.prompts").joinpath(
-            "constitution_seed.md"
-        )
-        content = seed.read_text(encoding="utf-8")
-    except (ModuleNotFoundError, FileNotFoundError):
-        console.print("  [red]ERROR[/] constitution seed not found in package")
+    content = _read_seed("deviate.prompts", "constitution_seed.md")
+    if content is None:
         return
 
     resolved = _resolve_seed(content)
@@ -142,15 +148,8 @@ def _provision_constitution(workdir: Path) -> None:
 
 
 def _apply_governance(workdir: Path) -> None:
-    import importlib.resources
-
-    try:
-        seed = importlib.resources.files(
-            "deviate.prompts.governance"
-        ).joinpath("claudemd_seed.md")
-        content = seed.read_text(encoding="utf-8")
-    except (ModuleNotFoundError, FileNotFoundError):
-        console.print("  [red]ERROR[/] governance seed not found in package")
+    content = _read_seed("deviate.prompts.governance", "claudemd_seed.md")
+    if content is None:
         return
 
     claude_path = workdir / "CLAUDE.md"

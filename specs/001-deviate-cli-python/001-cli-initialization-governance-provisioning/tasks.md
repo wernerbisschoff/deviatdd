@@ -56,7 +56,7 @@
 
 ### Tasks
 
-- [\] T003: Init Subcommand — Scaffolding, Governance & Idempotency
+- [/] T003: Init Subcommand — Scaffolding, Governance & Idempotency
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
