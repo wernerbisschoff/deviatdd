@@ -41,7 +41,6 @@ set -euo pipefail
 # Provided exports:
 #   Color constants:     RED, GREEN, YELLOW, BLUE, NC
 #   Logging:             log_info(), log_ok(), log_warn(), log_err()
-#   Skill directory:     resolve_skill_dir() — optional; sets SKILL_DIR
 #   Repository:          find_repo_root()
 #   Temp dir:            create_temp_dir()
 #   Git state:           gather_git_state() — staged/unstaged/untracked as JSON
@@ -67,24 +66,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
-# ── Optional Skill Directory Resolution ─────────────────────────────────
-
-# Resolve SKILL_DIR to the directory containing the orchestrator script.
-# Uses BASH_SOURCE[0] which correctly resolves because the library is
-# expanded inline at render time (not sourced at runtime).
-#
-# Only sets SKILL_DIR if not already exported by the environment or script.
-# Scripts can skip this entirely if they manage SKILL_DIR independently.
-#
-# Usage (optional — only if the script needs $SKILL_DIR):
-#   resolve_skill_dir
-resolve_skill_dir() {
-	if [ -z "${SKILL_DIR:-}" ]; then
-	SKILL_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-	export SKILL_DIR
-	fi
-}
 
 # ── Logging Functions (stderr only) ──────────────────────────────────────
 
@@ -388,8 +369,7 @@ select_next_unblocked_issue() {
 	            and (
 	                (.blocked_by // [] | length == 0)
 	                or all(.blocked_by[];
-	                    IN($completed[])
-	                    or ($status_map[.] // "UNKNOWN") == "COMPLETED"
+	                    ($status_map[.] // "UNKNOWN") == "COMPLETED"
 	                )
 	            ))]
 	    | sort_by(.created_at // .timestamp // "1970-01-01")
@@ -888,15 +868,36 @@ validate_repo() {
 	export REPO_ROOT
 }
 
-# ── Issue ledger registration (inline, no external script) ──────────────
-# Appends a new issue entry to specs/issues.jsonl (append-only JSON Lines).
-# Assigns a deterministic ISS-NNN identifier based on existing entries.
-# Supports additional fields: source_file, blocked_by, coordinates_with.
+# ── Issue ledger helpers ──────────────────────────────────────────────────
+
+# Find the next available ISS-NNN ID from the existing ledger.
+# Usage: next_issue_id
+# Outputs: "ISS-NNN" on stdout.
+next_issue_id() {
+	local issues_file="$REPO_ROOT/specs/issues.jsonl"
+	local highest_num=0
+	if [[ -f "$issues_file" ]]; then
+		while IFS= read -r line; do
+			local id
+			id=$(echo "$line" | grep -oE '"issue_id": "ISS-[0-9]+"' | grep -oE '[0-9]+' || true)
+			if [[ -n "$id" ]]; then
+				local num
+				num=$((10#$id))
+				[[ $num -gt $highest_num ]] && highest_num=$num
+			fi
+		done <"$issues_file"
+	fi
+	printf "ISS-%03d" $((highest_num + 1))
+}
+
+# Register an issue in specs/issues.jsonl (append-only JSON Lines).
+# Supports pre-assigned issue_id or auto-assignment.
 #
 # Usage:
-#   register_issue_in_ledger "Issue title" [--source-file <path>] [--blocked-by <json>] [--coordinates-with <json>]
+#   register_issue_in_ledger "Issue title" [--issue-id ISS-NNN] [--source-file <path>] [--blocked-by <json>] [--coordinates-with <json>]
 register_issue_in_ledger() {
 	local title=""
+	local issue_id=""
 	local source_file=""
 	local blocked_by="[]"
 	local coordinates_with="[]"
@@ -904,6 +905,10 @@ register_issue_in_ledger() {
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
+		--issue-id)
+			issue_id="$2"
+			shift 2
+			;;
 		--source-file)
 			source_file="$2"
 			shift 2
@@ -934,32 +939,27 @@ register_issue_in_ledger() {
 		return 1
 	fi
 
+	if [[ -z "$issue_id" ]]; then
+		issue_id=$(next_issue_id)
+	fi
+
 	local issues_file="$REPO_ROOT/specs/issues.jsonl"
 	mkdir -p "$(dirname "$issues_file")"
 
-	# Find highest existing issue number
-	local highest_num=0
-	if [[ -f "$issues_file" ]]; then
-		while IFS= read -r line; do
-			local id
-			id=$(echo "$line" | grep -oE '"issue_id": "ISS-[0-9]+"' | grep -oE '[0-9]+' || true)
-			if [[ -n "$id" ]]; then
-				local num
-				num=$((10#$id))
-				[[ $num -gt $highest_num ]] && highest_num=$num
-			fi
-		done <"$issues_file"
+	# Dedup: skip if source_file already registered
+	if [[ -f "$issues_file" ]] && [[ -n "$source_file" ]]; then
+		if grep -qF "$source_file" "$issues_file" 2>/dev/null; then
+			log_ok "Issue already registered for $source_file — skipping"
+			return 0
+		fi
 	fi
 
-	local next_num=$((highest_num + 1))
-	local issue_id
-	issue_id=$(printf "ISS-%03d" "$next_num")
 	local timestamp
 	timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 	# Build JSON entry
 	local entry
-	entry=$(jq -n \
+	entry=$(jq -c -n \
 		--arg issue_id "$issue_id" \
 		--arg type "$issue_type" \
 		--arg title "$title" \
@@ -1050,7 +1050,6 @@ cmd_pre() {
 		emit_json_contract \
 			"status" "NO_EPIC" \
 			"phase" "shard" \
-			"skill_dir" "$SKILL_DIR" \
 			"timestamp" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 			"reason" "No NNN-* feature directory found in specs/"
 		exit 2
@@ -1063,7 +1062,6 @@ cmd_pre() {
 			"status" "NO_PRD" \
 			"phase" "shard" \
 			"epic_slug" "$EPIC_SLUG" \
-			"skill_dir" "$SKILL_DIR" \
 			"timestamp" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 			"reason" "No prd.md found in $FEATURE_DIR"
 		exit 2
@@ -1106,8 +1104,8 @@ cmd_pre() {
 		--arg issues_dir "$ISSUES_DIR" \
 		--arg issues_abs_dir "$ISSUES_ABS_DIR" \
 		--arg issues_ledger "$ISSUES_LEDGER" \
+		--arg next_issue_id "$(next_issue_id)" \
 		--arg plan_target "$plan_target" \
-		--arg skill_dir "$SKILL_DIR" \
 		--argjson dry_run "$DRY_RUN" \
 		--arg git_state "$git_state" \
 		--arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -1124,8 +1122,8 @@ cmd_pre() {
 	    issues_dir: $issues_dir,
 	    issues_abs_dir: $issues_abs_dir,
 	    issues_ledger: $issues_ledger,
+	    next_issue_id: $next_issue_id,
 	    plan_target: $plan_target,
-	    skill_dir: $skill_dir,
 	    dry_run: $dry_run,
 	    git_state: $git_state,
 	    timestamp: $timestamp
@@ -1236,6 +1234,8 @@ cmd_post() {
 		basename=$(basename "$shard_file")
 		local title
 		title=$(grep "^title:" "$shard_file" | sed 's/^title: "\(.*\)"$/\1/' | sed 's/^title: //')
+		local issue_id
+		issue_id=$(grep "^issue_id:" "$shard_file" | sed 's/^issue_id: "\(.*\)"$/\1/' | sed 's/^issue_id: //')
 
 		# Extract frontmatter fields for the ledger entry
 		local source_path="$ISSUES_DIR/$basename"
@@ -1258,13 +1258,24 @@ cmd_post() {
 
 		if [[ -n "$title" ]]; then
 			log_info "Registering: $basename — $title"
-			register_issue_in_ledger \
-				"$title" \
-				--type feature \
-				--source-file "$source_path" \
-				--blocked-by "$blocked_by_json" \
-				--coordinates-with "$coordinates_with_json" ||
-				log_warn "Failed to register $basename (non-fatal)"
+			if [[ -n "$issue_id" ]]; then
+				register_issue_in_ledger \
+					"$title" \
+					--issue-id "$issue_id" \
+					--type feature \
+					--source-file "$source_path" \
+					--blocked-by "$blocked_by_json" \
+					--coordinates-with "$coordinates_with_json" ||
+					log_warn "Failed to register $basename (non-fatal)"
+			else
+				register_issue_in_ledger \
+					"$title" \
+					--type feature \
+					--source-file "$source_path" \
+					--blocked-by "$blocked_by_json" \
+					--coordinates-with "$coordinates_with_json" ||
+					log_warn "Failed to register $basename (non-fatal)"
+			fi
 		fi
 	done
 

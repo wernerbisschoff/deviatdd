@@ -42,7 +42,6 @@ set -euo pipefail
 # Provided exports:
 #   Color constants:     RED, GREEN, YELLOW, BLUE, NC
 #   Logging:             log_info(), log_ok(), log_warn(), log_err()
-#   Skill directory:     resolve_skill_dir() — optional; sets SKILL_DIR
 #   Repository:          find_repo_root()
 #   Temp dir:            create_temp_dir()
 #   Git state:           gather_git_state() — staged/unstaged/untracked as JSON
@@ -68,24 +67,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
-# ── Optional Skill Directory Resolution ─────────────────────────────────
-
-# Resolve SKILL_DIR to the directory containing the orchestrator script.
-# Uses BASH_SOURCE[0] which correctly resolves because the library is
-# expanded inline at render time (not sourced at runtime).
-#
-# Only sets SKILL_DIR if not already exported by the environment or script.
-# Scripts can skip this entirely if they manage SKILL_DIR independently.
-#
-# Usage (optional — only if the script needs $SKILL_DIR):
-#   resolve_skill_dir
-resolve_skill_dir() {
-	if [ -z "${SKILL_DIR:-}" ]; then
-	SKILL_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-	export SKILL_DIR
-	fi
-}
 
 # ── Logging Functions (stderr only) ──────────────────────────────────────
 
@@ -389,8 +370,7 @@ select_next_unblocked_issue() {
 	            and (
 	                (.blocked_by // [] | length == 0)
 	                or all(.blocked_by[];
-	                    IN($completed[])
-	                    or ($status_map[.] // "UNKNOWN") == "COMPLETED"
+	                    ($status_map[.] // "UNKNOWN") == "COMPLETED"
 	                )
 	            ))]
 	    | sort_by(.created_at // .timestamp // "1970-01-01")
@@ -775,7 +755,6 @@ build_json_contract() {
 
 
 SCRIPT_NAME="$(basename "$0")"
-SKILL_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── No external scripts required (fully self-contained) ──────────────────
 # This script uses common.sh.tmpl functions directly.
@@ -1066,7 +1045,6 @@ cmd_pre() {
 			"reason" "No spec.md found in worktree issues directories" \
 			"worktree_full" "$WORKTREE_PATH" \
 			"repo_root" "$REPO_ROOT" \
-			"skill_dir" "$SKILL_DIR" \
 			"timestamp" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		exit 3
 	}
@@ -1079,7 +1057,6 @@ cmd_pre() {
 			"reason" "spec.md missing required sections" \
 			"spec_path" "$SPEC_PATH_RELATIVE" \
 			"worktree_full" "$WORKTREE_PATH" \
-			"skill_dir" "$SKILL_DIR" \
 			"timestamp" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		exit 3
 	}
@@ -1114,7 +1091,6 @@ cmd_pre() {
 		--arg issue_id "${ISSUE_ID:-}" \
 		--arg issue_slug "${ISSUE_SLUG:-}" \
 		--arg repo_root "$REPO_ROOT" \
-		--arg skill_dir "$SKILL_DIR" \
 		--argjson git_state "$git_state" \
 		--arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 		'{
@@ -1133,7 +1109,6 @@ cmd_pre() {
 	    issue_id: $issue_id,
 	    issue_slug: $issue_slug,
 	    repo_root: $repo_root,
-	    skill_dir: $skill_dir,
 	    git_state: $git_state,
 	    timestamp: $timestamp
 	}')

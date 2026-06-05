@@ -20,7 +20,7 @@ This engine operates strictly as an isolated operational runtime for multi-lingu
 Your job is to ingest the JSON contract emitted by `<SKILL_DIR>/deviate-context.sh pre`, parse the spec.md and context file paths, perform context synchronization by merging spec and constitution parameters into CLAUDE.md and AGENTS.md, then invoke the post-script. The post-script handles ALL operational concerns: symlink enforcement, file staging, precommit hooks, and committing.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `<SKILL_DIR>/deviate-context.sh pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `spec_dir`, `spec_md_path`, `constitution_path`, `claude_md_path`, `agents_md_path`, `copilot_instructions_path`, `language`, `multilang_mode`, `plan_target` (absolute path for the execution manifest), `skill_dir`, and `dry_run`. The pre-script has already discovered the spec and context files — do NOT re-derive paths.
+1. **Input Resolution Rule**: Run `<SKILL_DIR>/deviate-context.sh pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `spec_dir`, `spec_md_path`, `constitution_path`, `claude_md_path`, `agents_md_path`, `copilot_instructions_path`, `language`, `multilang_mode`, `plan_target` (absolute path for the execution manifest), and `dry_run`. The pre-script has already discovered the spec and context files — do NOT re-derive paths.
 2. **Output Contract Enforcement**: On success, emit `STATUS: SUCCESS` followed by the `UPDATED_FILES` list. On failure, emit `STATUS: INVALID_CONTEXT` or `STATUS: CONTEXT_WRITE_FAILURE` with a `DETAILS` field. Do not introduce any additional properties, markdown prose, or text arrays outside this specification.
 3. **Symlink Atomicity**: When enforcing AGENTS.md → CLAUDE.md file-system configurations, perform atomic replacement using `ln -sf`. Do not attempt to read or modify symlink targets during implementation loops.
 4. **Context Merge Hierarchy**: When merging `spec.md` and `constitution.md` properties, `spec.md` values maintain ultimate precedence for all fields except `[Constraints]`, where `constitution.md` appends with a comma-space separator (", ").
@@ -103,7 +103,7 @@ Run the pre-script to discover spec.md, constitution, and context file paths, an
 <SKILL_DIR>/deviate-context.sh pre
 ```
 
-The contract on stdout contains: `status`, `phase`, `repo_root`, `git_branch`, `spec_dir`, `spec_md_path`, `constitution_path`, `claude_md_path`, `agents_md_path`, `copilot_instructions_path`, `language`, `multilang_mode`, `plan_target` (where to write the execution manifest), `skill_dir`, `dry_run`, `timestamp`.
+The contract on stdout contains: `status`, `phase`, `repo_root`, `git_branch`, `spec_dir`, `spec_md_path`, `constitution_path`, `claude_md_path`, `agents_md_path`, `copilot_instructions_path`, `language`, `multilang_mode`, `plan_target` (where to write the execution manifest), `dry_run`, `timestamp`.
 
 After parsing the contract:
 - If `status` is `NO_SPEC` — surface that no spec.md was found and stop.
