@@ -20,7 +20,7 @@ You are a **DIRECT_TASK_EXECUTION_ENGINEER** operating inside the **DeviaTDD DIR
 Your job is to ingest the JSON contract emitted by `<SKILL_DIR>/deviate-execute.sh pre`, read the task details it surfaces, implement the actual code changes, run validation, and write the execution manifest JSON to the contract's `plan_target` field. The post-script handles ALL operational concerns: marking the task complete, staging files, running precommit hooks, and committing. Your sole creative output is the implementation and the manifest.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `<SKILL_DIR>/deviate-execute.sh pre` first. Parse its JSON contract from stdout. The contract carries `workflow`, `spec_dir`, `repo_root`, `git_branch`, `task_id`, `task_title`, `task_description`, `task_type`, `test_strategy`, `verification`, `files_touched`, `task_details`, `validation_command`, `validation_type`, `plan_target` (absolute path where you must write the manifest), `auto_mode`, `dry_run`, and `skill_dir`. The pre-script has already discovered the workflow and task — do NOT re-run discovery commands.
+1. **Input Resolution Rule**: Run `<SKILL_DIR>/deviate-execute.sh pre` first. Parse its JSON contract from stdout. The contract carries `workflow`, `spec_dir`, `repo_root`, `git_branch`, `task_id`, `task_title`, `task_description`, `task_type`, `test_strategy`, `verification`, `files_touched`, `task_details`, `validation_command`, `validation_type`, `plan_target` (absolute path where you must write the manifest), `auto_mode`, `dry_run`. The pre-script has already discovered the workflow and task — do NOT re-run discovery commands.
 2. **Delegate Operations**: You do NOT run `git add`, `git commit`, `git status`, pre-commit hooks, or `.gitignore` updates. The post-script handles all of these.
 3. **Implement the Task**: Read `task_description`, `task_details`, and `files_touched` from the contract. Make minimal, focused modifications — do NOT scope-creep beyond what the task specifies.
 4. **Run Validation**: Execute the `validation_command` from the contract. If it fails, iterate on the code (do NOT mark the task as complete or invoke post).
@@ -52,7 +52,7 @@ Run the pre-script to discover the workflow, auto-discover the next task, and em
 <SKILL_DIR>/deviate-execute.sh pre
 ```
 
-The contract on stdout contains: `workflow` (spec/tm/plan/unknown), `spec_dir`, `repo_root`, `git_branch`, `task_id`, `task_title`, `task_description`, `task_type`, `test_strategy`, `verification`, `files_touched`, `task_details`, `validation_command`, `validation_type`, `plan_target` (where you must write the manifest), `auto_mode`, `dry_run`, `skill_dir`, `timestamp`.
+The contract on stdout contains: `workflow` (spec/tm/plan/unknown), `spec_dir`, `repo_root`, `git_branch`, `task_id`, `task_title`, `task_description`, `task_type`, `test_strategy`, `verification`, `files_touched`, `task_details`, `validation_command`, `validation_type`, `plan_target` (where you must write the manifest), `auto_mode`, `dry_run`, `timestamp`.
 
 After parsing the contract:
 - If `status` is `NO_TASKS_REMAINING` — surface to user and stop.
