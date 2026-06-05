@@ -30,7 +30,7 @@
     - **Edge Cases**: Extra forbidden keys cause `ValidationError`; `timeout_seconds=0` and `-1` are rejected; `current_phase="INVALID"` raises `ValueError` listing valid phases; `None` serializes/deserializes correctly for `active_issue_id`.
     - **Acceptance**: `pytest tests/test_state/test_config.py -v` exits 0. All model instances are importable from `src.deviate.state.config`.
 
-- [ ] T002: Prompt Seed Resources
+- [x] T002: Prompt Seed Resources
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
   - **Verification**: `python -c "from deviate.prompts import governance; print(governance.__file__)"`
@@ -56,7 +56,7 @@
 
 ### Tasks
 
-- [ ] T003: Init Subcommand — Scaffolding, Governance & Idempotency
+- [\] T003: Init Subcommand — Scaffolding, Governance & Idempotency
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
