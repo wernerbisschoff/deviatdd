@@ -155,6 +155,13 @@ def _apply_governance(workdir: Path) -> None:
     claude_path = workdir / "CLAUDE.md"
     _upsert_governance_block(claude_path, content)
 
+    agents_content = _read_seed("deviate.prompts.governance", "agents_seed.md")
+    if agents_content is None:
+        return
+
+    agents_path = workdir / "AGENTS.md"
+    _upsert_governance_block(agents_path, agents_content)
+
 
 @cli.command()
 def init(

@@ -2,39 +2,44 @@
   "task_id": "T004",
   "files_modified": [
     {
+      "path": "src/deviate/cli/__init__.py",
+      "action": "modified",
+      "purpose": "Extend _apply_governance to also apply agents_seed.md to AGENTS.md per US-004-GOV"
+    },
+    {
       "path": "tests/test_integration/__init__.py",
       "action": "created",
       "purpose": "Package marker for integration test directory"
     },
     {
       "path": "tests/test_integration/test_init_export_cycle.py",
-      "action": "created",
-      "purpose": "Integration tests for full init cycle, performance gates, and idempotency"
+      "action": "modified",
+      "purpose": "Add AGENTS.md assertions, add test_init_export_files_not_created_when_existing"
     }
   ],
-  "commit_subject": "test(T004): add integration tests for init cycle and performance",
-  "commit_body": "Add 6 integration tests across 4 scenarios: full init cycle structural validation (config.toml TOML parsing, session.json schema, constitution marker resolution, CLAUDE.md governance block), wall-clock performance under 500ms for both first-run and idempotent second-run, and pre-scaffolded directory idempotency verification. All 6 tests enforce the L_max <= 500ms performance constraint from US-006-PERF.",
+  "commit_subject": "test(T004): add integration tests and AGENTS.md governance support",
+  "commit_body": "Extend _apply_governance to also write the DeviaTDD Orchestration Rules block to AGENTS.md using agents_seed.md (gap from US-004-GOV). Update test_full_init_cycle_completes to assert AGENTS.md exists with governance content. Add test_init_export_files_not_created_when_existing verifying pre-scaffolded config.toml/session.json are not overwritten. Add AGENTS.md assertions to test_init_idempotency_with_pre_existing_files. All 23 tests pass with lint and format clean.",
   "validation": {
     "lint": "PASS",
     "typecheck": "SKIP",
     "tests": "PASS",
     "command": "pytest tests/test_integration/test_init_export_cycle.py -v",
-    "summary": "6/6 integration tests passed, ruff lint clean, ruff format clean, 22/22 all-tests pass (448ms)"
+    "summary": "7/7 integration tests passed (1 added), ruff lint clean, format clean, 23/23 all-tests pass (447ms)"
   },
   "reasoning": {
-    "approach": "Created integration test package with 6 tests across 4 scenarios: full cycle validation, TOML/JSON structural checks, first-run and idempotent performance gates, and pre-scaffolded directory idempotency",
+    "approach": "Fixed spec gap by adding AGENTS.md governance management in _apply_governance, then updated integration tests to assert AGENTS.md and added the missing test_init_export_files_not_created_when_existing test",
     "key_decisions": [
       {
-        "decision": "Split structural validation into 3 separate tests (full cycle, TOML, JSON)",
-        "rationale": "Keeps each assertion focused: one test for file existence + governance, one for TOML deserialization content, one for JSON schema. Easier to diagnose failures."
+        "decision": "Extended _apply_governance to handle AGENTS.md alongside CLAUDE.md",
+        "rationale": "US-004-GOV explicitly requires AGENTS.md to receive the same governance block treatment; this was a gap in T003's implementation"
       },
       {
-        "decision": "Used time.perf_counter() for performance tests per spec",
-        "rationale": "perf_counter() provides monotonic high-resolution wall-clock timing suitable for sub-second measurements per US-006-PERF"
+        "decision": "Added test_init_export_files_not_created_when_existing separately from existing idempotency tests",
+        "rationale": "Task spec explicitly requested this test; keeps focused on config/session idempotency separated from governance block behavior"
       },
       {
-        "decision": "Pre-scaffolded test uses CLAUDE.md with existing governance block",
-        "rationale": "Aligns with _upsert_governance_block behavior: file without the block gets appended, file with the block gets section-replaced. The test verifies content-aware idempotency."
+        "decision": "Skipped .deviate/prompts.log from assertions",
+        "rationale": "prompts.log is not defined in spec.md or the current init implementation; asserting it would cause test failures with no corresponding feature"
       }
     ]
   }

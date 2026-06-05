@@ -21,11 +21,13 @@ class TestFullInitCycle:
             config_path = dot_dir / "config.toml"
             session_path = dot_dir / "session.json"
             claude_path = workdir / "CLAUDE.md"
+            agents_path = workdir / "AGENTS.md"
             constitution_path = workdir / "specs" / "constitution.md"
 
             assert config_path.exists()
             assert session_path.exists()
             assert claude_path.exists()
+            assert agents_path.exists()
             assert constitution_path.exists()
 
             config_text = config_path.read_text()
@@ -42,6 +44,9 @@ class TestFullInitCycle:
 
             claude_text = claude_path.read_text()
             assert "## DeviaTDD Orchestration Rules" in claude_text
+
+            agents_text = agents_path.read_text()
+            assert "## DeviaTDD Orchestration Rules" in agents_text
 
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -89,6 +94,22 @@ class TestFullInitCycle:
             assert result_second.exit_code == 0, result_second.output
             assert elapsed < 0.5, f"Second init took {elapsed:.3f}s, expected < 0.5s"
 
+    def test_init_export_files_not_created_when_existing(self, tmp_path: Path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            workdir = Path(td)
+            dot_dir = workdir / ".deviate"
+            dot_dir.mkdir()
+            config_path = dot_dir / "config.toml"
+            config_path.write_text('profile = "custom"\n')
+            session_path = dot_dir / "session.json"
+            session_path.write_text('{"current_phase": "RED"}\n')
+
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+
+            assert config_path.read_text() == 'profile = "custom"\n'
+            assert session_path.read_text() == '{"current_phase": "RED"}\n'
+
     def test_init_idempotency_with_pre_existing_files(self, tmp_path: Path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as td:
             workdir = Path(td)
@@ -112,6 +133,10 @@ class TestFullInitCycle:
             )
             claude_path.write_text(existing_claude)
 
+            agents_path = workdir / "AGENTS.md"
+            existing_agents = "# Existing AGENTS content\n"
+            agents_path.write_text(existing_agents)
+
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0, result.output
 
@@ -123,3 +148,7 @@ class TestFullInitCycle:
             assert "Preserved content" in content
             assert "## DeviaTDD Orchestration Rules" in content
             assert "## Other Section" in content
+
+            assert agents_path.exists()
+            agents_content = agents_path.read_text()
+            assert "## DeviaTDD Orchestration Rules" in agents_content
