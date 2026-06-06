@@ -26,6 +26,25 @@ assert_ledger_count() {
     [[ "$actual" -eq "$expected" ]]
 }
 
+scaffold_artifacts() {
+    local spec_dir="specs/001-deviate-cli-python"
+    for name in "$@"; do
+        echo "# $name" > "$spec_dir/$name"
+    done
+}
+
+run_full_cycle() {
+    local epic_slug="${1:-001-deviate-cli-python}"
+    run deviate cli explore "$epic_slug"
+    [ "$status" -eq 0 ] || return 1
+    run deviate cli research "$epic_slug"
+    [ "$status" -eq 0 ] || return 1
+    run deviate cli prd "$epic_slug"
+    [ "$status" -eq 0 ] || return 1
+    run deviate cli shard "$epic_slug"
+    [ "$status" -eq 0 ] || return 1
+}
+
 @test "deviate explore accepts --help" {
     run deviate cli explore --help
     [ "$status" -eq 0 ]
@@ -38,8 +57,7 @@ assert_ledger_count() {
 }
 
 @test "prd with missing research.md fails with HALTED" {
-    mkdir -p specs/001-deviate-cli-python
-    echo "# explore" > specs/001-deviate-cli-python/explore.md
+    scaffold_artifacts "explore.md"
     echo '{"current_phase":"RESEARCH","timestamp":"2026-01-01T00:00:00Z"}' > .deviate/session.json
 
     run deviate cli prd 001-deviate-cli-python
@@ -49,25 +67,9 @@ assert_ledger_count() {
 }
 
 @test "full cycle produces ledger entry" {
-    mkdir -p specs/001-deviate-cli-python
-    echo "# explore" > specs/001-deviate-cli-python/explore.md
-    echo "# research" > specs/001-deviate-cli-python/research.md
-    echo "# prd" > specs/001-deviate-cli-python/prd.md
-
-    run deviate cli explore 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
-    run deviate cli research 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
-    run deviate cli prd 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
-    run deviate cli shard 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
+    scaffold_artifacts "explore.md" "research.md" "prd.md"
+    run_full_cycle
     assert_session_phase "IDLE"
-
     [ -f specs/issues.jsonl ]
     assert_ledger_count 1
     run jq -r '.status' specs/issues.jsonl
@@ -75,14 +77,13 @@ assert_ledger_count() {
 }
 
 @test "session state survives across CLI invocations" {
-    mkdir -p specs/001-deviate-cli-python
-    echo "# explore" > specs/001-deviate-cli-python/explore.md
+    scaffold_artifacts "explore.md"
 
     run deviate cli explore 001-deviate-cli-python
     [ "$status" -eq 0 ]
     assert_session_phase "EXPLORE"
 
-    echo "# research" > specs/001-deviate-cli-python/research.md
+    scaffold_artifacts "research.md"
 
     run deviate cli research 001-deviate-cli-python
     [ "$status" -eq 0 ]
@@ -90,23 +91,8 @@ assert_ledger_count() {
 }
 
 @test "shard idempotently skips duplicate" {
-    mkdir -p specs/001-deviate-cli-python
-    echo "# explore" > specs/001-deviate-cli-python/explore.md
-    echo "# research" > specs/001-deviate-cli-python/research.md
-    echo "# prd" > specs/001-deviate-cli-python/prd.md
-
-    run deviate cli explore 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
-    run deviate cli research 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
-    run deviate cli prd 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
-    run deviate cli shard 001-deviate-cli-python
-    [ "$status" -eq 0 ]
-
+    scaffold_artifacts "explore.md" "research.md" "prd.md"
+    run_full_cycle
     assert_ledger_count 1
     assert_session_phase "IDLE"
 
@@ -116,4 +102,34 @@ assert_ledger_count() {
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "LEDGER_IDEMPOTENT"
     assert_ledger_count 1
+}
+
+@test "handle missing .deviate directory gracefully" {
+    rm -rf .deviate
+    run deviate cli explore 001-deviate-cli-python
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -q "EXPLORE_HALTED"
+    echo "$output" | grep -q ".deviate"
+}
+
+@test "handle non-ASCII project path characters" {
+    local epic_slug="001-déviate-cli-python"
+    local spec_dir="specs/$epic_slug"
+    mkdir -p "$spec_dir"
+    echo "# explore.md" > "$spec_dir/explore.md"
+    echo "# research.md" > "$spec_dir/research.md"
+    echo "# prd.md" > "$spec_dir/prd.md"
+
+    run deviate cli explore "$epic_slug"
+    [ "$status" -eq 0 ]
+
+    run deviate cli research "$epic_slug"
+    [ "$status" -eq 0 ]
+
+    run deviate cli prd "$epic_slug"
+    [ "$status" -eq 0 ]
+
+    run deviate cli shard "$epic_slug"
+    [ "$status" -eq 0 ]
+    assert_session_phase "IDLE"
 }
