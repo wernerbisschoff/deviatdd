@@ -42,8 +42,8 @@ depends = ["lint-fix", "format"]
 description = "Format + lint fix"
 
 [tasks.setup]
-run = "uv sync"
-description = "Install deps"
+run = "uv sync && git config core.hooksPath .githooks"
+description = "Install deps + configure git hooks"
 
 [tasks.clean]
 run = "rm -rf .ruff_cache/ .pytest_cache/ __pycache__/ .mypy_cache/ dist/ build/ *.egg-info/"

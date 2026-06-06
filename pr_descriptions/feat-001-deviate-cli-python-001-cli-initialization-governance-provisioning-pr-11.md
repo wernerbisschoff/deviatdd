@@ -1,0 +1,7 @@
+This PR introduces the `deviate init` CLI command that fully scaffolds a DeviaTDD workspace. It creates the `.deviate/` directory with Pydantic-validated configuration and session state, provisions a `specs/constitution.md` from a tokenized template, and idempotently manages agent governance files with append/overwrite semantics. The implementation follows TDD across four tasks (T001–T004) verified by unit and integration tests under a 500ms performance gate.
+
+- **Pydantic state models**: `DeviateConfig` and `SessionState` in `src/deviate/state/config.py` with strict `extra="forbid"` validation, typed fields, and JSON/TOML serialization
+- **Prompt seed resources**: Static markdown templates under `src/deviate/prompts/` including `constitution_seed.md` with `${VARIABLE}` tokenized placeholders and governance seeds for `CLAUDE.md` and `AGENTS.md`
+- **Init subcommand**: `deviate init` in `src/deviate/cli/__init__.py` with `.deviate/` scaffolding, idempotent file creation, `--agent-export-mode` (local/global), `--generate-constitution` flag, and partial scaffold recovery from interrupted runs
+- **Governance file management**: `_upsert_governance_block` helper that appends or in-place replaces the `## DeviaTDD Orchestration Rules` section in `CLAUDE.md` and `AGENTS.md` via `src/deviate/prompts/governance/` seeds
+- **Integration and performance**: E2E tests in `tests/test_integration/test_init_export_cycle.py` verifying the full init cycle, idempotency, and compliance with the 500ms wall-clock constraint
