@@ -46,3 +46,7 @@ htmlcov/
 
 
 .worktrees/
+
+# Tooling
+.rgr
+.tdd-session.json

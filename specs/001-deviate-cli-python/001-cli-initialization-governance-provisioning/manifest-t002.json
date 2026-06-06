@@ -1,0 +1,52 @@
+{
+  "task_id": "T002",
+  "files_modified": [
+    {
+      "path": "src/deviate/prompts/__init__.py",
+      "action": "created",
+      "purpose": "Package marker for prompts resource vault"
+    },
+    {
+      "path": "src/deviate/prompts/governance/__init__.py",
+      "action": "created",
+      "purpose": "Package marker for governance sub-package"
+    },
+    {
+      "path": "src/deviate/prompts/constitution_seed.md",
+      "action": "created",
+      "purpose": "Tokenized constitution boilerplate with ${VARIABLE} placeholders"
+    },
+    {
+      "path": "src/deviate/prompts/governance/claudemd_seed.md",
+      "action": "created",
+      "purpose": "Governance seed for CLAUDE.md with DeviaTDD Orchestration Rules"
+    },
+    {
+      "path": "src/deviate/prompts/governance/agents_seed.md",
+      "action": "created",
+      "purpose": "Governance seed for AGENTS.md with DeviaTDD Orchestration Rules"
+    }
+  ],
+  "commit_subject": "feat(T002): add prompt seed resources for constitution and governance",
+  "commit_body": "Create static prompt resource files under src/deviate/prompts/ for downstream init command consumption: constitution_seed.md with tokenized ${PROJECT_NAME}/${REPO_ROOT} placeholders and all required constitution sections, plus governance seeds (claudemd_seed.md, agents_seed.md) both containing the ## DeviaTDD Orchestration Rules header for idempotent governance file management.",
+  "validation": {
+    "lint": "PASS",
+    "typecheck": "SKIP",
+    "tests": "SKIP",
+    "command": "python -c \"from deviate.prompts import governance; print(governance.__file__)\"",
+    "summary": "Package importable via importlib.resources, both governance seeds contain ## DeviaTDD Orchestration Rules header, ruff lint clean"
+  },
+  "reasoning": {
+    "approach": "Created all 5 files in a single pass as static content artifacts with no runtime logic",
+    "key_decisions": [
+      {
+        "decision": "constitution_seed.md includes 'repo_root' as placeholder alongside 'project_name'",
+        "rationale": "Required by spec for regex-based project file scanning resolution in T003"
+      },
+      {
+        "decision": "Governance seeds have identical structure but separate files",
+        "rationale": "Task spec requires distinct files (claudemd_seed.md vs agents_seed.md) even though content is currently identical; separates concerns for potential future divergence"
+      }
+    ]
+  }
+}
