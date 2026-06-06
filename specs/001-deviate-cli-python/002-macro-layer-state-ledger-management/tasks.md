@@ -50,7 +50,7 @@
 
 ### Tasks
 
-- [ ] T003: Macro CLI subcommands with artifact validation
+- [x] T003: Macro CLI subcommands with artifact validation
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
@@ -83,7 +83,7 @@
 
 ### Tasks
 
-- [ ] T004: Full-cycle integration test
+- [/] T004: Full-cycle integration test
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
