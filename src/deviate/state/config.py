@@ -33,11 +33,13 @@ _TRANSITION_MAP: dict[str, tuple[str, ...]] = {
     "SPECIFY": ("TASKS",),
     "TASKS": ("IDLE",),
 }
-_REVERSE_MAP: dict[str, str] = {}
-for _src, _targets in _TRANSITION_MAP.items():
-    for _tgt in _targets:
-        if _tgt not in _REVERSE_MAP:
-            _REVERSE_MAP[_tgt] = _src
+
+
+def _find_source_for(target: str) -> str | None:
+    for source, targets in _TRANSITION_MAP.items():
+        if target in targets:
+            return source
+    return None
 
 
 class TransitionViolationError(Exception):
@@ -70,7 +72,7 @@ class SessionState(BaseModel):
     def transition_to(self, phase: str) -> SessionState:
         expected_next: tuple[str, ...] | None = _TRANSITION_MAP.get(self.current_phase)
         if expected_next is None or phase not in expected_next:
-            expected_current = _REVERSE_MAP.get(phase)
+            expected_current = _find_source_for(phase)
             raise TransitionViolationError(
                 f"cannot transition from '{self.current_phase}' to '{phase}': "
                 f"expected '{expected_current}' -> '{phase}', "
