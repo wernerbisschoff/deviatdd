@@ -42,7 +42,7 @@ depends = ["lint-fix", "format"]
 description = "Format + lint fix"
 
 [tasks.setup]
-run = "uv sync && git config core.hooksPath .githooks"
+run = "uv sync --extra dev && git config core.hooksPath .githooks"
 description = "Install deps + configure git hooks"
 
 [tasks.clean]
