@@ -48,7 +48,7 @@
 
 ### Tasks
 
-- [ ] T003: `deviate specify` — Issue Record Resolution & Artifact Scaffolding
+- [x] T003: `deviate specify` — Issue Record Resolution & Artifact Scaffolding
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
@@ -69,7 +69,7 @@
     - **Edge Cases**: Handle `.deviate/` not found by emitting a clear error before resolving issues. Handle duplicate invocations — directory already exists → output skip message but still transition session.
     - **Acceptance**: All `test_specify.py` tests pass. CLI exits with proper codes. Session state is persisted correctly.
 
-- [ ] T004: `deviate tasks` — TaskRecord Generation, Append & Idempotency Guard
+- [x] T004: `deviate tasks` — TaskRecord Generation, Append & Idempotency Guard
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
