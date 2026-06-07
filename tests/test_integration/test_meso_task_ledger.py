@@ -109,10 +109,7 @@ class TestMesoTaskLedger:
             ledger.parent.mkdir(parents=True)
             ledger.write_text(
                 "not valid json\n"
-                "also not valid\n"
-                + valid.model_dump_json()
-                + "\n"
-                + "trash\n"
+                "also not valid\n" + valid.model_dump_json() + "\n" + "trash\n"
             )
 
             result = runner.invoke(
@@ -121,9 +118,7 @@ class TestMesoTaskLedger:
             assert result.exit_code == 0, result.output
 
             spec_dir = Path("specs") / "valid-issue-malformed"
-            assert spec_dir.is_dir(), (
-                f"Expected {spec_dir} despite malformed lines"
-            )
+            assert spec_dir.is_dir(), f"Expected {spec_dir} despite malformed lines"
 
     def test_missing_dotdir_graceful(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
