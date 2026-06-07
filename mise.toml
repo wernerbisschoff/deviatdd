@@ -6,7 +6,7 @@ python = "3.13"
 uv = "latest"
 
 [tasks.test]
-run = "pytest tests/ -v"
+run = "uv run pytest tests/ -v"
 description = "Run unit tests"
 
 [tasks.test-e2e]

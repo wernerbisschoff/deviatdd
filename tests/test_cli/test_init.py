@@ -1,3 +1,5 @@
+import os
+from contextlib import contextmanager
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -7,18 +9,28 @@ from deviate.cli import cli
 runner = CliRunner()
 
 
+@contextmanager
+def chdir(path: Path):
+    cwd = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(cwd)
+
+
 class TestInitCommand:
     def test_init_creates_dotfile_structure(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0, result.output
             assert (workdir / ".deviate" / "config.toml").exists()
             assert (workdir / ".deviate" / "session.json").exists()
 
     def test_init_creates_constitution(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             result = runner.invoke(cli, ["init", "--generate-constitution"])
             assert result.exit_code == 0, result.output
             constitution_path = workdir / "specs" / "constitution.md"
@@ -28,8 +40,8 @@ class TestInitCommand:
             assert "${REPO_ROOT}" not in content
 
     def test_init_appends_governance_to_nonexistent_file(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0, result.output
             claude_path = workdir / "CLAUDE.md"
@@ -38,8 +50,8 @@ class TestInitCommand:
             assert "## DeviaTDD Orchestration Rules" in content
 
     def test_init_overwrites_governance_block_when_exists(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             claude_path = workdir / "CLAUDE.md"
             existing_content = (
                 "# My Project\n\n"
@@ -60,8 +72,8 @@ class TestInitCommand:
             assert "## Other Section" in content
 
     def test_init_skip_existing_dotfiles(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             dotfile_dir = workdir / ".deviate"
             dotfile_dir.mkdir()
             config_path = dotfile_dir / "config.toml"
@@ -74,8 +86,8 @@ class TestInitCommand:
             assert "skip" in result.output.lower() or "already" in result.output.lower()
 
     def test_init_recover_partial_scaffold(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             dotfile_dir = workdir / ".deviate"
             dotfile_dir.mkdir()
             config_path = dotfile_dir / "config.toml"

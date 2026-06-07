@@ -6,7 +6,13 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from deviate.state.ledger import IssueRecord, append_issue_record
+from deviate.state.ledger import (
+    IssueRecord,
+    TaskRecord,
+    append_issue_record,
+    append_task_record,
+    resolve_issue_record,
+)
 
 
 class TestIssueRecord:
@@ -132,3 +138,161 @@ class TestAppendIssueRecord:
         assert result is True
         assert ledger_path.exists()
         assert ledger_path.stat().st_size > 0
+
+
+class TestTaskRecord:
+    def test_task_record_creation(self):
+        record = TaskRecord(
+            id=str(uuid4()),
+            issue_id="iss-001",
+            description="Implement task record model",
+        )
+        assert record.id is not None
+        assert record.issue_id == "iss-001"
+        assert record.description == "Implement task record model"
+        assert record.status == "PENDING"
+        assert record.execution_mode == "TDD"
+        assert record.created_at.tzinfo is not None
+
+    def test_task_record_explicit_status_and_mode(self):
+        record = TaskRecord(
+            id=str(uuid4()),
+            issue_id="iss-002",
+            description="Explicit fields",
+            status="RED",
+            execution_mode="DIRECT",
+        )
+        assert record.status == "RED"
+        assert record.execution_mode == "DIRECT"
+
+    def test_task_record_invalid_status(self):
+        with pytest.raises(ValidationError):
+            TaskRecord(
+                id=str(uuid4()),
+                issue_id="iss-003",
+                description="Bad status",
+                status="INVALID",
+            )
+
+    def test_task_record_invalid_execution_mode(self):
+        with pytest.raises(ValidationError):
+            TaskRecord(
+                id=str(uuid4()),
+                issue_id="iss-004",
+                description="Bad execution mode",
+                execution_mode="INVALID",
+            )
+
+    def test_task_record_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            TaskRecord(
+                id=str(uuid4()),
+                issue_id="iss-005",
+                description="Extra field",
+                extra_field="should_fail",
+            )
+
+    def test_task_record_uuid4_validation(self):
+        with pytest.raises(ValidationError):
+            TaskRecord(
+                id="not-a-uuid",
+                issue_id="iss-006",
+                description="Invalid UUID",
+            )
+
+    def test_task_record_empty_description(self):
+        with pytest.raises(ValidationError):
+            TaskRecord(
+                id=str(uuid4()),
+                issue_id="iss-007",
+                description="",
+            )
+
+    def test_task_record_serialization(self):
+        record = TaskRecord(
+            id=str(uuid4()),
+            issue_id="iss-008",
+            description="Round trip",
+            status="REFACTOR",
+            execution_mode="E2E",
+        )
+        data = json.loads(record.model_dump_json())
+        restored = TaskRecord.model_validate(data)
+        assert restored == record
+
+
+class TestAppendTaskRecord:
+    def test_append_task_record_new(self, tmp_path: Path):
+        ledger_path = tmp_path / "tasks.jsonl"
+        record = TaskRecord(
+            id=str(uuid4()),
+            issue_id="iss-010",
+            description="First task",
+        )
+        result = append_task_record(record, ledger_path)
+        assert result is True
+        assert ledger_path.exists()
+        lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        parsed = json.loads(lines[0])
+        assert parsed["id"] == record.id
+
+    def test_append_task_record_idempotent_skip(self, tmp_path: Path):
+        ledger_path = tmp_path / "tasks.jsonl"
+        task_id = str(uuid4())
+        record = TaskRecord(
+            id=task_id,
+            issue_id="iss-011",
+            description="First",
+        )
+        result1 = append_task_record(record, ledger_path)
+        assert result1 is True
+
+        record2 = TaskRecord(
+            id=task_id,
+            issue_id="iss-012",
+            description="Duplicate id",
+        )
+        result2 = append_task_record(record2, ledger_path)
+        assert result2 is False
+
+        lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+
+    def test_task_ledger_directory_creation(self, tmp_path: Path):
+        ledger_path = tmp_path / "subdir" / "tasks.jsonl"
+        assert not ledger_path.parent.exists()
+
+        record = TaskRecord(
+            id=str(uuid4()),
+            issue_id="iss-013",
+            description="Creates dirs",
+        )
+        result = append_task_record(record, ledger_path)
+        assert result is True
+        assert ledger_path.parent.exists()
+        assert ledger_path.exists()
+        assert ledger_path.stat().st_size > 0
+
+
+class TestResolveIssueRecord:
+    def test_read_issue_record_by_id(self, tmp_path: Path):
+        ledger_path = tmp_path / "issues.jsonl"
+        issue_id = str(uuid4())
+        record = IssueRecord(
+            id=issue_id,
+            title="Test",
+            epic_slug="epic-001",
+            issue_slug="iss-resolve",
+        )
+        append_issue_record(record, ledger_path)
+
+        result = resolve_issue_record(issue_id, ledger_path)
+        assert result is not None
+        assert result.id == issue_id
+        assert result.title == "Test"
+
+    def test_read_issue_record_not_found(self, tmp_path: Path):
+        ledger_path = tmp_path / "issues.jsonl"
+        result = resolve_issue_record("nonexistent-id", ledger_path)
+        assert result is None
