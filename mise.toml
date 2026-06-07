@@ -14,19 +14,19 @@ run = "bats tests/e2e/"
 description = "Run E2E tests via bats"
 
 [tasks.lint]
-run = "ruff check"
+run = "uv run ruff check"
 description = "Lint Python"
 
 [tasks.lint-fix]
-run = "ruff check --fix"
+run = "uv run ruff check --fix"
 description = "Apply lint fixes"
 
 [tasks.format]
-run = "ruff format"
+run = "uv run ruff format"
 description = "Format Python"
 
 [tasks.format-check]
-run = "ruff format --check"
+run = "uv run ruff format --check"
 description = "Check formatting"
 
 [tasks.check-types]
@@ -48,6 +48,10 @@ description = "Install deps + configure git hooks"
 [tasks.clean]
 run = "rm -rf .ruff_cache/ .pytest_cache/ __pycache__/ .mypy_cache/ dist/ build/ *.egg-info/"
 description = "Remove artifacts"
+
+[tasks.dev]
+run = "uv run deviate"
+description = "Run the deviate CLI (pass args directly, e.g. `mise run dev init`)"
 
 [tasks.help]
 run = "mise tasks"
