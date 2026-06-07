@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 
 from deviate.state.config import DeviateConfig, SessionState
+from deviate.cli.macro import explore, research, prd, shard
 
 cli = typer.Typer(no_args_is_help=True)
 console = Console()
@@ -182,3 +183,9 @@ def init(
     _apply_governance(workdir)
 
     _provision_constitution(workdir)
+
+
+cli.command(name="explore")(explore)
+cli.command(name="research")(research)
+cli.command(name="prd")(prd)
+cli.command(name="shard")(shard)
