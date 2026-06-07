@@ -3,7 +3,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from deviate.state.config import DeviateConfig, SessionState
+from deviate.state.config import (
+    DeviateConfig,
+    SessionState,
+    TransitionViolationError,
+)
 
 
 class TestDeviateConfig:
@@ -84,3 +88,28 @@ class TestSessionState:
         data = json.loads(session.model_dump_json())
         restored = SessionState.model_validate(data)
         assert restored == session
+
+    def test_transition_idle_to_specify(self):
+        session = SessionState(current_phase="IDLE")
+        result = session.transition_to("SPECIFY")
+        assert result.current_phase == "SPECIFY"
+
+    def test_transition_specify_to_tasks(self):
+        session = SessionState(current_phase="SPECIFY")
+        result = session.transition_to("TASKS")
+        assert result.current_phase == "TASKS"
+
+    def test_transition_tasks_to_idle(self):
+        session = SessionState(current_phase="TASKS")
+        result = session.transition_to("IDLE")
+        assert result.current_phase == "IDLE"
+
+    def test_transition_idle_to_explore_still_works(self):
+        session = SessionState(current_phase="IDLE")
+        result = session.transition_to("EXPLORE")
+        assert result.current_phase == "EXPLORE"
+
+    def test_transition_specify_to_shard_rejected(self):
+        session = SessionState(current_phase="SPECIFY")
+        with pytest.raises(TransitionViolationError):
+            session.transition_to("SHARD")

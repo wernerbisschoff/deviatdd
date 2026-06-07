@@ -25,6 +25,8 @@ class IssueRecord(BaseModel):
     issue_slug: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    model_config = {"extra": "forbid"}
+
     @field_validator("id")
     @classmethod
     def _validate_uuid4(cls, v: str) -> str:
@@ -52,29 +54,77 @@ def _read_ledger(path: Path) -> list[dict]:
     return records
 
 
-def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
+class TaskRecord(BaseModel):
+    id: str
+    issue_id: str
+    description: str = Field(min_length=1)
+    status: Literal["PENDING", "RED", "GREEN", "REFACTOR", "COMPLETED"] = "PENDING"
+    execution_mode: Literal["TDD", "DIRECT", "E2E"] = "TDD"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("id")
+    @classmethod
+    def _validate_uuid4(cls, v: str) -> str:
+        try:
+            uuid.UUID(v, version=4)
+        except ValueError:
+            raise ValueError(f"Invalid UUID4: {v}")
+        return v
+
+
+def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
     with ledger_path.open("a+", encoding="utf-8") as f:
         if HAS_FCNTL:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             f.seek(0)
-            existing_slugs: set[str] = set()
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     data = json.loads(line)
-                    if "issue_slug" in data:
-                        existing_slugs.add(data["issue_slug"])
+                    if data.get("id") == record.id:
+                        return False
                 except json.JSONDecodeError:
                     continue
-
-            if record.issue_slug in existing_slugs:
-                return False
-
             f.write(record.model_dump_json() + "\n")
-            return True
         finally:
             if HAS_FCNTL:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    return True
+
+
+def resolve_issue_record(issue_id: str, ledger_path: Path) -> IssueRecord | None:
+    records = _read_ledger(ledger_path)
+    for data in reversed(records):
+        if data.get("id") == issue_id:
+            return IssueRecord.model_validate(data)
+    return None
+
+
+def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    with ledger_path.open("a+", encoding="utf-8") as f:
+        if HAS_FCNTL:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if data.get("issue_slug") == record.issue_slug:
+                        return False
+                except json.JSONDecodeError:
+                    continue
+            f.write(record.model_dump_json() + "\n")
+        finally:
+            if HAS_FCNTL:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    return True

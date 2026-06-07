@@ -1,5 +1,7 @@
 import json
+import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import tomllib
@@ -10,10 +12,20 @@ from deviate.cli import cli
 runner = CliRunner()
 
 
+@contextmanager
+def chdir(path: Path):
+    cwd = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(cwd)
+
+
 class TestFullInitCycle:
     def test_full_init_cycle_completes(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             result = runner.invoke(cli, ["init", "--generate-constitution"])
             assert result.exit_code == 0, result.output
 
@@ -49,8 +61,8 @@ class TestFullInitCycle:
             assert "## DeviaTDD Orchestration Rules" in agents_text
 
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0, result.output
 
@@ -63,8 +75,8 @@ class TestFullInitCycle:
             assert data.get("agent_export_mode") == "local"
 
     def test_full_init_structure_valid_session(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0, result.output
 
@@ -74,7 +86,7 @@ class TestFullInitCycle:
             assert data["last_command"] == ""
 
     def test_init_performance_under_500ms(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path):
+        with chdir(tmp_path):
             start = time.perf_counter()
             result = runner.invoke(cli, ["init"])
             elapsed = time.perf_counter() - start
@@ -83,7 +95,7 @@ class TestFullInitCycle:
             assert elapsed < 0.5, f"Init took {elapsed:.3f}s, expected < 0.5s"
 
     def test_init_idempotent_performance(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path):
+        with chdir(tmp_path):
             result_first = runner.invoke(cli, ["init"])
             assert result_first.exit_code == 0, result_first.output
 
@@ -95,8 +107,8 @@ class TestFullInitCycle:
             assert elapsed < 0.5, f"Second init took {elapsed:.3f}s, expected < 0.5s"
 
     def test_init_export_files_not_created_when_existing(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             dot_dir = workdir / ".deviate"
             dot_dir.mkdir()
             config_path = dot_dir / "config.toml"
@@ -111,8 +123,8 @@ class TestFullInitCycle:
             assert session_path.read_text() == '{"current_phase": "RED"}\n'
 
     def test_init_idempotency_with_pre_existing_files(self, tmp_path: Path):
-        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-            workdir = Path(td)
+        with chdir(tmp_path):
+            workdir = tmp_path
             dot_dir = workdir / ".deviate"
             dot_dir.mkdir()
             config_path = dot_dir / "config.toml"
