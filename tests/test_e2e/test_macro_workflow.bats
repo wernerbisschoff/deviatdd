@@ -35,23 +35,23 @@ scaffold_artifacts() {
 
 run_full_cycle() {
     local epic_slug="${1:-001-deviate-cli-python}"
-    run deviate cli explore "$epic_slug"
+    run deviate explore "$epic_slug"
     [ "$status" -eq 0 ] || return 1
-    run deviate cli research "$epic_slug"
+    run deviate research "$epic_slug"
     [ "$status" -eq 0 ] || return 1
-    run deviate cli prd "$epic_slug"
+    run deviate prd "$epic_slug"
     [ "$status" -eq 0 ] || return 1
-    run deviate cli shard "$epic_slug"
+    run deviate shard "$epic_slug"
     [ "$status" -eq 0 ] || return 1
 }
 
 @test "deviate explore accepts --help" {
-    run deviate cli explore --help
+    run deviate explore --help
     [ "$status" -eq 0 ]
 }
 
 @test "explore transitions state to EXPLORE" {
-    run deviate cli explore 001-deviate-cli-python
+    run deviate explore 001-deviate-cli-python
     [ "$status" -eq 0 ]
     assert_session_phase "EXPLORE"
 }
@@ -60,7 +60,7 @@ run_full_cycle() {
     scaffold_artifacts "explore.md"
     echo '{"current_phase":"RESEARCH","timestamp":"2026-01-01T00:00:00Z"}' > .deviate/session.json
 
-    run deviate cli prd 001-deviate-cli-python
+    run deviate prd 001-deviate-cli-python
     [ "$status" -ne 0 ]
     echo "$output" | grep -q "PRD_HALTED"
     echo "$output" | grep -q "research.md"
@@ -79,13 +79,13 @@ run_full_cycle() {
 @test "session state survives across CLI invocations" {
     scaffold_artifacts "explore.md"
 
-    run deviate cli explore 001-deviate-cli-python
+    run deviate explore 001-deviate-cli-python
     [ "$status" -eq 0 ]
     assert_session_phase "EXPLORE"
 
     scaffold_artifacts "research.md"
 
-    run deviate cli research 001-deviate-cli-python
+    run deviate research 001-deviate-cli-python
     [ "$status" -eq 0 ]
     assert_session_phase "RESEARCH"
 }
@@ -98,7 +98,7 @@ run_full_cycle() {
 
     echo '{"current_phase":"PRD","timestamp":"2026-01-01T00:00:00Z"}' > .deviate/session.json
 
-    run deviate cli shard 001-deviate-cli-python
+    run deviate shard 001-deviate-cli-python
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "LEDGER_IDEMPOTENT"
     assert_ledger_count 1
@@ -106,7 +106,7 @@ run_full_cycle() {
 
 @test "handle missing .deviate directory gracefully" {
     rm -rf .deviate
-    run deviate cli explore 001-deviate-cli-python
+    run deviate explore 001-deviate-cli-python
     [ "$status" -ne 0 ]
     echo "$output" | grep -q "EXPLORE_HALTED"
     echo "$output" | grep -q ".deviate"
@@ -120,16 +120,16 @@ run_full_cycle() {
     echo "# research.md" > "$spec_dir/research.md"
     echo "# prd.md" > "$spec_dir/prd.md"
 
-    run deviate cli explore "$epic_slug"
+    run deviate explore "$epic_slug"
     [ "$status" -eq 0 ]
 
-    run deviate cli research "$epic_slug"
+    run deviate research "$epic_slug"
     [ "$status" -eq 0 ]
 
-    run deviate cli prd "$epic_slug"
+    run deviate prd "$epic_slug"
     [ "$status" -eq 0 ]
 
-    run deviate cli shard "$epic_slug"
+    run deviate shard "$epic_slug"
     [ "$status" -eq 0 ]
     assert_session_phase "IDLE"
 }
