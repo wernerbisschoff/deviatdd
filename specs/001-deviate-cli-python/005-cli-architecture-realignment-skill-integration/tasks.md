@@ -149,7 +149,7 @@
     - **Edge Cases**: Handle skills with no `SKILL.md` (skip). Handle skills already partially migrated. Preserve any non-`.sh` files in skill directories.
     - **Acceptance**: `find prompts -name "*.sh"` returns zero results. All SKILL.md files in `src/deviate/prompts/skills/` reference `deviate <subcommand>` instead of shell scripts. `deviate-cycle` directory no longer exists.
 
-- [\] T007: Wire Agent Detection, Skill Installation, and Contract Handoff into deviate init
+- [x] T007: Wire Agent Detection, Skill Installation, and Contract Handoff into deviate init
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration

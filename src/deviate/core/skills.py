@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import importlib.resources
 import shutil
 from pathlib import Path
 
 
 def _resolve_skills_root(skills_root: Path | None = None) -> Path:
-    return skills_root or Path("src/deviate/prompts/skills")
+    if skills_root is not None:
+        return skills_root
+    try:
+        return Path(importlib.resources.files("deviate.prompts").joinpath("skills"))
+    except (ModuleNotFoundError, TypeError, FileNotFoundError):
+        fallback = Path("src/deviate/prompts/skills")
+        if fallback.exists():
+            return fallback
+        return Path() / "src" / "deviate" / "prompts" / "skills"
 
 
 def discover_skills(skills_root: Path | None = None) -> list[str]:
@@ -35,3 +44,17 @@ def install_skill(name: str, target_dir: Path, skills_root: Path | None = None) 
         return False
     shutil.copy2(skill_path, target_path)
     return True
+
+
+def detect_agents(workdir: Path | None = None) -> list[str]:
+    """Detect agent platforms from cwd directories.
+
+    Scans *workdir* for ``.claude/``, ``.opencode/``, and ``.factory/``
+    subdirectories and returns the matching agent names.
+    """
+    workdir = workdir or Path.cwd()
+    agents: list[str] = []
+    for name in ("claude", "opencode", "factory"):
+        if (workdir / f".{name}").is_dir():
+            agents.append(name)
+    return sorted(agents)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
-from contextlib import contextmanager
+from contextlib import chdir
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -11,32 +11,34 @@ from deviate.cli import cli
 runner = CliRunner()
 
 
-@contextmanager
-def chdir(path: Path):
-    cwd = Path.cwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(cwd)
-
-
 class TestSkillInstallation:
     """T007: Wire agent detection, skill installation, and contract handoff into deviate init."""
 
-    def test_init_installs_skills_to_agent_dirs(self, tmp_path: Path):
+    def test_init_installs_skills_to_agent_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """US-005-SKILLS Scenario 2: SKILL.md copied to detected agent paths."""
-        (tmp_path / ".claude").mkdir()
-        (tmp_path / ".opencode").mkdir()
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".claude").mkdir(parents=True)
+        (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0
             assert "INSTALL" in result.output.upper()
 
-    def test_skill_idempotency_skip_identical(self, tmp_path: Path):
-        """US-005-SKILLS Scenario 3: skip when content hash matches."""
-        claude_skills = Path.home() / ".claude" / "skills"
-        claude_skills.mkdir(parents=True, exist_ok=True)
+    def test_skill_idempotency_skip_identical(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """US-005-SKILLS Scenario 3: skip when content matches."""
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent: tmp_path / f".{agent}" / "skills",
+        )
+        target_dir = tmp_path / ".claude" / "skills"
+        target_dir.mkdir(parents=True)
         src = (
             Path(__file__).resolve().parent.parent.parent
             / "src"
@@ -46,7 +48,7 @@ class TestSkillInstallation:
         )
         for skill_dir in src.iterdir():
             if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-                target = claude_skills / skill_dir.name / "SKILL.md"
+                target = target_dir / skill_dir.name / "SKILL.md"
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(
                     (skill_dir / "SKILL.md").read_text(encoding="utf-8"),
@@ -58,11 +60,15 @@ class TestSkillInstallation:
             assert result.exit_code == 0
             assert "SKIP" in result.output
 
-    def test_skill_idempotency_overwrite_stale(self, tmp_path: Path):
+    def test_skill_idempotency_overwrite_stale(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """US-005-SKILLS Scenario 4: overwrite when content differs."""
-        claude_skills = Path.home() / ".claude" / "skills"
-        claude_skills.mkdir(parents=True, exist_ok=True)
-        target = claude_skills / "deviate-specify" / "SKILL.md"
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent: tmp_path / f".{agent}" / "skills",
+        )
+        target = tmp_path / ".claude" / "skills" / "deviate-specify" / "SKILL.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("STALE CONTENT", encoding="utf-8")
         (tmp_path / ".claude").mkdir(exist_ok=True)
@@ -85,8 +91,14 @@ class TestSkillInstallation:
             assert "claude" in agents
             assert "factory" in agents
 
-    def test_agent_flag_overrides_detection(self, tmp_path: Path):
+    def test_agent_flag_overrides_detection(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """US-006-INIT Scenario 2: --agent flag overrides auto-detection."""
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent: tmp_path / f".{agent}" / "skills",
+        )
         (tmp_path / ".claude").mkdir()
         with chdir(tmp_path):
             result = runner.invoke(cli, ["init", "--agent", "opencode"])
