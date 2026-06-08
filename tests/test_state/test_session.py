@@ -138,3 +138,56 @@ class TestSessionPersistence:
         before = session.timestamp
         result = session.transition_to("EXPLORE")
         assert result.timestamp >= before
+
+
+class TestDualModePhaseOrdering:
+    def test_strict_phase_ordering_rejects_skip(self):
+        from deviate.state.config import TransitionViolationError
+
+        session = SessionState(current_phase="IDLE")
+        with pytest.raises(TransitionViolationError) as exc_info:
+            session.transition_to("SPECIFY")
+        msg = str(exc_info.value)
+        assert "SPECIFY" in msg
+        assert "IDLE" in msg
+
+
+class TestFilesystemDivergence:
+    def test_filesystem_divergence_detected_on_missing_artifact(self, tmp_path: Path):
+        bucket = tmp_path / "specs" / "test-epic"
+        bucket.mkdir(parents=True)
+        (bucket / "explore.md").write_text("# Explore", encoding="utf-8")
+
+        missing = SessionState.validate_filesystem_state(
+            "RESEARCH", "test-epic", repo_path=tmp_path
+        )
+        assert len(missing) == 0
+
+        (bucket / "explore.md").unlink()
+        missing = SessionState.validate_filesystem_state(
+            "RESEARCH", "test-epic", repo_path=tmp_path
+        )
+        assert "explore.md" in missing
+
+
+class TestSessionReconstruction:
+    def test_session_reconstruction_from_worktree(self, tmp_git_repo: Path):
+        worktree = tmp_git_repo / "worktrees" / "feat-test"
+        worktree.mkdir(parents=True)
+        (worktree / "spec.md").write_text("# Spec", encoding="utf-8")
+        (worktree / "tasks.md").write_text("# Tasks", encoding="utf-8")
+
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        if session_path.exists():
+            session_path.unlink()
+
+        session = SessionState.reconstruct_from_worktree(worktree)
+        assert isinstance(session, SessionState)
+        assert session.current_phase is not None
+
+
+class TestTaskIdNormalization:
+    def test_task_id_normalization(self):
+        assert SessionState.normalize_task_id("T005") == "T005"
+        assert SessionState.normalize_task_id("T005:") == "T005"
+        assert SessionState.normalize_task_id("T008:") == "T008"

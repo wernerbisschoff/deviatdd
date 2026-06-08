@@ -18,58 +18,59 @@ from deviate.state.ledger import (
 class TestIssueRecord:
     def test_issue_record_creation(self):
         record = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-001",
+            type="feature",
             title="Test Issue",
             status="SHARDED",
-            epic_slug="epic-001",
-            issue_slug="iss-001",
-            created_at=datetime.now(timezone.utc),
+            source_file="specs/epic-001/issues/iss-001.md",
+            timestamp=datetime.now(timezone.utc),
         )
-        assert record.id is not None
+        assert record.issue_id == "ISS-001"
+        assert record.type == "feature"
         assert record.title == "Test Issue"
         assert record.status == "SHARDED"
-        assert record.epic_slug == "epic-001"
-        assert record.issue_slug == "iss-001"
-        assert record.created_at.tzinfo is not None
+        assert record.source_file == "specs/epic-001/issues/iss-001.md"
+        assert record.timestamp is not None
 
     def test_issue_record_default_status(self):
         record = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-002",
+            type="feature",
             title="Default Status",
-            epic_slug="epic-001",
-            issue_slug="iss-default",
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         assert record.status == "DRAFT"
 
     def test_issue_record_invalid_status(self):
         with pytest.raises(ValidationError):
             IssueRecord(
-                id=str(uuid4()),
+                issue_id="ISS-003",
+                type="feature",
                 title="Bad Status",
                 status="INVALID",
-                epic_slug="epic-001",
-                issue_slug="iss-002",
-                created_at=datetime.now(timezone.utc),
+                source_file="test.md",
+                timestamp=datetime.now(timezone.utc),
             )
 
-    def test_issue_record_missing_id(self):
+    def test_issue_record_missing_issue_id(self):
         with pytest.raises(ValidationError):
             IssueRecord(
+                type="feature",
                 title="No ID",
                 status="SHARDED",
-                epic_slug="epic-001",
-                issue_slug="iss-003",
-                created_at=datetime.now(timezone.utc),
+                source_file="test.md",
+                timestamp=datetime.now(timezone.utc),
             )
 
     def test_issue_record_serialization(self):
         record = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-004",
+            type="feature",
             title="Round Trip",
             status="SHARDED",
-            epic_slug="epic-001",
-            issue_slug="iss-004",
-            created_at=datetime.now(timezone.utc),
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         data = json.loads(record.model_dump_json())
         restored = IssueRecord.model_validate(data)
@@ -80,12 +81,12 @@ class TestAppendIssueRecord:
     def test_append_new_record(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"
         record = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-005",
+            type="feature",
             title="New Issue",
             status="SHARDED",
-            epic_slug="epic-001",
-            issue_slug="iss-005",
-            created_at=datetime.now(timezone.utc),
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         result = append_issue_record(record, ledger_path)
         assert result is True
@@ -93,28 +94,28 @@ class TestAppendIssueRecord:
         lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 1
         parsed = json.loads(lines[0])
-        assert parsed["issue_slug"] == "iss-005"
+        assert parsed["issue_id"] == "ISS-005"
 
-    def test_idempotent_skip_existing_slug(self, tmp_path: Path):
+    def test_idempotent_skip_existing_issue_id(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"
         record = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-SAME",
+            type="feature",
             title="First",
             status="SHARDED",
-            epic_slug="epic-001",
-            issue_slug="iss-same",
-            created_at=datetime.now(timezone.utc),
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         result1 = append_issue_record(record, ledger_path)
         assert result1 is True
 
         record2 = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-SAME",
+            type="feature",
             title="Second",
             status="SHARDED",
-            epic_slug="epic-001",
-            issue_slug="iss-same",
-            created_at=datetime.now(timezone.utc),
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         result2 = append_issue_record(record2, ledger_path)
         assert result2 is False
@@ -127,12 +128,12 @@ class TestAppendIssueRecord:
         assert not ledger_path.exists()
 
         record = IssueRecord(
-            id=str(uuid4()),
+            issue_id="ISS-CREATOR",
+            type="feature",
             title="Creates File",
             status="SHARDED",
-            epic_slug="epic-001",
-            issue_slug="iss-creator",
-            created_at=datetime.now(timezone.utc),
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         result = append_issue_record(record, ledger_path)
         assert result is True
@@ -276,20 +277,21 @@ class TestAppendTaskRecord:
 
 
 class TestResolveIssueRecord:
-    def test_read_issue_record_by_id(self, tmp_path: Path):
+    def test_read_issue_record_by_issue_id(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"
-        issue_id = str(uuid4())
         record = IssueRecord(
-            id=issue_id,
+            issue_id="ISS-RESOLVE",
+            type="feature",
             title="Test",
-            epic_slug="epic-001",
-            issue_slug="iss-resolve",
+            status="DRAFT",
+            source_file="test.md",
+            timestamp=datetime.now(timezone.utc),
         )
         append_issue_record(record, ledger_path)
 
-        result = resolve_issue_record(issue_id, ledger_path)
+        result = resolve_issue_record("ISS-RESOLVE", ledger_path)
         assert result is not None
-        assert result.id == issue_id
+        assert result.issue_id == "ISS-RESOLVE"
         assert result.title == "Test"
 
     def test_read_issue_record_not_found(self, tmp_path: Path):

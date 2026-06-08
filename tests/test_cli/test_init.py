@@ -1,5 +1,4 @@
-import os
-from contextlib import contextmanager
+from contextlib import chdir
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -7,16 +6,6 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 
 runner = CliRunner()
-
-
-@contextmanager
-def chdir(path: Path):
-    cwd = Path.cwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(cwd)
 
 
 class TestInitCommand:

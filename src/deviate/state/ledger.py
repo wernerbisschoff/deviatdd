@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError as PydanticValidationError,
+    field_validator,
+)
 
 try:
     import fcntl
@@ -18,23 +23,17 @@ except ImportError:
 
 
 class IssueRecord(BaseModel):
-    id: str
+    issue_id: str
+    type: str
     title: str = Field(min_length=1)
-    status: Literal["DRAFT", "SPECIFIED", "SHARDED", "COMPLETED"] = "DRAFT"
-    epic_slug: str
-    issue_slug: str
+    status: Literal["DRAFT", "BACKLOG", "SPECIFIED", "SHARDED", "COMPLETED"] = "DRAFT"
+    source_file: str
+    blocked_by: list[str] = []
+    coordinates_with: list[str] = []
+    timestamp: datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = {"extra": "forbid"}
-
-    @field_validator("id")
-    @classmethod
-    def _validate_uuid4(cls, v: str) -> str:
-        try:
-            uuid.UUID(v, version=4)
-        except ValueError:
-            raise ValueError(f"Invalid UUID4: {v}")
-        return v
 
 
 def _read_ledger(path: Path) -> list[dict]:
@@ -42,14 +41,17 @@ def _read_ledger(path: Path) -> list[dict]:
         return []
     records: list[dict] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for line_no, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
             try:
                 records.append(json.loads(line))
             except json.JSONDecodeError:
-                warnings.warn(f"Skipping malformed JSONL line in {path}", stacklevel=2)
+                warnings.warn(
+                    f"Skipping malformed JSONL line {line_no} in {path}",
+                    stacklevel=2,
+                )
                 continue
     return records
 
@@ -74,7 +76,12 @@ class TaskRecord(BaseModel):
         return v
 
 
-def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
+def _append_record(
+    record_json: str,
+    record_id: str,
+    id_field: str,
+    ledger_path: Path,
+) -> bool:
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     with ledger_path.open("a+", encoding="utf-8") as f:
         if HAS_FCNTL:
@@ -87,44 +94,113 @@ def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
                     continue
                 try:
                     data = json.loads(line)
-                    if data.get("id") == record.id:
+                    if data.get(id_field) == record_id:
                         return False
                 except json.JSONDecodeError:
                     continue
-            f.write(record.model_dump_json() + "\n")
+            f.write(record_json + "\n")
         finally:
             if HAS_FCNTL:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     return True
+
+
+def _append_with_compound_key(
+    record_json: str,
+    key_fields: list[str],
+    record: IssueRecord,
+    ledger_path: Path,
+) -> bool:
+    """Append a record only if no existing entry matches all *key_fields* values."""
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    record_data = json.loads(record_json)
+    with ledger_path.open("a+", encoding="utf-8") as f:
+        if HAS_FCNTL:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if all(data.get(k) == record_data.get(k) for k in key_fields):
+                        return False
+                except json.JSONDecodeError:
+                    continue
+            f.write(record_json + "\n")
+        finally:
+            if HAS_FCNTL:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    return True
+
+
+def append_issue_transition(record: IssueRecord, ledger_path: Path) -> bool:
+    """Append a status-transition entry for an issue.
+
+    Idempotency is checked on the ``(issue_id, status)`` compound key so that
+    multiple transitions for the same issue (e.g. BACKLOG → CLAIMED →
+    COMPLETED) are all recorded, but re-running the same transition is safe.
+    """
+    return _append_with_compound_key(
+        record_json=record.model_dump_json(),
+        key_fields=["issue_id", "status"],
+        record=record,
+        ledger_path=ledger_path,
+    )
+
+
+def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
+    return _append_record(
+        record_json=record.model_dump_json(),
+        record_id=record.id,
+        id_field="id",
+        ledger_path=ledger_path,
+    )
 
 
 def resolve_issue_record(issue_id: str, ledger_path: Path) -> IssueRecord | None:
     records = _read_ledger(ledger_path)
     for data in reversed(records):
-        if data.get("id") == issue_id:
-            return IssueRecord.model_validate(data)
+        if data.get("issue_id") == issue_id:
+            try:
+                return IssueRecord.model_validate(data)
+            except PydanticValidationError:
+                continue
     return None
 
 
 def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    with ledger_path.open("a+", encoding="utf-8") as f:
-        if HAS_FCNTL:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            f.seek(0)
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    if data.get("issue_slug") == record.issue_slug:
-                        return False
-                except json.JSONDecodeError:
-                    continue
-            f.write(record.model_dump_json() + "\n")
-        finally:
-            if HAS_FCNTL:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-    return True
+    return _append_record(
+        record_json=record.model_dump_json(),
+        record_id=record.issue_id,
+        id_field="issue_id",
+        ledger_path=ledger_path,
+    )
+
+
+def _parse_timestamp(value: object) -> datetime:
+    """Parse an ISO 8601 timestamp string to a timezone-aware datetime.
+
+    Returns ``datetime.min`` (UTC) for unparseable or missing values so that
+    malformed entries sort to the bottom rather than crashing the comparator.
+    """
+    if not isinstance(value, str):
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def select_next_unblocked_issue(ledger_path: Path) -> IssueRecord | None:
+    records = _read_ledger(ledger_path)
+    candidates: list[dict] = []
+    for data in records:
+        if data.get("status") == "BACKLOG" and not data.get("blocked_by"):
+            candidates.append(data)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda r: _parse_timestamp(r.get("timestamp")))
+    return IssueRecord.model_validate(candidates[0])

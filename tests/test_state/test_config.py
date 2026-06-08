@@ -89,10 +89,10 @@ class TestSessionState:
         restored = SessionState.model_validate(data)
         assert restored == session
 
-    def test_transition_idle_to_specify(self):
+    def test_transition_idle_to_specify_rejected(self):
         session = SessionState(current_phase="IDLE")
-        result = session.transition_to("SPECIFY")
-        assert result.current_phase == "SPECIFY"
+        with pytest.raises(TransitionViolationError):
+            session.transition_to("SPECIFY")
 
     def test_transition_specify_to_tasks(self):
         session = SessionState(current_phase="SPECIFY")
@@ -103,6 +103,11 @@ class TestSessionState:
         session = SessionState(current_phase="TASKS")
         result = session.transition_to("IDLE")
         assert result.current_phase == "IDLE"
+
+    def test_transition_shard_to_specify(self):
+        session = SessionState(current_phase="SHARD")
+        result = session.transition_to("SPECIFY")
+        assert result.current_phase == "SPECIFY"
 
     def test_transition_idle_to_explore_still_works(self):
         session = SessionState(current_phase="IDLE")

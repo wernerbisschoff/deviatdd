@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import chdir
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -29,11 +30,12 @@ def meso_workspace(tmp_path: Path) -> Path:
     session.save(dot_dir / "session.json")
 
     issue = IssueRecord(
-        id="550e8400-e29b-41d4-a716-446655440100",
+        issue_id="550e8400-e29b-41d4-a716-446655440100",
+        type="feature",
         title="Test Meso Issue",
         status="SHARDED",
-        epic_slug="test-epic",
-        issue_slug="test-meso-issue",
+        source_file="specs/test-epic/issues/test-meso-issue.md",  # stem = test-meso-issue
+        timestamp=datetime.now(timezone.utc),
     )
     ledger = tmp_path / "specs" / "issues.jsonl"
     ledger.parent.mkdir(parents=True)
