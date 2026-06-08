@@ -10,3 +10,4 @@
 {"issue_id":"ISS-003","status":"COMPLETED","timestamp":"2026-06-07T09:14:18Z"}
 {"issue_id":"ISS-005","type":"feature","title":"[FR-005] CLI Architecture Realignment & Skill Integration","status":"BACKLOG","timestamp":"2026-06-07T11:00:00Z","source_file":"specs/001-deviate-cli-python/issues/005-cli-architecture-realignment-skill-integration.md","blocked_by":[],"coordinates_with":["ISS-004"]}
 {"issue_id":"ISS-006","type":"feature","title":"[FR-006] State Persistence & Concurrency Safety","status":"BACKLOG","timestamp":"2026-06-07T11:30:00Z","source_file":"specs/001-deviate-cli-python/issues/006-state-persistence-concurrency-safety.md","blocked_by":[],"coordinates_with":[]}
+{"issue_id":"ISS-005","status":"CLAIMED","worker_id":"werner@Werners-MacBook-Air.local","timestamp":"2026-06-07T12:00:32Z"}

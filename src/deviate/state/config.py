@@ -24,19 +24,30 @@ _VALID_PHASES = frozenset(
     }
 )
 
-_TRANSITION_MAP: dict[str, tuple[str, ...]] = {
-    "IDLE": ("EXPLORE", "SPECIFY"),
+_MACRO_TRANSITION_MAP: dict[str, tuple[str, ...]] = {
+    "IDLE": ("EXPLORE",),
     "EXPLORE": ("RESEARCH",),
     "RESEARCH": ("PRD",),
     "PRD": ("SHARD",),
-    "SHARD": ("IDLE",),
+    "SHARD": ("IDLE", "SPECIFY"),
     "SPECIFY": ("TASKS",),
     "TASKS": ("IDLE",),
 }
 
+_MACRO_PHASES = frozenset({"IDLE", "EXPLORE", "RESEARCH", "PRD", "SHARD"})
+_MESO_PHASES = frozenset({"SPECIFY", "TASKS"})
+
+_PHASE_ARTIFACT_MAP: dict[str, tuple[str, ...]] = {
+    "RESEARCH": ("explore.md",),
+    "PRD": ("design.md", "data-model.md"),
+    "SHARD": ("prd.md",),
+    "SPECIFY": ("spec.md",),
+    "TASKS": ("spec.md", "tasks.md"),
+}
+
 
 def _find_source_for(target: str) -> str | None:
-    for source, targets in _TRANSITION_MAP.items():
+    for source, targets in _MACRO_TRANSITION_MAP.items():
         if target in targets:
             return source
     return None
@@ -44,6 +55,45 @@ def _find_source_for(target: str) -> str | None:
 
 class TransitionViolationError(Exception):
     pass
+
+
+# ---------------------------------------------------------------------------
+# Module-level utility functions (extracted from SessionState static methods)
+# ---------------------------------------------------------------------------
+
+
+def validate_filesystem_state(
+    phase: str,
+    epic_slug: str | None,
+    repo_path: Path,
+) -> list[str]:
+    expected_artifacts = _PHASE_ARTIFACT_MAP.get(phase, ())
+    missing: list[str] = []
+    for artifact in expected_artifacts:
+        artifact_path = (
+            repo_path / "specs" / epic_slug / artifact
+            if epic_slug
+            else repo_path / artifact
+        )
+        if not artifact_path.exists():
+            missing.append(artifact)
+    return missing
+
+
+def reconstruct_from_worktree(worktree: Path) -> SessionState:
+    has_spec = (worktree / "spec.md").exists()
+    has_tasks = (worktree / "tasks.md").exists()
+    if has_spec and has_tasks:
+        phase = "TASKS"
+    elif has_spec:
+        phase = "SPECIFY"
+    else:
+        phase = "IDLE"
+    return SessionState(current_phase=phase)
+
+
+def normalize_task_id(ref: str) -> str:
+    return ref.rstrip(":")
 
 
 class DeviateConfig(BaseModel):
@@ -70,7 +120,9 @@ class SessionState(BaseModel):
         return v
 
     def transition_to(self, phase: str) -> SessionState:
-        expected_next: tuple[str, ...] | None = _TRANSITION_MAP.get(self.current_phase)
+        expected_next: tuple[str, ...] | None = _MACRO_TRANSITION_MAP.get(
+            self.current_phase
+        )
         if expected_next is None or phase not in expected_next:
             expected_current = _find_source_for(phase)
             raise TransitionViolationError(
@@ -78,6 +130,14 @@ class SessionState(BaseModel):
                 f"expected '{expected_current}' -> '{phase}', "
                 f"current '{self.current_phase}' -> '{expected_next}'"
             )
+        return SessionState(
+            current_phase=phase,
+            active_issue_id=self.active_issue_id,
+            last_command=self.last_command,
+            timestamp=datetime.now(timezone.utc),
+        )
+
+    def force_transition_to(self, phase: str) -> SessionState:
         return SessionState(
             current_phase=phase,
             active_issue_id=self.active_issue_id,
@@ -96,3 +156,19 @@ class SessionState(BaseModel):
         raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
         return cls.model_validate(data)
+
+    @staticmethod
+    def validate_filesystem_state(
+        phase: str,
+        epic_slug: str | None,
+        repo_path: Path,
+    ) -> list[str]:
+        return validate_filesystem_state(phase, epic_slug, repo_path)
+
+    @staticmethod
+    def reconstruct_from_worktree(worktree: Path) -> SessionState:
+        return reconstruct_from_worktree(worktree)
+
+    @staticmethod
+    def normalize_task_id(ref: str) -> str:
+        return normalize_task_id(ref)

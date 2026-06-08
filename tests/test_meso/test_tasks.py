@@ -1,4 +1,5 @@
 from contextlib import chdir
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -16,11 +17,12 @@ def _make_issue_record(
     status: str = "SHARDED",
 ) -> IssueRecord:
     return IssueRecord(
-        id=issue_id,
+        issue_id=issue_id,
+        type="feature",
         title="Test Issue",
         status=status,
-        epic_slug="test-epic",
-        issue_slug=issue_slug,
+        source_file=f"specs/test-epic/issues/{issue_slug}.md",
+        timestamp=datetime.now(timezone.utc),
     )
 
 
@@ -31,10 +33,12 @@ def _write_ledger(ledger_path: Path, *records: IssueRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+BUCKET = "test-epic"
+
+
 class TestTasksCommand:
     def test_tasks_appends_pending_records(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440010"
-        issue_slug = "tasks-scaffold"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -43,13 +47,13 @@ class TestTasksCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
             result = runner.invoke(cli, ["tasks", issue_id])
             assert result.exit_code == 0, result.output
 
-            tasks_path = Path("specs") / issue_slug / "tasks.jsonl"
+            tasks_path = Path("specs") / BUCKET / "tasks.jsonl"
             assert tasks_path.is_file(), f"Expected {tasks_path} to exist"
             lines = tasks_path.read_text().strip().splitlines()
             assert len(lines) >= 1, "Expected at least one task record"
@@ -74,7 +78,6 @@ class TestTasksCommand:
 
     def test_tasks_idempotent_skip_existing(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440012"
-        issue_slug = "idempotent-skip"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -83,10 +86,10 @@ class TestTasksCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
-            tasks_jsonl = Path("specs") / issue_slug / "tasks.jsonl"
+            tasks_jsonl = Path("specs") / BUCKET / "tasks.jsonl"
             tasks_jsonl.parent.mkdir(parents=True)
             tasks_jsonl.write_text(
                 '{"id":"existing-id","issue_id":"550e8400-e29b-41d4-a716-446655440012","description":"Existing task","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-07T00:00:00Z"}\n'
@@ -105,7 +108,6 @@ class TestTasksCommand:
 
     def test_tasks_idempotent_skip_no_new_file(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440013"
-        issue_slug = "idempotent-count"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -114,10 +116,10 @@ class TestTasksCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
-            tasks_jsonl = Path("specs") / issue_slug / "tasks.jsonl"
+            tasks_jsonl = Path("specs") / BUCKET / "tasks.jsonl"
             tasks_jsonl.parent.mkdir(parents=True)
             tasks_jsonl.write_text("existing,unchanged\n")
 
@@ -133,7 +135,6 @@ class TestTasksCommand:
 
     def test_tasks_sets_session_transition(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440014"
-        issue_slug = "session-transition"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -142,7 +143,7 @@ class TestTasksCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
             result = runner.invoke(cli, ["tasks", issue_id])
