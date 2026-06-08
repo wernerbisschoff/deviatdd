@@ -25,7 +25,8 @@ class TestPrdCommand:
             spec_dir = Path("specs") / "001-deviate-cli-python"
             spec_dir.mkdir(parents=True)
             (spec_dir / "explore.md").write_text("# Explore\n")
-            (spec_dir / "research.md").write_text("# Research\n")
+            (spec_dir / "design.md").write_text("# Design\n")
+            (spec_dir / "data-model.md").write_text("# Data Model\n")
 
             result = runner.invoke(cli, ["prd", "001-deviate-cli-python"])
             assert result.exit_code == 0, result.output
@@ -44,7 +45,7 @@ class TestPrdCommand:
             assert result.exit_code != 0
             assert "PRD_HALTED" in result.output
 
-    def test_prd_missing_explore_and_research(self, tmp_path: Path):
+    def test_prd_missing_all_artifacts(self, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -54,10 +55,10 @@ class TestPrdCommand:
             result = runner.invoke(cli, ["prd", "001-deviate-cli-python"])
             assert result.exit_code != 0
             assert "PRD_HALTED" in result.output
-            assert "explore.md" in result.output
-            assert "research.md" in result.output
+            assert "design.md" in result.output
+            assert "data-model.md" in result.output
 
-    def test_prd_missing_research_only(self, tmp_path: Path):
+    def test_prd_missing_design_and_data_model(self, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -71,4 +72,5 @@ class TestPrdCommand:
             result = runner.invoke(cli, ["prd", "001-deviate-cli-python"])
             assert result.exit_code != 0
             assert "PRD_HALTED" in result.output
-            assert "research.md" in result.output
+            assert "design.md" in result.output
+            assert "data-model.md" in result.output

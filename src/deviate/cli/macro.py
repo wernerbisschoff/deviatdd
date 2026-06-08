@@ -63,7 +63,7 @@ def research(
 def prd(
     epic_slug: str = typer.Argument(..., help="Epic slug for the feature scope"),
 ) -> None:
-    _run_command("PRD", epic_slug, ["explore.md", "research.md"])
+    _run_command("PRD", epic_slug, ["design.md", "data-model.md"])
 
 
 def shard(

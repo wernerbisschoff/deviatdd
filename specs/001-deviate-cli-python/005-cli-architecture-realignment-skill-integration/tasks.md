@@ -52,7 +52,7 @@
     - **Edge Cases**: Handle detached HEAD in `gather_git_state`; handle missing `.git` directory (not a repo); handle `constitution.md` not found; handle empty spec sections; handle worktree path already in use.
     - **Acceptance**: All 6 test files pass independently. `commit_artifact` creates a real git commit visible in `git log`.
 
-- [\] T003: Implement Core Domain Modules (issues, epic, prd, skills) and Fix macro.py Artifact Check
+- [/] T003: Implement Core Domain Modules (issues, epic, prd, skills) and Fix macro.py Artifact Check
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit

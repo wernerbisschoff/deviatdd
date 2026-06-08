@@ -19,7 +19,9 @@ def scaffold_artifacts(workspace: Path, *names: str) -> None:
 
 class TestMacroFullCycle:
     def test_full_idle_to_shard_cycle(self, mock_workspace: Path) -> None:
-        scaffold_artifacts(mock_workspace, "explore.md", "research.md", "prd.md")
+        scaffold_artifacts(
+            mock_workspace, "explore.md", "design.md", "data-model.md", "prd.md"
+        )
 
         result_explore = runner.invoke(cli, ["explore", "001-deviate-cli-python"])
         assert result_explore.exit_code == 0, result_explore.output
@@ -46,7 +48,9 @@ class TestMacroFullCycle:
         assert record["status"] == "SHARDED"
 
     def test_cycle_resets_for_second_run(self, mock_workspace: Path) -> None:
-        scaffold_artifacts(mock_workspace, "explore.md", "research.md", "prd.md")
+        scaffold_artifacts(
+            mock_workspace, "explore.md", "design.md", "data-model.md", "prd.md"
+        )
 
         runner.invoke(cli, ["explore", "001-deviate-cli-python"])
         runner.invoke(cli, ["research", "001-deviate-cli-python"])
@@ -81,7 +85,8 @@ class TestMacroFullCycle:
         result_prd = runner.invoke(cli, ["prd", "001-deviate-cli-python"])
         assert result_prd.exit_code != 0
         assert "PRD_HALTED" in result_prd.output
-        assert "research.md" in result_prd.output
+        assert "design.md" in result_prd.output
+        assert "data-model.md" in result_prd.output
 
         loaded = SessionState.load(Path(".deviate") / "session.json")
         assert loaded.current_phase == "RESEARCH", (
