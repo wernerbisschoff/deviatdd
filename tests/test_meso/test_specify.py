@@ -1,4 +1,5 @@
 from contextlib import chdir
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -16,11 +17,12 @@ def _make_issue_record(
     status: str = "SHARDED",
 ) -> IssueRecord:
     return IssueRecord(
-        id=issue_id,
+        issue_id=issue_id,
+        type="feature",
         title="Test Issue",
         status=status,
-        epic_slug="test-epic",
-        issue_slug=issue_slug,
+        source_file=f"specs/test-epic/issues/{issue_slug}.md",
+        timestamp=datetime.now(timezone.utc),
     )
 
 
@@ -31,10 +33,12 @@ def _write_ledger(ledger_path: Path, *records: IssueRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+BUCKET = "test-epic"
+
+
 class TestSpecifyCommand:
     def test_specify_valid_issue(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440000"
-        issue_slug = "valid-scaffold"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -43,13 +47,13 @@ class TestSpecifyCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
             result = runner.invoke(cli, ["specify", issue_id])
             assert result.exit_code == 0, result.output
 
-            spec_dir = Path("specs") / issue_slug
+            spec_dir = Path("specs") / BUCKET
             assert spec_dir.is_dir(), f"Expected directory {spec_dir} to be created"
 
     def test_specify_invalid_issue_id(self, tmp_path: Path):
@@ -72,7 +76,6 @@ class TestSpecifyCommand:
 
     def test_specify_issue_regardless_of_status(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440003"
-        issue_slug = "draft-issue"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -81,18 +84,17 @@ class TestSpecifyCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug, status="DRAFT")
+            record = _make_issue_record(issue_id, status="DRAFT")
             _write_ledger(ledger, record)
 
             result = runner.invoke(cli, ["specify", issue_id])
             assert result.exit_code == 0, result.output
 
-            spec_dir = Path("specs") / issue_slug
+            spec_dir = Path("specs") / BUCKET
             assert spec_dir.is_dir(), f"Expected directory {spec_dir} for DRAFT issue"
 
     def test_specify_creates_spec_md_placeholder(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440004"
-        issue_slug = "spec-file-check"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -101,18 +103,17 @@ class TestSpecifyCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
             result = runner.invoke(cli, ["specify", issue_id])
             assert result.exit_code == 0, result.output
 
-            spec_md = Path("specs") / issue_slug / "spec.md"
+            spec_md = Path("specs") / BUCKET / "spec.md"
             assert spec_md.is_file(), f"Expected {spec_md} placeholder to exist"
 
     def test_specify_sets_session_to_specify(self, tmp_path: Path):
         issue_id = "550e8400-e29b-41d4-a716-446655440005"
-        issue_slug = "session-check"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -121,7 +122,7 @@ class TestSpecifyCommand:
             session.save(dot_dir / "session.json")
 
             ledger = Path("specs") / "issues.jsonl"
-            record = _make_issue_record(issue_id, issue_slug)
+            record = _make_issue_record(issue_id)
             _write_ledger(ledger, record)
 
             result = runner.invoke(cli, ["specify", issue_id])

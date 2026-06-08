@@ -8,8 +8,9 @@ import typer
 from rich.console import Console
 
 from deviate.state.config import DeviateConfig, SessionState
-from deviate.cli.macro import explore, research, prd, shard
-from deviate.cli.meso import specify, tasks
+from deviate.cli.macro import explore_app, research_app, prd_app, shard_app
+from deviate.cli.meso import pr, specify, tasks
+from deviate.core.skills import detect_agents, discover_skills, install_skill
 
 cli = typer.Typer(no_args_is_help=True)
 console = Console()
@@ -40,18 +41,23 @@ def _dict_to_toml(data: dict) -> str:
             continue
         if isinstance(value, bool):
             lines.append(f"{key} = {'true' if value else 'false'}")
-        elif isinstance(value, int):
+        elif isinstance(value, (int, float)):
             lines.append(f"{key} = {value}")
-        elif isinstance(value, float):
-            lines.append(f"{key} = {value}")
-        elif isinstance(value, str):
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-            lines.append(f'{key} = "{escaped}"')
         else:
             escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
             lines.append(f'{key} = "{escaped}"')
     lines.append("")
-    return "\n".join(lines)
+    toml_str = "\n".join(lines)
+    try:
+        import tomllib
+
+        try:
+            tomllib.loads(toml_str)
+        except tomllib.TOMLDecodeError:
+            console.print("  [red]ERROR[/] Generated TOML failed round-trip validation")
+    except ImportError:
+        pass
+    return toml_str
 
 
 def _resolve_placeholder(match: re.Match[str]) -> str:
@@ -166,6 +172,45 @@ def _apply_governance(workdir: Path) -> None:
     _upsert_governance_block(agents_path, agents_content)
 
 
+def _get_agent_skill_dir(agent_name: str) -> Path | None:
+    if agent_name == "claude":
+        return Path.home() / ".claude" / "skills"
+    if agent_name == "opencode":
+        return Path.home() / ".config" / "opencode" / "skills"
+    if agent_name == "factory":
+        return Path.cwd() / ".factory" / "skills"
+    return None
+
+
+def _install_skills_to_agents(agents: list[str]) -> None:
+    skills = discover_skills()
+    if not skills:
+        return
+    for agent in agents:
+        target_dir = _get_agent_skill_dir(agent)
+        if target_dir is None:
+            console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
+            continue
+        for skill_name in skills:
+            if install_skill(skill_name, target_dir):
+                console.print(f"  [green]INSTALL[/] {skill_name} → {agent}")
+            else:
+                console.print(f"  [yellow]SKIP[/] {skill_name} → {agent}")
+
+
+def _ensure_gitignore(workdir: Path) -> None:
+    gitignore = workdir / ".gitignore"
+    entry = ".deviate/session.json"
+    if gitignore.exists():
+        content = gitignore.read_text(encoding="utf-8")
+        if entry not in content:
+            gitignore.write_text(
+                content.rstrip("\n") + f"\n{entry}\n", encoding="utf-8"
+            )
+    else:
+        gitignore.write_text(f"{entry}\n", encoding="utf-8")
+
+
 @cli.command()
 def init(
     agent_export_mode: str = typer.Option(
@@ -173,6 +218,9 @@ def init(
     ),
     generate_constitution: bool = typer.Option(
         False, "--generate-constitution", help="Generate constitution boilerplate"
+    ),
+    agent: str | None = typer.Option(
+        None, "--agent", help="Override auto-detected agent platform"
     ),
 ) -> None:
     workdir = Path.cwd()
@@ -185,10 +233,21 @@ def init(
 
     _provision_constitution(workdir)
 
+    if agent:
+        active_agents = [agent]
+    else:
+        active_agents = detect_agents(workdir)
 
-cli.command(name="explore")(explore)
-cli.command(name="research")(research)
-cli.command(name="prd")(prd)
-cli.command(name="shard")(shard)
+    if active_agents:
+        _install_skills_to_agents(active_agents)
+
+    _ensure_gitignore(workdir)
+
+
+cli.add_typer(explore_app, name="explore")
+cli.add_typer(research_app, name="research")
+cli.add_typer(prd_app, name="prd")
+cli.add_typer(shard_app, name="shard")
 cli.command(name="specify")(specify)
 cli.command(name="tasks")(tasks)
+cli.command(name="pr")(pr)
