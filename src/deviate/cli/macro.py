@@ -25,7 +25,7 @@ def _handle_missing_artifacts(phase: str, missing: list[Path]) -> None:
     raise typer.Exit(code=1)
 
 
-def _run_command(phase: str, epic_slug: str, artifact_names: list[str]) -> None:
+def _load_and_transition(phase: str) -> tuple[SessionState, Path]:
     dot_dir = Path(".deviate")
     if not dot_dir.exists():
         _handle_missing_dot_dir(phase)
@@ -37,6 +37,12 @@ def _run_command(phase: str, epic_slug: str, artifact_names: list[str]) -> None:
         session = session.transition_to(phase)
     except TransitionViolationError as e:
         _handle_transition_error(phase, e)
+
+    return session, session_path
+
+
+def _run_command(phase: str, epic_slug: str, artifact_names: list[str]) -> None:
+    session, session_path = _load_and_transition(phase)
 
     if artifact_names:
         spec_dir = Path("specs") / epic_slug
@@ -69,17 +75,7 @@ def prd(
 def shard(
     epic_slug: str = typer.Argument(..., help="Epic slug for the feature scope"),
 ) -> None:
-    dot_dir = Path(".deviate")
-    if not dot_dir.exists():
-        _handle_missing_dot_dir("SHARD")
-
-    session_path = dot_dir / "session.json"
-    session = SessionState.load(session_path)
-
-    try:
-        session = session.transition_to("SHARD")
-    except TransitionViolationError as e:
-        _handle_transition_error("SHARD", e)
+    session, session_path = _load_and_transition("SHARD")
 
     spec_dir = Path("specs") / epic_slug
     missing = _validate_artifacts([spec_dir / "prd.md"])

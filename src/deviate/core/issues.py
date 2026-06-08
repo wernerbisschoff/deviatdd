@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deviate.state.ledger import IssueRecord, _read_ledger, resolve_issue_record
+from deviate.state.ledger import IssueRecord, resolve_issue_record
+
+
+def _resolve_ledger(path: Path | None = None) -> Path:
+    return path or Path("specs/issues.jsonl")
 
 
 def resolve_issue(issue_id: str, ledger_path: Path | None = None) -> IssueRecord | None:
-    ledger_path = ledger_path or Path("specs/issues.jsonl")
-    return resolve_issue_record(issue_id, ledger_path)
+    return resolve_issue_record(issue_id, _resolve_ledger(ledger_path))
 
 
 def claim_issue(issue_id: str, ledger_path: Path | None = None) -> bool:
-    ledger_path = ledger_path or Path("specs/issues.jsonl")
+    ledger_path = _resolve_ledger(ledger_path)
     record = resolve_issue(issue_id, ledger_path)
     if record is None:
         return False
@@ -30,17 +32,15 @@ def claim_issue(issue_id: str, ledger_path: Path | None = None) -> bool:
 
 
 def read_issue_body(issue_id: str, ledger_path: Path | None = None) -> str:
-    ledger_path = ledger_path or Path("specs/issues.jsonl")
-    records = _read_ledger(ledger_path)
-    for data in reversed(records):
-        if data.get("issue_id") == issue_id:
-            return json.dumps(data, indent=2)
-    return ""
+    ledger_path = _resolve_ledger(ledger_path)
+    record = resolve_issue(issue_id, ledger_path)
+    if record is None:
+        return ""
+    return record.model_dump_json(indent=2)
 
 
 def is_issue_completed(issue_id: str, ledger_path: Path | None = None) -> bool:
-    ledger_path = ledger_path or Path("specs/issues.jsonl")
-    record = resolve_issue(issue_id, ledger_path)
+    record = resolve_issue(issue_id, _resolve_ledger(ledger_path))
     if record is None:
         return False
     return record.status == "COMPLETED"
