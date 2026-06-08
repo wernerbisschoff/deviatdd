@@ -47,7 +47,7 @@
   - **Git Isolation**: Per `Universal API Design Constraint`, all git-interacting functions accept `repo_path` parameter. Tests use `tmp_git_repo` conftest fixture. No test references the real repo's `.git`.
   - **Details**:
     - **Red**: Write `test_find_repo_root_from_subdir(tmp_git_repo)` asserting repo root is the `.git` parent; `test_contract_round_trip()` asserting emit/load preserves all keys; `test_stage_and_commit_creates_commit(tmp_git_repo)` asserting a file is committed and SHA returned; `test_extract_test_command_from_constitution()` asserting `constitution.md` section body is extracted; `test_validate_gherkin_syntax_valid_block()` asserting Given/When/Then detection; `test_create_worktree_returns_path(tmp_git_repo)` asserting worktree creation on new branch.
-    - **Green**: Create `tests/conftest.py` with shared `tmp_git_repo` fixture (calls `git init` inside `tmp_path`, configures `runner@test.local` / `Test Runner` as test user, creates initial commit). Every `git` subprocess call MUST pass `cwd=tmp_path` — this is the sole isolation boundary. Implement `find_repo_root(start_at: Path | None = None)` via upward `.git` directory walk and `gather_git_state(repo: Path | None = None)` via `git status --porcelain`. Implement `emit_contract(data: dict) -> Path` and `load_contract(path: Path) -> dict` with JSON round-trip. Implement `stage_and_commit(message: str, files: list[Path], repo: Path | None = None) -> str` and `commit_artifact(path: Path, message: str, repo: Path | None = None) -> str` via subprocess `git add`/`git commit`. Implement `resolve_constitution() -> Path` finding `specs/constitution.md`, `validate_constitution(path: Path) -> bool`, and `extract_commands() -> dict[str, str]`. Implement `extract_section_body(content: str, header: str) -> str` and `validate_gherkin_syntax(content: str) -> list[str]`. Implement `create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path`, `detect_worktree(repo: Path | None = None) -> dict`, and `validate_worktree(path: Path) -> bool`.
+    - **Green**: Create `tests/conftest.py` with shared `tmp_git_repo` fixture (calls `git init` inside `tmp_path`, configures `runner@test.local` / `Test Runner` as test user, creates initial commit). Every `git` subprocess call MUST pass BOTH `cwd=tmp_path` AND `env=_git_env()` (a helper that strips `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` from environment — otherwise pre-commit hooks will leak the real repo). Implement `find_repo_root(start_at: Path | None = None)` via upward `.git` directory walk and `gather_git_state(repo: Path | None = None)` via `git status --porcelain`. Implement `emit_contract(data: dict) -> Path` and `load_contract(path: Path) -> dict` with JSON round-trip. Implement `stage_and_commit(message: str, files: list[Path], repo: Path | None = None) -> str` and `commit_artifact(path: Path, message: str, repo: Path | None = None) -> str` via subprocess `git add`/`git commit`. Implement `resolve_constitution() -> Path` finding `specs/constitution.md`, `validate_constitution(path: Path) -> bool`, and `extract_commands() -> dict[str, str]`. Implement `extract_section_body(content: str, header: str) -> str` and `validate_gherkin_syntax(content: str) -> list[str]`. Implement `create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path`, `detect_worktree(repo: Path | None = None) -> dict`, and `validate_worktree(path: Path) -> bool`.
     - **Refactor**: Use `shlex.quote` for all git subprocess calls. Ensure all path operations return `Path` objects, not strings.
     - **Edge Cases**: Handle detached HEAD in `gather_git_state`; handle missing `.git` directory (not a repo); handle `constitution.md` not found; handle empty spec sections; handle worktree path already in use.
     - **Acceptance**: All 6 test files pass independently. `commit_artifact` creates a real git commit visible in `git log`.
@@ -221,8 +221,9 @@
 
 - **Git Isolation Mandatory**: Any test that invokes git operations (init, add, commit, branch, worktree, checkout, log, status, push) MUST operate on a temporary directory initialized as a fresh git repo via `tmp_path` (pytest) or `tempfile.TemporaryDirectory`. Tests MUST NOT run git commands within the real repository's working tree.
 - **Implementation Pattern**: Use the shared `tmp_git_repo` fixture from `tests/conftest.py` (which calls `git init` inside `tmp_path` and configures a test user). Pass `repo=tmp_git_repo` to all git-interacting functions. Never reference `Path.cwd()` or the real repo root.
+- **GIT_DIR Isolation**: `cwd=tmp_path` is NOT sufficient when subprocesses run inside a pre-commit hook. Git sets `$GIT_DIR`, `$GIT_WORK_TREE`, `$GIT_INDEX_FILE` which override `cwd`. EVERY `subprocess.run(["git", ...])` call MUST strip `GIT_*` environment variables via `env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")}`. This applies to both test fixtures AND production code.
 - **Conftest Creation**: The first task that needs `tmp_git_repo` (T002) MUST create `tests/conftest.py` with the fixture. Downstream tasks (T004, T005, T008) depend on its existence — they MUST NOT re-create it.
-- **Verification**: After running a test that uses `tmp_git_repo`, verify `git config user.name` inside the temp repo shows `Test Runner` (not the real user). If the real user's name appears, the test is leaking into the real repo — fix the `cwd=` flag.
+- **Verification**: After running a test that uses `tmp_git_repo`, verify `git config user.name` inside the temp repo shows `Test Runner` (not the real user). If the real user's name appears, the test is leaking into the real repo — fix the `cwd=` flag. Also verify that `echo "$GIT_DIR"` inside the test context is empty — if it's set, the test is leaking into the real repo.
 - **Rationale**: Prevent accidental commits, branch creation, or state mutation in the actual project repo during test execution. All tests are TDD and run repeatedly; accidental mutations corrupt the development workflow.
 
 ## Universal API Design Constraint (ALL CORE MODULES)
@@ -230,13 +231,18 @@
 Every git-interacting function in core modules (`repo.py`, `commit.py`, `worktree.py`) MUST accept an optional `repo_path: Path | None = None` parameter. When `None`, default to `Path.cwd()`. This is the **sole enabler** of test isolation — without it, tests must use fragile `chdir` tricks or operate on the real repo.
 
 ```python
-# DO: accept repo_path, default to cwd
+import os
+
+def _git_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+# DO: accept repo_path, default to cwd; strip GIT_* env vars
 def find_repo_root(start_at: Path | None = None) -> Path:
     start_at = start_at or Path.cwd()
 
 def stage_and_commit(message: str, files: list[Path], repo: Path | None = None) -> str:
     repo = repo or Path.cwd()
-    subprocess.run(["git", "add", ...], cwd=repo, check=True)
+    subprocess.run(["git", "add", ...], cwd=repo, env=_git_env(), check=True)
 
 # DON'T: hard-code Path.cwd() or rely on ambient working directory
 def find_repo_root() -> Path:  # BAD — untestable

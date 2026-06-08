@@ -97,6 +97,31 @@ def test_find_repo_root_from_subdir(tmp_git_repo: Path):
 
 > **WARNING**: The `cwd=tmp_path` flag on every `subprocess.run(["git", ...])` call is the **sole boundary** keeping these operations inside the temp repo. Omitting `cwd=` means git auto-discovers the nearest `.git` by walking up the directory tree — which will find the **real project repo**. Every git subprocess call in tests and production code MUST pass `cwd=<repo_path>` or the equivalent `repo=` parameter. Never rely on ambient working directory.
 
+### GIT_DIR Environment Variable Isolation (CRITICAL)
+
+When any git subprocess runs inside a **pre-commit hook** (e.g., `.githooks/pre-commit` runs `mise run check`), git sets the `GIT_DIR`, `GIT_WORK_TREE`, and `GIT_INDEX_FILE` environment variables. These override the `cwd=` parameter entirely — meaning `subprocess.run(["git", ...], cwd=tmp_path)` will still operate on the **real repo** if `$GIT_DIR` is set.
+
+**Fix**: Every `subprocess.run(["git", ...])` call MUST strip `GIT_*` environment variables:
+
+```python
+import os
+
+def _git_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+# In every subprocess.run(["git", ...]) call:
+subprocess.run(["git", "init"], cwd=tmp_path, env=_git_env(), check=True)
+subprocess.run(["git", "status", "--porcelain"], cwd=repo, env=_git_env(), check=True)
+```
+
+This applies to:
+- The `tests/conftest.py` fixture (all `git init`, `git config`, `git commit` calls)
+- `src/deviate/core/repo.py` (`git status --porcelain` call)
+- `src/deviate/core/commit.py` (`git add`, `git commit`, `git rev-parse` calls)
+- `src/deviate/core/worktree.py` (`git branch`, `git worktree add`, `git branch --show-current`, `git rev-parse --show-toplevel` calls)
+
+Without this fix, running tests via the pre-commit hook (or any git hook) will corrupt the real repository, creating "initial" commits, staged files, and branching in the real project.
+
 ## MULTI_TIERED_VERIFICATION_TARGETS
 
 | Tier | Target | Description |
