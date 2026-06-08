@@ -129,7 +129,7 @@
 
 ### Tasks
 
-- [ ] T006: Migrate SKILL.md Files, Rewrite Invocations, and Remove Bash Scripts
+- [x] T006: Migrate SKILL.md Files, Rewrite Invocations, and Remove Bash Scripts
   - **Type**: Migration
   - **Mode**: IMMEDIATE
   - **Verification**: `find prompts -name "*.sh" | wc -l | xargs test 0 -eq && ls src/deviate/prompts/skills/deviate-specify/SKILL.md`
