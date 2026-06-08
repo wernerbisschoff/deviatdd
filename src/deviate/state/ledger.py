@@ -124,3 +124,15 @@ def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
         id_field="issue_id",
         ledger_path=ledger_path,
     )
+
+
+def select_next_unblocked_issue(ledger_path: Path) -> IssueRecord | None:
+    records = _read_ledger(ledger_path)
+    candidates: list[dict] = []
+    for data in records:
+        if data.get("status") == "BACKLOG" and not data.get("blocked_by"):
+            candidates.append(data)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda r: r.get("timestamp", ""))
+    return IssueRecord.model_validate(candidates[0])

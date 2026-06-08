@@ -103,7 +103,7 @@
     - **Edge Cases**: Handle greenfield projects with no existing epic buckets; handle constitution not found; handle `explore.md` content validation failure; handle shard with zero issues.
     - **Acceptance**: `test_macro_layer.py` passes with coverage of all 4 macro subcommand families (explore, research, prd, shard) each testing pre and post paths.
 
-- [\] T005: Implement Meso Layer Pre/Post Subcommands
+- [/] T005: Implement Meso Layer Pre/Post Subcommands
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
