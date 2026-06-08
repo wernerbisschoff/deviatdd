@@ -84,7 +84,7 @@
 
 ### Tasks
 
-- [\] T004: Implement Macro Layer Pre/Post Subcommands
+- [/] T004: Implement Macro Layer Pre/Post Subcommands
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
