@@ -23,7 +23,7 @@
     - **Edge Cases**: Handle lines where `issue_id` is missing (skip with warning). Handle `coordinates_with` as optional empty list when absent.
     - **Acceptance**: `python -c "import json; [json.loads(l) for l in open('specs/issues.jsonl')]"` succeeds without exception. All existing `test_ledger.py` tests pass after schema migration.
 
-- [ ] T002: Implement Core Infrastructure Modules (repo, contract, commit, constitution, validation, worktree)
+- [\] T002: Implement Core Infrastructure Modules (repo, contract, commit, constitution, validation, worktree)
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
