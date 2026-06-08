@@ -195,7 +195,7 @@
 
 ### Tasks
 
-- [ ] T009: End-to-End Integration Verification of Full Macro/Meso Cycles and Skill Installation
+- [x] T009: End-to-End Integration Verification of Full Macro/Meso Cycles and Skill Installation
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
   - **Verification**: `mise run test -- tests/test_integration/test_macro_layer.py tests/test_integration/test_meso_layer.py tests/test_integration/test_skill_installation.py tests/test_integration/test_macro_full_cycle.py tests/test_integration/test_meso_task_ledger.py tests/test_integration/test_init_export_cycle.py -v`
