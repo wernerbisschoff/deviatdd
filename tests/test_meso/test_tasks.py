@@ -1,4 +1,5 @@
 from contextlib import chdir
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -16,11 +17,12 @@ def _make_issue_record(
     status: str = "SHARDED",
 ) -> IssueRecord:
     return IssueRecord(
-        id=issue_id,
+        issue_id=issue_id,
+        type="feature",
         title="Test Issue",
         status=status,
-        epic_slug="test-epic",
-        issue_slug=issue_slug,
+        source_file=f"specs/test-epic/issues/{issue_slug}.md",
+        timestamp=datetime.now(timezone.utc),
     )
 
 

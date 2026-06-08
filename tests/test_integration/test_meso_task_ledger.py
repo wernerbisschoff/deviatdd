@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import chdir
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -99,11 +100,12 @@ class TestMesoTaskLedger:
             session.save(dot_dir / "session.json")
 
             valid = IssueRecord(
-                id="550e8400-e29b-41d4-a716-446655440300",
+                issue_id="550e8400-e29b-41d4-a716-446655440300",
+                type="feature",
                 title="Valid Issue in Malformed Ledger",
                 status="SHARDED",
-                epic_slug="test-epic",
-                issue_slug="valid-issue-malformed",
+                source_file="specs/test-epic/issues/valid-issue-malformed.md",  # stem = valid-issue-malformed
+                timestamp=datetime.now(timezone.utc),
             )
             ledger = Path("specs") / "issues.jsonl"
             ledger.parent.mkdir(parents=True)

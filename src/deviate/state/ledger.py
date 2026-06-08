@@ -18,23 +18,17 @@ except ImportError:
 
 
 class IssueRecord(BaseModel):
-    id: str
+    issue_id: str
+    type: str
     title: str = Field(min_length=1)
-    status: Literal["DRAFT", "SPECIFIED", "SHARDED", "COMPLETED"] = "DRAFT"
-    epic_slug: str
-    issue_slug: str
+    status: Literal["DRAFT", "BACKLOG", "SPECIFIED", "SHARDED", "COMPLETED"] = "DRAFT"
+    source_file: str
+    blocked_by: list[str] = []
+    coordinates_with: list[str] = []
+    timestamp: datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = {"extra": "forbid"}
-
-    @field_validator("id")
-    @classmethod
-    def _validate_uuid4(cls, v: str) -> str:
-        try:
-            uuid.UUID(v, version=4)
-        except ValueError:
-            raise ValueError(f"Invalid UUID4: {v}")
-        return v
 
 
 def _read_ledger(path: Path) -> list[dict]:
@@ -42,14 +36,17 @@ def _read_ledger(path: Path) -> list[dict]:
         return []
     records: list[dict] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for line_no, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
             try:
                 records.append(json.loads(line))
             except json.JSONDecodeError:
-                warnings.warn(f"Skipping malformed JSONL line in {path}", stacklevel=2)
+                warnings.warn(
+                    f"Skipping malformed JSONL line {line_no} in {path}",
+                    stacklevel=2,
+                )
                 continue
     return records
 
@@ -101,7 +98,7 @@ def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
 def resolve_issue_record(issue_id: str, ledger_path: Path) -> IssueRecord | None:
     records = _read_ledger(ledger_path)
     for data in reversed(records):
-        if data.get("id") == issue_id:
+        if data.get("issue_id") == issue_id:
             return IssueRecord.model_validate(data)
     return None
 
@@ -119,7 +116,7 @@ def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
                     continue
                 try:
                     data = json.loads(line)
-                    if data.get("issue_slug") == record.issue_slug:
+                    if data.get("issue_id") == record.issue_id:
                         return False
                 except json.JSONDecodeError:
                     continue

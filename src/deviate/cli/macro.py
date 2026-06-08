@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -88,19 +89,19 @@ def shard(
     ledger_path = Path("specs") / "issues.jsonl"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     record = IssueRecord(
-        id=str(uuid.uuid4()),
+        issue_id=str(uuid.uuid4()),
+        type="feature",
         title=f"Shard output for {epic_slug}",
         status="SHARDED",
-        epic_slug=epic_slug,
-        issue_slug=epic_slug,
+        source_file=f"specs/{epic_slug}/prd.md",
+        timestamp=datetime.now(timezone.utc),
     )
     appended = append_issue_record(record, ledger_path)
     if appended:
-        console.print(f"[green]LEDGER_APPENDED[/] {record.issue_slug}")
+        console.print(f"[green]LEDGER_APPENDED[/] {record.issue_id}")
     else:
         console.print(
-            f"[yellow]LEDGER_IDEMPOTENT[/] record for "
-            f"{record.issue_slug} already exists"
+            f"[yellow]LEDGER_IDEMPOTENT[/] record for {record.issue_id} already exists"
         )
 
     session = session.transition_to("IDLE")

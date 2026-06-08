@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import typer
 
@@ -41,7 +41,7 @@ def tasks(
     session_path = Path(".deviate") / "session.json"
     session = SessionState.load(session_path)
 
-    issue_slug = record.issue_slug
+    issue_slug = PurePosixPath(record.source_file).stem
     tasks_jsonl = Path("specs") / issue_slug / "tasks.jsonl"
 
     if tasks_jsonl.exists():
@@ -84,7 +84,7 @@ def specify(
     session_path = Path(".deviate") / "session.json"
     session = SessionState.load(session_path)
 
-    issue_slug = record.issue_slug
+    issue_slug = PurePosixPath(record.source_file).stem
     spec_dir = Path("specs") / issue_slug
     if spec_dir.exists():
         console.print(f"[yellow]SKIP[/] specs/{issue_slug}/ already exists")
