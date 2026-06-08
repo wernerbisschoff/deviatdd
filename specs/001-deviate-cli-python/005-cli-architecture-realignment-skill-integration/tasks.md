@@ -5,7 +5,7 @@
 
 ### Tasks
 
-- [ ] T001: Fix IssueRecord Schema, Malformed JSONL Recovery, and Key Lookup Mismatches
+- [\] T001: Fix IssueRecord Schema, Malformed JSONL Recovery, and Key Lookup Mismatches
   - **Type**: Bugfix
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
