@@ -32,21 +32,16 @@ from deviate.state.ledger import (
 # ---------------------------------------------------------------------------
 
 
-def _load_and_transition(phase: str) -> tuple[SessionState, Path]:
-    dot_dir = Path(".deviate")
-    if not dot_dir.exists():
-        _handle_missing_dot_dir(phase)
-    session_path = dot_dir / "session.json"
-    session = SessionState.load(session_path)
-    try:
-        session = session.transition_to(phase)
-    except TransitionViolationError as e:
-        _handle_transition_error(phase, e)
-    return session, session_path
+def _resolve_dot_deviate() -> Path:
+    return Path(".deviate")
+
+
+def _resolve_specs_root() -> Path:
+    return Path("specs")
 
 
 def _load_session(phase: str) -> tuple[SessionState, Path]:
-    dot_dir = Path(".deviate")
+    dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
         _handle_missing_dot_dir(phase)
     session_path = dot_dir / "session.json"
@@ -63,10 +58,6 @@ def _load_session(phase: str) -> tuple[SessionState, Path]:
 def _save_session(session: SessionState, session_path: Path, phase: str) -> None:
     session.save(session_path)
     console.print(f"[green]{phase}[/] session advanced to {phase} phase")
-
-
-def _resolve_specs_root() -> Path:
-    return Path("specs")
 
 
 def _resolve_bucket_dir(source_file: str) -> str:
@@ -86,7 +77,7 @@ def _find_spec_md(issue_id: str) -> Path | None:
 
 
 def _resolve_and_validate_issue(issue_id: str, phase: str) -> IssueRecord:
-    dot_dir = Path(".deviate")
+    dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
         _handle_missing_dot_dir(phase)
     ledger_path = _resolve_specs_root() / "issues.jsonl"
@@ -104,7 +95,7 @@ def _resolve_and_validate_issue(issue_id: str, phase: str) -> IssueRecord:
 
 def _specify_legacy(issue_id: str) -> None:
     record = _resolve_and_validate_issue(issue_id, "SPECIFY")
-    session_path = Path(".deviate") / "session.json"
+    session_path = _resolve_dot_deviate() / "session.json"
     session = SessionState.load(session_path)
     issue_slug = PurePosixPath(record.source_file).stem
     spec_dir = _resolve_specs_root() / issue_slug
@@ -132,7 +123,7 @@ def _specify_legacy(issue_id: str) -> None:
 
 
 def _specify_pre(issue_id: str | None = None, force: bool = False) -> None:
-    dot_dir = Path(".deviate")
+    dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
         _handle_missing_dot_dir("SPECIFY")
     session_path = dot_dir / "session.json"
@@ -235,7 +226,7 @@ def _specify_post(force: bool = False) -> None:
 
 def _tasks_legacy(issue_id: str) -> None:
     record = _resolve_and_validate_issue(issue_id, "TASKS")
-    session_path = Path(".deviate") / "session.json"
+    session_path = _resolve_dot_deviate() / "session.json"
     session = SessionState.load(session_path)
     issue_slug = PurePosixPath(record.source_file).stem
     tasks_jsonl = _resolve_specs_root() / issue_slug / "tasks.jsonl"
@@ -274,7 +265,7 @@ def _tasks_legacy(issue_id: str) -> None:
 
 
 def _tasks_pre() -> None:
-    session, session_path = _load_session("SPECIFY")
+    _load_session("SPECIFY")
     wts = detect_worktree(repo=Path.cwd())
     console.print(f"[green]WORKTREES[/] {len(wts)} worktree(s) detected")
     spec_mds = list(_resolve_specs_root().rglob("spec.md"))
@@ -283,7 +274,6 @@ def _tasks_pre() -> None:
         raise typer.Exit(code=1)
     spec_path = spec_mds[0]
     console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
-    _save_session(session, session_path, "SPECIFY")
 
 
 def _tasks_post(force: bool = False) -> None:
@@ -327,7 +317,7 @@ def _tasks_post(force: bool = False) -> None:
 
 
 def _pr_pre() -> None:
-    session, session_path = _load_session("TASKS")
+    session, _ = _load_session("TASKS")
     issue_id = session.active_issue_id
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
@@ -338,7 +328,6 @@ def _pr_pre() -> None:
         console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
         raise typer.Exit(code=1)
     console.print(f"[green]ISSUE[/] {issue_id}: {record.title}")
-    _save_session(session, session_path, "TASKS")
 
 
 def _pr_run(
