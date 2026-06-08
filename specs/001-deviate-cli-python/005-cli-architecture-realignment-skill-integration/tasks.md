@@ -169,7 +169,7 @@
     - **Edge Cases**: Handle agent directories that exist but are empty; handle `~/.config/opencode/skills/` directory creation when missing; handle permissions errors on skill copy; handle `--agent` with invalid agent name.
     - **Acceptance**: `test_skill_installation.py` passes all idempotency and detection scenarios. `test_cli/test_init.py` existing tests continue passing. `deviate init` installs skills without shell script dependency.
 
-- [ ] T008: Implement Dual-Mode Session State with Divergence Detection and Worktree Reconstruction
+- [\] T008: Implement Dual-Mode Session State with Divergence Detection and Worktree Reconstruction
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
