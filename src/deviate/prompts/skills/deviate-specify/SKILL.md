@@ -30,7 +30,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 2. **Context Reuse Rule**: In the typical meso flow, `/deviate-tasks` follows in the same conversation. The tasks pre-script detects the existing worktree claim via git state — it does not need a fresh contract. Your contract values (`BRANCH_NAME`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG`, `spec_target`, `prd_requirements`, `traceability_status`) remain valid downstream.
 3. **Prefix Invariance Placement Rule**: All static role definitions, systemic constraints, formatting parameters, and operational directives sit rigidly at the absolute head of the prompt stream. Volatile runtime attributes (target issue body, branch path mappings) occupy the trailing edge inside `<context>`.
 4. **Context-Instruction Isolation (The Markov Blanket)**: Never mix conversational text or rule changes into the incoming payload parameters. Data ingest containers must behave strictly as an inert warehouse.
-5. **Absolute ATDD Traceability Rule**: Every `US-NNN` story must inherit from an upstream `FR-NNN` defined in the contract's `prd_requirements` array. Every scenario block must use Given/When/Then.
+5. **Absolute ATDD Traceability Rule**: Every `US-NNN` story must inherit from an upstream `FR-NNN` defined in the contract's `prd_requirements` array. Every scenario block must use `**Given**`/`**When**`/`**Then**`.
 6. **Output Format Constraint**: Write the spec content directly to `<spec_target>` using clean Markdown. The file content is exactly the spec body (from `# FEATURE_SPECIFICATION:` through the end of `## SYSTEM_STATUS_SUMMARY`) — no preamble, no postamble, no XML wrapper tags. The post-script will read the file, validate, and commit.
 7. **Output Header Constraint**: Do not synthesize top-level (`#` or `##`) headers not explicitly declared in the layout schema. User stories and edge cases nest as sub-elements under authorized system headings.
 8. **Pointer Normalization**: Wrap all inline natural language references to structural XML elements inside explicit markdown backticks.
@@ -66,7 +66,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    [option] <strategy 3>
    ```
    After the stakeholder answers, apply the chosen strategies to inform the spec content you are about to write.
-3. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp **Given/When/Then** block mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array. Incorporate the HITL answers from step 2 into your decisions.
+3. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp `**Given**`/`**When**`/`**Then**` block (using bold markdown) mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array. Incorporate the HITL answers from step 2 into your decisions.
 4. `cd` into the worktree (using the `worktree_full` path from step 1), then transpile the final spec content per the output format schema and write it directly to `<spec_target>` (the relative path from the contract). Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
 5. Run the post-script to validate, commit, and update the ledger:
    ```
@@ -91,7 +91,7 @@ Required headers to generate:
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER
 - Must list each User Story header format matching: ### US-[NNN]-[ID]: [Story Domain Description]
 - Each story must contain tracking links to parent PRD attributes matching: * **Upstream Requirement Traceability**: FR-{NNN}-{ID}
-- Scenarios must be explicitly formatted inside ordered Gherkin definitions containing: Given, When, Then parameters.
+- Scenarios must be explicitly formatted inside ordered Gherkin definitions containing: `**Given**`, `**When**`, `**Then**` parameters (bold markdown).
 ## SYSTEM_STATUS_SUMMARY
 - Must contain an exact markdown key-value parameter table checking variables for: STATUS, EPIC_SLUG, BRANCH_NAME, SPEC_PATH, ISSUE_ID, and NEXT_ACTION.
 
