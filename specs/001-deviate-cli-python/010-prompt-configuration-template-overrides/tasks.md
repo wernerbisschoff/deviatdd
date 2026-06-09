@@ -137,7 +137,7 @@
 
 ### Tasks
 
-- [/] T004: Convert Skill Installation to Custom Command Installation
+- [x] T004: Convert Skill Installation to Custom Command Installation
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
@@ -171,7 +171,7 @@
     - **Edge Cases**: Handle missing `commands/` directory in package (log warning, return False). Handle case where `prompts.py` not yet imported (try/except ImportError with fallback to direct read from package).
     - **Acceptance**: All 6 test cases pass. `install_command("deviate-red", target_dir)` writes `.opencode/commands/deviate-red.md` with override content when override exists, falls through to package default otherwise.
 
-- [/] T004b: Update CLI Init for Command Installation
+- [x] T004b: Update CLI Init for Command Installation
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration

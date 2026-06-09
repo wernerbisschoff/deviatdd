@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 from deviate.core.prompts import resolve_command
-
-logger = logging.getLogger(__name__)
 
 
 def install_command(
@@ -46,7 +43,8 @@ def discover_commands(root: Path | None = None) -> list[str]:
     return []
 
 
-discover_skills = discover_commands
+def discover_skills(root: Path | None = None) -> list[str]:
+    return discover_commands(root=root)
 
 
 def detect_agents(workdir: Path | None = None) -> list[str]:
