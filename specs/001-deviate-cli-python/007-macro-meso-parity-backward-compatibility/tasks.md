@@ -85,8 +85,8 @@
     - `tests/test_core/test_validation.py`
   - **Rationale**: `validation.py` currently has only `extract_section_body()` and `validate_gherkin_syntax()`. No contract validation or markdown section validation exists. The spec requires post-commands to validate specific sections (US-007 through US-010, FR-007-VALIDATE). Each command validates different artifacts: explore validates 5 sections in explore.md, research validates 9+6 in design.md+data-model.md, shard validates NNN-*.md YAML frontmatter, tasks validates T{NNN} format and checkboxes.
   - **Details**:
-    - **Red**: Write `test_validate_explore_sections_detects_missing()` asserting that an explore.md missing `PROBLEM_DEFINITION` returns non-zero with diagnostic. Write `test_validate_research_artifacts_detects_missing()` asserting design.md missing 1 of 9 sections fails. Write `test_validate_shard_frontmatter_validates_yaml()` asserting a shard file with invalid YAML frontmatter fails. Write `test_validate_tasks_format_validates_tnnn()` asserting a task with `TSK-001` instead of `T001` fails.
-    - **Green**: Add `validate_sections(content: str, required: list[str]) -> list[str]` returning missing sections. Add `validate_yaml_frontmatter(content: str) -> bool` for shard validation. Add `validate_task_ids(content: str) -> list[str]` returning invalid IDs. In `macro.py`, wire explore post to call `validate_sections()` with `[PROBLEM_DEFINITION, DISCOVERY_AUDIT_RESULTS, CONSTITUTION_QUOTES, FILE_REGISTRY, STATUS_SUMMARY]`. Wire research post to validate design.md (9 sections) + data-model.md (6 sections) + constitutional alignment audit. Wire shard post to iterate `NNN-*.md` files and validate YAML frontmatter. In `meso.py`, wire tasks post to call `validate_task_ids()` and checkbox validation.
+    - **Red**: Write `test_validate_explore_sections_detects_missing()` asserting that an explore.md missing `PROBLEM_DEFINITION` returns non-zero with diagnostic. Write `test_validate_research_artifacts_detects_missing()` asserting design.md missing 1 of 9 sections fails. Write `test_validate_shard_frontmatter_validates_yaml()` asserting a shard file with invalid YAML frontmatter fails. Write `test_validate_task_ids_accepts_both_TNNN_and_TSK()` asserting that both `T001` and `TSK-ISS-007-01` pass validation. Write `test_validate_task_ids_rejects_malformed()` asserting `TASK_1` or `TSK001` fail.
+    - **Green**: Add `validate_sections(content: str, required: list[str]) -> list[str]` returning missing sections. Add `validate_yaml_frontmatter(content: str) -> bool` for shard validation. Add `validate_task_id(task_id: str) -> bool` accepting both `T{NNN}` (regex `^T\d{3}$`) and `TSK-{ISSUE_ID}-{NN}` (regex `^TSK-[A-Z]+-\d+-\d{2}$`) formats. In `macro.py`, wire explore post to call `validate_sections()` with `[PROBLEM_DEFINITION, DISCOVERY_AUDIT_RESULTS, CONSTITUTION_QUOTES, FILE_REGISTRY, STATUS_SUMMARY]`. Wire research post to validate design.md (9 sections) + data-model.md (6 sections) + constitutional alignment audit. Wire shard post to iterate `NNN-*.md` files and validate YAML frontmatter. In `meso.py`, wire tasks post to call `validate_task_id()` and checkbox validation on every task entry.
     - **Refactor**: Extract a `PostValidator` class or module-level registry mapping artifact types to their required sections, so adding new validators doesn't require editing individual post-command functions. Use a `ValidationResult` namedtuple with `.passed`, `.errors`, `.warnings`.
     - **Edge Cases**: Handle empty files (no sections found = all missing); handle missing artifact file (emit FILE_NOT_FOUND error); handle files with only whitespace or comments (treated as empty).
     - **Acceptance**: `pytest tests/test_core/test_validation.py -v` passes; `deviate explore post` on a minimal explore.md fails with specific missing section names; `deviate shard post` validates YAML frontmatter not spec.md/tasks.md.
@@ -138,27 +138,27 @@
     - **Edge Cases**: If `.githooks/` does not exist, skip silently (emit info-level log). If mise is missing, emit warning and continue. If pre-commit hooks fail the commit, the post-phase fails with the hook output.
     - **Acceptance**: `mise run check` passes; new worktrees created via `deviate specify pre` have `mise trust` applied; `deviate explore post` runs pre-commit hooks if configured.
 
-## Phase 7: Auto Continuous Execute Loop
-**Goal**: Implement `deviate execute --auto` that iterates through available CREATED tasks, executing RED/GREEN/REFACTOR sequentially until all are COMPLETED or a failure occurs.
+## Phase 7: Deviate Run Dispatcher Command
+**Goal**: Implement `deviate run` that reads a task's `execution_mode` field and routes to either the TDD cycle (RED → GREEN → REFACTOR for `TDD` tasks) or the execute phase (direct implementation for `IMMEDIATE` tasks). Also implement `deviate run --all` for batch iteration. Note: `deviate execute` from the old bash skill still exists as a separate command for direct non-TDD execution.
 
 ### Tasks
 
-- [ ] T007: Implement auto continuous execute loop
+- [ ] T007: Implement deviate run dispatcher with TDD/execute routing
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_micro/test_execute.py -v`
-  - **Estimated Time**: 60 minutes
+  - **Verification**: `pytest tests/test_micro/test_run.py -v`
+  - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_execute.py`
-  - **Rationale**: US-015 (FR-007-FEATURES) requires `deviate execute --auto` to iterate through task entries executing the full Red-Green-Refactor cycle. This is a new orchestration capability in the micro layer that reads the task ledger, dispatches each task's phase, and tracks completion. It is independent of macro/meso contract changes.
+    - `tests/test_micro/test_run.py`
+  - **Rationale**: US-015 (FR-007-FEATURES) requires `deviate run` as a dispatcher that reads task `execution_mode` (TDD or IMMEDIATE) and routes accordingly. `deviate execute` remains available for direct IMMEDIATE task execution (legacy bash behavior). The dispatcher must accept both legacy `T{NNN}` and new `TSK-{ISSUE_ID}-{NN}` task ID formats. This is an independent orchestration capability in the micro layer.
   - **Details**:
-    - **Red**: Write `test_auto_loop_executes_all_created_tasks()` using a mock task ledger with 3 CREATED task records. Assert that after `execute --auto`, all 3 tasks are COMPLETED. Write `test_auto_loop_stops_on_failure()` with a task that fails GREEN, asserting the loop stops and the failed task status is FAILED.
-    - **Green**: In `micro.py`, implement the `execute` command with `--auto` flag. The loop reads task records from the issue's `tasks.jsonl`, filters for CREATED status, then for each task: runs RED (create failing test), GREEN (implement), REFACTOR (polish). After each cycle, append a status update to the task ledger. On any failure, log the error and stop the loop.
-    - **Refactor**: Extract `_execute_single_task(task_id, issue_id)` as a pure orchestration function. Extract `_run_red_green_refactor(task_id)` from the loop body. Use the existing micro-layer dispatch functions from `micro.py` if they exist, otherwise create the dispatch stubs.
-    - **Edge Cases**: Handle empty task ledger by emitting `NO_TASKS_AVAILABLE` and exiting zero. Handle task already COMPLETED by skipping (not re-executing). Handle ledger read failure by exiting non-zero with `LEDGER_READ_ERROR`.
-    - **Acceptance**: `pytest tests/test_micro/test_execute.py -v` passes; `deviate execute --auto` with no tasks emits `NO_TASKS_AVAILABLE`; with tasks, iterates through all and reports completion.
+    - **Red**: Write `test_run_dispatches_tdd_task_to_rgr()` using a mock task ledger with a TDD-mode task in CREATED status. Assert that `deviate run TSK-ISS-007-01` produces a failing test (RED), then implementation (GREEN), then polish (REFACTOR), ending in COMPLETED. Write `test_run_dispatches_immediate_task_to_execute()` with an IMMEDIATE-mode task, asserting that RED is skipped and implementation starts directly. Write `test_run_all_iterates_mixed_modes()` with a ledger containing both TDD and IMMEDIATE tasks, asserting all reach COMPLETED. Write `test_run_accepts_legacy_TNNN_format()` asserting `deviate run T001` resolves correctly.
+    - **Green**: In `micro.py`, implement the `run` command with positional `task_id` arg and optional `--all` flag. Implement `_run_single_task(task_id)` that: (1) reads the task record from the ledger, (2) checks `execution_mode` — `TDD` routes to RED → GREEN → REFACTOR, `IMMEDIATE` routes to execute phase (verify → commit), (3) appends status updates to the ledger after each phase. Implement `--all` to iterate all CREATED tasks. The `task_id` resolver must accept both `T{NNN}` and `TSK-{ISSUE_ID}-{NN}` by normalizing to a canonical lookup key.
+    - **Refactor**: Extract `_resolve_task(ledger, task_id: str)` that handles both ID formats. Extract `_run_tdd_cycle(task_id)` and `_run_execute_phase(task_id)` as separate dispatch targets. Keep the `run` command itself thin — just resolves, dispatches, and reports.
+    - **Edge Cases**: Unknown task ID exits with `TASK_NOT_FOUND`. Already-COMPLETED task is skipped with `TASK_ALREADY_DONE` warning. Mixed-mode `--all` continues to next task if one fails (recording FAILED status). Both ID formats must resolve to the same canonical task.
+    - **Acceptance**: `pytest tests/test_micro/test_run.py -v` passes; `deviate run T001` dispatches correctly; `deviate run TSK-ISS-007-01` dispatches correctly; `deviate run --all` processes all tasks.
 
 ## Phase 8: End-to-End Parity Verification
 **Goal**: Verify the complete macro/meso parity implementation against the bash originals and confirm backward compatibility.
@@ -189,7 +189,7 @@
 1. Phase 1 (T001) -> Phase 2 (T002) -> Phase 5 (T005)
 2. Phase 3 (T003) -> Phase 5 (T005)
 3. Phase 4 (T004) -> Phase 6 (T006)
-4. Phase 7 (T007) independent
+4. Phase 7 (T007) independent — micro layer, no dependency on macro/meso contracts
 5. Phase 8 (T008) requires all previous phases
 
 **Critical Dependency Chains**:
@@ -201,7 +201,7 @@
 **Risk Hotspots**:
 - T001/T002 scope overlap: Ensure the shared `_resolve_repo_context()` is truly shared and not duplicated per-command to avoid the "junk drawer" anti-pattern in macro.py.
 - T005 flag wiring: `--dry-run` and `--issue-id` require Typer option annotations; forgetting to add them to the function signatures will cause silent flag omission.
-- T007 auto loop: The auto loop must handle integration with TDD subprocess dispatch which may not exist yet; stub calls with error logging if micro-layer dispatch is unimplemented.
+- T007 dispatcher: The `TDD` → RED/GREEN/REFACTOR dispatch path must call micro-layer phase functions that may not exist yet; stub them with error logging and clear TODO markers. The dual-format task ID resolver (`T{NNN}` + `TSK-{ISSUE_ID}-{NN}`) must normalize to a single canonical lookup key to avoid duplicate execution.
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/macro.py`: Touched by T001, T002, T004, T005, T006 — high contention

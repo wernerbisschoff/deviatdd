@@ -39,9 +39,15 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
 **Priority 3 — Missing Features**
 - `--dry-run` flag on `prd`, `shard`, `tasks`, `pr` commands (currently only on `specify`).
 - `--issue-id` option on `tasks post` (bash derives spec from explicit issue ID).
-- `--auto` continuous execute loop flag.
+- `deviate run --all` dispatcher command: reads task `execution_mode` and routes to TDD cycle or execute phase accordingly.
 - Pre-commit hooks in post-phase (bash runs pre-commit if config exists).
 - Mise setup in new worktrees (bash installs dependencies).
+
+**Cross-Cutting — Dual Task ID Format Support**
+- **Legacy format**: `T{NNN}` (e.g., `T001`, `T002`) — must be readable/parseable by all validation and dispatch logic.
+- **New format**: `TSK-{ISSUE_ID}-{NN}` (e.g., `TSK-ISS-007-01`) — primary format for new task creation going forward.
+- **Validation**: `tasks post` must accept both formats, and `tasks pre` must generate new tasks using `TSK-{ISSUE_ID}-{NN}`, aligning with `DeviaTDD-architecture.md` §5.1.
+- **Dispatch**: `deviate run` must recognize both formats when resolving a task ID.
 
 ### Defensive Exclusions
 
@@ -137,12 +143,16 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
   2. **When** `deviate shard post` is executed
   3. **Then** it MUST validate each `NNN-*.md` file for valid YAML frontmatter, issue title, and FR mapping (NOT `spec.md` or `tasks.md`)
 
-### US-010-VALIDATE-P2: Tasks post validates T{NNN} format and checkboxes
+### US-010-VALIDATE-P2: Tasks post validates both T{NNN} and TSK formats with checkboxes
 * **Upstream Requirement Traceability**: FR-007-VALIDATE [NEEDS_CLARIFICATION — PRD lacks FR-007 entry]; closest PRD FR: FR-003-MESO
-* **Scenario: Task format validation in tasks post**
-  1. **Given** a `tasks.md` file containing task entries with `T{NNN}` format, checkboxes, and verification commands
+* **Scenario: Legacy T{NNN} format validation**
+  1. **Given** a `tasks.md` file containing task entries with legacy `T{NNN}` format (e.g., `T001`, `T002`), checkboxes, and verification commands
   2. **When** `deviate tasks post` is executed
   3. **Then** it MUST validate each task entry for the correct `T{NNN}` format, present checkboxes, and non-empty verification commands
+* **Scenario: New TSK format validation**
+  1. **Given** a `tasks.md` file containing task entries with new `TSK-{ISSUE_ID}-{NN}` format (e.g., `TSK-ISS-007-01`)
+  2. **When** `deviate tasks post` is executed
+  3. **Then** it MUST validate each task entry for the correct `TSK-{ISSUE_ID}-{NN}` format, present checkboxes, and non-empty verification commands
 
 ### US-011-FEATURES-P3: Dry-run flag on remaining commands
 * **Upstream Requirement Traceability**: FR-007-FEATURES [NEEDS_CLARIFICATION — PRD lacks FR-007 entry]; closest PRD FR: FR-005-ARCHITECTURE
@@ -196,12 +206,20 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
   2. **When** the pre-phase attempts mise setup
   3. **Then** it MUST proceed without error and emit a warning that mise setup was skipped
 
-### US-015-FEATURES-P3: Auto continuous execute loop flag
+### US-015-FEATURES-P3: Deviate run dispatcher command
 * **Upstream Requirement Traceability**: FR-007-FEATURES [NEEDS_CLARIFICATION — PRD lacks FR-007 entry]; closest PRD FR: FR-004-MICRO
-* **Scenario: Auto flag invokes continuous execution**
-  1. **Given** a task ledger with one or more `CREATED` task entries
-  2. **When** `deviate execute --auto` is invoked
-  3. **Then** it iterates through available tasks, executing each one sequentially (RED, GREEN, REFACTOR), until all tasks are `COMPLETED` or a failure is encountered
+* **Scenario: Run dispatches TDD task to RED-GREEN-REFACTOR**
+  1. **Given** a task with `execution_mode: TDD` in `CREATED` status
+  2. **When** `deviate run TSK-ISS-007-01` is invoked
+  3. **Then** it enters the TDD cycle: RED (write failing test), GREEN (implement), REFACTOR (polish), and marks the task COMPLETED
+* **Scenario: Run dispatches IMMEDIATE task to execute phase**
+  1. **Given** a task with `execution_mode: IMMEDIATE` in `CREATED` status
+  2. **When** `deviate run TSK-ISS-007-02` is invoked
+  3. **Then** it enters the execute phase (no RED test generation) and proceeds directly to implementation and verification
+* **Scenario: —all flag iterates all CREATED tasks**
+  1. **Given** a task ledger with multiple CREATED task entries of mixed modes (TDD and IMMEDIATE)
+  2. **When** `deviate run --all` is invoked
+  3. **Then** it iterates through available tasks, dispatching each according to its `execution_mode`, until all are COMPLETED or a failure is encountered
 
 ## SYSTEM_STATUS_SUMMARY
 
