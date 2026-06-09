@@ -174,7 +174,10 @@ RESEARCH_BASH_FIELDS = {
 class TestParity:
     def test_bash_skills_still_parse(self, tmp_path: Path) -> None:
         scripts = _find_bash_scripts()
-        assert len(scripts) > 0, "No bash deviate scripts found"
+        if not scripts:
+            pytest.skip(
+                "No bash deviate scripts found — project migrated to Python CLI"
+            )
 
         failures: list[str] = []
         for name, script in scripts:
