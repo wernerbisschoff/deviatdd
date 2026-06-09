@@ -10,8 +10,6 @@ aliases:
   - /tdd.red
 ---
 
-**IMPORTANT**: The script `deviate-red.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate red`.
-
 <system_instructions>
 
 ## [ROLE_DEFINITION]

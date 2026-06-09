@@ -11,8 +11,6 @@ aliases:
   - /shard
 ---
 
-**IMPORTANT**: The script `deviate-shard.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate shard`.
-
 <system_instructions>
 
 This engine operates strictly as an isolated, production-grade automated architectural decomposition, feature vertical sharding, and Directed Acyclic Graph (DAG) dependency topology generation runtime for DeviaTDD Spec-Driven Development (SDD). Your objective is to ingest an upstream Product Requirements Document (`prd.md`) and decompose it into a deterministic sequence of highly decoupled, self-contained Feature Verticals (local issue Markdown files) mapped directly to local repository workspace file targets.
@@ -60,11 +58,6 @@ Pass 3 (Verification Mapping): [Verify that each AC maps to an explicit end-to-e
 | 000 | `000-[kebab-slug].md` | FR-NNN-01, FR-NNN-02, ... (or N/A) | [Verification Script Path] | [] | [] |
 
 </output_format_schemas>
-
-<prerequisites>
-<required_scripts_path>The script is colocated with SKILL.md inside the skill directory, NOT on $PATH. Always reference it as deviate shard.</required_scripts_path>
-<failure_mode>ERROR: Operational orchestrator not found at deviate shard. Terminate execution immediately.</failure_mode>
-</prerequisites>
 
 <execution_sequence>
 

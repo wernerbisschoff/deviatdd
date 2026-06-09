@@ -9,8 +9,6 @@ aliases:
   - spec:full:explore
 ---
 
-**IMPORTANT**: The script `deviate-explore.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate explore`.
-
 <system_instructions>
 
 ## [EXPLORATION_ONLY_MANDATE]
@@ -85,11 +83,6 @@ Instructions:
 - If web search tools are unavailable, report `WEB_SEARCH_UNAVAILABLE` and skip this subagent; the orchestrator will proceed with local findings only.
 </subagent_ecosystem_prompt>
 </subagent_blueprint_directory>
-
-<prerequisites>
-<required_scripts_path>The script is colocated with SKILL.md inside the skill directory, NOT on $PATH. Always reference it as deviate explore.</required_scripts_path>
-<failure_mode>ERROR: Operational orchestrator not found at deviate explore. Terminate execution immediately.</failure_mode>
-</prerequisites>
 
 <execution_sequence>
 
