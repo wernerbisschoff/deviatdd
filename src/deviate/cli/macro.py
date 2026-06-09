@@ -13,6 +13,7 @@ from deviate.cli._common import (
     _handle_missing_dot_dir,
     _handle_transition_error,
     _load_manifest,
+    _run_pre_commit_hooks,
     _validate_constitution,
     console,
 )
@@ -248,6 +249,8 @@ def explore_post() -> None:
     if not result.passed:
         _halt("EXPLORE", f"missing required sections: {', '.join(result.errors)}")
 
+    _run_pre_commit_hooks()
+
     commit_artifact(
         explore_path, f"EXPLORE: {explore_path.parent.name}", repo=Path.cwd()
     )
@@ -325,6 +328,7 @@ def research_post() -> None:
             _halt(
                 "RESEARCH", f"{artifact} missing sections: {', '.join(result.errors)}"
             )
+        _run_pre_commit_hooks()
         commit_artifact(path, f"RESEARCH: {artifact} for {epic_slug}", repo=Path.cwd())
         console.print(f"[green]COMMITTED[/] {path}")
 
@@ -404,6 +408,8 @@ def prd_post(
         console.print(
             f"[yellow]PRD_WARNING[/] missing requirements in prd.md: {missing}"
         )
+
+    _run_pre_commit_hooks()
 
     try:
         sha = commit_artifact(prd_path, f"PRD: {epic_slug}", repo=Path.cwd())
@@ -508,6 +514,8 @@ def shard_post(
             console.print(
                 f"[yellow]LEDGER_IDEMPOTENT[/] {record.issue_id} already exists"
             )
+
+    _run_pre_commit_hooks()
 
     try:
         session = session.transition_to("IDLE")

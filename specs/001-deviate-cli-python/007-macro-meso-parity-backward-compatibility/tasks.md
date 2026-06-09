@@ -122,7 +122,7 @@
 
 ### Tasks
 
-- [ ] T006: Add pre-commit hook execution and mise setup in post-phases and worktrees
+- [x] T006: Add pre-commit hook execution and mise setup in post-phases and worktrees
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
   - **Verification**: `pytest tests/test_integration/test_parity.py -v`

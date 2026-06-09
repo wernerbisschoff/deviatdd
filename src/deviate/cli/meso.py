@@ -11,6 +11,7 @@ import typer
 from deviate.cli._common import (
     _handle_missing_dot_dir,
     _handle_transition_error,
+    _run_pre_commit_hooks,
     console,
 )
 from deviate.core._shared import git_env as _git_env
@@ -137,6 +138,27 @@ def _resolve_and_validate_issue(issue_id: str, phase: str) -> IssueRecord:
         console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
         raise typer.Exit(code=1)
     return record
+
+
+def _setup_mise(worktree_path: Path | None = None) -> None:
+    """Run mise trust && install && setup if mise is on PATH."""
+    repo = worktree_path or Path.cwd()
+    try:
+        subprocess.run(["mise", "--version"], capture_output=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        console.print("[yellow]MISE_WARN[/] mise not found on PATH, skipping setup")
+        return
+    try:
+        subprocess.run(["mise", "trust"], cwd=repo, check=True, capture_output=True)
+        console.print("[green]MISE[/] trust applied")
+        subprocess.run(["mise", "install"], cwd=repo, check=True, capture_output=True)
+        console.print("[green]MISE[/] install complete")
+        subprocess.run(
+            ["mise", "run", "setup"], cwd=repo, check=True, capture_output=True
+        )
+        console.print("[green]MISE[/] setup complete")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[yellow]MISE_WARN[/] setup step failed — {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +374,9 @@ def _specify_pre(
         except RuntimeError as e:
             console.print(f"[red]WORKTREE_ERROR[/] {e}")
             raise typer.Exit(code=1)
+
+        # ── Mise setup ─────────────────────────────────────────────────
+        _setup_mise(Path(worktree_path))
 
         # ── Claim issue ────────────────────────────────────────────────
         claimed = claim_issue(resolved_id, ledger_path)
@@ -619,6 +644,8 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
                     "[red]UNCHECKED_TASKS[/] some tasks are not marked complete"
                 )
                 raise typer.Exit(code=1)
+
+    _run_pre_commit_hooks()
 
     try:
         sha = commit_artifact(
