@@ -45,8 +45,8 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
 
 **Cross-Cutting — Dual Task ID Format Support**
 - **Legacy format**: `T{NNN}` (e.g., `T001`, `T002`) — must be readable/parseable by all validation and dispatch logic.
-- **New format**: `TSK-{ISSUE_ID}-{NN}` (e.g., `TSK-ISS-007-01`) — primary format for new task creation going forward.
-- **Validation**: `tasks post` must accept both formats, and `tasks pre` must generate new tasks using `TSK-{ISSUE_ID}-{NN}`, aligning with `DeviaTDD-architecture.md` §5.1.
+- **New format**: `TSK-{issue_number}-{NN}` (e.g., `TSK-007-01`) — primary format for new task creation going forward.
+- **Validation**: `tasks post` must accept both formats, and `tasks pre` must generate new tasks using `TSK-{issue_number}-{NN}`, aligning with `DeviaTDD-architecture.md` §5.1.
 - **Dispatch**: `deviate run` must recognize both formats when resolving a task ID.
 
 ### Defensive Exclusions
@@ -150,9 +150,9 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
   2. **When** `deviate tasks post` is executed
   3. **Then** it MUST validate each task entry for the correct `T{NNN}` format, present checkboxes, and non-empty verification commands
 * **Scenario: New TSK format validation**
-  1. **Given** a `tasks.md` file containing task entries with new `TSK-{ISSUE_ID}-{NN}` format (e.g., `TSK-ISS-007-01`)
+  1. **Given** a `tasks.md` file containing task entries with new `TSK-{issue_number}-{NN}` format (e.g., `TSK-007-01`)
   2. **When** `deviate tasks post` is executed
-  3. **Then** it MUST validate each task entry for the correct `TSK-{ISSUE_ID}-{NN}` format, present checkboxes, and non-empty verification commands
+  3. **Then** it MUST validate each task entry for the correct `TSK-{issue_number}-{NN}` format, present checkboxes, and non-empty verification commands
 
 ### US-011-FEATURES-P3: Dry-run flag on remaining commands
 * **Upstream Requirement Traceability**: FR-007-FEATURES [NEEDS_CLARIFICATION — PRD lacks FR-007 entry]; closest PRD FR: FR-005-ARCHITECTURE
@@ -210,11 +210,11 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
 * **Upstream Requirement Traceability**: FR-007-FEATURES [NEEDS_CLARIFICATION — PRD lacks FR-007 entry]; closest PRD FR: FR-004-MICRO
 * **Scenario: Run dispatches TDD task to RED-GREEN-REFACTOR**
   1. **Given** a task with `execution_mode: TDD` in `CREATED` status
-  2. **When** `deviate run TSK-ISS-007-01` is invoked
+  2. **When** `deviate run TSK-007-01` is invoked
   3. **Then** it enters the TDD cycle: RED (write failing test), GREEN (implement), REFACTOR (polish), and marks the task COMPLETED
 * **Scenario: Run dispatches IMMEDIATE task to execute phase**
   1. **Given** a task with `execution_mode: IMMEDIATE` in `CREATED` status
-  2. **When** `deviate run TSK-ISS-007-02` is invoked
+  2. **When** `deviate run TSK-007-02` is invoked
   3. **Then** it enters the execute phase (no RED test generation) and proceeds directly to implementation and verification
 * **Scenario: —all flag iterates all CREATED tasks**
   1. **Given** a task ledger with multiple CREATED task entries of mixed modes (TDD and IMMEDIATE)
