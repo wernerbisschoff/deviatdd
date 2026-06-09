@@ -373,14 +373,19 @@ def _specify_pre(
         # ── Mise setup ─────────────────────────────────────────────────
         _setup_mise(Path(worktree_path))
 
-        # ── Claim issue ────────────────────────────────────────────────
-        claimed = claim_issue(resolved_id, ledger_path)
+        # ── Claim issue (write directly to worktree ledger) ────────────
+        wt_ledger_path = Path(worktree_path) / "specs" / "issues.jsonl"
+        claimed = claim_issue(resolved_id, wt_ledger_path)
         if claimed:
             console.print(f"[green]CLAIMED[/] {resolved_id} → SPECIFIED")
         else:
             console.print(
                 f"[yellow]CLAIM_SKIP[/] {resolved_id} already claimed or skipped"
             )
+
+        # ── Create spec target directory in worktree ───────────────────
+        wt_spec_dir = Path(worktree_path) / Path(spec_target_rel).parent
+        wt_spec_dir.mkdir(parents=True, exist_ok=True)
 
         # ── Commit and push claim ──────────────────────────────────────
         if claimed:
