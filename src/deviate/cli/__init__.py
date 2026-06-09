@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.prompt import Confirm
 
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.cli.macro import explore_app, research_app, prd_app, shard_app
@@ -199,6 +202,36 @@ def _install_skills_to_agents(workdir: Path, agents: list[str]) -> None:
                 console.print(f"  [yellow]SKIP[/] {skill_name} → {agent}")
 
 
+def _copy_package_prompts(source_root: Path, target_root: Path) -> None:
+    for subdir in ("auto", "commands"):
+        src = source_root / subdir
+        dst = target_root / subdir
+        dst.mkdir(parents=True, exist_ok=True)
+        for item in src.iterdir():
+            if item.suffix == ".md":
+                shutil.copy2(item, dst / item.name)
+                console.print(f"  [green]COPY[/] prompts/{subdir}/{item.name}")
+
+
+def _scaffold_prompts(workdir: Path, refresh: bool = False) -> None:
+    prompts_dir = workdir / ".deviate" / "prompts"
+
+    if prompts_dir.exists():
+        if not refresh:
+            console.print("  [yellow]SKIP[/] prompts/ already exists, skipping")
+            return
+        if Confirm.ask("Back up existing overrides?"):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            bak_dir = workdir / ".deviate" / "prompts.bak" / timestamp
+            shutil.copytree(prompts_dir, bak_dir, dirs_exist_ok=True)
+            console.print(f"  [green]BACKUP[/] prompts → prompts.bak/{timestamp}")
+    else:
+        console.print("  [green]CREATE[/] .deviate/prompts/")
+
+    pkg_root = importlib.resources.files("deviate.prompts")
+    _copy_package_prompts(pkg_root, prompts_dir)
+
+
 def _ensure_gitignore(workdir: Path) -> None:
     dot_dir = workdir / ".deviate"
     dot_dir.mkdir(parents=True, exist_ok=True)
@@ -225,12 +258,19 @@ def init(
     agent: str | None = typer.Option(
         None, "--agent", help="Override auto-detected agent platform"
     ),
+    refresh_prompts: bool = typer.Option(
+        False,
+        "--refresh-prompts",
+        help="Refresh prompt templates from package defaults",
+    ),
 ) -> None:
     workdir = Path.cwd()
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
     _scaffold_dotfiles(workdir, agent_export_mode)
+
+    _scaffold_prompts(workdir, refresh_prompts)
 
     _apply_governance(workdir)
 

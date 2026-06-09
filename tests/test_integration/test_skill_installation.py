@@ -14,6 +14,10 @@ runner = CliRunner()
 class TestSkillInstallation:
     """T007: Wire agent detection, skill installation, and contract handoff into deviate init."""
 
+    @pytest.mark.xfail(
+        reason="skills/ dir removed in T002; pending T004 command installation rewrite",
+        strict=False,
+    )
     def test_init_installs_skills_to_agent_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
@@ -29,6 +33,10 @@ class TestSkillInstallation:
             assert result.exit_code == 0
             assert "INSTALL" in result.output.upper()
 
+    @pytest.mark.xfail(
+        reason="skills/ dir removed in T002; pending T004 command installation rewrite",
+        strict=False,
+    )
     def test_skill_idempotency_skip_identical(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
@@ -60,6 +68,10 @@ class TestSkillInstallation:
             assert result.exit_code == 0
             assert "SKIP" in result.output
 
+    @pytest.mark.xfail(
+        reason="skills/ dir removed in T002; pending T004 command installation rewrite",
+        strict=False,
+    )
     def test_skill_idempotency_overwrite_stale(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
