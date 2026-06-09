@@ -5,7 +5,7 @@
 
 ### Tasks
 
-- [/] T001: Enhance macro contract infrastructure and apply to explore/research pre
+- [x] T001: Enhance macro contract infrastructure and apply to explore/research pre
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit

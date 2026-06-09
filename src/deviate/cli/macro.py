@@ -103,7 +103,7 @@ def _resolve_constitution_commands() -> dict:
             "constitution_path": str(const_path),
             "test_cmd": commands.get("test_command", ""),
             "lint_cmd": commands.get("lint_command", ""),
-            "type_check_cmd": "",
+            "type_check_cmd": commands.get("type_check_command", ""),
         }
     except (FileNotFoundError, ValueError):
         return {
