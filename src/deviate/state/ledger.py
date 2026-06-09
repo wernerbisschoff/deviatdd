@@ -108,7 +108,6 @@ def _append_record(
 def _append_with_compound_key(
     record_json: str,
     key_fields: list[str],
-    record: IssueRecord,
     ledger_path: Path,
 ) -> bool:
     """Append a record only if no existing entry matches all *key_fields* values."""
@@ -146,7 +145,6 @@ def append_issue_transition(record: IssueRecord, ledger_path: Path) -> bool:
     return _append_with_compound_key(
         record_json=record.model_dump_json(),
         key_fields=["issue_id", "status"],
-        record=record,
         ledger_path=ledger_path,
     )
 
@@ -156,6 +154,20 @@ def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
         record_json=record.model_dump_json(),
         record_id=record.id,
         id_field="id",
+        ledger_path=ledger_path,
+    )
+
+
+def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
+    """Append a status-transition entry for a task.
+
+    Idempotency is checked on the ``(id, status)`` compound key so that
+    multiple transitions for the same task (e.g. PENDING → RED → GREEN)
+    are all recorded, but re-running the same transition is safe.
+    """
+    return _append_with_compound_key(
+        record_json=record.model_dump_json(),
+        key_fields=["id", "status"],
         ledger_path=ledger_path,
     )
 

@@ -10,6 +10,7 @@ from rich.console import Console
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.cli.macro import explore_app, research_app, prd_app, shard_app
 from deviate.cli.meso import pr, specify, tasks
+from deviate.cli.micro import run_command
 from deviate.core.skills import detect_agents, discover_skills, install_skill
 
 cli = typer.Typer(no_args_is_help=True)
@@ -251,3 +252,4 @@ cli.add_typer(shard_app, name="shard")
 cli.command(name="specify")(specify)
 cli.command(name="tasks")(tasks)
 cli.command(name="pr")(pr)
+cli.command(name="run")(run_command)

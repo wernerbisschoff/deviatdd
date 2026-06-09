@@ -30,4 +30,8 @@ def extract_commands(path: Path) -> dict[str, str]:
             value = stripped.split(":", 1)[1].strip().strip("`").strip()
             if value:
                 commands["lint_command"] = value
+        elif "TYPE_CHECK_COMMAND" in stripped and ":" in stripped:
+            value = stripped.split(":", 1)[1].strip().strip("`").strip()
+            if value:
+                commands["type_check_command"] = value
     return commands

@@ -48,23 +48,34 @@ class SessionState(BaseModel):
         return v
 
 class IssueRecord(BaseModel):
-    issue_id: str = Field(..., description="ISS-NNN identifier")
-    type: Literal["feature", "adhoc"] = Field(default="feature")
-    title: str = Field(..., min_length=1)
-    feature_slug: str = Field(default="")
-    status: Literal["BACKLOG", "CLAIMED", "COMPLETED"] = Field(default="BACKLOG")
-    source_file: str = Field(default="")
-    blocked_by: list[str] = Field(default_factory=list)
-    coordinates_with: list[str] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    issue_id: str
+    type: str
+    title: str = Field(min_length=1)
+    status: Literal["DRAFT", "BACKLOG", "SPECIFIED", "SHARDED", "COMPLETED"] = "DRAFT"
+    source_file: str
+    blocked_by: list[str] = []
+    coordinates_with: list[str] = []
+    timestamp: datetime
+    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    model_config = {"extra": "forbid"}
 
 class TaskRecord(BaseModel):
-    task_id: str = Field(..., description="TSK-{ISSUE_ID}-{NN} identifier")
-    type: Literal["tdd", "direct", "e2e"] = Field(default="tdd")
-    action: str = Field(..., min_length=1)
-    status: Literal["CREATED", "CLAIMED", "COMPLETED", "FAILED"] = Field(default="CREATED")
-    worker_id: Optional[str] = Field(default=None)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    id: str
+    issue_id: str
+    description: str = Field(min_length=1)
+    status: Literal["PENDING", "RED", "GREEN", "REFACTOR", "COMPLETED"] = "PENDING"
+    execution_mode: Literal["TDD", "DIRECT", "E2E"] = "TDD"
+    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    model_config = {"extra": "forbid"}
+
+    @field_validator("id")
+    @classmethod
+    def _validate_uuid4(cls, v: str) -> str:
+        try:
+            uuid.UUID(v, version=4)
+        except ValueError:
+            raise ValueError(f"Invalid UUID4: {v}")
+        return v
 ```
 ## Performance / Scalability Thresholds
 - `L_max <= 500ms` for `deviate init` command execution.
