@@ -118,11 +118,19 @@ def _resolve_constitution_commands() -> dict:
         repo_root = find_repo_root()
         const_path = resolve_constitution(repo_root)
         commands = extract_commands(const_path)
+        test_command = commands.get("test_command", "")
+        lint_command = commands.get("lint_command", "")
+        type_check_command = commands.get("type_check_command", "")
         return {
             "constitution_path": str(const_path),
-            "test_cmd": commands.get("test_command", ""),
-            "lint_cmd": commands.get("lint_command", ""),
-            "type_check_cmd": commands.get("type_check_command", ""),
+            "test_cmd": test_command,
+            "lint_cmd": lint_command,
+            "type_check_cmd": type_check_command,
+            "test_command": test_command,
+            "lint_command": lint_command,
+            "type_check_command": type_check_command,
+            "constitution_test_command": test_command,
+            "constitution_lint_command": lint_command,
         }
     except (FileNotFoundError, ValueError):
         return {
@@ -130,6 +138,11 @@ def _resolve_constitution_commands() -> dict:
             "test_cmd": "",
             "lint_cmd": "",
             "type_check_cmd": "",
+            "test_command": "",
+            "lint_command": "",
+            "type_check_command": "",
+            "constitution_test_command": "",
+            "constitution_lint_command": "",
         }
 
 
@@ -211,14 +224,21 @@ def explore_pre(
             f"[yellow]LEDGER_IDEMPOTENT[/] record for {record.issue_id} already exists"
         )
 
+    spec_target_rel = str(specs_root / slug / "explore.md") if slug else ""
+    spec_target_abs = str((specs_root / slug / "explore.md").resolve()) if slug else ""
+
     _emit_contract(
         "EXPLORE",
         session,
         session_path,
         epic_id=slug or "",
         is_greenfield=is_greenfield,
-        feature_bucket=slug,
+        feature_slug=slug,
         feature_dir=str(bucket),
+        specs_directory=str(specs_root),
+        spec_target=spec_target_rel,
+        spec_target_abs=spec_target_abs,
+        feature_bucket=slug,
         explore_path=str(bucket / "explore.md"),
         problem=problem,
         slug=slug,
@@ -287,16 +307,34 @@ def research_pre(
     feature_dir = specs_root / epic_slug
     is_greenfield = not feature_dir.exists()
 
+    issues_ledger = str(specs_root / "issues.jsonl")
+    explore_md_abs = str(explore_path.resolve())
+    explore_abs = (
+        explore_path if explore_path.is_absolute() else (Path.cwd() / explore_path)
+    )
+    explore_md_rel = str(explore_abs.relative_to(Path.cwd()))
+    design_target_abs = str((feature_dir / "design.md").resolve())
+    data_model_target_abs = str((feature_dir / "data-model.md").resolve())
+
     _emit_contract(
         "RESEARCH",
         session,
         session_path,
         is_greenfield=is_greenfield,
+        epic_id=epic_slug,
+        feature_slug=epic_slug,
+        feature_dir=str(feature_dir),
+        specs_directory=str(specs_root),
+        explore_md_path=explore_md_abs,
+        explore_md_rel=explore_md_rel,
+        design_target=str(feature_dir / "design.md"),
+        design_target_abs=design_target_abs,
+        data_model_target=str(feature_dir / "data-model.md"),
+        data_model_target_abs=data_model_target_abs,
+        issues_ledger=issues_ledger,
         issue_id="",
         feature_bucket=epic_slug,
         explore_path=str(explore_path),
-        design_target=str(feature_dir / "design.md"),
-        data_model_target=str(feature_dir / "data-model.md"),
         epic_slug=epic_slug,
     )
 
