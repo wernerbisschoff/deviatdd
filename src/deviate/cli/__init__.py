@@ -173,22 +173,22 @@ def _apply_governance(workdir: Path) -> None:
     _upsert_governance_block(agents_path, agents_content)
 
 
-def _get_agent_skill_dir(agent_name: str) -> Path | None:
+def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
     if agent_name == "claude":
-        return Path.home() / ".claude" / "skills"
+        return workdir / ".claude" / "skills"
     if agent_name == "opencode":
-        return Path.home() / ".config" / "opencode" / "skills"
+        return workdir / ".opencode" / "skills"
     if agent_name == "factory":
-        return Path.cwd() / ".factory" / "skills"
+        return workdir / ".factory" / "skills"
     return None
 
 
-def _install_skills_to_agents(agents: list[str]) -> None:
+def _install_skills_to_agents(workdir: Path, agents: list[str]) -> None:
     skills = discover_skills()
     if not skills:
         return
     for agent in agents:
-        target_dir = _get_agent_skill_dir(agent)
+        target_dir = _get_agent_skill_dir(agent, workdir)
         if target_dir is None:
             console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
             continue
@@ -240,7 +240,7 @@ def init(
         active_agents = detect_agents(workdir)
 
     if active_agents:
-        _install_skills_to_agents(active_agents)
+        _install_skills_to_agents(workdir, active_agents)
 
     _ensure_gitignore(workdir)
 
