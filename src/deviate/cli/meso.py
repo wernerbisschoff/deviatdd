@@ -17,6 +17,7 @@ from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
+from deviate.core.repo import gather_git_state
 from deviate.core.validation import validate_gherkin_syntax
 from deviate.core.worktree import (
     branch_exists_on_remote,
@@ -517,15 +518,47 @@ def _tasks_legacy(issue_id: str) -> None:
 
 
 def _tasks_pre() -> None:
-    _load_session("SPECIFY")
-    wts = detect_worktree(repo=Path.cwd())
-    console.print(f"[green]WORKTREES[/] {len(wts)} worktree(s) detected")
+    session, _ = _load_session("SPECIFY")
+    repo_root = Path.cwd()
+
+    issue_id = session.active_issue_id or ""
+
     spec_mds = list(_resolve_specs_root().rglob("spec.md"))
     if not spec_mds:
+        spec_path = ""
+        status = "SPEC_NOT_FOUND"
         console.print("[red]SPEC_NOT_FOUND[/] no spec.md found under specs/")
-        raise typer.Exit(code=1)
-    spec_path = spec_mds[0]
-    console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+    else:
+        spec_path = str(spec_mds[0])
+        status = "READY"
+        console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+
+    wts = detect_worktree(repo=repo_root)
+    worktree_full = str(next(iter(wts.values()))).strip() if wts else str(repo_root)
+    console.print(f"[green]WORKTREES[/] {len(wts)} worktree(s) detected")
+
+    const_path = repo_root / "specs" / "constitution.md"
+    constitution_path = str(const_path) if const_path.exists() else ""
+    constitution_test_command = ""
+    constitution_lint_command = ""
+    if const_path.exists():
+        cmds = extract_commands(const_path)
+        constitution_test_command = cmds.get("test_command", "")
+        constitution_lint_command = cmds.get("lint_command", "")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    contract = {
+        "issue_id": issue_id,
+        "spec_path": spec_path,
+        "worktree_full": worktree_full,
+        "constitution_path": constitution_path,
+        "constitution_test_command": constitution_test_command,
+        "constitution_lint_command": constitution_lint_command,
+        "timestamp": timestamp,
+        "status": status,
+        "phase": "tasks_pre",
+    }
+    print(json.dumps(contract, indent=2))
 
 
 def _tasks_post(force: bool = False) -> None:
@@ -570,6 +603,7 @@ def _tasks_post(force: bool = False) -> None:
 
 def _pr_pre() -> None:
     session, _ = _load_session("TASKS")
+    repo_root = Path.cwd()
     issue_id = session.active_issue_id
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
@@ -580,6 +614,35 @@ def _pr_pre() -> None:
         console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
         raise typer.Exit(code=1)
     console.print(f"[green]ISSUE[/] {issue_id}: {record.title}")
+
+    git_state = gather_git_state(repo=repo_root)
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=repo_root,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    branch_name = result.stdout.strip()
+
+    pr_title = f"[{issue_id}] {record.title}"
+    pr_body = ""
+    base_branch = "main"
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    contract = {
+        "branch_name": branch_name,
+        "base_branch": base_branch,
+        "pr_title": pr_title,
+        "pr_body": pr_body,
+        "git_state": git_state,
+        "timestamp": timestamp,
+        "status": "READY",
+        "phase": "pr_pre",
+    }
+    print(json.dumps(contract, indent=2))
 
 
 def _pr_run(
