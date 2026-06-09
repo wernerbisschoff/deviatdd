@@ -72,7 +72,7 @@
 
 ### Tasks
 
-- [ ] T004: Implement content validation engine and wire into post-commands
+- [\] T004: Implement content validation engine and wire into post-commands
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
