@@ -200,8 +200,10 @@ def _install_skills_to_agents(workdir: Path, agents: list[str]) -> None:
 
 
 def _ensure_gitignore(workdir: Path) -> None:
-    gitignore = workdir / ".gitignore"
-    entry = ".deviate/session.json"
+    dot_dir = workdir / ".deviate"
+    dot_dir.mkdir(parents=True, exist_ok=True)
+    gitignore = dot_dir / ".gitignore"
+    entry = "session.json"
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")
         if entry not in content:
