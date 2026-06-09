@@ -206,7 +206,7 @@
 
 ### Tasks
 
-- [ ] T005: Prompt Override E2E Integration Tests
+- [x] T005: Prompt Override E2E Integration Tests
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
   - **Verification**: `pytest tests/test_integration/test_prompt_overrides.py -v`
