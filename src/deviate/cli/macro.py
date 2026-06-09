@@ -215,8 +215,8 @@ def explore_pre(
             f"[yellow]LEDGER_IDEMPOTENT[/] record for {record.issue_id} already exists"
         )
 
-    spec_target_rel = str(specs_root / slug / "explore.md") if slug else ""
-    spec_target_abs = str((specs_root / slug / "explore.md").resolve()) if slug else ""
+    spec_target_rel = str(bucket / "explore.md")
+    spec_target_abs = str((bucket / "explore.md").resolve())
 
     _emit_contract(
         "EXPLORE",

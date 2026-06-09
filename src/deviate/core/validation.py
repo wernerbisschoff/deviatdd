@@ -91,14 +91,14 @@ def validate_sections(content: str | None, required: list[str]) -> list[str]:
         return list(required)
     missing: list[str] = []
     for section in required:
-        pattern = rf"^##\s+{re.escape(section)}\s*$"
+        pattern = rf"^##\s+\[?{re.escape(section)}\]?\s*$"
         if not re.search(pattern, content, re.MULTILINE):
             missing.append(section)
     return missing
 
 
 def validate_yaml_frontmatter(content: str) -> bool:
-    if not content.startswith("---"):
+    if not content.lstrip().startswith("---"):
         return False
     end_idx = content.find("---", 3)
     if end_idx == -1:

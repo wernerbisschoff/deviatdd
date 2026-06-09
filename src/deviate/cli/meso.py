@@ -622,7 +622,7 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
 
-    task_id_pattern = re.findall(r"(?m)^- \[[ x]\]\s+(\w+)", content)
+    task_id_pattern = re.findall(r"(?m)^- \[[ x]\]\s+([\w-]+)", content)
     for tid in task_id_pattern:
         if not validate_task_id(tid):
             console.print(f"[red]INVALID_TASK_ID[/] {tid}")
@@ -676,15 +676,18 @@ def _pr_pre() -> None:
 
     git_state = gather_git_state(repo=repo_root)
 
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=repo_root,
-        env=_git_env(),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    branch_name = result.stdout.strip()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch_name = result.stdout.strip()
+    except Exception:
+        branch_name = "detached"
 
     pr_title, pr_body, base_branch = _derive_pr_metadata(
         branch_name, issue_id, record.title
