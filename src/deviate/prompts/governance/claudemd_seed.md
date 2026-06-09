@@ -57,6 +57,15 @@ Use `mise run <task>` for all execution:
 | `mise run clean` | Remove artifacts |
 | `mise run help` | List tasks |
 
+### Code Quality & Conventions
+
+- **Docstrings**: Every public function, method, and class MUST have a docstring. Private helpers should have docstrings when their purpose isn't obvious from the name. Use the language's standard docstring format.
+- **Typing**: All function signatures MUST have type annotations. Use strict typing where the language supports it. Typed code is self-documenting and catches errors at definition time.
+- **Clean code**: Prefer early returns and guard clauses over deep nesting. Keep functions small and single-purpose. Favor readability over cleverness. Use descriptive names — code is written once, read many times.
+- **Pragmatism**: Don't over-abstract. No features beyond what was asked. No abstractions for single-use code. If it can be 50 lines instead of 200, write 50 lines.
+- **Imports**: Follow language conventions for import grouping (stdlib → third-party → local). Use absolute imports where idiomatic.
+- **Testing**: All new code must have corresponding tests.
+
 ### Quick-Start Workflow
 1. Run `deviate explore` to scan the codebase
 2. Run `deviate research` for architectural analysis
