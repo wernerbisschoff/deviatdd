@@ -8,6 +8,13 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class AgentConfig(BaseModel):
+    backend: Literal["opencode", "claude", "droid"] = "opencode"
+    timeout: int = Field(default=600, gt=0)
+
+    model_config = {"extra": "forbid"}
+
+
 _VALID_PHASES = frozenset(
     {
         "IDLE",
@@ -101,6 +108,7 @@ class DeviateConfig(BaseModel):
     llm_backend: str = "droid"
     timeout_seconds: int = Field(default=300, gt=0)
     agent_export_mode: Literal["local", "global"] = "local"
+    agent: AgentConfig = Field(default_factory=AgentConfig)
 
     model_config = {"extra": "forbid"}
 
