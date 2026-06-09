@@ -153,30 +153,48 @@ test_file: path/to/test.py
 
 ## [SCOPE_BOUNDARIES]
 
-### Hard Inclusions
+### Hard Inclusions (✅ Infrastructure — Implemented)
 
 - **`.deviate/prompts/` directory scaffolding** in `deviate init`:
-  - Creates `.deviate/prompts/auto/` with all slim automated templates
-  - Creates `.deviate/prompts/skills/` with all manual SKILL.md templates
+  - Creates `.deviate/prompts/auto/` with all automated templates
+  - Creates `.deviate/prompts/commands/` with all command templates (instead of `skills/`)
   - Copies from `src/deviate/prompts/` package defaults
   - Idempotent: skips if `.deviate/prompts/` already exists
   - `--refresh-prompts` flag: force overwrite with `--force` confirmation
 - **Prompt resolution layer** (`src/deviate/core/prompts.py`):
-  - `resolve_prompt(name: str) -> str` — resolve template content via override → fallback chain
-  - `resolve_skill(name: str) -> str` — resolve SKILL.md content via override → fallback chain
+  - `resolve_prompt(name: str) -> str` — resolve auto template content via override → fallback chain
+  - `resolve_command(name: str) -> str` — resolve command template content via override → fallback chain
   - `interpolate(template: str, variables: dict) -> str` — resolve `${PLACEHOLDER}` placeholders
   - `list_overrides() -> list[str]` — enumerate which templates have user overrides
   - `list_defaults() -> list[str]` — enumerate which templates are on package defaults
   - Caching: static placeholders (`${CONSTITUTION}`, `${CLAUDE_MD}`) resolved once, cached for pipeline lifetime
-- **Skill installation integration** in `src/deviate/core/skills.py`:
-  - `install_skill()` updated to call `resolve_skill()` instead of reading directly from `src/deviate/prompts/skills/`
-  - Skill installation now reflects user overrides
+- **Command installation integration** in `src/deviate/core/skills.py`:
+  - `install_command()` reads from the override chain before package defaults
+  - Installed commands now reflect user overrides
 - **Automated pipeline integration** in ISS-004, ISS-008:
-  - All slim prompt builds call `resolve_prompt("auto/<phase>.md")` instead of reading from `src/deviate/prompts/auto/` directly
+  - All automated prompt builds call `resolve_prompt("auto/<phase>.md")` instead of reading from `src/deviate/prompts/auto/` directly
 - **`deviate init` CLI updates** in `src/deviate/cli/__init__.py`:
   - `--refresh-prompts` flag added to `deviate init`
-  - Prompt scaffolding step added to init sequence (after dotfiles, before skill installation)
+  - Prompt scaffolding step added to init sequence (after dotfiles, before command installation)
   - Console output reflecting prompt bootstrapping status
+
+### Hard Inclusions (❌ Template Content — Needs Restoration)
+
+Source-of-truth prompt templates in `src/deviate/prompts/` were created as stripped-down stubs (~28-34 lines) that lost all the rich behavioral instructions, XML structure, invariants, subagent blueprints, execution sequences, and edge case handling from the original skills. These must be restored:
+
+- **`src/deviate/prompts/commands/` (18 files)** — Must contain the FULL original skill content (restored from git history at `bd18ddc^:src/deviate/prompts/skills/`). Each file = the complete original `SKILL.md` verbatim, including:
+  - YAML frontmatter with name, description, category, version, aliases
+  - `<system_instructions>` with ROLE_DEFINITION, CRITICAL INSTRUCTION INVARIANTS, tier classification
+  - `<subagent_blueprint_directory>` with subagent prompts for parallel delegation
+  - `<execution_sequence>` with step-by-step workflow including `deviate * pre/post` CLI calls
+  - `<output_format_schemas>` with full output structure
+  - `<edge_case_handling>` with condition/action tables
+  - `<context>` with `<user_input>$ARGUMENTS</user_input>`
+- **`src/deviate/prompts/auto/` (11 files)** — Must contain the CORE content from the originals, stripping ONLY:
+  - `<subagent_blueprint_directory>` blocks (attached files — not needed in auto mode)
+  - `<execution_sequence>` blocks (CLI pre/post orchestration — handled by deviate engine)
+  - `<context>` blocks (user input — handled by pipeline)
+  - Preserve: `<system_instructions>`, `<output_format_schemas>`, `<edge_case_handling>` with full invariant rules and behavioral instructions
 
 ### Defensive Exclusions
 
@@ -188,23 +206,36 @@ test_file: path/to/test.py
 
 ## [UPSTREAM_REQUIREMENT_TRACING]
 
-- **FR-010-PROMPT-DIR**: `.deviate/prompts/` directory created by `deviate init`, containing `auto/` and `skills/` subdirectories mirroring package defaults.
+### Infrastructure (✅ Implemented)
+- **FR-010-PROMPT-DIR**: `.deviate/prompts/` directory created by `deviate init`, containing `auto/` and `commands/` subdirectories mirroring package defaults.
 - **FR-010-RESOLUTION**: Prompt resolution layer that checks `.deviate/prompts/` override first, falls back to `src/deviate/prompts/` package default.
 - **FR-010-IDEMPOTENCY**: `deviate init` never overwrites existing `.deviate/prompts/` files unless `--refresh-prompts --force` is explicitly passed.
 - **FR-010-INTERPOLATION**: `${PLACEHOLDER}` variable interpolation in all templates, with static variables cached per pipeline invocation.
-- **FR-010-SKILL-INSTALL**: Skill installation resolves from override chain, so user edits to `.deviate/prompts/skills/` propagate to agent directories on next `deviate init`.
-- **FR-010-PIPELINE**: Automated pipelines (ISS-004, ISS-008) resolve slim prompts from the override chain, so user edits to `.deviate/prompts/auto/` take effect immediately.
+- **FR-010-COMMAND-INSTALL**: Command installation resolves from override chain, so user edits to `.deviate/prompts/commands/` propagate to agent directories on next `deviate init`.
+- **FR-010-PIPELINE**: Automated pipelines (ISS-004, ISS-008) resolve auto prompts from the override chain, so user edits to `.deviate/prompts/auto/` take effect immediately.
+
+### Template Content (❌ Needs Work)
+- **FR-010-CMD-CONTENT**: Each `src/deviate/prompts/commands/deviate-*.md` must contain the FULL original skill content restored from git history — XML tags, subagent blueprints, execution sequences, pre/post CLI calls, output schemas, edge cases, and `<user_input>` context blocks intact. All 18 commands restored.
+- **FR-010-AUTO-CONTENT**: Each `src/deviate/prompts/auto/*.md` must contain the CORE content from the original skills: `<system_instructions>` with invariants, `<output_format_schemas>`, `<edge_case_handling>` — stripping only subagent blueprints, execution sequences, and context blocks. All 11 auto prompts restored.
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
+### Infrastructure (✅ Already Passing)
 - **Unit Tests**: `tests/test_core/test_prompts.py` — resolution order, interpolation, caching, idempotency of copy
 - **Integration Tests**: `tests/test_cli/test_init.py` — prompt scaffolding assertions, `--refresh-prompts` behavior
 - **Integration Tests**: `tests/test_integration/test_prompt_overrides.py` — end-to-end override → agent → execution
 
+### Template Content (❌ Needs Verification)
+- **Content Integrity**: Each `commands/deviate-*.md` line count matches original skill (119–360 lines), not stub (~28 lines)
+- **Structural Integrity**: Each `commands/deviate-*.md` contains `<system_instructions>`, `<execution_sequence>`, `<edge_case_handling>`
+- **Auto Integrity**: Each `auto/*.md` contains `<system_instructions>`, `<output_format_schemas>`, `<edge_case_handling>`
+- **Auto Exclusion**: No `auto/*.md` contains `<subagent_blueprint_directory>`, `<execution_sequence>`, or `<context>` blocks
+- **No Regression**: `pytest tests/test_core/ tests/test_cli/ tests/test_integration/ -v`
+
 ## [DEMONSTRATION_PATH]
 
 ```bash
-# Verify prompt resolution layer
+# Verify infrastructure (should pass without content changes)
 pytest tests/test_core/test_prompts.py -v
 
 # Verify init scaffolding
@@ -213,17 +244,17 @@ pytest tests/test_cli/test_init.py -v -k prompt
 # Verify end-to-end override flow
 pytest tests/test_integration/test_prompt_overrides.py -v
 
-# Manual verification
-deviate init
-ls .deviate/prompts/auto/
-ls .deviate/prompts/skills/
+# Verify command content restored (line counts match originals)
+for f in src/deviate/prompts/commands/*.md; do
+  name=$(basename "$f" .md)
+  lines=$(wc -l < "$f")
+  echo "$name: $lines lines"
+done
 
-# Edit a prompt, verify it takes effect
-echo "# custom" >> .deviate/prompts/auto/red.md
-deviate micro T001 --dry-run  # should show custom prompt content
+# Verify auto content has XML tags but no subagent/execution blocks
+grep -l '<system_instructions>' src/deviate/prompts/auto/*.md
+grep -l '<subagent_blueprint_directory>' src/deviate/prompts/auto/*.md && echo "FAIL: auto has subagent blueprints"
 
-# Reset to defaults
-deviate init --refresh-prompts
-
+# Full check
 mise run check
 ```
