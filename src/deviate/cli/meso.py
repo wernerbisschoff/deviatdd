@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import uuid as uuid_mod
 from datetime import datetime, timezone
@@ -11,13 +12,18 @@ import typer
 from deviate.cli._common import (
     _handle_missing_dot_dir,
     _handle_transition_error,
+    _run_pre_commit_hooks,
     console,
 )
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
-from deviate.core.validation import validate_gherkin_syntax
+from deviate.core.repo import gather_git_state
+from deviate.core.validation import (
+    validate_gherkin_syntax,
+    validate_task_id,
+)
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
@@ -100,6 +106,29 @@ def _find_spec_md(issue_id: str) -> Path | None:
     return None
 
 
+def _resolve_constitution_commands(
+    repo_root: Path,
+) -> tuple[str, str, str]:
+    const_path = repo_root / "specs" / "constitution.md"
+    constitution_path = str(const_path) if const_path.exists() else ""
+    test_command = ""
+    lint_command = ""
+    if const_path.exists():
+        cmds = extract_commands(const_path)
+        test_command = cmds.get("test_command", "")
+        lint_command = cmds.get("lint_command", "")
+    return constitution_path, test_command, lint_command
+
+
+def _derive_pr_metadata(
+    branch_name: str, issue_id: str, record_title: str
+) -> tuple[str, str, str]:
+    pr_title = f"[{issue_id}] {record_title}"
+    pr_body = ""
+    base_branch = "main"
+    return pr_title, pr_body, base_branch
+
+
 def _resolve_and_validate_issue(issue_id: str, phase: str) -> IssueRecord:
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
@@ -110,6 +139,27 @@ def _resolve_and_validate_issue(issue_id: str, phase: str) -> IssueRecord:
         console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
         raise typer.Exit(code=1)
     return record
+
+
+def _setup_mise(worktree_path: Path | None = None) -> None:
+    """Run mise trust && install && setup if mise is on PATH."""
+    repo = worktree_path or Path.cwd()
+    try:
+        subprocess.run(["mise", "--version"], capture_output=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        console.print("[yellow]MISE_WARN[/] mise not found on PATH, skipping setup")
+        return
+    try:
+        subprocess.run(["mise", "trust"], cwd=repo, check=True, capture_output=True)
+        console.print("[green]MISE[/] trust applied")
+        subprocess.run(["mise", "install"], cwd=repo, check=True, capture_output=True)
+        console.print("[green]MISE[/] install complete")
+        subprocess.run(
+            ["mise", "run", "setup"], cwd=repo, check=True, capture_output=True
+        )
+        console.print("[green]MISE[/] setup complete")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[yellow]MISE_WARN[/] setup step failed — {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -158,16 +208,12 @@ def _validate_prd_traceability(issue_body: str, prd_path: Path) -> tuple[str, st
     prd_frs = set()
     try:
         prd_text = prd_path.read_text(encoding="utf-8")
-        import re as _re
-
-        for m in _re.finditer(r"FR-\d+(?:[_-]\d+)?", prd_text):
+        for m in re.finditer(r"FR-\d+(?:[_-]\d+)?", prd_text):
             prd_frs.add(m.group(0))
     except Exception:
         return ("FAIL", "PRD unreadable")
     issue_frs = set()
-    import re as _re
-
-    for m in _re.finditer(r"FR-\d+(?:[_-]\d+)?", issue_body):
+    for m in re.finditer(r"FR-\d+(?:[_-]\d+)?", issue_body):
         issue_frs.add(m.group(0))
     if not issue_frs:
         return ("WARN", "No FR references found in issue body")
@@ -283,10 +329,8 @@ def _specify_pre(
     prd_path = repo_root / "specs" / epic_slug / "prd.md"
     prd_reqs: list[str] = []
     if prd_path.exists():
-        import re as _re
-
         prd_text = prd_path.read_text(encoding="utf-8")
-        prd_reqs = sorted(set(_re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
+        prd_reqs = sorted(set(re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
         traceability_status, traceability_details = _validate_prd_traceability(
             issue_body, prd_path
         )
@@ -297,14 +341,9 @@ def _specify_pre(
     console.print(f"[green]TRACEABILITY[/] {traceability_status}")
 
     # ── Constitution ───────────────────────────────────────────────────
-    const_path = repo_root / "specs" / "constitution.md"
-    constitution_path = str(const_path) if const_path.exists() else ""
-    constitution_test_command = ""
-    constitution_lint_command = ""
-    if const_path.exists():
-        cmds = extract_commands(const_path)
-        constitution_test_command = cmds.get("test_command", "")
-        constitution_lint_command = cmds.get("lint_command", "")
+    constitution_path, constitution_test_command, constitution_lint_command = (
+        _resolve_constitution_commands(repo_root)
+    )
 
     # ── Dry-run / create worktree ──────────────────────────────────────
     worktree_path: str
@@ -330,6 +369,9 @@ def _specify_pre(
         except RuntimeError as e:
             console.print(f"[red]WORKTREE_ERROR[/] {e}")
             raise typer.Exit(code=1)
+
+        # ── Mise setup ─────────────────────────────────────────────────
+        _setup_mise(Path(worktree_path))
 
         # ── Claim issue ────────────────────────────────────────────────
         claimed = claim_issue(resolved_id, ledger_path)
@@ -516,28 +558,59 @@ def _tasks_legacy(issue_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _tasks_pre() -> None:
-    _load_session("SPECIFY")
-    wts = detect_worktree(repo=Path.cwd())
-    console.print(f"[green]WORKTREES[/] {len(wts)} worktree(s) detected")
+def _tasks_pre(dry_run: bool = False) -> None:
+    session, _ = _load_session("SPECIFY")
+    repo_root = Path.cwd()
+
+    issue_id = session.active_issue_id or ""
+
     spec_mds = list(_resolve_specs_root().rglob("spec.md"))
     if not spec_mds:
+        spec_path = ""
+        status = "SPEC_NOT_FOUND"
         console.print("[red]SPEC_NOT_FOUND[/] no spec.md found under specs/")
-        raise typer.Exit(code=1)
-    spec_path = spec_mds[0]
-    console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+    else:
+        spec_path = str(spec_mds[0])
+        status = "READY"
+        console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+
+    wts = detect_worktree(repo=repo_root)
+    worktree_full = str(next(iter(wts.values()))).strip() if wts else str(repo_root)
+    console.print(f"[green]WORKTREES[/] {len(wts)} worktree(s) detected")
+
+    constitution_path, constitution_test_command, constitution_lint_command = (
+        _resolve_constitution_commands(repo_root)
+    )
+
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping side effects")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    contract = {
+        "issue_id": issue_id,
+        "spec_path": spec_path,
+        "worktree_full": worktree_full,
+        "constitution_path": constitution_path,
+        "constitution_test_command": constitution_test_command,
+        "constitution_lint_command": constitution_lint_command,
+        "timestamp": timestamp,
+        "status": status,
+        "phase": "tasks_pre",
+        "dry_run": dry_run,
+    }
+    print(json.dumps(contract, indent=2))
 
 
-def _tasks_post(force: bool = False) -> None:
+def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
     session, session_path = _load_session("TASKS")
-    issue_id = session.active_issue_id
-    if not issue_id:
+    resolved_issue_id = issue_id or session.active_issue_id
+    if not resolved_issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
     ledger_path = _resolve_specs_root() / "issues.jsonl"
-    record = resolve_issue_record(issue_id, ledger_path)
+    record = resolve_issue_record(resolved_issue_id, ledger_path)
     if record is None:
-        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {resolved_issue_id}")
         raise typer.Exit(code=1)
     bucket = _resolve_bucket_dir(record.source_file)
     tasks_md = _resolve_specs_root() / bucket / "tasks.md"
@@ -548,6 +621,25 @@ def _tasks_post(force: bool = False) -> None:
     if not content and not force:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
+
+    task_id_pattern = re.findall(r"(?m)^- \[[ x]\]\s+([\w-]+)", content)
+    for tid in task_id_pattern:
+        if not validate_task_id(tid):
+            console.print(f"[red]INVALID_TASK_ID[/] {tid}")
+            raise typer.Exit(code=1)
+
+    task_lines = re.findall(r"(?m)^- \[[ x]\]\s+\S+.*", content)
+    for line in task_lines:
+        if "[ ]" in line:
+            console.print(f"[yellow]UNCHECKED_TASK[/] {line.strip()}")
+            if not force:
+                console.print(
+                    "[red]UNCHECKED_TASKS[/] some tasks are not marked complete"
+                )
+                raise typer.Exit(code=1)
+
+    _run_pre_commit_hooks()
+
     try:
         sha = commit_artifact(
             tasks_md, f"TASKS: tasks.md for {issue_id}", repo=Path.cwd()
@@ -570,6 +662,7 @@ def _tasks_post(force: bool = False) -> None:
 
 def _pr_pre() -> None:
     session, _ = _load_session("TASKS")
+    repo_root = Path.cwd()
     issue_id = session.active_issue_id
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
@@ -580,6 +673,38 @@ def _pr_pre() -> None:
         console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
         raise typer.Exit(code=1)
     console.print(f"[green]ISSUE[/] {issue_id}: {record.title}")
+
+    git_state = gather_git_state(repo=repo_root)
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch_name = result.stdout.strip()
+    except Exception:
+        branch_name = "detached"
+
+    pr_title, pr_body, base_branch = _derive_pr_metadata(
+        branch_name, issue_id, record.title
+    )
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    contract = {
+        "branch_name": branch_name,
+        "base_branch": base_branch,
+        "pr_title": pr_title,
+        "pr_body": pr_body,
+        "git_state": git_state,
+        "timestamp": timestamp,
+        "status": "READY",
+        "phase": "pr_pre",
+    }
+    print(json.dumps(contract, indent=2))
 
 
 def _pr_run(
@@ -660,12 +785,18 @@ def specify(
 def tasks(
     issue_id: str = typer.Argument(..., help="Issue ID (or 'pre' / 'post')"),
     force: bool = typer.Option(False, "--force", help="Force operation"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without side effects"
+    ),
+    issue: str | None = typer.Option(
+        None, "--issue-id", help="Issue ID for post subcommand"
+    ),
 ) -> None:
     """Tasks phase: pre (detect worktree) or post (validate, commit)"""
     if issue_id == "pre":
-        _tasks_pre()
+        _tasks_pre(dry_run=dry_run)
     elif issue_id == "post":
-        _tasks_post(force=force)
+        _tasks_post(force=force, issue_id=issue)
     else:
         _tasks_legacy(issue_id)
 
