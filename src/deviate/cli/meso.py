@@ -538,7 +538,7 @@ def _tasks_legacy(issue_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _tasks_pre() -> None:
+def _tasks_pre(dry_run: bool = False) -> None:
     session, _ = _load_session("SPECIFY")
     repo_root = Path.cwd()
 
@@ -562,6 +562,9 @@ def _tasks_pre() -> None:
         _resolve_constitution_commands(repo_root)
     )
 
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping side effects")
+
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     contract = {
         "issue_id": issue_id,
@@ -573,20 +576,21 @@ def _tasks_pre() -> None:
         "timestamp": timestamp,
         "status": status,
         "phase": "tasks_pre",
+        "dry_run": dry_run,
     }
     print(json.dumps(contract, indent=2))
 
 
-def _tasks_post(force: bool = False) -> None:
+def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
     session, session_path = _load_session("TASKS")
-    issue_id = session.active_issue_id
-    if not issue_id:
+    resolved_issue_id = issue_id or session.active_issue_id
+    if not resolved_issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
     ledger_path = _resolve_specs_root() / "issues.jsonl"
-    record = resolve_issue_record(issue_id, ledger_path)
+    record = resolve_issue_record(resolved_issue_id, ledger_path)
     if record is None:
-        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {resolved_issue_id}")
         raise typer.Exit(code=1)
     bucket = _resolve_bucket_dir(record.source_file)
     tasks_md = _resolve_specs_root() / bucket / "tasks.md"
@@ -602,7 +606,8 @@ def _tasks_post(force: bool = False) -> None:
 
     task_id_pattern = _re.findall(r"(?m)^- \[[ x]\]\s+(\S+)", content)
     for tid in task_id_pattern:
-        if not validate_task_id(tid):
+        tid_clean = tid.rstrip(":")
+        if not validate_task_id(tid_clean):
             console.print(f"[red]INVALID_TASK_ID[/] {tid}")
             raise typer.Exit(code=1)
 
@@ -758,12 +763,18 @@ def specify(
 def tasks(
     issue_id: str = typer.Argument(..., help="Issue ID (or 'pre' / 'post')"),
     force: bool = typer.Option(False, "--force", help="Force operation"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without side effects"
+    ),
+    issue: str | None = typer.Option(
+        None, "--issue-id", help="Issue ID for post subcommand"
+    ),
 ) -> None:
     """Tasks phase: pre (detect worktree) or post (validate, commit)"""
     if issue_id == "pre":
-        _tasks_pre()
+        _tasks_pre(dry_run=dry_run)
     elif issue_id == "post":
-        _tasks_post(force=force)
+        _tasks_post(force=force, issue_id=issue)
     else:
         _tasks_legacy(issue_id)
 

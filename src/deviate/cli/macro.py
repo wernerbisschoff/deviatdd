@@ -124,6 +124,7 @@ def _emit_contract(
     phase: str,
     session: SessionState,
     session_path: Path,
+    dry_run: bool = False,
     **extra: str | int | bool | None,
 ) -> None:
     repo_ctx = _resolve_repo_context()
@@ -131,13 +132,15 @@ def _emit_contract(
     contract = {
         **repo_ctx,
         **const_cmds,
-        "status": "READY",
+        "status": "DRY_RUN" if dry_run else "READY",
         "phase": phase,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dry_run": dry_run,
         **extra,
     }
     print(json.dumps(contract, indent=2))
-    _save_session(session, session_path, phase)
+    if not dry_run:
+        _save_session(session, session_path, phase)
 
 
 def _compute_next_issue_id(ledger_path: Path) -> str:
@@ -324,7 +327,11 @@ prd_app = typer.Typer(no_args_is_help=True, help="PRD phase commands")
 
 
 @prd_app.command("pre")
-def prd_pre() -> None:
+def prd_pre(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview contract without side effects"
+    ),
+) -> None:
     """Discover epic slug, resolve upstream artifacts"""
     specs_root = _resolve_specs_root()
     epic_slug = discover_epic(specs_root)
@@ -338,12 +345,19 @@ def prd_pre() -> None:
         paths = "\n  - ".join(str(specs_root / epic_slug / a) for a in missing)
         _halt("PRD", f"missing upstream artifacts\n  - {paths}")
 
-    session, session_path = _load_and_transition("PRD")
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping phase transition")
+        dot_dir = Path(".deviate")
+        session_path = dot_dir / "session.json"
+        session = SessionState.load(session_path)
+    else:
+        session, session_path = _load_and_transition("PRD")
 
     _emit_contract(
         "PRD",
         session,
         session_path,
+        dry_run=dry_run,
         epic_slug=epic_slug,
         feature_bucket=epic_slug,
         design_path=str(epic_dir / "design.md"),
@@ -402,7 +416,11 @@ shard_app = typer.Typer(no_args_is_help=True, help="Shard phase commands")
 
 
 @shard_app.command("pre")
-def shard_pre() -> None:
+def shard_pre(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview contract without side effects"
+    ),
+) -> None:
     """Discover epic, resolve PRD, compute next_issue_id"""
     specs_root = _resolve_specs_root()
     epic_slug = discover_epic(specs_root)
@@ -418,7 +436,13 @@ def shard_pre() -> None:
 
     next_issue_id = _compute_next_issue_id(ledger_path)
 
-    session, session_path = _load_and_transition("SHARD")
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping phase transition")
+        dot_dir = Path(".deviate")
+        session_path = dot_dir / "session.json"
+        session = SessionState.load(session_path)
+    else:
+        session, session_path = _load_and_transition("SHARD")
 
     epic_path = specs_root / epic_slug
     issues_dir = epic_path / "issues"
@@ -428,12 +452,12 @@ def shard_pre() -> None:
         "SHARD",
         session,
         session_path,
+        dry_run=dry_run,
         epic_slug=epic_slug,
         prd_path=str(prd_path),
         next_issue_id=next_issue_id,
         issues_dir=str(issues_dir),
         plan_target=str(epic_path / "tasks.md"),
-        dry_run=False,
         issue_id=session.active_issue_id or "",
         shard_count=shard_count,
     )
