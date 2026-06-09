@@ -6,8 +6,42 @@ from pathlib import Path
 from deviate.core._shared import git_env as _git_env
 
 
+def find_worktree_for_branch(branch: str, repo: Path | None = None) -> Path | None:
+    """Return the worktree path for an existing branch, or None."""
+    repo = repo or Path.cwd()
+    result = subprocess.run(
+        ["git", "worktree", "list"],
+        cwd=repo,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for line in result.stdout.strip().splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2].strip("[]") == branch:
+            return Path(parts[0])
+    return None
+
+
+def branch_exists_on_remote(branch: str, repo: Path | None = None) -> bool:
+    """Check if a branch exists on the remote origin."""
+    repo = repo or Path.cwd()
+    result = subprocess.run(
+        ["git", "ls-remote", "--heads", "origin", branch],
+        cwd=repo,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+    )
+    return bool(result.stdout.strip())
+
+
 def create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path:
     repo = repo or Path.cwd()
+    existing = find_worktree_for_branch(branch, repo)
+    if existing is not None:
+        return existing
     path.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
         ["git", "branch", "--list", branch],
@@ -17,10 +51,15 @@ def create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path:
         text=True,
     )
     branch_exists = bool(result.stdout.strip())
-    if branch_exists:
-        raise RuntimeError(f"Branch '{branch}' already exists")
+    if not branch_exists:
+        subprocess.run(
+            ["git", "branch", branch, "HEAD"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+        )
     subprocess.run(
-        ["git", "worktree", "add", "-b", branch, str(path)],
+        ["git", "worktree", "add", str(path), branch],
         cwd=repo,
         env=_git_env(),
         check=True,

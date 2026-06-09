@@ -2,13 +2,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from deviate.core.worktree import (
     create_worktree,
     detect_worktree,
+    find_worktree_for_branch,
     validate_worktree,
 )
+
+
+class TestFindWorktreeForBranch:
+    def test_returns_none_for_nonexistent_branch(self, tmp_git_repo: Path):
+        assert find_worktree_for_branch("no-such-branch", repo=tmp_git_repo) is None
+
+    def test_returns_path_for_existing_branch(self, tmp_git_repo: Path):
+        wt_path = tmp_git_repo / "worktrees" / "feat-test"
+        create_worktree(branch="feat-test", path=wt_path, repo=tmp_git_repo)
+        found = find_worktree_for_branch("feat-test", repo=tmp_git_repo)
+        assert found is not None
+        assert found.resolve() == wt_path.resolve()
 
 
 class TestCreateWorktree:
@@ -23,14 +35,21 @@ class TestCreateWorktree:
         assert result.exists()
         assert (result / ".git").exists() or (result / ".git").is_file()
 
-    def test_create_worktree_with_existing_branch_fails(self, tmp_git_repo: Path):
-        worktree_path = tmp_git_repo / "worktrees" / "main"
-        with pytest.raises(RuntimeError):
-            create_worktree(
-                branch="main",
-                path=worktree_path,
-                repo=tmp_git_repo,
-            )
+    def test_create_worktree_existing_worktree_returns_existing(
+        self, tmp_git_repo: Path
+    ):
+        wt_path = tmp_git_repo / "worktrees" / "existing-branch"
+        first = create_worktree(
+            branch="existing-branch",
+            path=wt_path,
+            repo=tmp_git_repo,
+        )
+        second = create_worktree(
+            branch="existing-branch",
+            path=wt_path,
+            repo=tmp_git_repo,
+        )
+        assert first == second
 
 
 class TestDetectWorktree:

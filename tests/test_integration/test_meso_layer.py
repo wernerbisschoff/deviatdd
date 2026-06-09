@@ -58,7 +58,7 @@ class TestSpecifyPre:
                 iss1.model_dump_json() + "\n" + iss2.model_dump_json() + "\n"
             )
 
-            result = runner.invoke(cli, ["specify", "pre"])
+            result = runner.invoke(cli, ["specify", "pre", "--force"])
             assert result.exit_code == 0, result.output
 
             loaded = SessionState.load(dot_dir / "session.json")
