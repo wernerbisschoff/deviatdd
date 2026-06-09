@@ -10,6 +10,7 @@ aliases:
   - /tdd.green
 ---
 
+
 <system_instructions>
 
 ## [ROLE_DEFINITION]
@@ -23,6 +24,7 @@ CRITICAL CONTEXT INFERENCE & PHYSICS INVARIANTS:
 4. **Explicit Pointer Pattern**: Any natural language instruction or validation step referencing a structural tag or schema block name must wrap that target name in explicit markdown backticks (e.g., `tasks.md`, `spec.md`, `prd.md`, `data-model.md`).
 5. **Input Resolution Rule**: Run `deviate green pre` first. Parse its JSON contract from stdout. The contract carries `task_id`, `test_command`, `lint_command`, `spec_dir`, and the active task context. Then read and consider the contents of the `<user_input>` container before continuing. If that container is unpopulated or empty, dynamically parse the unstructured text trailing or preceding this framework block as the true user intent.
 6. **Output Format Constraint**: Present the final response exclusively using human-readable Markdown syntax headers, bullet configurations, and text patterns. Do not encapsulate or wrap output blocks within XML structural boundaries.
+7. **Automated Execution Invariant**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. The caller is an automated orchestrator — this phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option without consulting the user.
 
 ## [TIER_CLASSIFICATION]
 
@@ -88,7 +90,7 @@ Run the pre-script to discover the active TDD task and emit a JSON contract:
 deviate green pre
 ```
 
-The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_command`, `spec_dir`, `feature_slug`, `task_title`, `task_description`, `files_touched`, `verification`, `repo_root`, `git_branch`, `timestamp`.
+The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_command`, `spec_dir`, `feature_slug`, `task_title`, `task_type`, `task_mode`, `test_strategy`, `verification`, `estimated_time`, `dependency`, `rationale`, `task_details`, `files_touched`, `universal_constraints`, `repo_root`, `git_branch`, `timestamp`.
 
 - If `status` is `READY` — proceed to step 1.
 - If `status` is `NO_TASKS_REMAINING` — surface to user and stop.
@@ -106,11 +108,12 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
 2. Maintain existing functional signatures — do not change test files
 3. Add only the production code required — no speculative features
-4. Run the `test_command` from the contract to verify the tests pass:
+4. **Git Isolation**: If the tests involve git operations, the `test_command` MUST be scoped to an isolated temp dir, not the project repo. Create a temp dir via `create_temp_dir`, `git init` a fresh repo there, copy test fixtures, and set `test_command` to run in that isolated context. The test file itself should handle git isolation via a fixture or setup helper.
+5. Run the `test_command` from the contract to verify the tests pass:
    ```bash
    {test_command}
    ```
-5. Run the `lint_command` from the contract to ensure lint compliance:
+6. Run the `lint_command` from the contract to ensure lint compliance:
    ```bash
    {lint_command}
    ```
@@ -154,6 +157,11 @@ deviate green post
 ```
 
 The post-script stages the implementation files, runs precommit hooks, and commits with the conventional format.
+
+If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-script again:
+```bash
+deviate green post
+```
 </step>
 
 </execution_sequence>
@@ -193,9 +201,11 @@ next_phase: "/deviate-refactor"
 | Pre-script returns NO_TASKS_REMAINING | Surface message; recommend running /deviate-tasks |
 | Pre-script returns FAILURE | Surface the reason from the JSON contract |
 | Tests fail after implementation | Fix implementation iteratively until all tests pass |
+| Tests involve git operations | Ensure test isolation via `create_temp_dir` + `git init` — run tests in temp dir, not the project repo |
 | Lint fails | Fix lint issues, re-run tests and lint until both pass |
 | Contract drift detected | Halt and report API signature conflict with `spec.md` or `data-model.md` |
 | Test file not found | Read RED handover manifest for test file path; if missing, search for test files matching the task_id |
+| Post-script returns COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
 
 </edge_case_handling>

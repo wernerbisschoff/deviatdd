@@ -10,6 +10,7 @@ aliases:
   - /tdd.red
 ---
 
+
 <system_instructions>
 
 ## [ROLE_DEFINITION]
@@ -22,6 +23,7 @@ CRITICAL CONTEXT INFERENCE & PHYSICS INVARIANTS:
 3. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 4. **Explicit Pointer Pattern**: Any natural language instruction or validation step referencing a structural tag or schema block name must wrap that target name in explicit markdown backticks (e.g., `tasks.md`, `spec.md`, `<user_input>`).
 5. **Input Resolution Rule**: Run `deviate red pre` first. Parse its JSON contract from stdout. The contract carries `task_id`, `test_command`, `lint_command`, `spec_dir`, and the active task context. Then read and consider the contents of the `<user_input>` container before continuing. If that container is unpopulated or empty, dynamically parse the unstructured text trailing or preceding this framework block as the true user intent.
+6. **Automated Execution Invariant**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. The caller is an automated orchestrator — this phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option without consulting the user.
 
 ## [TIER_CLASSIFICATION]
 
@@ -88,7 +90,7 @@ Run the pre-script to discover the active TDD task and emit a JSON contract:
 deviate red pre
 ```
 
-The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_command`, `spec_dir`, `feature_slug`, `task_title`, `task_description`, `files_touched`, `task_details`, `verification`, `repo_root`, `git_branch`, `timestamp`.
+The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_command`, `spec_dir`, `feature_slug`, `task_title`, `task_type`, `task_mode`, `test_strategy`, `verification`, `estimated_time`, `dependency`, `rationale`, `task_details`, `files_touched`, `universal_constraints`, `repo_root`, `git_branch`, `timestamp`.
 
 - If `status` is `READY` — proceed to step 1.
 - If `status` is `NO_TASKS_REMAINING` — surface to user and stop.
@@ -110,8 +112,9 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
    ```bash
    {test_command}
    ```
-4. Validate that the execution crashes explicitly due to assertion failures or missing function components. If the suite passes immediately or crashes due to parsing syntax failures, abort execution and throw a micro error.
-5. Run the `lint_command` from the contract to ensure lint compliance:
+4. **Git Isolation**: If the test involves git operations (running git commands, testing git-based tools, fixture repos), the test MUST NOT run inside the project repository. Use `create_temp_dir` to create an isolated workspace, `cd` into it, `git init` a fresh repo there, copy test fixtures, and run the test against that isolated context. The LLM must create a test helper or fixture setup that handles this; the `test_command` must be scoped to the isolated directory, not `$REPO_ROOT`.
+5. Validate that the execution crashes explicitly due to assertion failures or missing function components. If the suite passes immediately or crashes due to parsing syntax failures, abort execution and throw a micro error.
+6. Run the `lint_command` from the contract to ensure lint compliance:
    ```bash
    {lint_command}
    ```
@@ -157,7 +160,7 @@ After tests are written and the handover manifest is generated, run the post-scr
 deviate red post
 ```
 
-The post-script stages the test file, runs precommit hooks, and commits with the conventional format.
+The post-script stages the test file and commits with `--no-verify` (pre-commit hooks are bypassed because RED-phase tests are intentionally failing).
 </step>
 
 </execution_sequence>
@@ -203,6 +206,7 @@ next_phase: "/deviate-green"
 | Pre-script returns FAILURE | Surface the reason from the JSON contract |
 | Test passes immediately | Abort — test must fail first. Check for pre-existing implementation |
 | Test crashes with syntax error | Fix syntax, re-run, verify FAIL status |
+| Tests involve git operations | Create isolated temp dir via `create_temp_dir`, `git init` a fresh repo, copy test fixtures there, run tests in that isolated context — NEVER inside the project repository |
 | Lint fails | Fix lint issues before proceeding |
 | No matching spec.md found | Proceed with minimal test structure based on task description |
 | Test file already exists | Read it, understand current state, add new failing tests |
