@@ -27,7 +27,7 @@
 
 ### Tasks
 
-- [ ] T002: Extend enhanced contract to prd and shard pre commands
+- [\] T002: Extend enhanced contract to prd and shard pre commands
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
