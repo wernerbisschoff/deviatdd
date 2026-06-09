@@ -57,6 +57,19 @@ class TestSpecifyPre:
             ledger.write_text(
                 iss1.model_dump_json() + "\n" + iss2.model_dump_json() + "\n"
             )
+            # Commit ledger so worktree checkout inherits it
+            subprocess.run(
+                ["git", "add", "specs/issues.jsonl"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "add issues ledger"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
 
             result = runner.invoke(cli, ["specify", "pre", "--force"])
             assert result.exit_code == 0, result.output
@@ -77,14 +90,26 @@ class TestSpecifyPre:
                 "expected at least 2 worktrees (main + newly created)"
             )
 
-            ledger_lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+            wt_ledger = (
+                tmp_git_repo
+                / ".worktrees"
+                / "feat"
+                / "test-epic"
+                / "iss-001"
+                / "specs"
+                / "issues.jsonl"
+            )
+            assert wt_ledger.exists(), "expected worktree ledger to exist"
+            ledger_lines = wt_ledger.read_text(encoding="utf-8").strip().splitlines()
             claims = [
                 json.loads(line)
                 for line in ledger_lines
                 if json.loads(line).get("issue_id") == "ISS-001"
                 and json.loads(line).get("status") == "SPECIFIED"
             ]
-            assert len(claims) >= 1, "expected ISS-001 claim (SPECIFIED) in ledger"
+            assert len(claims) >= 1, (
+                "expected ISS-001 claim (SPECIFIED) in worktree ledger"
+            )
 
     def test_specify_pre_errors_when_no_backlog(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
