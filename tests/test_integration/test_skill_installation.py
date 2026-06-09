@@ -20,7 +20,7 @@ class TestSkillInstallation:
         """US-005-SKILLS Scenario 2: SKILL.md copied to detected agent paths."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
-            lambda agent: tmp_path / f".{agent}" / "skills",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
         (tmp_path / ".claude").mkdir(parents=True)
         (tmp_path / ".opencode").mkdir(parents=True)
@@ -35,7 +35,7 @@ class TestSkillInstallation:
         """US-005-SKILLS Scenario 3: skip when content matches."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
-            lambda agent: tmp_path / f".{agent}" / "skills",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
         target_dir = tmp_path / ".claude" / "skills"
         target_dir.mkdir(parents=True)
@@ -66,7 +66,7 @@ class TestSkillInstallation:
         """US-005-SKILLS Scenario 4: overwrite when content differs."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
-            lambda agent: tmp_path / f".{agent}" / "skills",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
         target = tmp_path / ".claude" / "skills" / "deviate-specify" / "SKILL.md"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -97,7 +97,7 @@ class TestSkillInstallation:
         """US-006-INIT Scenario 2: --agent flag overrides auto-detection."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
-            lambda agent: tmp_path / f".{agent}" / "skills",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
         (tmp_path / ".claude").mkdir()
         with chdir(tmp_path):

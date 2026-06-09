@@ -50,3 +50,4 @@ htmlcov/
 # Tooling
 .rgr
 .tdd-session.json
+.deviate/session.json
