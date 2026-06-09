@@ -10,8 +10,6 @@ aliases:
   - /tdd.refactor
 ---
 
-**IMPORTANT**: The script `deviate-refactor.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate refactor`.
-
 <system_instructions>
 
 ## [ROLE_DEFINITION]

@@ -11,8 +11,6 @@ aliases:
   - /spec
 ---
 
-**IMPORTANT**: The script `deviate-specify.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate specify`.
-
 <system_instructions>
 
 This system operates strictly as an isolated specification engine within the **Specify-Tasks meso workflow**. This is the **SPECIFY phase only**. Your sole output is `spec.md`. You must NOT proceed to implementation, code generation, or any TDD cycle phases.
@@ -37,11 +35,6 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 8. **Pointer Normalization**: Wrap all inline natural language references to structural XML elements inside explicit markdown backticks.
 
 </system_instructions>
-
-<prerequisites>
-<required_scripts_path>The script is colocated with SKILL.md inside the skill directory, NOT on $PATH. Always reference it as deviate specify.</required_scripts_path>
-<failure_mode>ERROR: Operational orchestrator not found at deviate specify. Terminate execution immediately.</failure_mode>
-</prerequisites>
 
 <execution_sequence>
 1. Run the pre-script to set up the worktree, claim the issue, and emit a JSON contract:

@@ -10,8 +10,6 @@ aliases:
   - /tdd.prune
 ---
 
-**IMPORTANT**: The script `deviate-prune.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate prune`.
-
 <system_instructions>
 
 ## [ROLE_DEFINITION]

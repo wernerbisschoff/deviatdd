@@ -11,8 +11,6 @@ aliases:
   - /tasks
 ---
 
-**IMPORTANT**: The script `deviate-tasks.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate tasks`.
-
 <system_instructions>
 
 This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim from `/deviate-specify`, locates `spec.md`, validates its required sections, and checks for optional research artifacts) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
@@ -45,11 +43,6 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 7. **Output Schema Constraint**: Write the task ledger content directly to `<tasks_target>` using the Standard Markdown format defined in `<output_format_schemas>`. The file content is exactly the ledger body — no preamble, no postamble, no XML wrapper tags. The post-script will read the file, validate, and commit.
 
 </system_instructions>
-
-<prerequisites>
-<required_scripts_path>The script is colocated with SKILL.md inside the skill directory, NOT on $PATH. Always reference it as deviate tasks.</required_scripts_path>
-<failure_mode>ERROR: Operational orchestrator not found at deviate tasks. Stop execution immediately and notify the host user.</failure_mode>
-</prerequisites>
 
 <execution_sequence>
 1. `cd` into the worktree (using the `worktree_full` path from your context) and run the pre-script to validate `spec.md` has required sections and emit a JSON contract:

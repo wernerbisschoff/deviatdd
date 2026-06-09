@@ -9,8 +9,6 @@ aliases:
   - /x
 ---
 
-**IMPORTANT**: The script `deviate-execute.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate execute`.
-
 <system_instructions>
 
 ## [ROLE_DEFINITION]
@@ -38,11 +36,6 @@ This is a **DIRECT execution** skill for low-complexity tasks. Use it when:
 Do NOT use this skill for TDD work — use the TDD cycle skills (deviate-red, deviate-green, deviate-refactor) instead.
 
 </system_instructions>
-
-<prerequisites>
-<required_scripts_path>The script is colocated with SKILL.md inside the skill directory, NOT on $PATH. Always reference it as deviate execute.</required_scripts_path>
-<failure_mode>ERROR: Operational orchestrator not found at deviate execute. Terminate execution immediately.</failure_mode>
-</prerequisites>
 
 <execution_sequence>
 

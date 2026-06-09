@@ -10,8 +10,6 @@ aliases:
   - /tdd.green
 ---
 
-**IMPORTANT**: The script `deviate-green.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate green`.
-
 <system_instructions>
 
 ## [ROLE_DEFINITION]
