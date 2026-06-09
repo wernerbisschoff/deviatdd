@@ -110,6 +110,31 @@ def detect_worktree(repo: Path | None = None) -> dict[str, str]:
     return worktrees
 
 
+def remove_worktree(branch: str, path: Path, repo: Path | None = None) -> None:
+    """Remove a worktree and its local branch (best-effort, no-op on failure)."""
+    repo = repo or Path.cwd()
+    try:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(path)],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        pass
+    try:
+        subprocess.run(
+            ["git", "branch", "-D", branch],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        pass
+
+
 def validate_worktree(path: Path) -> bool:
     if not path.exists():
         return False
