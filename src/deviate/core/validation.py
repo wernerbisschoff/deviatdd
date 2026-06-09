@@ -1,8 +1,61 @@
 from __future__ import annotations
 
 import re
+from collections import namedtuple
 
 import yaml
+
+ValidationResult = namedtuple("ValidationResult", ["passed", "errors", "warnings"])
+
+ARTIFACT_VALIDATORS: dict[str, list[str]] = {
+    "explore": [
+        "PROBLEM_DEFINITION",
+        "DISCOVERY_AUDIT_RESULTS",
+        "CONSTITUTION_QUOTES",
+        "FILE_REGISTRY",
+        "STATUS_SUMMARY",
+    ],
+    "design": [
+        "PROBLEM_DEFINITION",
+        "SYSTEM_TOPOLOGY_MAPPING",
+        "THE_PROBLEM_CONTRACT",
+        "SCOPE_BOUNDARIES",
+        "PERFORMANCE_CONSTRAINTS",
+        "MULTI_TIERED_VERIFICATION_TARGETS",
+        "ATDD_ACCEPTANCE_CRITERIA_LEDGER",
+        "SYSTEM_STATUS_SUMMARY",
+        "DESIGN_TRADE_OFF_MATRIX",
+    ],
+    "data_model": [
+        "[ENTITY_DEFINITIONS]",
+        "[RELATIONSHIP_GRAPH]",
+        "[SCHEMA_TABLES]",
+        "[STATE_TRANSITIONS]",
+        "[DATA_FLOW]",
+        "[SOURCE_REGISTRY]",
+    ],
+    "prd": [
+        "DOCUMENT_CONTROL_AND_METADATA",
+        "SYSTEM_OBJECTIVES_AND_SCOPE_BOUNDARY",
+        "ARCHITECTURAL_CONSTRAINTS_AND_PREREQUISITES",
+        "FUNCTIONAL_FLOW_AND_SEQUENCE_ARCHITECTURE",
+        "FUNCTIONAL_REQUIREMENTS_AND_EPICS",
+        "GITHUB_ISSUE_SHARDING_STRATEGY",
+    ],
+}
+
+
+def validate_artifact(content: str | None, artifact_type: str) -> ValidationResult:
+    required = ARTIFACT_VALIDATORS.get(artifact_type)
+    if required is None:
+        return ValidationResult(
+            passed=False,
+            errors=[f"unknown artifact type: {artifact_type}"],
+            warnings=[],
+        )
+    missing = validate_sections(content, required)
+    passed = len(missing) == 0
+    return ValidationResult(passed=passed, errors=missing, warnings=[])
 
 
 def extract_section_body(content: str, header: str) -> str | None:

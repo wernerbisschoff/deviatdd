@@ -27,6 +27,8 @@ from deviate.core.epic import (
 from deviate.core.prd import extract_prd_requirements
 from deviate.core.repo import find_repo_root
 from deviate.core.validation import (
+    ARTIFACT_VALIDATORS,
+    validate_artifact,
     validate_sections,
     validate_yaml_frontmatter,
 )
@@ -227,16 +229,9 @@ def explore_post() -> None:
     if not content.strip():
         _halt("EXPLORE", "explore.md is empty")
 
-    _REQUIRED_EXPLORE_SECTIONS = [
-        "PROBLEM_DEFINITION",
-        "DISCOVERY_AUDIT_RESULTS",
-        "CONSTITUTION_QUOTES",
-        "FILE_REGISTRY",
-        "STATUS_SUMMARY",
-    ]
-    missing = validate_sections(content, _REQUIRED_EXPLORE_SECTIONS)
-    if missing:
-        _halt("EXPLORE", f"missing required sections: {', '.join(missing)}")
+    result = validate_artifact(content, "explore")
+    if not result.passed:
+        _halt("EXPLORE", f"missing required sections: {', '.join(result.errors)}")
 
     commit_artifact(
         explore_path, f"EXPLORE: {explore_path.parent.name}", repo=Path.cwd()
@@ -300,29 +295,9 @@ def research_post() -> None:
     if not epic_slug:
         _halt("RESEARCH", "no active feature bucket found")
 
-    _REQUIRED_DESIGN_SECTIONS = [
-        "PROBLEM_DEFINITION",
-        "SYSTEM_TOPOLOGY_MAPPING",
-        "THE_PROBLEM_CONTRACT",
-        "SCOPE_BOUNDARIES",
-        "PERFORMANCE_CONSTRAINTS",
-        "MULTI_TIERED_VERIFICATION_TARGETS",
-        "ATDD_ACCEPTANCE_CRITERIA_LEDGER",
-        "SYSTEM_STATUS_SUMMARY",
-        "DESIGN_TRADE_OFF_MATRIX",
-    ]
-    _REQUIRED_DATA_MODEL_SECTIONS = [
-        "[ENTITY_DEFINITIONS]",
-        "[RELATIONSHIP_GRAPH]",
-        "[SCHEMA_TABLES]",
-        "[STATE_TRANSITIONS]",
-        "[DATA_FLOW]",
-        "[SOURCE_REGISTRY]",
-    ]
-
-    for artifact, required in (
-        ("design.md", _REQUIRED_DESIGN_SECTIONS),
-        ("data-model.md", _REQUIRED_DATA_MODEL_SECTIONS),
+    for artifact, atype in (
+        ("design.md", "design"),
+        ("data-model.md", "data_model"),
     ):
         path = specs_root / epic_slug / artifact
         if not path.exists():
@@ -330,9 +305,11 @@ def research_post() -> None:
         content = path.read_text(encoding="utf-8")
         if not content.strip():
             _halt("RESEARCH", f"{artifact} is empty")
-        missing = validate_sections(content, required)
-        if missing:
-            _halt("RESEARCH", f"{artifact} missing sections: {', '.join(missing)}")
+        result = validate_artifact(content, atype)
+        if not result.passed:
+            _halt(
+                "RESEARCH", f"{artifact} missing sections: {', '.join(result.errors)}"
+            )
         commit_artifact(path, f"RESEARCH: {artifact} for {epic_slug}", repo=Path.cwd())
         console.print(f"[green]COMMITTED[/] {path}")
 
@@ -393,19 +370,11 @@ def prd_post(
         _halt("PRD", f"prd.md not found at {prd_path}")
 
     prd_content = prd_path.read_text(encoding="utf-8")
-    _REQUIRED_PRD_SECTIONS = [
-        "DOCUMENT_CONTROL_AND_METADATA",
-        "SYSTEM_OBJECTIVES_AND_SCOPE_BOUNDARY",
-        "ARCHITECTURAL_CONSTRAINTS_AND_PREREQUISITES",
-        "FUNCTIONAL_FLOW_AND_SEQUENCE_ARCHITECTURE",
-        "FUNCTIONAL_REQUIREMENTS_AND_EPICS",
-        "GITHUB_ISSUE_SHARDING_STRATEGY",
-    ]
-    missing_sections = [s for s in _REQUIRED_PRD_SECTIONS if s not in prd_content]
+    prd_required = ARTIFACT_VALIDATORS.get("prd", [])
+    missing_sections = validate_sections(prd_content, prd_required)
     if missing_sections:
-        sections_str = ", ".join(missing_sections)
         console.print(
-            f"[yellow]PRD_WARNING[/] missing required sections: {sections_str}"
+            f"[yellow]PRD_WARNING[/] missing required sections: {', '.join(missing_sections)}"
         )
 
     reqs = extract_prd_requirements(prd_path)
