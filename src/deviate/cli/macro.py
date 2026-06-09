@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,13 +16,16 @@ from deviate.cli._common import (
     _validate_constitution,
     console,
 )
+from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
+from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.core.epic import (
     allocate_feature_bucket,
     discover_epic,
     resolve_active_feature,
 )
 from deviate.core.prd import extract_prd_requirements
+from deviate.core.repo import find_repo_root
 from deviate.state.config import SessionState, TransitionViolationError
 from deviate.state.ledger import IssueRecord, _read_ledger, append_issue_record
 
@@ -67,14 +71,66 @@ def _resolve_specs_root() -> Path:
     return Path("specs")
 
 
+def _resolve_repo_context() -> dict:
+    try:
+        repo_root = find_repo_root()
+    except ValueError:
+        repo_root = Path.cwd()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch = result.stdout.strip()
+    except Exception:
+        branch = "detached"
+    return {
+        "repo_root": str(repo_root.resolve()),
+        "git_branch": branch,
+    }
+
+
+def _resolve_constitution_commands() -> dict:
+    try:
+        repo_root = find_repo_root()
+        const_path = resolve_constitution(repo_root)
+        commands = extract_commands(const_path)
+        return {
+            "constitution_path": str(const_path),
+            "test_cmd": commands.get("test_command", ""),
+            "lint_cmd": commands.get("lint_command", ""),
+            "type_check_cmd": "",
+        }
+    except (FileNotFoundError, ValueError):
+        return {
+            "constitution_path": "",
+            "test_cmd": "",
+            "lint_cmd": "",
+            "type_check_cmd": "",
+        }
+
+
 def _emit_contract(
     phase: str,
     session: SessionState,
     session_path: Path,
     **extra: str | int | bool | None,
 ) -> None:
-    contract = {"phase": phase, **extra}
-    console.print(json.dumps(contract, indent=2))
+    repo_ctx = _resolve_repo_context()
+    const_cmds = _resolve_constitution_commands()
+    contract = {
+        **repo_ctx,
+        **const_cmds,
+        "status": "READY",
+        "phase": phase,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **extra,
+    }
+    print(json.dumps(contract, indent=2))
     _save_session(session, session_path, phase)
 
 
@@ -109,6 +165,10 @@ def explore_pre(
 
     session, session_path = _load_and_transition("EXPLORE")
 
+    specs_root = _resolve_specs_root()
+    bucket_path = specs_root / slug if slug else None
+    is_greenfield = not (bucket_path and bucket_path.exists())
+
     bucket = allocate_feature_bucket(slug)
     console.print(f"[green]BUCKET_CREATED[/] {bucket}")
 
@@ -117,10 +177,10 @@ def explore_pre(
         type="feature",
         title=problem,
         status="DRAFT",
-        source_file=str(_resolve_specs_root() / slug / "explore.md"),
+        source_file=str(bucket / "explore.md"),
         timestamp=datetime.now(timezone.utc),
     )
-    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    ledger_path = specs_root / "issues.jsonl"
     appended = append_issue_record(record, ledger_path)
     if appended:
         console.print(f"[green]LEDGER_APPENDED[/] {record.issue_id}")
@@ -133,6 +193,11 @@ def explore_pre(
         "EXPLORE",
         session,
         session_path,
+        epic_id=slug or "",
+        is_greenfield=is_greenfield,
+        feature_bucket=slug,
+        feature_dir=str(bucket),
+        explore_path=str(bucket / "explore.md"),
         problem=problem,
         slug=slug,
         bucket_path=str(bucket),
@@ -191,12 +256,20 @@ def research_pre(
 
     session, session_path = _load_and_transition("RESEARCH")
 
+    feature_dir = specs_root / epic_slug
+    is_greenfield = not feature_dir.exists()
+
     _emit_contract(
         "RESEARCH",
         session,
         session_path,
-        epic_slug=epic_slug,
+        is_greenfield=is_greenfield,
+        issue_id="",
+        feature_bucket=epic_slug,
         explore_path=str(explore_path),
+        design_target=str(feature_dir / "design.md"),
+        data_model_target=str(feature_dir / "data-model.md"),
+        epic_slug=epic_slug,
     )
 
 
