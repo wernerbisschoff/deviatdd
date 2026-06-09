@@ -5,7 +5,7 @@
 
 ### Tasks
 
-- [\] T001: Agent backend with heredoc-pipe subprocess invocation, YAML handover parsing, timeout/retry, and AgentConfig model
+- [/] T001: Agent backend with heredoc-pipe subprocess invocation, YAML handover parsing, timeout/retry, and AgentConfig model
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
