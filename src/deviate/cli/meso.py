@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import uuid as uuid_mod
 from datetime import datetime, timezone
@@ -207,16 +208,12 @@ def _validate_prd_traceability(issue_body: str, prd_path: Path) -> tuple[str, st
     prd_frs = set()
     try:
         prd_text = prd_path.read_text(encoding="utf-8")
-        import re as _re
-
-        for m in _re.finditer(r"FR-\d+(?:[_-]\d+)?", prd_text):
+        for m in re.finditer(r"FR-\d+(?:[_-]\d+)?", prd_text):
             prd_frs.add(m.group(0))
     except Exception:
         return ("FAIL", "PRD unreadable")
     issue_frs = set()
-    import re as _re
-
-    for m in _re.finditer(r"FR-\d+(?:[_-]\d+)?", issue_body):
+    for m in re.finditer(r"FR-\d+(?:[_-]\d+)?", issue_body):
         issue_frs.add(m.group(0))
     if not issue_frs:
         return ("WARN", "No FR references found in issue body")
@@ -332,10 +329,8 @@ def _specify_pre(
     prd_path = repo_root / "specs" / epic_slug / "prd.md"
     prd_reqs: list[str] = []
     if prd_path.exists():
-        import re as _re
-
         prd_text = prd_path.read_text(encoding="utf-8")
-        prd_reqs = sorted(set(_re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
+        prd_reqs = sorted(set(re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
         traceability_status, traceability_details = _validate_prd_traceability(
             issue_body, prd_path
         )
@@ -627,15 +622,13 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
 
-    import re as _re
-
-    task_id_pattern = _re.findall(r"(?m)^- \[[ x]\]\s+(\w+)", content)
+    task_id_pattern = re.findall(r"(?m)^- \[[ x]\]\s+(\w+)", content)
     for tid in task_id_pattern:
         if not validate_task_id(tid):
             console.print(f"[red]INVALID_TASK_ID[/] {tid}")
             raise typer.Exit(code=1)
 
-    task_lines = _re.findall(r"(?m)^- \[[ x]\]\s+\S+.*", content)
+    task_lines = re.findall(r"(?m)^- \[[ x]\]\s+\S+.*", content)
     for line in task_lines:
         if "[ ]" in line:
             console.print(f"[yellow]UNCHECKED_TASK[/] {line.strip()}")

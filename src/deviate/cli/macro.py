@@ -102,7 +102,7 @@ def _resolve_repo_context() -> dict:
             check=True,
         )
         branch = result.stdout.strip()
-    except Exception:
+    except subprocess.CalledProcessError:
         branch = "detached"
     return {
         "repo_root": str(repo_root.resolve()),
