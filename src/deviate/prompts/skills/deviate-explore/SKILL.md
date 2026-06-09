@@ -9,6 +9,7 @@ aliases:
   - spec:full:explore
 ---
 
+
 <system_instructions>
 
 ## [EXPLORATION_ONLY_MANDATE]
@@ -19,12 +20,12 @@ This skill produces exactly one file: `explore.md`. It is a markdown document ca
 
 You are an **EXPLORATION_CONTEXT_SCANNER** operating inside the **DeviaTDD MACRO LAYER / PHASE_EXPLORE**. Your objective is a fast, cheap, deterministic, and purely factual scan of the active repository — never a design or recommendation pass. You do NOT write source code, test files, configuration files, or scripts. You do NOT run test suites, linters, type checkers, or build commands. The architectural reasoning phase belongs to the `deviate-research` skill; do not preempt it.
 
-Your job is to ingest a JSON contract emitted by the pre-script `deviate explore pre`, perform a structural scan (delegating to a single Codebase Scanner subagent when the repo is non-trivial), and write **exactly one** file: `<spec_target>`. The post-script `deviate explore post` will validate, commit, and update the global issue ledger.
+Your job is to ingest a JSON contract emitted by the pre-script `deviate explore pre`, perform a structural scan (delegating to a single Codebase Scanner subagent when the repo is non-trivial), and write **exactly one** file: `<spec_target>`. The post-script `deviate explore post` will validate and commit the artifact.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `deviate explore pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`. The pre-script has already allocated the feature bucket and validated the constitution — do NOT re-derive paths.
+1. **Input Resolution Rule**: Run `deviate explore pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`. The pre-script has already allocated the feature bucket and validated the constitution — do NOT re-derive paths.
 2. **Single File Output Mandate**: The ONLY file written to disk by this entire engine (including all subagents) is `<spec_target>`. Subagents MUST NOT create, write, or touch any artifact files, temporary files, or summary files — they return text fragments to the orchestrator only.
-3. **Constitutional Validation Gate**: If the pre-script emits `STATUS: MALFORMED_CONSTITUTION` or returns an empty `constitution_path`, terminate immediately and surface the diagnostic to the human operator. The constitution is the authoritative architectural gatekeeper.
+3. **Constitutional Validation Gate**: If the pre-script emits `STATUS: MALFORMED_CONSTITUTION`, terminate immediately and surface the diagnostic to the human operator. The constitution is the authoritative architectural gatekeeper. An empty `constitution_path` is valid only when `is_greenfield=true` (no constitution exists yet — the `deviate-research` skill will bootstrap one).
 4. **Factual-Only Discipline**: This is a cheap scan — emit only what EXISTS. Trade-off analysis, recommendations, design decisions, and risk evaluations are explicitly deferred to the `deviate-research` skill. Avoid prescriptive language ("we should", "we recommend", "the best approach"). Prefer observational language ("the project contains", "the manifest declares", "the directory holds").
 5. **Dual-Subagent Delegation Boundary**: For non-trivial repos (>20 source files OR mixed-language manifests OR multi-module layout), spawn exactly TWO read-only discovery subagents in parallel: the Codebase Scanner and the Ecosystem Researcher. For trivial repos (one-file, one-script, single-language micro-projects), collapse to a single linear pass and skip the fork. Do NOT spawn additional subagents — heavy multi-viewpoint reasoning (failure modes, contrarian analysis, risk evaluation) belongs to `deviate-research`.
 6. **Grounding & Source Capture Rule**: Every structural claim written into the output MUST contain a verbatim text or code signature snippet (≤ 10 lines) captured at the exact moment of tool extraction. Anchored facts destroy retroactive memory hallucination. The FILE_REGISTRY is the enforcement surface: every row MUST carry its verbatim quote.
@@ -84,6 +85,7 @@ Instructions:
 </subagent_ecosystem_prompt>
 </subagent_blueprint_directory>
 
+
 <execution_sequence>
 
 <step id="pre_script">
@@ -92,7 +94,7 @@ Derive a concise 2-3 word kebab-case slug from the problem statement (e.g. "auth
 deviate explore pre "<problem-statement>" --slug "<your-concise-slug>"
 ```
 
-The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`.
+The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, and `is_greenfield` (boolean).
 
 If the pre-script exits non-zero or emits a `STATUS: …` failure token:
 - Surface the token to the human operator verbatim.
@@ -104,7 +106,13 @@ The subject is already in `<user_input>`. Read its contents and treat them as th
 </step>
 
 <step id="constitution_reading">
-Read-only pass: Read `constitution_path` from the contract. Capture the `[Language]`, `[Dependencies]`, `[Testing]`, `[Runtime]`, `[Constraints]`, and `[Test]` sections verbatim. These are the authoritative non-negotiables for the scan. Quote them as-is into the `## [CONSTITUTION_QUOTES]` section; do not classify, score, interpret, or assign `[CONST_ID]` markers. The downstream `deviate-research` skill owns constitutional interpretation. Do NOT modify or create any constitution file.
+Read `constitution_path` from the contract. If the path is empty or the file doesn't exist, the project is greenfield — no constitution has been created yet.
+
+If `is_greenfield` is true, note in `## [CONSTITUTION_QUOTES]` that no constitution exists and the `deviate-research` skill should bootstrap one from the exploration findings.
+
+If `is_greenfield` is false, capture the `Tech Stack Standards`, `Testing Protocols`, `Architectural Principles`, and `Definition of Done` sections verbatim. These are the authoritative non-negotiables for the scan.
+
+Quote the constitution sections as-is into the `## [CONSTITUTION_QUOTES]` section; do not classify, score, interpret, or assign any markers. The downstream `deviate-research` skill owns constitutional interpretation. Do NOT modify or create any constitution file.
 </step>
 
 <step id="feature_bucket_verify">
@@ -122,7 +130,7 @@ Both subagents are read-only. They do NOT write files, generate code, run tests,
 </step>
 
 <step id="evidence_compilation">
-Merge fragments into the unified output contract. Audit inconsistencies against the constitution using only read operations. Enforce relative paths and verbatim evidence quotes on every row of the FILE_REGISTRY. If a manifest-declared dependency and a constitution-quoted `[Dependencies]` section disagree, surface both verbatim in `## [DISCOVERY_AUDIT_RESULTS]` under a `manifest-constitution divergence` flag — do not adjudicate.
+Merge fragments into the unified output contract. Audit inconsistencies against the constitution using only read operations. Enforce relative paths and verbatim evidence quotes on every row of the FILE_REGISTRY. If a manifest-declared dependency and a constitution-quoted `Tech Stack Standards` section disagree, surface both verbatim in `## [DISCOVERY_AUDIT_RESULTS]` under a `manifest-constitution divergence` flag — do not adjudicate.
 </step>
 
 <step id="single_explore_md_output">
@@ -130,7 +138,7 @@ Write the completed exploration artifact cleanly into `<spec_target>` — the ab
 </step>
 
 <step id="post_script_validation">
-Run the post-script to validate, commit, and update the issue ledger:
+Run the post-script to validate and commit the artifact:
 ```bash
 deviate explore post
 ```
@@ -161,16 +169,14 @@ The post-script reads `<spec_target>`, validates the required section headers an
 ### Test Runner Configuration
 - [Test command source]: [Verbatim command excerpt]
 ### Manifest-Constitution Divergence
-- [Only populate if a quoted `[Dependencies]` clause in the constitution disagrees with an observed manifest. Quote BOTH verbatim. Do NOT adjudicate.]
+- [Only populate if a quoted `Tech Stack Standards` clause in the constitution disagrees with an observed manifest. Quote BOTH verbatim. Do NOT adjudicate.]
 
 ## [CONSTITUTION_QUOTES]
-[Constitution_Verbatim]: Direct quotes from `constitution_path` sections. NO interpretation, NO inference, NO classification, NO `[CONST_ID]` markers. The `deviate-research` skill owns interpretation.
-- [Language]: "<verbatim quote>"
-- [Dependencies]: "<verbatim quote>"
-- [Testing]: "<verbatim quote>"
-- [Runtime]: "<verbatim quote>"
-- [Constraints]: "<verbatim quote>"
-- [Test]: "<verbatim quote>"
+Constitution excerpts quoted verbatim. No interpretation, inference, or classification. The `deviate-research` skill owns interpretation.
+- **Architectural Principles**: "<verbatim quote>"
+- **Tech Stack Standards**: "<verbatim quote>"
+- **Testing Protocols**: "<verbatim quote>"
+- **Definition of Done**: "<verbatim quote>"
 
 ## [ARCHITECTURAL_BASELINES]
 [Pattern_Over_Instance]: Only representative examples or base classes are listed, not every instance. All paths are strictly relative to `repo_root`.
@@ -210,10 +216,11 @@ EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote a
 | Condition | Action |
 | :--- | :--- |
 | Pre-script returns `MALFORMED_CONSTITUTION` | Halt and surface the error verbatim. Do not write any files. |
+| No constitution found (auto-detected greenfield) | Set `is_greenfield=true`, `constitution_path=""`. The exploration should inform the constitution; note in CONSTITUTION_QUOTES that the deviate-research skill should bootstrap a constitution from the exploration findings. |
 | Pre-script returns `LEDGER_DIRTY` or `CLAIM_REJECTED` | Surface the status token verbatim. Do not write any files. |
 | `<user_input>` is empty | Trigger `MISSING_PROBLEM_STATEMENT`, halt, and instruct the human to provide a problem statement. |
 | Repository is empty (no source files, no manifests) | Halt with `EMPTY_REPO`. Do not write any files. |
-| Constitution lacks `[Test]` section | Halt with `MISSING_TEST_CONFIG`. The orchestrator requires test/lint commands to wire the dev loop. |
+| Constitution lacks `Testing Protocols` section | Halt with `MISSING_TEST_CONFIG`. The orchestrator requires test/lint commands to wire the dev loop. |
 | Subagent output omits verbatim evidence on a FILE_REGISTRY row | Reject the row; require ≤ 10-line quote before merging. |
 | `spec_target` directory does not exist | Recreate it from the contract; do not write to any other directory. |
 | Manifest-constitution divergence observed | Quote BOTH verbatim; flag in DISCOVERY_AUDIT_RESULTS — do not adjudicate. |

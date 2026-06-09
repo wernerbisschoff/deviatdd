@@ -11,6 +11,7 @@ aliases:
   - /spec
 ---
 
+
 <system_instructions>
 
 This system operates strictly as an isolated specification engine within the **Specify-Tasks meso workflow**. This is the **SPECIFY phase only**. Your sole output is `spec.md`. You must NOT proceed to implementation, code generation, or any TDD cycle phases.
@@ -36,52 +37,43 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 
 </system_instructions>
 
+
 <execution_sequence>
 1. Run the pre-script to set up the worktree, claim the issue, and emit a JSON contract:
    ```
    deviate specify pre
    ```
    The contract on stdout contains: `issue_id`, `issue_title`, `issue_body` (raw), `epic_slug`, `issue_slug`, `branch_name`, `worktree_full`, `spec_target`, `prd_requirements`, `traceability_status`, `constitution_test_command`, `constitution_lint_command`. Note the `worktree_full` field — it is the absolute path to the newly created worktree.
-   - If the pre-script emits `STATUS: LEDGER_DIRTY`, `STATUS: CLAIM_REJECTED`, or `STATUS: TRACEABILITY_LOG_BROKEN`, terminate immediately and surface the status to the human operator.
-2. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp **Given/When/Then** block mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array.
-3. `cd` into the worktree (using the `worktree_full` path from step 1), then transpile the final spec content per the output format schema and write it directly to `<spec_target>` (the relative path from the contract). Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
-4. Run the post-script to validate, commit, and update the ledger:
+   - If the pre-script exits non-zero (e.g. `PUSH_TO_CLAIM_FAILED`), surface the error to the human operator. If the operator approves continuing without pushing, re-run with `--force`: `deviate specify pre --force`.
+2. **HITL: Clarify before authoring.** Present 3 edge-case boundary assertions drawn from the contract to the stakeholder before writing spec content. Use the AskUser tool to present them:
+   ```
+   1. [question] <edge case name and decision point>
+   [topic] <ShortTopic>
+   [option] <strategy 1>
+   [option] <strategy 2>
+   [option] <strategy 3>
+
+   2. [question] <second edge case>
+   [topic] <ShortTopic>
+   [option] <strategy 1>
+   [option] <strategy 2>
+   [option] <strategy 3>
+
+   3. [question] <third edge case>
+   [topic] <ShortTopic>
+   [option] <strategy 1>
+   [option] <strategy 2>
+   [option] <strategy 3>
+   ```
+   After the stakeholder answers, apply the chosen strategies to inform the spec content you are about to write.
+3. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp **Given/When/Then** block mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array. Incorporate the HITL answers from step 2 into your decisions.
+4. `cd` into the worktree (using the `worktree_full` path from step 1), then transpile the final spec content per the output format schema and write it directly to `<spec_target>` (the relative path from the contract). Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
+5. Run the post-script to validate, commit, and update the ledger:
    ```
    deviate specify post
    ```
-   The post-script runs from inside the worktree, reads the file you just wrote, validates required sections, Gherkin blocks, and FR traceability, then commits and updates the ledger. If validation fails, it prints a diagnostic. Fix the file and re-run. Re-run with `--force` only with documented justification.
-
-**TERMINATE HERE. Do NOT proceed to implementation. Hand off to the Plan phase.**
+   The post-script runs from inside the worktree, reads the file you just wrote, validates required sections, Gherkin blocks, and FR traceability, then commits and updates the ledger. If validation fails, prints a diagnostic, and requires re-running with `--force` only with documented justification. Once the post-script succeeds, **the phase is complete.**
 </execution_sequence>
-
-<hitl_gate id="SPECIFY_PHASE_TERMINATION_GATE">
-<checkpoint>SPECIFY PHASE COMPLETE. Display summary to human operator for verification before termination:</checkpoint>
-<presentation>
-<item type="target_topology">Relative path destination location for spec.md</item>
-<item type="trace_links">Verified match connections between prd.md FR tokens and spec.md US stories</item>
-<item type="executable_scenarios">Summary count of extracted Gherkin behavioral validation steps</item>
-</presentation>
-<questions>Invoke the AskUser tool to present 3 edge-case boundary assertions drawn from the spec you just wrote. Each question becomes one AskUser entry; each option is one validation strategy the stakeholder can authorize. Use the format:
-1. [question] &lt;edge case name and decision point&gt;
-[topic] &lt;ShortTopic&gt;
-[option] &lt;strategy 1&gt;
-[option] &lt;strategy 2&gt;
-[option] &lt;strategy 3&gt;
-
-2. [question] &lt;second edge case&gt;
-[topic] &lt;ShortTopic&gt;
-[option] &lt;strategy 1&gt;
-[option] &lt;strategy 2&gt;
-[option] &lt;strategy 3&gt;
-
-3. [question] &lt;third edge case&gt;
-[topic] &lt;ShortTopic&gt;
-[option] &lt;strategy 1&gt;
-[option] &lt;strategy 2&gt;
-[option] &lt;strategy 3&gt;
-
-After the stakeholder answers, apply the chosen strategies to the spec (re-scope the relevant sections) before terminating.</questions>
-</hitl_gate>
 
 <output_format_schemas>
 <format_contract>
@@ -98,7 +90,7 @@ Required headers to generate:
 ## MULTI_TIERED_VERIFICATION_TARGETS
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER
 - Must list each User Story header format matching: ### US-[NNN]-[ID]: [Story Domain Description]
-- Each story must contain tracking links to parent PRD attributes matching: * **Upstream Requirement Traceability**: FR-[ID]
+- Each story must contain tracking links to parent PRD attributes matching: * **Upstream Requirement Traceability**: FR-{NNN}-{ID}
 - Scenarios must be explicitly formatted inside ordered Gherkin definitions containing: Given, When, Then parameters.
 ## SYSTEM_STATUS_SUMMARY
 - Must contain an exact markdown key-value parameter table checking variables for: STATUS, EPIC_SLUG, BRANCH_NAME, SPEC_PATH, ISSUE_ID, and NEXT_ACTION.

@@ -11,6 +11,7 @@ aliases:
   - /ctx
 ---
 
+
 <system_instructions>
 
 This engine operates strictly as an isolated operational runtime for multi-lingual and mono-repo software configuration mapping, context synchronization, and automated workspace orchestration.
@@ -21,7 +22,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 1. **Input Resolution Rule**: Run `deviate context pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `spec_dir`, `spec_md_path`, `constitution_path`, `claude_md_path`, `agents_md_path`, `copilot_instructions_path`, `language`, `multilang_mode`, `plan_target` (absolute path for the execution manifest), and `dry_run`. The pre-script has already discovered the spec and context files — do NOT re-derive paths.
 2. **Output Contract Enforcement**: On success, emit `STATUS: SUCCESS` followed by the `UPDATED_FILES` list. On failure, emit `STATUS: INVALID_CONTEXT` or `STATUS: CONTEXT_WRITE_FAILURE` with a `DETAILS` field. Do not introduce any additional properties, markdown prose, or text arrays outside this specification.
 3. **Symlink Atomicity**: When enforcing AGENTS.md → CLAUDE.md file-system configurations, perform atomic replacement using `ln -sf`. Do not attempt to read or modify symlink targets during implementation loops.
-4. **Context Merge Hierarchy**: When merging `spec.md` and `constitution.md` properties, `spec.md` values maintain ultimate precedence for all fields except `[Constraints]`, where `constitution.md` appends with a comma-space separator (", ").
+4. **Context Merge Hierarchy**: When merging `spec.md` and `constitution.md` properties, `spec.md` values maintain ultimate precedence for all fields except `Constraints`, where `constitution.md` appends with a comma-space separator (", "). The mapping from constitution sections to context block fields is: `Architectural Principles` → `Constraints`, `Tech Stack Standards > Backend` → `Language`, `Tech Stack Standards > Tooling` → `Dependencies`, `Tech Stack Standards > Infrastructure` → `Runtime`, `Testing Protocols` → `Testing`, `Testing Protocols > TEST_COMMAND` → `Test`, `Testing Protocols > LINT_COMMAND` → `Lint`.
 5. **Output Architecture Isolation**: Structural XML tags within this prompt are reserved exclusively for context parsing and engineering isolation within the engine input payload. The final generated execution reports, status summaries, or file tracking sheets must default strictly to Standard Markdown or raw string logs as outlined in the output format schemas. Do not wrap human-facing prose inside XML nodes.
 
 </system_instructions>
@@ -32,40 +33,94 @@ CRITICAL INSTRUCTION INVARIANTS:
 ```
 ## Technical Execution Context
 
-[Language]: <value>
-[Dependencies]: <value_1>, <value_2>
-[Storage]: <value>
-[Testing]: <value>
-[Target_Platform]: <value>
-[Project_Type]: <value>
-[Performance_Goals]: <value>
-[Constraints]: <value>
-[Scale]: <value>
-[Build]: <value>
-[Test]: <value>
-[Lint]: <value>
-[Runtime]: <value>
-[Structure]: <value>
+### Language
+<value>
+
+### Dependencies
+<value_1>, <value_2>
+
+### Storage
+<value>
+
+### Testing
+<value>
+
+### Target Platform
+<value>
+
+### Project Type
+<value>
+
+### Performance Goals
+<value>
+
+### Constraints
+<value>
+
+### Scale
+<value>
+
+### Build
+<value>
+
+### Test
+<value>
+
+### Lint
+<value>
+
+### Runtime
+<value>
+
+### Structure
+<value>
 ```
 
 ### Canonical Append Schema (Multi-Language)
 ```
 ## {LANGUAGE} Context
 
-[Language]: <value>
-[Dependencies]: <value_1>, <value_2>
-[Storage]: <value>
-[Testing]: <value>
-[Target_Platform]: <value>
-[Project_Type]: <value>
-[Performance_Goals]: <value>
-[Constraints]: <value>
-[Scale]: <value>
-[Build]: <value>
-[Test]: <value>
-[Lint]: <value>
-[Runtime]: <value>
-[Structure]: <value>
+### Language
+<value>
+
+### Dependencies
+<value_1>, <value_2>
+
+### Storage
+<value>
+
+### Testing
+<value>
+
+### Target Platform
+<value>
+
+### Project Type
+<value>
+
+### Performance Goals
+<value>
+
+### Constraints
+<value>
+
+### Scale
+<value>
+
+### Build
+<value>
+
+### Test
+<value>
+
+### Lint
+<value>
+
+### Runtime
+<value>
+
+### Structure
+<value>
 ```
 
 ### Output Contract
@@ -88,6 +143,7 @@ DETAILS: <target_file_name>
 
 </output_format_schemas>
 
+
 <execution_sequence>
 
 <step id="pre_script">
@@ -105,10 +161,17 @@ After parsing the contract:
 </step>
 
 <step id="spec_and_constitution_reading">
-Read the spec from `spec_md_path` and constitution from `constitution_path`. Extract:
-- `[Language]`, `[Dependencies]`, `[Storage]`, `[Testing]`, `[Target_Platform]`, `[Project_Type]`
-- `[Performance_Goals]`, `[Constraints]`, `[Scale]`, `[Build]`, `[Test]`, `[Lint]`, `[Runtime]`, `[Structure]`
-- Apply merge hierarchy: spec.md values take precedence, constitution.md `[Constraints]` appends with ", "
+Read the spec from `spec_md_path` and constitution from `constitution_path`. Extract the following sections to build the context block:
+
+From the constitution:
+- `Architectural Principles` → becomes `Constraints` in the context block
+- `Tech Stack Standards`: Backend → `Language`, Tooling → `Dependencies`, Infrastructure → `Runtime`
+- `Testing Protocols`: Framework + commands → `Testing`, `Test`, `Lint`, `TypeCheck`
+- `Definition of Done` → contributes to project metadata
+
+From the spec:
+- Override/extend these with spec-specific values where applicable
+- Apply merge hierarchy: spec.md values take precedence, constitution.md `Constraints` appends with ", "
 
 If `spec_md_path` does not exist or is empty, halt with INVALID_CONTEXT.
 </step>
