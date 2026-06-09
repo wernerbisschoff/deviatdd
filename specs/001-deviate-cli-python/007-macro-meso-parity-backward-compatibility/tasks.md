@@ -143,7 +143,7 @@
 
 ### Tasks
 
-- [\] T007: Implement deviate run dispatcher with TDD/execute routing
+- [/] T007: Implement deviate run dispatcher with TDD/execute routing
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
