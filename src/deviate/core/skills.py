@@ -37,7 +37,10 @@ def resolve_skill(name: str, skills_root: Path | None = None) -> Path:
 def install_skill(name: str, target_dir: Path, skills_root: Path | None = None) -> bool:
     skill_path = resolve_skill(name, skills_root)
     target_path = target_dir / name / "SKILL.md"
-    target_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+    except (FileNotFoundError, FileExistsError):
+        target_path.parent.mkdir(parents=False, exist_ok=True)
     if target_path.exists() and target_path.read_text(
         encoding="utf-8"
     ) == skill_path.read_text(encoding="utf-8"):
