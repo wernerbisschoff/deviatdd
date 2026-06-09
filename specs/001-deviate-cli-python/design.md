@@ -10,7 +10,9 @@
 The `deviate` CLI will be structured as a core Typer application that delegates to strictly isolated sub-applications using `app.add_typer()`. This directly enforces the "Three-Layer Architecture" constraint by mapping each layer to a distinct module boundary:
 - `src/deviate/cli/macro.py`: Handles `/explore`, `/research`, `/prd`, `/shard` (and `/adhoc`).
 - `src/deviate/cli/meso.py`: Handles `/specify`, `/tasks`, and HITL Gate orchestration.
-- `src/deviate/cli/micro.py`: Handles the TDD sandbox (RED, GREEN, YELLOW, JUDGE, REFACTOR) with embedded Tamper Guard logic.
+- `src/deviate/cli/micro.py`: Handles the TDD sandbox (RED, GREEN, YELLOW, JUDGE, REFACTOR) with embedded Tamper Guard logic and automated `deviate micro` orchestration.
+- `src/deviate/core/agent.py`: Agent backend abstraction — invokes agent subprocesses (opencode, claude, droid, aider) via heredoc pipe or `--message` flag, parses YAML handover manifests from output, handles timeouts.
+- `src/deviate/prompts/auto/`: Slimmed prompt templates for automated pipelines — each template has a static KV-cacheable prefix (role, constraints, constitution/CLAUDE.md content) and a dynamic task-specific suffix.
 - `src/deviate/state/ledger.py`: Centralized, append-only JSONL writer enforcing the "Append-Only Ledger Protocol" for `issues.jsonl` and `tasks.jsonl`.
 - `src/deviate/core/git.py`: Isolated utility enforcing the "Git Isolation Principle" (branch/worktree creation and cleanup).
 
