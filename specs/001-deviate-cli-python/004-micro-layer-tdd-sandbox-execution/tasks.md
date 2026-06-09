@@ -64,7 +64,7 @@
 
 ### Tasks
 
-- [\] T004: RED and GREEN phase manual pre/post commands
+- [/] T004: RED and GREEN phase manual pre/post commands
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
