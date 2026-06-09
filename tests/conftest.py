@@ -32,4 +32,10 @@ def tmp_git_repo(tmp_path: Path) -> Path:
         env=_git_env(),
         check=True,
     )
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://example.com/repo.git"],
+        cwd=tmp_path,
+        env=_git_env(),
+        check=True,
+    )
     return tmp_path
