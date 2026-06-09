@@ -110,7 +110,7 @@ class TestSkillInstallation:
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0
             assert (tmp_path / ".deviate" / "session.json").exists()
-            gitignore = tmp_path / ".gitignore"
+            gitignore = tmp_path / ".deviate" / ".gitignore"
             assert gitignore.exists()
             content = gitignore.read_text(encoding="utf-8")
-            assert ".deviate/session.json" in content
+            assert "session.json" in content

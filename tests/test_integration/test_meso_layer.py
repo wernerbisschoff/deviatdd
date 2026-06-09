@@ -137,7 +137,7 @@ class TestSpecifyPost:
 
             spec_root = Path("specs")
             spec_root.mkdir(parents=True)
-            bucket_dir = spec_root / "test-specify"
+            bucket_dir = spec_root / "test-specify" / "iss-001"
             bucket_dir.mkdir(parents=True)
             (spec_root / "constitution.md").write_text("# Constitution\n")
 
