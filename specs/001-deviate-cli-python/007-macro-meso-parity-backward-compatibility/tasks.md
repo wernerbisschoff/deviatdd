@@ -50,7 +50,7 @@
 
 ### Tasks
 
-- [ ] T003: Implement full JSON contract emission for tasks pre and pr pre
+- [\] T003: Implement full JSON contract emission for tasks pre and pr pre
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
