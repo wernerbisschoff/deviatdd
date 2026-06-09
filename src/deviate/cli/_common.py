@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
+from deviate.core._shared import git_env as _git_env
 from deviate.core.constitution import resolve_constitution, validate_constitution
 from deviate.state.config import TransitionViolationError
 
@@ -40,3 +42,23 @@ def _load_manifest(path: Path, phase: str) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, FileNotFoundError) as e:
         _halt(phase, f"invalid manifest at {path} — {e}")
+
+
+def _run_pre_commit_hooks(worktree_path: Path | None = None) -> None:
+    """Ensure .githooks/ is configured as hooks path if the directory exists."""
+    repo = worktree_path or Path.cwd()
+    githooks_dir = repo / ".githooks"
+    if not githooks_dir.is_dir():
+        console.print("[dim]PRE_COMMIT_SKIP[/] no .githooks/ directory")
+        return
+    try:
+        subprocess.run(
+            ["git", "config", "core.hooksPath", str(githooks_dir)],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        console.print("[green]PRE_COMMIT_HOOKS[/] hooks path set to .githooks/")
+    except subprocess.CalledProcessError:
+        console.print("[yellow]PRE_COMMIT_WARN[/] could not set hooks path")
