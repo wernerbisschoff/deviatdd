@@ -9,6 +9,7 @@ aliases:
   - /x
 ---
 
+
 <system_instructions>
 
 ## [ROLE_DEFINITION]
@@ -36,6 +37,7 @@ This is a **DIRECT execution** skill for low-complexity tasks. Use it when:
 Do NOT use this skill for TDD work — use the TDD cycle skills (deviate-red, deviate-green, deviate-refactor) instead.
 
 </system_instructions>
+
 
 <execution_sequence>
 

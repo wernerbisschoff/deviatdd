@@ -10,6 +10,7 @@ aliases:
   - spec.constitution
 ---
 
+
 <system_instructions>
 
 This engine operates strictly as an isolated, context-bounded structural configuration and governance transpiler for software architecture specifications. Your objective is to initialize or update the `specs/constitution.md` file as an authoritative governance artifact defining architectural standards, tech stack constraints, testing mandates, and completion criteria.
@@ -45,29 +46,29 @@ Consult exclusively the following evidence files when deriving environment stand
 <output_payload>
 # Project Constitution
 
-[CONSTITUTION_VERSION]: 0.1.0
+**Version:** 0.1.0
 
 ---
 
-## [1_ARCHITECTURAL_PRINCIPLES]
+## Architectural Principles
 - Code must reflect strict domain-driven isolation.
 
-## [2_TECH_STACK_STANDARDS]
-### [2_1_BACKEND]
+## Tech Stack Standards
+### Backend
 - Go 1.21 / Gorilla Mux
-### [2_3_DATABASE]
+### Database
 - PostgreSQL
 
-## [3_TESTING_PROTOCOLS]
-### [3_1_FRAMEWORK]
+## Testing Protocols
+### Framework
 - `TEST_FRAMEWORK`: go test
 - `TEST_COMMAND`: go test ./...
 
-## [4_DEFINITION_OF_DONE]
+## Definition of Done
 - [ ] Code implemented
 - [ ] Tests passing
 
-## [5_VERSION_HISTORY]
+## Version History
 - 0.1.0 — Initial constitution generation
 </output_payload>
 </example>
@@ -79,45 +80,40 @@ The generated output file must match the structural alignment defined below:
 ```markdown
 # Project Constitution
 
-[CONSTITUTION_VERSION]: X.Y.Z
+**Version:** X.Y.Z
 
 ---
 
-## [1_ARCHITECTURAL_PRINCIPLES]
+## Architectural Principles
 - Immutable governance rules
 
-## [2_TECH_STACK_STANDARDS]
-### [2_1_BACKEND]
-### [2_2_FRONTEND]
-### [2_3_DATABASE]
-### [2_4_INFRASTRUCTURE]
-### [2_5_TOOLING]
+## Tech Stack Standards
+### Backend
+### Frontend
+### Database
+### Infrastructure
+### Tooling
 
-## [3_TESTING_PROTOCOLS]
-### [3_1_FRAMEWORK]
+## Testing Protocols
+### Framework
 - `TEST_FRAMEWORK`: <exunit|jest|pytest|...>
 - `TEST_ROOT`: <test|tests>
 - `TEST_EXT`: <_test.exs|.test.ts|...>
 - `TEST_COMMAND`: <mix test|pytest|...>
 - `LINT_COMMAND`: <mix credo|ruff check|...>
 
-### [3_2_COVERAGE]
+### Coverage
 - Coverage thresholds
 
-## [4_DEFINITION_OF_DONE]
+## Definition of Done
 - [ ] Code implemented
 - [ ] Tests passing
 - [ ] Coverage requirements met
 - [ ] Documentation updated
 - [ ] No governance violations
 
-## [5_VERSION_HISTORY]
+## Version History
 - X.Y.Z — Change description
-
-## [SEMANTIC_ANCHORS]
-- `CONSTITUTION_VERSION`
-- Section identifiers: `[1_ARCHITECTURAL_PRINCIPLES]`, `[2_TECH_STACK_STANDARDS]`, etc.
-- File paths, framework names, CLI commands
 ```
 </required_output_template>
 
