@@ -31,6 +31,7 @@ from deviate.core.worktree import (
     create_worktree,
     detect_remote,
     detect_worktree,
+    remove_worktree,
 )
 from deviate.state.config import SessionState, TransitionViolationError
 from deviate.state.ledger import (
@@ -39,7 +40,7 @@ from deviate.state.ledger import (
     append_issue_transition,
     append_task_record,
     resolve_issue_record,
-    select_next_unblocked_issue,
+    select_unblocked_candidates,
 )
 
 
@@ -279,42 +280,20 @@ def _emit_contract(
 # ---------------------------------------------------------------------------
 
 
-def _specify_pre(
-    issue_id: str | None = None,
+def _try_claim_issue(
+    issue: IssueRecord,
+    repo_root: Path,
+    ledger_path: Path,
+    remote: str | None = None,
     force: bool = False,
     dry_run: bool = False,
-) -> None:
-    dot_dir = _resolve_dot_deviate()
-    if not dot_dir.exists():
-        _handle_missing_dot_dir("SPECIFY")
-    session_path = dot_dir / "session.json"
-    session = SessionState.load(session_path)
-    repo_root = Path.cwd()
-    ledger_path = _resolve_specs_root() / "issues.jsonl"
+) -> dict | None:
+    """Attempt to claim a single issue end-to-end.
 
-    # ── Resolve issue ──────────────────────────────────────────────────
-    if issue_id is None:
-        issue = select_next_unblocked_issue(ledger_path)
-        if issue is None:
-            console.print(
-                "[red]NO_UNBLOCKED_BACKLOG[/] no unblocked BACKLOG issues found"
-            )
-            raise typer.Exit(code=1)
-        resolved_id: str = issue.issue_id
-        console.print(f"[green]SELECTED[/] {resolved_id} — {issue.title}")
-    else:
-        issue = resolve_issue_record(issue_id, ledger_path)
-        if issue is None:
-            console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
-            raise typer.Exit(code=1)
-        resolved_id = issue_id
-
-    # ── Reject if already completed ────────────────────────────────────
-    if _is_issue_completed(resolved_id, ledger_path):
-        console.print(f"[red]COMPLETED[/] issue {resolved_id} is already COMPLETED")
-        raise typer.Exit(code=1)
-
-    # ── Parse source_file → epic slug + issue slug ─────────────────────
+    Returns a metadata dict on success, ``None`` if the issue cannot be
+    claimed (branch on remote, worktree error, or push race).
+    """
+    resolved_id = issue.issue_id
     epic_slug = _resolve_bucket_dir(issue.source_file)
     issue_slug = _source_stem(issue.source_file)
     branch = f"feat/{epic_slug}/{issue_slug}"
@@ -324,30 +303,14 @@ def _specify_pre(
     console.print(f"[green]SLUG[/] {issue_slug}")
     console.print(f"[green]BRANCH[/] {branch}")
 
-    # ── Issue body ─────────────────────────────────────────────────────
-    issue_body = _read_issue_body(issue.source_file, repo_root)
-    body_len = len(issue_body)
-    console.print(f"[green]BODY[/] read {body_len} chars from {issue.source_file}")
-
-    # ── PRD traceability ───────────────────────────────────────────────
-    prd_path = repo_root / "specs" / epic_slug / "prd.md"
-    prd_reqs: list[str] = []
-    if prd_path.exists():
-        prd_text = prd_path.read_text(encoding="utf-8")
-        prd_reqs = sorted(set(re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
-        traceability_status, traceability_details = _validate_prd_traceability(
-            issue_body, prd_path
-        )
-    else:
-        traceability_status = "FAIL"
-        traceability_details = f"PRD not found at {prd_path}"
-
-    console.print(f"[green]TRACEABILITY[/] {traceability_status}")
-
-    # ── Constitution ───────────────────────────────────────────────────
-    constitution_path, constitution_test_command, constitution_lint_command = (
-        _resolve_constitution_commands(repo_root)
-    )
+    # ── Remote branch check (non-dry-run only) ──────────────────────────
+    if not dry_run and remote is not None:
+        if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
+            console.print(
+                f"[yellow]BRANCH_ON_REMOTE[/] {branch} — issue likely "
+                f"already claimed elsewhere"
+            )
+            return None
 
     # ── Dry-run / create worktree ──────────────────────────────────────
     worktree_path: str
@@ -355,31 +318,18 @@ def _specify_pre(
         console.print("[yellow]DRY_RUN[/] skipping worktree creation and claim")
         worktree_path = str(repo_root)
     else:
-        try:
-            remote = detect_remote(repo_root)
-        except RuntimeError:
-            console.print(
-                "[red]NO_REMOTE[/] no git remotes configured — cannot push claim"
-            )
-            raise typer.Exit(code=1)
-        # Check remote first
-        if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
-            console.print(
-                f"[red]BRANCH_EXISTS_REMOTE[/] {branch} already on {remote} — "
-                f"issue likely already claimed elsewhere"
-            )
-            raise typer.Exit(code=1)
-
         wt_path = repo_root / ".worktrees" / branch
         try:
             created = create_worktree(branch, wt_path, repo=repo_root)
             console.print(
-                f"[green]WORKTREE[/] {'detected at' if created != wt_path else 'created at'} {created}"
+                f"[green]WORKTREE[/] "
+                f"{'detected at' if created != wt_path else 'created at'} "
+                f"{created}"
             )
             worktree_path = str(created)
         except RuntimeError as e:
-            console.print(f"[red]WORKTREE_ERROR[/] {e}")
-            raise typer.Exit(code=1)
+            console.print(f"[yellow]WORKTREE_ERROR[/] {e}")
+            return None
 
         # ── Mise setup ─────────────────────────────────────────────────
         _setup_mise(Path(worktree_path))
@@ -440,10 +390,125 @@ def _specify_pre(
                     console.print("[yellow]PUSH_FAILED[/] continuing (--force)")
                 else:
                     console.print(
-                        "[red]PUSH_FAILED[/] push-to-claim failed. "
-                        "Retry with --force to bypass."
+                        f"[yellow]PUSH_FAILED[/] {branch} — race or remote error"
                     )
-                    raise typer.Exit(code=1)
+                    remove_worktree(branch, Path(worktree_path), repo=repo_root)
+                    return None
+
+    return {
+        "resolved_id": resolved_id,
+        "issue": issue,
+        "epic_slug": epic_slug,
+        "issue_slug": issue_slug,
+        "branch": branch,
+        "spec_target_rel": spec_target_rel,
+        "worktree_path": worktree_path,
+    }
+
+
+def _specify_pre(
+    issue_id: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+) -> None:
+    dot_dir = _resolve_dot_deviate()
+    if not dot_dir.exists():
+        _handle_missing_dot_dir("SPECIFY")
+    session_path = dot_dir / "session.json"
+    session = SessionState.load(session_path)
+    repo_root = Path.cwd()
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+
+    # ── Detect remote (non-dry-run only) ────────────────────────────────
+    remote: str | None = None
+    if not dry_run:
+        try:
+            remote = detect_remote(repo_root)
+        except RuntimeError:
+            console.print(
+                "[red]NO_REMOTE[/] no git remotes configured — cannot push claim"
+            )
+            raise typer.Exit(code=1)
+
+    # ── Resolve and claim ──────────────────────────────────────────────
+    claim_result: dict | None = None
+
+    if issue_id is not None:
+        # ── Explicit issue: single attempt, fail hard ──────────────────
+        issue = resolve_issue_record(issue_id, ledger_path)
+        if issue is None:
+            console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
+            raise typer.Exit(code=1)
+
+        if _is_issue_completed(issue_id, ledger_path):
+            console.print(f"[red]COMPLETED[/] issue {issue_id} is already COMPLETED")
+            raise typer.Exit(code=1)
+
+        console.print(f"[green]SELECTED[/] {issue_id} — {issue.title}")
+        claim_result = _try_claim_issue(
+            issue, repo_root, ledger_path, remote, force, dry_run
+        )
+        if claim_result is None:
+            console.print("[red]CLAIM_FAILED[/] could not claim specified issue")
+            raise typer.Exit(code=1)
+
+    else:
+        # ── Auto-select: try-claim loop ────────────────────────────────
+        candidates = select_unblocked_candidates(ledger_path)
+        if not candidates:
+            console.print(
+                "[red]NO_UNBLOCKED_BACKLOG[/] no unblocked BACKLOG issues found"
+            )
+            raise typer.Exit(code=1)
+
+        for candidate in candidates:
+            console.print(f"[blue]TRYING[/] {candidate.issue_id} — {candidate.title}")
+            claim_result = _try_claim_issue(
+                candidate, repo_root, ledger_path, remote, force, dry_run
+            )
+            if claim_result is not None:
+                break
+
+        if claim_result is None:
+            console.print(
+                "[red]ALL_CLAIMS_FAILED[/] could not claim any unblocked "
+                "issue — all branches already on remote or push failed"
+            )
+            raise typer.Exit(code=1)
+
+    # ── Extract claim result ───────────────────────────────────────────
+    resolved_id = claim_result["resolved_id"]
+    issue = claim_result["issue"]
+    epic_slug = claim_result["epic_slug"]
+    issue_slug = claim_result["issue_slug"]
+    branch = claim_result["branch"]
+    spec_target_rel = claim_result["spec_target_rel"]
+    worktree_path = claim_result["worktree_path"]
+
+    # ── Issue body ─────────────────────────────────────────────────────
+    issue_body = _read_issue_body(issue.source_file, repo_root)
+    body_len = len(issue_body)
+    console.print(f"[green]BODY[/] read {body_len} chars from {issue.source_file}")
+
+    # ── PRD traceability ───────────────────────────────────────────────
+    prd_path = repo_root / "specs" / epic_slug / "prd.md"
+    prd_reqs: list[str] = []
+    if prd_path.exists():
+        prd_text = prd_path.read_text(encoding="utf-8")
+        prd_reqs = sorted(set(re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
+        traceability_status, traceability_details = _validate_prd_traceability(
+            issue_body, prd_path
+        )
+    else:
+        traceability_status = "FAIL"
+        traceability_details = f"PRD not found at {prd_path}"
+
+    console.print(f"[green]TRACEABILITY[/] {traceability_status}")
+
+    # ── Constitution ───────────────────────────────────────────────────
+    constitution_path, constitution_test_command, constitution_lint_command = (
+        _resolve_constitution_commands(repo_root)
+    )
 
     # ── Resolve git branch name ────────────────────────────────────────
     git_branch = branch
