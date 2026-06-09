@@ -5,7 +5,7 @@
 
 ### Tasks
 
-- [\] T001: Prompt Resolution Core Module
+- [/] T001: Prompt Resolution Core Module
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
