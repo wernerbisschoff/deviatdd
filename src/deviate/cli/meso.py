@@ -100,7 +100,8 @@ def _find_spec_md(issue_id: str) -> Path | None:
     if record is None:
         return None
     bucket = _resolve_bucket_dir(record.source_file)
-    spec_path = _resolve_specs_root() / bucket / "spec.md"
+    slug = _source_stem(record.source_file)
+    spec_path = _resolve_specs_root() / bucket / slug / "spec.md"
     if spec_path.exists():
         return spec_path
     return None
@@ -452,6 +453,11 @@ def _specify_pre(
     session = session.force_transition_to("SPECIFY")
     session.active_issue_id = resolved_id
     session.save(session_path)
+    if not dry_run:
+        wt_dot_dir = Path(worktree_path) / ".deviate"
+        wt_dot_dir.mkdir(parents=True, exist_ok=True)
+        session.save(wt_dot_dir / "session.json")
+        console.print(f"[green]SESSION_SYNC[/] session written to {wt_dot_dir}")
     console.print(
         f"[green]SPECIFY_PRE[/] session advanced to SPECIFY with {resolved_id}"
     )
