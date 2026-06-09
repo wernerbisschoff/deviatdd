@@ -23,7 +23,7 @@
     - **Edge Cases**: Handle `FileNotFoundError` when agent command is not on PATH (surface `AgentBinaryNotFoundError`). Handle empty stdout (raise `EmptyOutputError`). Handle YAML with missing required keys (raise `MalformedHandoverManifestError` with key list).
     - **Acceptance**: `AgentBackend` can invoke opencode, claude, and droid via heredoc. Timeout applies per backend. YAML manifest is parsed into typed model. Yellow handover trigger is detected. All scenarios from US-004-1 and US-004-10 pass.
 
-- [ ] T002: Tamper Guard — git diff evaluation and git restore rollback
+- [\] T002: Tamper Guard — git diff evaluation and git restore rollback
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
