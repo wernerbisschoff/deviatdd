@@ -37,7 +37,7 @@
     - **Edge Cases**: Handle unreadable override files by logging and falling through to package default. Handle empty `variables` dict in `interpolate()` (return template unchanged). Handle `overrides_root` that doesn't exist.
     - **Acceptance**: All 9 test cases pass. `mise run check` passes. No `Path.cwd()` references — all paths accept optional `repo_path` or `overrides_root` parameters for test isolation.
 
-- [ ] T002: Auto Prompt Template Files
+- [x] T002: Auto Prompt Template Files
   - **Type**: Config
   - **Mode**: IMMEDIATE
   - **Verification**: `ls src/deviate/prompts/auto/ | wc -l` (expect 11 files) && `ls src/deviate/prompts/commands/ | wc -l` (expect 18 files) && `pytest tests/test_core/test_prompts.py -v`

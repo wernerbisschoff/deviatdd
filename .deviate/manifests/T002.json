@@ -1,0 +1,55 @@
+{
+  "task_id": "T002",
+  "files_modified": [
+    {"path": "src/deviate/prompts/auto/__init__.py", "action": "created", "purpose": "Package marker for importlib.resources"},
+    {"path": "src/deviate/prompts/auto/explore.md", "action": "created", "purpose": "DeviaTDD phase prompt for /explore"},
+    {"path": "src/deviate/prompts/auto/research.md", "action": "created", "purpose": "DeviaTDD phase prompt for /research"},
+    {"path": "src/deviate/prompts/auto/prd.md", "action": "created", "purpose": "DeviaTDD phase prompt for /prd"},
+    {"path": "src/deviate/prompts/auto/shard.md", "action": "created", "purpose": "DeviaTDD phase prompt for /shard"},
+    {"path": "src/deviate/prompts/auto/specify.md", "action": "created", "purpose": "DeviaTDD phase prompt for /specify"},
+    {"path": "src/deviate/prompts/auto/tasks.md", "action": "created", "purpose": "DeviaTDD phase prompt for /tasks"},
+    {"path": "src/deviate/prompts/auto/red.md", "action": "created", "purpose": "DeviaTDD phase prompt for RED phase"},
+    {"path": "src/deviate/prompts/auto/green.md", "action": "created", "purpose": "DeviaTDD phase prompt for GREEN phase"},
+    {"path": "src/deviate/prompts/auto/refactor.md", "action": "created", "purpose": "DeviaTDD phase prompt for REFACTOR phase"},
+    {"path": "src/deviate/prompts/auto/judge.md", "action": "created", "purpose": "DeviaTDD phase prompt for JUDGE phase"},
+    {"path": "src/deviate/prompts/auto/yellow.md", "action": "created", "purpose": "DeviaTDD phase prompt for YELLOW phase"},
+    {"path": "src/deviate/prompts/commands/__init__.py", "action": "created", "purpose": "Package marker for importlib.resources"},
+    {"path": "src/deviate/prompts/commands/deviate-adhoc.md", "action": "created", "purpose": "Custom command template for deviate-adhoc"},
+    {"path": "src/deviate/prompts/commands/deviate-constitution.md", "action": "created", "purpose": "Custom command template for deviate-constitution"},
+    {"path": "src/deviate/prompts/commands/deviate-context.md", "action": "created", "purpose": "Custom command template for deviate-context"},
+    {"path": "src/deviate/prompts/commands/deviate-e2e.md", "action": "created", "purpose": "Custom command template for deviate-e2e"},
+    {"path": "src/deviate/prompts/commands/deviate-execute.md", "action": "created", "purpose": "Custom command template for deviate-execute"},
+    {"path": "src/deviate/prompts/commands/deviate-explore.md", "action": "created", "purpose": "Custom command template for deviate-explore"},
+    {"path": "src/deviate/prompts/commands/deviate-green.md", "action": "created", "purpose": "Custom command template for deviate-green"},
+    {"path": "src/deviate/prompts/commands/deviate-hotfix.md", "action": "created", "purpose": "Custom command template for deviate-hotfix"},
+    {"path": "src/deviate/prompts/commands/deviate-pr.md", "action": "created", "purpose": "Custom command template for deviate-pr"},
+    {"path": "src/deviate/prompts/commands/deviate-prd.md", "action": "created", "purpose": "Custom command template for deviate-prd"},
+    {"path": "src/deviate/prompts/commands/deviate-prune.md", "action": "created", "purpose": "Custom command template for deviate-prune"},
+    {"path": "src/deviate/prompts/commands/deviate-red.md", "action": "created", "purpose": "Custom command template for deviate-red"},
+    {"path": "src/deviate/prompts/commands/deviate-refactor.md", "action": "created", "purpose": "Custom command template for deviate-refactor"},
+    {"path": "src/deviate/prompts/commands/deviate-research.md", "action": "created", "purpose": "Custom command template for deviate-research"},
+    {"path": "src/deviate/prompts/commands/deviate-shard.md", "action": "created", "purpose": "Custom command template for deviate-shard"},
+    {"path": "src/deviate/prompts/commands/deviate-specify.md", "action": "created", "purpose": "Custom command template for deviate-specify"},
+    {"path": "src/deviate/prompts/commands/deviate-tasks.md", "action": "created", "purpose": "Custom command template for deviate-tasks"},
+    {"path": "src/deviate/prompts/commands/deviate-triage.md", "action": "created", "purpose": "Custom command template for deviate-triage"},
+    {"path": "src/deviate/prompts/skills", "action": "deleted", "purpose": "Replaced by flat commands/ directory structure"}
+  ],
+  "commit_subject": "feat(T002): create auto/ and commands/ prompt template files, delete skills/",
+  "commit_body": "Add 11 auto/ phase prompt templates and 18 commands/ custom command templates,\ndelete the nested skills/ SKILL.md directory structure, add __init__.py markers\nfor importlib.resources discovery.\n\nAcceptance: 11 .md auto/ files, 18 .md commands/ files, no skills/ dir,\nimportlib.resources.files('deviate.prompts').joinpath('commands') resolves correctly.",
+  "validation": {
+    "lint": "SKIP",
+    "typecheck": "SKIP",
+    "tests": "PASS",
+    "command": "ls src/deviate/prompts/auto/*.md | wc -l && ls src/deviate/prompts/commands/*.md | wc -l && pytest tests/test_core/test_prompts.py -v",
+    "summary": "11 auto/ .md files, 18 commands/ .md files, skills/ deleted, 9/9 tests pass"
+  },
+  "reasoning": {
+    "approach": "Create 11 auto/ phase prompt templates and 18 commands/ custom command templates from existing SKILL.md content, delete nested skills/ directory",
+    "key_decisions": [
+      {"decision": "commands/ templates adapted from SKILL.md frontmatter + body", "rationale": "Preserve semantic content while flattening directory structure per spec requirement"},
+      {"decision": "Auto/ templates use consistent ## [ROLE]/## [GOVERNANCE]/## [AGENT_RULES]/## [TASK]/## [CONSTRAINTS]/## [OUTPUT] structure", "rationale": "Consistent header format enables model-based prefix caching across all auto/ files"},
+      {"decision": "Each template includes at least 3 ${PLACEHOLDER} variables", "rationale": "Required for interpolate() function in prompts.py to produce dynamic prompts"},
+      {"decision": "__init__.py added to auto/ and commands/", "rationale": "Required by importlib.resources.files() for package discovery"}
+    ]
+  }
+}
