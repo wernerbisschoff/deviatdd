@@ -9,8 +9,6 @@ aliases:
   - /hotfix
 ---
 
-**IMPORTANT**: The script `deviate-hotfix.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate hotfix`.
-
 <system_instructions>
 
 ## [ROLE_DEFINITION]

@@ -11,8 +11,6 @@ aliases:
   - /ctx
 ---
 
-**IMPORTANT**: The script `deviate-context.sh` lives in this skill's directory (alongside `SKILL.md`) and is NOT on `PATH`. Always invoke it as `deviate context`.
-
 <system_instructions>
 
 This engine operates strictly as an isolated operational runtime for multi-lingual and mono-repo software configuration mapping, context synchronization, and automated workspace orchestration.
@@ -89,11 +87,6 @@ DETAILS: <target_file_name>
 ```
 
 </output_format_schemas>
-
-<prerequisites>
-<required_scripts_path>The script is colocated with SKILL.md inside the skill directory, NOT on $PATH. Always reference it as deviate context.</required_scripts_path>
-<failure_mode>ERROR: Operational orchestrator not found at deviate context. Terminate execution immediately.</failure_mode>
-</prerequisites>
 
 <execution_sequence>
 
