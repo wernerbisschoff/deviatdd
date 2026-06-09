@@ -321,7 +321,16 @@ def prd_pre() -> None:
 
     session, session_path = _load_and_transition("PRD")
 
-    _emit_contract("PRD", session, session_path, epic_slug=epic_slug)
+    _emit_contract(
+        "PRD",
+        session,
+        session_path,
+        epic_slug=epic_slug,
+        feature_bucket=epic_slug,
+        design_path=str(specs_root / epic_slug / "design.md"),
+        data_model_path=str(specs_root / epic_slug / "data-model.md"),
+        issue_id=session.active_issue_id or "",
+    )
 
 
 @prd_app.command("post")
@@ -400,6 +409,10 @@ def shard_pre() -> None:
 
     session, session_path = _load_and_transition("SHARD")
 
+    epic_path = specs_root / epic_slug
+    issues_dir = epic_path / "issues"
+    shard_count = len(list(issues_dir.glob("*.md"))) if issues_dir.exists() else 0
+
     _emit_contract(
         "SHARD",
         session,
@@ -407,6 +420,11 @@ def shard_pre() -> None:
         epic_slug=epic_slug,
         prd_path=str(prd_path),
         next_issue_id=next_issue_id,
+        issues_dir=str(issues_dir),
+        plan_target=str(epic_path / "tasks.md"),
+        dry_run=False,
+        issue_id=session.active_issue_id or "",
+        shard_count=shard_count,
     )
 
 
