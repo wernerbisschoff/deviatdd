@@ -24,11 +24,36 @@ def find_worktree_for_branch(branch: str, repo: Path | None = None) -> Path | No
     return None
 
 
-def branch_exists_on_remote(branch: str, repo: Path | None = None) -> bool:
-    """Check if a branch exists on the remote origin."""
+def detect_remote(repo: Path | None = None) -> str:
+    """Return the default git remote name, preferring ``origin``."""
     repo = repo or Path.cwd()
     result = subprocess.run(
-        ["git", "ls-remote", "--heads", "origin", branch],
+        ["git", "remote"],
+        cwd=repo,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    remotes = result.stdout.strip().splitlines()
+    if not remotes:
+        msg = "no git remotes configured"
+        raise RuntimeError(msg)
+    return "origin" if "origin" in remotes else remotes[0]
+
+
+def branch_exists_on_remote(
+    branch: str, repo: Path | None = None, remote: str | None = None
+) -> bool:
+    """Check if a branch exists on the remote (auto-detected by default).
+
+    Returns ``False`` if the remote is unreachable (network error) —
+    the caller's ``detect_remote`` already validated the remote exists.
+    """
+    repo = repo or Path.cwd()
+    remote = remote or detect_remote(repo)
+    result = subprocess.run(
+        ["git", "ls-remote", "--heads", remote, branch],
         cwd=repo,
         env=_git_env(),
         capture_output=True,

@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 import typer
 
 from deviate.cli._common import (
+    _extract_epic_num,
+    _extract_issue_num,
     _handle_missing_dot_dir,
     _handle_transition_error,
     _run_pre_commit_hooks,
@@ -27,6 +29,7 @@ from deviate.core.validation import (
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
+    detect_remote,
     detect_worktree,
 )
 from deviate.state.config import SessionState, TransitionViolationError
@@ -352,10 +355,17 @@ def _specify_pre(
         console.print("[yellow]DRY_RUN[/] skipping worktree creation and claim")
         worktree_path = str(repo_root)
     else:
-        # Check remote first
-        if branch_exists_on_remote(branch, repo=repo_root):
+        try:
+            remote = detect_remote(repo_root)
+        except RuntimeError:
             console.print(
-                f"[red]BRANCH_EXISTS_REMOTE[/] {branch} already on origin — "
+                "[red]NO_REMOTE[/] no git remotes configured — cannot push claim"
+            )
+            raise typer.Exit(code=1)
+        # Check remote first
+        if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
+            console.print(
+                f"[red]BRANCH_EXISTS_REMOTE[/] {branch} already on {remote} — "
                 f"issue likely already claimed elsewhere"
             )
             raise typer.Exit(code=1)
@@ -398,13 +408,15 @@ def _specify_pre(
                     check=True,
                     capture_output=True,
                 )
+                epic_num = _extract_epic_num(epic_slug)
+                issue_num = _extract_issue_num(resolved_id)
                 subprocess.run(
                     [
                         "git",
                         "commit",
                         "--no-verify",
                         "-m",
-                        f"chore: claim {resolved_id}",
+                        f"chore({epic_num}-{issue_num}): claim {resolved_id}",
                     ],
                     cwd=worktree_path,
                     env=_git_env(),
@@ -416,13 +428,13 @@ def _specify_pre(
 
             try:
                 subprocess.run(
-                    ["git", "push", "-u", "origin", branch],
+                    ["git", "push", "-u", remote, branch],
                     cwd=worktree_path,
                     env=_git_env(),
                     check=True,
                     capture_output=True,
                 )
-                console.print(f"[green]PUSHED[/] {branch} pushed to origin")
+                console.print(f"[green]PUSHED[/] {branch} pushed to {remote}")
             except subprocess.CalledProcessError:
                 if force:
                     console.print("[yellow]PUSH_FAILED[/] continuing (--force)")
@@ -509,9 +521,12 @@ def _specify_post(force: bool = False) -> None:
             for err in errors:
                 console.print(f"[red]GHERKIN_ERROR[/] {err}")
             raise typer.Exit(code=1)
+    epic_slug = spec_path.parent.parent.name
+    epic_num = _extract_epic_num(epic_slug)
+    issue_num = _extract_issue_num(issue_id)
     try:
         sha = commit_artifact(
-            spec_path, f"SPECIFY: spec.md for {issue_id}", repo=Path.cwd()
+            spec_path, f"docs({epic_num}-{issue_num}): create spec.md", repo=Path.cwd()
         )
         console.print(f"[green]COMMITTED[/] spec.md at {sha[:8]}")
     except Exception as e:
@@ -651,9 +666,11 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
 
     _run_pre_commit_hooks()
 
+    epic_num = _extract_epic_num(bucket)
+    issue_num = _extract_issue_num(resolved_issue_id)
     try:
         sha = commit_artifact(
-            tasks_md, f"TASKS: tasks.md for {issue_id}", repo=Path.cwd()
+            tasks_md, f"docs({epic_num}-{issue_num}): create tasks.md", repo=Path.cwd()
         )
         console.print(f"[green]COMMITTED[/] tasks.md at {sha[:8]}")
     except Exception as e:

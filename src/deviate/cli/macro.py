@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from deviate.cli._common import (
+    _extract_epic_num,
     _halt,
     _handle_missing_dot_dir,
     _handle_transition_error,
@@ -262,8 +263,9 @@ def explore_post() -> None:
 
     _run_pre_commit_hooks()
 
+    epic_num = _extract_epic_num(explore_path.parent.name)
     commit_artifact(
-        explore_path, f"EXPLORE: {explore_path.parent.name}", repo=Path.cwd()
+        explore_path, f"docs({epic_num}): create explore.md", repo=Path.cwd()
     )
     console.print(f"[green]COMMITTED[/] {explore_path}")
 
@@ -355,7 +357,8 @@ def research_post() -> None:
                 "RESEARCH", f"{artifact} missing sections: {', '.join(result.errors)}"
             )
         _run_pre_commit_hooks()
-        commit_artifact(path, f"RESEARCH: {artifact} for {epic_slug}", repo=Path.cwd())
+        epic_num = _extract_epic_num(epic_slug)
+        commit_artifact(path, f"docs({epic_num}): create {artifact}", repo=Path.cwd())
         console.print(f"[green]COMMITTED[/] {path}")
 
     _save_session(session, session_path, "RESEARCH")
@@ -438,7 +441,10 @@ def prd_post(
     _run_pre_commit_hooks()
 
     try:
-        sha = commit_artifact(prd_path, f"PRD: {epic_slug}", repo=Path.cwd())
+        epic_num = _extract_epic_num(epic_slug)
+        sha = commit_artifact(
+            prd_path, f"docs({epic_num}): create prd.md", repo=Path.cwd()
+        )
         console.print(f"[green]COMMITTED[/] prd.md at {sha[:8]}")
     except Exception as e:
         _halt("PRD", f"commit failed - {e}")

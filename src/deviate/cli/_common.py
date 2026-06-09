@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -12,6 +13,24 @@ from deviate.core.constitution import resolve_constitution, validate_constitutio
 from deviate.state.config import TransitionViolationError
 
 console = Console()
+
+
+def _extract_epic_num(slug: str) -> str:
+    """Extract the leading numeric prefix from an epic slug.
+
+    ``001-deviate-cli-bootstrapping`` → ``001``
+    """
+    m = re.match(r"(\d+)", slug)
+    return m.group(1) if m else slug
+
+
+def _extract_issue_num(issue_id: str) -> str:
+    """Extract the numeric suffix from an issue ID.
+
+    ``ISS-006`` → ``006``, ``TSK-042`` → ``042``
+    """
+    m = re.search(r"-(\d+)$", issue_id)
+    return m.group(1) if m else issue_id
 
 
 def _halt(phase: str, message: str) -> None:
