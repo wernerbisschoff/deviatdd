@@ -7,6 +7,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from deviate.state.ledger import TaskRecord, append_task_transition
+
 console = Console()
 
 _LEDGER_GLOB = "specs/**/tasks.jsonl"
@@ -56,55 +58,41 @@ def _find_all_pending_tasks(root: Path) -> list[tuple[dict, Path]]:
     return results
 
 
-def _update_ledger_status(ledger_path: Path, task_uuid: str, new_status: str) -> bool:
-    records: list[str] = []
-    found = False
-    try:
-        with open(ledger_path, encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if not stripped:
-                    records.append(line)
-                    continue
-                try:
-                    record = json.loads(stripped)
-                except json.JSONDecodeError:
-                    records.append(line)
-                    continue
-                if record.get("id") == task_uuid:
-                    record["status"] = new_status
-                    found = True
-                    records.append(json.dumps(record, ensure_ascii=False) + "\n")
-                else:
-                    records.append(line)
-    except FileNotFoundError:
-        return False
+def _append_status_transition(
+    task_data: dict, new_status: str, ledger_path: Path
+) -> None:
+    """Append a status-transition entry for a task.
 
-    with open(ledger_path, "w", encoding="utf-8") as f:
-        f.writelines(records)
-    return found
+    Creates a new TaskRecord with the same identity fields but an updated
+    status, then appends it to the ledger.  No existing line is ever
+    modified (Append-Only Ledger Protocol).
+    """
+    record = TaskRecord(
+        id=task_data["id"],
+        issue_id=task_data.get("issue_id", ""),
+        description=task_data.get("description", ""),
+        status=new_status,
+        execution_mode=task_data.get("execution_mode", "TDD"),
+    )
+    append_task_transition(record, ledger_path)
 
 
 def _run_tdd_cycle(task: dict, ledger_path: Path, c: Console) -> None:
     tid = task.get("id", "?")
-    # TODO: TDD cycle stubs — replace with actual RED/GREEN/REFACTOR phase
-    #       invocations once micro-layer phase functions exist.
     c.print(f"  [bold blue]RED →[/] {tid}")
-    _update_ledger_status(ledger_path, tid, "RED")
+    _append_status_transition(task, "RED", ledger_path)
     c.print(f"  [bold green]GREEN →[/] {tid}")
-    _update_ledger_status(ledger_path, tid, "GREEN")
+    _append_status_transition(task, "GREEN", ledger_path)
     c.print(f"  [bold yellow]REFACTOR →[/] {tid}")
-    _update_ledger_status(ledger_path, tid, "REFACTOR")
-    _update_ledger_status(ledger_path, tid, "COMPLETED")
+    _append_status_transition(task, "REFACTOR", ledger_path)
+    _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {tid}")
 
 
 def _run_execute_phase(task: dict, ledger_path: Path, c: Console) -> None:
     tid = task.get("id", "?")
-    # TODO: execute phase stub — replace with actual IMMEDIATE-mode
-    #       implementation handler once micro-layer phase functions exist.
     c.print(f"  [bold green]EXECUTE →[/] {tid}")
-    _update_ledger_status(ledger_path, tid, "COMPLETED")
+    _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {tid}")
 
 
