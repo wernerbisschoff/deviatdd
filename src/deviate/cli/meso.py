@@ -604,10 +604,9 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
 
     import re as _re
 
-    task_id_pattern = _re.findall(r"(?m)^- \[[ x]\]\s+(\S+)", content)
+    task_id_pattern = _re.findall(r"(?m)^- \[[ x]\]\s+(\w+)", content)
     for tid in task_id_pattern:
-        tid_clean = tid.rstrip(":")
-        if not validate_task_id(tid_clean):
+        if not validate_task_id(tid):
             console.print(f"[red]INVALID_TASK_ID[/] {tid}")
             raise typer.Exit(code=1)
 

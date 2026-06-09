@@ -73,6 +73,18 @@ def _save_session(session: SessionState, session_path: Path, phase: str) -> None
     console.print(f"[green]{phase}[/] session advanced to {phase} phase")
 
 
+def _load_session_for_phase(
+    phase: str, dry_run: bool = False
+) -> tuple[SessionState, Path]:
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping phase transition")
+        dot_dir = Path(".deviate")
+        session_path = dot_dir / "session.json"
+        session = SessionState.load(session_path)
+        return session, session_path
+    return _load_and_transition(phase)
+
+
 def _resolve_specs_root() -> Path:
     return Path("specs")
 
@@ -345,13 +357,7 @@ def prd_pre(
         paths = "\n  - ".join(str(specs_root / epic_slug / a) for a in missing)
         _halt("PRD", f"missing upstream artifacts\n  - {paths}")
 
-    if dry_run:
-        console.print("[yellow]DRY_RUN[/] skipping phase transition")
-        dot_dir = Path(".deviate")
-        session_path = dot_dir / "session.json"
-        session = SessionState.load(session_path)
-    else:
-        session, session_path = _load_and_transition("PRD")
+    session, session_path = _load_session_for_phase("PRD", dry_run=dry_run)
 
     _emit_contract(
         "PRD",
@@ -436,13 +442,7 @@ def shard_pre(
 
     next_issue_id = _compute_next_issue_id(ledger_path)
 
-    if dry_run:
-        console.print("[yellow]DRY_RUN[/] skipping phase transition")
-        dot_dir = Path(".deviate")
-        session_path = dot_dir / "session.json"
-        session = SessionState.load(session_path)
-    else:
-        session, session_path = _load_and_transition("SHARD")
+    session, session_path = _load_session_for_phase("SHARD", dry_run=dry_run)
 
     epic_path = specs_root / epic_slug
     issues_dir = epic_path / "issues"

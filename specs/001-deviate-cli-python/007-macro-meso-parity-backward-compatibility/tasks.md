@@ -96,7 +96,7 @@
 
 ### Tasks
 
-- [/] T005: Add dry-run flag to remaining commands and issue-id to tasks post
+- [x] T005: Add dry-run flag to remaining commands and issue-id to tasks post
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
