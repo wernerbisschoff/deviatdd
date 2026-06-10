@@ -103,7 +103,7 @@ As a developer writing code, I need the deviate CLI to execute the full micro-la
 - Macro-layer orchestration (feature scoping, `/explore`, `/research`, `/prd`, `/shard`) — covered by `ISS-005`, `ISS-008`.
 - Meso-layer orchestration (issue engineering, `/specify`, `/tasks`) — covered by `ISS-005`, `ISS-008`.
 - Core module implementations (repo, ledger, contract, commit, constitution, epic, validation, worktree, issues, prd, skills) — covered by `ISS-005`.
-- Aider integration — covered by `ISS-009`.
+- Aider integration — covered by `ISS-010`.
 - Direct modification of `tests/`, `specs/`, or configuration files by agent sandbox (strictly read-only outside of RED test creation and GREEN+ YELLOW-approved amendments, enforced by Tamper Guard).
 - Web or GUI frontend — CLI-only application.
 

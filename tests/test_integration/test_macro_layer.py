@@ -167,7 +167,7 @@ class TestShardPost:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
                 {
-                    "issue_id": "ISS-011",
+                    "issue_id": "ISS-009",
                     "type": "feature",
                     "title": "Sharded issue 2",
                     "status": "DRAFT",

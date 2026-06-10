@@ -95,7 +95,7 @@ These are read once per `deviate micro` invocation (not per phase — they are s
 - **Agent backend abstraction** (`src/deviate/core/agent.py`):
   - Subprocess invocation via heredoc pipe: `echo "$PROMPT" | <agent_cmd>`
   - Supported backends: `opencode run`, `claude -p`, `droid exec`
-  - Aider is NOT included (covered by ISS-009)
+  - Aider is NOT included (covered by ISS-010)
   - Configurable via `.deviate/config.toml` `[agent]` section
   - Timeout per phase in seconds
   - Capture stdout, parse YAML handover manifest from agent output
@@ -147,7 +147,7 @@ These are read once per `deviate micro` invocation (not per phase — they are s
 
 - Macro or Meso layer orchestration (covered by ISS-005, ISS-008).
 - Core module implementations (repo, ledger, contract, commit, constitution, epic, validation, worktree, issues, prd, skills — covered by ISS-005).
-- Aider integration (covered by ISS-009).
+- Aider integration (covered by ISS-010).
 - Direct modification of `tests/`, `specs/`, or configuration files by the agent sandbox (strictly read-only outside of expected RED test creation and GREEN YELLOW-approved amendments, enforced by Tamper Guard).
 
 ## [AGENT_BACKEND_SPECIFICATION]
