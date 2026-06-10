@@ -45,18 +45,32 @@ def _write_if_missing(path: Path, content: str) -> bool:
     return True
 
 
+def _serialize_value(key: str, value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return f"{key} = {'true' if value else 'false'}"
+    if isinstance(value, (int, float)):
+        return f"{key} = {value}"
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'{key} = "{escaped}"'
+
+
 def _dict_to_toml(data: dict) -> str:
     lines: list[str] = []
     for key, value in data.items():
         if value is None:
             continue
-        if isinstance(value, bool):
-            lines.append(f"{key} = {'true' if value else 'false'}")
-        elif isinstance(value, (int, float)):
-            lines.append(f"{key} = {value}")
+        if isinstance(value, dict):
+            lines.append(f"\n[{key}]")
+            for k, v in value.items():
+                line = _serialize_value(k, v)
+                if line:
+                    lines.append(line)
         else:
-            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
-            lines.append(f'{key} = "{escaped}"')
+            line = _serialize_value(key, value)
+            if line:
+                lines.append(line)
     lines.append("")
     toml_str = "\n".join(lines)
     try:

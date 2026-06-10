@@ -140,6 +140,7 @@ def _run_red_phase(
     session: SessionState,
     session_path: Path,
     c: Console,
+    agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold blue]RED →[/] {tid}")
@@ -155,6 +156,7 @@ def _run_green_phase(
     session: SessionState,
     session_path: Path,
     c: Console,
+    agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold green]GREEN →[/] {tid}")
@@ -170,7 +172,34 @@ def _run_judge_phase(
     session: SessionState,
     session_path: Path,
     c: Console,
+    agent: str | None = None,
 ) -> SessionState:
+    tid = task.get("id", "?")
+    c.print(f"  [bold magenta]JUDGE →[/] {tid}")
+
+    root = Path.cwd()
+    changed = _detect_phase_changes(root)
+    protected = _find_protected_modules(root)
+
+    violations: list[str] = []
+    for changed_file in changed:
+        changed_normalized = changed_file.rstrip("/")
+        for protected_path in protected:
+            if changed_normalized == protected_path or protected_path.startswith(
+                changed_normalized + "/"
+            ):
+                violations.append(
+                    f"{changed_file} conflicts with protected module {protected_path}"
+                )
+
+    if violations:
+        detail = "; ".join(violations)
+        c.print(f"  [red]COMPLIANCE_VIOLATION[/] {detail}")
+    else:
+        c.print("  [green]compliance pass[/]")
+
+    session = session.force_transition_to("JUDGE")
+    session.save(session_path)
     return session
 
 
@@ -180,6 +209,7 @@ def _run_refactor_phase(
     session: SessionState,
     session_path: Path,
     c: Console,
+    agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold yellow]REFACTOR →[/] {tid}")
@@ -215,7 +245,9 @@ def _run_tdd_cycle(
             continue
         if phase == "REFACTOR" and no_refactor:
             continue
-        session = _PHASE_MAP[phase](task, ledger_path, session, session_path, c)
+        session = _PHASE_MAP[phase](
+            task, ledger_path, session, session_path, c, agent=agent
+        )
 
     _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {task.get('id', '?')}")
@@ -590,6 +622,12 @@ def yellow_post(
     approved: bool = typer.Option(False, "--approved", help="Approve amendments"),
     rejected: bool = typer.Option(False, "--rejected", help="Reject amendments"),
 ) -> None:
+    if approved and rejected:
+        console.print(
+            "[red]MUTUALLY_EXCLUSIVE[/] --approved and --rejected cannot both be set"
+        )
+        raise typer.Exit(code=1)
+
     root = Path.cwd()
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
@@ -755,26 +793,15 @@ def _is_return_type_mismatch(
             return not isinstance(value.value, type_map[expected])
         return True
 
-    if expected == "str" and isinstance(value, ast.JoinedStr):
+    expected_nodes = _RETURN_TYPE_MAP.get(expected, ())
+    if not expected_nodes:
         return False
-    if expected == "list" and isinstance(value, ast.List):
-        return False
-    if expected == "dict" and isinstance(value, ast.Dict):
-        return False
-    if expected == "tuple" and isinstance(value, ast.Tuple):
-        return False
-    if expected == "set" and isinstance(value, ast.Set):
-        return False
-    return False
+    return not isinstance(value, expected_nodes)
 
 
 @refactor_app.command(name="post")
 def refactor_post() -> None:
     root = Path.cwd()
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
-    SessionState.load(session_path)
-
     test_files = _find_test_files(root)
 
     if not test_files:
