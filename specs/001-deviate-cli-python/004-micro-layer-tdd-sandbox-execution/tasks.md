@@ -83,7 +83,7 @@
     - **Edge Cases**: Handle no PENDING tasks (print `NO_PENDING_TASKS`, exit 1). Handle missing test file after RED agent (print `TEST_NOT_FOUND`). Handle `test_command` as list of files (run all, assert any fail). Handle empty RED task (no failing test committed) in GREEN pre. Handle post-commit hook failure gracefully.
     - **Acceptance**: `deviate red pre/post` completes full RED cycle: task transitions from PENDING to RED, failing test committed, passing/syntax-error tests rejected. `deviate green pre/post` completes full GREEN cycle: task transitions from RED to GREEN, passing implementation committed, Tamper Guard active, YELLOW trigger detectable. All scenarios from US-004-3 and US-004-4 pass.
 
-- [\] T005: YELLOW, JUDGE, and REFACTOR phase manual pre/post commands
+- [/] T005: YELLOW, JUDGE, and REFACTOR phase manual pre/post commands
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
