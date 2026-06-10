@@ -26,6 +26,8 @@ _VALID_PHASES = frozenset(
         "TASKS",
         "RED",
         "GREEN",
+        "YELLOW",
+        "JUDGE",
         "REFACTOR",
         "E2E",
     }

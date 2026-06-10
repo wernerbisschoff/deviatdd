@@ -10,7 +10,14 @@ from rich.console import Console
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.cli.macro import explore_app, research_app, prd_app, shard_app
 from deviate.cli.meso import pr, specify, tasks
-from deviate.cli.micro import green_app, red_app, run_command
+from deviate.cli.micro import (
+    green_app,
+    judge_app,
+    red_app,
+    refactor_app,
+    run_command,
+    yellow_app,
+)
 from deviate.core.skills import detect_agents, discover_skills, install_skill
 
 cli = typer.Typer(no_args_is_help=True)
@@ -256,4 +263,7 @@ cli.command(name="tasks")(tasks)
 cli.command(name="pr")(pr)
 cli.add_typer(red_app, name="red")
 cli.add_typer(green_app, name="green")
+cli.add_typer(yellow_app, name="yellow")
+cli.add_typer(judge_app, name="judge")
+cli.add_typer(refactor_app, name="refactor")
 cli.command(name="run")(run_command)

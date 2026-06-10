@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -11,6 +12,7 @@ import typer
 from rich.console import Console
 
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
+from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
 
 console = Console()
@@ -18,6 +20,9 @@ console = Console()
 # Typer apps for manual phase commands
 red_app = typer.Typer(no_args_is_help=True)
 green_app = typer.Typer(no_args_is_help=True)
+yellow_app = typer.Typer(no_args_is_help=True)
+judge_app = typer.Typer(no_args_is_help=True)
+refactor_app = typer.Typer(no_args_is_help=True)
 
 _LEDGER_GLOB = "specs/**/tasks.jsonl"
 
@@ -324,6 +329,309 @@ def green_post() -> None:
         console.print("[green]GREEN_POST_OK[/]")
     else:
         console.print("[yellow]YELLOW_TRIGGERED[/]")
+
+    raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# YELLOW commands
+# ---------------------------------------------------------------------------
+
+
+def _detect_phase_changes(root: Path) -> list[str]:
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    files: list[str] = []
+    for line in status.stdout.splitlines():
+        raw = line.rstrip("\n")
+        if not raw.strip():
+            continue
+        filename = raw[3:]
+        files.append(filename)
+
+    expanded: list[str] = []
+    for f in files:
+        if f.endswith("/"):
+            full_dir = root / f
+            if full_dir.is_dir():
+                for py_file in sorted(full_dir.rglob("*.py")):
+                    rel = py_file.relative_to(root)
+                    expanded.append(str(rel))
+            else:
+                expanded.append(f)
+        else:
+            expanded.append(f)
+    return expanded
+
+
+@yellow_app.command(name="pre")
+def yellow_pre(
+    task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
+) -> None:
+    root = Path.cwd()
+    _resolve_task_context(task, root)
+
+    changed = _detect_phase_changes(root)
+    test_files = [str(f) for f in _find_test_files(root)]
+
+    contract = {
+        "proposed_changes": changed,
+        "rationale": "YELLOW phase — review proposed test amendments",
+        "test_files": test_files,
+    }
+    print(json.dumps(contract, ensure_ascii=False))
+    raise typer.Exit(code=0)
+
+
+@yellow_app.command(name="post")
+def yellow_post(
+    approved: bool = typer.Option(False, "--approved", help="Approve amendments"),
+    rejected: bool = typer.Option(False, "--rejected", help="Reject amendments"),
+) -> None:
+    root = Path.cwd()
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = SessionState.load(session_path)
+
+    changed = _detect_phase_changes(root)
+
+    if not changed:
+        console.print("NO_CHANGES_PROPOSED")
+        raise typer.Exit(code=0)
+
+    if approved:
+        _commit_phase("feat: YELLOW phase — approved amendments", root)
+        session = session.force_transition_to("GREEN")
+        session.save(session_path)
+        console.print("[green]YELLOW_POST_OK[/]")
+
+    if rejected:
+        subprocess.run(["git", "restore", "."], cwd=root, env=_git_env(), check=False)
+        session = session.force_transition_to("GREEN")
+        session.save(session_path)
+        console.print("[yellow]YELLOW_REVERTED[/]")
+
+    raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# JUDGE commands
+# ---------------------------------------------------------------------------
+
+
+def _find_protected_modules(root: Path) -> list[str]:
+    modules: list[str] = []
+    for spec_file in sorted(root.glob("specs/**/spec.md")):
+        content = spec_file.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Module:"):
+                module_path = stripped[len("Module:") :].strip()
+                modules.append(module_path)
+    return modules
+
+
+@judge_app.command(name="pre")
+def judge_pre() -> None:
+    root = Path.cwd()
+    changed = _detect_phase_changes(root)
+
+    protected = _find_protected_modules(root)
+    violations: list[dict[str, str]] = []
+    for changed_file in changed:
+        for protected_path in protected:
+            changed_normalized = changed_file.rstrip("/")
+            if changed_normalized == protected_path:
+                violations.append(
+                    {
+                        "file": changed_file,
+                        "protected_module": protected_path,
+                    }
+                )
+            elif protected_path.startswith(changed_normalized + "/"):
+                violations.append(
+                    {
+                        "file": changed_file,
+                        "protected_module": protected_path,
+                    }
+                )
+
+    if not changed and not violations:
+        pass
+
+    verdict = {
+        "verdict": "COMPLIANCE_VIOLATION" if violations else "COMPLIANCE_PASS",
+        "details": violations,
+    }
+    print(json.dumps(verdict, ensure_ascii=False))
+    raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# REFACTOR commands
+# ---------------------------------------------------------------------------
+
+
+def _normalize_pytest_output(output: str) -> str:
+    lines: list[str] = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("==="):
+            continue
+        if "collected " in stripped and "item" in stripped:
+            continue
+        if stripped.startswith(".") and stripped.endswith("%]"):
+            continue
+        lines.append(stripped)
+    return "\n".join(lines)
+
+
+@refactor_app.command(name="pre")
+def refactor_pre(
+    task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
+) -> None:
+    root = Path.cwd()
+    _resolve_task_context(task, root)
+
+    src_files = [str(f) for f in _find_source_files(root)]
+
+    contract = {"files_to_refactor": src_files}
+    print(json.dumps(contract, ensure_ascii=False))
+    raise typer.Exit(code=0)
+
+
+_RETURN_TYPE_MAP = {
+    "str": (ast.Constant, ast.JoinedStr),
+    "int": (ast.Constant,),
+    "float": (ast.Constant,),
+    "bool": (ast.Constant,),
+    "list": (ast.List,),
+    "dict": (ast.Dict,),
+    "tuple": (ast.Tuple,),
+    "set": (ast.Set,),
+}
+
+
+def _check_return_type_mismatch(filepath: str) -> list[str]:
+    issues: list[str] = []
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=filepath)
+    except SyntaxError:
+        return issues
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.returns is None:
+            continue
+
+        return_annotation: str | None = None
+        if isinstance(node.returns, ast.Name):
+            return_annotation = node.returns.id
+        elif isinstance(node.returns, ast.Constant) and isinstance(
+            node.returns.value, str
+        ):
+            return_annotation = node.returns.value
+
+        if return_annotation is None:
+            continue
+
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Return) or child.value is None:
+                continue
+            if _is_return_type_mismatch(child.value, return_annotation):
+                issues.append(
+                    f"{node.name}: return value type mismatch (expected {return_annotation})"
+                )
+                break
+    return issues
+
+
+def _is_return_type_mismatch(
+    value: ast.expr,
+    expected: str,
+) -> bool:
+    if expected == "str":
+        if isinstance(value, ast.JoinedStr):
+            return False
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            return False
+        return True
+    if expected == "int":
+        if isinstance(value, ast.Constant) and isinstance(value.value, int):
+            return False
+        return True
+    if expected == "float":
+        if isinstance(value, ast.Constant) and isinstance(value.value, (int, float)):
+            return False
+        return True
+    if expected == "bool":
+        if isinstance(value, ast.Constant) and isinstance(value.value, bool):
+            return False
+        return True
+    if expected == "list" and isinstance(value, ast.List):
+        return False
+    if expected == "dict" and isinstance(value, ast.Dict):
+        return False
+    if expected == "tuple" and isinstance(value, ast.Tuple):
+        return False
+    if expected == "set" and isinstance(value, ast.Set):
+        return False
+    return True
+
+
+@refactor_app.command(name="post")
+def refactor_post() -> None:
+    root = Path.cwd()
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    SessionState.load(session_path)
+
+    test_files = _find_test_files(root)
+
+    if not test_files:
+        console.print("[yellow]NO_TESTS_TO_CHECK[/]")
+        raise typer.Exit(code=0)
+
+    proc_before = _run_pytest(root)
+    before_returncode = proc_before.returncode
+    before_output = _normalize_pytest_output(proc_before.stdout)
+
+    changed = _detect_phase_changes(root)
+    for changed_file in changed:
+        full_path = root / changed_file
+        if full_path.suffix == ".py" and full_path.exists():
+            type_issues = _check_return_type_mismatch(str(full_path))
+            if type_issues:
+                subprocess.run(
+                    ["git", "restore", "."], cwd=root, env=_git_env(), check=False
+                )
+                console.print(
+                    "[red]RefactorRegressionError:[/] " + "; ".join(type_issues)
+                )
+                raise typer.Exit(code=1)
+
+    proc_after = _run_pytest(root)
+    after_returncode = proc_after.returncode
+    after_output = _normalize_pytest_output(proc_after.stdout)
+
+    if after_returncode != before_returncode or after_output != before_output:
+        subprocess.run(["git", "restore", "."], cwd=root, env=_git_env(), check=False)
+        console.print(
+            "[red]RefactorRegressionError:[/] Test regression detected after refactor"
+        )
+        raise typer.Exit(code=1)
+
+    committed = _commit_phase("feat: REFACTOR phase — code cleanup", root)
+
+    if committed:
+        console.print("[green]REFACTOR_POST_OK[/]")
+    else:
+        console.print("[yellow]NOTHING_CHANGED[/]")
 
     raise typer.Exit(code=0)
 
