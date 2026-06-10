@@ -1,7 +1,6 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -144,11 +143,11 @@ class TestAppendIssueRecord:
 class TestTaskRecord:
     def test_task_record_creation(self):
         record = TaskRecord(
-            id=str(uuid4()),
+            id="TSK-001-01",
             issue_id="iss-001",
             description="Implement task record model",
         )
-        assert record.id is not None
+        assert record.id == "TSK-001-01"
         assert record.issue_id == "iss-001"
         assert record.description == "Implement task record model"
         assert record.status == "PENDING"
@@ -157,7 +156,7 @@ class TestTaskRecord:
 
     def test_task_record_explicit_status_and_mode(self):
         record = TaskRecord(
-            id=str(uuid4()),
+            id="TSK-001-02",
             issue_id="iss-002",
             description="Explicit fields",
             status="RED",
@@ -169,7 +168,7 @@ class TestTaskRecord:
     def test_task_record_invalid_status(self):
         with pytest.raises(ValidationError):
             TaskRecord(
-                id=str(uuid4()),
+                id="TSK-001-03",
                 issue_id="iss-003",
                 description="Bad status",
                 status="INVALID",
@@ -178,7 +177,7 @@ class TestTaskRecord:
     def test_task_record_invalid_execution_mode(self):
         with pytest.raises(ValidationError):
             TaskRecord(
-                id=str(uuid4()),
+                id="TSK-001-04",
                 issue_id="iss-004",
                 description="Bad execution mode",
                 execution_mode="INVALID",
@@ -187,31 +186,31 @@ class TestTaskRecord:
     def test_task_record_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
             TaskRecord(
-                id=str(uuid4()),
+                id="TSK-001-05",
                 issue_id="iss-005",
                 description="Extra field",
                 extra_field="should_fail",
             )
 
-    def test_task_record_uuid4_validation(self):
+    def test_task_record_invalid_id_format(self):
         with pytest.raises(ValidationError):
             TaskRecord(
-                id="not-a-uuid",
+                id="not-a-tsk",
                 issue_id="iss-006",
-                description="Invalid UUID",
+                description="Invalid ID format",
             )
 
     def test_task_record_empty_description(self):
         with pytest.raises(ValidationError):
             TaskRecord(
-                id=str(uuid4()),
+                id="TSK-001-06",
                 issue_id="iss-007",
                 description="",
             )
 
     def test_task_record_serialization(self):
         record = TaskRecord(
-            id=str(uuid4()),
+            id="TSK-001-07",
             issue_id="iss-008",
             description="Round trip",
             status="REFACTOR",
@@ -226,7 +225,7 @@ class TestAppendTaskRecord:
     def test_append_task_record_new(self, tmp_path: Path):
         ledger_path = tmp_path / "tasks.jsonl"
         record = TaskRecord(
-            id=str(uuid4()),
+            id="TSK-001-08",
             issue_id="iss-010",
             description="First task",
         )
@@ -240,7 +239,7 @@ class TestAppendTaskRecord:
 
     def test_append_task_record_idempotent_skip(self, tmp_path: Path):
         ledger_path = tmp_path / "tasks.jsonl"
-        task_id = str(uuid4())
+        task_id = "TSK-001-09"
         record = TaskRecord(
             id=task_id,
             issue_id="iss-011",
@@ -265,7 +264,7 @@ class TestAppendTaskRecord:
         assert not ledger_path.parent.exists()
 
         record = TaskRecord(
-            id=str(uuid4()),
+            id="TSK-001-10",
             issue_id="iss-013",
             description="Creates dirs",
         )

@@ -38,7 +38,7 @@ BUCKET = "test-epic"
 
 class TestTasksCommand:
     def test_tasks_appends_pending_records(self, tmp_path: Path):
-        issue_id = "550e8400-e29b-41d4-a716-446655440010"
+        issue_id = "ISS-010"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -59,8 +59,8 @@ class TestTasksCommand:
             assert len(lines) >= 1, "Expected at least one task record"
 
     def test_tasks_invalid_issue_id(self, tmp_path: Path):
-        valid_id = "550e8400-e29b-41d4-a716-446655440011"
-        missing_id = "550e8400-e29b-41d4-a716-446655440099"
+        valid_id = "ISS-011"
+        missing_id = "ISS-099"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -77,7 +77,7 @@ class TestTasksCommand:
             assert "INVALID_ISSUE_ID" in result.output
 
     def test_tasks_idempotent_skip_existing(self, tmp_path: Path):
-        issue_id = "550e8400-e29b-41d4-a716-446655440012"
+        issue_id = "ISS-012"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -92,7 +92,7 @@ class TestTasksCommand:
             tasks_jsonl = Path("specs") / BUCKET / "tasks.jsonl"
             tasks_jsonl.parent.mkdir(parents=True)
             tasks_jsonl.write_text(
-                '{"id":"existing-id","issue_id":"550e8400-e29b-41d4-a716-446655440012","description":"Existing task","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-07T00:00:00Z"}\n'
+                '{"id":"existing-id","issue_id":"ISS-012","description":"Existing task","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-07T00:00:00Z"}\n'
             )
 
             pre_content = tasks_jsonl.read_text()
@@ -107,7 +107,7 @@ class TestTasksCommand:
             )
 
     def test_tasks_idempotent_skip_no_new_file(self, tmp_path: Path):
-        issue_id = "550e8400-e29b-41d4-a716-446655440013"
+        issue_id = "ISS-013"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -134,7 +134,7 @@ class TestTasksCommand:
             )
 
     def test_tasks_sets_session_transition(self, tmp_path: Path):
-        issue_id = "550e8400-e29b-41d4-a716-446655440014"
+        issue_id = "ISS-014"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")

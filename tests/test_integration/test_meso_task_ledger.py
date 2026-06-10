@@ -13,7 +13,7 @@ from deviate.state.ledger import IssueRecord, TaskRecord
 
 runner = CliRunner()
 
-MESO_ISSUE_ID = "550e8400-e29b-41d4-a716-446655440100"
+MESO_ISSUE_ID = "ISS-100"
 MESO_BUCKET = "test-epic"
 
 
@@ -86,9 +86,7 @@ class TestMesoTaskLedger:
             ledger.parent.mkdir(parents=True)
             ledger.write_text("")
 
-            result = runner.invoke(
-                cli, ["specify", "550e8400-e29b-41d4-a716-446655440200"]
-            )
+            result = runner.invoke(cli, ["specify", "ISS-200"])
             assert result.exit_code != 0
             assert "INVALID_ISSUE_ID" in result.output
 
@@ -100,7 +98,7 @@ class TestMesoTaskLedger:
             session.save(dot_dir / "session.json")
 
             valid = IssueRecord(
-                issue_id="550e8400-e29b-41d4-a716-446655440300",
+                issue_id="ISS-300",
                 type="feature",
                 title="Valid Issue in Malformed Ledger",
                 status="SHARDED",
@@ -114,9 +112,7 @@ class TestMesoTaskLedger:
                 "also not valid\n" + valid.model_dump_json() + "\n" + "trash\n"
             )
 
-            result = runner.invoke(
-                cli, ["specify", "550e8400-e29b-41d4-a716-446655440300"]
-            )
+            result = runner.invoke(cli, ["specify", "ISS-300"])
             assert result.exit_code == 0, result.output
 
             spec_dir = Path("specs") / "test-epic"

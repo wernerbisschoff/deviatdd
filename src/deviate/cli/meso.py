@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import uuid as uuid_mod
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -24,7 +23,6 @@ from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
 from deviate.core.validation import (
     validate_gherkin_syntax,
-    validate_task_id,
 )
 from deviate.core.worktree import (
     branch_exists_on_remote,
@@ -648,8 +646,30 @@ def _tasks_legacy(issue_id: str) -> None:
     session.active_issue_id = issue_id
     session.save(session_path)
 
+    # Generate TSK-NNN-NN: extract issue number, count existing tasks, increment
+    issue_num = _extract_issue_num(issue_id)
+    existing_ids: list[dict] = []
+    if tasks_jsonl.exists():
+        for line in tasks_jsonl.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    existing_ids.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    existing_tasks = [r for r in existing_ids if r.get("issue_id") == issue_id]
+    existing_max = 0
+    for t in existing_tasks:
+        m = re.match(r"^TSK-\d{3}-(\d{2})$", t.get("id", ""))
+        if m:
+            idx = int(m.group(1))
+            if idx > existing_max:
+                existing_max = idx
+    next_index = existing_max + 1
+    task_id = f"TSK-{issue_num}-{next_index:02d}"
+
     task = TaskRecord(
-        id=str(uuid_mod.uuid4()),
+        id=task_id,
         issue_id=issue_id,
         description=f"Implement {record.title}",
         status="PENDING",
@@ -768,24 +788,6 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
     if not content and not force:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
-
-    task_id_pattern = re.findall(r"(?m)^- \[[ x]\]\s+([\w-]+)", content)
-    for tid in task_id_pattern:
-        if not validate_task_id(tid):
-            console.print(f"[red]INVALID_TASK_ID[/] {tid}")
-            raise typer.Exit(code=1)
-
-    task_lines = re.findall(r"(?m)^- \[[ x]\]\s+\S+.*", content)
-    has_pending = False
-    for line in task_lines:
-        if "[ ]" in line:
-            console.print(f"[yellow]UNCHECKED_TASK[/] {line.strip()}")
-            has_pending = True
-    if has_pending and not force:
-        console.print(
-            "[yellow]UNCHECKED_TASKS[/] tasks have pending items — committing anyway"
-        )
-        console.print("[yellow]  (use --force to suppress this warning)[/]")
 
     _run_pre_commit_hooks()
 

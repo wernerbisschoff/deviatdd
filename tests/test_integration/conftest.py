@@ -30,7 +30,7 @@ def meso_workspace(tmp_path: Path) -> Path:
     session.save(dot_dir / "session.json")
 
     issue = IssueRecord(
-        issue_id="550e8400-e29b-41d4-a716-446655440100",
+        issue_id="ISS-100",
         type="feature",
         title="Test Meso Issue",
         status="SHARDED",

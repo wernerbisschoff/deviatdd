@@ -22,7 +22,7 @@ def _git_env() -> dict[str, str]:
 
 
 def _make_task_record(
-    task_id: str = "550e8400-e29b-41d4-a716-446655440001",
+    task_id: str = "TSK-004-01",
     issue_id: str = "ISS-004",
     description: str = "RED phase task",
     status: str = "PENDING",
@@ -53,7 +53,7 @@ class TestRedPre:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440001",
+                task_id="TSK-004-01",
                 issue_id="ISS-004",
                 description="RED test task",
                 status="PENDING",
@@ -61,7 +61,7 @@ class TestRedPre:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["red", "pre", "--task", "T004"])
+            result = runner.invoke(cli, ["red", "pre", "--task", "TSK-004-01"])
 
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
@@ -80,6 +80,19 @@ class TestRedPost:
             args=[], returncode=1, stdout="1 failed", stderr=""
         )
         with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE", active_issue_id="ISS-004")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-004",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
             test_file = Path("tests") / "test_failing.py"
             test_file.parent.mkdir(parents=True)
             test_file.write_text("def test_fail():\n    assert False\n")

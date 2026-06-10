@@ -20,7 +20,7 @@ def _git_env() -> dict[str, str]:
 
 
 def _make_task_record(
-    task_id: str = "550e8400-e29b-41d4-a716-446655440001",
+    task_id: str = "TSK-004-01",
     issue_id: str = "ISS-004",
     description: str = "Test TDD task",
     status: str = "PENDING",
@@ -51,7 +51,7 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440001",
+                task_id="TSK-004-01",
                 issue_id="ISS-004",
                 description="Full cycle orchestration task",
                 status="PENDING",
@@ -59,7 +59,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "T004"])
+            result = runner.invoke(cli, ["run", "TSK-004-01"])
 
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
@@ -84,7 +84,7 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440002",
+                task_id="TSK-004-02",
                 issue_id="ISS-004",
                 description="Session tracking task",
                 status="PENDING",
@@ -109,7 +109,7 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440003",
+                task_id="TSK-004-03",
                 issue_id="ISS-004",
                 description="No judge flag task",
                 status="PENDING",
@@ -117,7 +117,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "--no-judge", "T004"])
+            result = runner.invoke(cli, ["run", "--no-judge", "TSK-004-03"])
 
             assert result.exit_code == 0, (
                 f"Expected --no-judge flag to be accepted, got {result.exit_code}: {result.output}"
@@ -134,7 +134,7 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440004",
+                task_id="TSK-004-04",
                 issue_id="ISS-004",
                 description="No refactor flag task",
                 status="PENDING",
@@ -142,7 +142,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "--no-refactor", "T004"])
+            result = runner.invoke(cli, ["run", "--no-refactor", "TSK-004-04"])
 
             assert result.exit_code == 0, (
                 f"Expected --no-refactor flag to be accepted, got {result.exit_code}: {result.output}"
@@ -159,7 +159,7 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440005",
+                task_id="TSK-004-05",
                 issue_id="ISS-004",
                 description="Agent flag task",
                 status="PENDING",
@@ -167,7 +167,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "--agent", "droid", "T004"])
+            result = runner.invoke(cli, ["run", "--agent", "droid", "TSK-004-05"])
 
             assert result.exit_code == 0, (
                 f"Expected --agent flag to be accepted, got {result.exit_code}: {result.output}"
@@ -184,7 +184,7 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440006",
+                task_id="TSK-004-06",
                 issue_id="ISS-004",
                 description="Ledger tracking task",
                 status="PENDING",
@@ -192,7 +192,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            runner.invoke(cli, ["run", "TSK-004-01"])
+            runner.invoke(cli, ["run", "TSK-004-06"])
 
             ledger_lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")
             statuses = [json.loads(line).get("status") for line in ledger_lines if line]
@@ -214,13 +214,13 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task_a = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440007",
+                task_id="TSK-004-07",
                 issue_id="ISS-004",
                 description="First --all task",
                 status="PENDING",
             )
             task_b = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440008",
+                task_id="TSK-004-08",
                 issue_id="ISS-004",
                 description="Second --all task",
                 status="PENDING",
@@ -245,13 +245,13 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             failing_task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440009",
+                task_id="TSK-004-09",
                 issue_id="ISS-004",
                 description="Failing task for retry test",
                 status="PENDING",
             )
             good_task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440010",
+                task_id="TSK-004-10",
                 issue_id="ISS-004",
                 description="Good task that should not run",
                 status="PENDING",
