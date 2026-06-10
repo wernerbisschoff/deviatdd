@@ -185,8 +185,8 @@ class TestMesoContracts:
             ledger_path = specs_dir / "issues.jsonl"
             ledger_path.write_text(json.dumps(issue_record) + "\n")
 
-            (specs_dir / "test-epic").mkdir(parents=True, exist_ok=True)
-            tasks_md = specs_dir / "test-epic" / "tasks.md"
+            (specs_dir / "test-epic" / "ISS-006").mkdir(parents=True, exist_ok=True)
+            tasks_md = specs_dir / "test-epic" / "ISS-006" / "tasks.md"
             tasks_md.write_text("- [x] T001: Complete task\n  - Verification: pytest\n")
 
             ledger_path.parent.mkdir(parents=True, exist_ok=True)

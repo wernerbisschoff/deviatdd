@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from contextlib import chdir
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
+from deviate.cli import cli
+
+runner = CliRunner()
 BASH_SKILLS_DIR = Path.home() / ".claude" / "skills"
-DEVIATE_CLI = ["uv", "run", "deviate"]
 
 
 def _git_env() -> dict[str, str]:
@@ -37,7 +41,7 @@ def _init_git_repo(path: Path) -> None:
     )
 
 
-def _install_deviate(path: Path) -> None:
+def _init_deviate(path: Path) -> None:
     specs_dir = path / "specs"
     specs_dir.mkdir(parents=True, exist_ok=True)
     constitution = specs_dir / "constitution.md"
@@ -47,13 +51,8 @@ def _install_deviate(path: Path) -> None:
         "`TEST_COMMAND`: pytest\n"
         "`LINT_COMMAND`: ruff check .\n"
     )
-    subprocess.run(
-        [*DEVIATE_CLI, "init", "--agent-export-mode", "local"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    with chdir(path):
+        runner.invoke(cli, ["init", "--agent-export-mode", "local"])
 
 
 def _find_bash_scripts() -> list[tuple[str, Path]]:
@@ -74,15 +73,6 @@ def _run_bash(
 ) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["bash", str(script_path), *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-
-
-def _run_python(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [*DEVIATE_CLI, *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -191,12 +181,12 @@ class TestParity:
         )
 
     def test_explore_python_matches_bash_fields(self, tmp_path: Path) -> None:
-        _init_git_repo(tmp_path)
-        _install_deviate(tmp_path)
-
         bash_script = BASH_SKILLS_DIR / "deviate-explore" / "deviate-explore.sh"
         if not bash_script.exists():
             pytest.skip("bash explore script not found")
+
+        _init_git_repo(tmp_path)
+        _init_deviate(tmp_path)
 
         bash_result = _run_bash(bash_script, ["pre", "test parity feature"], tmp_path)
         assert bash_result.returncode == 0, (
@@ -207,16 +197,16 @@ class TestParity:
             f"bash contract missing expected fields: {EXPLORE_BASH_FIELDS - set(bash_contract.keys())}"
         )
 
-        python_result = _run_python(
-            ["explore", "pre", "test parity feature", "--slug", "test-parity"],
-            tmp_path,
-        )
-        if python_result.returncode != 0:
+        with chdir(tmp_path):
+            python_result = runner.invoke(
+                cli, ["explore", "pre", "test parity feature", "--slug", "test-parity"]
+            )
+        if python_result.exit_code != 0:
             pytest.skip(
                 f"python explore pre unavailable (will retest later):\n"
-                f"{python_result.stderr}"
+                f"{python_result.output}"
             )
-        python_contract = _parse_json_contract(python_result.stdout)
+        python_contract = _parse_json_contract(python_result.output)
 
         py_fields = set(python_contract.keys())
         missing = EXPLORE_BASH_FIELDS - py_fields
@@ -230,8 +220,12 @@ class TestParity:
         )
 
     def test_research_python_matches_bash_fields(self, tmp_path: Path) -> None:
+        bash_script = BASH_SKILLS_DIR / "deviate-research" / "deviate-research.sh"
+        if not bash_script.exists():
+            pytest.skip("bash research script not found")
+
         _init_git_repo(tmp_path)
-        _install_deviate(tmp_path)
+        _init_deviate(tmp_path)
 
         specs_dir = tmp_path / "specs"
         epic_dir = specs_dir / "001-research-test"
@@ -239,10 +233,6 @@ class TestParity:
         (epic_dir / "explore.md").write_text(
             "# Explore\n\n## [PROBLEM_DEFINITION]\n\n## [DISCOVERY_AUDIT_RESULTS]\n\n## [CONSTITUTION_QUOTES]\n\n## [FILE_REGISTRY]\n\n## [STATUS_SUMMARY]\n"
         )
-
-        bash_script = BASH_SKILLS_DIR / "deviate-research" / "deviate-research.sh"
-        if not bash_script.exists():
-            pytest.skip("bash research script not found")
 
         bash_result = _run_bash(bash_script, ["pre", "001-research-test"], tmp_path)
         if bash_result.returncode != 0:
@@ -255,10 +245,11 @@ class TestParity:
             f"bash research contract missing expected fields: {RESEARCH_BASH_FIELDS - set(bash_contract.keys())}"
         )
 
-        python_result = _run_python(["research", "pre", "001-research-test"], tmp_path)
-        if python_result.returncode != 0:
-            pytest.skip(f"python research pre unavailable:\n{python_result.stderr}")
-        python_contract = _parse_json_contract(python_result.stdout)
+        with chdir(tmp_path):
+            python_result = runner.invoke(cli, ["research", "pre", "001-research-test"])
+        if python_result.exit_code != 0:
+            pytest.skip(f"python research pre unavailable:\n{python_result.output}")
+        python_contract = _parse_json_contract(python_result.output)
 
         py_fields = set(python_contract.keys())
         missing = RESEARCH_BASH_FIELDS - py_fields

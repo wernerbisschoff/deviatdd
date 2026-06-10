@@ -10,7 +10,17 @@ from rich.console import Console
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.cli.macro import explore_app, research_app, prd_app, shard_app
 from deviate.cli.meso import pr, specify, tasks
-from deviate.cli.micro import run_command
+from deviate.cli.micro import (
+    e2e_app,
+    execute_app,
+    green_app,
+    hotfix_app,
+    judge_app,
+    red_app,
+    refactor_app,
+    run_command,
+    yellow_app,
+)
 from deviate.core.skills import detect_agents, discover_skills, install_skill
 
 cli = typer.Typer(no_args_is_help=True)
@@ -35,18 +45,32 @@ def _write_if_missing(path: Path, content: str) -> bool:
     return True
 
 
+def _serialize_value(key: str, value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return f"{key} = {'true' if value else 'false'}"
+    if isinstance(value, (int, float)):
+        return f"{key} = {value}"
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'{key} = "{escaped}"'
+
+
 def _dict_to_toml(data: dict) -> str:
     lines: list[str] = []
     for key, value in data.items():
         if value is None:
             continue
-        if isinstance(value, bool):
-            lines.append(f"{key} = {'true' if value else 'false'}")
-        elif isinstance(value, (int, float)):
-            lines.append(f"{key} = {value}")
+        if isinstance(value, dict):
+            lines.append(f"\n[{key}]")
+            for k, v in value.items():
+                line = _serialize_value(k, v)
+                if line:
+                    lines.append(line)
         else:
-            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
-            lines.append(f'{key} = "{escaped}"')
+            line = _serialize_value(key, value)
+            if line:
+                lines.append(line)
     lines.append("")
     toml_str = "\n".join(lines)
     try:
@@ -254,4 +278,12 @@ cli.add_typer(shard_app, name="shard")
 cli.command(name="specify")(specify)
 cli.command(name="tasks")(tasks)
 cli.command(name="pr")(pr)
+cli.add_typer(red_app, name="red")
+cli.add_typer(green_app, name="green")
+cli.add_typer(yellow_app, name="yellow")
+cli.add_typer(judge_app, name="judge")
+cli.add_typer(refactor_app, name="refactor")
+cli.add_typer(execute_app, name="execute")
+cli.add_typer(e2e_app, name="e2e")
+cli.add_typer(hotfix_app, name="hotfix")
 cli.command(name="run")(run_command)
