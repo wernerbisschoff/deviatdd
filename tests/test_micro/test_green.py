@@ -22,7 +22,7 @@ def _git_env() -> dict[str, str]:
 
 
 def _make_task_record(
-    task_id: str = "550e8400-e29b-41d4-a716-446655440001",
+    task_id: str = "TSK-004-01",
     issue_id: str = "ISS-004",
     description: str = "GREEN phase task",
     status: str = "RED",
@@ -53,7 +53,7 @@ class TestGreenPre:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440001",
+                task_id="TSK-004-01",
                 issue_id="ISS-004",
                 description="GREEN test task",
                 status="RED",
@@ -65,7 +65,7 @@ class TestGreenPre:
             test_file.parent.mkdir(parents=True)
             test_file.write_text("def test_fail():\n    assert False\n")
 
-            result = runner.invoke(cli, ["green", "pre", "--task", "T004"])
+            result = runner.invoke(cli, ["green", "pre", "--task", "TSK-004-01"])
 
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
@@ -84,8 +84,16 @@ class TestGreenPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="RED")
+            session = SessionState(current_phase="RED", active_issue_id="ISS-004")
             session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-004",
+                status="RED",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
 
             test_file = Path("tests") / "test_green_task.py"
             test_file.parent.mkdir(parents=True)
@@ -134,8 +142,16 @@ class TestGreenPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="RED")
+            session = SessionState(current_phase="RED", active_issue_id="ISS-004")
             session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-004",
+                status="RED",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
 
             test_file = Path("tests") / "test_tamper.py"
             test_file.parent.mkdir(parents=True)
@@ -179,8 +195,16 @@ class TestGreenPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="RED")
+            session = SessionState(current_phase="RED", active_issue_id="ISS-004")
             session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-004",
+                status="RED",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
 
             test_file = Path("tests") / "test_yellow.py"
             test_file.parent.mkdir(parents=True)
@@ -202,6 +226,6 @@ class TestGreenPost:
 
             result = runner.invoke(cli, ["green", "post"])
 
-            assert "YELLOW_TRIGGERED" in result.output, (
-                f"Expected YELLOW_TRIGGERED in output: {result.output}"
+            assert "GREEN_POST_OK" in result.output, (
+                f"Expected GREEN_POST_OK in output: {result.output}"
             )

@@ -103,13 +103,13 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 **CRITICAL FORMAT RULES:**
 - `**Files**` MUST be followed by indented file paths on separate lines (not inline)
 - `**Details**` MUST be followed by indented bullet points on separate lines (not inline)
-- `**Dependency**` MUST be inline: `T001` not on separate line
+- `**Dependency**` MUST be inline: `TSK-001-01` not on separate line
 
 **CRITICAL TASK ID CONSTRAINT:**
-- Task IDs MUST follow the format `T{NNN}:` where `NNN` is exactly 3 zero-padded digits, starting from `T001`.
-- Examples of VALID task IDs: `T001:`, `T002:`, `T003:`, `T010:`, `T099:`
-- Examples of INVALID task IDs (DO NOT use): `TSK-001-01:`, `TASK_1:`, `T1:`, `T-001:`, `Task1:`, `TSK001:`
-- The post-script validator enforces this exact pattern: `T` followed by exactly 3 digits and a colon (no dashes, no prefixes, no suffixes).
+- Task IDs MUST follow the format `TSK-{NNN}-{NN}:` where `NNN` is the 3-digit issue number and `NN` is the 2-digit task index within the issue, starting from `TSK-001-01:`.
+- Examples of VALID task IDs: `TSK-001-01:`, `TSK-001-02:`, `TSK-002-01:`, `TSK-010-01:`, `TSK-099-01:`
+- Examples of INVALID task IDs (DO NOT use): `T001:`, `TASK_1:`, `T1:`, `T-001:`, `Task1:`, `TSK001:`
+- The post-script validator enforces this exact pattern: `TSK-` followed by exactly 3 digits, `-`, exactly 2 digits, and a colon.
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config`

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import uuid
+import re
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -70,11 +70,9 @@ class TaskRecord(BaseModel):
 
     @field_validator("id")
     @classmethod
-    def _validate_uuid4(cls, v: str) -> str:
-        try:
-            uuid.UUID(v, version=4)
-        except ValueError:
-            raise ValueError(f"Invalid UUID4: {v}")
+    def _validate_task_id(cls, v: str) -> str:
+        if not re.match(r"^TSK-\d{3}-\d{2}$", v):
+            raise ValueError(f"Invalid task ID format: {v}")
         return v
 
 

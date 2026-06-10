@@ -114,6 +114,4 @@ def validate_yaml_frontmatter(content: str) -> bool:
 def validate_task_id(task_id: str) -> bool:
     if not task_id:
         return False
-    legacy = re.match(r"^T\d{3}$", task_id)
-    new_format = re.match(r"^TSK-\d{3}-\d{2}$", task_id)
-    return bool(legacy or new_format)
+    return bool(re.match(r"^TSK-\d{3}-\d{2}$", task_id))

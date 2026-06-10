@@ -188,6 +188,6 @@ class TestSessionReconstruction:
 
 class TestTaskIdNormalization:
     def test_task_id_normalization(self):
-        assert SessionState.normalize_task_id("T005") == "T005"
-        assert SessionState.normalize_task_id("T005:") == "T005"
-        assert SessionState.normalize_task_id("T008:") == "T008"
+        assert SessionState.normalize_task_id("TSK-005-01") == "TSK-005-01"
+        assert SessionState.normalize_task_id("TSK-005-01:") == "TSK-005-01"
+        assert SessionState.normalize_task_id("TSK-008-02:") == "TSK-008-02"

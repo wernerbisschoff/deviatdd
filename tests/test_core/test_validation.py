@@ -170,13 +170,13 @@ class TestValidateYamlFrontmatter:
 
 
 class TestValidateTaskId:
-    def test_validate_task_ids_accepts_both_TNNN_and_TSK(self):
-        assert validate_task_id("T001") is True
-        assert validate_task_id("T999") is True
+    def test_validate_task_ids_accepts_TSK_format(self):
         assert validate_task_id("TSK-007-01") is True
         assert validate_task_id("TSK-123-99") is True
+        assert validate_task_id("TSK-000-00") is True
 
     def test_validate_task_ids_rejects_malformed(self):
+        assert validate_task_id("T001") is False
         assert validate_task_id("TASK_1") is False
         assert validate_task_id("TSK001") is False
         assert validate_task_id("T01") is False
@@ -184,7 +184,3 @@ class TestValidateTaskId:
         assert validate_task_id("TSK-007-1") is False
         assert validate_task_id("TSK-07-01") is False
         assert validate_task_id("") is False
-
-    def test_validate_task_id_edge_cases(self):
-        assert validate_task_id("T000") is True
-        assert validate_task_id("TSK-000-00") is True

@@ -20,7 +20,7 @@ def _git_env() -> dict[str, str]:
 
 
 def _make_task_record(
-    task_id: str = "550e8400-e29b-41d4-a716-446655440001",
+    task_id: str = "TSK-004-01",
     issue_id: str = "ISS-004",
     description: str = "JUDGE phase task",
     status: str = "GREEN",

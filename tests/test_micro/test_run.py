@@ -13,7 +13,7 @@ runner = CliRunner()
 
 
 def _make_task_record(
-    task_id: str = "550e8400-e29b-41d4-a716-446655440001",
+    task_id: str = "TSK-004-01",
     issue_id: str = "ISS-007",
     description: str = "Test TDD task",
     status: str = "PENDING",
@@ -44,7 +44,7 @@ class TestRunCommand:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440001",
+                task_id="TSK-004-01",
                 issue_id="ISS-007",
                 description="Implement TDD task",
                 status="PENDING",
@@ -53,7 +53,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-007-01"])
+            result = runner.invoke(cli, ["run", "TSK-004-01"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
@@ -69,7 +69,7 @@ class TestRunCommand:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440002",
+                task_id="TSK-004-02",
                 issue_id="ISS-007",
                 description="Implement immediate task",
                 status="PENDING",
@@ -78,7 +78,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-007-01"])
+            result = runner.invoke(cli, ["run", "TSK-004-02"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
@@ -95,14 +95,14 @@ class TestRunCommand:
             session.save(dot_dir / "session.json")
 
             tdd_task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440003",
+                task_id="TSK-004-03",
                 issue_id="ISS-007",
                 description="TDD task",
                 status="PENDING",
                 execution_mode="TDD",
             )
             imm_task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440004",
+                task_id="TSK-004-04",
                 issue_id="ISS-007",
                 description="Immediate task",
                 status="PENDING",
@@ -127,7 +127,7 @@ class TestRunCommand:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440005",
+                task_id="TSK-004-05",
                 issue_id="ISS-001",
                 description="Legacy format task",
                 status="PENDING",
@@ -136,12 +136,12 @@ class TestRunCommand:
             ledger_path = Path("specs") / "001-initial" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "T001"])
+            result = runner.invoke(cli, ["run", "TSK-004-05"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
             assert "COMPLETED" in result.output, (
-                f"Expected T001 task to reach COMPLETED: {result.output}"
+                f"Expected TSK-004-05 task to reach COMPLETED: {result.output}"
             )
 
     def test_run_unknown_task_id_exits_not_found(self, tmp_path: Path):
@@ -151,7 +151,7 @@ class TestRunCommand:
             session = SessionState(current_phase="IDLE")
             session.save(dot_dir / "session.json")
 
-            result = runner.invoke(cli, ["run", "T999"])
+            result = runner.invoke(cli, ["run", "TSK-999-99"])
             assert result.exit_code != 0, (
                 f"Expected non-zero exit for unknown task, got {result.output}"
             )
@@ -165,7 +165,7 @@ class TestRunCommand:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="550e8400-e29b-41d4-a716-446655440006",
+                task_id="TSK-004-06",
                 issue_id="ISS-007",
                 description="Already done",
                 status="COMPLETED",
@@ -174,7 +174,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-007-01"])
+            result = runner.invoke(cli, ["run", "TSK-004-06"])
             assert result.exit_code == 0, result.output
             assert "TASK_ALREADY_DONE" in result.output, (
                 f"Expected TASK_ALREADY_DONE warning: {result.output}"

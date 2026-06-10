@@ -53,35 +53,18 @@ def _read_ledger_records(ledger_file: Path) -> list[dict]:
 
 
 def _resolve_issue_number(task_id: str) -> str | None:
-    m = re.match(r"^T(\d{3})$", task_id)
-    if m:
-        return m.group(1)
     m = re.match(r"^TSK-(\d{3})-\d{2}$", task_id)
     if m:
         return m.group(1)
     return None
 
 
-def _resolve_task_index(task_id: str) -> int | None:
-    m = re.match(r"^T\d{3}$", task_id)
-    if m:
-        return 1
-    m = re.match(r"^TSK-\d{3}-(\d{2})$", task_id)
-    if m:
-        return int(m.group(1))
-    return None
-
-
-def _find_task_record(
-    root: Path, issue_number: str, task_index: int
-) -> tuple[dict, Path] | None:
-    count = 0
+def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
+    """Look up a task record by its TSK-NNN-NN ID across all ledger files."""
     for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
         for record in _read_ledger_records(ledger_file):
-            if record.get("issue_id") == f"ISS-{issue_number}":
-                count += 1
-                if count == task_index:
-                    return record, ledger_file
+            if record.get("id") == task_id:
+                return record, ledger_file
     return None
 
 
@@ -109,19 +92,12 @@ def _append_status_transition(
 
 def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] | None:
     if task_id is not None:
-        issue_number = _resolve_issue_number(task_id)
-        if issue_number is None:
+        if not re.match(r"^TSK-\d{3}-\d{2}$", task_id):
             console.print(
                 f"[red]TASK_NOT_FOUND[/] Unrecognised task ID format: {task_id}"
             )
             raise typer.Exit(code=1)
-        task_index = _resolve_task_index(task_id)
-        if task_index is None:
-            console.print(
-                f"[red]TASK_NOT_FOUND[/] Unrecognised task ID format: {task_id}"
-            )
-            raise typer.Exit(code=1)
-        result = _find_task_record(root, issue_number, task_index)
+        result = _find_task_record(root, task_id)
         if result is None:
             console.print(f"[red]TASK_NOT_FOUND[/] No task matching {task_id}")
             raise typer.Exit(code=1)
@@ -132,6 +108,35 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
         console.print("[red]NO_PENDING_TASKS[/]")
         raise typer.Exit(code=1)
     return pending[0]
+
+
+def _resolve_latest_task(
+    root: Path, issue_id: str, status: str
+) -> tuple[dict, Path] | None:
+    """Return the most recent task record with *issue_id* and *status*."""
+    latest: tuple[dict, Path] | None = None
+    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
+        for rec in _read_ledger_records(ledger_file):
+            if rec.get("issue_id") == issue_id and rec.get("status") == status:
+                latest = (rec, ledger_file)
+    return latest
+
+
+def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | None:
+    """Return the first PENDING task for *issue_id*."""
+    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
+        for rec in _read_ledger_records(ledger_file):
+            if rec.get("issue_id") == issue_id and rec.get("status") == "PENDING":
+                return (rec, ledger_file)
+    return None
+
+
+def _build_scope(issue_id: str, task_id: str) -> str:
+    """Return the task ID as scope (already TSK-NNN-NN format)."""
+    issue_match = re.search(r"ISS-(\d+)", issue_id)
+    if not issue_match:
+        return issue_id
+    return task_id
 
 
 def _run_red_phase(
@@ -506,7 +511,34 @@ def red_post() -> None:
         console.print("[red]SyntaxCrashRejected:[/] Test file contains syntax errors")
         raise typer.Exit(code=1)
 
-    _commit_phase("feat: RED phase - failing test", root)
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+
+    issue_id = session.active_issue_id or ""
+    pending = _resolve_first_pending(root, issue_id)
+    if pending is None:
+        console.print("[red]NO_PENDING_TASKS[/] No PENDING task found for active issue")
+        raise typer.Exit(code=1)
+
+    pending_record, ledger_path = pending
+    task_uuid = pending_record.get("id", "")
+
+    try:
+        record = TaskRecord.model_validate(pending_record)
+        record.status = "RED"  # type: ignore[assignment]
+        append_task_transition(record, ledger_path)
+    except Exception as e:
+        console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
+        raise typer.Exit(code=1)
+
+    session = session.force_transition_to("RED")
+    session.save(session_path)
+
+    scope = _build_scope(issue_id, task_uuid)
+    _commit_phase(f"test({scope}): RED phase - failing test", root)
 
     console.print("[green]RED_POST_OK[/]")
     raise typer.Exit(code=0)
@@ -539,6 +571,24 @@ def green_post() -> None:
         console.print("[red]TEST_NOT_FOUND[/]")
         raise typer.Exit(code=1)
 
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+
+    issue_id = session.active_issue_id or ""
+
+    # Verify the specific task has a RED entry (RED phase completed)
+    red_task = _resolve_latest_task(root, issue_id, "RED")
+    if red_task is None:
+        console.print(
+            "[red]MISSING_RED_PHASE[/] No RED transition found — RED phase must complete before GREEN"
+        )
+        raise typer.Exit(code=1)
+
+    task_uuid = red_task[0].get("id", "")
+
     proc = _run_pytest(root)
 
     if proc.returncode != 0:
@@ -552,7 +602,22 @@ def green_post() -> None:
     if tamper_verdict == TamperVerdict.TAMPER_DETECTED:
         console.print("[yellow]TAMPER_DETECTED[/]")
 
-    committed = _commit_phase("feat: GREEN phase - implementation passes tests", root)
+    # Append GREEN transition for this specific task
+    try:
+        record = TaskRecord.model_validate(red_task[0])
+        record.status = "GREEN"  # type: ignore[assignment]
+        append_task_transition(record, red_task[1])
+    except Exception as e:
+        console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
+        raise typer.Exit(code=1)
+
+    session = session.force_transition_to("GREEN")
+    session.save(session_path)
+
+    scope = _build_scope(issue_id, task_uuid)
+    committed = _commit_phase(
+        f"feat({scope}): GREEN phase - implementation passes tests", root
+    )
 
     if committed:
         console.print("[green]GREEN_POST_OK[/]")
@@ -808,6 +873,38 @@ def refactor_post() -> None:
         console.print("[yellow]NO_TESTS_TO_CHECK[/]")
         raise typer.Exit(code=0)
 
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+
+    issue_id = session.active_issue_id or ""
+
+    # Verify the specific task has a GREEN entry (GREEN phase completed)
+    green_task = _resolve_latest_task(root, issue_id, "GREEN")
+    if green_task is None:
+        console.print(
+            "[red]MISSING_GREEN_PHASE[/] No GREEN transition found — GREEN phase must complete before REFACTOR"
+        )
+        raise typer.Exit(code=1)
+
+    task_uuid = green_task[0].get("id", "")
+
+    # Append REFACTOR transition for this specific task
+    try:
+        record = TaskRecord.model_validate(green_task[0])
+        record.status = "REFACTOR"  # type: ignore[assignment]
+        append_task_transition(record, green_task[1])
+    except Exception as e:
+        console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
+        raise typer.Exit(code=1)
+
+    session = session.force_transition_to("REFACTOR")
+    session.save(session_path)
+
+    scope = _build_scope(issue_id, task_uuid)
+
     proc_before = _run_pytest(root)
     before_returncode = proc_before.returncode
     before_output = _normalize_pytest_output(proc_before.stdout)
@@ -837,7 +934,9 @@ def refactor_post() -> None:
         )
         raise typer.Exit(code=1)
 
-    committed = _commit_phase("feat: REFACTOR phase — code cleanup", root)
+    committed = _commit_phase(
+        f"refactor({scope}): REFACTOR phase \u2014 code cleanup", root
+    )
 
     if committed:
         console.print("[green]REFACTOR_POST_OK[/]")
