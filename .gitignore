@@ -13,3 +13,5 @@ uv.lock
 .tdd-session.json
 .deviate/session.json
 .opencode/index/
+graphify-out/cost.json
+node_modules/
