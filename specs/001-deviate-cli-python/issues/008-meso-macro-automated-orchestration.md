@@ -128,7 +128,7 @@ Same as ISS-004: `specs/constitution.md` and `CLAUDE.md` are read once at pipeli
 
 - Individual pre/post command implementation (already covered by ISS-005).
 - Micro-layer TDD execution (covered by ISS-004).
-- Aider integration (covered by ISS-009).
+- Aider integration (covered by ISS-010).
 - Core module implementations (covered by ISS-005).
 - State persistence and concurrency (covered by ISS-006).
 

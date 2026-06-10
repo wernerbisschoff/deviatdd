@@ -3,12 +3,12 @@ title: "Streaming Pipeline Monitor with Live Task Status & Agent Output Display"
 labels: [enhancement, adhoc, vertical-slice]
 blocked_by: []
 coordinates_with: ["ISS-004"]
-issue_id: ISS-011
+issue_id: ISS-009
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
 - **Epic Target Domain**: `specs/adhoc/`
-- **Local Issue File**: `issues/011-streaming-pipeline-monitor.md`
+- **Local Issue File**: `issues/009-streaming-pipeline-monitor.md`
 - **Primary Architectural Workstation**: `src/deviate/cli/micro.py`, `src/deviate/ui/` (new)
 
 ## [THE_PROBLEM_CONTRACT]

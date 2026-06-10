@@ -1,20 +1,15 @@
 ---
-title: "[FR-009] Aider Agent Backend Integration"
-labels: ["epic:001-deviate-cli-python", "layer:micro", "layer:agent"]
-source_file: "specs/001-deviate-cli-python/prd.md"
-blocked_by: ["ISS-004"]
-coordinates_with: []
-issue_id: "ISS-009"
+title: "[ADHOC-010] Aider Agent Backend Integration"
+labels: [enhancement, adhoc, vertical-slice]
+blocked_by: []
+coordinates_with: ["ISS-004"]
+issue_id: ISS-010
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
-- **Epic Domain**: `001-deviate-cli-python`
-- **Local File Path**: `specs/001-deviate-cli-python/issues/009-aider-agent-backend-integration.md`
-- **Workstation Paths**:
-  - `src/deviate/core/agent.py` — Extend `AgentBackend` with Aider provider
-  - `src/deviate/state/config.py` — Extend `AgentConfig.backend` with `"aider"` literal
-  - `tests/test_core/test_agent.py` — Aider-specific invocation tests
-  - `tests/test_integration/test_aider_backend.py`
+- **Epic Target Domain**: `specs/adhoc/`
+- **Local Issue File**: `issues/010-aider-agent-backend-integration.md`
+- **Primary Architectural Workstation**: `src/deviate/core/agent.py`, `src/deviate/state/config.py`
 
 ## [THE_PROBLEM_CONTRACT]
 As a developer using `aider` as my AI coding agent, I need the `deviate` CLI to support invoking aider as a subprocess in automated micro/meso/macro pipelines — with aider-specific prompt formatting, flag handling, and output parsing — so that the full DeviaTDD workflow can run with aider as the code-generation backend.
@@ -124,10 +119,10 @@ class DeviateConfig(BaseModel):
 
 ## [UPSTREAM_REQUIREMENT_TRACING]
 
-- **FR-009-AIDER-BACKEND**: `AiderBackend` provider implementing the `AgentBackend` interface with aider-specific subprocess invocation via `--message` + `--yes` + `--no-auto-commits`.
-- **FR-009-AIDER-CONFIG**: `AiderConfig` Pydantic model and `DeviateConfig.agent.aider` configuration section.
-- **FR-009-AIDER-PARSE**: Aider output parsing — extract file modifications, test results, and error messages from aider's chat-style output.
-- **FR-009-AIDER-CONTEXT**: Constitution and CLAUDE.md delivered via `--read` flag for efficient read-only context injection.
+- **FR-ADHOC-010-AIDER-BACKEND**: `AiderBackend` provider implementing the `AgentBackend` interface with aider-specific subprocess invocation via `--message` + `--yes` + `--no-auto-commits`.
+- **FR-ADHOC-010-AIDER-CONFIG**: `AiderConfig` Pydantic model and `DeviateConfig.agent.aider` configuration section.
+- **FR-ADHOC-010-AIDER-PARSE**: Aider output parsing — extract file modifications, test results, and error messages from aider's chat-style output.
+- **FR-ADHOC-010-AIDER-CONTEXT**: Constitution and CLAUDE.md delivered via `--read` flag for efficient read-only context injection.
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
