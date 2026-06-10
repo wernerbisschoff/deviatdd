@@ -318,6 +318,7 @@ class TestPrRun:
                     cli, ["pr", "run", "--body-file", str(body_file)]
                 )
                 assert result.exit_code == 0, result.output
+                assert "PR created but not merged" in result.output
 
                 lines = ledger.read_text(encoding="utf-8").strip().splitlines()
                 completed = [
@@ -326,4 +327,77 @@ class TestPrRun:
                     if json.loads(line).get("issue_id") == "ISS-001"
                     and json.loads(line).get("status") == "COMPLETED"
                 ]
-                assert len(completed) >= 1, "expected COMPLETED event for ISS-001"
+                assert len(completed) == 0, (
+                    "COMPLETED should NOT be set without --merge"
+                )
+
+    def test_pr_run_with_merge_marks_completed(self, tmp_git_repo: Path) -> None:
+        body_file = tmp_git_repo.parent / "pr-body.md"
+        body_file.write_text("PR description\n")
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001")
+            session.save(dot_dir / "session.json")
+
+            spec_root = Path("specs")
+            spec_root.mkdir(parents=True)
+            (spec_root / "constitution.md").write_text("# Constitution\n")
+
+            record = IssueRecord(
+                issue_id="ISS-001",
+                type="feature",
+                title="PR test issue",
+                status="BACKLOG",
+                source_file="specs/test-pr/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            )
+            ledger = spec_root / "issues.jsonl"
+            ledger.write_text(record.model_dump_json() + "\n")
+
+            readme = Path("README.md")
+            readme.write_text("change")
+            subprocess.run(
+                ["git", "add", "README.md"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "feat: test change"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            with patch("subprocess.run") as mock_run:
+                real_run = subprocess.run
+
+                def side_effect(args, **kwargs):
+                    args_str = " ".join(args) if isinstance(args, list) else args
+                    if "gh" in args_str and "pr" in args_str:
+                        mock = type("Result", (), {})()
+                        mock.returncode = 0
+                        mock.stdout = "https://github.com/owner/repo/pull/42\n"
+                        return mock
+                    return real_run(args, **kwargs)
+
+                mock_run.side_effect = side_effect
+
+                result = runner.invoke(
+                    cli, ["pr", "run", "--body-file", str(body_file), "--merge"]
+                )
+                assert result.exit_code == 0, result.output
+                assert "COMPLETED" in result.output
+
+                lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+                completed = [
+                    json.loads(line)
+                    for line in lines
+                    if json.loads(line).get("issue_id") == "ISS-001"
+                    and json.loads(line).get("status") == "COMPLETED"
+                ]
+                assert len(completed) >= 1, (
+                    "expected COMPLETED event for ISS-001 with --merge"
+                )
