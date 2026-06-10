@@ -880,7 +880,7 @@ def _pr_run(
     cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
     if merge:
         cmd.append("--merge")
-    if auto_merge:
+    elif auto_merge:
         cmd.append("--auto-merge")
     result = subprocess.run(cmd, capture_output=True, text=True, env=_git_env())
     if result.returncode != 0:
@@ -889,18 +889,24 @@ def _pr_run(
     pr_url = result.stdout.strip()
     console.print(f"[green]PR_CREATED[/] {pr_url}")
 
-    completed = record.model_copy(
-        update={
-            "status": "COMPLETED",
-            "timestamp": datetime.now(timezone.utc),
-        }
-    )
-    appended = append_issue_transition(completed, ledger_path)
-    if appended:
-        console.print(f"[green]COMPLETED[/] {issue_id} → COMPLETED")
+    if merge:
+        completed = record.model_copy(
+            update={
+                "status": "COMPLETED",
+                "timestamp": datetime.now(timezone.utc),
+            }
+        )
+        appended = append_issue_transition(completed, ledger_path)
+        if appended:
+            console.print(f"[green]COMPLETED[/] {issue_id} → COMPLETED")
+        else:
+            console.print(
+                f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
+            )
     else:
         console.print(
-            f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
+            f"[yellow]PR_CREATED[/] {issue_id} — PR created but not merged. "
+            f"Pass --merge to mark COMPLETED. URL: {pr_url}"
         )
     _save_session(session, session_path, "TASKS")
 
