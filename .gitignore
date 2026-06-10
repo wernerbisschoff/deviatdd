@@ -2,10 +2,16 @@ node_modules
 package.json
 package-lock.json
 bun.lock
-.gitignore.worktrees
 .worktrees/
-.opencode/index/
-.opencode/codebase-index.json
+
 graphify-out/cost.json
 __pycache__/
 uv.lock
+
+# Tooling
+.rgr
+.tdd-session.json
+.deviate/session.json
+.opencode/index/
+graphify-out/cost.json
+node_modules/

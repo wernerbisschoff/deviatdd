@@ -56,6 +56,34 @@ operation in tests MUST target a `tmp_path`-based isolated repo.
 See `spec.md` §`TEST_ISOLATION_CONSTRAINTS` and `tasks.md` §`Universal
 Test Constraints` for full rules.
 
+## ⚡ Test Performance (MANDATORY)
+
+Never call `_run_pytest()` (in `src/deviate/cli/micro.py`) in tests.
+Tests that invoke CLI commands which internally call `_run_pytest` (red post,
+green post, refactor post) MUST mock `deviate.cli.micro._run_pytest` with an
+appropriate `subprocess.CompletedProcess` return value.
+
+Performance target: full suite < 18s. If adding a test via `runner.invoke(cli,
+["red", "post"])` and it calls `_run_pytest`, the test will trigger ALL pytest
+tests as a subprocess (~5s per invocation). Always mock it.
+
+Example:
+```python
+@patch("deviate.cli.micro._run_pytest")
+def test_something(self, mock_pytest, tmp_git_repo):
+    mock_pytest.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="1 passed", stderr=""
+    )
+```
+
+For refactor_post tests that call `_run_pytest` twice, use `side_effect`:
+```python
+mock_pytest.side_effect = [
+    subprocess.CompletedProcess(args=[], returncode=0, stdout="1 passed", stderr=""),
+    subprocess.CompletedProcess(args=[], returncode=0, stdout="1 passed", stderr=""),
+]
+```
+
 ## DeviaTDD Phase Architecture
 
 ### Macro Layer — Feature Scoping

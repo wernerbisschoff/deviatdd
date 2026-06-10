@@ -30,7 +30,6 @@ from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
     detect_remote,
-    detect_worktree,
     remove_worktree,
 )
 from deviate.state.config import SessionState, TransitionViolationError
@@ -67,6 +66,30 @@ def _load_session(phase: str) -> tuple[SessionState, Path]:
         console.print(
             f"[red]PHASE_MISMATCH[/] session is in '{session.current_phase}', "
             f"expected '{phase}'"
+        )
+        raise typer.Exit(code=1)
+    return session, session_path
+
+
+def _load_session_accept(
+    *phases: str, force: bool = False
+) -> tuple[SessionState, Path]:
+    """Load session, accepting any of the given phases.
+
+    If ``force`` is ``True``, skip phase validation entirely.
+    """
+    dot_dir = _resolve_dot_deviate()
+    if not dot_dir.exists():
+        _handle_missing_dot_dir(phases[0] if phases else "?")
+    session_path = dot_dir / "session.json"
+    session = SessionState.load(session_path)
+    if force:
+        return session, session_path
+    if phases and session.current_phase not in phases:
+        joined = " | ".join(phases)
+        console.print(
+            f"[red]PHASE_MISMATCH[/] session is in '{session.current_phase}', "
+            f"expected one of '{joined}'"
         )
         raise typer.Exit(code=1)
     return session, session_path
@@ -649,29 +672,58 @@ def _tasks_legacy(issue_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _tasks_pre(dry_run: bool = False) -> None:
-    session, _ = _load_session("SPECIFY")
-    repo_root = Path.cwd()
+def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
+    session, _ = _load_session_accept("SPECIFY", "TASKS", force=force)
 
     issue_id = session.active_issue_id or ""
 
-    spec_mds = list(_resolve_specs_root().rglob("spec.md"))
-    if not spec_mds:
-        spec_path = ""
-        status = "SPEC_NOT_FOUND"
-        console.print("[red]SPEC_NOT_FOUND[/] no spec.md found under specs/")
+    # Resolve spec.md from the active issue (not rglob — avoids wrong-file bug)
+    spec_path: str = ""
+    status: str = "READY"
+    if issue_id:
+        found = _find_spec_md(issue_id)
+        if found is None:
+            status = "SPEC_NOT_FOUND"
+            console.print(f"[red]SPEC_NOT_FOUND[/] no spec.md for issue {issue_id}")
+        else:
+            spec_path = str(found)
+            console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
     else:
-        spec_path = str(spec_mds[0])
-        status = "READY"
-        console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+        status = "SPEC_NOT_FOUND"
+        console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
 
-    wts = detect_worktree(repo=repo_root)
-    worktree_full = str(next(iter(wts.values()))).strip() if wts else str(repo_root)
-    console.print(f"[green]WORKTREES[/] {len(wts)} worktree(s) detected")
+    # Worktree: we are already inside the worktree when tasks pre runs,
+    # so Path.cwd() is the correct answer. Fall back to branch lookup only
+    # as a safety net.
+    repo_root = Path.cwd()
+    worktree_full = str(repo_root)
+    branch_name = ""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch_name = result.stdout.strip()
+    except Exception:
+        pass
+    console.print(f"[green]WORKTREE[/] {worktree_full} [{branch_name}]")
 
     constitution_path, constitution_test_command, constitution_lint_command = (
         _resolve_constitution_commands(repo_root)
     )
+
+    # Resolve tasks_target alongside spec.md (per-issue, not per-epic)
+    tasks_target: str = ""
+    if issue_id:
+        ledger_path = _resolve_specs_root() / "issues.jsonl"
+        record = resolve_issue_record(issue_id, ledger_path)
+        if record is not None:
+            bucket = _resolve_bucket_dir(record.source_file)
+            slug = _source_stem(record.source_file)
+            tasks_target = str(_resolve_specs_root() / bucket / slug / "tasks.md")
 
     if dry_run:
         console.print("[yellow]DRY_RUN[/] skipping side effects")
@@ -680,13 +732,16 @@ def _tasks_pre(dry_run: bool = False) -> None:
     contract = {
         "issue_id": issue_id,
         "spec_path": spec_path,
+        "tasks_target": tasks_target,
         "worktree_full": worktree_full,
+        "branch_name": branch_name,
         "constitution_path": constitution_path,
         "constitution_test_command": constitution_test_command,
         "constitution_lint_command": constitution_lint_command,
         "timestamp": timestamp,
         "status": status,
         "phase": "tasks_pre",
+        "force": force,
         "dry_run": dry_run,
     }
     print(json.dumps(contract, indent=2))
@@ -704,7 +759,8 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
         console.print(f"[red]ISSUE_NOT_FOUND[/] {resolved_issue_id}")
         raise typer.Exit(code=1)
     bucket = _resolve_bucket_dir(record.source_file)
-    tasks_md = _resolve_specs_root() / bucket / "tasks.md"
+    slug = _source_stem(record.source_file)
+    tasks_md = _resolve_specs_root() / bucket / slug / "tasks.md"
     if not tasks_md.exists():
         console.print(f"[red]TASKS_NOT_FOUND[/] {tasks_md}")
         raise typer.Exit(code=1)
@@ -720,14 +776,16 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
             raise typer.Exit(code=1)
 
     task_lines = re.findall(r"(?m)^- \[[ x]\]\s+\S+.*", content)
+    has_pending = False
     for line in task_lines:
         if "[ ]" in line:
             console.print(f"[yellow]UNCHECKED_TASK[/] {line.strip()}")
-            if not force:
-                console.print(
-                    "[red]UNCHECKED_TASKS[/] some tasks are not marked complete"
-                )
-                raise typer.Exit(code=1)
+            has_pending = True
+    if has_pending and not force:
+        console.print(
+            "[yellow]UNCHECKED_TASKS[/] tasks have pending items — committing anyway"
+        )
+        console.print("[yellow]  (use --force to suppress this warning)[/]")
 
     _run_pre_commit_hooks()
 
@@ -887,7 +945,7 @@ def tasks(
 ) -> None:
     """Tasks phase: pre (detect worktree) or post (validate, commit)"""
     if issue_id == "pre":
-        _tasks_pre(dry_run=dry_run)
+        _tasks_pre(force=force, dry_run=dry_run)
     elif issue_id == "post":
         _tasks_post(force=force, issue_id=issue)
     else:

@@ -68,11 +68,17 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    After the stakeholder answers, apply the chosen strategies to inform the spec content you are about to write.
 3. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp `**Given**`/`**When**`/`**Then**` block (using bold markdown) mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array. Incorporate the HITL answers from step 2 into your decisions.
 4. `cd` into the worktree (using the `worktree_full` path from step 1), then transpile the final spec content per the output format schema and write it directly to `<spec_target>` (the relative path from the contract). Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
-5. Run the post-script to validate, commit, and update the ledger:
+5. Run the tasks pre-script to let the downstream tasks agent detect the worktree and spec:
+   ```
+   deviate tasks pre
+   ```
+   This runs inside the worktree and emits a JSON contract. The contract includes `spec_path` (the spec.md the tasks agent must read), `worktree_full`, `branch_name`, and `tasks_target`. You do NOT need to write tasks.md — that is the `/deviate-tasks` agent's job. This step just keeps the meso workflow in sync.
+6. Run the specify post-script to validate, commit spec.md, and update the ledger:
    ```
    deviate specify post
    ```
-   The post-script runs from inside the worktree, reads the file you just wrote, validates required sections, Gherkin blocks, and FR traceability, then commits and updates the ledger. If validation fails, prints a diagnostic, and requires re-running with `--force` only with documented justification. Once the post-script succeeds, **the phase is complete.**
+   The post-script reads the spec.md file, validates required sections, Gherkin blocks, and FR traceability, then commits and advances the session to TASKS. If validation fails, it prints a diagnostic; re-run with `--force` only with documented justification.
+7. Hand off to `/deviate-tasks`. **TERMINATE HERE. Do NOT write tasks.md.**
 </execution_sequence>
 
 <output_format_schemas>

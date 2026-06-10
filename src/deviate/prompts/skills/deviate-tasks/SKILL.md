@@ -47,12 +47,12 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 
 
 <execution_sequence>
-1. `cd` into the worktree (using the `worktree_full` path from your context) and run the pre-script to validate `spec.md` has required sections and emit a JSON contract:
+1. `cd` into the worktree (using the `worktree_full` path from your context) and run the pre-script to detect the worktree and emit a JSON contract:
    ```
    deviate tasks pre
    ```
-   The pre-script detects the worktree via `git rev-parse` — it must run from inside the worktree. The contract on stdout contains: `branch_name`, `worktree_full`, `spec_path` (the spec.md you must read), `tasks_target` (where the post-script will write tasks.md), `design_path` (optional, from research skill), `data_model_path` (optional, from research skill), `reuse_from_specify: true`.
-   - If the pre-script emits `STATUS: NOT_IN_WORKTREE`, `STATUS: INVALID_BRANCH`, `STATUS: SPEC_NOT_FOUND`, or `STATUS: TASKS_FAILED`, terminate immediately and surface the status.
+   The pre-script detects the worktree via `Path.cwd()` — it must run from inside the worktree. It accepts the session in either SPECIFY or TASKS phase (the specify post-script may or may not have run yet). Use `--force` to bypass any phase validation. The contract on stdout contains: `branch_name`, `worktree_full`, `spec_path` (the spec.md you must read, resolved from the active issue ID), `tasks_target` (where to write tasks.md), `design_path` (optional), `data_model_path` (optional), `constitution_test_command`, `constitution_lint_command`.
+   - If the pre-script emits `STATUS: SPEC_NOT_FOUND` or `STATUS: NO_ACTIVE_ISSUE`, surface the status. The `/deviate-specify` phase must produce a valid spec.md for the active issue first.
 
 2. Read `spec_path` (the full file on disk) for user stories, acceptance criteria, and project structure. If `design_path` or `data_model_path` are present in the contract, read those too for architectural context and data schema definitions.
 
@@ -75,8 +75,8 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
     - **4e. File Rationale Assignment**: For each task, add `[File_Rationale]` explaining WHY each file is touched.
 
 5. **Traceability Audit**:
-    - Read spec.md ANTI_GOALS section and verify no task touches files related to anti-goals
-    - Read design.md RISK_REGISTER or CONSTRAINTS sections (if available) and incorporate into task generation
+    - Read `spec.md` `SCOPE_BOUNDARIES > Defensive Exclusions` section and verify no task touches files related to anti-goals
+    - Read `design.md` `RISK_REGISTER` or `CONSTRAINTS` sections (if available) and incorporate into task generation
     - Verify phase-to-story mapping
     - Flag orphaned files
 
@@ -87,11 +87,11 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 
 7. Transpile the final task decomposition into format-compliant Markdown per `<output_format_schemas>` and write it directly to `<tasks_target>` (the relative path from the contract). Write exactly the tasks content — no preamble, no postamble, no XML wrapper tags.
 
-8. Run the post-script to validate, commit (still inside the worktree from step 1):
+8. Run the post-script to validate and commit (still inside the worktree from step 1):
    ```
    deviate tasks post
    ```
-   The post-script reads the file, validates required sections, task ID format (`T{NNN}`), locked checkboxes (`- [ ] `, never `- [x]`), and file traceability tags, then commits. If validation fails, it prints a diagnostic. Fix the file and re-run. Re-run with `--force` only with documented justification.
+   The post-script reads the file, validates required sections, task ID format (`T{NNN}`), and locked checkboxes (`- [ ] `, never `- [x]`), then commits and advances the session to IDLE. Unchecked tasks generate a warning but are NOT rejected (tasks are pending by design on initial creation). If validation fails, it prints a diagnostic. Fix the file and re-run. Use `--force` only with documented justification.
 
 **TERMINATE HERE. Do NOT proceed to implementation. Hand off to the TDD phase.**
 </execution_sequence>
