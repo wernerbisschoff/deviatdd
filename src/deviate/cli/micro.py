@@ -555,24 +555,14 @@ def _is_return_type_mismatch(
     value: ast.expr,
     expected: str,
 ) -> bool:
-    if expected == "str":
-        if isinstance(value, ast.JoinedStr):
-            return False
-        if isinstance(value, ast.Constant) and isinstance(value.value, str):
-            return False
+    if isinstance(value, ast.Constant):
+        type_map = {"str": str, "int": int, "float": (int, float), "bool": bool}
+        if expected in type_map:
+            return not isinstance(value.value, type_map[expected])
         return True
-    if expected == "int":
-        if isinstance(value, ast.Constant) and isinstance(value.value, int):
-            return False
-        return True
-    if expected == "float":
-        if isinstance(value, ast.Constant) and isinstance(value.value, (int, float)):
-            return False
-        return True
-    if expected == "bool":
-        if isinstance(value, ast.Constant) and isinstance(value.value, bool):
-            return False
-        return True
+
+    if expected == "str" and isinstance(value, ast.JoinedStr):
+        return False
     if expected == "list" and isinstance(value, ast.List):
         return False
     if expected == "dict" and isinstance(value, ast.Dict):
@@ -581,7 +571,7 @@ def _is_return_type_mismatch(
         return False
     if expected == "set" and isinstance(value, ast.Set):
         return False
-    return True
+    return False
 
 
 @refactor_app.command(name="post")
