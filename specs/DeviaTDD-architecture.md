@@ -8,7 +8,7 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
 
 ```plaintext
                           ┌──────────────┐
-                          │   /adhoc     │  (complexity gate: low/medium only)
+                          │   /deviate-adhoc     │  (complexity gate: low/medium only)
                           │ Condensed    │
                           │ E+P+S → Issue│
                           └──────┬───────┘
@@ -51,31 +51,51 @@ Breaks a business goal down into standard development project containers.
 * **Research (Architectural Design):** Consumes `explore.md` and performs high-level architectural analysis: trade-offs, options matrix, design decisions, and data modeling. Runs on a reasoning model (Qwen thinking or V4 Pro). Outputs `design.md` (architecture and decisions) and `data-model.md` (entity relationships, schemas).
 * **PRD:** Translates `design.md` into a clear, feature-wide requirement set of immutable user requirements and acceptance criteria.
 * **Shard:** Breaks down the PRD into standalone technical issue files (GitHub Issues). Each issue must be a **vertical slice** — a complete, testable behavior end-to-end (not a horizontal layer like "add database"). Target ~5 issues per feature shard. Enforce bounds: minimum 3 issues, maximum 10 issues. Each issue must be independently implementable and testable, with clear acceptance criteria.
-* **Adhoc (Fast-Path):** A condensed single-command shortcut (`/adhoc`) that compresses Explore + Research + PRD + Shard into one operation for low-to-medium complexity tasks. Performs proportional exploration (lightweight file scanning, dependency mapping), synthesizes a condensed PRD entry, and emits a single vertical-slice issue directly into `specs/adhoc/`. Appends to the aggregated `specs/adhoc/prd.md` and registers the issue in the global `specs/issues.jsonl` append-only ledger with an `ADH-{NNN}` identifier. A **Complexity Gate** evaluates the task description before proceeding: high-complexity tasks (multi-module coordination, state management, new architecture) are rejected with a directive to run `/explore` to initiate a full epic workflow instead. This gate prevents scope-creep and ensures adhoc remains a true fast-path, not a bypass for complex engineering.
+* **Adhoc (Fast-Path):** A condensed single-command shortcut (`/deviate-adhoc`) that compresses Explore + Research + PRD + Shard into one operation for low-to-medium complexity tasks. Performs proportional exploration (lightweight file scanning, dependency mapping), synthesizes a condensed PRD entry, and emits a single vertical-slice issue directly into `specs/adhoc/`. Appends to the aggregated `specs/adhoc/prd.md` and registers the issue in the global `specs/issues.jsonl` append-only ledger with an `ADH-{NNN}` identifier. A **Complexity Gate** evaluates the task description before proceeding: high-complexity tasks (multi-module coordination, state management, new architecture) are rejected with a directive to run `/deviate-explore` to initiate a full epic workflow instead. This gate prevents scope-creep and ensures adhoc remains a true fast-path, not a bypass for complex engineering.
 
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands.
-* **Specify (`/spec:core:specify`):** Generates a structured functional contract (`spec.md`).
+* **Specify (`deviate specify pre` / `deviate specify post`):** Generates a structured functional contract (`spec.md`). The `pre` subcommand claims an issue, creates a worktree, and emits a JSON contract. The `post` subcommand validates Gherkin syntax and commits. A legacy positional-argument interface (`deviate specify ISS-001`) also exists for direct invocation.
 * **[HITL GATE]:** Human reviews the functional contract before task decomposition proceeds. Catches spec errors early when they're cheap to fix.
-* **Tasks (`/spec:core:tasks`):** Merges the former `/plan` role. Decomposes the specification into a trackable execution blueprint with implementation hints, stored in `specs/features/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`. Each task entry is assigned a unique `TSK-{ISSUE_ID}-{NN}` identifier, typed as `tdd`, `direct`, or `e2e`, and includes file locations, mock boundaries, and fixture requirements. Automatically appends a terminal `type: "e2e"` task at the bottom of every issue's task ledger.
+* **Tasks (`deviate tasks pre` / `deviate tasks post`):** Decomposes the specification into a trackable execution blueprint with implementation hints, stored in `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.md`. The `pre` subcommand resolves spec.md for the active issue. The `post` subcommand validates and commits tasks.md. A legacy positional-argument interface (`deviate tasks ISS-001`) also exists for direct invocation. Each task entry is assigned a unique `TSK-{ISSUE_ID}-{NN}` identifier, typed as `tdd`, `direct`, or `e2e`, and includes file locations, mock boundaries, and fixture requirements. Automatically appends a terminal `type: "e2e"` task at the bottom of every issue's task ledger.
   * **Granularity:** Target ~5 tasks per issue. Each task must be a complete functional unit implementable in a single TDD cycle (15-60 min). Avoid "create one file" granularity — group related functions into a cohesive unit. Enforce bounds: minimum 3 tasks per issue, maximum 10 tasks per issue.
-* **Context (`/spec:core:context`):** Synchronizes dependencies and historical constitution constraints.
-* **Session Continuity (KV Cache Optimization):** `/specify` and `/tasks` execute in a single continuous LLM session — not as separate invocations. The system prompt, tool definitions, and `spec.md` content form a stable prefix that achieves 90%+ KV cache hit rates after the first turn. DeepSeek V4 Flash bills cache-hit input at $0.0028/M tokens versus $0.14/M for cache-miss input (98% discount). V4 Pro applies a similar ratio ($0.003625/M hit vs $0.435/M miss). Architectural rationale: task decomposition is cheap to regenerate (~30s); the cost of a cache miss from restarting the session dwarfs the cost of keeping it alive. This is the primary cost lever in the Meso layer.
+* **PR (`deviate pr pre` / `deviate pr run`):** Creates a GitHub pull request from the current worktree branch. The `pre` subcommand validates PR metadata; the `run` subcommand executes `gh pr create` and optionally merges upon completion.
+* **Context (`deviate context pre` / `deviate context post`):** Synchronizes agent context files (CLAUDE.md, AGENTS.md) with the active `spec.md`, `constitution.md`, and workspace parameters. The `pre` subcommand discovers project paths and emits a JSON contract; the `post` subcommand performs block replacement in CLAUDE.md and enforces the AGENTS.md → CLAUDE.md symlink. Auto-triggered after every macro/meso `post` command that commits an artifact. Pass `--no-context-sync` to suppress.
+* **Session Continuity (KV Cache Optimization):** `/deviate-specify` and `/deviate-tasks` execute in a single continuous LLM session — not as separate invocations. The system prompt, tool definitions, and `spec.md` content form a stable prefix that achieves 90%+ KV cache hit rates after the first turn. DeepSeek V4 Flash bills cache-hit input at $0.0028/M tokens versus $0.14/M for cache-miss input (98% discount). V4 Pro applies a similar ratio ($0.003625/M hit vs $0.435/M miss). Architectural rationale: task decomposition is cheap to regenerate (~30s); the cost of a cache miss from restarting the session dwarfs the cost of keeping it alive. This is the primary cost lever in the Meso layer.
 
 ### 2.3 The Micro Layer: The Automated Sandbox (Python CLI)
 The executor agent targets a task by looking up its current state in `tasks.jsonl`. The state ledger is pure — only event type, worker, and timestamp are stored. The agent is trapped inside a strict state machine governed by Git, deterministic parsing, and defensive operational safeguards. **Task execution type determines the applicable phase gates and file-write boundaries.**
 
 ### Execution Engine
 
-The Micro layer execution engine uses **Aider's Python API** (`aider.coders.Coder`) rather than raw `claude -p` or `droid exec` subprocess calls. Three architectural advantages drive this decision:
+The Micro layer execution engine is implemented as an in-process Python function dispatch
+via `src/deviate/cli/micro.py`. The `deviate run <task-id>` command resolves a task by its
+`TSK-NNN-NN` identifier from the ledger and dispatches through the phase cycle based on
+`execution_mode`:
 
-1. **SEARCH/REPLACE diff format**: TDD edits are typically 5–20 lines. Aider sends only the changed lines as SEARCH/REPLACE blocks, not full file rewrites. This yields ~10x token savings on output per turn compared to whole-file formats used by other engines.
+- **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle
+  via `_run_tdd_cycle()`, which calls `_PHASE_MAP[phase]()` for each phase in sequence.
+- **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
+  `_run_execute_phase()`, which marks the task COMPLETED without test generation.
 
-2. **Architect/Editor two-model routing**: Aider's `--architect` mode maps directly to DeviaTDD's model tiering. Complex RED phases can route V4 Pro as Architect (reasoning) and V4 Flash as Editor (code generation). Standard GREEN/REFACTOR phases use V4 Flash for both roles.
+Each phase transition appends a status record to the append-only task ledger using
+`append_task_transition()` with compound-key idempotency on `(id, status)`. The JUDGE
+phase (`deviate judge pre`) performs compliance verification by comparing changed files
+against protected modules declared in `spec.md` `Module:` declarations.
 
-3. **Single-session KV cache preservation**: A single `Coder` object is reused across RED → GREEN → REFACTOR turns within a task. The system prompt, repo map, and read-only test files form a stable prefix that hits the KV cache on every turn after the first. Test files that do not change during a cycle are loaded as read-only context rather than appended as conversation turns (which would break the cache prefix).
+Manual phase execution is supported via individual `pre`/`post` subcommands:
+`deviate red pre/post`, `deviate green pre/post`, etc. These are used for interactive
+or agent-driven TDD where full automation is not desired.
 
-The JUDGE and YELLOW phases run in isolated, zero-shared-history sessions (different model and/or fresh context) to break recursive subjectivity — this is a deliberate cache sacrifice for compliance integrity.
+All `pre` subcommands accept `--json` (emit the phase contract as JSON to stdout) and
+`--quiet` (suppress rich console diagnostic output). These flags enable programmatic
+consumption by agent runtimes that parse JSON contracts rather than reading human-facing
+console output.
+
+Cache optimization strategies (prefix caching, session continuity) are defined as
+recommended patterns in `specs/constitution.md` seeds but are **not enforced programmatically**
+by the `deviate` CLI. The `--agent` flag on `deviate run` configures which agent backend
+to invoke, but model selection is delegated to the calling environment.
 
 #### Task Execution Types
 
@@ -126,7 +146,7 @@ This closed-loop lifecycle converts high-level human intent into strict machine-
 
 ### 3.1 Spec-Driven Development (SDD)
 * **How it is fulfilled:** Executed directly via the Macro Layer and Meso Layer.
-* **Mechanisms:** The workflow prohibits "vibe coding" or jumping straight into implementation. The framework enforces an artifact-centric approach where a feature must be systematically defined via research, design analysis, Product Requirement Documents (PRDs), and issue sharding. The Macro Layer separates context gathering (`/explore` — cheap) from architectural reasoning (`/research` — expensive), then synthesizes requirements (`/prd`) and decomposes issues (`/shard`). Slash commands like `/spec:core:specify` and `/spec:core:tasks` lock down the functional intent (`spec.md`) and execution blueprint (`tasks.jsonl`) before a single line of feature code can legally be written.
+* **Mechanisms:** The workflow prohibits "vibe coding" or jumping straight into implementation. The framework enforces an artifact-centric approach where a feature must be systematically defined via research, design analysis, Product Requirement Documents (PRDs), and issue sharding. The Macro Layer separates context gathering (`/deviate-explore` — cheap) from architectural reasoning (`/deviate-research` — expensive), then synthesizes requirements (`/deviate-prd`) and decomposes issues (`/deviate-shard`). The CLI commands `deviate specify pre/post` and `deviate tasks pre/post` lock down the functional intent (`spec.md`) and execution blueprint (`tasks.md` / `tasks.jsonl`) before a single line of feature code can legally be written.
 
 ### 3.2 Test-Driven Development (TDD)
 * **How it is fulfilled:** Executed via the Micro Layer: Automated Sandbox.
@@ -138,7 +158,7 @@ This closed-loop lifecycle converts high-level human intent into strict machine-
 
 ### 3.4 Acceptance Test-Driven Development (ATDD)
 * **How it is fulfilled:** Achieved through bidirectional requirement traceability and the Meso/Micro Layer transition.
-* **Mechanisms:** During the Meso phase, `/spec:core:tasks` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate evaluates the collective task execution delta directly against the overarching functional constraints of `spec.md`. This guarantees that passing unit tests mathematically equal a passed business acceptance spec.
+* **Mechanisms:** During the Meso phase, `deviate tasks pre/post` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate evaluates the collective task execution delta directly against the overarching functional constraints of `spec.md`. This guarantees that passing unit tests mathematically equal a passed business acceptance spec.
 
 ### 3.5 Evaluation-Driven Development (EDD)
 * **How it is fulfilled:** Realized via the Yellow Amend Gate and the Judge/Train Compliance Gate.
@@ -148,56 +168,82 @@ This closed-loop lifecycle converts high-level human intent into strict machine-
 
 ## 4. Core State Machine Engine
 
-The execution state transitions must follow a strict non-bypassable sequence. Backward paths are structurally impossible unless triggered by the programmatic Yellow Amendment or Train Rollback protocols.
+The execution state transitions follow a strict sequence enforced by `SessionState.transition_to()` in `src/deviate/state/config.py`. Macro and meso phases use the `_MACRO_TRANSITION_MAP` to validate forward transitions. Micro phases use `force_transition_to()` which bypasses transition validation (micro phases are driven by the TDD cycle dispatcher).
+
+**Macro/Meso valid transitions** (defined in `_MACRO_TRANSITION_MAP`):
 
 ```
-   ┌─────────┐      /spec:core:specify     ┌───────────┐
-   │  IDLE   │ ──────────────────────────> │ SPECIFIED │
-   └─────────┘                             └───────────┘
-        ▲                                        │
-        │                                  [HITL GATE]
-        │                                        │
-        │                                        │ /spec:core:tasks
-        │                                        ▼
-        │   ┌──────────────┐
-        └── │ TASKS_READY  │
-            └──────────────┘
-                   │
-                   │ rgr run [TASK_ID]
-                   ▼
-            ┌──────────────┐
-            │  PHASE_RED   │ ──(Test Failure Verified)──┐
-            └──────────────┘                            │
-                   ▲                                    │
-                   │ (Invalid Red/Syntax Error)         ▼
-                   └───────────────────────────── ┌───────────┐
-                                                  │ PHASE_GREEN│ <──────────┐
-                                                  └───────────┘            │
-                                                        │                  │
-                                           Proposed     │    Judge         │ Train
-                                           Amendment    │  Violation       │ Rollback
-                                                        ▼                  │
-                                                  ┌───────────┐            │
-                                                  │ PHASE_AMEND│           │
-                                                  └───────────┘ ───────────┘
-                                                        │
-                                           Approved     │
-                                           Amendment    ▼
-                                                  ┌───────────┐
-                                                  │PHASE_JUDGE│
-                                                  └───────────┘
-                                                        │
-                                                Passed  │
-                                                Judge   ▼
-                                                  ┌───────────┐
-                                                  │ PHASE_REFA│
-                                                  └───────────┘
-                                                        │
-                                                        │ Regression check
-                                                        ▼
-                                                  ┌───────────┐
-                                                  │ TASK_DONE │
-                                                  └───────────┘
+    ┌─────────┐  explore pre   ┌──────────┐  explore post  ┌───────────┐
+    │  IDLE   │ ─────────────> │ EXPLORE  │ ─────────────> │ RESEARCH  │
+    └─────────┘                └──────────┘                └───────────┘
+         ▲                                                    │
+         │                                          research post
+         │                                                    ▼
+         │                                              ┌─────────┐
+         │                                              │   PRD   │
+         │                                              └─────────┘
+         │                                                    │
+         │                                              prd post
+         │                                                    ▼
+         │                                              ┌──────────┐
+         │                                              │  SHARD   │
+         │                                              └──────────┘
+         │                                                    │
+         │                                              shard post
+         │                                                    ▼
+         │   ┌────────────┐   tasks post (loops back)   ┌──────────┐
+         ├── │   TASKS    │ <────────────────────────── │ SPECIFY  │
+         │   └────────────┘                              └──────────┘
+         │         │                                           ▲
+         │         │  pr pre/run                                │
+         │         ▼                                            │ specify pre
+         │   ┌──────────┐                                       │
+         └── │ IDLE     │ ──────────────────────────────────────┘
+             └──────────┘
+```
+
+**Micro layer TDD cycle** (per task, dispatched by `deviate run <task-id>`):
+
+```
+             ┌──────────────┐
+             │  PENDING     │   (initial ledger status)
+             └──────────────┘
+                    │
+                    │ red post
+                    ▼
+             ┌──────────────┐
+             │     RED      │ ──(Test Failure Verified)──┐
+             └──────────────┘                            │
+                    ▲                                    │
+                    │ (invalid: PASS/SYNTAX_ERROR)       ▼
+                    └───────────────────────────── ┌────────────┐
+                                                   │   GREEN    │ <──────────┐
+                                                   └────────────┘            │
+                                                         │                  │
+                                            Proposed     │    Judge         │ git
+                                            Amendment    │  Violation       │ restore
+                                                         ▼                  │
+                                                   ┌───────────┐            │
+                                                   │  YELLOW   │            │
+                                                   └───────────┘ ───────────┘
+                                                         │
+                                            Approved     │
+                                            Amendment    ▼
+                                                   ┌────────────┐
+                                                   │   JUDGE    │
+                                                   └────────────┘
+                                                         │
+                                                 Passed  │
+                                                 Judge   ▼
+                                                   ┌──────────────┐
+                                                   │  REFACTOR    │
+                                                   └──────────────┘
+                                                         │
+                                                         │ Regression check
+                                                         ▼
+                                                   ┌──────────────┐
+                                                   │  COMPLETED   │
+                                                   └──────────────┘
 ```
 
 ---
@@ -207,29 +253,59 @@ The execution state transitions must follow a strict non-bypassable sequence. Ba
 Agents are bound into specialized operational scopes by context restrictions. Open-ended instructions are forbidden.
 
 ### 5.1 Meso Layer Phase Prompts
-* **`/spec:core:specify` Context:** Issue Data + Raw Architectural Guidelines.
+* **`/deviate-specify` Context (via `deviate specify pre`):** Issue Data + Raw Architectural Guidelines.
     * *System Directives:* Analyze raw input requirements. Synthesize the deterministic functional specification (`spec.md`). Express logic entirely in business behavior boundaries, edge states, and data models. Exclude engineering syntax or syntax paradigms.
 * **[HITL GATE]:** Human reviews `spec.md` for completeness, edge cases, scope correctness. Catches spec errors before task decomposition proceeds. Task decomposition is cheap to regenerate; spec errors cascade.
-* **`/spec:core:tasks` Context:** `spec.md` + Codebase Layout Map + `deviate test-config` output.
-    * *System Directives:* Decompose `spec.md` directly into discrete task entries within `tasks.jsonl` (issue-scoped at `specs/features/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`). This command merges the former `/plan` role — each task must include implementation hints (file locations, mock boundaries, fixture requirements) alongside the decomposition. Every entry must be assigned a unique tracking identifier (`TSK-{ISSUE_ID}-{NN}`) and must map cleanly to an acceptance criterion in `spec.md`. Encode DAG dependencies via `blocked_by` arrays in each task entry. Assign each task an execution type: `tdd` (standard TDD loop), `direct` (boilerplate/config, no RED phase), or `e2e` (end-to-end integration). **Automatically append a terminal `type: "e2e"` task at the bottom of the ledger** to validate the issue's holistic system flow. Target ~5 tasks per issue; enforce 3-10 bounds.
+* **`/deviate-tasks` Context (via `deviate tasks pre`):** `spec.md` + Codebase Layout Map + constitution command output.
+    * *System Directives:* Decompose `spec.md` directly into discrete task entries written to `tasks.md` (the human-authored decomposition document). The CLI subsequently registers these as rows in `tasks.jsonl` (the append-only event ledger). This command merges the former `/plan` role — each task must include implementation hints (file locations, mock boundaries, fixture requirements) alongside the decomposition. Every entry must be assigned a unique tracking identifier (`TSK-{ISSUE_ID}-{NN}`) and must map cleanly to an acceptance criterion in `spec.md`. Encode DAG dependencies via `blocked_by` arrays in each task entry. Assign each task an execution type: `tdd` (standard TDD loop), `direct` (boilerplate/config, no RED phase), or `e2e` (end-to-end integration). **Automatically append a terminal `type: "e2e"` task at the bottom of the ledger** to validate the issue's holistic system flow. Target ~5 tasks per issue; enforce 3-10 bounds.
 
-### 5.2 Micro Layer Sandbox Prompts
+### 5.2 Micro Layer Sandbox Prompts (Reference)
 
-### Model Routing & Cache Discipline
+The following system prompt templates are stored in `src/deviate/prompts/auto/` as `.md`
+files. They are provided as reference templates — the `deviate` CLI emits context contracts
+via JSON at each `pre` subcommand, which the calling agent or skill can use to construct
+its own prompts. The exact prompt text is not hard-coded in the CLI source; agent
+implementations may choose their own framing as long as the behavioral invariants are
+preserved.
 
-| Phase | Model | Session | Cache Strategy |
+### Model Routing & Cache Discipline (Guidance)
+
+The model routing table below is documented as a recommended strategy in the
+`specs/constitution.md` seeds and prompt skills. It is **not enforced programmatically**
+by the `deviate` CLI. The `--agent` flag on `deviate run` and the `DeviateConfig.agent.backend`
+field configure which agent backend to target, but model selection within the backend is
+delegated to the calling environment.
+
+| Phase | Recommended Model | Session | Cache Strategy |
 |---|---|---|---|
-| RED | V4 Flash (default) or V4 Pro (complex tasks) | Task session | Stable prefix: system prompt + repo map + read-only test files |
+| RED | V4 Flash (default) or V4 Pro (complex tasks) | Task session | Stable prefix |
 | GREEN | V4 Flash | Same task session | Cache hit on prefix from RED turn |
-| YELLOW | V4 Pro | Isolated session | No cache sharing — compliance requires fresh context |
-| JUDGE | V4 Pro | Isolated session | No cache sharing — breaks recursive subjectivity |
+| YELLOW | V4 Pro | Isolated session | No cache sharing |
+| JUDGE | V4 Pro | Isolated session | No cache sharing |
 | REFACTOR | V4 Flash | Same task session | Cache hit on prefix from GREEN turn |
+| `/deviate-explore` | V4 Flash | Single invocation | One-shot |
+| `/deviate-research` | Qwen 3.7+ | Single invocation | One-shot |
+| `/deviate-prd` | Qwen 3.7+ | Single invocation | One-shot |
+| `/deviate-shard` | Qwen 3.7+ | Single invocation | One-shot |
+| `/deviate-specify` -> `/deviate-tasks` | V4 Pro | Continuous thread | 90%+ cache hit after turn 1 |
+| `/deviate-adhoc` | V4 Flash | Single invocation | One-shot |
 
-**Cache-breaking actions prohibited during Micro loops:**
-- Switching the model identifier mid-cycle (each model has its own KV cache)
-- Adding or removing tool definitions
-- Modifying the system prompt
-- Appending read-only test files as conversation turns instead of prefix-stable context
+**Cache Discipline — Prohibited Actions During Micro Loops:**
+
+To preserve KV cache hit rates across the RED → GREEN → JUDGE → REFACTOR cycle:
+
+1. **No model switching mid-cycle.** Each model maintains its own KV cache. Switching the
+   model identifier mid-cycle forces full context recomputation at cache-miss pricing.
+2. **No tool definition changes.** Adding or removing tool definitions invalidates the
+   cached prefix.
+3. **No system prompt mutation.** Modifying the system prompt between phases breaks the
+   stable prefix.
+4. **No appending read-only test files as conversation turns.** Test files that do not
+   change during a cycle must be loaded as prefix-stable context (e.g., via `--read` mode),
+   not appended as conversation turns (which would push them past the cache prefix boundary).
+
+The `CacheDiscipline` module (`src/deviate/core/cache_discipline.py`) provides
+programmatic validation of these rules during `deviate run` execution cycles.
 
 * **`PHASE_RED` System Prompt (for `tdd` tasks):**
     ```text
@@ -301,15 +377,15 @@ The framework prevents total autonomy drift by enforcing non-bypassable verifica
 [Micro Success] ──>  ( GATE 3: Final Merge Audit )   ──> [Production Deployment]
 ```
 
-* **Gate 1: Blueprint Approval (After `/research`, Before `/prd`)**
+* **Gate 1: Blueprint Approval (After `/deviate-research`, Before `/deviate-prd`)**
     * *Trigger:* Triggered when `design.md` and `data-model.md` are generated by the Research phase.
     * *Action:* Human reviews core architectural selections, design decisions, data models, and tech stacks. PRD and Shard execution remain locked until an approval flag is written.
-* **Gate 2: Contract Sign-Off (After `/specify`, Before `/tasks`) — PRIMARY GATE**
+* **Gate 2: Contract Sign-Off (After `/deviate-specify`, Before `/deviate-tasks`) — PRIMARY GATE**
     * *Trigger:* Triggered when `spec.md` is generated for all issues in the feature.
     * *Rationale:* Spec errors are the most expensive to fix downstream. Task decomposition is cheap to regenerate (~30s). Catch functional contract errors here before they cascade into 25+ task implementations.
     * *Question Budget Rule:* The agent can prompt the user with targeted clarity questions (max 4 per interaction) to resolve functional ambiguity before locking.
-    * *Action:* Human reviews each issue's `spec.md` for completeness, edge cases, scope correctness, and architectural alignment. Approval is required before `/tasks` will execute.
-* **Gate 2b: Task Review (After `/tasks` — Opt-in)**
+    * *Action:* Human reviews each issue's `spec.md` for completeness, edge cases, scope correctness, and architectural alignment. Approval is required before `/deviate-tasks` will execute.
+* **Gate 2b: Task Review (After `/deviate-tasks` — Opt-in)**
     * *Trigger:* Only for complex features (>7 issues or highly interdependent tasks).
     * *Action:* Human reviews task granularity, DAG dependencies, and implementation hints. Skipped for standard features.
 * **Gate 3: Final Merge Audit (Micro-to-Idle Boundary)**
@@ -320,13 +396,17 @@ The framework prevents total autonomy drift by enforcing non-bypassable verifica
 
 ## 7. Multi-Framework Testing Abstraction
 
-DeviaTDD standardizes framework outputs into its state engine using a unified driver specification.
+DeviaTDD's current implementation (`src/deviate/cli/micro.py`) supports **pytest** as its
+test runner via `_run_pytest()`. The abstraction layer is designed to be extensible to other
+frameworks through the `_classify_pytest_outcome()` pattern, which parses stdout/stderr for
+syntax errors, assertion failures, and pass states. Currently, `_run_pytest()` collects all
+`tests/**/test_*.py` files and runs them with `python -m pytest -v`.
 
 | Testing Framework | CLI Invocation Strategy | Success Validation | Error Parse Pattern | Tamper Guard Reset Path |
 | :--- | :--- | :--- | :--- | :--- |
-| **Python / pytest** | `pytest --json-report` | `exit_code == 0` | Inspect JSON for `outcome == "failed"` matching an explicit `AssertionError` / `NotImplementedError`. | `git checkout HEAD -- tests/` |
-| **Node.js / Jest** | `jest --json` | `success == true` | Inspect JSON for failed assertions; ensure zero runtime or module import failures. | `git checkout HEAD -- __tests__/` |
-| **Go / testing** | `go test -json` | `Action == "pass"` | Parse output stream lines for `Action == "fail"` with explicit testing log assertions. | `git checkout HEAD -- *_test.go` |
+| **Python / pytest** | `python -m pytest tests/ -v` | `returncode == 0` | `_classify_pytest_outcome()`: checks `SYNTAX_ERROR` markers (SyntaxError, IndentationError, etc.), `ASSERTION_FAILURE`, `PASS`, `UNKNOWN_FAILURE`. | `TamperGuard.evaluate(GREEN_IMPLEMENTATION)` — restores `tests/`, `specs/`, `.deviate/` files. |
+| **Node.js / Jest** | (Not implemented) | — | — | — |
+| **Go / testing** | (Not implemented) | — | — | — |
 
 ---
 
@@ -334,15 +414,15 @@ DeviaTDD standardizes framework outputs into its state engine using a unified dr
 
 The orchestrator must maintain and enforce these structural constraints across all operations:
 
-1. **The Git Isolation Principle:** Every isolated task loop must be executed on a clean git branch or worktree environment. Commits must be made automatically at each phase boundary (`test: [TASK-ID]`, `feat: [TASK-ID]`).
-2. **The Test Reversion & Scope Audit Law (Tamper Guard Upgrade):** When entering or running the `GREEN` execution phase, the testing directories must be programmatically forced back to their post-`RED` commit status via a hard checkout hook. To prevent optimization-seeking agents from circumventing execution parameters, the host CLI executes a passive `git diff` audit prior to processing any `GREEN` phase evaluation. If changes are detected outside the designated implementation targets (e.g., configurations, environment components, shared mocks, or parent infrastructure paths), the transaction is immediately invalidated, rolled back, and thrown as an execution error.
-3. **Append-Only Ledger Protocol (issues.jsonl + tasks.jsonl):** All state transitions are append-only. The global `specs/issues.jsonl` serves as the authoritative issue registry (features + ad-hoc hotfixes). Issue-scoped micro-task ledgers live at `specs/features/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`. Agents cannot edit any status fields directly — only the CLI may append events. No existing line in any ledger is ever modified or overwritten. Canonical state is derived by parsing each ledger sequentially (bottom-up for `issues.jsonl` to find latest entry per issue_id; sequential for `tasks.jsonl` to derive task status). Ad-hoc issues bypass macro planning and route directly to isolated execution workspaces.
-4. **Deterministic Test Failure Check:** For a `RED` phase to be valid, the test must crash explicitly due to missing code logic (assertions). Runtime engine issues, bad imports, typos, or script failures are caught and handled as execution errors, returning the file to the agent without committing.
-5. **Memory Preservation via Train Gates:** When the code fails a compliance check, the workspace is safely reset to the last valid commit via a hard reset (`git reset --hard HEAD~1`) to remove code rot. However, the generated failure logs must be preserved and injected directly into the agent's context window. The agent's contextual understanding must expand systematically even when bad files are dropped.
-6. **The Elastic Governance Rule:** The operational overhead and token consumption of the micro-execution loop can be scaled dynamically using project-level Execution Profiles configured in `.deviate/config.toml`. While the baseline state machine path remains unyielding, specific semantic phases—such as the independent Judge Phase, automated Refactoring routines, or long-running Train loops—can be scaled back, bypassed, or attached to higher/lower model thresholds depending on the target task's explicit risk or temperature tier (e.g., `--profile fast` versus `--profile secure`).
-7. **Atomic Concurrency Protocol (Git Reference Locks):** To eliminate TOCTOU race conditions across distributed terminal instances, task claim and reservation are combined into a single atomic server-side write via Git branch reference creation. A worker atomically creates a branch `deviatdd/lock/<task-id>`, attempts `git push --set-upstream origin <branch>`. The server serializes concurrent claims; the first successful push wins. Rejected push attempts abort cleanly without modifying local state. The `tasks.jsonl` ledger records the authoritative outcome.
-8. **The Session Continuity Principle:** Each Micro-layer task executes in a single LLM session, reusing the same connection across RED, GREEN, and REFACTOR phases. Test files that do not change during a cycle must be loaded as read-only prefix context, not appended as conversation turns. Switching the model identifier mid-task is prohibited — each model maintains its own KV cache, and a switch forces full context recomputation at cache-miss pricing.
-9. **The Model Tiering Constraint:** Model selection follows a cost-appropriateness ladder: V4 Flash for high-frequency, low-complexity phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for infrequent compliance phases (JUDGE, YELLOW, `/specify`, `/tasks`); reasoning-tier models (Qwen 3.7+) for architectural phases (`/research`, `/prd`, `/shard`). The vast majority of turns (~85%) use the cheapest model. No phase may use a model more expensive than its task complexity warrants.
+1. **The Git Isolation Principle:** Every isolated task loop must be executed on a clean git branch or worktree environment. Commits are made automatically at each phase boundary via `_commit_phase()` in `micro.py` (`test: [{scope}]: RED phase`, `feat: [{scope}]: GREEN phase`, `refactor({scope}): REFACTOR phase`). Worktrees are created via `deviate specify pre` using `create_worktree()` and removed via `remove_worktree()`.
+2. **The Tamper Guard & Scope Audit Law:** When entering or running the `GREEN` execution phase, `TamperGuard.evaluate(TamperContext.GREEN_IMPLEMENTATION)` checks for unauthorized changes to test, spec, and config directories. Protected files are reverted via `git restore <filepath>`. The JUDGE phase (`deviate judge pre`) additionally performs compliance verification by detecting changes to protected modules declared in `spec.md` `Module:` lines.
+3. **Append-Only Ledger Protocol (issues.jsonl + tasks.jsonl):** All state transitions are append-only. The global `specs/issues.jsonl` serves as the authoritative issue registry. Issue-scoped micro-task ledgers live at `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`. Agents cannot edit any status fields directly — only the CLI may append events via `append_issue_transition()` and `append_task_transition()`. No existing line is ever modified or overwritten. Canonical state is derived by parsing each ledger using compound-key idempotency (bottom-up for `issues.jsonl`; `(id, status)` compound key for `tasks.jsonl`). Ad-hoc issues bypass macro planning and route directly to isolated execution workspaces.
+4. **Deterministic Test Failure Check:** For a `RED` phase to be valid (`deviate red post`), `_classify_pytest_outcome()` must return `ASSERTION_FAILURE`. Return codes of `PASS` or `SYNTAX_ERROR` (SyntaxError, IndentationError, TabError, ImportError, ModuleNotFoundError) are rejected.
+5. **Memory Preservation via Train Gates:** The `deviate yellow post --rejected` path restores changes via `git restore .` without losing session state. The JUDGE phase implements Train rollback on compliance violations: `git reset --hard HEAD~1` to wipe bad implementation while preserving the RED test, then injects `<judge_feedback>` context into the session for the agent's next GREEN attempt. The `deviate refactor post` regression check runs `git restore .` on type mismatch or test regression.
+6. **The Elastic Governance Rule:** The `deviate run` command supports `--profile [full|fast|secure]` to control which phases execute. `full` runs the complete RED → GREEN → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip REFACTOR). Specific phases can be tuned at the operator's discretion. Execution profiles and agent backends are configured via `DeviateConfig.agent.backend`.
+7. **Atomic Concurrency Protocol (Git Reference Locks):** To eliminate TOCTOU race conditions across distributed terminal instances, the `deviate specify pre` command uses try-claim semantics: `select_unblocked_candidates()` returns all available BACKLOG issues, and the worker iterates through them attempting `claim_issue()` combined with `create_worktree()` and `git push -u <remote> <branch>`. The server serializes concurrent pushes; the first successful push wins. The `tasks.jsonl` ledger records the authoritative outcome.
+8. **The Session Continuity Principle:** Session state is persisted to `.deviate/session.json` after each CLI command. The `SessionState` class tracks `current_phase`, `active_issue_id`, and `last_command`. Macro and meso phases transition through `transation_to()` with validation from `_MACRO_TRANSITION_MAP`. Micro phases use `force_transition_to()`. Model continuity and KV cache management are delegated to the calling environment.
+9. **The Model Tiering Constraint:** Model selection is defined as a recommended strategy in `specs/constitution.md` seeds and prompt skills. The `deviate` CLI does **not** enforce model selection programmatically. The `--agent` flag and `DeviateConfig.agent.backend` field configure agent backends (`opencode`, `claude`, `droid`), but the specific model used within each backend is chosen by the calling environment.
 
 ---
 
@@ -352,32 +432,43 @@ DeviaTDD's phase structure is also a cost-optimization architecture. Three mecha
 
 ### 9.1 Model Tiering
 
-| Phase | Model | 1M Input (cached hit) | Frequency | Cost Profile |
-|---|---|---|---|---|
-| `/explore` | V4 Flash | $0.0028 | Once/feature | Cheap scan |
+| Phase | Recommended Model | 1M Input (cached hit) | Frequency | Cost Profile |
+|---|---|---|---|---|---|
+| `/deviate-explore` | V4 Flash | $0.0028 | Once/feature | Cheap scan |
 | RED | V4 Flash | $0.0028 | ~5/task | Cheap gen |
 | GREEN | V4 Flash | $0.0028 | ~5/task | Cheap gen |
 | REFACTOR | V4 Flash | $0.0028 | ~5/task | Cheap gen |
-| `/specify` + `/tasks` | V4 Pro | $0.003625 | Once/issue | Premium, cached |
+| `/deviate-specify` + `/deviate-tasks` | V4 Pro | $0.003625 | Once/issue | Premium, cached |
 | JUDGE | V4 Pro | $0.003625 | ~5/task | Premium, sparse |
 | YELLOW | V4 Pro | $0.003625 | Conditional | Premium, rare |
-| `/research`, `/prd`, `/shard` | Qwen 3.7+ | varies | Once/feature | Premium, infrequent |
+| `/deviate-research`, `/deviate-prd`, `/deviate-shard` | Qwen 3.7+ | varies | Once/feature | Premium, infrequent |
+| EXECUTE / E2E / HOTFIX | V4 Flash | $0.0028 | As needed | Cheap |
+| `/deviate-adhoc` | V4 Flash | $0.0028 | As needed | Cheap |
+| EXECUTE / E2E / HOTFIX | V4 Flash | $0.0028 | As needed | Cheap |
 
-~85% of all LLM turns use V4 Flash at cache-hit rates.
+Model routing is **guidance, not enforcement** — the `deviate` CLI does not select models.
+~85% of all recommended LLM turns use V4 Flash at cache-hit rates.
 
 ### 9.2 Continuous-Thread Caching
 
-`/specify` and `/tasks` share a single session. The system prompt, tool definitions, and `spec.md` content are written to the KV cache once (first turn, cache-miss pricing) and read at 98%+ discount on every subsequent turn. Without this, each turn would re-send the full context at full price.
+`/deviate-specify` and `/deviate-tasks` share a single session. The system prompt, tool definitions, and `spec.md` content are written to the KV cache once (first turn, cache-miss pricing) and read at 98%+ discount on every subsequent turn. Without this, each turn would re-send the full context at full price.
 
-Micro-layer tasks similarly reuse a single Aider session across RED → GREEN → REFACTOR. The system prompt, repo map, and read-only test files form a stable prefix; only the new instruction and previous turn output are uncached.
+Micro-layer tasks dispatched via `deviate run <task-id>` reuse the same in-process state
+through `SessionState.force_transition_to()`. Each phase is a synchronous function call
+within the same process — there is no subprocess or LLM session restart between phases.
+The `_commit_phase()` function handles automatic git commits between phase transitions.
 
-### 9.3 Diff-Format Editing
+### 9.3 In-Process Dispatch
 
-Aider's SEARCH/REPLACE diff format sends only changed lines (~200 tokens for a typical TDD edit) versus full file rewrites (~2,000+ tokens). Over 15 turns per task, this compounds. The Architect/Editor mode further optimizes by letting a cheap model (V4 Flash Editor) produce the precise edits from a reasoning model's (V4 Pro Architect) solution description.
+The `deviate run` command avoids subprocess overhead entirely by dispatching phase transitions
+in-process via `_PHASE_MAP` function calls. Each phase transition is a single Python function
+call that reads session state, appends to the ledger, and runs synchronous verification
+(`_run_pytest`, `TamperGuard.evaluate`, `_detect_phase_changes`, `_check_return_type_mismatch`).
+There are no subprocess round-trips between phases within a single `deviate run` invocation.
 
 ### 9.4 HITL Gate Prevention
 
-Each HITL gate prevents wasted downstream compute. A design error caught at Gate 1 saves all `/prd`, `/shard`, `/specify`, `/tasks`, and Micro cycles. A spec error caught at Gate 2 saves all task decomposition and Micro cycles. Each gate is a cheap human check that prevents expensive LLM work.
+Each HITL gate prevents wasted downstream compute. A design error caught at Gate 1 saves all `/deviate-prd`, `/deviate-shard`, `/deviate-specify`, `/deviate-tasks`, and Micro cycles. A spec error caught at Gate 2 saves all task decomposition and Micro cycles. Each gate is a cheap human check that prevents expensive LLM work.
 
 ### 9.5 Task Isolation
 
