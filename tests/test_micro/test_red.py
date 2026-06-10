@@ -14,6 +14,12 @@ from deviate.state.ledger import TaskRecord
 runner = CliRunner()
 
 
+def _git_env() -> dict[str, str]:
+    return {
+        k: v for k, v in __import__("os").environ.items() if not k.startswith("GIT_")
+    }
+
+
 def _make_task_record(
     task_id: str = "550e8400-e29b-41d4-a716-446655440001",
     issue_id: str = "ISS-004",
@@ -67,40 +73,15 @@ class TestRedPre:
 
 
 class TestRedPost:
-    def _init_git_repo(self, path: Path) -> None:
-        env = {
-            k: v
-            for k, v in __import__("os").environ.items()
-            if not k.startswith("GIT_")
-        }
-        subprocess.run(["git", "init"], cwd=path, env=env, check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "runner@test.local"],
-            cwd=path,
-            env=env,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Test Runner"],
-            cwd=path,
-            env=env,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "commit", "--allow-empty", "-m", "initial"],
-            cwd=path,
-            env=env,
-            check=True,
-        )
-
-    def test_red_post_validates_test_fails(self, tmp_path: Path):
-        self._init_git_repo(tmp_path)
-        with chdir(tmp_path):
+    def test_red_post_validates_test_fails(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
             test_file = Path("tests") / "test_failing.py"
             test_file.parent.mkdir(parents=True)
             test_file.write_text("def test_fail():\n    assert False\n")
 
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
 
             result = runner.invoke(cli, ["red", "post"])
 
@@ -109,21 +90,23 @@ class TestRedPost:
             )
             log = subprocess.run(
                 ["git", "log", "--oneline", "-1"],
-                cwd=tmp_path,
+                cwd=tmp_git_repo,
                 capture_output=True,
                 text=True,
+                env=_git_env(),
             )
             assert log.returncode == 0
             assert len(log.stdout.strip()) > 0
 
-    def test_red_post_rejects_passing_test(self, tmp_path: Path):
-        self._init_git_repo(tmp_path)
-        with chdir(tmp_path):
+    def test_red_post_rejects_passing_test(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
             test_file = Path("tests") / "test_passing.py"
             test_file.parent.mkdir(parents=True)
             test_file.write_text("def test_pass():\n    assert True\n")
 
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
 
             result = runner.invoke(cli, ["red", "post"])
 
@@ -132,14 +115,15 @@ class TestRedPost:
             )
             assert "RedMustPassError" in result.output
 
-    def test_red_post_rejects_syntax_error(self, tmp_path: Path):
-        self._init_git_repo(tmp_path)
-        with chdir(tmp_path):
+    def test_red_post_rejects_syntax_error(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
             test_file = Path("tests") / "test_syntax_error.py"
             test_file.parent.mkdir(parents=True)
             test_file.write_text("def test_syntax_error(:\n    pass\n")
 
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
 
             result = runner.invoke(cli, ["red", "post"])
 

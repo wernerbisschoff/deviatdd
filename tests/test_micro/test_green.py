@@ -14,6 +14,12 @@ from deviate.state.ledger import TaskRecord
 runner = CliRunner()
 
 
+def _git_env() -> dict[str, str]:
+    return {
+        k: v for k, v in __import__("os").environ.items() if not k.startswith("GIT_")
+    }
+
+
 def _make_task_record(
     task_id: str = "550e8400-e29b-41d4-a716-446655440001",
     issue_id: str = "ISS-004",
@@ -69,35 +75,8 @@ class TestGreenPre:
 
 
 class TestGreenPost:
-    def _init_git_repo(self, path: Path) -> None:
-        env = {
-            k: v
-            for k, v in __import__("os").environ.items()
-            if not k.startswith("GIT_")
-        }
-        subprocess.run(["git", "init"], cwd=path, env=env, check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "runner@test.local"],
-            cwd=path,
-            env=env,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Test Runner"],
-            cwd=path,
-            env=env,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "commit", "--allow-empty", "-m", "initial"],
-            cwd=path,
-            env=env,
-            check=True,
-        )
-
-    def test_green_post_validates_tests_pass(self, tmp_path: Path):
-        self._init_git_repo(tmp_path)
-        with chdir(tmp_path):
+    def test_green_post_validates_tests_pass(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="RED")
@@ -111,15 +90,20 @@ class TestGreenPost:
             implementation.parent.mkdir(parents=True)
             implementation.write_text("# GREEN implementation stub\n")
 
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", "feat: RED test and GREEN implementation"],
-                cwd=tmp_path,
+                cwd=tmp_git_repo,
+                env=_git_env(),
                 check=True,
             )
 
             test_file.write_text("def test_pass():\n    assert True\n")
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
 
             result = runner.invoke(cli, ["green", "post"])
 
@@ -129,16 +113,16 @@ class TestGreenPost:
 
             log = subprocess.run(
                 ["git", "log", "--oneline", "-1"],
-                cwd=tmp_path,
+                cwd=tmp_git_repo,
                 capture_output=True,
                 text=True,
+                env=_git_env(),
             )
             assert log.returncode == 0
             assert len(log.stdout.strip()) > 0
 
-    def test_green_post_tamper_detection(self, tmp_path: Path):
-        self._init_git_repo(tmp_path)
-        with chdir(tmp_path):
+    def test_green_post_tamper_detection(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="RED")
@@ -152,10 +136,13 @@ class TestGreenPost:
             implementation.parent.mkdir(parents=True)
             implementation.write_text("# implementation\n")
 
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", "feat: initial RED test"],
-                cwd=tmp_path,
+                cwd=tmp_git_repo,
+                env=_git_env(),
                 check=True,
             )
 
@@ -175,9 +162,8 @@ class TestGreenPost:
                 "Tamper Guard should have restored the original test file"
             )
 
-    def test_green_post_yellow_handover(self, tmp_path: Path):
-        self._init_git_repo(tmp_path)
-        with chdir(tmp_path):
+    def test_green_post_yellow_handover(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="RED")
@@ -191,10 +177,13 @@ class TestGreenPost:
             implementation.parent.mkdir(parents=True)
             implementation.write_text("# implementation\n")
 
-            subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", "feat: RED test"],
-                cwd=tmp_path,
+                cwd=tmp_git_repo,
+                env=_git_env(),
                 check=True,
             )
 

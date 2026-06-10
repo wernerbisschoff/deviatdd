@@ -165,6 +165,23 @@ pytest tests/test_integration/test_full_cycle.py -v
 mise run check
 ```
 
+### TEST_ISOLATION_CONSTRAINTS
+
+**Git Isolation Mandatory**: Any test that invokes git operations (init, add, commit, branch, worktree, checkout, log, status, diff, restore, push) MUST operate on a temporary directory initialized as a fresh git repo. Use the `tmp_git_repo` fixture from `tests/conftest.py` which creates a clean repo in `tmp_path` with a test user (`Test Runner <runner@test.local>`) and an initial commit. All git-subprocess calls MUST pass `cwd=<tmp_git_repo>` and strip `GIT_*` env vars via `_git_env()` to prevent ambient leakage from the real repo.
+
+**Fixture pattern**:
+```python
+def test_something(self, tmp_git_repo: Path):
+    with chdir(tmp_git_repo):
+        # All git ops scoped to tmp_git_repo
+        result = runner.invoke(cli, [...])
+        assert result.exit_code == 0
+```
+
+**`repo_path` parameter mandate**: Every git-interacting function in core/module code MUST accept `repo_path: Path | None = None` defaulting to `Path.cwd()`. Tests MUST pass `repo_path=tmp_git_repo` explicitly. Never reference `Path.cwd()` or the real repo root from test code.
+
+**Rationale**: Prevent accidental commits, branch creation, or state mutation in the actual project repo during test execution. All tests are TDD and run repeatedly; accidental mutations corrupt the development workflow.
+
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER
 
 ### US-004-1: Agent backend abstraction with heredoc-pipe invocation
