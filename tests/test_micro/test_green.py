@@ -23,7 +23,7 @@ def _git_env() -> dict[str, str]:
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-004",
+    issue_id: str = "ISS-001-004",
     description: str = "GREEN phase task",
     status: str = "RED",
     execution_mode: str = "TDD",
@@ -54,7 +54,7 @@ class TestGreenPre:
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="GREEN test task",
                 status="RED",
             )
@@ -84,12 +84,12 @@ class TestGreenPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="RED", active_issue_id="ISS-004")
+            session = SessionState(current_phase="RED", active_issue_id="ISS-001-004")
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 status="RED",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
@@ -142,12 +142,12 @@ class TestGreenPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="RED", active_issue_id="ISS-004")
+            session = SessionState(current_phase="RED", active_issue_id="ISS-001-004")
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 status="RED",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
@@ -195,12 +195,12 @@ class TestGreenPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="RED", active_issue_id="ISS-004")
+            session = SessionState(current_phase="RED", active_issue_id="ISS-001-004")
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 status="RED",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"

@@ -2,9 +2,9 @@
 title: "[FR-002] Macro-Layer State & Ledger Management"
 labels: ["epic:001-deviate-cli-python", "layer:macro"]
 source_file: "specs/001-deviate-cli-python/prd.md"
-blocked_by: ["ISS-001"]
+blocked_by: ["ISS-001-001"]
 coordinates_with: []
-issue_id: "ISS-002"
+issue_id: "ISS-001-002"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]

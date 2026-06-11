@@ -3,8 +3,8 @@ title: "[FR-005] CLI Architecture Realignment & Skill Integration"
 labels: ["epic:001-deviate-cli-python", "layer:macro", "layer:meso", "layer:infra"]
 source_file: "specs/001-deviate-cli-python/prd.md"
 blocked_by: []
-coordinates_with: ["ISS-004"]
-issue_id: "ISS-005"
+coordinates_with: ["ISS-001-004"]
+issue_id: "ISS-001-005"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -35,7 +35,7 @@ As a developer, I need the Python CLI to fully replace 15 bash orchestrator scri
   - **Cleanup**: Remove all `.sh` files from `prompts/`; remove `deviate-cycle` skill; update `mise.toml` and `AGENTS.md`
   - **Installed skill improvements preserved**: specify pre-write HITL gate + --force flag; tasks 6-step execution mode decision tree; explore greenfield support; research greenfield constitution bootstrapping; shard anti-pattern gate + horizontal slice audit
 - **Defensive Exclusions**:
-  - Micro-layer TDD sandbox execution (execute, red, green, refactor, e2e, prune, hotfix, YELLOW, JUDGE) — covered by ISS-004
+  - Micro-layer TDD sandbox execution (execute, red, green, refactor, e2e, prune, hotfix, YELLOW, JUDGE) — covered by ISS-001-004
   - Direct LLM sandbox or Tamper Guard implementation
 
 ## [UPSTREAM_REQUIREMENT_TRACING]

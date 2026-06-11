@@ -151,9 +151,7 @@ class TestValidateSections:
 
 class TestValidateYamlFrontmatter:
     def test_validate_shard_frontmatter_validates_yaml(self):
-        content = (
-            "---\ntitle: Task 001\nissue_id: ISS-007\nfr: FR-001\n---\n\nBody content\n"
-        )
+        content = "---\ntitle: Task 001\nissue_id: ISS-001-007\nfr: FR-001\n---\n\nBody content\n"
         assert validate_yaml_frontmatter(content) is True
 
     def test_validate_yaml_frontmatter_invalid_syntax_fails(self):

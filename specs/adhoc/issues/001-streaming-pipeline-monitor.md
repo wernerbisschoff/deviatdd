@@ -2,8 +2,8 @@
 title: "Streaming Pipeline Monitor with Live Task Status & Agent Output Display"
 labels: [enhancement, adhoc, vertical-slice]
 blocked_by: []
-coordinates_with: ["ISS-004"]
-issue_id: ISS-009
+coordinates_with: ["ISS-001-004"]
+issue_id: ISS-ADH-001
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]

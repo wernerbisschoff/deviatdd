@@ -37,7 +37,7 @@ As a maintainer of the DeviaTDD orchestrator, I need to replace all 15 bash orch
 
 ### Defensive Exclusions
 
-- Micro-layer TDD sandbox execution (`execute`, `red`, `green`, `refactor`, `e2e`, `prune`, `hotfix`, `YELLOW`, `JUDGE`) — covered by ISS-004.
+- Micro-layer TDD sandbox execution (`execute`, `red`, `green`, `refactor`, `e2e`, `prune`, `hotfix`, `YELLOW`, `JUDGE`) — covered by ISS-001-004.
 - Direct LLM sandbox or Tamper Guard implementation.
 - OS-level file locking for JSONL ledgers.
 - Dynamic LLM-driven content generation (the CLI orchestrates workflows; content generation is delegated to agent skills).
@@ -163,8 +163,8 @@ Without this fix, running tests via the pre-commit hook (or any git hook) will c
 
 **Scenario 3: resolve_issue_record uses correct key**
 
-- **Given**: An `IssueRecord` exists in the ledger with `issue_id: "ISS-001"`
-- **When**: `resolve_issue_record("ISS-001")` is called
+- **Given**: An `IssueRecord` exists in the ledger with `issue_id: "ISS-001-001"`
+- **When**: `resolve_issue_record("ISS-001-001")` is called
 - **Then**: The record is returned successfully (no KeyError from mismatched `id` vs `issue_id` key lookup)
 
 **Scenario 4: macro.py:prd checks correct artifact names**
@@ -373,5 +373,5 @@ Without this fix, running tests via the pre-commit hook (or any git hook) will c
 | EPIC_SLUG | 001-deviate-cli-python |
 | BRANCH_NAME | feat/001-deviate-cli-python/005-cli-architecture-realignment-skill-integration |
 | SPEC_PATH | specs/001-deviate-cli-python/005-cli-architecture-realignment-skill-integration/spec.md |
-| ISSUE_ID | ISS-005 |
+| ISSUE_ID | ISS-001-005 |
 | NEXT_ACTION | Run `/deviate-tasks` to decompose this spec into TDD-cycle tasks |

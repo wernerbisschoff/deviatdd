@@ -125,16 +125,16 @@ class TestMesoContracts:
         with chdir(tmp_path):
             self._setup_git_repo(tmp_path)
             self._setup_minimal_env(
-                tmp_path, session_phase="TASKS", active_issue_id="ISS-001"
+                tmp_path, session_phase="TASKS", active_issue_id="ISS-001-001"
             )
 
             specs_dir = tmp_path / "specs"
             issue_record = {
-                "issue_id": "ISS-001",
+                "issue_id": "ISS-001-001",
                 "type": "feature",
                 "title": "Test feature",
                 "status": "BACKLOG",
-                "source_file": "specs/test-epic/issues/ISS-001.md",
+                "source_file": "specs/test-epic/issues/ISS-001-001.md",
                 "timestamp": "2026-01-01T00:00:00Z",
             }
             ledger_path = specs_dir / "issues.jsonl"
@@ -170,27 +170,27 @@ class TestMesoContracts:
         with chdir(tmp_path):
             self._setup_git_repo(tmp_path)
             self._setup_minimal_env(
-                tmp_path, session_phase="TASKS", active_issue_id="ISS-006"
+                tmp_path, session_phase="TASKS", active_issue_id="ISS-001-006"
             )
 
             specs_dir = tmp_path / "specs"
             issue_record = {
-                "issue_id": "ISS-006",
+                "issue_id": "ISS-001-006",
                 "type": "feature",
                 "title": "Issue with explicit spec",
                 "status": "BACKLOG",
-                "source_file": "specs/test-epic/issues/ISS-006.md",
+                "source_file": "specs/test-epic/issues/ISS-001-006.md",
                 "timestamp": "2026-01-01T00:00:00Z",
             }
             ledger_path = specs_dir / "issues.jsonl"
             ledger_path.write_text(json.dumps(issue_record) + "\n")
 
-            (specs_dir / "test-epic" / "ISS-006").mkdir(parents=True, exist_ok=True)
-            tasks_md = specs_dir / "test-epic" / "ISS-006" / "tasks.md"
+            (specs_dir / "test-epic" / "ISS-001-006").mkdir(parents=True, exist_ok=True)
+            tasks_md = specs_dir / "test-epic" / "ISS-001-006" / "tasks.md"
             tasks_md.write_text("- [x] T001: Complete task\n  - Verification: pytest\n")
 
             ledger_path.parent.mkdir(parents=True, exist_ok=True)
 
-            result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-006"])
+            result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-001-006"])
 
             assert result.exit_code == 0, result.output

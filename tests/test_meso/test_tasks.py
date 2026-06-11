@@ -38,7 +38,7 @@ BUCKET = "test-epic"
 
 class TestTasksCommand:
     def test_tasks_appends_pending_records(self, tmp_path: Path):
-        issue_id = "ISS-010"
+        issue_id = "ISS-ADH-002"
 
         with chdir(tmp_path):
             dot_dir = Path(".deviate")

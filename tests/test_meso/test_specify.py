@@ -141,7 +141,7 @@ class TestSpecifyCommand:
 
 class TestSpecifyPreSubcommand:
     def test_specify_pre_dry_run_emits_contract(self, tmp_git_repo: Path):
-        issue_id = "ISS-001"
+        issue_id = "ISS-001-001"
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -185,7 +185,7 @@ class TestSpecifyPreSubcommand:
             )
 
     def test_specify_pre_with_explicit_issue_creates_worktree(self, tmp_git_repo: Path):
-        issue_id = "ISS-002"
+        issue_id = "ISS-001-002"
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -233,7 +233,7 @@ class TestSpecifyPreSubcommand:
             assert f'"issue_id": "{issue_id}"' in result.output
 
     def test_specify_pre_rejects_completed_issue(self, tmp_git_repo: Path):
-        issue_id = "ISS-003"
+        issue_id = "ISS-001-003"
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -259,8 +259,8 @@ class TestSpecifyPreSubcommand:
             assert "COMPLETED" in result.output
 
     def test_specify_pre_auto_selects_unblocked(self, tmp_git_repo: Path):
-        blocked_id = "ISS-004"
-        unblocked_id = "ISS-005"
+        blocked_id = "ISS-001-004"
+        unblocked_id = "ISS-001-005"
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)

@@ -2,8 +2,8 @@
 title: "[ADHOC-010] Aider Agent Backend Integration"
 labels: [enhancement, adhoc, vertical-slice]
 blocked_by: []
-coordinates_with: ["ISS-004"]
-issue_id: ISS-010
+coordinates_with: ["ISS-001-004"]
+issue_id: ISS-ADH-002
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -16,7 +16,7 @@ As a developer using `aider` as my AI coding agent, I need the `deviate` CLI to 
 
 ## [ARCHITECTURAL_OVERVIEW]
 
-### Why Separate from ISS-004
+### Why Separate from ISS-001-004
 
 Aider has fundamentally different invocation semantics than opencode/claude/droid:
 - **No heredoc pipe**: Aider does not accept prompts via stdin. Invocation is `aider --message "..."` or `aider --load prompt.md`.

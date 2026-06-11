@@ -4,7 +4,7 @@ labels: ["epic:001-deviate-cli-python", "layer:state"]
 source_file: "specs/001-deviate-cli-python/prd.md"
 blocked_by: []
 coordinates_with: []
-issue_id: "ISS-006"
+issue_id: "ISS-001-006"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -27,8 +27,8 @@ As a developer running multiple CLI instances or background processes, I need al
   - Graceful failure when lock cannot be acquired within `timeout_seconds`.
   - Unit test coverage for all state mutation functions.
 - **Defensive Exclusions**: 
-  - Core module business logic (covered by ISS-005).
-  - Micro-layer TDD sandbox execution (covered by ISS-004).
+  - Core module business logic (covered by ISS-001-005).
+  - Micro-layer TDD sandbox execution (covered by ISS-001-004).
   - Database-level concurrency (state is strictly file-based).
 
 ## [UPSTREAM_REQUIREMENT_TRACING]

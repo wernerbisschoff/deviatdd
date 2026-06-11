@@ -2,9 +2,9 @@
 title: "[FR-008] Meso/Macro Automated Orchestration Layer"
 labels: ["epic:001-deviate-cli-python", "layer:meso", "layer:macro"]
 source_file: "specs/001-deviate-cli-python/prd.md"
-blocked_by: ["ISS-004"]
+blocked_by: ["ISS-001-004"]
 coordinates_with: []
-issue_id: "ISS-008"
+issue_id: "ISS-001-008"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -13,7 +13,7 @@ issue_id: "ISS-008"
 - **Workstation Paths**:
   - `src/deviate/cli/meso.py` — Add `meso` command with automated specify→tasks pipeline
   - `src/deviate/cli/macro.py` — Add `macro` command with automated explore→research→prd→shard pipeline
-  - `src/deviate/core/agent.py` — Reuse agent backend from ISS-004
+  - `src/deviate/core/agent.py` — Reuse agent backend from ISS-001-004
   - `src/deviate/prompts/auto/` — Add slim prompt templates for meso/macro phases
   - `src/deviate/state/config.py` — Session state transitions for automated pipelines
   - `tests/test_integration/test_meso_orchestration.py`
@@ -95,7 +95,7 @@ deviate macro [--target <slug>] [--from <phase>] [--dry-run]
 
 ### Constitution & Governance Injection
 
-Same as ISS-004: `specs/constitution.md` and `CLAUDE.md` are read once at pipeline start and injected into every slim prompt's static KV-cacheable prefix.
+Same as ISS-001-004: `specs/constitution.md` and `CLAUDE.md` are read once at pipeline start and injected into every slim prompt's static KV-cacheable prefix.
 
 ## [SCOPE_BOUNDARIES]
 
@@ -119,24 +119,24 @@ Same as ISS-004: `specs/constitution.md` and `CLAUDE.md` are read once at pipeli
   - `shard.md` — PRD → shard issue files
   - `specify.md` — Issue body + PRD reqs → spec.md with Gherkin
   - `tasks.md` — Spec.md → tasks.md with TDD task decomposition
-  - Each follows the same static-prefix + dynamic-suffix pattern as ISS-004 slim prompts.
-- **Agent backend reuse**: Uses `src/deviate/core/agent.py` from ISS-004 — same heredoc pipe invocation, same YAML handover manifest parsing, same timeout handling.
+  - Each follows the same static-prefix + dynamic-suffix pattern as ISS-001-004 slim prompts.
+- **Agent backend reuse**: Uses `src/deviate/core/agent.py` from ISS-001-004 — same heredoc pipe invocation, same YAML handover manifest parsing, same timeout handling.
 - **Session state**: Phase transitions tracked in `.deviate/session.json`. Pipeline resumes correctly if interrupted (e.g., detect existing spec.md → skip SPECIFY, proceed to TASKS).
 - **Error recovery**: If a phase fails (agent non-zero exit, validation failure, commit failure), abort pipeline, surface error with phase context, leave state at last successful phase.
 
 ### Defensive Exclusions
 
-- Individual pre/post command implementation (already covered by ISS-005).
-- Micro-layer TDD execution (covered by ISS-004).
-- Aider integration (covered by ISS-010).
-- Core module implementations (covered by ISS-005).
-- State persistence and concurrency (covered by ISS-006).
+- Individual pre/post command implementation (already covered by ISS-001-005).
+- Micro-layer TDD execution (covered by ISS-001-004).
+- Aider integration (covered by ISS-ADH-002).
+- Core module implementations (covered by ISS-001-005).
+- State persistence and concurrency (covered by ISS-001-006).
 
 ## [UPSTREAM_REQUIREMENT_TRACING]
 
 - **FR-008-MESO**: `deviate meso` automates the specify→tasks pipeline — discovers issue, runs pre→agent→post for both phases, handles all state and commit operations internally.
 - **FR-008-MACRO**: `deviate macro` automates the explore→research→prd→shard pipeline — runs pre→agent→post for all four phases, handles bucket allocation, ledger registration, and state transitions.
-- **FR-008-SLIM-PROMPTS**: Slim prompt templates for all six meso/macro phases following the same static-prefix + dynamic-suffix KV-cacheable pattern established in ISS-004.
+- **FR-008-SLIM-PROMPTS**: Slim prompt templates for all six meso/macro phases following the same static-prefix + dynamic-suffix KV-cacheable pattern established in ISS-001-004.
 - **FR-008-CONSTITUTION**: Constitution and CLAUDE.md injected into every automated meso/macro prompt.
 - **FR-008-RECOVERY**: Pipeline resumes at correct phase on interruption; completed phases are skipped idempotently.
 

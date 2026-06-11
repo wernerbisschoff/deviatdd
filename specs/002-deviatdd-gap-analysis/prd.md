@@ -132,7 +132,7 @@ sequenceDiagram
      - **Given**: The `run_command()` Typer command
      - **When**: Invoked with `--profile invalid`
      - **Then**: Typer emits a CLI validation error with valid choices enumerated
-- **Downstream Shard Mapping**: ISS-002-SHARD-001
+- **Downstream Shard Mapping**: ISS-002-001
 
 ### FR-002-ContextSync: Context Pre/Post with Auto-Trigger
 - **Description**: Create `deviate context pre` (directory crawl, resolve paths, emit `ContextContract` JSON) and `deviate context post <manifest>` (read manifest, upsert governance blocks in CLAUDE.md/AGENTS.md, enforce AGENTS.md → CLAUDE.md symlink, commit). Wire auto-trigger in all macro/meso post commands via `--no-context-sync` flag.
@@ -155,7 +155,7 @@ sequenceDiagram
      - **Given**: A macro post command (e.g., `deviate explore post`)
      - **When**: The post command completes its artifact commit
      - **Then**: `deviate context post` is auto-triggered unless `--no-context-sync` was passed
-- **Downstream Shard Mapping**: ISS-002-SHARD-002
+- **Downstream Shard Mapping**: ISS-002-002
 
 ### FR-003-Adhoc: Adhoc Task Fast-Path
 - **Description**: Create `deviate adhoc pre <task-description>` with LLM-based complexity gate (LOW/MEDIUM/HIGH), proportional exploration, contract emission. Create `deviate adhoc post <manifest>` for ledger registration. `specs/adhoc/` directory auto-created on first use. LOW complexity → `execution_mode=DIRECT`, MEDIUM/HIGH → `execution_mode=TDD`.
@@ -178,7 +178,7 @@ sequenceDiagram
      - **Given**: A valid `AdhocRecord` in `PENDING` status and a completed execution manifest
      - **When**: `deviate adhoc post <manifest>` is executed
      - **Then**: The record transitions to `COMPLETED` and the session returns to `IDLE`
-- **Downstream Shard Mapping**: ISS-002-SHARD-003
+- **Downstream Shard Mapping**: ISS-002-003
 
 ### FR-004-FeatureCreate: Feature Workspace Scaffold
 - **Description**: Extract `deviate feature create <title> [--slug]` as a standalone command that derives a URL-safe slug, creates a git branch, scaffolds `specs/{FEATURE_SLUG}/` directory, and updates the session. Have `deviate specify pre` internally call this logic if no feature workspace exists.
@@ -196,7 +196,7 @@ sequenceDiagram
      - **Given**: `deviate specify pre` is executed without an existing feature workspace
      - **When**: The command detects no active session
      - **Then**: It internally calls the feature creation logic before proceeding to spec scaffolding
-- **Downstream Shard Mapping**: ISS-002-SHARD-004
+- **Downstream Shard Mapping**: ISS-002-004
 
 ### FR-005-ConstitutionCLI: Constitution Pre/Post
 - **Description**: Create `deviate constitution pre` that validates `specs/constitution.md` exists, extracts test/lint/typecheck commands, emits JSON contract. Create `deviate constitution post <manifest>` that validates constitution sections and commits.
@@ -215,7 +215,7 @@ sequenceDiagram
      - **Given**: `specs/constitution.md` is missing
      - **When**: `deviate constitution pre` is executed
      - **Then**: The command exits with `status: FAILURE` and a descriptive `reason`
-- **Downstream Shard Mapping**: ISS-002-SHARD-004
+- **Downstream Shard Mapping**: ISS-002-004
 
 ### FR-006-Inspect: Ledger Inspection Commands
 - **Description**: Create `deviate tasks list [--type] [--status] [--json]` (parses active issue's `tasks.jsonl` with status derivation, renders Rich table) and `deviate issues list [--type] [--status] [--json]` (parses `specs/issues.jsonl` bottom-up, renders Rich table).
@@ -233,7 +233,7 @@ sequenceDiagram
      - **Given**: A valid `tasks.jsonl` in the active feature directory
      - **When**: `deviate tasks list --status PENDING` is executed
      - **Then**: Only PENDING tasks are displayed in a Rich table
-- **Downstream Shard Mapping**: ISS-002-SHARD-004
+- **Downstream Shard Mapping**: ISS-002-004
 
 ### FR-007-CacheDiscipline: Cache Enforcement Module
 - **Description**: Create `CacheDiscipline` class in `src/deviate/core/cache_discipline.py` enforcing 4 rules during micro loops: (1) no model switching, (2) no tool definition changes, (3) no system prompt mutation, (4) no read-only test file conversation append. Hook `CacheDiscipline.validate()` into `_run_tdd_cycle()` at phase boundaries.
@@ -251,7 +251,7 @@ sequenceDiagram
      - **Given**: A TDD cycle running in micro layer
      - **When**: A tool definition changes mid-cycle
      - **Then**: `CacheDiscipline.validate()` detects the change and raises `CacheDisciplineViolation`
-- **Downstream Shard Mapping**: ISS-002-SHARD-005
+- **Downstream Shard Mapping**: ISS-002-005
 
 ### FR-008-TrainRollback: JUDGE Train Rollback
 - **Description**: In `_run_judge_phase()`, on `COMPLIANCE_VIOLATION`: derive current task states from `tasks.jsonl`, execute `git revert <green_commit_sha>` (never `--hard`), inject `<judge_feedback>` into session state, re-route task to GREEN phase. Append `RollbackSnapshot` to `.deviate/rollback.jsonl`.
@@ -270,7 +270,7 @@ sequenceDiagram
      - **Given**: A non-violating JUDGE evaluation
      - **When**: `_run_judge_phase()` completes
      - **Then**: No `RollbackSnapshot` is created, and the pipeline proceeds to REFACTOR
-- **Downstream Shard Mapping**: ISS-002-SHARD-005
+- **Downstream Shard Mapping**: ISS-002-005
 
 ### FR-009-JsonQuietFlags: Cross-Cutting CLI Flags
 - **Description**: Add `--json` and `--quiet` to all `pre` subcommands via reusable `@with_json_quiet` decorator in `src/deviate/cli/_common.py`. `--json` emits the command contract to stdout; `--quiet` suppresses Rich console output (errors still go to stderr).
@@ -288,7 +288,7 @@ sequenceDiagram
      - **Given**: Any `pre` subcommand with `--quiet` flag
      - **When**: The subcommand executes
      - **Then**: Rich console output is suppressed; errors still appear on stderr
-- **Downstream Shard Mapping**: ISS-002-SHARD-001
+- **Downstream Shard Mapping**: ISS-002-001
 
 ### FR-010-PlaceholderResolution: Full Variable Resolution
 - **Description**: Extend `_resolve_placeholder()` in `src/deviate/cli/__init__.py` from 2 variables (PROJECT_NAME, REPO_ROOT) to 6: adding `TARGET_BACKEND_FRAMEWORK`, `TARGET_PACKAGE_MANAGER`, `TARGET_TEST_RUNNER`, `TARGET_COVERAGE_MINIMUM` via filesystem heuristics (scan `pyproject.toml`, `package.json`, etc.).
@@ -307,7 +307,7 @@ sequenceDiagram
      - **Given**: A project without `pyproject.toml`
      - **When**: Placeholder resolution runs
      - **Then**: Unresolvable variables emit `"UNKNOWN"` with a warning to stderr
-- **Downstream Shard Mapping**: ISS-002-SHARD-001
+- **Downstream Shard Mapping**: ISS-002-001
 
 ### FR-011-AgentsClaudeAlign: AGENTS.md/CLAUDE.md Symlink Enforcement
 - **Description**: In `deviate context post`, enforce `AGENTS.md` → `CLAUDE.md` symlink via `ln -sf` before governance block replacement. Audit AGENTS.md for stale references (`rgr run`, `manage-tasks.sh`, `sdd-parse-ast.sh`, `get-test-config.sh`, `.rgr/`).
@@ -326,7 +326,7 @@ sequenceDiagram
      - **Given**: AGENTS.md contains `rgr run` or `manage-tasks.sh` references
      - **When**: `deviate context post` or `deviate init` runs
      - **Then**: Those stale references are removed from AGENTS.md
-- **Downstream Shard Mapping**: ISS-002-SHARD-002
+- **Downstream Shard Mapping**: ISS-002-002
 
 ### FR-012-SkillActionLogic: Skill File Rewrites
 - **Description**: Rewrite 18 SKILL.md files under `src/deviate/prompts/skills/` to: (1) replace `--no-judge`/`--no-refactor` with `--profile`, (2) remove `.sh` script references, (3) use `deviate <subcommand> pre/post` for all phase transitions. Rewrite in dependency order (simplest → most complex), verifying each.
@@ -344,7 +344,7 @@ sequenceDiagram
      - **Given**: Skill files that previously referenced `--no-judge` or `--no-refactor`
      - **When**: Inspected
      - **Then**: They now reference `--profile [full|fast|secure]`
-- **Downstream Shard Mapping**: ISS-002-SHARD-005
+- **Downstream Shard Mapping**: ISS-002-005
 
 ### FR-013-TasksLedgerSeparation: tasks.md vs tasks.jsonl
 - **Description**: In `deviate tasks post`: after validating `tasks.md`, parse task entries, write a proposal file (`.jsonl.proposal`), require `--confirm` flag to append `TaskLedgerBatch` rows to `tasks.jsonl`. If `tasks.jsonl` is missing but `tasks.md` is committed, generate initial `tasks.jsonl` from `tasks.md` on next `tasks post`.
@@ -363,7 +363,7 @@ sequenceDiagram
      - **Given**: A valid `.jsonl.proposal` file
      - **When**: `deviate tasks post --confirm` executes
      - **Then**: The proposal rows are appended to `tasks.jsonl` and the proposal file is removed
-- **Downstream Shard Mapping**: ISS-002-SHARD-005
+- **Downstream Shard Mapping**: ISS-002-005
 
 ### FR-014-ConstitutionSeedPlaceholderAudit: Seed Template Validation
 - **Description**: Audit `src/deviate/prompts/constitution_seed.md` for all 6 `${VARIABLE}` placeholders. Add missing ones with appropriate surrounding context. Implement `validate_placeholders()` in `core/constitution.py`.
@@ -378,7 +378,7 @@ sequenceDiagram
      - **Given**: `src/deviate/prompts/constitution_seed.md`
      - **When**: `validate_placeholders()` runs
      - **Then**: All 6 variables (`PROJECT_NAME`, `REPO_ROOT`, `TARGET_BACKEND_FRAMEWORK`, `TARGET_PACKAGE_MANAGER`, `TARGET_TEST_RUNNER`, `TARGET_COVERAGE_MINIMUM`) are present and correctly formatted
-- **Downstream Shard Mapping**: ISS-002-SHARD-004
+- **Downstream Shard Mapping**: ISS-002-004
 
 ### FR-016-PytestJsonReport: Pytest JSON Report
 - **Description**: Update `_run_pytest()` to optionally use `--json-report` flag (requires `pytest-json-report` plugin). Update `_classify_pytest_outcome()` to parse JSON output as alternative to string matching. Add `pytest-json-report` to dev dependencies. Keep string parsing as primary path per adversarial finding R10.
@@ -397,7 +397,7 @@ sequenceDiagram
      - **Given**: `PytestReportConfig.json_report = False`
      - **When**: `_run_pytest()` executes
      - **Then**: String-based outcome classification is used as before
-- **Downstream Shard Mapping**: ISS-002-SHARD-001
+- **Downstream Shard Mapping**: ISS-002-001
 
 ## Non-Functional Engineering Requirements
 - **Observability & Telemetry**: All CLI phase transitions emit structured JSON contracts for agent consumption. Rollback events persist to `.deviate/rollback.jsonl` with full audit trail (SHA, reason, timestamp). Cache validation failures log warnings.

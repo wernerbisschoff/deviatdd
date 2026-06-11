@@ -21,7 +21,7 @@ def _git_env() -> dict[str, str]:
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-004",
+    issue_id: str = "ISS-001-004",
     description: str = "Test TDD task",
     status: str = "PENDING",
     execution_mode: str = "TDD",
@@ -52,7 +52,7 @@ class TestMicroOrchestration:
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Full cycle orchestration task",
                 status="PENDING",
             )
@@ -85,7 +85,7 @@ class TestMicroOrchestration:
 
             task = _make_task_record(
                 task_id="TSK-004-02",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Session tracking task",
                 status="PENDING",
             )
@@ -110,7 +110,7 @@ class TestMicroOrchestration:
 
             task = _make_task_record(
                 task_id="TSK-004-03",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="No judge flag task",
                 status="PENDING",
             )
@@ -135,7 +135,7 @@ class TestMicroOrchestration:
 
             task = _make_task_record(
                 task_id="TSK-004-04",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="No refactor flag task",
                 status="PENDING",
             )
@@ -160,7 +160,7 @@ class TestMicroOrchestration:
 
             task = _make_task_record(
                 task_id="TSK-004-05",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Agent flag task",
                 status="PENDING",
             )
@@ -185,7 +185,7 @@ class TestMicroOrchestration:
 
             task = _make_task_record(
                 task_id="TSK-004-06",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Ledger tracking task",
                 status="PENDING",
             )
@@ -215,13 +215,13 @@ class TestMicroOrchestration:
 
             task_a = _make_task_record(
                 task_id="TSK-004-07",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="First --all task",
                 status="PENDING",
             )
             task_b = _make_task_record(
                 task_id="TSK-004-08",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Second --all task",
                 status="PENDING",
             )
@@ -246,13 +246,13 @@ class TestMicroOrchestration:
 
             failing_task = _make_task_record(
                 task_id="TSK-004-09",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Failing task for retry test",
                 status="PENDING",
             )
             good_task = _make_task_record(
                 task_id="TSK-004-10",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Good task that should not run",
                 status="PENDING",
             )

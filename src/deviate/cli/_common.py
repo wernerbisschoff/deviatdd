@@ -27,7 +27,7 @@ def _extract_epic_num(slug: str) -> str:
 def _extract_issue_num(issue_id: str) -> str:
     """Extract the numeric suffix from an issue ID.
 
-    ``ISS-006`` → ``006``, ``TSK-042`` → ``042``
+    ``ISS-001-006`` → ``006``, ``TSK-042`` → ``042``
     """
     m = re.search(r"-(\d+)$", issue_id)
     return m.group(1) if m else issue_id

@@ -41,7 +41,7 @@ class TestMacroFullCycle:
         manifest = mock_workspace / "specs" / "001-deviate-cli-python" / "manifest.json"
         issues = [
             {
-                "issue_id": "ISS-001",
+                "issue_id": "ISS-001-001",
                 "type": "feature",
                 "title": "Issue 1",
                 "source_file": "specs/001-deviate-cli-python/issues/issue-1.md",
@@ -90,7 +90,7 @@ class TestMacroFullCycle:
                 {
                     "issues": [
                         {
-                            "issue_id": "ISS-001",
+                            "issue_id": "ISS-001-001",
                             "type": "feature",
                             "title": "Test",
                             "source_file": "test.md",

@@ -155,5 +155,5 @@ As a task engineer working within the DeviaTDD workflow, I need the `deviate spe
 | EPIC_SLUG | 001-deviate-cli-python |
 | BRANCH_NAME | feat/001-deviate-cli-python/003-meso-layer-specification-task-decomposition |
 | SPEC_PATH | specs/001-deviate-cli-python/003-meso-layer-specification-task-decomposition/spec.md |
-| ISSUE_ID | ISS-003 |
+| ISSUE_ID | ISS-001-003 |
 | NEXT_ACTION | Run `/deviate-tasks` to decompose this spec into TDD-cycle tasks |

@@ -541,19 +541,19 @@ src/deviate/
 
 **Global Issue Ledger (`specs/issues.jsonl`):**
 ```json
-{"issue_id": "ISS-001", "type": "feature", "title": "Implement JWT validation", "status": "DRAFT", "source_file": "specs/auth-jwt/explore.md", "timestamp": "2026-05-31T10:00:00Z"}
-{"issue_id": "ISS-002", "type": "feature", "title": "Refresh token rotation", "status": "BACKLOG", "source_file": "specs/auth-jwt/issues/ISS-002-spec.md", "timestamp": "2026-05-31T10:05:00Z"}
-{"issue_id": "ISS-001", "status": "SHARDED", "timestamp": "2026-06-01T12:00:00Z"}
-{"issue_id": "ISS-001", "status": "COMPLETED", "timestamp": "2026-06-02T15:30:00Z"}
+{"issue_id": "ISS-001-001", "type": "feature", "title": "Implement JWT validation", "status": "DRAFT", "source_file": "specs/auth-jwt/explore.md", "timestamp": "2026-05-31T10:00:00Z"}
+{"issue_id": "ISS-001-002", "type": "feature", "title": "Refresh token rotation", "status": "BACKLOG", "source_file": "specs/auth-jwt/issues/ISS-002-spec.md", "timestamp": "2026-05-31T10:05:00Z"}
+{"issue_id": "ISS-001-001", "status": "SHARDED", "timestamp": "2026-06-01T12:00:00Z"}
+{"issue_id": "ISS-001-001", "status": "COMPLETED", "timestamp": "2026-06-02T15:30:00Z"}
 ```
 
 **Issue-Scoped Task Ledger (`specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`):**
 ```json
-{"id": "TSK-001-01", "issue_id": "ISS-001", "description": "create_jwt_validator_class", "status": "PENDING", "execution_mode": "TDD"}
-{"id": "TSK-001-01", "issue_id": "ISS-001", "description": "create_jwt_validator_class", "status": "RED"}
-{"id": "TSK-001-01", "issue_id": "ISS-001", "description": "create_jwt_validator_class", "status": "GREEN"}
-{"id": "TSK-001-01", "issue_id": "ISS-001", "description": "create_jwt_validator_class", "status": "COMPLETED"}
-{"id": "TSK-001-02", "issue_id": "ISS-001", "description": "integration_token_flow", "status": "PENDING", "execution_mode": "E2E"}
+{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "PENDING", "execution_mode": "TDD"}
+{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "RED"}
+{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "GREEN"}
+{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "COMPLETED"}
+{"id": "TSK-001-02", "issue_id": "ISS-001-001", "description": "integration_token_flow", "status": "PENDING", "execution_mode": "E2E"}
 ```
 
 ---

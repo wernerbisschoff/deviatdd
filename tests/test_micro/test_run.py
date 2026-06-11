@@ -14,7 +14,7 @@ runner = CliRunner()
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-007",
+    issue_id: str = "ISS-001-007",
     description: str = "Test TDD task",
     status: str = "PENDING",
     execution_mode: str = "TDD",
@@ -45,7 +45,7 @@ class TestRunCommand:
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-007",
+                issue_id="ISS-001-007",
                 description="Implement TDD task",
                 status="PENDING",
                 execution_mode="TDD",
@@ -70,7 +70,7 @@ class TestRunCommand:
 
             task = _make_task_record(
                 task_id="TSK-004-02",
-                issue_id="ISS-007",
+                issue_id="ISS-001-007",
                 description="Implement immediate task",
                 status="PENDING",
                 execution_mode="DIRECT",
@@ -96,14 +96,14 @@ class TestRunCommand:
 
             tdd_task = _make_task_record(
                 task_id="TSK-004-03",
-                issue_id="ISS-007",
+                issue_id="ISS-001-007",
                 description="TDD task",
                 status="PENDING",
                 execution_mode="TDD",
             )
             imm_task = _make_task_record(
                 task_id="TSK-004-04",
-                issue_id="ISS-007",
+                issue_id="ISS-001-007",
                 description="Immediate task",
                 status="PENDING",
                 execution_mode="DIRECT",
@@ -128,7 +128,7 @@ class TestRunCommand:
 
             task = _make_task_record(
                 task_id="TSK-004-05",
-                issue_id="ISS-001",
+                issue_id="ISS-001-001",
                 description="Legacy format task",
                 status="PENDING",
                 execution_mode="TDD",
@@ -166,7 +166,7 @@ class TestRunCommand:
 
             task = _make_task_record(
                 task_id="TSK-004-06",
-                issue_id="ISS-007",
+                issue_id="ISS-001-007",
                 description="Already done",
                 status="COMPLETED",
                 execution_mode="TDD",
