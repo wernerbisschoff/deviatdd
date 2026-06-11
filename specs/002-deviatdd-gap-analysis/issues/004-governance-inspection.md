@@ -1,11 +1,12 @@
 ---
-title: Governance & Inspection — Constitution CLI, Ledger List Commands, Seed Audit
-labels: ["feature", "ISS-002", "P2"]
+title: Governance and Inspection — Constitution CLI, Ledger Inspection, Seed Placeholder Audit
+labels: ["feature", "ISS-002", "P1"]
 source_file: specs/002-deviatdd-gap-analysis/prd.md
-blocked_by: ["ISS-002-003", "ISS-002-002"]
+blocked_by: ["ISS-002-002", "ISS-002-003"]
 coordinates_with: []
 issue_id: ISS-002-004
 epic_id: ISS-002
+type: feature
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -13,95 +14,93 @@ epic_id: ISS-002
 - **Epic Domain**: 002 — DeviaTDD Docs-to-Code Gap Resolution
 - **Local Issue File**: `specs/002-deviatdd-gap-analysis/issues/004-governance-inspection.md`
 - **Workstation Paths**:
-  - `src/deviate/cli/constitution.py` — NEW: Typer app with `constitution pre`, `constitution post`
-  - `src/deviate/cli/inspect.py` — NEW: `tasks list`, `issues list` commands
-  - `src/deviate/core/constitution.py` — MODIFY: add `validate_placeholders()`
-  - `src/deviate/state/ledger.py` — MODIFY: add `LedgerFilter` model
-  - `src/deviate/cli/__init__.py` — MODIFY: register `constitution_app`, wire inspect commands
-  - `src/deviate/prompts/constitution_seed.md` — MODIFY: audit/add missing placeholders
+  - `src/deviate/cli/constitution.py` — NEW: `constitution pre` (validate, extract commands) and `constitution post <manifest>` (section validation, commit)
+  - `src/deviate/core/constitution.py` — MODIFY: `validate_constitution()`, add `validate_placeholders()`
+  - `src/deviate/cli/inspect.py` — NEW: `deviate tasks list` and `deviate issues list` with filtering
+  - `src/deviate/state/ledger.py` — MODIFY: add `LedgerFilter` model, query helpers
+  - `src/deviate/prompts/constitution_seed.md` — MODIFY: audit and patch all 6 `${VARIABLE}` placeholders
 
 ## [THE_PROBLEM_CONTRACT]
 
-**User Journey**: A developer runs `deviate constitution pre` to validate the project's `specs/constitution.md` exists and extracts test/lint/typecheck commands. They run `deviate tasks list --json` to see all task records in the active worktree, filtered by status. They run `deviate issues list --status BACKLOG --json` to see pending issues. The constitution seed template (`constitution_seed.md`) is audited to ensure all 6 `${VARIABLE}` placeholders are present.
+**User Journey**: A developer runs `deviate constitution pre` to validate `specs/constitution.md` and extract test/lint/typecheck commands. The output is a JSON contract with extracted commands. Then `deviate constitution post <manifest>` validates constitution sections and commits. Separately, a developer wants to see all issues: `deviate issues list --json` parses `specs/issues.jsonl` bottom-up and emits a JSON array. `deviate tasks list --status PENDING` shows only pending tasks in a Rich table. During `deviate init`, placeholders in `constitution_seed.md` are validated to ensure all 6 `${VARIABLE}` tokens are present.
 
-**System Response**: `constitution pre` parses `specs/constitution.md` and emits a JSON contract with extracted commands. `constitution post` validates sections and commits. List commands parse JSONL ledgers with status/type filters and render Rich tables (or JSON with `--json` flag). `validate_placeholders()` scans the seed template and reports coverage.
+**System Response**: `constitution pre` reads `specs/constitution.md`, validates sections, extracts `test_command`, `lint_command`, `typecheck_command` from `## TESTING_PROTOCOLS`. Missing constitution → `FAILURE` with reason. `constitution post` validates section structure and commits. `issues list` parses `specs/issues.jsonl` bottom-up with `--type`, `--status`, `--json` filters. `tasks list` parses active issue's `tasks.jsonl` with status derivation. Missing ledger → empty result set (not error). `validate_placeholders()` checks all 6 variables are present in the seed template.
 
 ## [SCOPE_BOUNDARIES]
 
 ### Hard Inclusions
-- `cli/constitution.py` with `constitution pre` (validate, extract commands, emit JSON) and `constitution post <manifest>` (validate sections, commit)
-- `cli/inspect.py` with `tasks list [--type] [--status] [--json]` and `issues list [--type] [--status] [--json]`
-- `validate_placeholders()` in `core/constitution.py`
-- Add missing placeholders to `constitution_seed.md`
-- Missing constitution file emits `status: FAILURE` with reason
-- Missing ledger files return empty results (not errors)
-- Malformed JSONL lines skipped with warnings
+- `deviate constitution pre` — validate constitution, extract test/lint/typecheck commands, emit JSON contract
+- `deviate constitution post <manifest>` — validate sections, commit
+- `validate_placeholders(seed_path)` — audit all 6 `${VARIABLE}` placeholders in seed template
+- `deviate issues list [--type] [--status] [--json]` — parse `specs/issues.jsonl` bottom-up, Rich table or JSON
+- `deviate tasks list [--type] [--status] [--json]` — parse active issue's `tasks.jsonl`, Rich table or JSON
+- Missing ledger → empty result set (not error)
+- Malformed JSONL lines → skip with stderr warning
+- `--json` mode emits valid JSON array even when empty
+- Constitution seed audit: patch missing placeholders with surrounding context
 
 ### Defensive Exclusions
-- NO changes to the TDD cycle or phase dispatch
-- NO changes to context sync or profile execution
-- NO changes to skill files
-- NO changes to AGENTS.md or CLAUDE.md
-- NO changes to the session state machine
-- NO deep integration with micro-layer rollback or cache
+- NO changes to micro-layer TDD cycle or phase dispatch
+- NO changes to `deviate init` scaffolding beyond placeholder validation
+- NO changes to session state machine
+- NO migration of existing ledger data — only forward reads
+- NO changes to constitution content beyond seed template patching
 
 ## [UPSTREAM_REQUIREMENT_TRACING]
 
 ### Functional Requirements
 | ID | Title | PRD Section |
 |----|-------|-------------|
-| FR-005 | Constitution Pre/Post | FR-005-ConstitutionCLI |
+| FR-005 | Constitution Pre/Post CLI | FR-005-ConstitutionCLI |
 | FR-006 | Ledger Inspection Commands | FR-006-Inspect |
 | FR-014 | Constitution Seed Placeholder Audit | FR-014-ConstitutionSeedPlaceholderAudit |
 
 ### Acceptance Criteria
 | ID | Description |
 |----|-------------|
-| AC-005-01 | `deviate constitution pre` emits JSON with `test_command`, `lint_command`, `typecheck_command` |
-| AC-005-02 | `deviate constitution pre` without constitution emits `status: FAILURE` with reason |
-| AC-006-01 | `deviate issues list --json` emits valid JSON array from `issues.jsonl` |
-| AC-006-02 | `deviate tasks list --status PENDING` displays only PENDING tasks in Rich table |
-| AC-014-01 | All 6 variables present and correctly formatted in `constitution_seed.md` |
+| AC-005-01 | `constitution pre` with valid constitution emits JSON with `test_command`, `lint_command`, `typecheck_command` |
+| AC-005-02 | `constitution pre` with missing constitution → `status: FAILURE` with descriptive reason |
+| AC-006-01 | `issues list --json` with 3 issues → valid JSON array on stdout |
+| AC-006-02 | `tasks list --status PENDING` → only PENDING tasks in Rich table |
+| AC-014-01 | `validate_placeholders()` confirms all 6 variables present in `constitution_seed.md` |
 
 ### Data Model Entities
-- `LedgerFilter` — `src/deviate/state/ledger.py`
+- `LedgerFilter` — `src/deviate/state/ledger.py` (transient query parameter)
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- `tests/test_cli/test_constitution.py` — `test_constitution_pre_valid`, `test_constitution_pre_missing`, `test_constitution_post`
-- `tests/test_cli/test_inspect.py` — `test_tasks_list_json`, `test_tasks_list_status_filter`, `test_issues_list_json`, `test_issues_list_empty_ledger`, `test_issues_list_malformed_jsonl`
-- `tests/test_core/test_constitution.py` — `test_validate_placeholders_all_present`, `test_validate_placeholders_missing`, `test_validate_placeholders_not_found`
-- `tests/test_state/test_ledger.py` — `test_ledger_filter_model`
+- `tests/test_cli/test_constitution.py` — `test_constitution_pre_emits_commands`, `test_constitution_pre_missing_file`
+- `tests/test_cli/test_inspect.py` — `test_issues_list_json`, `test_tasks_list_status_filter`, `test_issues_list_empty_ledger`
+- `tests/test_core/test_constitution.py` — `test_validate_placeholders_all_present`, `test_validate_placeholders_missing_var`
+- `tests/test_state/test_ledger.py` — `test_ledger_filter_query`, `test_ledger_filter_empty`
 
 ## [DEMONSTRATION_PATH]
 
 ```bash
-# Verify constitution pre emits commands
-uv run deviate constitution pre --json 2>/dev/null | python -c "
+# Verify constitution pre extracts commands
+deviate constitution pre 2>/dev/null | uv run python -c "
 import sys, json
-c = json.load(sys.stdin)
-assert 'test_command' in c
-assert 'lint_command' in c
-print('Constitution pre OK:', c['status'])
+contract = json.load(sys.stdin)
+assert 'test_command' in contract
+assert 'lint_command' in contract
+print(f'Constitution OK: test={contract[\"test_command\"]}')
 "
 
-# Verify issues list with JSON output
-uv run deviate issues list --json 2>/dev/null | python -c "
+# Verify issues list (json mode)
+deviate issues list --json 2>/dev/null | uv run python -c "
 import sys, json
-data = json.load(sys.stdin)
-assert isinstance(data, list)
-print(f'Issues list OK: {len(data)} issues')
+issues = json.load(sys.stdin)
+print(f'{len(issues)} issues loaded')
 "
 
-# Verify placeholder audit
+# Verify placeholder validation
 uv run python -c "
 from deviate.core.constitution import validate_placeholders
-result = validate_placeholders()
-all_vars = {'PROJECT_NAME', 'REPO_ROOT', 'TARGET_BACKEND_FRAMEWORK', 'TARGET_PACKAGE_MANAGER', 'TARGET_TEST_RUNNER', 'TARGET_COVERAGE_MINIMUM'}
-assert all_vars.issubset(result['present']), f'Missing: {all_vars - set(result[\"present\"])}'
-print(f'Placeholder audit OK: {len(result[\"present\"])}/{len(all_vars)} present')
+result = validate_placeholders('src/deviate/prompts/constitution_seed.md')
+assert result.all_present
+print(f'Placeholders OK: {len(result.variables)} variables present')
 "
 
-# Run verification tests
+# Run tests
 pytest tests/test_cli/test_constitution.py tests/test_cli/test_inspect.py tests/test_core/test_constitution.py -v --no-header -q
 ```
