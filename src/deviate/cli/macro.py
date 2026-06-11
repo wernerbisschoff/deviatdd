@@ -24,6 +24,7 @@ from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.core.epic import (
     allocate_feature_bucket,
     discover_epic,
+    discover_latest_epic,
     resolve_active_feature,
 )
 from deviate.core.prd import extract_prd_requirements
@@ -465,13 +466,16 @@ shard_app = typer.Typer(no_args_is_help=True, help="Shard phase commands")
 
 @shard_app.command("pre")
 def shard_pre(
+    epic: str | None = typer.Option(
+        None, "--epic", help="Epic slug (e.g. 002-deviatdd-gap-analysis)"
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview contract without side effects"
     ),
 ) -> None:
     """Discover epic, resolve PRD, compute next_issue_id"""
     specs_root = _resolve_specs_root()
-    epic_slug = discover_epic(specs_root)
+    epic_slug = epic or discover_latest_epic(specs_root)
     if not epic_slug:
         _halt("SHARD", "no epic discovered")
 
@@ -511,6 +515,9 @@ def shard_pre(
 @shard_app.command("post")
 def shard_post(
     manifest: Path = typer.Argument(..., help="Path to shard manifest JSON file"),
+    epic: str | None = typer.Option(
+        None, "--epic", help="Override epic slug from manifest"
+    ),
 ) -> None:
     """Validate shard output, register issues as BACKLOG, reset session to IDLE"""
     session, session_path = _load_session("SHARD")
@@ -520,7 +527,7 @@ def shard_post(
     issues = manifest_data.get("issues", [])
     ledger_path = _resolve_specs_root() / "issues.jsonl"
 
-    epic_slug = manifest_data.get("epic_slug", "")
+    epic_slug = epic or manifest_data.get("epic_slug", "")
     if epic_slug:
         issues_dir = _resolve_specs_root() / epic_slug / "issues"
         if issues_dir.exists():
