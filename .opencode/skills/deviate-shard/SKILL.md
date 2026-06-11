@@ -1,6 +1,6 @@
 ---
 name: deviate-shard
-description: Decompose a Product Requirements Document (prd.md) into a deterministic sequence of highly decoupled, self-contained Feature Verticals (GitHub Issues) with DAG dependency topology
+description: Decompose a Product Requirements Document (prd.md) into a deterministic sequence of highly decoupled, self-contained Feature Verticals (local issues registered in specs/issues.jsonl) with DAG dependency topology
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:

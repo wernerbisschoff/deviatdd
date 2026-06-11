@@ -153,6 +153,7 @@ def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
 def _scaffold_dotfiles(workdir: Path, agent_export_mode: str) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
+    _ensure_dir(dot_dir / "artifacts")
 
     config = DeviateConfig(agent_export_mode=agent_export_mode)
     config_path = dot_dir / "config.toml"
@@ -227,15 +228,15 @@ def _ensure_gitignore(workdir: Path) -> None:
     dot_dir = workdir / ".deviate"
     dot_dir.mkdir(parents=True, exist_ok=True)
     gitignore = dot_dir / ".gitignore"
-    entry = "session.json"
+    entries = ["session.json", "artifacts/"]
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")
-        if entry not in content:
-            gitignore.write_text(
-                content.rstrip("\n") + f"\n{entry}\n", encoding="utf-8"
-            )
+        for entry in entries:
+            if entry not in content:
+                content = content.rstrip("\n") + f"\n{entry}\n"
+        gitignore.write_text(content, encoding="utf-8")
     else:
-        gitignore.write_text(f"{entry}\n", encoding="utf-8")
+        gitignore.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
 
 @cli.command()
