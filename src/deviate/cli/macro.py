@@ -392,6 +392,9 @@ def prd_pre(
 
     session, session_path = _load_session_for_phase("PRD", dry_run=dry_run)
 
+    artifacts_dir = Path(".deviate") / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
     _emit_contract(
         "PRD",
         session,
@@ -401,6 +404,7 @@ def prd_pre(
         feature_bucket=epic_slug,
         design_path=str(epic_dir / "design.md"),
         data_model_path=str(epic_dir / "data-model.md"),
+        plan_target=str(artifacts_dir / "manifest_prd.json"),
         issue_id=session.active_issue_id or "",
     )
 
@@ -486,6 +490,9 @@ def shard_pre(
     issues_dir = epic_path / "issues"
     shard_count = len(list(issues_dir.glob("*.md"))) if issues_dir.exists() else 0
 
+    artifacts_dir = Path(".deviate") / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
     _emit_contract(
         "SHARD",
         session,
@@ -495,7 +502,7 @@ def shard_pre(
         prd_path=str(prd_path),
         next_issue_id=next_issue_id,
         issues_dir=str(issues_dir),
-        plan_target=str(epic_path / "tasks.md"),
+        plan_target=str(artifacts_dir / "manifest_shard.json"),
         issue_id=session.active_issue_id or "",
         shard_count=shard_count,
     )
