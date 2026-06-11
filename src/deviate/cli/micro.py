@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.resources
 import json
 import os
 import re
@@ -12,10 +13,14 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from deviate.core.agent import AgentBackend, AgentBinaryNotFoundError
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
-from deviate.state.config import SessionState
-from deviate.state.ledger import TaskRecord, append_task_transition
+from deviate.state.config import AgentConfig, SessionState
+from deviate.state.ledger import (
+    TaskRecord,
+    append_task_transition,
+)
 
 console = Console()
 
@@ -30,6 +35,60 @@ e2e_app = typer.Typer(no_args_is_help=True)
 hotfix_app = typer.Typer(no_args_is_help=True)
 
 _LEDGER_GLOB = "specs/**/tasks.jsonl"
+
+_SKILL_NAMES: dict[str, str | None] = {
+    "RED": "deviate-red",
+    "GREEN": "deviate-green",
+    "JUDGE": None,
+    "REFACTOR": "deviate-refactor",
+}
+
+
+def _load_skill_content(phase_name: str) -> str | None:
+    skill_name = _SKILL_NAMES.get(phase_name.upper())
+    if not skill_name:
+        return None
+    try:
+        path = importlib.resources.files("deviate.prompts.skills").joinpath(
+            skill_name, "SKILL.md"
+        )
+        return path.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, TypeError):
+        fallback = Path("src/deviate/prompts/skills") / skill_name / "SKILL.md"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
+        return None
+
+
+def _build_agent_prompt(skill_content: str, phase: str, task: dict, root: Path) -> str:
+    task_context = json.dumps(
+        {
+            "phase": phase,
+            "task_id": task.get("id", ""),
+            "issue_id": task.get("issue_id", ""),
+            "description": task.get("description", ""),
+            "execution_mode": task.get("execution_mode", "TDD"),
+            "repo_root": str(root.resolve()),
+        },
+        indent=2,
+    )
+    return skill_content.replace("$ARGUMENTS", task_context)
+
+
+def _invoke_agent(prompt: str, c: Console, backend_name: str = "opencode") -> bool:
+    c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
+    try:
+        backend = AgentBackend(config=AgentConfig(backend=backend_name))
+        backend.invoke(prompt)
+        return True
+    except AgentBinaryNotFoundError:
+        c.print(
+            f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
+        )
+        return False
+    except Exception as exc:
+        c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
+        return False
 
 
 def _git_env() -> dict[str, str]:
@@ -97,12 +156,15 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
     return None
 
 
-def _find_all_pending_tasks(root: Path) -> list[tuple[dict, Path]]:
+def _find_all_pending_tasks(
+    root: Path, issue_id: str | None = None
+) -> list[tuple[dict, Path]]:
     results: list[tuple[dict, Path]] = []
     for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
         for record in _read_ledger_records(ledger_file):
             if record.get("status") == "PENDING":
-                results.append((record, ledger_file))
+                if issue_id is None or record.get("issue_id") == issue_id:
+                    results.append((record, ledger_file))
     return results
 
 
@@ -132,7 +194,13 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
             raise typer.Exit(code=1)
         return result
 
-    pending = _find_all_pending_tasks(root)
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+
+    pending = _find_all_pending_tasks(root, issue_id=session.active_issue_id)
     if not pending:
         console.print("[red]NO_PENDING_TASKS[/]")
         raise typer.Exit(code=1)
@@ -178,6 +246,13 @@ def _run_red_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold blue]RED →[/] {tid}")
+
+    if agent:
+        skill = _load_skill_content("RED")
+        if skill:
+            prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
+            _invoke_agent(prompt, c, backend_name=agent)
+
     session = session.force_transition_to("RED")
     session.save(session_path)
     _append_status_transition(task, "RED", ledger_path)
@@ -194,6 +269,13 @@ def _run_green_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold green]GREEN →[/] {tid}")
+
+    if agent:
+        skill = _load_skill_content("GREEN")
+        if skill:
+            prompt = _build_agent_prompt(skill, "GREEN", task, Path.cwd())
+            _invoke_agent(prompt, c, backend_name=agent)
+
     session = session.force_transition_to("GREEN")
     session.save(session_path)
     _append_status_transition(task, "GREEN", ledger_path)
@@ -247,6 +329,13 @@ def _run_refactor_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold yellow]REFACTOR →[/] {tid}")
+
+    if agent:
+        skill = _load_skill_content("REFACTOR")
+        if skill:
+            prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
+            _invoke_agent(prompt, c, backend_name=agent)
+
     session = session.force_transition_to("REFACTOR")
     session.save(session_path)
     _append_status_transition(task, "REFACTOR", ledger_path)
@@ -367,9 +456,19 @@ def _run_all(
     no_refactor: bool = False,
     agent: str | None = None,
 ) -> None:
-    pending = _find_all_pending_tasks(root)
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    issue_id = session.active_issue_id
+
+    pending = _find_all_pending_tasks(root, issue_id=issue_id)
     if not pending:
-        c.print("[yellow]No PENDING tasks found[/]")
+        msg = "No PENDING tasks found"
+        if issue_id:
+            msg += f" for issue {issue_id}"
+        c.print(f"[yellow]{msg}[/]")
         raise typer.Exit(code=0)
 
     any_failed = False
@@ -1079,14 +1178,25 @@ def run_command(
     ),
     agent: str | None = typer.Option(None, "--agent", help="Override agent backend"),
 ) -> None:
-    """Run dispatcher: route task by execution_mode to TDD cycle or execute phase."""
-    if not task_id and not all_tasks:
-        console.print("[red]ERROR[/] Provide a task ID or use --all")
-        raise typer.Exit(code=1)
+    """Run dispatcher: route task by execution_mode to TDD cycle or execute phase.
 
+    When called without arguments, picks the next PENDING task for the active issue.
+    """
     root = _resolve_workspace_root()
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
+
+    if agent is None:
+        config_path = dot_dir / "config.toml"
+        if config_path.exists():
+            try:
+                import tomllib
+
+                with open(config_path, "rb") as f:
+                    data = tomllib.load(f)
+                agent = data.get("agent", {}).get("backend") or None
+            except Exception:
+                pass
     if session_path.exists():
         session = SessionState.load(session_path)
         cmd_parts = ["run"]
@@ -1105,7 +1215,6 @@ def run_command(
         _run_all(root, console, no_judge=no_judge, no_refactor=no_refactor, agent=agent)
         raise typer.Exit(code=0)
 
-    assert task_id is not None
     _run_single(
         task_id, root, console, no_judge=no_judge, no_refactor=no_refactor, agent=agent
     )
