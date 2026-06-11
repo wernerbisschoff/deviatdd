@@ -125,6 +125,39 @@
   | report_path | `Path \| None` | Defaults to `.deviate/pytest-report.json` | `explore.md` Gap #16.1 |
   | junit | `bool` | Default `False` | `explore.md` Gap #16.1 |
 
+### E12: StubAgentBackend
+- **Source-of-truth**: `src/deviate/core/agent.py` (new, alongside real backends)
+- **Lifecycle owner**: AgentBackend registry (`BACKEND_COMMANDS`)
+- **Attributes**:
+  | Attribute | Type | Invariant | Source Anchor |
+  |-----------|------|-----------|---------------|
+  | invoke_return | `HandoverManifest` | Always returns canned success response | `plan-tdd-integration-gap.md:98-108` |
+  | backend_name | `Literal["stub"]` | Must match `BACKEND_COMMANDS["stub"]` key | `plan-tdd-integration-gap.md:229-235` |
+  | subprocess_bypass | `bool` | Always `True` — no real subprocess | `plan-tdd-integration-gap.md:101` |
+- **Invariants**: StubBackend must return same `HandoverManifest` schema as real backends; never used in production; E2E tests use real backend
+
+### E13: YELLOW Skill Manifest
+- **Source-of-truth**: Emitted as JSON to stdout by `yellow_pre`; consumed by `deviate-yellow` skill agent
+- **Lifecycle owner**: `yellow_pre` CLI command
+- **Attributes**:
+  | Attribute | Type | Invariant | Source Anchor |
+  |-----------|------|-----------|---------------|
+  | proposed_changes | `list[str]` | Changed files detected by `_detect_phase_changes()` | `micro.py:794-810` |
+  | rationale | `str` | Always `"YELLOW phase — review proposed test amendments"` | `micro.py:806` |
+  | test_files | `list[str]` | Test files from `_find_test_files()` | `micro.py:802` |
+  | status | `Literal["REVIEW", "APPROVED", "REJECTED"]` | Updated by yellow_post | — |
+
+### E14: JUDGE Skill Manifest
+- **Source-of-truth**: Emitted as JSON to stdout by `judge_pre`; consumed by `deviate-judge` skill agent
+- **Lifecycle owner**: `judge_pre` CLI command
+- **Attributes**:
+  | Attribute | Type | Invariant | Source Anchor |
+  |-----------|------|-----------|---------------|
+  | verdict | `Literal["COMPLIANCE_PASS", "COMPLIANCE_VIOLATION"]` | Derived from `_find_protected_modules()` | `micro.py:867-897` |
+  | details | `list[dict]` | Violation file → protected module mappings | `micro.py:873-891` |
+  | changed_files | `list[str]` | Files changed since last phase | `micro.py:870` |
+  | protected_modules | `list[str]` | Spec-defined protected module paths | `micro.py:872` |
+
 ## [RELATIONSHIP_GRAPH]
 
 | From | Relationship | To | Cardinality | On-Delete | On-Cascade | Source Anchor |
@@ -142,6 +175,11 @@
 | `PlaceholderRegistry` | consumes | seed files | 1:N | N/A (transient) | N/A | `config.py:88` |
 | `CommonCLIFlags` | decorates | all `pre` commands | M:N | N/A (inline) | N/A | `_common.py` |
 | `PytestReportConfig` | configures | `_run_pytest()` | 1:1 | N/A (config read) | N/A | `micro.py:385` |
+| `StubAgentBackend` | mocks | `AgentBackend.invoke()` | 1:1 | N/A (test-only) | N/A | `plan-tdd-integration-gap.md:98-108` |
+| `yellow_pre` | emits | `YELLOWSkillManifest` | 1:1 | N/A (transient) | N/A | `micro.py:794-810` |
+| `judge_pre` | emits | `JUDGESkillManifest` | 1:1 | N/A (transient) | N/A | `micro.py:867-897` |
+| `deviate-yellow` skill | reads | `YELLOWSkillManifest` | 1:1 | N/A (transient) | N/A | Gap #18 |
+| `deviate-judge` skill | reads | `JUDGESkillManifest` | 1:1 | N/A (transient) | N/A | Gap #19 |
 
 ## [SCHEMA_TABLES]
 
@@ -257,6 +295,48 @@ class RollbackSnapshot(BaseModel):
     model_config = {"extra": "forbid"}
 ```
 
+### StubAgentBackend class (src/deviate/core/agent.py — new)
+```python
+class StubAgentBackend(AgentBackend):
+    """Deterministic stub backend for testing integration logic."""
+
+    def invoke(
+        self, prompt: str, backend: str | None = None, timeout: int | None = None
+    ) -> HandoverManifest:
+        return HandoverManifest(
+            phase="RED",
+            status="success",
+            test_file="tests/test_stub.py",
+            verification_command="pytest tests/test_stub.py",
+        )
+
+BACKEND_COMMANDS: dict[str, str] = {
+    "opencode": "opencode run",
+    "claude": "claude -p",
+    "droid": "droid exec",
+    "stub": "echo",  # Stub backend for testing — no real subprocess
+}
+```
+
+### YELLOW Skill Manifest Contract (emitted by yellow_pre)
+```json
+{
+  "proposed_changes": ["src/deviate/core/profile.py", "tests/test_profile.py"],
+  "rationale": "YELLOW phase — review proposed test amendments",
+  "test_files": ["tests/test_core/test_profile.py", "tests/test_cli/test_init.py"]
+}
+```
+
+### JUDGE Skill Manifest Contract (emitted by judge_pre)
+```json
+{
+  "verdict": "COMPLIANCE_VIOLATION",
+  "details": [{"file": "src/deviate/core/protected.py", "protected_module": "src/deviate/core/protected.py"}],
+  "changed_files": ["src/deviate/core/protected.py"],
+  "protected_modules": ["src/deviate/core/protected.py"]
+}
+```
+
 ### Pydantic: New entities for cache.py, context.py
 ```python
 class CacheEntry(BaseModel):
@@ -312,8 +392,10 @@ class ContextContract(BaseModel):
 | JUDGE | force_transition_to | no violation | REFACTOR | polish |
 | JUDGE | force_transition_to | violation | GREEN | git revert, rollback log |
 | REFACTOR | force_transition_to | regression check | IDLE | commit, COMPLETED |
-| YELLOW | --approved | amendments exist | GREEN | commit amendments |
-| YELLOW | --rejected | amendments exist | GREEN | git restore |
+| YELLOW | --approved | amendments exist | GREEN | commit amendments + `_load_skill_content("YELLOW")` skill guidance |
+| YELLOW | --rejected | amendments exist | GREEN | git restore + no skill invocation |
+| JUDGE | force_transition_to | compliance check | REFACTOR | `_load_skill_content("JUDGE")` skill guidance + `_run_judge_phase()` |
+| JUDGE | force_transition_to | violation | GREEN | `_load_skill_content("JUDGE")` skill guidance + `_run_judge_phase()` + rollback |
 
 ### TaskStatus State Machine
 - **States**: `PENDING → RED → GREEN → JUDGE → REFACTOR → COMPLETED → FAILED`
@@ -381,6 +463,24 @@ class ContextContract(BaseModel):
 ### Flow: Cache Validation
 1. `deviate <command> pre` → `CacheDiscipline.validate()` → for each `CacheEntry`: compare `source_path.mtime` vs `source_mtime` → if mismatch: recompute digest, mark invalid → update `.deviate/cache.json` (`core/cache_discipline.py` new, `explore.md` Gap #7.1-7.2)
 
+### Flow: StubAgentBackend Test Pattern
+1. Test declares `agent="stub"` → `_run_red_phase()` / `_run_green_phase()` calls `_invoke_agent(prompt, c, backend_name="stub")` → `AgentBackend.from_name("stub")` → `StubAgentBackend.invoke()` returns canned `HandoverManifest` → no subprocess is spawned (`tests/conftest.py:16-17` replaced with system-edge mock per `plan-tdd-integration-gap.md:257-265`)
+2. `mock_popen` fixture asserts `subprocess.Popen` was called with expected CLI args, env vars, and stdin prompt (`plan-tdd-integration-gap.md:57-73`)
+
+### Flow: YELLOW Phase Skill Invocation
+1. RED → GREEN → TamperGuard detects test edit → YELLOW trigger (`micro.py:753`)
+2. Agent invokes `deviate yellow pre` → `_detect_phase_changes()` → `_find_test_files()` → emits `YELLOWSkillManifest` JSON (`micro.py:794-810`)
+3. `deviate-yellow` skill guides agent: review proposed changes, evaluate against spec, approve or reject (`micro.py:42` — new `_SKILL_NAMES["YELLOW"] = "deviate-yellow"`)
+4. `deviate yellow post --approved` → `_commit_phase()` → session → GREEN (`micro.py:835-839`)
+5. `deviate yellow post --rejected` → `git restore .` → session → GREEN (`micro.py:841-846`)
+
+### Flow: JUDGE Phase Skill Invocation
+1. GREEN passes → `_run_tdd_cycle()` dispatches JUDGE via `_PHASE_MAP["JUDGE"]` (`micro.py:348`)
+2. `_run_judge_phase()` loads `deviate-judge` skill (replaces `_SKILL_NAMES['JUDGE'] = None` with `"deviate-judge"`) → `_load_skill_content("JUDGE")` → `_build_agent_prompt()` → `_invoke_agent()` (`micro.py:285-319` modified per Gap #19)
+3. Skill guides agent to evaluate compliance: read `judge_pre` manifest, verify git diff against spec.md invariants, report findings
+4. `judge_pre` → `_detect_phase_changes()` → `_find_protected_modules()` → emits `JUDGESkillManifest` (`micro.py:867-897`)
+5. On violation: `RollbackSnapshot` → `git revert --no-edit <green_sha>` → inject feedback → re-route to GREEN (`micro.py` modified per Gap #8)
+
 ### Flow: Judge Train Rollback
 1. `judge post` detects `COMPLIANCE_VIOLATION` → `RollbackSnapshot(phase="JUDGE", reason=...)` → `.deviate/rollback.jsonl` (`micro.py:200`, `explore.md` Gap #8.1)
 2. `git revert --no-edit <green_commit_sha>` (not `--hard`) → preserve RED test file state (`micro.py` modified, `explore.md` Gap #8.2)
@@ -398,3 +498,7 @@ class ContextContract(BaseModel):
 | DM-SRC-006 | Codebase_File | `src/deviate/cli/__init__.py` | CLI registration, init command, placeholder resolution |
 | DM-SRC-007 | Codebase_File | `src/deviate/cli/_common.py` | Shared CLI utilities |
 | DM-SRC-008 | Codebase_File | `specs/001-deviate-cli-python/data-model.md` | Existing data-model for reference patterns |
+| DM-SRC-009 | Plan_MD | `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` | StubAgentBackend design, mock boundary strategy, test patterns |
+| DM-SRC-010 | Codebase_File | `src/deviate/cli/micro.py` | `_SKILL_NAMES`, `_run_judge_phase`, yellow/judge CLI commands |
+| DM-SRC-011 | Codebase_File | `tests/test_micro/conftest.py` | Autouse `_invoke_agent` mock pattern — the broken boundary |
+| DM-SRC-012 | Codebase_File | `src/deviate/core/agent.py` | AgentBackend base class, BACKEND_COMMANDS registry |
