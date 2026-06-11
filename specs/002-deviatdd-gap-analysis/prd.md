@@ -8,7 +8,7 @@
 
 ## System Objectives and Scope Boundary
 ### Core Value Proposition
-Resolve 16 documented gaps between the DeviaTDD specification documents (`specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`) and the implemented codebase under `src/deviate/`. The implementation extracts business logic from CLI handlers into a `core/` module layer, adds 4 new CLI subcommand trees (context, adhoc, constitution, inspect), wires cross-cutting `--json`/`--quiet`/`--profile` flags, and enforces constitutional governance rules (cache discipline, train rollback, ledger separation, AGENTS.md/CLAUDE.md alignment).
+Resolve 19 documented gaps between the DeviaTDD specification documents (`specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`) and the implemented codebase under `src/deviate/`. The implementation extracts business logic from CLI handlers into a `core/` module layer, adds 4 new CLI subcommand trees (context, adhoc, constitution, inspect), wires cross-cutting `--json`/`--quiet`/`--profile` flags, enforces constitutional governance rules (cache discipline, train rollback, ledger separation, AGENTS.md/CLAUDE.md alignment), adds `StubAgentBackend` for deterministic test infrastructure, and creates `deviate-yellow`/`deviate-judge` phase skills.
 
 ### In-Scope Boundaries (Hard Directives)
 - `ExecutionProfile` enum + `resolve_profile()` in `src/deviate/core/profile.py` replacing boolean phase-skip flags
@@ -26,6 +26,12 @@ Resolve 16 documented gaps between the DeviaTDD specification documents (`specs/
 - `tasks.jsonl` generation from `tasks.md` in `deviate tasks post` with proposal file + `--confirm` flag
 - Constitution seed placeholder audit (`src/deviate/prompts/constitution_seed.md`)
 - Optional `pytest --json-report` mode via `PytestReportConfig`
+- `StubAgentBackend` in `src/deviate/core/agent.py` for deterministic test infrastructure
+- `deviate-yellow` SKILL.md in `src/deviate/prompts/skills/deviate-yellow/` with review/amend workflow
+- `deviate-judge` SKILL.md in `src/deviate/prompts/skills/deviate-judge/` with compliance evaluation workflow
+- `_SKILL_NAMES` update: wire `"YELLOW": "deviate-yellow"` and `"JUDGE": "deviate-judge"`
+- System-edge mock boundary refactor: `conftest.py` patches `subprocess.Popen` instead of `_invoke_agent`
+- Test refactoring: remove `_run_pytest` function-level mocks from RED/GREEN/REFACTOR tests
 
 ### Out-of-Scope Boundaries (Defensive Exclusions)
 - DeepSeek V4 pricing reference table (already documented; no code changes needed)
@@ -38,7 +44,7 @@ Resolve 16 documented gaps between the DeviaTDD specification documents (`specs/
 
 ## Architectural Constraints and Prerequisites
 ### Data Models & Invariants
-All 11 entities defined in `specs/002-deviatdd-gap-analysis/data-model.md` are authoritative:
+All 14 entities defined in `specs/002-deviatdd-gap-analysis/data-model.md` are authoritative:
 - `ExecutionProfile` (`Literal["full", "fast", "secure"]`) in `src/deviate/core/profile.py`
 - `ProfileConfig` in `src/deviate/state/config.py` (TOML section)
 - `ContextContract` in `src/deviate/core/context.py` (transient JSON contract)
@@ -50,8 +56,13 @@ All 11 entities defined in `specs/002-deviatdd-gap-analysis/data-model.md` are a
 - `PlaceholderRegistry` in `src/deviate/cli/__init__.py` (lazy-resolved dict)
 - `CommonCLIFlags` via `@with_json_quiet` decorator in `src/deviate/cli/_common.py`
 - `PytestReportConfig` in `src/deviate/state/config.py` (TOML section)
+- `StubAgentBackend` in `src/deviate/core/agent.py` (deterministic test stub)
+- `YELLOWSkillManifest` in `src/deviate/cli/micro.py` (transient contract from `yellow_pre`)
+- `JUDGESkillManifest` in `src/deviate/cli/micro.py` (transient contract from `judge_pre`)
 - **Invariant**: All JSONL ledgers are append-only — no existing line is ever modified.
 - **Invariant**: Booleans `--no-judge`/`--no-refactor` retained as composable overrides to `--profile`.
+- **Invariant**: StubAgentBackend returns same `HandoverManifest` schema as real backends; never used in production.
+- **Invariant**: `_SKILL_NAMES` entries for all micro phases resolve to valid skill names — no `None` entries.
 
 ### Performance / Scalability Thresholds
 - Placeholder resolution (offline): L_max <= 50ms
