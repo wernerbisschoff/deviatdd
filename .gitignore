@@ -15,3 +15,5 @@ uv.lock
 .opencode/index/
 graphify-out/cost.json
 node_modules/
+
+.deviate/artifacts/
