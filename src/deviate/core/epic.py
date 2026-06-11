@@ -7,16 +7,34 @@ def _resolve_specs_root(specs_root: Path | None = None) -> Path:
     return specs_root or Path("specs")
 
 
-def discover_epic(specs_root: Path | None = None) -> str:
+def _discover_all(specs_root: Path | None = None) -> list[str]:
     root = _resolve_specs_root(specs_root)
     if not root.exists():
-        return ""
-    slug_dirs = sorted(
+        return []
+    return sorted(
         d.name
         for d in root.iterdir()
         if d.is_dir() and not d.name.startswith(".") and (d / "explore.md").exists()
     )
+
+
+def discover_epic(specs_root: Path | None = None) -> str:
+    slug_dirs = _discover_all(specs_root)
     return slug_dirs[0] if slug_dirs else ""
+
+
+def discover_latest_epic(specs_root: Path | None = None) -> str:
+    slug_dirs = _discover_all(specs_root)
+    if not slug_dirs:
+        return ""
+    return max(slug_dirs, key=lambda s: _extract_prefix_num(s))
+
+
+def _extract_prefix_num(slug: str) -> int:
+    try:
+        return int(slug.split("-")[0])
+    except (ValueError, IndexError):
+        return 0
 
 
 def allocate_feature_bucket(slug: str, specs_root: Path | None = None) -> Path:
