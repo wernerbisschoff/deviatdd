@@ -21,7 +21,7 @@ def _git_env() -> dict[str, str]:
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-004",
+    issue_id: str = "ISS-001-004",
     description: str = "JUDGE phase task",
     status: str = "GREEN",
     execution_mode: str = "TDD",

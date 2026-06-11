@@ -22,7 +22,7 @@ def _git_env() -> dict[str, str]:
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-004",
+    issue_id: str = "ISS-001-004",
     description: str = "E2E phase task",
     status: str = "COMPLETED",
     execution_mode: str = "E2E",
@@ -53,7 +53,7 @@ class TestE2ePre:
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="E2E task one",
                 status="COMPLETED",
                 execution_mode="TDD",
@@ -78,13 +78,13 @@ class TestE2ePre:
 
             completed = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Completed task",
                 status="COMPLETED",
             )
             pending = _make_task_record(
                 task_id="TSK-004-02",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="Pending task",
                 status="PENDING",
             )

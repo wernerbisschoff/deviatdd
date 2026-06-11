@@ -165,7 +165,7 @@ report_path = ".deviate/pytest-report.json"
 ```json
 {
   "current_phase": "SPECIFY",
-  "active_issue_id": "ISS-001",
+  "active_issue_id": "ISS-001-001",
   "last_command": "specify pre",
   "timestamp": "2026-06-10T10:30:00Z"
 }
@@ -173,14 +173,14 @@ report_path = ".deviate/pytest-report.json"
 
 ### Issues Ledger (`specs/issues.jsonl`)
 ```jsonl
-{"issue_id":"ISS-001","type":"feature","title":"CLI init scaffold","status":"COMPLETED","source_file":"specs/001-deviate-cli-bootstrapping/explore.md","blocked_by":[],"timestamp":"2026-06-10T10:00:00Z"}
-{"issue_id":"ISS-002","type":"feature","title":"Profile command","status":"BACKLOG","source_file":"specs/002-deviatdd-gap-analysis/issues/001-profile-command.md","blocked_by":[],"timestamp":"2026-06-11T08:00:00Z"}
+{"issue_id":"ISS-001-001","type":"feature","title":"CLI init scaffold","status":"COMPLETED","source_file":"specs/001-deviate-cli-bootstrapping/explore.md","blocked_by":[],"timestamp":"2026-06-10T10:00:00Z"}
+{"issue_id":"ISS-001-002","type":"feature","title":"Profile command","status":"BACKLOG","source_file":"specs/002-deviatdd-gap-analysis/issues/001-profile-command.md","blocked_by":[],"timestamp":"2026-06-11T08:00:00Z"}
 ```
 
 ### Tasks Ledger (`specs/<epic>/<slug>/tasks.jsonl`)
 ```jsonl
-{"id":"TSK-002-01","issue_id":"ISS-002","description":"Add ExecutionProfile dataclass","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-11T08:00:00Z"}
-{"id":"TSK-002-02","issue_id":"ISS-002","description":"Replace no_judge/no_refactor with profile","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-11T08:00:00Z"}
+{"id":"TSK-002-01","issue_id":"ISS-001-002","description":"Add ExecutionProfile dataclass","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-11T08:00:00Z"}
+{"id":"TSK-002-02","issue_id":"ISS-001-002","description":"Replace no_judge/no_refactor with profile","status":"PENDING","execution_mode":"TDD","created_at":"2026-06-11T08:00:00Z"}
 ```
 
 ### Adhoc Ledger (`specs/adhoc.jsonl`) — new

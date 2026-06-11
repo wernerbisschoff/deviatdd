@@ -4,7 +4,7 @@ labels: ["epic:001-deviate-cli-python", "layer:macro", "layer:meso", "layer:infr
 source_file: "specs/001-deviate-cli-python/prd.md"
 blocked_by: []
 coordinates_with: []
-issue_id: "ISS-007"
+issue_id: "ISS-001-007"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -55,12 +55,12 @@ As a developer migrating from bash to Python CLI, I need the macro (explore, res
 - Bash scripts are stateless (discover everything at runtime); Python is session-based. Both approaches must produce compatible artifacts.
 
 ### Defensive Exclusions
-- Micro-layer TDD sandbox execution (red, green, refactor, execute, e2e, prune, hotfix, YELLOW, JUDGE) — covered by ISS-004.
-- State persistence & concurrency safety (fcntl locking, atomic writes) — covered by ISS-006.
-- Core module business logic (repo, contract, constitution, epic, issues, commit, prd, skills) — covered by ISS-005.
-- CLI initialization & governance provisioning — covered by ISS-001.
-- Macro-layer state & ledger management — covered by ISS-002.
-- Meso-layer specification & task decomposition — covered by ISS-003.
+- Micro-layer TDD sandbox execution (red, green, refactor, execute, e2e, prune, hotfix, YELLOW, JUDGE) — covered by ISS-001-004.
+- State persistence & concurrency safety (fcntl locking, atomic writes) — covered by ISS-001-006.
+- Core module business logic (repo, contract, constitution, epic, issues, commit, prd, skills) — covered by ISS-001-005.
+- CLI initialization & governance provisioning — covered by ISS-001-001.
+- Macro-layer state & ledger management — covered by ISS-001-002.
+- Meso-layer specification & task decomposition — covered by ISS-001-003.
 
 ## [UPSTREAM_REQUIREMENT_TRACING]
 - **FR-007-CONTRACT**: All macro/meso pre-commands emit complete JSON contracts matching bash field set.

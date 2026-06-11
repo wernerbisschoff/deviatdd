@@ -38,7 +38,7 @@ class TestSpecifyPre:
             now = datetime.now(timezone.utc)
 
             iss1 = IssueRecord(
-                issue_id="ISS-001",
+                issue_id="ISS-001-001",
                 type="feature",
                 title="Oldest unblocked",
                 status="BACKLOG",
@@ -46,13 +46,13 @@ class TestSpecifyPre:
                 timestamp=now,
             )
             iss2 = IssueRecord(
-                issue_id="ISS-002",
+                issue_id="ISS-001-002",
                 type="feature",
                 title="Blocked issue",
                 status="BACKLOG",
                 source_file="specs/test-epic/issues/iss-002.md",
                 timestamp=datetime.now(timezone.utc),
-                blocked_by=["ISS-003"],
+                blocked_by=["ISS-001-003"],
             )
             ledger.write_text(
                 iss1.model_dump_json() + "\n" + iss2.model_dump_json() + "\n"
@@ -76,7 +76,7 @@ class TestSpecifyPre:
 
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "SPECIFY"
-            assert loaded.active_issue_id == "ISS-001"
+            assert loaded.active_issue_id == "ISS-001-001"
 
             wt_output = subprocess.run(
                 ["git", "worktree", "list"],
@@ -104,11 +104,11 @@ class TestSpecifyPre:
             claims = [
                 json.loads(line)
                 for line in ledger_lines
-                if json.loads(line).get("issue_id") == "ISS-001"
+                if json.loads(line).get("issue_id") == "ISS-001-001"
                 and json.loads(line).get("status") == "SPECIFIED"
             ]
             assert len(claims) >= 1, (
-                "expected ISS-001 claim (SPECIFIED) in worktree ledger"
+                "expected ISS-001-001 claim (SPECIFIED) in worktree ledger"
             )
 
     def test_specify_pre_errors_when_no_backlog(self, tmp_git_repo: Path) -> None:
@@ -132,7 +132,9 @@ class TestSpecifyPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="SPECIFY", active_issue_id="ISS-001")
+            session = SessionState(
+                current_phase="SPECIFY", active_issue_id="ISS-001-001"
+            )
             session.save(dot_dir / "session.json")
 
             spec_root = Path("specs")
@@ -152,7 +154,7 @@ class TestSpecifyPost:
 
             ledger = spec_root / "issues.jsonl"
             record = IssueRecord(
-                issue_id="ISS-001",
+                issue_id="ISS-001-001",
                 type="feature",
                 title="Test",
                 status="BACKLOG",
@@ -204,7 +206,9 @@ class TestTasksPre:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="SPECIFY", active_issue_id="ISS-001")
+            session = SessionState(
+                current_phase="SPECIFY", active_issue_id="ISS-001-001"
+            )
             session.save(dot_dir / "session.json")
 
             spec_root = Path("specs")
@@ -267,7 +271,7 @@ class TestPrRun:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001")
+            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001-001")
             session.save(dot_dir / "session.json")
 
             spec_root = Path("specs")
@@ -275,7 +279,7 @@ class TestPrRun:
             (spec_root / "constitution.md").write_text("# Constitution\n")
 
             record = IssueRecord(
-                issue_id="ISS-001",
+                issue_id="ISS-001-001",
                 type="feature",
                 title="PR test issue",
                 status="BACKLOG",
@@ -324,7 +328,7 @@ class TestPrRun:
                 completed = [
                     json.loads(line)
                     for line in lines
-                    if json.loads(line).get("issue_id") == "ISS-001"
+                    if json.loads(line).get("issue_id") == "ISS-001-001"
                     and json.loads(line).get("status") == "COMPLETED"
                 ]
                 assert len(completed) == 0, (
@@ -338,7 +342,7 @@ class TestPrRun:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001")
+            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001-001")
             session.save(dot_dir / "session.json")
 
             spec_root = Path("specs")
@@ -346,7 +350,7 @@ class TestPrRun:
             (spec_root / "constitution.md").write_text("# Constitution\n")
 
             record = IssueRecord(
-                issue_id="ISS-001",
+                issue_id="ISS-001-001",
                 type="feature",
                 title="PR test issue",
                 status="BACKLOG",
@@ -395,9 +399,9 @@ class TestPrRun:
                 completed = [
                     json.loads(line)
                     for line in lines
-                    if json.loads(line).get("issue_id") == "ISS-001"
+                    if json.loads(line).get("issue_id") == "ISS-001-001"
                     and json.loads(line).get("status") == "COMPLETED"
                 ]
                 assert len(completed) >= 1, (
-                    "expected COMPLETED event for ISS-001 with --merge"
+                    "expected COMPLETED event for ISS-001-001 with --merge"
                 )

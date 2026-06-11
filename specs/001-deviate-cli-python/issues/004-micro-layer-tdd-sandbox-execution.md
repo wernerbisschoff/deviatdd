@@ -2,9 +2,9 @@
 title: "[FR-004] Micro-Layer TDD Sandbox Execution — Manual & Automated Orchestration"
 labels: ["epic:001-deviate-cli-python", "layer:micro"]
 source_file: "specs/001-deviate-cli-python/prd.md"
-blocked_by: ["ISS-005", "ISS-006"]
+blocked_by: ["ISS-001-005", "ISS-001-006"]
 coordinates_with: []
-issue_id: "ISS-004"
+issue_id: "ISS-001-004"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
@@ -95,7 +95,7 @@ These are read once per `deviate micro` invocation (not per phase — they are s
 - **Agent backend abstraction** (`src/deviate/core/agent.py`):
   - Subprocess invocation via heredoc pipe: `echo "$PROMPT" | <agent_cmd>`
   - Supported backends: `opencode run`, `claude -p`, `droid exec`
-  - Aider is NOT included (covered by ISS-010)
+  - Aider is NOT included (covered by ISS-ADH-002)
   - Configurable via `.deviate/config.toml` `[agent]` section
   - Timeout per phase in seconds
   - Capture stdout, parse YAML handover manifest from agent output
@@ -145,9 +145,9 @@ These are read once per `deviate micro` invocation (not per phase — they are s
 
 ### Defensive Exclusions
 
-- Macro or Meso layer orchestration (covered by ISS-005, ISS-008).
-- Core module implementations (repo, ledger, contract, commit, constitution, epic, validation, worktree, issues, prd, skills — covered by ISS-005).
-- Aider integration (covered by ISS-010).
+- Macro or Meso layer orchestration (covered by ISS-001-005, ISS-001-008).
+- Core module implementations (repo, ledger, contract, commit, constitution, epic, validation, worktree, issues, prd, skills — covered by ISS-001-005).
+- Aider integration (covered by ISS-ADH-002).
 - Direct modification of `tests/`, `specs/`, or configuration files by the agent sandbox (strictly read-only outside of expected RED test creation and GREEN YELLOW-approved amendments, enforced by Tamper Guard).
 
 ## [AGENT_BACKEND_SPECIFICATION]

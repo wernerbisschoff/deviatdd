@@ -159,7 +159,7 @@ class TestShardPost:
 
             issues_data = [
                 {
-                    "issue_id": "ISS-010",
+                    "issue_id": "ISS-ADH-002",
                     "type": "feature",
                     "title": "Sharded issue 1",
                     "status": "DRAFT",
@@ -167,7 +167,7 @@ class TestShardPost:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
                 {
-                    "issue_id": "ISS-009",
+                    "issue_id": "ISS-ADH-001",
                     "type": "feature",
                     "title": "Sharded issue 2",
                     "status": "DRAFT",

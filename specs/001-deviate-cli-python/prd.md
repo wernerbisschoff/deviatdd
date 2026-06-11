@@ -269,8 +269,8 @@ sequenceDiagram
      - **Then**: The CLI discovers the issue, runs specify pre, invokes the agent with a slim specify prompt, validates spec.md, commits, advances to TASKS, runs tasks pre, invokes the agent with a slim tasks prompt, validates tasks.md, commits, and advances to IDLE.
   2. `[AC-008-MESO-02]`:
      - **Given**: A specific issue ID is provided.
-     - **When**: The user executes `deviate meso --issue ISS-004`.
-     - **Then**: The pipeline targets only ISS-004, skipping issue discovery.
+     - **When**: The user executes `deviate meso --issue ISS-001-004`.
+     - **Then**: The pipeline targets only ISS-001-004, skipping issue discovery.
   3. `[AC-008-MACRO-01]`:
      - **Given**: `specs/constitution.md` exists and is valid.
      - **When**: The user executes `deviate macro`.

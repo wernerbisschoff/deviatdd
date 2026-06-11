@@ -3,7 +3,7 @@
 ## SYSTEM_TOPOLOGY_MAPPING
 
 - **Epic Domain**: `001-deviate-cli-python`
-- **Issue ID**: ISS-007
+- **Issue ID**: ISS-001-007
 - **Issue Title**: `[FR-007] Macro/Meso Parity & Backward Compatibility`
 - **Workstation Paths**:
   - `src/deviate/cli/macro.py` — explore, research, prd, shard contracts & validation
@@ -12,7 +12,7 @@
   - `src/deviate/core/validation.py` — content validation for post-phases
   - `src/deviate/state/` — session, config updates for new features
   - `~/.claude/skills/deviate-*.sh` — bash scripts (must remain functional)
-- **Spec Source**: ISS-007 issue body supersedes the PRD for FR-007 definitions (PRD lacks FR-007 — noted as `[NEEDS_CLARIFICATION]` pending PRD update)
+- **Spec Source**: ISS-001-007 issue body supersedes the PRD for FR-007 definitions (PRD lacks FR-007 — noted as `[NEEDS_CLARIFICATION]` pending PRD update)
 
 ## THE_PROBLEM_CONTRACT
 
@@ -51,12 +51,12 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
 
 ### Defensive Exclusions
 
-- Micro-layer TDD sandbox execution (red, green, refactor, execute, e2e, prune, hotfix, YELLOW, JUDGE) — covered by ISS-004.
-- State persistence & concurrency safety (fcntl locking, atomic writes) — covered by ISS-006.
-- Core module business logic (repo, contract, constitution, epic, issues, commit, prd, skills) — covered by ISS-005.
-- CLI initialization & governance provisioning — covered by ISS-001.
-- Macro-layer state & ledger management — covered by ISS-002.
-- Meso-layer specification & task decomposition — covered by ISS-003.
+- Micro-layer TDD sandbox execution (red, green, refactor, execute, e2e, prune, hotfix, YELLOW, JUDGE) — covered by ISS-001-004.
+- State persistence & concurrency safety (fcntl locking, atomic writes) — covered by ISS-001-006.
+- Core module business logic (repo, contract, constitution, epic, issues, commit, prd, skills) — covered by ISS-001-005.
+- CLI initialization & governance provisioning — covered by ISS-001-001.
+- Macro-layer state & ledger management — covered by ISS-001-002.
+- Meso-layer specification & task decomposition — covered by ISS-001-003.
 
 **Backward Compatibility Constraint** (soft): All new Python code must coexist with old bash scripts in `~/.claude/skills/deviate-*.sh`. Bash skills must remain fully functional — no breaking changes to the contract handoff format they produce or consume. Python CLI must detect and work correctly alongside bash-managed worktrees, ledgers, and session state. No changes to the JSONL ledger schema or issue file format that would break bash tooling.
 
@@ -176,9 +176,9 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
 ### US-012-FEATURES-P3: Issue-id option on tasks post
 * **Upstream Requirement Traceability**: FR-007-FEATURES [NEEDS_CLARIFICATION — PRD lacks FR-007 entry]; closest PRD FR: FR-003-MESO
 * **Scenario: Explicit issue ID for tasks post**
-  1. **Given** a task ledger directory with entries for `ISS-006`
-  2. **When** `deviate tasks post --issue-id ISS-006` is executed
-  3. **Then** it resolves the spec target from `ISS-006` and validates the corresponding `tasks.md`
+  1. **Given** a task ledger directory with entries for `ISS-001-006`
+  2. **When** `deviate tasks post --issue-id ISS-001-006` is executed
+  3. **Then** it resolves the spec target from `ISS-001-006` and validates the corresponding `tasks.md`
 * **Scenario: Invalid issue ID rejection**
   1. **Given** a task ledger that does not contain `ISS-999`
   2. **When** `deviate tasks post --issue-id ISS-999` is executed
@@ -229,5 +229,5 @@ As a developer migrating from bash to Python CLI, I need the macro (`explore`, `
 | **EPIC_SLUG** | 001-deviate-cli-python |
 | **BRANCH_NAME** | feat/001-deviate-cli-python/007-macro-meso-parity-backward-compatibility |
 | **SPEC_PATH** | specs/001-deviate-cli-python/007-macro-meso-parity-backward-compatibility/spec.md |
-| **ISSUE_ID** | ISS-007 |
+| **ISSUE_ID** | ISS-001-007 |
 | **NEXT_ACTION** | POST_VALIDATE_AND_COMMIT |

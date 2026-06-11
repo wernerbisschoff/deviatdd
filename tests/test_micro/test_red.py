@@ -23,7 +23,7 @@ def _git_env() -> dict[str, str]:
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-004",
+    issue_id: str = "ISS-001-004",
     description: str = "RED phase task",
     status: str = "PENDING",
     execution_mode: str = "TDD",
@@ -54,7 +54,7 @@ class TestRedPre:
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="RED test task",
                 status="PENDING",
             )
@@ -82,12 +82,12 @@ class TestRedPost:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="IDLE", active_issue_id="ISS-004")
+            session = SessionState(current_phase="IDLE", active_issue_id="ISS-001-004")
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 status="PENDING",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"

@@ -22,7 +22,7 @@ def _git_env() -> dict[str, str]:
 
 def _make_task_record(
     task_id: str = "TSK-004-01",
-    issue_id: str = "ISS-004",
+    issue_id: str = "ISS-001-004",
     description: str = "HOTFIX phase task",
     status: str = "PENDING",
     execution_mode: str = "DIRECT",
@@ -53,7 +53,7 @@ class TestHotfixPre:
 
             task = _make_task_record(
                 task_id="TSK-004-01",
-                issue_id="ISS-004",
+                issue_id="ISS-001-004",
                 description="HOTFIX: fix null pointer crash in parser",
                 status="PENDING",
                 execution_mode="DIRECT",

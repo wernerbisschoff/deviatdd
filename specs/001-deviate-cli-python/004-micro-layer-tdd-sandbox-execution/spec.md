@@ -4,9 +4,9 @@
 
 - **Epic Domain**: `001-deviate-cli-python`
 - **Layer**: Micro (TDD Sandbox)
-- **Issue**: `ISS-004` — Micro-Layer TDD Sandbox Execution — Manual & Automated Orchestration
+- **Issue**: `ISS-001-004` — Micro-Layer TDD Sandbox Execution — Manual & Automated Orchestration
 - **Execution Mode**: TDD (Red-Green-Refactor via deviate cycle)
-- **Blocked By**: `ISS-005` (Core Module Implementations), `ISS-006` (Ledger & State Config)
+- **Blocked By**: `ISS-001-005` (Core Module Implementations), `ISS-001-006` (Ledger & State Config)
 
 ### Component Map
 
@@ -100,10 +100,10 @@ As a developer writing code, I need the deviate CLI to execute the full micro-la
 
 ### Defensive Exclusions
 
-- Macro-layer orchestration (feature scoping, `/explore`, `/research`, `/prd`, `/shard`) — covered by `ISS-005`, `ISS-008`.
-- Meso-layer orchestration (issue engineering, `/specify`, `/tasks`) — covered by `ISS-005`, `ISS-008`.
-- Core module implementations (repo, ledger, contract, commit, constitution, epic, validation, worktree, issues, prd, skills) — covered by `ISS-005`.
-- Aider integration — covered by `ISS-010`.
+- Macro-layer orchestration (feature scoping, `/explore`, `/research`, `/prd`, `/shard`) — covered by `ISS-001-005`, `ISS-001-008`.
+- Meso-layer orchestration (issue engineering, `/specify`, `/tasks`) — covered by `ISS-001-005`, `ISS-001-008`.
+- Core module implementations (repo, ledger, contract, commit, constitution, epic, validation, worktree, issues, prd, skills) — covered by `ISS-001-005`.
+- Aider integration — covered by `ISS-ADH-002`.
 - Direct modification of `tests/`, `specs/`, or configuration files by agent sandbox (strictly read-only outside of RED test creation and GREEN+ YELLOW-approved amendments, enforced by Tamper Guard).
 - Web or GUI frontend — CLI-only application.
 
@@ -387,5 +387,5 @@ def test_something(self, tmp_git_repo: Path):
 | EPIC_SLUG | 001-deviate-cli-python |
 | BRANCH_NAME | feat/001-deviate-cli-python/004-micro-layer-tdd-sandbox-execution |
 | SPEC_PATH | specs/001-deviate-cli-python/004-micro-layer-tdd-sandbox-execution/spec.md |
-| ISSUE_ID | ISS-004 |
+| ISSUE_ID | ISS-001-004 |
 | NEXT_ACTION | decompose into TDD tasks via `/deviate-tasks` |

@@ -2,9 +2,9 @@
 title: "[FR-003] Meso-Layer Specification & Task Decomposition"
 labels: ["epic:001-deviate-cli-python", "layer:meso"]
 source_file: "specs/001-deviate-cli-python/prd.md"
-blocked_by: ["ISS-002"]
+blocked_by: ["ISS-001-002"]
 coordinates_with: []
-issue_id: "ISS-003"
+issue_id: "ISS-001-003"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]

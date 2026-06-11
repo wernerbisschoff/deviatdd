@@ -17,28 +17,28 @@ from deviate.state.ledger import (
 class TestIssueRecordSchemaRealignment:
     def test_issue_record_schema_realignment(self):
         record = IssueRecord(
-            issue_id="ISS-001",
+            issue_id="ISS-001-001",
             type="feature",
             title="[FR-001] CLI Initialization",
             status="BACKLOG",
             source_file="specs/001/some-file.md",
             blocked_by=[],
-            coordinates_with=["ISS-002"],
+            coordinates_with=["ISS-001-002"],
             timestamp=datetime(2026, 6, 1, tzinfo=timezone.utc),
         )
-        assert record.issue_id == "ISS-001"
+        assert record.issue_id == "ISS-001-001"
         assert record.type == "feature"
         assert record.title == "[FR-001] CLI Initialization"
         assert record.status == "BACKLOG"
         assert record.source_file == "specs/001/some-file.md"
         assert record.blocked_by == []
-        assert record.coordinates_with == ["ISS-002"]
+        assert record.coordinates_with == ["ISS-001-002"]
         assert record.timestamp == datetime(2026, 6, 1, tzinfo=timezone.utc)
 
     def test_rejects_unknown_fields(self):
         with pytest.raises(ValidationError):
             IssueRecord(
-                issue_id="ISS-002",
+                issue_id="ISS-001-002",
                 type="feature",
                 title="Test",
                 status="BACKLOG",
@@ -59,7 +59,7 @@ class TestIssueRecordSchemaRealignment:
 
     def test_issue_id_is_primary_key(self):
         record = IssueRecord(
-            issue_id="ISS-010",
+            issue_id="ISS-ADH-002",
             type="feature",
             title="PK test",
             status="BACKLOG",
@@ -67,11 +67,11 @@ class TestIssueRecordSchemaRealignment:
             timestamp=datetime.now(timezone.utc),
         )
         assert not hasattr(record, "id") or record.id is None
-        assert record.issue_id == "ISS-010"
+        assert record.issue_id == "ISS-ADH-002"
 
     def test_coordinates_with_default_empty_list(self):
         record = IssueRecord(
-            issue_id="ISS-003",
+            issue_id="ISS-001-003",
             type="bug",
             title="No coords",
             status="BACKLOG",
@@ -82,7 +82,7 @@ class TestIssueRecordSchemaRealignment:
 
     def test_blocked_by_default_empty_list(self):
         record = IssueRecord(
-            issue_id="ISS-004",
+            issue_id="ISS-001-004",
             type="bug",
             title="No blockers",
             status="BACKLOG",
@@ -97,7 +97,7 @@ class TestMalformedJsonlRecovery:
         ledger_path = tmp_path / "issues.jsonl"
         valid_line = json.dumps(
             {
-                "issue_id": "ISS-001",
+                "issue_id": "ISS-001-001",
                 "type": "feature",
                 "title": "Valid",
                 "status": "BACKLOG",
@@ -164,7 +164,7 @@ class TestResolveIssueRecordByIssueId:
         ledger_path.write_text(
             json.dumps(
                 {
-                    "issue_id": "ISS-001",
+                    "issue_id": "ISS-001-001",
                     "type": "feature",
                     "title": "Test",
                     "status": "BACKLOG",
@@ -176,16 +176,16 @@ class TestResolveIssueRecordByIssueId:
             encoding="utf-8",
         )
 
-        result = resolve_issue_record("ISS-001", ledger_path)
+        result = resolve_issue_record("ISS-001-001", ledger_path)
         assert result is not None
-        assert result.issue_id == "ISS-001"
+        assert result.issue_id == "ISS-001-001"
 
     def test_resolve_by_issue_id_not_found(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"
         ledger_path.write_text(
             json.dumps(
                 {
-                    "issue_id": "ISS-001",
+                    "issue_id": "ISS-001-001",
                     "type": "feature",
                     "title": "Test",
                     "status": "BACKLOG",
@@ -205,7 +205,7 @@ class TestResolveIssueRecordByIssueId:
         ledger_path.write_text(
             json.dumps(
                 {
-                    "issue_id": "ISS-001",
+                    "issue_id": "ISS-001-001",
                     "type": "feature",
                     "title": "Original",
                     "status": "BACKLOG",
@@ -216,7 +216,7 @@ class TestResolveIssueRecordByIssueId:
             + "\n"
             + json.dumps(
                 {
-                    "issue_id": "ISS-001",
+                    "issue_id": "ISS-001-001",
                     "type": "feature",
                     "title": "Updated",
                     "status": "COMPLETED",
@@ -228,7 +228,7 @@ class TestResolveIssueRecordByIssueId:
             encoding="utf-8",
         )
 
-        result = resolve_issue_record("ISS-001", ledger_path)
+        result = resolve_issue_record("ISS-001-001", ledger_path)
         assert result is not None
         assert result.title == "Updated"
         assert result.status == "COMPLETED"

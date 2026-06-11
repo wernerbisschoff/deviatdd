@@ -17,14 +17,14 @@ from deviate.state.ledger import (
 class TestIssueRecord:
     def test_issue_record_creation(self):
         record = IssueRecord(
-            issue_id="ISS-001",
+            issue_id="ISS-001-001",
             type="feature",
             title="Test Issue",
             status="SHARDED",
             source_file="specs/epic-001/issues/iss-001.md",
             timestamp=datetime.now(timezone.utc),
         )
-        assert record.issue_id == "ISS-001"
+        assert record.issue_id == "ISS-001-001"
         assert record.type == "feature"
         assert record.title == "Test Issue"
         assert record.status == "SHARDED"
@@ -33,7 +33,7 @@ class TestIssueRecord:
 
     def test_issue_record_default_status(self):
         record = IssueRecord(
-            issue_id="ISS-002",
+            issue_id="ISS-001-002",
             type="feature",
             title="Default Status",
             source_file="test.md",
@@ -44,7 +44,7 @@ class TestIssueRecord:
     def test_issue_record_invalid_status(self):
         with pytest.raises(ValidationError):
             IssueRecord(
-                issue_id="ISS-003",
+                issue_id="ISS-001-003",
                 type="feature",
                 title="Bad Status",
                 status="INVALID",
@@ -64,7 +64,7 @@ class TestIssueRecord:
 
     def test_issue_record_serialization(self):
         record = IssueRecord(
-            issue_id="ISS-004",
+            issue_id="ISS-001-004",
             type="feature",
             title="Round Trip",
             status="SHARDED",
@@ -80,7 +80,7 @@ class TestAppendIssueRecord:
     def test_append_new_record(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"
         record = IssueRecord(
-            issue_id="ISS-005",
+            issue_id="ISS-001-005",
             type="feature",
             title="New Issue",
             status="SHARDED",
@@ -93,7 +93,7 @@ class TestAppendIssueRecord:
         lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 1
         parsed = json.loads(lines[0])
-        assert parsed["issue_id"] == "ISS-005"
+        assert parsed["issue_id"] == "ISS-001-005"
 
     def test_idempotent_skip_existing_issue_id(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"

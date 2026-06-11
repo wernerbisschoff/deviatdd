@@ -2,20 +2,20 @@
 
 ## SYSTEM_TOPOLOGY_MAPPING
 - **Epic Domain**: `001-deviate-cli-python`
-- **Issue ID**: `ISS-002`
+- **Issue ID**: `ISS-001-002`
 - **Layer**: Macro (feature scoping orchestration)
 - **Primary Workstations**:
   - `src/deviate/cli/macro.py` — Macro-layer subcommand definitions (explore, research, prd, shard)
   - `src/deviate/state/ledger.py` — `IssueRecord` Pydantic model and `specs/issues.jsonl` append logic
   - `src/deviate/state/session.py` — Session state machine with transition enforcement
   - `tests/test_macro/` — Unit test suite for macro-layer commands
-- **Upstream Dependencies**: `ISS-001` (`[FR-001]` Package Scaffold & Bootstrap) — provides `src/deviate/cli/__init__.py` Typer app mount point
+- **Upstream Dependencies**: `ISS-001-001` (`[FR-001]` Package Scaffold & Bootstrap) — provides `src/deviate/cli/__init__.py` Typer app mount point
 - **Downstream Consumers**: Meso-layer (`/specify`, `/tasks`) consumes `shard` output (`IssueRecord` entries in `specs/issues.jsonl`)
 
 ## THE_PROBLEM_CONTRACT
 As a feature architect, I need the CLI to orchestrate the `/explore`, `/research`, `/prd`, and `/shard` commands, managing session state transitions and appending to the global issue ledger, so that feature scoping is systematically tracked and downstream agents receive deterministic context packets.
 
-The current codebase has the package scaffold (`ISS-001`) but lacks macro-layer orchestration. Without this, users cannot invoke `deviate explore`, `deviate research`, `deviate prd`, or `deviate shard`, and no session state or ledger tracking exists to coordinate the feature scoping workflow.
+The current codebase has the package scaffold (`ISS-001-001`) but lacks macro-layer orchestration. Without this, users cannot invoke `deviate explore`, `deviate research`, `deviate prd`, or `deviate shard`, and no session state or ledger tracking exists to coordinate the feature scoping workflow.
 
 ## SCOPE_BOUNDARIES
 ### Hard Inclusions
@@ -209,5 +209,5 @@ The current codebase has the package scaffold (`ISS-001`) but lacks macro-layer 
 | EPIC_SLUG | 001-deviate-cli-python |
 | BRANCH_NAME | feat/001-deviate-cli-python/002-macro-layer-state-ledger-management |
 | SPEC_PATH | specs/001-deviate-cli-python/002-macro-layer-state-ledger-management/spec.md |
-| ISSUE_ID | ISS-002 |
+| ISSUE_ID | ISS-001-002 |
 | NEXT_ACTION | Run `/deviate-tasks` to decompose this spec into TDD-cycle tasks |

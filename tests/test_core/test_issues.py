@@ -12,7 +12,7 @@ class TestResolveIssue:
         ledger = tmp_path / "issues.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
         record = {
-            "issue_id": "ISS-001",
+            "issue_id": "ISS-001-001",
             "type": "feature",
             "title": "Test issue",
             "status": "BACKLOG",
@@ -22,9 +22,9 @@ class TestResolveIssue:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         ledger.write_text(json.dumps(record) + "\n")
-        result = resolve_issue("ISS-001", ledger_path=ledger)
+        result = resolve_issue("ISS-001-001", ledger_path=ledger)
         assert result is not None
-        assert result.issue_id == "ISS-001"
+        assert result.issue_id == "ISS-001-001"
 
     def test_resolve_issue_returns_none_when_not_found(self, tmp_path: Path):
         ledger = tmp_path / "issues.jsonl"
@@ -39,7 +39,7 @@ class TestClaimIssue:
         ledger = tmp_path / "issues.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
         record = {
-            "issue_id": "ISS-002",
+            "issue_id": "ISS-001-002",
             "type": "feature",
             "title": "Claim test",
             "status": "BACKLOG",
@@ -49,7 +49,7 @@ class TestClaimIssue:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         ledger.write_text(json.dumps(record) + "\n")
-        result = claim_issue("ISS-002", ledger_path=ledger)
+        result = claim_issue("ISS-001-002", ledger_path=ledger)
         assert result is True
         lines = ledger.read_text().strip().split("\n")
         assert len(lines) >= 2

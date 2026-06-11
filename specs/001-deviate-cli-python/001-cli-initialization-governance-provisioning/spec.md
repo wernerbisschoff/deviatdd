@@ -2,7 +2,7 @@
 
 ## SYSTEM_TOPOLOGY_MAPPING
 - **Epic Domain**: `001-deviate-cli-python`
-- **Issue ID**: `ISS-001`
+- **Issue ID**: `ISS-001-001`
 - **Issue Slug**: `001-cli-initialization-governance-provisioning`
 - **Upstream PRD**: `specs/001-deviate-cli-python/prd.md`
 - **Branch**: `feat/001-deviate-cli-python/001-cli-initialization-governance-provisioning`
@@ -165,5 +165,5 @@ As a developer setting up the DeviaTDD environment, I need the `deviate init` co
 | EPIC_SLUG | 001-deviate-cli-python |
 | BRANCH_NAME | feat/001-deviate-cli-python/001-cli-initialization-governance-provisioning |
 | SPEC_PATH | specs/001-deviate-cli-python/001-cli-initialization-governance-provisioning/spec.md |
-| ISSUE_ID | ISS-001 |
+| ISSUE_ID | ISS-001-001 |
 | NEXT_ACTION | Run post-script to validate, commit, and transition to TASKS phase |

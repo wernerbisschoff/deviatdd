@@ -542,6 +542,8 @@ def shard_post(
             title=issue_data.get("title", ""),
             status="BACKLOG",
             source_file=issue_data.get("source_file", ""),
+            blocked_by=issue_data.get("blocked_by", []),
+            coordinates_with=issue_data.get("coordinates_with", []),
             timestamp=datetime.now(timezone.utc),
         )
         appended = append_issue_record(record, ledger_path)

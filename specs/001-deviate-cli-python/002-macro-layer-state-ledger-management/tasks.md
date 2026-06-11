@@ -136,7 +136,7 @@
 - T004 (integration) must precede T005 (E2E gates on integration passing)
 
 **Risk Hotspots**:
-- `src/deviate/main.py` currently wraps `cli` as a sub-typer (`app.add_typer(cli, name="cli")`) — CLI invocations use `deviate cli <subcommand>` prefix. T003 adds `macro_cli` as sub-typer of `cli`, resulting in `deviate cli explore` etc. This is consistent with ISS-001's architecture but may require eventual refactoring in a future issue.
+- `src/deviate/main.py` currently wraps `cli` as a sub-typer (`app.add_typer(cli, name="cli")`) — CLI invocations use `deviate cli <subcommand>` prefix. T003 adds `macro_cli` as sub-typer of `cli`, resulting in `deviate cli explore` etc. This is consistent with ISS-001-001's architecture but may require eventual refactoring in a future issue.
 - Session state file locking: no OS-level locking as per defensive exclusions. Concurrent invocations may race. Risk is documented (RSK-001) but not addressed in this issue.
 - Test isolation: T003 tests using CliRunner must mock or pre-create session state and artifacts on the isolated filesystem. Ensure `tmp_path` or `isolated_filesystem` is used consistently.
 

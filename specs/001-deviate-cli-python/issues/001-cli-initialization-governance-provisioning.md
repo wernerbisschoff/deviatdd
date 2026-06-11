@@ -4,7 +4,7 @@ labels: ["epic:001-deviate-cli-python", "layer:init"]
 source_file: "specs/001-deviate-cli-python/prd.md"
 blocked_by: []
 coordinates_with: []
-issue_id: "ISS-001"
+issue_id: "ISS-001-001"
 ---
 
 ## [SYSTEM_TOPOLOGY_MAPPING]
