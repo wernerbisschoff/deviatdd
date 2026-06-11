@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
+from deviate.core.worktree import find_worktree_for_branch
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
 
@@ -33,6 +34,34 @@ _LEDGER_GLOB = "specs/**/tasks.jsonl"
 
 def _git_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+def _resolve_workspace_root() -> Path:
+    """Resolve workspace root from current branch → worktree path.
+
+    If already inside a git worktree (``.git`` is a file), returns CWD.
+    Otherwise queries the current branch and looks up the matching
+    worktree path.  Falls back to ``Path.cwd()`` when neither applies.
+    """
+    root = Path.cwd()
+    git_path = root / ".git"
+    if git_path.exists() and not git_path.is_dir():
+        return root
+    try:
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        if branch and branch != "HEAD":
+            wt = find_worktree_for_branch(branch, repo=root)
+            if wt is not None:
+                return wt
+    except (subprocess.CalledProcessError, OSError):
+        pass
+    return root
 
 
 def _read_ledger_records(ledger_file: Path) -> list[dict]:
@@ -1055,7 +1084,7 @@ def run_command(
         console.print("[red]ERROR[/] Provide a task ID or use --all")
         raise typer.Exit(code=1)
 
-    root = Path.cwd()
+    root = _resolve_workspace_root()
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     if session_path.exists():

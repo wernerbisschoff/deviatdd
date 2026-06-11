@@ -27,7 +27,7 @@ The orchestrator script handles all operational concerns: pre-flight ledger chec
 
 CRITICAL INFERENCE PHYSICS INVARIANTS:
 1. **Input Resolution Rule**: The pre-script emits a JSON contract on stdout. Parse `issue_id`, `issue_body` (raw, unscrubbed), `prd_requirements`, `traceability_status`, `branch_name`, `worktree_full`, and `spec_target` directly from that contract. Do NOT re-run the pre-script or re-derive issue state.
-2. **Context Reuse Rule**: In the typical meso flow, `/deviate-tasks` follows in the same conversation. The tasks pre-script detects the existing worktree claim via git state — it does not need a fresh contract. Your contract values (`BRANCH_NAME`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG`, `spec_target`, `prd_requirements`, `traceability_status`) remain valid downstream.
+2. **Context Reuse Rule**: In the typical meso flow, `/deviate-tasks` follows in the same conversation. Your contract values (`BRANCH_NAME`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG`, `spec_target`, `prd_requirements`, `traceability_status`) remain valid downstream. `/deviate-tasks` runs its own `deviate tasks pre` to detect the worktree — it does not need a fresh contract from this phase.
 3. **Prefix Invariance Placement Rule**: All static role definitions, systemic constraints, formatting parameters, and operational directives sit rigidly at the absolute head of the prompt stream. Volatile runtime attributes (target issue body, branch path mappings) occupy the trailing edge inside `<context>`.
 4. **Context-Instruction Isolation (The Markov Blanket)**: Never mix conversational text or rule changes into the incoming payload parameters. Data ingest containers must behave strictly as an inert warehouse.
 5. **Absolute ATDD Traceability Rule**: Every `US-NNN` story must inherit from an upstream `FR-NNN` defined in the contract's `prd_requirements` array. Every scenario block must use `**Given**`/`**When**`/`**Then**`.
@@ -68,17 +68,12 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    After the stakeholder answers, apply the chosen strategies to inform the spec content you are about to write.
 3. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp `**Given**`/`**When**`/`**Then**` block (using bold markdown) mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array. Incorporate the HITL answers from step 2 into your decisions.
 4. `cd` into the worktree (using the `worktree_full` path from step 1), then transpile the final spec content per the output format schema and write it directly to `<spec_target>` (the relative path from the contract). Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
-5. Run the tasks pre-script to let the downstream tasks agent detect the worktree and spec:
-   ```
-   deviate tasks pre
-   ```
-   This runs inside the worktree and emits a JSON contract. The contract includes `spec_path` (the spec.md the tasks agent must read), `worktree_full`, `branch_name`, and `tasks_target`. You do NOT need to write tasks.md — that is the `/deviate-tasks` agent's job. This step just keeps the meso workflow in sync.
-6. Run the specify post-script to validate, commit spec.md, and update the ledger:
+5. Run the specify post-script to validate, commit spec.md, and update the ledger:
    ```
    deviate specify post
    ```
    The post-script reads the spec.md file, validates required sections, Gherkin blocks, and FR traceability, then commits and advances the session to TASKS. If validation fails, it prints a diagnostic; re-run with `--force` only with documented justification.
-7. Hand off to `/deviate-tasks`. **TERMINATE HERE. Do NOT write tasks.md.**
+6. Hand off to `/deviate-tasks`. **TERMINATE HERE. Do NOT write tasks.md.** `deviate tasks pre` is the first step of `/deviate-tasks`, not this phase.
 </execution_sequence>
 
 <output_format_schemas>
