@@ -118,6 +118,84 @@ sequenceDiagram
 
 ## Functional Requirements and Epics
 
+### FR-017-TDDMockBoundary: TDD Integration Mock Boundary
+- **Description**: Push the agent invocation mock boundary from internal function (`_invoke_agent`) to the system edge (`subprocess.Popen`). Add `StubAgentBackend` class in `src/deviate/core/agent.py` that returns a deterministic `HandoverManifest` without subprocess overhead. Register `"stub"` entry in `BACKEND_COMMANDS`. Replace the autouse `conftest.py` fixture (currently patches `_invoke_agent`) with a `subprocess.Popen` mock. Remove `_run_pytest` function-level mocks from RED/GREEN/REFACTOR tests, replacing them with system-edge subprocess assertions. Update `deviate-tasks` SKILL.md decision tree to include integration/wiring guidance (step 7): tasks involving subprocess, API, or agent prompt wiring must be typed as TDD with system-edge mock boundaries.
+- **Preconditions**: `tests/test_micro/conftest.py:16-17` patches `_invoke_agent` site-wide. All RED/GREEN/REFACTOR tests mock `_run_pytest` at function level. No `StubAgentBackend` exists. The `deviate-tasks` decision tree has no integration/wiring guidance.
+- **Inputs/Outputs**:
+  - `StubAgentBackend.invoke(prompt)` → `HandoverManifest` (canned response, no subprocess)
+  - `conftest.py` autouse fixture patches `subprocess.Popen` (not `_invoke_agent`)
+  - Tests assert `Popen` call args (CLI, env, stdin) not function-call mock assertions
+  - Task decomposition entries include `Mock Boundary` metadata field
+- **State Transition**: `FUNCTION_BOUNDARY_MOCK ➔ STUB_BACKEND_EXISTS ➔ SYSTEM_EDGE_MOCK ➔ INTEGRATION_TESTS_COVER_WIRING`
+- **Exception Strategy**: StubBackend must return the same `HandoverManifest` schema as real backends — E2E task with real backend validates divergence per `plan-tdd-integration-gap.md:308-314`. Test refactoring must preserve existing coverage — focus on contract testing (args, env vars) not implementation details per `plan-tdd-integration-gap.md:324-327`.
+- **Acceptance Criteria (Definition of Done)**:
+  1. `AC-017-01`:
+     - **Given**: The `StubAgentBackend` class in `src/deviate/core/agent.py`
+     - **When**: `.invoke("test prompt")` is called
+     - **Then**: It returns a valid `HandoverManifest` with `phase="RED"`, `status="success"` without spawning any subprocess
+  2. `AC-017-02`:
+     - **Given**: `tests/test_micro/conftest.py`
+     - **When**: The autouse fixture executes
+     - **Then**: It patches `subprocess.Popen` (not `deviate.cli.micro._invoke_agent`)
+  3. `AC-017-03`:
+     - **Given**: An integration test using `agent="stub"` and `mock_popen`
+     - **When**: `_run_red_phase()` or `_run_green_phase()` executes
+     - **Then**: The test asserts `subprocess.Popen` was called with the correct CLI arguments, environment variables, and stdin prompt content
+  4. `AC-017-04`:
+     - **Given**: The `deviate-tasks` SKILL.md decision tree
+     - **When**: Inspected for integration/wiring guidance
+     - **Then**: A step 7 entry exists: "Does this task connect/wire already-tested components via subprocess, API, or message passing? → TDD with system-edge mock boundary"
+- **Downstream Shard Mapping**: ISS-002-005
+
+### FR-018-YELLOWSkill: YELLOW Phase Skill
+- **Description**: Create `src/deviate/prompts/skills/deviate-yellow/SKILL.md` — a YELLOW phase skill that guides the agent through review and amendment of proposed test changes after Tamper Guard detection. Add `"YELLOW": "deviate-yellow"` to `_SKILL_NAMES` in `cli/micro.py`. Wire `_load_skill_content("YELLOW")` into the `yellow_pre` and `yellow_post` CLI handlers so that when a YELLOW phase is triggered (after GREEN tamper detection at `micro.py:753`), the agent receives skill-guided instructions for reviewing proposed test amendments, evaluating them against spec.md, and either approving (`--approved` → commit) or rejecting (`--rejected` → `git restore`) the changes.
+- **Preconditions**: YELLOW has CLI commands (`yellow_pre`, `yellow_post`) and is in the constitutional state machine, but `_SKILL_NAMES` has no YELLOW entry (see `micro.py:39-44`). The green phase triggers YELLOW at `micro.py:753` but no skill guides the agent.
+- **Inputs/Outputs**:
+  - `yellow_pre` → emits `YELLOWSkillManifest` JSON (proposed changes, test files, rationale) → agent reads skill guidance → evaluates
+  - `yellow_post --approved` → `_commit_phase()` → session → GREEN
+  - `yellow_post --rejected` → `git restore .` → session → GREEN
+  - `_load_skill_content("YELLOW")` returns skill prompt for agent consumption
+- **State Transition**: `YELLOW_TRIGGERED ➔ SKILL_LOADED ➔ AMENDMENTS_REVIEWED ➔ APPROVED_OR_REJECTED ➔ RETURN_TO_GREEN`
+- **Exception Strategy**: YELLOW is conditional (tamper-only trigger in most cycles). The skill is agent-facing guidance, not a human workflow requirement. On `--rejected`, `git restore` resets working tree to RED-commit state per Tamper Guard protocol.
+- **Acceptance Criteria (Definition of Done)**:
+  1. `AC-018-01`:
+     - **Given**: `src/deviate/prompts/skills/deviate-yellow/`
+     - **When**: Inspected
+     - **Then**: A `SKILL.md` file exists with review/amend workflow guidance for the YELLOW phase
+  2. `AC-018-02`:
+     - **Given**: `src/deviate/cli/micro.py` `_SKILL_NAMES` dict
+     - **When**: Inspected
+     - **Then**: `_SKILL_NAMES["YELLOW"]` resolves to `"deviate-yellow"`
+  3. `AC-018-03`:
+     - **Given**: A Tamper Guard event triggers YELLOW at `micro.py:753`
+     - **When**: `yellow_pre` or `yellow_post` executes
+     - **Then**: `_load_skill_content("YELLOW")` is called and the skill prompt is available for agent consumption
+- **Downstream Shard Mapping**: ISS-002-005
+
+### FR-019-JUDGESkill: JUDGE Phase Skill
+- **Description**: Create `src/deviate/prompts/skills/deviate-judge/SKILL.md` — a JUDGE phase skill that guides the agent through compliance evaluation of GREEN-phase changes. Replace `_SKILL_NAMES['JUDGE'] = None` with `"deviate-judge"` in `cli/micro.py:42`. Wire `_load_skill_content("JUDGE")` into both `_run_judge_phase()` (internal TDD cycle dispatch) and the `judge_pre`/`judge_post` CLI commands. The skill guides the agent to: read the `JUDGESkillManifest` emitted by `judge_pre` (changed files, protected modules, verdict), verify git diff against spec.md invariants, and report findings. The programmatic compliance gate (`_detect_phase_changes` + `_find_protected_modules` in `micro.py:285-319`) remains authoritative — the skill is complementary agent guidance.
+- **Preconditions**: `_SKILL_NAMES['JUDGE']` is explicitly `None` (`micro.py:42`). `_run_judge_phase` is inlined business logic that doesn't load a skill. The constitution mandates V4 Pro for JUDGE compliance (`specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]`).
+- **Inputs/Outputs**:
+  - `judge_pre` → emits `JUDGESkillManifest` JSON (verdict, changed files, protected modules, violation details)
+  - `_load_skill_content("JUDGE")` returns skill prompt for agent consumption
+  - `_run_judge_phase()` loads skill → agent evaluates → programmatic gate validates independently
+- **State Transition**: `JUDGE_DISPATCHED ➔ SKILL_LOADED ➔ AGENT_EVALUATION ➔ COMPLIANCE_CHECK ➔ PASS_OR_VIOLATION`
+- **Exception Strategy**: The skill guides agent evaluation; `_run_judge_phase()` remains the authoritative compliance gate. On `COMPLIANCE_VIOLATION`, `_run_judge_phase()` executes rollback (`git revert` + `RollbackSnapshot` + GREEN re-route per FR-008) regardless of skill output. Skill loading failure (e.g., file missing) logs a warning and proceeds without skill guidance — does not block JUDGE execution.
+- **Acceptance Criteria (Definition of Done)**:
+  1. `AC-019-01`:
+     - **Given**: `src/deviate/prompts/skills/deviate-judge/`
+     - **When**: Inspected
+     - **Then**: A `SKILL.md` file exists with compliance evaluation workflow guidance for the JUDGE phase
+  2. `AC-019-02`:
+     - **Given**: `src/deviate/cli/micro.py` `_SKILL_NAMES` dict
+     - **When**: Inspected
+     - **Then**: `_SKILL_NAMES["JUDGE"]` resolves to `"deviate-judge"` (not `None`)
+  3. `AC-019-03`:
+     - **Given**: A task dispatched to JUDGE phase via `_run_tdd_cycle()` or `judge_pre`/`judge_post`
+     - **When**: The phase executes
+     - **Then**: `_load_skill_content("JUDGE")` is called and the skill prompt is available for agent consumption
+- **Downstream Shard Mapping**: ISS-002-005
+
 ### FR-001-Profile: Execution Profile Dispatch
 - **Description**: Replace `--no-judge`/`--no-refactor` boolean flags on `deviate run` with a `--profile` enum (`full`|`fast`|`secure`) that maps to boolean combinations. Retain booleans as composable overrides.
 - **Preconditions**: `src/deviate/core/profile.py` does not exist; booleans exist in `cli/micro.py:run_command()`.
@@ -422,7 +500,7 @@ Each shard maps one FR module boundary with all related AC sub-nodes to preserve
 - **SHARD-002** (Block 2): FR-002 (ContextSync) + FR-011 (AgentsClaudeAlign) — context pipeline
 - **SHARD-003** (Block 2): FR-003 (Adhoc) + FR-004 (FeatureCreate) — fast-path commands
 - **SHARD-004** (Block 3): FR-005 (ConstitutionCLI) + FR-006 (Inspect) + FR-014 (ConstitutionSeedAudit) — governance and inspection
-- **SHARD-005** (Block 3-4): FR-007 (CacheDiscipline) + FR-008 (TrainRollback) + FR-012 (SkillActionLogic) + FR-013 (TasksLedgerSeparation) — micro-layer integrity
+- **SHARD-005** (Block 3-4): FR-007 (CacheDiscipline) + FR-008 (TrainRollback) + FR-012 (SkillActionLogic) + FR-013 (TasksLedgerSeparation) + FR-017 (TDDMockBoundary) + FR-018 (YELLOWSkill) + FR-019 (JUDGESkill) — micro-layer integrity
 
 ### Dependency Topology Graph
 ```
@@ -430,7 +508,7 @@ SHARD-001 (--json/--quiet, placeholders, pytest-report, profile)
   └── SHARD-002 (context sync, AGENTS.md align) ──────┐
   └── SHARD-003 (adhoc, feature create) ───────────────┤
       └── SHARD-004 (constitution CLI, inspect, seed audit)
-          └── SHARD-005 (cache, rollback, skills, ledger separation)
+          └── SHARD-005 (cache, rollback, skills, mock boundary, YELLOW/JUDGE skills, ledger separation)
 ```
 
 ### Issue Template Protocol
@@ -443,6 +521,9 @@ Each shard issue card must include: FR reference, all AC references, source file
 - `RESOLVED-Q-004`: tasks.jsonl direct append vs proposal pattern → **Resolution Requirement Invariant**: Proposal file (`.jsonl.proposal`) + `--confirm` flag per adversarial finding R09 and Append-Only Protocol.
 - `RESOLVED-Q-005`: Adhoc complexity classification: file vs LLM → **Resolution Requirement Invariant**: LLM-based with confidence threshold per adversarial finding R03.
 - `RESOLVED-Q-006`: CacheDiscipline enforcement level: session vs dispatch → **Resolution Requirement Invariant**: Enforce at phase-dispatch level (hard-coded model routing) per adversarial finding R06.
+- `RESOLVED-Q-007`: TDD mock boundary: function-level `_invoke_agent` vs system-edge `subprocess.Popen` → **Resolution Requirement Invariant**: Push to system-edge mock per `plan-tdd-integration-gap.md:42-54`. Use `StubAgentBackend` for deterministic testing. Wire code tasks must be typed as TDD, not IMMEDIATE.
+- `RESOLVED-Q-008`: YELLOW phase skill: standalone skill vs embedded in GREEN skill → **Resolution Requirement Invariant**: Standalone skill per design.md Gap #18 evaluation. YELLOW has distinct model routing (V4 Pro) from GREEN (V4 Flash) per `specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]`.
+- `RESOLVED-Q-009`: JUDGE phase skill: skill vs internal-only (`_SKILL_NAMES['JUDGE'] = None`) → **Resolution Requirement Invariant**: Skill per design.md Gap #19 evaluation. Constitution mandates V4 Pro for JUDGE compliance — skill enables agent guidance at correct tier. Programmatic compliance gate remains authoritative.
 
 ### Decision Readiness
 - [x] Requirements space clear of technical blindspots
@@ -457,12 +538,15 @@ Each shard issue card must include: FR reference, all AC references, source file
 - `Q-004`: tasks.jsonl safety — **Status**: RESOLVED — **Impact**: FR-013 uses proposal + --confirm
 - `Q-005`: Complexity classification — **Status**: RESOLVED — **Impact**: FR-003 uses LLM-based
 - `Q-006`: Cache enforcement level — **Status**: RESOLVED — **Impact**: FR-007 uses dispatch-level
+- `Q-007`: TDD mock boundary — **Status**: RESOLVED — **Impact**: FR-017 uses system-edge mock + StubBackend
+- `Q-008`: YELLOW skill architecture — **Status**: RESOLVED — **Impact**: FR-018 uses standalone skill
+- `Q-009`: JUDGE skill architecture — **Status**: RESOLVED — **Impact**: FR-019 uses standalone skill
 
 ## Session State
 ```json
 {
-"current_focus": "Compiling 16-gap resolution PRD for DeviaTDD docs-to-code alignment",
-"resolved_questions": ["Q-001 (Gate 1 approval)", "Q-002 (rollback mechanism)", "Q-003 (pytest report mode)", "Q-004 (jsonl safety)", "Q-005 (complexity classification)", "Q-006 (cache dispatch level)"],
+"current_focus": "Compiling 19-gap resolution PRD for DeviaTDD docs-to-code alignment",
+"resolved_questions": ["Q-001 (Gate 1 approval)", "Q-002 (rollback mechanism)", "Q-003 (pytest report mode)", "Q-004 (jsonl safety)", "Q-005 (complexity classification)", "Q-006 (cache dispatch level)", "Q-007 (mock boundary)", "Q-008 (YELLOW skill)", "Q-009 (JUDGE skill)"],
 "pending_unknowns": []
 }
 ```
@@ -472,7 +556,7 @@ ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note
 --- | --- | --- | ---
 `SRC-001` | Explore_MD | `specs/002-deviatdd-gap-analysis/explore.md` | Primary gap definitions — 16 gaps, 5 execution blocks, priority tags (P0-P3)
 `SRC-002` | Design_MD | `specs/002-deviatdd-gap-analysis/design.md` | Architectural decisions, options matrix, risk register, constitutional alignment audit
-`SRC-003` | DataModel_MD | `specs/002-deviatdd-gap-analysis/data-model.md` | 11 entity definitions, Pydantic schemas, state machines, data flows, relationship graph
+`SRC-003` | DataModel_MD | `specs/002-deviatdd-gap-analysis/data-model.md` | 14 entity definitions (incl. StubAgentBackend, YELLOW/JUDGE manifests), Pydantic schemas, state machines, data flows, relationship graph
 `SRC-004` | Constitution | `specs/constitution.md` | Governance rules: Three-Layer Architecture, Append-Only Ledger, HITL gates, Tamper Guard
 `SRC-005` | Codebase_File | `src/deviate/cli/__init__.py` | CLI registration root, init command, placeholder resolution
 `SRC-006` | Codebase_File | `src/deviate/cli/micro.py` | TDD cycle, phase dispatch, run_command, _run_pytest
@@ -481,3 +565,7 @@ ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note
 `SRC-009` | Codebase_File | `src/deviate/cli/_common.py` | Shared CLI utilities
 `SRC-010` | Codebase_File | `src/deviate/state/config.py` | DeviateConfig, SessionState, ProfileConfig, PytestReportConfig
 `SRC-011` | Codebase_File | `src/deviate/state/ledger.py` | IssueRecord, TaskRecord, AdhocRecord, RollbackSnapshot, LedgerFilter
+`SRC-012` | Plan_MD | `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` | TDD mock boundary analysis, StubAgentBackend design, system-edge test patterns
+`SRC-013` | Codebase_File | `tests/test_micro/conftest.py` | Autouse `_invoke_agent` mock — the broken boundary pattern targeted by FR-017
+`SRC-014` | Codebase_File | `src/deviate/cli/micro.py` | `_SKILL_NAMES` dict at L39-44 — YELLOW absent, JUDGE = None — targeted by FR-018/FR-019
+`SRC-015` | Constitution | `specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]` | Model tiering: V4 Pro for compliance (JUDGE, YELLOW) — mandate for FR-018/FR-019
