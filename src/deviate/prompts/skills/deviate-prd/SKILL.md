@@ -1,6 +1,6 @@
 ---
 name: deviate-prd
-description: Compile exploration results into a Product Requirements Document (prd.md) — the singular, deeply coherent source of truth for downstream automated sharding into decoupled GitHub Issues
+description: Compile exploration results into a Product Requirements Document (prd.md) — the singular, deeply coherent source of truth for downstream automated sharding into local issues via specs/issues.jsonl
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:
@@ -13,7 +13,7 @@ aliases:
 
 <system_instructions>
 
-This engine operates strictly as an isolated, production-grade Product Requirements Document (PRD) compiler and structural transpiler within a Spec-Driven Development (SDD) agentic workspace topology. Your objective is to ingest the unstructured results compiled during the feature exploration phase and compile them into an integrated, production-grade Product Requirements Document (`prd.md`). This document serves as the singular, deeply coherent source of truth for downstream automated sharding into decoupled GitHub Issues. Eliminate all conversational filler, prefaces, and meta-commentary.
+This engine operates strictly as an isolated, production-grade Product Requirements Document (PRD) compiler and structural transpiler within a Spec-Driven Development (SDD) agentic workspace topology. Your objective is to ingest the unstructured results compiled during the feature exploration phase and compile them into an integrated, production-grade Product Requirements Document (`prd.md`). This document serves as the singular, deeply coherent source of truth for downstream automated sharding into local issues via specs/issues.jsonl. Eliminate all conversational filler, prefaces, and meta-commentary.
 
 CRITICAL INSTRUCTION INVARIANTS:
 1. **Input Resolution Rule**: Run `deviate prd pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `timestamp`, `epic_slug`, `feature_dir` (relative path to the feature bucket under specs/), `prd_path` (absolute path to prd.md), `constitution_path`, `explore_md_path`, `design_md_path`, `data_model_md_path`, `plan_target` (absolute path for the execution manifest), and `dry_run`. The pre-script has already discovered the epic slug and validated upstream artifacts — do NOT re-derive paths.
@@ -26,7 +26,7 @@ CRITICAL INSTRUCTION INVARIANTS:
     - Pass 1 (Topological Layout): Map out the relationship matrices between the incoming data inputs and systemic entities.
     - Pass 2 (Flow Synthesis): Trace how data mutates over time across internal module boundaries, modeling the sequencing behavior.
     - Pass 3 (Modular Decomposition): Translate those verified system states into independent, cleanly shardable functional blocks.
-8. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax to allow a downstream `/shard` orchestration tool to slice the markdown cleanly into atomic GitHub Issue Cards without structural loss.
+8. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax to allow a downstream `/shard` orchestration tool to slice the markdown cleanly into atomic issue cards (registered in specs/issues.jsonl) without structural loss.
 9. **Template Engine Safety**: Preserve all double-curly variable markers or local workspace configuration flags as inert string inputs via explicit escape syntax to ensure zero compilation syntax errors within local dotfile template managers like Chezmoi or Jinja.
 10. **Pointer Normalization**: Explicitly wrap all inline references to structural XML tags inside markdown backticks.
 11. **Implementation Phase**: After generating the PRD content, write it to `prd_path` from the contract. Then write the execution manifest to `plan_target` and run `deviate prd post` with the plan target path.
@@ -85,7 +85,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 - **Reliability & Fallbacks**: [Retry algorithms, backoff configurations, fallback defaults, circuit thresholds]
 - **Type Safety & Modularity**: [Linting rules, typing requirements, strict minimum coverage flags]
 
-# GitHub Issue Sharding Strategy
+# Issue Sharding Strategy
 ## Shard Mechanics
 [Explicit rules mapping requirements structures directly down to localized issue entities. Shards MUST cluster an FR module boundary with all related AC sub-nodes to preserve data and context encapsulation]
 ## Dependency Topology Graph

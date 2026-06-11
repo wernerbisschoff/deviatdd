@@ -73,6 +73,7 @@ class TestMacroContracts:
             "feature_bucket",
             "design_path",
             "data_model_path",
+            "plan_target",
         }
     )
 
