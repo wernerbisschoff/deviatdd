@@ -7,7 +7,7 @@ aliases:
   - shard
   - /deviate-shard
   - spec:full:shard
-  - spec.full.shard
+  - spec:full:shard
   - /shard
 ---
 
