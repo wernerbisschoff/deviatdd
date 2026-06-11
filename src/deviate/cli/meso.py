@@ -573,7 +573,7 @@ def _specify_pre(
         branch_name=branch,
         worktree_path=worktree_path,
         spec_target=spec_target_rel,
-        spec_target_abs=str(repo_root / spec_target_rel),
+        spec_target_abs=str(Path(worktree_path) / spec_target_rel),
         prd_requirements=prd_reqs,
         traceability_status=traceability_status,
         traceability_details=traceability_details,
