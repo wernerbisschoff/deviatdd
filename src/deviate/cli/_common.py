@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import subprocess
+from contextlib import redirect_stdout
+from functools import wraps
+from io import StringIO
 from pathlib import Path
 
 import typer
@@ -13,6 +17,63 @@ from deviate.core.constitution import resolve_constitution, validate_constitutio
 from deviate.state.config import TransitionViolationError
 
 console = Console()
+
+
+def with_json_quiet(func):
+    """Decorator that injects ``--json`` and ``--quiet`` options into a Typer command.
+
+    ``--json``: capture stdout, serialize the command's return value as JSON,
+    print only JSON to stdout.
+
+    ``--quiet``: suppress stdout while preserving stderr output.
+
+    Flags are orthogonal: ``--json --quiet`` emits JSON on stdout and errors
+    on stderr.
+    """
+    sig = inspect.signature(func)
+    orig_params = list(sig.parameters.values())
+
+    new_params = list(orig_params)
+    new_params.extend(
+        [
+            inspect.Parameter(
+                "json",
+                inspect.Parameter.KEYWORD_ONLY,
+                default=typer.Option(
+                    False, "--json", help="Output result as JSON contract"
+                ),
+                annotation=bool,
+            ),
+            inspect.Parameter(
+                "quiet",
+                inspect.Parameter.KEYWORD_ONLY,
+                default=typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+                annotation=bool,
+            ),
+        ]
+    )
+
+    @wraps(func)
+    def wrapper(**kwargs: object) -> object:
+        json_flag = kwargs.pop("json", False)
+        quiet_flag = kwargs.pop("quiet", False)
+
+        def _captured() -> object:
+            buf = StringIO()
+            with redirect_stdout(buf):
+                return func(**kwargs)
+
+        if json_flag:
+            result = _captured()
+            typer.echo(json.dumps(result))
+        elif quiet_flag:
+            result = _captured()
+        else:
+            result = func(**kwargs)
+        return result
+
+    wrapper.__signature__ = sig.replace(parameters=new_params)
+    return wrapper
 
 
 def _extract_epic_num(slug: str) -> str:
