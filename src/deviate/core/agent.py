@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from typing import Any, Literal
@@ -13,13 +14,16 @@ from deviate.state.config import AgentConfig
 class HandoverManifest(BaseModel):
     phase: str
     status: str
+    task_id: str | None = None
     test_file: str | None = None
     verification_command: str | None = None
+    expected_failure_node: str | None = None
     yellow_trigger: bool | None = None
     test_changes: dict[str, Any] | None = None
     rationale: str | None = None
+    next_phase: str | None = None
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "allow"}
 
 
 class AgentTimeoutError(Exception):
@@ -51,9 +55,19 @@ BACKEND_COMMANDS: dict[str, str] = {
 }
 
 
+_YAML_BLOCK_RE = re.compile(r"```(?:yaml)\s*\n(.*?)```", re.DOTALL)
+
+
 class AgentBackend:
     def __init__(self, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
+
+    @staticmethod
+    def _extract_yaml_block(text: str) -> str:
+        m = _YAML_BLOCK_RE.search(text)
+        if m:
+            return m.group(1).strip()
+        return text.strip()
 
     @staticmethod
     def parse_output(
@@ -65,8 +79,10 @@ class AgentBackend:
                 f"Agent backend '{backend_name}' returned empty output"
             )
 
+        yaml_text = AgentBackend._extract_yaml_block(stdout)
+
         try:
-            data = yaml.safe_load(stdout)
+            data = yaml.safe_load(yaml_text)
         except yaml.YAMLError as e:
             raise MalformedHandoverManifestError(
                 f"Failed to parse YAML handover manifest: {e}"

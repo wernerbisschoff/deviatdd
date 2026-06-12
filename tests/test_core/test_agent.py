@@ -92,11 +92,12 @@ class TestHandoverManifestModel:
         assert manifest.verification_command is None
         assert manifest.yellow_trigger is None
 
-    def test_handover_manifest_forbids_extra_fields(self):
+    def test_handover_manifest_allows_extra_fields(self):
         from deviate.core.agent import HandoverManifest
 
-        with pytest.raises(ValidationError):
-            HandoverManifest(phase="RED", status="FAIL", unknown_field="x")
+        manifest = HandoverManifest(phase="RED", status="FAIL", unknown_field="x")
+        assert manifest.phase == "RED"
+        assert manifest.status == "FAIL"
 
 
 class TestAgentBackendInvocation:
