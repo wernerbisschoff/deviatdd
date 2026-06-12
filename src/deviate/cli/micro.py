@@ -202,20 +202,10 @@ def _find_all_pending_tasks(
 ) -> list[tuple[dict, Path]]:
     results: list[tuple[dict, Path]] = []
     for rec, ledger_file in _collect_latest_task_records(root):
-        if rec.get("status") in _TERMINAL_STATUSES:
+        if issue_id is not None and rec.get("issue_id") != issue_id:
             continue
-        if issue_id is None or rec.get("issue_id") == issue_id:
+        if rec.get("status") not in _TERMINAL_STATUSES:
             results.append((rec, ledger_file))
-
-    if not results and issue_id is not None:
-        tasks_md = _find_tasks_md_for_issue(root, issue_id)
-        if tasks_md is not None:
-            tasks = _parse_tasks_md(tasks_md)
-            ledger_path = tasks_md.with_name("tasks.jsonl")
-            for task in tasks:
-                task["issue_id"] = issue_id
-                results.append((task, ledger_path))
-
     return results
 
 
@@ -244,46 +234,6 @@ def _find_tasks_md_for_issue(root: Path, issue_id: str) -> Path | None:
     if tasks_md.exists():
         return tasks_md
     return None
-
-
-_MODE_MAP: dict[str, str] = {
-    "TDD": "TDD",
-    "DIRECT": "DIRECT",
-    "E2E": "E2E",
-    "IMMEDIATE": "DIRECT",
-}
-
-_TASK_MD_RE = re.compile(r"^\s*-\s+\[.\]\s+(TSK-\d{3}-\d{2}):\s*(.*)")
-_MODE_MD_RE = re.compile(r"^\s+-\s+\*\*Mode\*\*:\s*(\S+)")
-
-
-def _parse_tasks_md(tasks_md: Path) -> list[dict]:
-    """Parse tasks.md to extract task entries.
-
-    Returns list of dicts with id, description, status, execution_mode.
-    """
-    tasks: list[dict] = []
-    content = tasks_md.read_text(encoding="utf-8")
-    current: dict | None = None
-    for line in content.splitlines():
-        m = _TASK_MD_RE.match(line)
-        if m:
-            if current is not None:
-                tasks.append(current)
-            current = {
-                "id": m.group(1),
-                "description": m.group(2).strip(),
-                "status": "PENDING",
-                "execution_mode": "TDD",
-            }
-        elif current is not None:
-            mode_m = _MODE_MD_RE.match(line)
-            if mode_m:
-                raw = mode_m.group(1).upper()
-                current["execution_mode"] = _MODE_MAP.get(raw, "TDD")
-    if current is not None:
-        tasks.append(current)
-    return tasks
 
 
 def _append_status_transition(
@@ -342,14 +292,6 @@ def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | Non
     for rec, ledger_file in _collect_latest_task_records(root):
         if rec.get("issue_id") == issue_id and rec.get("status") == "PENDING":
             return (rec, ledger_file)
-    tasks_md = _find_tasks_md_for_issue(root, issue_id)
-    if tasks_md is not None:
-        tasks = _parse_tasks_md(tasks_md)
-        ledger_path = tasks_md.with_name("tasks.jsonl")
-        if tasks:
-            first = tasks[0]
-            first["issue_id"] = issue_id
-            return (first, ledger_path)
     return None
 
 
@@ -1041,9 +983,10 @@ def green_pre(
         lines = content.splitlines()
         capture = False
         for line in lines:
-            if line.strip().startswith("- ") and task_id in line:
+            stripped = line.strip()
+            if stripped.startswith("- ") and task_id in stripped:
                 capture = True
-            elif capture and line.strip().startswith("- [") and "TSK-" in line:
+            elif capture and re.match(r"- TSK-\d{3}-\d{2}:", stripped):
                 break
             if capture:
                 task_entry += line + "\n"
