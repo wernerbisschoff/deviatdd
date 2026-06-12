@@ -137,6 +137,7 @@ class SessionState(BaseModel):
     active_issue_id: Optional[str] = None
     last_command: str = ""
     yellow_triggered: bool = False
+    train_feedback: str = ""
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("current_phase")
@@ -172,6 +173,7 @@ class SessionState(BaseModel):
             active_issue_id=self.active_issue_id,
             last_command=self.last_command,
             yellow_triggered=self.yellow_triggered,
+            train_feedback=self.train_feedback,
             timestamp=datetime.now(timezone.utc),
         )
 
