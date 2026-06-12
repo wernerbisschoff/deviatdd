@@ -33,6 +33,13 @@ from deviate.state.ledger import (
 )
 
 console = Console()
+_verbose: bool = False
+
+
+def _log(msg: str) -> None:
+    if _verbose:
+        console.print(f"[dim]{msg}[/]")
+
 
 # Typer apps for manual phase commands
 red_app = typer.Typer(no_args_is_help=True)
@@ -197,24 +204,27 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
     return [(latest[tid], ledger_of[tid]) for tid in latest]
 
 
-_TASK_LINE_RE = re.compile(r"^\s*-\s+(TSK-\d{3}-\d{2}):\s*(.*)")
+_TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[.\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
 
 
 def _find_all_pending_tasks(
     root: Path, issue_id: str | None = None
 ) -> list[tuple[dict, Path]]:
+    _log(f"find_all_pending_tasks: issue_id={issue_id}, root={root}")
     latest: dict[str, dict] = {}
     ledger_of: dict[str, Path] = {}
     for rec, ledger_file in _collect_latest_task_records(root):
         tid = rec["id"]
         latest[tid] = rec
         ledger_of[tid] = ledger_file
+        _log(f"  ledger record: {tid} → {rec.get('status')} ({ledger_file.name})")
 
     seen: set[str] = set()
     results: list[tuple[dict, Path]] = []
 
     if issue_id is not None:
         tasks_md = _find_tasks_md_for_issue(root, issue_id)
+        _log(f"  tasks_md: {tasks_md}")
         if tasks_md is not None:
             fallback = tasks_md.parent / "tasks.jsonl"
             content = tasks_md.read_text(encoding="utf-8")
@@ -223,12 +233,16 @@ def _find_all_pending_tasks(
                 if m is None:
                     continue
                 tid = m.group(1)
+                _log(f"  tasks.md task: {tid}")
                 seen.add(tid)
                 if tid in latest and latest[tid].get("status") in _TERMINAL_STATUSES:
+                    _log(f"    → terminal ({latest[tid].get('status')}), skipping")
                     continue
                 if tid in latest:
+                    _log(f"    → status={latest[tid].get('status')}, including")
                     results.append((latest[tid], ledger_of.get(tid, fallback)))
                 else:
+                    _log("    → no ledger entry, assuming PENDING")
                     results.append(
                         (
                             {
@@ -248,8 +262,12 @@ def _find_all_pending_tasks(
         if issue_id is not None and rec.get("issue_id") != issue_id:
             continue
         if rec.get("status") not in _TERMINAL_STATUSES:
+            _log(f"  orphan ledger task: {tid} ({rec.get('status')}), including")
             results.append((rec, ledger_of[tid]))
+        else:
+            _log(f"  orphan ledger task: {tid} ({rec.get('status')}), skipping")
 
+    _log(f"  total pending: {len(results)}")
     return results
 
 
@@ -1030,7 +1048,7 @@ def green_pre(
             stripped = line.strip()
             if stripped.startswith("- ") and task_id in stripped:
                 capture = True
-            elif capture and re.match(r"- TSK-\d{3}-\d{2}:", stripped):
+            elif capture and re.match(r"- (?:\[.\]\s+)?TSK-\d{3}-\d{2}:", stripped):
                 break
             if capture:
                 task_entry += line + "\n"
@@ -1563,18 +1581,27 @@ def run_command(
         None, "--no-refactor", help="Skip REFACTOR phase"
     ),
     agent: str | None = typer.Option(None, "--agent", help="Override agent backend"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print resolved task and exit"),
+    verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
 ) -> None:
     """Run dispatcher: route task by execution_mode to TDD cycle or execute phase.
 
     When called without arguments, picks the next PENDING task for the active issue.
     """
+    global _verbose
+    _verbose = verbose
+
     root = _resolve_workspace_root()
     session_path = root / ".deviate" / "session.json"
+
+    _log(f"workspace root: {root}")
+    _log(f"session path: {session_path}")
 
     agent = _resolve_agent_config(root, agent)
 
     if session_path.exists():
         session = SessionState.load(session_path)
+        _log(f"session: phase={session.current_phase}, issue={session.active_issue_id}")
         cmd_parts = ["run"]
         if task_id:
             cmd_parts.append(task_id)
@@ -1586,6 +1613,31 @@ def run_command(
             last_command=" ".join(cmd_parts),
         )
         session.save(session_path)
+
+    if dry_run:
+        _log("dry-run mode — resolving tasks without execution")
+        if all_tasks:
+            pending = _find_all_pending_tasks(root)
+            if not pending:
+                console.print("[yellow]NO_PENDING_TASKS[/]")
+            for rec, path in pending:
+                console.print(
+                    f"  {rec.get('id')}: {rec.get('status')} "
+                    f"— {rec.get('description', '')[:60]}"
+                )
+        else:
+            try:
+                result = _resolve_task_context(task_id, root)
+                task, path = result
+                console.print(
+                    f"  {task.get('id')}: {task.get('status')} "
+                    f"— {task.get('description', '')[:60]}"
+                )
+                console.print(f"  ledger: {path}")
+            except typer.Exit:
+                if _verbose:
+                    console.print("[yellow]No task resolved[/]")
+        raise typer.Exit(code=0)
 
     skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
 
