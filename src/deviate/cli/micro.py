@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import warnings
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -22,9 +23,10 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
+from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
-from deviate.state.config import AgentConfig, SessionState
+from deviate.state.config import AgentConfig, PytestReportConfig, SessionState
 from deviate.state.ledger import (
     TaskRecord,
     append_task_transition,
@@ -692,11 +694,33 @@ def _find_source_files(root: Path) -> list[Path]:
     return sorted(root.glob("src/**/*.py"))
 
 
-def _run_pytest(root: Path) -> subprocess.CompletedProcess:
+def _is_pytest_json_report_available() -> bool:
+    try:
+        import pytest_json_report  # noqa: F401
+
+        return True
+    except ImportError:
+        warnings.warn(
+            "pytest-json-report plugin not installed; falling back to string parsing",
+            stacklevel=2,
+        )
+        return False
+
+
+def _run_pytest(
+    root: Path,
+    report_config: PytestReportConfig | None = None,
+) -> subprocess.CompletedProcess:
     test_files = _find_test_files(root)
     test_file_list = [str(f) for f in test_files]
+    cmd = [sys.executable, "-m", "pytest", *test_file_list, "-v"]
+
+    if report_config is not None and report_config.json_report:
+        if _is_pytest_json_report_available():
+            cmd.append("--json-report")
+
     return subprocess.run(
-        [sys.executable, "-m", "pytest", *test_file_list, "-v"],
+        cmd,
         cwd=root,
         capture_output=True,
         text=True,
@@ -952,10 +976,9 @@ def _detect_phase_changes(root: Path) -> list[str]:
     )
     files: list[str] = []
     for line in status.stdout.splitlines():
-        raw = line.rstrip("\n")
-        if not raw.strip():
+        if not line.strip():
             continue
-        filename = raw[3:]
+        filename = line[3:]
         files.append(filename)
 
     expanded: list[str] = []
@@ -1349,14 +1372,46 @@ def hotfix_post(
     raise typer.Exit(code=0)
 
 
+def _resolve_agent_config(root: Path, agent: str | None) -> str | None:
+    """Resolve agent backend from CLI arg or config.toml fallback."""
+    if agent is not None:
+        return agent
+    config_path = root / ".deviate" / "config.toml"
+    if not config_path.exists():
+        return None
+    try:
+        import tomllib
+
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+        return data.get("agent", {}).get("backend") or None
+    except Exception:
+        return None
+
+
+def _validate_profile(value: str) -> str:
+    """Typer callback: validate profile via resolve_profile, emit Typer error."""
+    try:
+        resolve_profile(value)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    return value
+
+
 def run_command(
     task_id: str | None = typer.Argument(
         None, help="Task ID (TNNN or TSK-NNN-NN format)"
     ),
     all_tasks: bool = typer.Option(False, "--all", help="Run all PENDING tasks"),
-    no_judge: bool = typer.Option(False, "--no-judge", help="Skip JUDGE phase"),
-    no_refactor: bool = typer.Option(
-        False, "--no-refactor", help="Skip REFACTOR phase"
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        callback=_validate_profile,
+        help="Execution profile: full, fast, secure",
+    ),
+    no_judge: bool | None = typer.Option(None, "--no-judge", help="Skip JUDGE phase"),
+    no_refactor: bool | None = typer.Option(
+        None, "--no-refactor", help="Skip REFACTOR phase"
     ),
     agent: str | None = typer.Option(None, "--agent", help="Override agent backend"),
 ) -> None:
@@ -1365,20 +1420,10 @@ def run_command(
     When called without arguments, picks the next PENDING task for the active issue.
     """
     root = _resolve_workspace_root()
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
+    session_path = root / ".deviate" / "session.json"
 
-    if agent is None:
-        config_path = dot_dir / "config.toml"
-        if config_path.exists():
-            try:
-                import tomllib
+    agent = _resolve_agent_config(root, agent)
 
-                with open(config_path, "rb") as f:
-                    data = tomllib.load(f)
-                agent = data.get("agent", {}).get("backend") or None
-            except Exception:
-                pass
     if session_path.exists():
         session = SessionState.load(session_path)
         cmd_parts = ["run"]
@@ -1393,10 +1438,23 @@ def run_command(
         )
         session.save(session_path)
 
+    skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
+
     if all_tasks:
-        _run_all(root, console, no_judge=no_judge, no_refactor=no_refactor, agent=agent)
+        _run_all(
+            root,
+            console,
+            no_judge=skip_judge,
+            no_refactor=skip_refactor,
+            agent=agent,
+        )
         raise typer.Exit(code=0)
 
     _run_single(
-        task_id, root, console, no_judge=no_judge, no_refactor=no_refactor, agent=agent
+        task_id,
+        root,
+        console,
+        no_judge=skip_judge,
+        no_refactor=skip_refactor,
+        agent=agent,
     )

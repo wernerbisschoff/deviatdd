@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from deviate.state.config import (
     DeviateConfig,
+    ProfileConfig,
     SessionState,
     TransitionViolationError,
 )
@@ -42,6 +43,33 @@ class TestDeviateConfig:
         data = json.loads(config.model_dump_json())
         restored = DeviateConfig.model_validate(data)
         assert restored == config
+
+
+class TestProfileConfig:
+    def test_default_values(self):
+        config = ProfileConfig()
+        assert config.default == "full"
+
+    def test_forbids_extra_fields(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ProfileConfig(default="full", unknown_field="value")
+
+    def test_toml_roundtrip(self):
+        import tomllib
+
+        config = ProfileConfig(default="fast")
+        toml_str = config.to_toml_string()
+        parsed = tomllib.loads(toml_str)
+        restored = ProfileConfig.model_validate(parsed)
+        assert restored == config
+
+    def test_rejects_invalid_profile(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ProfileConfig(default="invalid")
 
 
 class TestSessionState:

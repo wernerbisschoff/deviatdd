@@ -17,6 +17,7 @@ from deviate.cli._common import (
     _run_pre_commit_hooks,
     _validate_constitution,
     console,
+    with_json_quiet,
 )
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
@@ -184,6 +185,7 @@ explore_app = typer.Typer(no_args_is_help=True, help="Explore phase commands")
 
 
 @explore_app.command("pre")
+@with_json_quiet
 def explore_pre(
     problem: str = typer.Argument(..., help="Problem description"),
     slug: str | None = typer.Option(None, "--slug", help="Feature bucket slug"),
@@ -281,6 +283,7 @@ research_app = typer.Typer(no_args_is_help=True, help="Research phase commands")
 
 
 @research_app.command("pre")
+@with_json_quiet
 def research_pre(
     epic: str = typer.Argument("", help="Epic slug"),
 ) -> None:
@@ -373,6 +376,7 @@ prd_app = typer.Typer(no_args_is_help=True, help="PRD phase commands")
 
 
 @prd_app.command("pre")
+@with_json_quiet
 def prd_pre(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview contract without side effects"
@@ -465,6 +469,7 @@ shard_app = typer.Typer(no_args_is_help=True, help="Shard phase commands")
 
 
 @shard_app.command("pre")
+@with_json_quiet
 def shard_pre(
     epic: str | None = typer.Option(
         None, "--epic", help="Epic slug (e.g. 002-deviatdd-gap-analysis)"
