@@ -151,7 +151,7 @@ The post-script:
 1. Reads the manifest from the given path
 2. Validates `task_id` and `commit_subject` are present
 3. Re-discovers the workflow + spec_dir from the repo (the pre contract is not persisted)
-4. Marks the task as done in `tasks.md` (changes `[ ]` to `[x]`) if in spec mode
+4. Appends a COMPLETED transition to the `tasks.jsonl` ledger
 5. Stages tracked changes + spec files
 6. Runs pre-commit hooks with hash-diff verification (re-stages if hooks modify files)
 7. Updates `.gitignore` for stray untracked `.log`/`.tmp`/`node_modules` files

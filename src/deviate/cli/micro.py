@@ -1581,7 +1581,9 @@ def run_command(
         None, "--no-refactor", help="Skip REFACTOR phase"
     ),
     agent: str | None = typer.Option(None, "--agent", help="Override agent backend"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print resolved task and exit"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print resolved task and exit"
+    ),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
 ) -> None:
     """Run dispatcher: route task by execution_mode to TDD cycle or execute phase.

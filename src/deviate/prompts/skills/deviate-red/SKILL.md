@@ -29,7 +29,7 @@ CRITICAL CONTEXT INFERENCE & PHYSICS INVARIANTS:
 
 This is the **RED** (test-writing) phase of the DeviaTDD micro-cycle. Use it when:
 - An active TDD task exists in `tasks.md`
-- The task is in `[ ]` (pending) or `[/]` (in-progress) state
+- The task has a PENDING status in the `tasks.jsonl` ledger (or no ledger entry yet)
 - Tests need to be written before implementation code
 
 After completion, the `deviate-green` skill should be invoked for the implementation phase.
