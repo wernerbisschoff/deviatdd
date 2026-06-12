@@ -91,7 +91,7 @@
     - **Edge Cases**: No `pyproject.toml` → all non-REPO_ROOT vars UNKNOWN. Partial `pyproject.toml` → best-effort per HITL decision. `TARGET_COVERAGE_MINIMUM` defaults to `"80"` if unset. `package.json` fallback for non-Python projects.
     - **Acceptance**: AC-010-01, AC-010-02 pass. Performance: L_max <= 50ms. Unresolvable vars produce per-variable stderr warnings.
 
-- [ ] TSK-001-05: Pytest JSON Report Support
+- [\] TSK-001-05: Pytest JSON Report Support
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
