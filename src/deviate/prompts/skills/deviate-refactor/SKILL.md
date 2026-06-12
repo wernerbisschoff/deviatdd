@@ -136,7 +136,7 @@ Task: {TASK_ID} refactored and committed
 phase: REFACTOR
 task_id: {TASK_ID}
 spec_dir: {SPEC_DIR}
-task_status: COMPLETE
+status: PASS
 files:
   - path: path/to/source_file.ext
     action: modified
@@ -148,10 +148,7 @@ refactoring:
   patterns_applied:
     - "<PATTERN_1>"
     - "<PATTERN_2>"
-test:
-  command: "{test_command}"
-  status: PASS
-  output: "<TRUNCATED_TEST_OUTPUT>"
+verification_command: "{test_command}"
 constraints_preserved:
   - "<ALL_CONSTRAINTS_MAINTAINED>"
 reasoning:
