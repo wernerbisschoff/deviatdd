@@ -8,12 +8,20 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import typer
 from rich.console import Console
 
-from deviate.core.agent import AgentBackend, AgentBinaryNotFoundError
+from deviate.core.agent import (
+    AgentBackend,
+    AgentBinaryNotFoundError,
+    AgentSubprocessError,
+    AgentTimeoutError,
+    EmptyOutputError,
+    HandoverManifest,
+    MalformedHandoverManifestError,
+)
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.state.config import AgentConfig, SessionState
@@ -39,6 +47,7 @@ _LEDGER_GLOB = "specs/**/tasks.jsonl"
 _SKILL_NAMES: dict[str, str | None] = {
     "RED": "deviate-red",
     "GREEN": "deviate-green",
+    "YELLOW": "deviate-yellow",
     "JUDGE": None,
     "REFACTOR": "deviate-refactor",
 }
@@ -75,20 +84,30 @@ def _build_agent_prompt(skill_content: str, phase: str, task: dict, root: Path) 
     return skill_content.replace("$ARGUMENTS", task_context)
 
 
-def _invoke_agent(prompt: str, c: Console, backend_name: str = "opencode") -> bool:
+def _invoke_agent(
+    prompt: str, c: Console, backend_name: str = "opencode"
+) -> HandoverManifest | None:
     c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
-        backend.invoke(prompt)
-        return True
+        manifest = backend.invoke(prompt)
+        return manifest
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
         )
-        return False
+        return None
+    except (
+        AgentTimeoutError,
+        AgentSubprocessError,
+        MalformedHandoverManifestError,
+        EmptyOutputError,
+    ) as exc:
+        c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
+        return None
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
-        return False
+        return None
 
 
 def _git_env() -> dict[str, str]:
@@ -165,7 +184,84 @@ def _find_all_pending_tasks(
             if record.get("status") == "PENDING":
                 if issue_id is None or record.get("issue_id") == issue_id:
                     results.append((record, ledger_file))
+
+    if not results and issue_id is not None:
+        tasks_md = _find_tasks_md_for_issue(root, issue_id)
+        if tasks_md is not None:
+            tasks = _parse_tasks_md(tasks_md)
+            ledger_path = tasks_md.with_name("tasks.jsonl")
+            for task in tasks:
+                task["issue_id"] = issue_id
+                results.append((task, ledger_path))
+
     return results
+
+
+def _resolve_issue_source_file(root: Path, issue_id: str) -> str | None:
+    """Resolve source_file from specs/issues.jsonl for a given issue_id."""
+    ledger_path = root / "specs" / "issues.jsonl"
+    if not ledger_path.exists():
+        return None
+    for data in _read_ledger_records(ledger_path):
+        if data.get("issue_id") == issue_id:
+            return data.get("source_file")
+    return None
+
+
+def _find_tasks_md_for_issue(root: Path, issue_id: str) -> Path | None:
+    """Find tasks.md for a given issue_id by reading issues.jsonl."""
+    source_file = _resolve_issue_source_file(root, issue_id)
+    if not source_file:
+        return None
+    parts = PurePosixPath(source_file)
+    if len(parts.parts) < 3:
+        return None
+    epic = parts.parent.parent.name
+    slug = parts.stem
+    tasks_md = root / "specs" / epic / slug / "tasks.md"
+    if tasks_md.exists():
+        return tasks_md
+    return None
+
+
+_MODE_MAP: dict[str, str] = {
+    "TDD": "TDD",
+    "DIRECT": "DIRECT",
+    "E2E": "E2E",
+    "IMMEDIATE": "DIRECT",
+}
+
+_TASK_MD_RE = re.compile(r"^\s*-\s+\[.\]\s+(TSK-\d{3}-\d{2}):\s*(.*)")
+_MODE_MD_RE = re.compile(r"^\s+-\s+\*\*Mode\*\*:\s*(\S+)")
+
+
+def _parse_tasks_md(tasks_md: Path) -> list[dict]:
+    """Parse tasks.md to extract task entries.
+
+    Returns list of dicts with id, description, status, execution_mode.
+    """
+    tasks: list[dict] = []
+    content = tasks_md.read_text(encoding="utf-8")
+    current: dict | None = None
+    for line in content.splitlines():
+        m = _TASK_MD_RE.match(line)
+        if m:
+            if current is not None:
+                tasks.append(current)
+            current = {
+                "id": m.group(1),
+                "description": m.group(2).strip(),
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            }
+        elif current is not None:
+            mode_m = _MODE_MD_RE.match(line)
+            if mode_m:
+                raw = mode_m.group(1).upper()
+                current["execution_mode"] = _MODE_MAP.get(raw, "TDD")
+    if current is not None:
+        tasks.append(current)
+    return tasks
 
 
 def _append_status_transition(
@@ -225,6 +321,14 @@ def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | Non
         for rec in _read_ledger_records(ledger_file):
             if rec.get("issue_id") == issue_id and rec.get("status") == "PENDING":
                 return (rec, ledger_file)
+    tasks_md = _find_tasks_md_for_issue(root, issue_id)
+    if tasks_md is not None:
+        tasks = _parse_tasks_md(tasks_md)
+        ledger_path = tasks_md.with_name("tasks.jsonl")
+        if tasks:
+            first = tasks[0]
+            first["issue_id"] = issue_id
+            return (first, ledger_path)
     return None
 
 
@@ -247,11 +351,20 @@ def _run_red_phase(
     tid = task.get("id", "?")
     c.print(f"  [bold blue]RED →[/] {tid}")
 
-    if agent:
-        skill = _load_skill_content("RED")
-        if skill:
-            prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
-            _invoke_agent(prompt, c, backend_name=agent)
+    backend = agent or "opencode"
+    skill = _load_skill_content("RED")
+    if skill:
+        prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
+        manifest = _invoke_agent(prompt, c, backend_name=backend)
+        if manifest is not None and manifest.status.upper() in (
+            "FAILURE",
+            "ERROR",
+        ):
+            raise PhaseFailedError(
+                f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            )
+        if manifest and manifest.yellow_trigger:
+            c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
 
     session = session.force_transition_to("RED")
     session.save(session_path)
@@ -270,13 +383,24 @@ def _run_green_phase(
     tid = task.get("id", "?")
     c.print(f"  [bold green]GREEN →[/] {tid}")
 
-    if agent:
-        skill = _load_skill_content("GREEN")
-        if skill:
-            prompt = _build_agent_prompt(skill, "GREEN", task, Path.cwd())
-            _invoke_agent(prompt, c, backend_name=agent)
+    backend = agent or "opencode"
+    skill = _load_skill_content("GREEN")
+    manifest: HandoverManifest | None = None
+    if skill:
+        prompt = _build_agent_prompt(skill, "GREEN", task, Path.cwd())
+        manifest = _invoke_agent(prompt, c, backend_name=backend)
+        if manifest is not None and manifest.status.upper() in (
+            "FAILURE",
+            "ERROR",
+        ):
+            raise PhaseFailedError(
+                f"GREEN phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            )
 
     session = session.force_transition_to("GREEN")
+    if manifest and manifest.yellow_trigger:
+        c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
+        session.yellow_triggered = True
     session.save(session_path)
     _append_status_transition(task, "GREEN", ledger_path)
     return session
@@ -330,11 +454,18 @@ def _run_refactor_phase(
     tid = task.get("id", "?")
     c.print(f"  [bold yellow]REFACTOR →[/] {tid}")
 
-    if agent:
-        skill = _load_skill_content("REFACTOR")
-        if skill:
-            prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
-            _invoke_agent(prompt, c, backend_name=agent)
+    backend = agent or "opencode"
+    skill = _load_skill_content("REFACTOR")
+    if skill:
+        prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
+        manifest = _invoke_agent(prompt, c, backend_name=backend)
+        if manifest is not None and manifest.status.upper() in (
+            "FAILURE",
+            "ERROR",
+        ):
+            raise PhaseFailedError(
+                f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            )
 
     session = session.force_transition_to("REFACTOR")
     session.save(session_path)
@@ -342,9 +473,42 @@ def _run_refactor_phase(
     return session
 
 
+def _run_yellow_phase(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    agent: str | None = None,
+) -> SessionState:
+    tid = task.get("id", "?")
+    c.print(f"  [bold magenta]YELLOW →[/] {tid}")
+
+    backend = agent or "opencode"
+    skill = _load_skill_content("YELLOW")
+    if skill:
+        prompt = _build_agent_prompt(skill, "YELLOW", task, Path.cwd())
+        manifest = _invoke_agent(prompt, c, backend_name=backend)
+        if manifest is not None and manifest.status.upper() == "FAILURE":
+            c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
+            subprocess.run(
+                ["git", "restore", "."],
+                cwd=Path.cwd(),
+                env=_git_env(),
+                check=False,
+            )
+            c.print("  [dim]Reverted test changes, re-running GREEN[/]")
+
+    session = session.force_transition_to("YELLOW")
+    session.save(session_path)
+    _append_status_transition(task, "YELLOW", ledger_path)
+    return session
+
+
 _PHASE_MAP: dict[str, Callable] = {
     "RED": _run_red_phase,
     "GREEN": _run_green_phase,
+    "YELLOW": _run_yellow_phase,
     "JUDGE": _run_judge_phase,
     "REFACTOR": _run_refactor_phase,
 }
@@ -368,14 +532,28 @@ def _run_tdd_cycle(
             continue
         if phase == "REFACTOR" and no_refactor:
             continue
+
         session = _PHASE_MAP[phase](
             task, ledger_path, session, session_path, c, agent=agent
         )
+
+        if phase == "GREEN" and session.yellow_triggered:
+            c.print("  [yellow]YELLOW requested by GREEN — running YELLOW phase[/]")
+            session = _run_yellow_phase(
+                task, ledger_path, session, session_path, c, agent=agent
+            )
+            session.yellow_triggered = False
+            session.save(session_path)
+            c.print("  [yellow]Re-running GREEN after YELLOW[/]")
+            session = _run_green_phase(
+                task, ledger_path, session, session_path, c, agent=agent
+            )
 
     _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {task.get('id', '?')}")
 
     session = session.force_transition_to("IDLE")
+    session.yellow_triggered = False
     session.save(session_path)
 
 
@@ -384,6 +562,10 @@ def _run_execute_phase(task: dict, ledger_path: Path, c: Console) -> None:
     c.print(f"  [bold green]EXECUTE →[/] {tid}")
     _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {tid}")
+
+
+class PhaseFailedError(Exception):
+    pass
 
 
 class RedPhaseError(Exception):
