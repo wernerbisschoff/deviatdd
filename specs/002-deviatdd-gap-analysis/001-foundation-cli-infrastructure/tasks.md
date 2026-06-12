@@ -5,7 +5,7 @@
 
 ### Tasks
 
-- [\] TSK-001-01: Profile Module + ProfileConfig TOML Section
+- [/] TSK-001-01: Profile Module + ProfileConfig TOML Section
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit

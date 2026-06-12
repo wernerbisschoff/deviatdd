@@ -117,6 +117,15 @@ class DeviateConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ProfileConfig(BaseModel):
+    default: Literal["full", "fast", "secure"] = "full"
+
+    model_config = {"extra": "forbid"}
+
+    def to_toml_string(self) -> str:
+        return 'default = "{}"\n'.format(self.default)
+
+
 class SessionState(BaseModel):
     current_phase: str = "IDLE"
     active_issue_id: Optional[str] = None
