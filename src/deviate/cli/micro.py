@@ -1015,7 +1015,24 @@ def green_pre(
     test_files = _find_test_files(root)
     src_files = _find_source_files(root)
 
+    task_id = task_data.get("id", "")
+    task_entry = ""
+    tasks_md = _find_tasks_md_for_issue(root, task_data.get("issue_id", ""))
+    if tasks_md is not None:
+        content = tasks_md.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        capture = False
+        for line in lines:
+            if line.strip().startswith("- ") and task_id in line:
+                capture = True
+            elif capture and line.strip().startswith("- [") and "TSK-" in line:
+                break
+            if capture:
+                task_entry += line + "\n"
+
     contract = {
+        "task_id": task_id,
+        "task_entry": task_entry.strip(),
         "test_file": str(test_files[0]) if test_files else "",
         "implementation_targets": [str(f) for f in src_files],
     }
