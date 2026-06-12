@@ -50,7 +50,7 @@ _SKILL_NAMES: dict[str, str | None] = {
     "RED": "deviate-red",
     "GREEN": "deviate-green",
     "YELLOW": "deviate-yellow",
-    "JUDGE": None,
+    "JUDGE": "deviate-judge",
     "REFACTOR": "deviate-refactor",
 }
 
@@ -390,6 +390,10 @@ def _run_green_phase(
     manifest: HandoverManifest | None = None
     if skill:
         prompt = _build_agent_prompt(skill, "GREEN", task, Path.cwd())
+        if session.train_feedback:
+            prompt += (
+                f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
+            )
         manifest = _invoke_agent(prompt, c, backend_name=backend)
         if manifest is not None and manifest.status.upper() in (
             "FAILURE",
@@ -403,9 +407,28 @@ def _run_green_phase(
     if manifest and manifest.yellow_trigger:
         c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
         session.yellow_triggered = True
+    session.train_feedback = ""
     session.save(session_path)
     _append_status_transition(task, "GREEN", ledger_path)
     return session
+
+
+def _resolve_spec_md(root: Path, task: dict) -> str:
+    issue_id = task.get("issue_id", "")
+    if not issue_id:
+        return ""
+    source_file = _resolve_issue_source_file(root, issue_id)
+    if not source_file:
+        return ""
+    parts = PurePosixPath(source_file)
+    if len(parts.parts) < 3:
+        return ""
+    epic = parts.parent.parent.name
+    slug = parts.stem
+    spec_path = root / "specs" / epic / slug / "spec.md"
+    if spec_path.exists():
+        return spec_path.read_text(encoding="utf-8")
+    return ""
 
 
 def _run_judge_phase(
@@ -419,29 +442,53 @@ def _run_judge_phase(
     tid = task.get("id", "?")
     c.print(f"  [bold magenta]JUDGE →[/] {tid}")
 
-    root = Path.cwd()
-    changed = _detect_phase_changes(root)
-    protected = _find_protected_modules(root)
+    backend = agent or "opencode"
+    skill = _load_skill_content("JUDGE")
+    if skill:
+        root = Path.cwd()
 
-    violations: list[str] = []
-    for changed_file in changed:
-        changed_normalized = changed_file.rstrip("/")
-        for protected_path in protected:
-            if changed_normalized == protected_path or protected_path.startswith(
-                changed_normalized + "/"
-            ):
-                violations.append(
-                    f"{changed_file} conflicts with protected module {protected_path}"
-                )
+        diff = subprocess.run(
+            ["git", "diff", "HEAD~1..HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
 
-    if violations:
-        detail = "; ".join(violations)
-        c.print(f"  [red]COMPLIANCE_VIOLATION[/] {detail}")
-    else:
-        c.print("  [green]compliance pass[/]")
+        spec_content = _resolve_spec_md(root, task)
+
+        prompt = _build_agent_prompt(skill, "JUDGE", task, root)
+        prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
+        if spec_content:
+            prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
+
+        manifest = _invoke_agent(prompt, c, backend_name=backend)
+        if manifest is not None and manifest.status.upper() in (
+            "FAILURE",
+            "ERROR",
+        ):
+            c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
+
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD~1"],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
+
+            feedback = manifest.rationale or ""
+            if hasattr(manifest, "train_feedback") and manifest.train_feedback:
+                feedback = manifest.train_feedback
+
+            session = session.force_transition_to("GREEN")
+            session.train_feedback = feedback
+            session.yellow_triggered = False
+            session.save(session_path)
+            return session
 
     session = session.force_transition_to("JUDGE")
     session.save(session_path)
+    _append_status_transition(task, "JUDGE", ledger_path)
     return session
 
 
@@ -529,17 +576,18 @@ def _run_tdd_cycle(
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
 
-    for phase in ("RED", "GREEN", "JUDGE", "REFACTOR"):
-        if phase == "JUDGE" and no_judge:
-            continue
-        if phase == "REFACTOR" and no_refactor:
-            continue
+    session = _run_red_phase(task, ledger_path, session, session_path, c, agent=agent)
 
-        session = _PHASE_MAP[phase](
+    train_attempts = 0
+    max_train_attempts = 3
+    judge_passed = no_judge
+
+    while not judge_passed:
+        session = _run_green_phase(
             task, ledger_path, session, session_path, c, agent=agent
         )
 
-        if phase == "GREEN" and session.yellow_triggered:
+        if session.yellow_triggered:
             c.print("  [yellow]YELLOW requested by GREEN — running YELLOW phase[/]")
             session = _run_yellow_phase(
                 task, ledger_path, session, session_path, c, agent=agent
@@ -551,11 +599,43 @@ def _run_tdd_cycle(
                 task, ledger_path, session, session_path, c, agent=agent
             )
 
+        if no_judge:
+            judge_passed = True
+            break
+
+        session = _run_judge_phase(
+            task, ledger_path, session, session_path, c, agent=agent
+        )
+
+        if session.train_feedback:
+            train_attempts += 1
+            if train_attempts >= max_train_attempts:
+                c.print(
+                    f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
+                    f"after {max_train_attempts} attempts"
+                )
+                raise PhaseFailedError(
+                    f"JUDGE phase rejected {task.get('id', '?')} "
+                    f"after {max_train_attempts} train attempts"
+                )
+            c.print(
+                f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                f" — re-running GREEN with judge feedback[/]"
+            )
+        else:
+            judge_passed = True
+
+    if not no_refactor:
+        session = _run_refactor_phase(
+            task, ledger_path, session, session_path, c, agent=agent
+        )
+
     _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {task.get('id', '?')}")
 
     session = session.force_transition_to("IDLE")
     session.yellow_triggered = False
+    session.train_feedback = ""
     session.save(session_path)
 
 
