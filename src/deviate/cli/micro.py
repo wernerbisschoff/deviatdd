@@ -22,6 +22,7 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
+from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.state.config import AgentConfig, SessionState
@@ -1349,14 +1350,29 @@ def hotfix_post(
     raise typer.Exit(code=0)
 
 
+def _validate_profile(value: str) -> str:
+    allowed = {"full", "fast", "secure"}
+    if value not in allowed:
+        raise typer.BadParameter(
+            f"Invalid value '{value}'. Must be one of: {', '.join(sorted(allowed))}"
+        )
+    return value
+
+
 def run_command(
     task_id: str | None = typer.Argument(
         None, help="Task ID (TNNN or TSK-NNN-NN format)"
     ),
     all_tasks: bool = typer.Option(False, "--all", help="Run all PENDING tasks"),
-    no_judge: bool = typer.Option(False, "--no-judge", help="Skip JUDGE phase"),
-    no_refactor: bool = typer.Option(
-        False, "--no-refactor", help="Skip REFACTOR phase"
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        callback=_validate_profile,
+        help="Execution profile: full, fast, secure",
+    ),
+    no_judge: bool | None = typer.Option(None, "--no-judge", help="Skip JUDGE phase"),
+    no_refactor: bool | None = typer.Option(
+        None, "--no-refactor", help="Skip REFACTOR phase"
     ),
     agent: str | None = typer.Option(None, "--agent", help="Override agent backend"),
 ) -> None:
@@ -1393,10 +1409,23 @@ def run_command(
         )
         session.save(session_path)
 
+    skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
+
     if all_tasks:
-        _run_all(root, console, no_judge=no_judge, no_refactor=no_refactor, agent=agent)
+        _run_all(
+            root,
+            console,
+            no_judge=skip_judge,
+            no_refactor=skip_refactor,
+            agent=agent,
+        )
         raise typer.Exit(code=0)
 
     _run_single(
-        task_id, root, console, no_judge=no_judge, no_refactor=no_refactor, agent=agent
+        task_id,
+        root,
+        console,
+        no_judge=skip_judge,
+        no_refactor=skip_refactor,
+        agent=agent,
     )

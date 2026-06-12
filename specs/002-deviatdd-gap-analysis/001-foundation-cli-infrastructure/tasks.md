@@ -51,7 +51,7 @@
 
 ### Tasks
 
-- [\] TSK-001-03: --profile Flag in run_command
+- [/] TSK-001-03: --profile Flag in run_command
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
