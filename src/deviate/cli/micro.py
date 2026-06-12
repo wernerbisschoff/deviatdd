@@ -431,6 +431,31 @@ def _resolve_spec_md(root: Path, task: dict) -> str:
     return ""
 
 
+def _resolve_tasks_md(root: Path, task: dict) -> Path | None:
+    issue_id = task.get("issue_id", "")
+    if not issue_id:
+        return None
+    return _find_tasks_md_for_issue(root, issue_id)
+
+
+def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> None:
+    content = tasks_md.read_text(encoding="utf-8")
+    task_marker = f"TSK-{task_id.split('-', 1)[1]}" if "-" in task_id else task_id
+    lines = content.splitlines()
+    new_lines: list[str] = []
+    inserted = False
+    for line in lines:
+        new_lines.append(line)
+        if not inserted and task_id in line and line.strip().startswith("-"):
+            indent = "  "
+            for fb_line in feedback.strip().splitlines():
+                new_lines.append(f"{indent}- **Judge Feedback**: {fb_line}")
+                indent = "    "
+            inserted = True
+    if inserted:
+        tasks_md.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
 def _run_judge_phase(
     task: dict,
     ledger_path: Path,
@@ -469,6 +494,10 @@ def _run_judge_phase(
         ):
             c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
 
+            feedback = manifest.rationale or ""
+            if hasattr(manifest, "train_feedback") and manifest.train_feedback:
+                feedback = manifest.train_feedback
+
             subprocess.run(
                 ["git", "revert", "--no-edit", "HEAD"],
                 cwd=root,
@@ -476,9 +505,27 @@ def _run_judge_phase(
                 env=_git_env(),
             )
 
-            feedback = manifest.rationale or ""
-            if hasattr(manifest, "train_feedback") and manifest.train_feedback:
-                feedback = manifest.train_feedback
+            tasks_md = _resolve_tasks_md(root, task)
+            if tasks_md is not None:
+                _append_judge_feedback(tasks_md, tid, feedback)
+
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"docs({tid}): add judge feedback for GREEN retry",
+                ],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
 
             session = session.force_transition_to("GREEN")
             session.train_feedback = feedback
