@@ -470,7 +470,7 @@ def _run_judge_phase(
             c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
 
             subprocess.run(
-                ["git", "reset", "--hard", "HEAD~1"],
+                ["git", "revert", "--no-edit", "HEAD"],
                 cwd=root,
                 capture_output=True,
                 env=_git_env(),
