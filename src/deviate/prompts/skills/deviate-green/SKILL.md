@@ -68,10 +68,8 @@ files:
     purpose: "Implement functional JWTService encoder routines matching technical specs"
   - path: "tests/auth/test_jwt.py"
     action: "unchanged"
-test:
-  command: "pytest tests/auth/test_jwt.py"
-  status: "PASS"
-  output: "tests/auth/test_jwt.py . [100%]\n1 passed in 0.02s"
+status: "PASS"
+verification_command: "pytest tests/auth/test_jwt.py"
 git_ledger:
   commit_sha: "b2c3d4e5"
   message: "feat(TASK-104): implement minimal logic to pass acceptance tests"
@@ -139,10 +137,8 @@ files:
     purpose: "{IMPLEMENTATION_PURPOSE}"
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
-test:
-  command: "{VERIFICATION_COMMAND}"
-  status: "PASS"
-  output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
+status: "PASS"
+verification_command: "{VERIFICATION_COMMAND}"
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
@@ -183,10 +179,8 @@ files:
     purpose: "{IMPLEMENTATION_PURPOSE}"
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
-test:
-  command: "{VERIFICATION_COMMAND}"
-  status: "PASS"
-  output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
+status: "PASS"
+verification_command: "{VERIFICATION_COMMAND}"
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
