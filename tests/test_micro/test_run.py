@@ -157,6 +157,90 @@ class TestRunCommand:
             )
             assert "TASK_NOT_FOUND" in result.output or "NOT_FOUND" in result.output
 
+    def test_run_with_profile_fast(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-001-03",
+                issue_id="ISS-002-001",
+                description="Profile flag test",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            ledger_path = (
+                Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
+            )
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["run", "TSK-001-03", "--profile", "fast"])
+            assert result.exit_code == 0, (
+                f"Expected exit code 0 with --profile fast, got {result.exit_code}: {result.output}"
+            )
+            assert "JUDGE" not in result.output, (
+                f"Expected JUDGE skipped with --profile fast: {result.output}"
+            )
+            assert "REFACTOR" not in result.output, (
+                f"Expected REFACTOR skipped with --profile fast: {result.output}"
+            )
+
+    def test_run_with_flag_overrides(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-001-03",
+                issue_id="ISS-002-001",
+                description="Profile flag overrides",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            ledger_path = (
+                Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
+            )
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(
+                cli,
+                ["run", "TSK-001-03", "--profile", "fast", "--no-judge"],
+            )
+            assert result.exit_code == 0, (
+                f"Expected exit code 0 with override, got {result.exit_code}: {result.output}"
+            )
+
+    def test_run_with_profile_invalid(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-001-03",
+                issue_id="ISS-002-001",
+                description="Invalid profile",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            ledger_path = (
+                Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
+            )
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["run", "TSK-001-03", "--profile", "invalid"])
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit for invalid profile, got {result.exit_code}: {result.output}"
+            )
+            assert "Invalid value" in result.output, (
+                f"Expected 'Invalid value' in output: {result.output}"
+            )
+
     def test_run_skips_already_completed_task(self, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")

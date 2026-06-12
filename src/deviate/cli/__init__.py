@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+import warnings
 from pathlib import Path
 
 import typer
@@ -85,31 +86,97 @@ def _dict_to_toml(data: dict) -> str:
     return toml_str
 
 
-def _resolve_placeholder(match: re.Match[str]) -> str:
+def _warn_if_unresolved(var_name: str, value: str) -> None:
+    if value == "UNKNOWN":
+        warnings.warn(
+            f"{var_name} could not be resolved from pyproject.toml", stacklevel=2
+        )
+
+
+def _resolve_project_name(data: dict) -> str:
+    name = data.get("project", {}).get("name")
+    return "UNKNOWN" if not name else name
+
+
+def _resolve_backend_framework(data: dict) -> str:
+    deps = data.get("project", {}).get("dependencies", [])
+    if not deps:
+        return "UNKNOWN"
+    pkg = re.split(r"[><=~!]", deps[0])[0].strip()
+    return pkg if pkg else "UNKNOWN"
+
+
+def _resolve_package_manager(data: dict) -> str:
+    tool = data.get("tool", {})
+    if "uv" in tool:
+        return "uv"
+    if "poetry" in tool:
+        return "poetry"
+    if "hatch" in tool:
+        return "hatch"
+    if "pdm" in tool:
+        return "pdm"
+    return "UNKNOWN"
+
+
+def _resolve_test_runner(data: dict) -> str:
+    tool = data.get("tool", {})
+    if "pytest" in tool:
+        return "pytest"
+    if "unittest" in tool:
+        return "unittest"
+    return "UNKNOWN"
+
+
+def _load_pyproject(root: Path) -> dict:
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return {}
+    try:
+        import tomllib
+
+        with open(pyproject, "rb") as f:
+            return tomllib.load(f)
+    except Exception:
+        return {}
+
+
+def _resolve_placeholder(repo_root: Path | None = None) -> dict[str, str]:
+    root = repo_root.resolve() if repo_root else Path.cwd().resolve()
+    data = _load_pyproject(root)
+
+    result: dict[str, str] = {
+        "REPO_ROOT": str(root),
+        "TARGET_COVERAGE_MINIMUM": "80",
+    }
+
+    pairs: list[tuple[str, str]] = [
+        ("PROJECT_NAME", _resolve_project_name(data)),
+        (
+            "TARGET_BACKEND_FRAMEWORK",
+            _resolve_backend_framework(data),
+        ),
+        (
+            "TARGET_PACKAGE_MANAGER",
+            _resolve_package_manager(data),
+        ),
+        ("TARGET_TEST_RUNNER", _resolve_test_runner(data)),
+    ]
+    for var_name, value in pairs:
+        _warn_if_unresolved(var_name, value)
+        result[var_name] = value
+
+    return result
+
+
+def _resolve_placeholder_match(match: re.Match[str]) -> str:
     var_name = match.group(1)
-    cwd = Path.cwd()
-
-    if var_name == "PROJECT_NAME":
-        pyproject = cwd / "pyproject.toml"
-        if pyproject.exists():
-            try:
-                import tomllib
-
-                with open(pyproject, "rb") as f:
-                    data = tomllib.load(f)
-                return data.get("project", {}).get("name", cwd.name)
-            except Exception:
-                pass
-        return cwd.name
-
-    if var_name == "REPO_ROOT":
-        return str(cwd.resolve())
-
-    return match.group(0)
+    resolved = _resolve_placeholder()
+    return resolved.get(var_name, f"${{{var_name}}}")
 
 
 def _resolve_seed(content: str) -> str:
-    return re.sub(r"\$\{(\w+)\}", _resolve_placeholder, content)
+    return re.sub(r"\$\{(\w+)\}", _resolve_placeholder_match, content)
 
 
 def _read_seed(module: str, filename: str) -> str | None:

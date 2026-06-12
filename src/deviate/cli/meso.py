@@ -15,6 +15,7 @@ from deviate.cli._common import (
     _handle_transition_error,
     _run_pre_commit_hooks,
     console,
+    with_json_quiet,
 )
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
@@ -427,6 +428,7 @@ def _try_claim_issue(
     }
 
 
+@with_json_quiet
 def _specify_pre(
     issue_id: str | None = None,
     force: bool = False,
@@ -692,6 +694,7 @@ def _tasks_legacy(issue_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+@with_json_quiet
 def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
     session, _ = _load_session_accept("SPECIFY", "TASKS", force=force)
 
