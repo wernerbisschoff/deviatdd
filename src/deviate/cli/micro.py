@@ -169,23 +169,43 @@ def _resolve_issue_number(task_id: str) -> str | None:
 
 
 def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
-    """Look up a task record by its TSK-NNN-NN ID across all ledger files."""
-    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
-        for record in _read_ledger_records(ledger_file):
-            if record.get("id") == task_id:
-                return record, ledger_file
+    """Look up the latest (current) record by its TSK-NNN-NN ID."""
+    for rec, ledger_file in _collect_latest_task_records(root):
+        if rec.get("id") == task_id:
+            return rec, ledger_file
     return None
+
+
+_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REFACTOR"}
+
+
+def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
+    """Return the latest record per task ID across all ledger files.
+
+    Because the ledger is append-only (chronological within each file,
+    files sorted lexicographically), the last seen record for each task
+    ID represents its current status.
+    """
+    latest: dict[str, dict] = {}
+    ledger_of: dict[str, Path] = {}
+    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
+        for rec in _read_ledger_records(ledger_file):
+            tid = rec.get("id")
+            if tid:
+                latest[tid] = rec
+                ledger_of[tid] = ledger_file
+    return [(latest[tid], ledger_of[tid]) for tid in latest]
 
 
 def _find_all_pending_tasks(
     root: Path, issue_id: str | None = None
 ) -> list[tuple[dict, Path]]:
     results: list[tuple[dict, Path]] = []
-    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
-        for record in _read_ledger_records(ledger_file):
-            if record.get("status") == "PENDING":
-                if issue_id is None or record.get("issue_id") == issue_id:
-                    results.append((record, ledger_file))
+    for rec, ledger_file in _collect_latest_task_records(root):
+        if rec.get("status") in _TERMINAL_STATUSES:
+            continue
+        if issue_id is None or rec.get("issue_id") == issue_id:
+            results.append((rec, ledger_file))
 
     if not results and issue_id is not None:
         tasks_md = _find_tasks_md_for_issue(root, issue_id)
@@ -318,11 +338,10 @@ def _resolve_latest_task(
 
 
 def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | None:
-    """Return the first PENDING task for *issue_id*."""
-    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
-        for rec in _read_ledger_records(ledger_file):
-            if rec.get("issue_id") == issue_id and rec.get("status") == "PENDING":
-                return (rec, ledger_file)
+    """Return the first task whose latest status is PENDING for *issue_id*."""
+    for rec, ledger_file in _collect_latest_task_records(root):
+        if rec.get("issue_id") == issue_id and rec.get("status") == "PENDING":
+            return (rec, ledger_file)
     tasks_md = _find_tasks_md_for_issue(root, issue_id)
     if tasks_md is not None:
         tasks = _parse_tasks_md(tasks_md)
