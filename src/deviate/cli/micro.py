@@ -197,15 +197,59 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
     return [(latest[tid], ledger_of[tid]) for tid in latest]
 
 
+_TASK_LINE_RE = re.compile(r"^\s*-\s+(TSK-\d{3}-\d{2}):\s*(.*)")
+
+
 def _find_all_pending_tasks(
     root: Path, issue_id: str | None = None
 ) -> list[tuple[dict, Path]]:
-    results: list[tuple[dict, Path]] = []
+    latest: dict[str, dict] = {}
+    ledger_of: dict[str, Path] = {}
     for rec, ledger_file in _collect_latest_task_records(root):
+        tid = rec["id"]
+        latest[tid] = rec
+        ledger_of[tid] = ledger_file
+
+    seen: set[str] = set()
+    results: list[tuple[dict, Path]] = []
+
+    if issue_id is not None:
+        tasks_md = _find_tasks_md_for_issue(root, issue_id)
+        if tasks_md is not None:
+            fallback = tasks_md.parent / "tasks.jsonl"
+            content = tasks_md.read_text(encoding="utf-8")
+            for line in content.splitlines():
+                m = _TASK_LINE_RE.match(line)
+                if m is None:
+                    continue
+                tid = m.group(1)
+                seen.add(tid)
+                if tid in latest and latest[tid].get("status") in _TERMINAL_STATUSES:
+                    continue
+                if tid in latest:
+                    results.append((latest[tid], ledger_of.get(tid, fallback)))
+                else:
+                    results.append(
+                        (
+                            {
+                                "id": tid,
+                                "issue_id": issue_id,
+                                "description": m.group(2).strip(),
+                                "status": "PENDING",
+                                "execution_mode": "TDD",
+                            },
+                            fallback,
+                        )
+                    )
+
+    for tid, rec in latest.items():
+        if tid in seen:
+            continue
         if issue_id is not None and rec.get("issue_id") != issue_id:
             continue
         if rec.get("status") not in _TERMINAL_STATUSES:
-            results.append((rec, ledger_file))
+            results.append((rec, ledger_of[tid]))
+
     return results
 
 
@@ -289,8 +333,8 @@ def _resolve_latest_task(
 
 def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | None:
     """Return the first task whose latest status is PENDING for *issue_id*."""
-    for rec, ledger_file in _collect_latest_task_records(root):
-        if rec.get("issue_id") == issue_id and rec.get("status") == "PENDING":
+    for rec, ledger_file in _find_all_pending_tasks(root, issue_id=issue_id):
+        if rec.get("status") == "PENDING":
             return (rec, ledger_file)
     return None
 
