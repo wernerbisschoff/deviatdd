@@ -498,30 +498,29 @@ def _run_judge_phase(
             if hasattr(manifest, "train_feedback") and manifest.train_feedback:
                 feedback = manifest.train_feedback
 
-            subprocess.run(
-                ["git", "revert", "--no-edit", "HEAD"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
-
             tasks_md = _resolve_tasks_md(root, task)
             if tasks_md is not None:
                 _append_judge_feedback(tasks_md, tid, feedback)
+                subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=root,
+                    capture_output=True,
+                    env=_git_env(),
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"docs({tid}): add judge feedback for GREEN retry",
+                    ],
+                    cwd=root,
+                    capture_output=True,
+                    env=_git_env(),
+                )
 
             subprocess.run(
-                ["git", "add", "-A"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "-m",
-                    f"docs({tid}): add judge feedback for GREEN retry",
-                ],
+                ["git", "revert", "--no-edit", "HEAD~1"],
                 cwd=root,
                 capture_output=True,
                 env=_git_env(),
