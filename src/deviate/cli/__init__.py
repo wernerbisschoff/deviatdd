@@ -86,73 +86,83 @@ def _dict_to_toml(data: dict) -> str:
     return toml_str
 
 
+def _warn_if_unresolved(var_name: str, value: str) -> None:
+    if value == "UNKNOWN":
+        warnings.warn(f"{var_name} could not be resolved from pyproject.toml")
+
+
+def _resolve_project_name(data: dict) -> str:
+    name = data.get("project", {}).get("name")
+    return "UNKNOWN" if not name else name
+
+
+def _resolve_backend_framework(data: dict) -> str:
+    deps = data.get("project", {}).get("dependencies", [])
+    if not deps:
+        return "UNKNOWN"
+    pkg = re.split(r"[><=~!]", deps[0])[0].strip()
+    return pkg if pkg else "UNKNOWN"
+
+
+def _resolve_package_manager(data: dict) -> str:
+    tool = data.get("tool", {})
+    if "uv" in tool:
+        return "uv"
+    if "poetry" in tool:
+        return "poetry"
+    if "hatch" in tool:
+        return "hatch"
+    if "pdm" in tool:
+        return "pdm"
+    return "UNKNOWN"
+
+
+def _resolve_test_runner(data: dict) -> str:
+    tool = data.get("tool", {})
+    if "pytest" in tool:
+        return "pytest"
+    if "unittest" in tool:
+        return "unittest"
+    return "UNKNOWN"
+
+
+def _load_pyproject(root: Path) -> dict:
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return {}
+    try:
+        import tomllib
+
+        with open(pyproject, "rb") as f:
+            return tomllib.load(f)
+    except Exception:
+        return {}
+
+
 def _resolve_placeholder(repo_root: Path | None = None) -> dict[str, str]:
     root = repo_root.resolve() if repo_root else Path.cwd().resolve()
+    data = _load_pyproject(root)
 
-    result: dict[str, str] = {}
-    result["REPO_ROOT"] = str(root)
-    result["TARGET_COVERAGE_MINIMUM"] = "80"
+    result: dict[str, str] = {
+        "REPO_ROOT": str(root),
+        "TARGET_COVERAGE_MINIMUM": "80",
+    }
 
-    pyproject = root / "pyproject.toml"
-
-    data: dict = {}
-    if pyproject.exists():
-        try:
-            import tomllib
-
-            with open(pyproject, "rb") as f:
-                data = tomllib.load(f)
-        except Exception:
-            pass
-
-    tool = data.get("tool", {})
-
-    # PROJECT_NAME
-    project_name = data.get("project", {}).get("name")
-    if project_name:
-        result["PROJECT_NAME"] = project_name
-    else:
-        result["PROJECT_NAME"] = "UNKNOWN"
-        warnings.warn("PROJECT_NAME could not be resolved from pyproject.toml")
-
-    # TARGET_BACKEND_FRAMEWORK — parse first dependency name
-    framework: str = "UNKNOWN"
-    deps = data.get("project", {}).get("dependencies", [])
-    if deps:
-        pkg = re.split(r"[><=~!]", deps[0])[0].strip()
-        if pkg:
-            framework = pkg
-    if framework == "UNKNOWN":
-        warnings.warn(
-            "TARGET_BACKEND_FRAMEWORK could not be resolved from pyproject.toml"
-        )
-    result["TARGET_BACKEND_FRAMEWORK"] = framework
-
-    # TARGET_PACKAGE_MANAGER
-    pkg_manager: str = "UNKNOWN"
-    if "uv" in tool:
-        pkg_manager = "uv"
-    elif "poetry" in tool:
-        pkg_manager = "poetry"
-    elif "hatch" in tool:
-        pkg_manager = "hatch"
-    elif "pdm" in tool:
-        pkg_manager = "pdm"
-    if pkg_manager == "UNKNOWN":
-        warnings.warn(
-            "TARGET_PACKAGE_MANAGER could not be resolved from pyproject.toml"
-        )
-    result["TARGET_PACKAGE_MANAGER"] = pkg_manager
-
-    # TARGET_TEST_RUNNER
-    test_runner: str = "UNKNOWN"
-    if "pytest" in tool:
-        test_runner = "pytest"
-    elif "unittest" in tool:
-        test_runner = "unittest"
-    if test_runner == "UNKNOWN":
-        warnings.warn("TARGET_TEST_RUNNER could not be resolved from pyproject.toml")
-    result["TARGET_TEST_RUNNER"] = test_runner
+    pairs: list[tuple[str, str]] = [
+        ("PROJECT_NAME", _resolve_project_name(data)),
+        (
+            "TARGET_BACKEND_FRAMEWORK",
+            _resolve_backend_framework(data),
+        ),
+        (
+            "TARGET_PACKAGE_MANAGER",
+            _resolve_package_manager(data),
+        ),
+        ("TARGET_TEST_RUNNER", _resolve_test_runner(data)),
+    ]
+    for var_name, value in pairs:
+        _warn_if_unresolved(var_name, value)
+        result[var_name] = value
 
     return result
 

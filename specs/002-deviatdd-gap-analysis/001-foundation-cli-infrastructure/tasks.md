@@ -74,7 +74,7 @@
 
 ### Tasks
 
-- [/] TSK-001-04: Extended Placeholder Resolution (2→6 Variables)
+- [x] TSK-001-04: Extended Placeholder Resolution (2→6 Variables)
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
