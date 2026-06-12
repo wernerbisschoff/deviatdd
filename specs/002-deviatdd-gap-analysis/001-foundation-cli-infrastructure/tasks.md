@@ -110,7 +110,7 @@
     - **Edge Cases**: Plugin not installed → warn + fall back to string parsing (no hard failure). JSON report has unexpected schema → fall back to string parsing. `json_report=True` but `--json-report` flag conflicts with other pytest args → last-flag-wins behavior is acceptable.
     - **Acceptance**: AC-016-01, AC-016-02 pass. Plugin missing does not break existing behavior. Performance: L_max <= 10ms overhead.
 
-- [ ] TSK-001-06: E2E Integration Verification
+- [x] TSK-001-06: E2E Integration Verification
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
   - **Test Strategy**: Integration
