@@ -88,7 +88,9 @@ def _dict_to_toml(data: dict) -> str:
 
 def _warn_if_unresolved(var_name: str, value: str) -> None:
     if value == "UNKNOWN":
-        warnings.warn(f"{var_name} could not be resolved from pyproject.toml")
+        warnings.warn(
+            f"{var_name} could not be resolved from pyproject.toml", stacklevel=2
+        )
 
 
 def _resolve_project_name(data: dict) -> str:

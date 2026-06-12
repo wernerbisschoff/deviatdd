@@ -24,8 +24,9 @@ class TestPytestReportConfig:
 
 
 class TestRunPytestJsonReport:
+    @patch("deviate.cli.micro._is_pytest_json_report_available", return_value=True)
     @patch("deviate.cli.micro.subprocess.run")
-    def test_report_enabled_appends_json_report_flag(self, mock_run):
+    def test_report_enabled_appends_json_report_flag(self, mock_run, mock_available):
         from deviate.state.config import PytestReportConfig
         from deviate.cli.micro import _run_pytest
 

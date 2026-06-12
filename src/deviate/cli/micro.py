@@ -716,8 +716,8 @@ def _run_pytest(
     cmd = [sys.executable, "-m", "pytest", *test_file_list, "-v"]
 
     if report_config is not None and report_config.json_report:
-        cmd.append("--json-report")
-        _is_pytest_json_report_available()
+        if _is_pytest_json_report_available():
+            cmd.append("--json-report")
 
     return subprocess.run(
         cmd,
@@ -976,10 +976,9 @@ def _detect_phase_changes(root: Path) -> list[str]:
     )
     files: list[str] = []
     for line in status.stdout.splitlines():
-        raw = line.rstrip("\n")
-        if not raw.strip():
+        if not line.strip():
             continue
-        filename = raw[3:]
+        filename = line[3:]
         files.append(filename)
 
     expanded: list[str] = []
