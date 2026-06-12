@@ -24,7 +24,7 @@
     - **Edge Cases**: Handle `profile="invalid"` with descriptive `ValueError` listing valid choices. Handle `no_judge=None` (not passed) correctly — don't override profile default. Handle `no_judge=False` explicitly — re-enable a phase the profile would skip.
     - **Acceptance**: AC-001-01, AC-001-02, AC-001-04 pass. ProfileConfig round-trips through TOML. Performance: `resolve_profile` completes in L_max <= 5ms.
 
-- [ ] TSK-001-02: @with_json_quiet Decorator + Pre-Subcommand Wiring
+- [\] TSK-001-02: @with_json_quiet Decorator + Pre-Subcommand Wiring
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
