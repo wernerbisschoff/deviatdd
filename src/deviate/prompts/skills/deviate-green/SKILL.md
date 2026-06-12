@@ -99,7 +99,8 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 1. Extract the target `{TASK_ID}` and test file path from the pre-script contract or RED handover manifest
 2. Read the target test file to isolate the exact assertion expectations
 3. Load system requirements inside `specs/constitution.md`, functional scopes inside `prd.md`, technical contracts inside `spec.md`, and type signatures inside `data-model.md`
-4. Parse test framework conventions from the test file
+4. Read the task description in `tasks.md` — this may contain updated context or **Judge Feedback** from a previous JUDGE/TRAIN rejection cycle
+5. Parse test framework conventions from the test file
 </step>
 
 <step id="implementation">
