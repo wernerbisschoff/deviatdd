@@ -27,7 +27,7 @@ This phase runs E2E tests that verify complete real-world user workflows:
 ## [TIER_CLASSIFICATION]
 
 This is the **E2E** (final verification) phase of the DeviaTDD micro-cycle. Use it when:
-- ALL tasks across ALL phases are marked complete `[x]`
+- All tasks in the `tasks.jsonl` ledger have a terminal status (REFACTOR or COMPLETED)
 - The feature needs final user-facing workflow verification
 - Ready to prepare for PR creation
 
@@ -67,19 +67,20 @@ The contract on stdout contains: `status`, `spec_dir`, `repo_root`, `git_branch`
 
 ### STEP_1: VERIFY_ALL_PHASES_COMPLETE
 
-Read `<REPO_ROOT>/<SPEC_DIR>/tasks.md`:
+Read `<REPO_ROOT>/<SPEC_DIR>/tasks.jsonl`:
 
-1. Parse ALL phases and verify each phase has all tasks complete `[x]`
-2. Verify at least ONE phase exists (the feature has tasks)
+1. For each unique task ID, check its latest status record in the append-only ledger
+2. All tasks must have a terminal status (REFACTOR or COMPLETED)
+3. Verify at least ONE task exists (the feature has tasks)
 
-If not all phases are complete, emit status and stop.
+If not all tasks are complete, emit status and stop.
 
 ### STEP_2: LOAD_CONTEXT
 
 Read architectural and project context:
 1. `<REPO_ROOT>/specs/constitution.md` — architectural invariants, test framework mandates
 2. `<REPO_ROOT>/<SPEC_DIR>/spec.md` — technical specification
-3. `<REPO_ROOT>/<SPEC_DIR>/tasks.md` — task completion status
+3. `<REPO_ROOT>/<SPEC_DIR>/tasks.md` — task definitions and metadata
 
 ### STEP_3: FETCH_GIT_DIFF
 
