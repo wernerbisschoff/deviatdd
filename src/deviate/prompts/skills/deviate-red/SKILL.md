@@ -138,7 +138,8 @@ test_suite:
   file_path: "path/to/test_file.ext"
   verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
   status: "FAIL"
-  expected_failure_node: "{EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}"
+  expected_failure_node: |
+    {EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}
 traceability_anchors:
   requirement_id: "FR-{ID}"
   acceptance_criteria: "AC-{ID}"
@@ -182,7 +183,8 @@ test_suite:
   file_path: "path/to/test_file.ext"
   verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
   status: "FAIL"
-  expected_failure_node: "{EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}"
+  expected_failure_node: |
+    {EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}
 traceability_anchors:
   requirement_id: "FR-{ID}"
   acceptance_criteria: "AC-{ID}"
