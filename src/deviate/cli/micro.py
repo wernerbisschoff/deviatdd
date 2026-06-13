@@ -1672,6 +1672,14 @@ def refactor_post() -> None:
 
     if committed:
         console.print("[green]REFACTOR_POST_OK[/]")
+
+        task_record = green_task[0]
+        _append_status_transition(task_record, "COMPLETED", green_task[1])
+        console.print(f"  [bold green]COMPLETED[/] {task_uuid}")
+
+        session = session.force_transition_to("IDLE")
+        session.yellow_triggered = False
+        session.save(session_path)
     else:
         console.print("[yellow]NOTHING_CHANGED[/]")
 
