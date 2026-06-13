@@ -555,8 +555,6 @@ def _run_red_phase(
     session = session.force_transition_to("RED")
     session.save(session_path)
     _append_status_transition(task, "RED", ledger_path)
-    scope = _build_scope(task.get("issue_id", ""), tid)
-    _commit_phase(f"test({scope}): RED phase - failing test", Path.cwd())
     return session
 
 
@@ -614,8 +612,6 @@ def _run_green_phase(
     session.train_feedback = ""
     session.save(session_path)
     _append_status_transition(task, "GREEN", ledger_path)
-    scope = _build_scope(task.get("issue_id", ""), tid)
-    _commit_phase(f"feat({scope}): GREEN phase - implementation", Path.cwd())
     return session
 
 
@@ -780,8 +776,6 @@ def _run_refactor_phase(
     session = session.force_transition_to("REFACTOR")
     session.save(session_path)
     _append_status_transition(task, "REFACTOR", ledger_path)
-    scope = _build_scope(task.get("issue_id", ""), tid)
-    _commit_phase(f"refactor({scope}): REFACTOR phase \u2014 code cleanup", Path.cwd())
     return session
 
 
