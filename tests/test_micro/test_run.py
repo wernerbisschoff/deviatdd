@@ -2,14 +2,25 @@ from __future__ import annotations
 
 from contextlib import chdir
 from pathlib import Path
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 
 runner = CliRunner()
+
+
+def _mock_invoke_agent(*args, **kwargs):
+    """Mock _invoke_agent to return a valid manifest for testing."""
+    return HandoverManifest(
+        phase=kwargs.get("phase", "RED"),
+        status="SUCCESS",
+        task_id=kwargs.get("task_id", "TSK-000-00"),
+    ), ""
 
 
 def _make_task_record(
@@ -36,7 +47,8 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
 
 
 class TestRunCommand:
-    def test_run_dispatches_tdd_task_to_rgr(self, tmp_path: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_run_dispatches_tdd_task_to_rgr(self, mock_agent, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -87,7 +99,8 @@ class TestRunCommand:
                 f"Expected immediate task to reach COMPLETED: {result.output}"
             )
 
-    def test_run_all_iterates_mixed_modes(self, tmp_path: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_run_all_iterates_mixed_modes(self, mock_agent, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -119,7 +132,8 @@ class TestRunCommand:
                 f"Expected all tasks to reach COMPLETED: {result.output}"
             )
 
-    def test_run_accepts_legacy_TNNN_format(self, tmp_path: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_run_accepts_legacy_TNNN_format(self, mock_agent, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -157,7 +171,8 @@ class TestRunCommand:
             )
             assert "TASK_NOT_FOUND" in result.output or "NOT_FOUND" in result.output
 
-    def test_run_with_profile_fast(self, tmp_path: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_run_with_profile_fast(self, mock_agent, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -187,7 +202,8 @@ class TestRunCommand:
                 f"Expected REFACTOR skipped with --profile fast: {result.output}"
             )
 
-    def test_run_with_flag_overrides(self, tmp_path: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_run_with_flag_overrides(self, mock_agent, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)

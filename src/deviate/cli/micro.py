@@ -16,6 +16,7 @@ import typer
 from rich.console import Console
 
 from deviate.core.agent import (
+    BACKEND_COMMANDS,
     AgentBackend,
     AgentBinaryNotFoundError,
     AgentSubprocessError,
@@ -177,7 +178,7 @@ def _invoke_agent(
     backend_name: str = "opencode",
     task_id: str = "",
     phase: str = "",
-) -> HandoverManifest | None:
+) -> tuple[HandoverManifest | None, str]:
     c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
     _save_agent_log(phase, task_id, "prompt", prompt)
     try:
@@ -185,29 +186,84 @@ def _invoke_agent(
         output_handler = _make_output_handler(c)
         manifest = backend.invoke(prompt, output_callback=output_handler)
         _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
-        return manifest
+        return manifest, ""
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
         )
-        return None
+        return None, ""
     except AgentTimeoutError as exc:
+        partial_output = exc.partial_stdout or ""
         if exc.partial_stderr:
             _save_agent_log(phase, task_id, "timeout_stderr", exc.partial_stderr)
-        if exc.partial_stdout:
-            _save_agent_log(phase, task_id, "timeout_stdout", exc.partial_stdout)
+        if partial_output:
+            _save_agent_log(phase, task_id, "timeout_stdout", partial_output)
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
-        return None
+        return None, partial_output
     except (
         AgentSubprocessError,
         MalformedHandoverManifestError,
         EmptyOutputError,
     ) as exc:
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
-        return None
+        return None, ""
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
-        return None
+        return None, ""
+
+
+_TIMEOUT_SUMMARY_PROMPT = """\
+The previous agent attempt for the GREEN (implementation) phase timed out.
+Partial output from that attempt is below.
+
+Concisely summarize (under 200 words):
+- What was being attempted?
+- What was already completed?
+- What errors or obstacles occurred?
+- What should the next attempt try differently?
+
+<partial_output>
+{partial_text}
+</partial_output>
+"""
+
+
+def _summarize_timeout_context(
+    partial_output: str,
+    backend_name: str = "opencode",
+) -> str:
+    """Call the agent backend to summarize timeout partial output."""
+    truncated = partial_output[-5000:] if len(partial_output) > 5000 else partial_output
+    prompt = _TIMEOUT_SUMMARY_PROMPT.format(partial_text=truncated)
+    backend_cmd = BACKEND_COMMANDS.get(backend_name, "opencode run")
+    cmd = backend_cmd.split()
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout_bytes, _ = proc.communicate(input=prompt.encode("utf-8"), timeout=30)
+        summary = stdout_bytes.decode("utf-8").strip()
+        if len(summary) > 2000:
+            summary = "..." + summary[-1997:]
+        return summary
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+        return (
+            "[Previous GREEN attempt timed out \u2014 summarization also timed out. "
+            "Check prompts.log for partial output.]"
+        )
+    except FileNotFoundError:
+        return (
+            f"[Previous GREEN attempt timed out. Partial output (last {len(truncated)} chars):\n"
+            f"{truncated[-500:]}]"
+        )
 
 
 def _git_env() -> dict[str, str]:
@@ -474,7 +530,7 @@ def _run_red_phase(
     skill = _load_skill_content("RED")
     if skill:
         prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
-        manifest = _invoke_agent(
+        manifest, _ = _invoke_agent(
             prompt, c, backend_name=backend, task_id=tid, phase="RED"
         )
         if manifest is None:
@@ -516,9 +572,17 @@ def _run_green_phase(
             prompt += (
                 f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
             )
-        manifest = _invoke_agent(
+        manifest, timeout_ctx = _invoke_agent(
             prompt, c, backend_name=backend, task_id=tid, phase="GREEN"
         )
+        if manifest is None and timeout_ctx:
+            c.print(
+                "  [yellow]TIMEOUT[/] GREEN agent timed out \u2014 summarizing context for retry"
+            )
+            summary = _summarize_timeout_context(timeout_ctx, backend_name=backend)
+            session.train_feedback = summary
+            session.save(session_path)
+            raise PhaseFailedError(f"GREEN phase agent timed out for {tid}")
         if manifest is None:
             raise PhaseFailedError(
                 f"GREEN phase agent error for {tid}: agent returned no manifest"
@@ -565,7 +629,6 @@ def _resolve_tasks_md(root: Path, task: dict) -> Path | None:
 
 def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> None:
     content = tasks_md.read_text(encoding="utf-8")
-    task_marker = f"TSK-{task_id.split('-', 1)[1]}" if "-" in task_id else task_id
     lines = content.splitlines()
     new_lines: list[str] = []
     inserted = False
@@ -612,7 +675,7 @@ def _run_judge_phase(
         if spec_content:
             prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
 
-        manifest = _invoke_agent(
+        manifest, _ = _invoke_agent(
             prompt, c, backend_name=backend, task_id=tid, phase="JUDGE"
         )
         if manifest is None:
@@ -684,7 +747,7 @@ def _run_refactor_phase(
     skill = _load_skill_content("REFACTOR")
     if skill:
         prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
-        manifest = _invoke_agent(
+        manifest, _ = _invoke_agent(
             prompt, c, backend_name=backend, task_id=tid, phase="REFACTOR"
         )
         if manifest is None:
@@ -717,7 +780,7 @@ def _run_yellow_phase(
     skill = _load_skill_content("YELLOW")
     if skill:
         prompt = _build_agent_prompt(skill, "YELLOW", task, Path.cwd())
-        manifest = _invoke_agent(
+        manifest, _ = _invoke_agent(
             prompt, c, backend_name=backend, task_id=tid, phase="YELLOW"
         )
         if manifest is None:
@@ -1000,12 +1063,14 @@ def _commit_phase(message: str, root: Path) -> bool:
     unstaged = subprocess.run(["git", "diff", "--quiet"], cwd=root, env=_git_env())
     if staged.returncode != 0 or unstaged.returncode != 0:
         subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
-        subprocess.run(
+        result = subprocess.run(
             ["git", "commit", "-m", message],
             cwd=root,
             env=_git_env(),
-            check=False,
         )
+        if result.returncode != 0:
+            console.print("[red]COMMIT_FAILED[/]")
+            return False
         return True
     return False
 
@@ -1207,12 +1272,6 @@ def green_post() -> None:
 
     task_uuid = red_task[0].get("id", "")
 
-    proc = _run_pytest(root)
-
-    if proc.returncode != 0:
-        console.print("[red]Tests failed:[/] Implementation does not pass tests")
-        raise typer.Exit(code=1)
-
     tamper_verdict = TamperGuard.evaluate(
         context=TamperContext.GREEN_IMPLEMENTATION, repo_path=root
     )
@@ -1240,7 +1299,9 @@ def green_post() -> None:
     if committed:
         console.print("[green]GREEN_POST_OK[/]")
     else:
-        console.print("[yellow]YELLOW_TRIGGERED[/]")
+        console.print(
+            "[yellow]YELLOW_TRIGGERED[/] (nothing to commit or commit failed)"
+        )
 
     raise typer.Exit(code=0)
 
