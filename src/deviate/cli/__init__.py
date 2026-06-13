@@ -295,7 +295,7 @@ def _ensure_gitignore(workdir: Path) -> None:
     dot_dir = workdir / ".deviate"
     dot_dir.mkdir(parents=True, exist_ok=True)
     gitignore = dot_dir / ".gitignore"
-    entries = ["session.json", "artifacts/"]
+    entries = ["session.json", "artifacts/", "prompts.log"]
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")
         for entry in entries:
