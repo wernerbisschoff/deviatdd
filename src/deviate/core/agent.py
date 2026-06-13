@@ -27,7 +27,12 @@ class HandoverManifest(BaseModel):
 
 
 class AgentTimeoutError(Exception):
-    pass
+    def __init__(
+        self, message: str, partial_stdout: str = "", partial_stderr: str = ""
+    ):
+        self.partial_stdout = partial_stdout
+        self.partial_stderr = partial_stderr
+        super().__init__(message)
 
 
 class AgentSubprocessError(Exception):
@@ -125,11 +130,19 @@ class AgentBackend:
                     input=prompt.encode("utf-8"),
                     timeout=timeout_secs,
                 )
-            except subprocess.TimeoutExpired:
+                return stdout_bytes, stderr_bytes
+            except subprocess.TimeoutExpired as e:
                 proc.kill()
                 proc.wait()
-                raise
-            return stdout_bytes, stderr_bytes
+                partial_out = e.output.decode("utf-8") if e.output else ""
+                partial_err = e.stderr.decode("utf-8") if e.stderr else ""
+                raise AgentTimeoutError(
+                    f"Agent backend '{backend_name}' timed out "
+                    f"after {effective_timeout}s"
+                    f" (retried once with 30s backoff)",
+                    partial_stdout=partial_out,
+                    partial_stderr=partial_err,
+                )
 
         try:
             proc = subprocess.Popen(
@@ -145,7 +158,7 @@ class AgentBackend:
 
         try:
             stdout_bytes, stderr_bytes = _try_communicate(proc, effective_timeout)
-        except subprocess.TimeoutExpired:
+        except AgentTimeoutError:
             time.sleep(30)
             try:
                 proc = subprocess.Popen(
@@ -155,12 +168,8 @@ class AgentBackend:
                     stderr=subprocess.PIPE,
                 )
                 stdout_bytes, stderr_bytes = _try_communicate(proc, effective_timeout)
-            except subprocess.TimeoutExpired:
-                raise AgentTimeoutError(
-                    f"Agent backend '{backend_name}' timed out "
-                    f"after {effective_timeout}s "
-                    "(retried once with 30s backoff)"
-                )
+            except AgentTimeoutError:
+                raise
 
         stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
         stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
