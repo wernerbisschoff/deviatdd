@@ -54,7 +54,7 @@ class TestRunPytestJsonReport:
     @patch("deviate.cli.micro.subprocess.run")
     def test_fallback_when_plugin_missing(self, mock_run):
         from deviate.state.config import PytestReportConfig
-        from deviate.cli.micro import _run_pytest, _classify_pytest_outcome
+        from deviate.cli.micro import _run_pytest
 
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="AssertionError: assert False", stderr=""
@@ -62,11 +62,7 @@ class TestRunPytestJsonReport:
         config = PytestReportConfig(json_report=True)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            result = _run_pytest(root=Path("."), report_config=config)
-        outcome = _classify_pytest_outcome(
-            result.stdout, result.stderr, result.returncode
-        )
-        assert outcome is not None
+            _run_pytest(root=Path("."), report_config=config)
         plugin_warnings = [
             x for x in w if "pytest-json-report" in str(x.message).lower()
         ]

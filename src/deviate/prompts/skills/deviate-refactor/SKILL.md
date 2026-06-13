@@ -123,7 +123,12 @@ deviate refactor post
 
 <output_contract>
 
-After completing the refactoring (including post-script), emit a structured handover:
+After completing the refactoring (including post-script), emit a structured handover.
+
+CRITICAL: The manifest MUST be a valid YAML code block delimited by ```yaml and ```.
+ALL string values in the YAML MUST be wrapped in double quotes (" ").
+A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
+Output NOTHING outside the YAML block — no explanations, no commentary.
 
 ```markdown
 # TDD Refactor: {TASK_ID}
@@ -133,14 +138,14 @@ Task: {TASK_ID} refactored and committed
 
 ## [HANDOVER_MANIFEST]
 ```yaml
-phase: REFACTOR
-task_id: {TASK_ID}
-spec_dir: {SPEC_DIR}
-status: PASS
+phase: "REFACTOR"
+task_id: "{TASK_ID}"
+spec_dir: "{SPEC_DIR}"
+status: "PASS"
 files:
-  - path: path/to/source_file.ext
-    action: modified
-    purpose: <REFACTOR_PURPOSE>
+  - path: "path/to/source_file.ext"
+    action: "modified"
+    purpose: "<REFACTOR_PURPOSE>"
 refactoring:
   smells_addressed:
     - "<SMELL_1>"
@@ -161,8 +166,8 @@ artifacts:
 commit:
   sha: "<COMMIT_SHA>"
   message: "refactor({TASK_ID}): improve structure"
-previous_phase: /deviate-green
-next_phase: /deviate-red (fresh cycle) | /tools:pr (all complete)
+previous_phase: "/deviate-green"
+next_phase: "/deviate-red (fresh cycle) | /tools:pr (all complete)"
 ```
 ```
 

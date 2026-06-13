@@ -67,8 +67,8 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    ```
    After the stakeholder answers, apply the chosen strategies to inform the spec content you are about to write.
 3. Build explicit user stories (`US-[ID]`) and isolate acceptance conditions. For every scenario, compile a crisp `**Given**`/`**When**`/`**Then**` block (using bold markdown) mapping the starting configuration state directly onto an explicit behavioral terminal evaluation checkpoint. Every `US-NNN` MUST reference an `FR-NNN` from the contract's `prd_requirements` array. Incorporate the HITL answers from step 2 into your decisions.
-4. `cd` into the worktree (using the `worktree_full` path from step 1), then transpile the final spec content per the output format schema and write it directly to `<spec_target>` (the relative path from the contract). Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
-5. Run the specify post-script to validate, commit spec.md, and update the ledger:
+4. Write the spec file into the worktree. Use the `worktree_full` path from step 1 to construct the absolute target path (`<worktree_full>/<spec_target>`), then transpile the final spec content per the output format schema and write it directly to that path. Write exactly the spec content — no preamble, no postamble, no XML wrapper tags.
+5. Run the specify post-script **from inside the worktree** to validate, commit spec.md, and update the ledger. The post-script reads the session from the current directory's `.deviate/session.json`, so it must execute with `workdir=<worktree_full>`:
    ```
    deviate specify post
    ```

@@ -121,7 +121,12 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 </step>
 
 <step id="handover_emission">
-After the test is written and verified failing, generate the HANDOVER_MANIFEST:
+Emit the structured handover manifest. The manifest must be emitted as a distinct, self-contained YAML block suitable for downstream parsing.
+
+CRITICAL: The manifest MUST be a valid YAML code block delimited by ```yaml and ```.
+ALL string values in the YAML MUST be wrapped in double quotes (" ").
+A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
+Output NOTHING outside the YAML block — no explanations, no commentary.
 
 # DeviaTDD Micro Red: {TASK_ID}
 
@@ -130,7 +135,7 @@ Target_Artifact: `path/to/test_file.ext`
 
 ## [HANDOVER_MANIFEST]
 ```yaml
-phase: RED
+phase: "RED"
 task_id: "{TASK_ID}"
 feature_slug: "{FEATURE_SLUG}"
 status: "FAIL"
@@ -151,6 +156,7 @@ git_ledger:
   message: "test({TASK_ID}): add failing acceptance criteria tests"
 next_phase: "/deviate-green"
 ```
+
 </step>
 
 <step id="post_script">

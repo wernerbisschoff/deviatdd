@@ -120,7 +120,12 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 </step>
 
 <step id="handover_emission">
-After the implementation is verified passing, generate the HANDOVER_MANIFEST:
+After the implementation is verified passing, generate the HANDOVER_MANIFEST.
+
+CRITICAL: The manifest MUST be a valid YAML code block delimited by ```yaml and ```.
+ALL string values in the YAML MUST be wrapped in double quotes (" ").
+A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
+Output NOTHING outside the YAML block — no explanations, no commentary.
 
 # DeviaTDD Micro Green: {TASK_ID}
 
@@ -129,7 +134,7 @@ Target_Artifact: `path/to/source_file.ext`
 
 ## [MINIMAL_HANDOVER]
 ```yaml
-phase: GREEN
+phase: "GREEN"
 task_id: "{TASK_ID}"
 feature_slug: "{FEATURE_SLUG}"
 files:

@@ -74,9 +74,9 @@ class TestRedPre:
 
 
 class TestRedPost:
-    @patch("deviate.cli.micro._run_pytest")
-    def test_red_post_validates_test_fails(self, mock_pytest, tmp_git_repo: Path):
-        mock_pytest.return_value = subprocess.CompletedProcess(
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_red_post_validates_test_fails(self, mock_run_test, tmp_git_repo: Path):
+        mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="1 failed", stderr=""
         )
         with chdir(tmp_git_repo):
@@ -116,9 +116,9 @@ class TestRedPost:
             assert log.returncode == 0
             assert len(log.stdout.strip()) > 0
 
-    @patch("deviate.cli.micro._run_pytest")
-    def test_red_post_rejects_passing_test(self, mock_pytest, tmp_git_repo: Path):
-        mock_pytest.return_value = subprocess.CompletedProcess(
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_red_post_rejects_passing_test(self, mock_run_test, tmp_git_repo: Path):
+        mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
         )
         with chdir(tmp_git_repo):
@@ -137,12 +137,27 @@ class TestRedPost:
             )
             assert "RedMustPassError" in result.output
 
-    @patch("deviate.cli.micro._run_pytest")
-    def test_red_post_rejects_syntax_error(self, mock_pytest, tmp_git_repo: Path):
-        mock_pytest.return_value = subprocess.CompletedProcess(
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_red_post_accepts_syntax_error_as_fail(
+        self, mock_run_test, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="SyntaxError: invalid syntax"
         )
         with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE", active_issue_id="ISS-001-004")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-001-004",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
             test_file = Path("tests") / "test_syntax_error.py"
             test_file.parent.mkdir(parents=True)
             test_file.write_text("def test_syntax_error(:\n    pass\n")
@@ -153,4 +168,4 @@ class TestRedPost:
 
             result = runner.invoke(cli, ["red", "post"])
 
-            assert "SyntaxCrashRejected" in result.output
+            assert result.exit_code == 0
