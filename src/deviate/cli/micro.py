@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import warnings
+from datetime import datetime, timezone
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -39,6 +40,26 @@ _verbose: bool = False
 def _log(msg: str) -> None:
     if _verbose:
         console.print(f"[dim]{msg}[/]")
+
+
+def _save_agent_log(phase: str, task_id: str, label: str, content: str) -> None:
+    log_dir = Path.cwd() / ".deviate"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "prompts.log"
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"=== {timestamp} | {phase} | {task_id} | {label} ===\n")
+        f.write(content)
+        f.write("\n\n")
+
+
+def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
+    if not ledger_path.exists():
+        return False
+    for rec in _read_ledger_records(ledger_path):
+        if rec.get("id") == task_id and rec.get("status") == phase:
+            return True
+    return False
 
 
 # Typer apps for manual phase commands
@@ -94,20 +115,32 @@ def _build_agent_prompt(skill_content: str, phase: str, task: dict, root: Path) 
 
 
 def _invoke_agent(
-    prompt: str, c: Console, backend_name: str = "opencode"
+    prompt: str,
+    c: Console,
+    backend_name: str = "opencode",
+    task_id: str = "",
+    phase: str = "",
 ) -> HandoverManifest | None:
     c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
+    _save_agent_log(phase, task_id, "prompt", prompt)
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
         manifest = backend.invoke(prompt)
+        _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
         return manifest
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
         )
         return None
+    except AgentTimeoutError as exc:
+        if exc.partial_stderr:
+            _save_agent_log(phase, task_id, "timeout_stderr", exc.partial_stderr)
+        if exc.partial_stdout:
+            _save_agent_log(phase, task_id, "timeout_stdout", exc.partial_stdout)
+        c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
+        return None
     except (
-        AgentTimeoutError,
         AgentSubprocessError,
         MalformedHandoverManifestError,
         EmptyOutputError,
@@ -374,21 +407,27 @@ def _run_red_phase(
     agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
+    if _phase_already_done(ledger_path, task.get("id", ""), "RED"):
+        c.print(f"  [dim]RED already done for {tid}, skipping[/]")
+        return session
     c.print(f"  [bold blue]RED →[/] {tid}")
 
     backend = agent or "opencode"
     skill = _load_skill_content("RED")
     if skill:
         prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
-        manifest = _invoke_agent(prompt, c, backend_name=backend)
-        if manifest is not None and manifest.status.upper() in (
-            "FAILURE",
-            "ERROR",
-        ):
+        manifest = _invoke_agent(
+            prompt, c, backend_name=backend, task_id=tid, phase="RED"
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"RED phase agent error for {tid}: agent returned no manifest"
+            )
+        if manifest.status.upper() in ("FAILURE", "ERROR"):
             raise PhaseFailedError(
                 f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
             )
-        if manifest and manifest.yellow_trigger:
+        if manifest.yellow_trigger:
             c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
 
     session = session.force_transition_to("RED")
@@ -406,22 +445,27 @@ def _run_green_phase(
     agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
+    if _phase_already_done(ledger_path, task.get("id", ""), "GREEN"):
+        c.print(f"  [dim]GREEN already done for {tid}, skipping[/]")
+        return session
     c.print(f"  [bold green]GREEN →[/] {tid}")
 
     backend = agent or "opencode"
     skill = _load_skill_content("GREEN")
-    manifest: HandoverManifest | None = None
     if skill:
         prompt = _build_agent_prompt(skill, "GREEN", task, Path.cwd())
         if session.train_feedback:
             prompt += (
                 f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
             )
-        manifest = _invoke_agent(prompt, c, backend_name=backend)
-        if manifest is not None and manifest.status.upper() in (
-            "FAILURE",
-            "ERROR",
-        ):
+        manifest = _invoke_agent(
+            prompt, c, backend_name=backend, task_id=tid, phase="GREEN"
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"GREEN phase agent error for {tid}: agent returned no manifest"
+            )
+        if manifest.status.upper() in ("FAILURE", "ERROR"):
             raise PhaseFailedError(
                 f"GREEN phase failed for {tid}: {manifest.rationale or 'unknown'}"
             )
@@ -510,11 +554,14 @@ def _run_judge_phase(
         if spec_content:
             prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
 
-        manifest = _invoke_agent(prompt, c, backend_name=backend)
-        if manifest is not None and manifest.status.upper() in (
-            "FAILURE",
-            "ERROR",
-        ):
+        manifest = _invoke_agent(
+            prompt, c, backend_name=backend, task_id=tid, phase="JUDGE"
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"JUDGE phase agent error for {tid}: agent returned no manifest"
+            )
+        if manifest.status.upper() in ("FAILURE", "ERROR"):
             c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
 
             feedback = manifest.rationale or ""
@@ -570,17 +617,23 @@ def _run_refactor_phase(
     agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
+    if _phase_already_done(ledger_path, task.get("id", ""), "REFACTOR"):
+        c.print(f"  [dim]REFACTOR already done for {tid}, skipping[/]")
+        return session
     c.print(f"  [bold yellow]REFACTOR →[/] {tid}")
 
     backend = agent or "opencode"
     skill = _load_skill_content("REFACTOR")
     if skill:
         prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
-        manifest = _invoke_agent(prompt, c, backend_name=backend)
-        if manifest is not None and manifest.status.upper() in (
-            "FAILURE",
-            "ERROR",
-        ):
+        manifest = _invoke_agent(
+            prompt, c, backend_name=backend, task_id=tid, phase="REFACTOR"
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"REFACTOR phase agent error for {tid}: agent returned no manifest"
+            )
+        if manifest.status.upper() in ("FAILURE", "ERROR"):
             raise PhaseFailedError(
                 f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
             )
@@ -606,8 +659,14 @@ def _run_yellow_phase(
     skill = _load_skill_content("YELLOW")
     if skill:
         prompt = _build_agent_prompt(skill, "YELLOW", task, Path.cwd())
-        manifest = _invoke_agent(prompt, c, backend_name=backend)
-        if manifest is not None and manifest.status.upper() == "FAILURE":
+        manifest = _invoke_agent(
+            prompt, c, backend_name=backend, task_id=tid, phase="YELLOW"
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"YELLOW phase agent error for {tid}: agent returned no manifest"
+            )
+        if manifest.status.upper() == "FAILURE":
             c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
             subprocess.run(
                 ["git", "restore", "."],
