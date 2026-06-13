@@ -33,6 +33,11 @@ def _read_adhoc_ledger(path: Path) -> list[dict]:
     return records
 
 
+def _emit_contract(status: str, **fields: object) -> None:
+    contract: dict[str, object] = {"status": status, **fields}
+    print(json.dumps(contract, indent=2))
+
+
 @adhoc_app.command()
 def pre(
     description: str = typer.Argument(..., help="Task description to classify"),
@@ -67,13 +72,12 @@ def pre(
     console.print(
         f"[green]{result.execution_mode}[/] execution_mode={result.execution_mode}"
     )
-    contract = {
-        "status": "READY",
-        "execution_mode": result.execution_mode,
-        "description": description,
-        "issue_id": record.issue_id,
-    }
-    print(json.dumps(contract, indent=2))
+    _emit_contract(
+        status="READY",
+        execution_mode=result.execution_mode,
+        description=description,
+        issue_id=record.issue_id,
+    )
 
 
 @adhoc_app.command()
@@ -84,28 +88,24 @@ def post(
     ledger_path = _adhoc_ledger_path()
     records = _read_adhoc_ledger(ledger_path)
 
-    found_idx = -1
-    for idx, rec in enumerate(records):
+    found = None
+    for rec in records:
         if rec.get("issue_id") == issue_id:
-            found_idx = idx
+            found = rec
+            break
 
-    if found_idx == -1:
+    if found is None:
         console.print(
             f"[red]MANIFEST_NOT_FOUND[/] No record found with issue_id={issue_id}"
         )
         raise typer.Exit(code=1)
 
-    records[found_idx]["status"] = "COMPLETED"
-    records[found_idx]["timestamp"] = datetime.now(timezone.utc).isoformat()
+    found["status"] = "COMPLETED"
+    found["timestamp"] = datetime.now(timezone.utc).isoformat()
 
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
     with ledger_path.open("w", encoding="utf-8") as f:
         for rec in records:
             f.write(json.dumps(rec) + "\n")
 
     console.print(f"[green]COMPLETED[/] {issue_id}")
-    contract = {
-        "status": "COMPLETED",
-        "issue_id": issue_id,
-    }
-    print(json.dumps(contract, indent=2))
+    _emit_contract(status="COMPLETED", issue_id=issue_id)

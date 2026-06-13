@@ -5,3 +5,5 @@
 {"id":"TSK-003-01","issue_id":"ISS-002-003","description":"ComplexityGate classification engine + AdhocRecord Pydantic model","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-13T15:09:02.128082Z"}
 {"id":"TSK-003-02","issue_id":"ISS-002-003","description":"Adhoc CLI — pre (classification + record) and post (completion + validation)","status":"RED","execution_mode":"TDD","created_at":"2026-06-13T15:12:19.998987Z"}
 {"id":"TSK-003-02","issue_id":"ISS-002-003","description":"Adhoc CLI — pre (classification + record) and post (completion + validation)","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-13T15:12:19.998987Z"}
+{"id":"TSK-003-02","issue_id":"ISS-002-003","description":"Adhoc CLI — pre (classification + record) and post (completion + validation)","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-13T15:15:48.007056Z"}
+{"id":"TSK-003-02","issue_id":"ISS-002-003","description":"Adhoc CLI — pre (classification + record) and post (completion + validation)","status":"REFACTOR","execution_mode":"TDD","created_at":"2026-06-13T15:12:19.998987Z"}
