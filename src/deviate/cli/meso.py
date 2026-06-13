@@ -449,12 +449,15 @@ def _specify_pre(
         )
     if session_absent and issue_id is not None:
         record = resolve_issue_record(issue_id, ledger_path)
-        if record is not None:
-            slug = _derive_slug(record.title)
-            spec_dir = repo_root / "specs" / slug
-            spec_dir.mkdir(parents=True, exist_ok=True)
-            _create_feature_branch(slug, repo_root)
-            console.print(f"[green]FEATURE_CREATE[/] created specs/{slug}/")
+        if record is None:
+            console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
+            raise typer.Exit(code=1)
+
+        slug = _derive_slug(record.title)
+        spec_dir = repo_root / "specs" / slug
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        _create_feature_branch(slug, repo_root)
+        console.print(f"[green]FEATURE_CREATE[/] created specs/{slug}/")
         dot_dir.mkdir(parents=True, exist_ok=True)
         fresh_session = SessionState()
         fresh_session.save(session_path)

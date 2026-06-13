@@ -28,9 +28,10 @@ def _read_adhoc_ledger(path: Path) -> dict[str, dict]:
                 continue
             try:
                 rec = json.loads(line)
-                issue_id = rec.get("issue_id")
-                if issue_id:
-                    records[issue_id] = rec
+                if isinstance(rec, dict):
+                    issue_id = rec.get("issue_id")
+                    if issue_id:
+                        records[issue_id] = rec
             except json.JSONDecodeError:
                 continue
     return records

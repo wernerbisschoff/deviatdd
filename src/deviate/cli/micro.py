@@ -1539,24 +1539,39 @@ def refactor_pre(
 
 
 def _classify_expression_returns(value: ast.expr, expected: str) -> list[str]:
-    """Walk return expressions and flag obvious constant mismatches.
+    """Walk return expressions and flag obvious constant/literal mismatches.
 
-    Only flags literal constants whose Python type doesn't match the
-    annotation.  Complex expressions (calls, attributes, names) are
-    assumed correct — the checker cannot statically resolve them.
+    Only flags literal constants and collection literals whose type doesn't
+    match the annotation.  Complex expressions (calls, attributes, names)
+    are assumed correct — the checker cannot statically resolve them.
     """
     issues: list[str] = []
 
+    scalar_types = {"str": str, "int": int, "float": (int, float), "bool": bool}
+    collection_nodes = {
+        "list": ast.List,
+        "dict": ast.Dict,
+        "tuple": ast.Tuple,
+        "set": ast.Set,
+    }
+
     if isinstance(value, ast.Constant):
-        type_map = {"str": str, "int": int, "float": (int, float), "bool": bool}
-        if expected in type_map:
-            if not isinstance(value.value, type_map[expected]):
+        if expected in scalar_types:
+            if not isinstance(value.value, scalar_types[expected]):
                 issues.append(
                     f"expected {expected}, got literal {type(value.value).__name__}"
                 )
+        elif expected in collection_nodes:
+            issues.append(f"expected {expected}, got literal constant")
 
-    elif isinstance(value, ast.JoinedStr) and expected != "str":
-        issues.append(f"expected {expected}, got f-string (str)")
+    elif isinstance(value, ast.JoinedStr):
+        if expected != "str":
+            issues.append(f"expected {expected}, got f-string (str)")
+
+    else:
+        for type_name, node_class in collection_nodes.items():
+            if isinstance(value, node_class) and expected != type_name:
+                issues.append(f"expected {expected}, got {type_name} literal")
 
     return issues
 

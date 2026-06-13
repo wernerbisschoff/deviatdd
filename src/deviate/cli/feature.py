@@ -5,12 +5,9 @@ import subprocess
 from pathlib import Path
 
 import typer
-from rich.console import Console
-
 from deviate.core._shared import git_env
 from deviate.state.config import SessionState
 
-console = Console()
 feature_app = typer.Typer(no_args_is_help=True)
 
 
@@ -18,7 +15,7 @@ def _derive_slug(title: str) -> str:
     slug = title.lower()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
     slug = slug.strip("-")
-    return f"{slug}"
+    return slug
 
 
 def _create_feature_directory(slug: str, repo_path: Path) -> Path:
@@ -56,6 +53,8 @@ def create(
     _create_feature_directory(final_slug, repo_path)
     _create_feature_branch(final_slug, repo_path)
 
+    session_dir = repo_path / ".deviate"
+    session_dir.mkdir(parents=True, exist_ok=True)
     session = SessionState()
-    session_path = repo_path / ".deviate" / "session.json"
+    session_path = session_dir / "session.json"
     session.save(session_path)
