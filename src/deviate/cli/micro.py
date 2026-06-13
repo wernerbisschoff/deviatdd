@@ -1550,6 +1550,29 @@ _RETURN_TYPE_MAP = {
 }
 
 
+def _classify_expression_returns(value: ast.expr, expected: str) -> list[str]:
+    """Walk return expressions and flag obvious constant mismatches.
+
+    Only flags literal constants whose Python type doesn't match the
+    annotation.  Complex expressions (calls, attributes, names) are
+    assumed correct — the checker cannot statically resolve them.
+    """
+    issues: list[str] = []
+
+    if isinstance(value, ast.Constant):
+        type_map = {"str": str, "int": int, "float": (int, float), "bool": bool}
+        if expected in type_map:
+            if not isinstance(value.value, type_map[expected]):
+                issues.append(
+                    f"expected {expected}, got literal {type(value.value).__name__}"
+                )
+
+    elif isinstance(value, ast.JoinedStr) and expected != "str":
+        issues.append(f"expected {expected}, got f-string (str)")
+
+    return issues
+
+
 def _check_return_type_mismatch(filepath: str) -> list[str]:
     issues: list[str] = []
     try:
@@ -1573,31 +1596,16 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
         if return_annotation is None:
             continue
 
+        # Only validate known builtin types
+        known = {"str", "int", "float", "bool", "list", "dict", "tuple", "set"}
+        if return_annotation not in known:
+            continue
+
         for child in ast.walk(node):
             if not isinstance(child, ast.Return) or child.value is None:
                 continue
-            if _is_return_type_mismatch(child.value, return_annotation):
-                issues.append(
-                    f"{node.name}: return value type mismatch (expected {return_annotation})"
-                )
-                break
+            issues.extend(_classify_expression_returns(child.value, return_annotation))
     return issues
-
-
-def _is_return_type_mismatch(
-    value: ast.expr,
-    expected: str,
-) -> bool:
-    if isinstance(value, ast.Constant):
-        type_map = {"str": str, "int": int, "float": (int, float), "bool": bool}
-        if expected in type_map:
-            return not isinstance(value.value, type_map[expected])
-        return True
-
-    expected_nodes = _RETURN_TYPE_MAP.get(expected, ())
-    if not expected_nodes:
-        return False
-    return not isinstance(value, expected_nodes)
 
 
 @refactor_app.command(name="post")
