@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
 set -e
+# Unset git environment variables inherited from the hook context.
+# Tests use git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
+GIT_DIR_SAVED="${GIT_DIR:-}"
+unset GIT_DIR
 mise run check
+[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED"
