@@ -838,6 +838,7 @@ def _run_tdd_cycle(
     agent: str | None = None,
 ) -> None:
     root = Path.cwd()
+    _verify_worktree_branch(root)
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
@@ -1123,6 +1124,31 @@ def _log_uncommitted(root: Path, phase: str, tid: str) -> None:
             for line in files:
                 f.write(f"  {line}\n")
             f.write("\n")
+
+
+def _verify_worktree_branch(root: Path) -> None:
+    try:
+        idx = root.parts.index(".worktrees")
+    except ValueError:
+        return
+
+    expected = "/".join(root.parts[idx + 1 :])
+    current = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+
+    if current != expected:
+        console.print(
+            f"  [red]BRANCH_MISMATCH[/] worktree expects"
+            f" [bold]{expected}[/]"
+            f" but HEAD is on [bold]{current}[/]"
+        )
+        console.print(f"  Run: git checkout {expected}")
+        raise typer.Exit(code=78)
 
 
 def _all_tasks_complete(root: Path) -> bool:

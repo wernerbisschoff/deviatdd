@@ -79,6 +79,16 @@ class AgentBackend:
         return text.strip()
 
     @staticmethod
+    def _yaml_error_hint(text: str) -> str:
+        if not re.search(r"```\s*yaml", text, re.IGNORECASE):
+            return (
+                " No ```yaml code block found — wrap the manifest in a ```yaml block."
+            )
+        if re.search(r"(?<!\"):\s+\w", text):
+            return " Check that all YAML string values are double-quoted."
+        return ""
+
+    @staticmethod
     def parse_output(
         stdout: str,
         backend_name: str,
@@ -93,8 +103,9 @@ class AgentBackend:
         try:
             data = yaml.safe_load(yaml_text)
         except yaml.YAMLError as e:
+            hint = AgentBackend._yaml_error_hint(stdout)
             raise MalformedHandoverManifestError(
-                f"Failed to parse YAML handover manifest: {e}"
+                f"Failed to parse YAML handover manifest: {e}{hint}"
             )
 
         if not isinstance(data, dict):
