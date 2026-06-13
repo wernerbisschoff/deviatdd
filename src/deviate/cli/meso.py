@@ -148,10 +148,34 @@ def _resolve_constitution_commands(
     return constitution_path, test_command, lint_command
 
 
+TYPE_MAP: dict[str, str] = {
+    "feature": "feat",
+    "bug": "fix",
+    "chore": "chore",
+    "refactor": "refactor",
+    "docs": "docs",
+    "test": "test",
+    "perf": "perf",
+    "style": "style",
+}
+
+
+def _pr_title(issue_id: str, record_title: str, record_type: str = "feature") -> str:
+    """Build a conventional-commit PR title suitable for squash-merge.
+
+    Takes the raw issue title (e.g. \"[FR-001] CLI Initialization\") and strips
+    any bracketed prefix like [FR-NNN] so the final title reads as a clean
+    conventional commit subject.
+    """
+    commit_type = TYPE_MAP.get(record_type, "feat")
+    desc = re.sub(r"^\[[A-Z]+-\d+\]\s*", "", record_title).strip()
+    return f"{commit_type}({issue_id}): {desc}"
+
+
 def _derive_pr_metadata(
-    branch_name: str, issue_id: str, record_title: str
+    branch_name: str, issue_id: str, record_title: str, record_type: str = "feature"
 ) -> tuple[str, str, str]:
-    pr_title = f"[{issue_id}] {record_title}"
+    pr_title = _pr_title(issue_id, record_title, record_type)
     pr_body = ""
     base_branch = "main"
     return pr_title, pr_body, base_branch
@@ -872,7 +896,7 @@ def _pr_pre() -> None:
         branch_name = "detached"
 
     pr_title, pr_body, base_branch = _derive_pr_metadata(
-        branch_name, issue_id, record.title
+        branch_name, issue_id, record.title, record.type
     )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -907,7 +931,7 @@ def _pr_run(
     if not body_file.exists():
         console.print(f"[red]BODY_FILE_NOT_FOUND[/] {body_file}")
         raise typer.Exit(code=1)
-    title = f"[{issue_id}] {record.title}"
+    title = _pr_title(issue_id, record.title, record.type)
     cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
     if merge:
         cmd.append("--merge")
