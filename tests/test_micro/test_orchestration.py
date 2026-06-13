@@ -3,14 +3,25 @@ from __future__ import annotations
 import json
 from contextlib import chdir
 from pathlib import Path
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 
 runner = CliRunner()
+
+
+def _mock_invoke_agent(*args, **kwargs):
+    """Mock _invoke_agent to return a valid manifest for testing."""
+    return HandoverManifest(
+        phase=kwargs.get("phase", "RED"),
+        status="SUCCESS",
+        task_id=kwargs.get("task_id", "TSK-000-00"),
+    ), ""
 
 
 def _git_env() -> dict[str, str]:
@@ -43,7 +54,8 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
 
 
 class TestMicroOrchestration:
-    def test_micro_single_task_full_cycle(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_single_task_full_cycle(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -76,7 +88,8 @@ class TestMicroOrchestration:
                 f"Expected session to be IDLE after full cycle, got {session_data}"
             )
 
-    def test_micro_session_tracks_active_phase(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_session_tracks_active_phase(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -101,7 +114,8 @@ class TestMicroOrchestration:
                 f"Expected last_command to be set, got {session_data}"
             )
 
-    def test_micro_no_judge_flag(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_no_judge_flag(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -126,7 +140,8 @@ class TestMicroOrchestration:
                 f"JUDGE phase should be skipped with --no-judge: {result.output}"
             )
 
-    def test_micro_no_refactor_flag(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_no_refactor_flag(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -151,7 +166,8 @@ class TestMicroOrchestration:
                 f"REFACTOR phase should be skipped with --no-refactor: {result.output}"
             )
 
-    def test_micro_agent_flag(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_agent_flag(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -176,7 +192,8 @@ class TestMicroOrchestration:
                 f"Expected task to complete with --agent: {result.output}"
             )
 
-    def test_micro_ledger_updates_on_each_phase(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_ledger_updates_on_each_phase(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -206,7 +223,8 @@ class TestMicroOrchestration:
                 f"Expected COMPLETED in ledger statuses: {statuses}"
             )
 
-    def test_micro_all_processes_all_pending(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_all_processes_all_pending(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -237,7 +255,8 @@ class TestMicroOrchestration:
                 f"Expected both tasks to reach COMPLETED: {result.output}"
             )
 
-    def test_micro_all_retry_once_then_abort(self, tmp_git_repo: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_all_retry_once_then_abort(self, mock_agent, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)

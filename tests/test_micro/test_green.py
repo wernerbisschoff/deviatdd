@@ -4,7 +4,6 @@ import json
 import subprocess
 from contextlib import chdir
 from pathlib import Path
-from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -76,11 +75,7 @@ class TestGreenPre:
 
 
 class TestGreenPost:
-    @patch("deviate.cli.micro._run_pytest")
-    def test_green_post_validates_tests_pass(self, mock_pytest, tmp_git_repo: Path):
-        mock_pytest.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+    def test_green_post_validates_tests_pass(self, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -134,11 +129,7 @@ class TestGreenPost:
             assert log.returncode == 0
             assert len(log.stdout.strip()) > 0
 
-    @patch("deviate.cli.micro._run_pytest")
-    def test_green_post_tamper_detection(self, mock_pytest, tmp_git_repo: Path):
-        mock_pytest.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+    def test_green_post_tamper_detection(self, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -187,11 +178,7 @@ class TestGreenPost:
                 "Tamper Guard should have restored the original test file"
             )
 
-    @patch("deviate.cli.micro._run_pytest")
-    def test_green_post_yellow_handover(self, mock_pytest, tmp_git_repo: Path):
-        mock_pytest.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+    def test_green_post_yellow_handover(self, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
