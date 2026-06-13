@@ -41,17 +41,38 @@
 - Never use `--no-verify`
 - Preserve all semantic anchors
 
-## 🧪 Test Git Isolation (MANDATORY)
+## 🧪 Git Isolation (MANDATORY — Tests AND Production Code)
 
-Never run git commands against the real repo during tests. Every git
-operation in tests MUST target a `tmp_path`-based isolated repo.
+All git operations — in both tests and production code — MUST target the
+correct repository and MUST NOT mutate the worktree's branch state.
+
+### Test Git Isolation
 
 - Use the `tmp_git_repo` fixture (created by T002 in `tests/conftest.py`)
-- Every `git` subprocess call MUST include `cwd=<tmp_git_repo>` — the `cwd`
-  flag is the ONLY thing scoping the command to the temp repo
+- Every `git` subprocess call MUST include BOTH `cwd=<tmp_git_repo>` and
+  `env=_git_env()` — `cwd` targets the temp repo, `env=_git_env()` strips
+  `GIT_*` env vars that could leak from the parent process
+- Import `_git_env` from `tests.conftest` (not redefined locally)
 - Never use `Path.cwd()`, `os.getcwd()`, or the real repo root in tests
 - Verify test isolation: `git config user.name` inside the fixture should
   show `Test Runner`, never the real user's name
+
+### Production Code Git Isolation
+
+- CLI commands that run `git checkout -b` (or any branch-switching command)
+  MUST save the current branch and restore it after the operation
+- Always use `_git_env()` (strips `GIT_*` env vars) for all `git` subprocess
+  calls — prevents inheriting parent repo's git configuration
+- Prefer creating branch refs (`git branch`) over checking out branches
+  (`git checkout -b`) in non-interactive commands
+- If a command must switch branches, use the pattern:
+  1. Save `git rev-parse --abbrev-ref HEAD` before
+  2. Execute the branch switch
+  3. Restore original branch afterwards
+
+Agents running TDD cycles MUST NOT execute CLI commands that mutate git
+branch state (e.g., `feature create`, `git checkout -b`). These operations
+will switch the worktree off its intended branch and break the TDD cycle.
 
 See `spec.md` §`TEST_ISOLATION_CONSTRAINTS` and `tasks.md` §`Universal
 Test Constraints` for full rules.

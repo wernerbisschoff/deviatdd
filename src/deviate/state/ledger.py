@@ -192,6 +192,16 @@ def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
     )
 
 
+class AdhocRecord(BaseModel):
+    issue_id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    execution_mode: Literal["DIRECT", "TDD"] = "DIRECT"
+    status: Literal["PENDING", "COMPLETED"] = "PENDING"
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    model_config = {"extra": "forbid"}
+
+
 def _parse_timestamp(value: object) -> datetime:
     """Parse an ISO 8601 timestamp string to a timezone-aware datetime.
 

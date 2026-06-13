@@ -17,6 +17,7 @@ from deviate.cli._common import (
     console,
     with_json_quiet,
 )
+from deviate.cli.feature import _create_feature_branch, _derive_slug
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
@@ -435,12 +436,37 @@ def _specify_pre(
     dry_run: bool = False,
 ) -> None:
     dot_dir = _resolve_dot_deviate()
-    if not dot_dir.exists():
-        _handle_missing_dot_dir("SPECIFY")
-    session_path = dot_dir / "session.json"
-    session = SessionState.load(session_path)
     repo_root = Path.cwd()
     ledger_path = _resolve_specs_root() / "issues.jsonl"
+
+    # ── Auto-create feature workspace if session is absent ────────────
+    session_path = dot_dir / "session.json"
+    session_absent = not session_path.exists()
+    if not session_absent:
+        existing = SessionState.load(session_path)
+        session_absent = (
+            existing.current_phase == "IDLE" and existing.active_issue_id is None
+        )
+    if session_absent and issue_id is not None:
+        record = resolve_issue_record(issue_id, ledger_path)
+        if record is None:
+            console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
+            raise typer.Exit(code=1)
+
+        slug = _derive_slug(record.title)
+        spec_dir = repo_root / "specs" / slug
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        _create_feature_branch(slug, repo_root)
+        console.print(f"[green]FEATURE_CREATE[/] created specs/{slug}/")
+        dot_dir.mkdir(parents=True, exist_ok=True)
+        fresh_session = SessionState()
+        fresh_session.save(session_path)
+        console.print("[green]SESSION_CREATE[/] session initialized")
+        session = fresh_session
+    else:
+        if not dot_dir.exists():
+            _handle_missing_dot_dir("SPECIFY")
+        session = SessionState.load(session_path)
 
     # ── Detect remote (non-dry-run only) ────────────────────────────────
     remote: str | None = None
@@ -817,7 +843,7 @@ def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
 
 
 def _pr_pre() -> None:
-    session, _ = _load_session("TASKS")
+    session, _ = _load_session_accept("TASKS", "IDLE")
     repo_root = Path.cwd()
     issue_id = session.active_issue_id
     if not issue_id:
@@ -868,7 +894,7 @@ def _pr_run(
     merge: bool = False,
     auto_merge: bool = False,
 ) -> None:
-    session, session_path = _load_session("TASKS")
+    session, session_path = _load_session_accept("TASKS", "IDLE")
     issue_id = session.active_issue_id
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")

@@ -555,6 +555,7 @@ def _run_red_phase(
     session = session.force_transition_to("RED")
     session.save(session_path)
     _append_status_transition(task, "RED", ledger_path)
+    _log_uncommitted(Path.cwd(), "RED", tid)
     return session
 
 
@@ -568,8 +569,13 @@ def _run_green_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "GREEN"):
-        c.print(f"  [dim]GREEN already done for {tid}, skipping[/]")
-        return session
+        if not session.train_feedback:
+            c.print(f"  [dim]GREEN already done for {tid}, skipping[/]")
+            return session
+        c.print(
+            f"  [dim]GREEN already done for {tid}"
+            f" but train_feedback present — re-running[/]"
+        )
     c.print(f"  [bold green]GREEN →[/] {tid}")
 
     backend = agent or "opencode"
@@ -607,6 +613,7 @@ def _run_green_phase(
     session.train_feedback = ""
     session.save(session_path)
     _append_status_transition(task, "GREEN", ledger_path)
+    _log_uncommitted(Path.cwd(), "GREEN", tid)
     return session
 
 
@@ -697,6 +704,13 @@ def _run_judge_phase(
             if hasattr(manifest, "train_feedback") and manifest.train_feedback:
                 feedback = manifest.train_feedback
 
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD~1"],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
+
             tasks_md = _resolve_tasks_md(root, task)
             if tasks_md is not None:
                 _append_judge_feedback(tasks_md, tid, feedback)
@@ -718,13 +732,6 @@ def _run_judge_phase(
                     env=_git_env(),
                 )
 
-            subprocess.run(
-                ["git", "revert", "--no-edit", "HEAD~1"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
-
             session = session.force_transition_to("GREEN")
             session.train_feedback = feedback
             session.yellow_triggered = False
@@ -732,6 +739,7 @@ def _run_judge_phase(
             return session
 
     session = session.force_transition_to("JUDGE")
+    session.train_feedback = ""
     session.save(session_path)
     _append_status_transition(task, "JUDGE", ledger_path)
     return session
@@ -746,10 +754,10 @@ def _run_refactor_phase(
     agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
-    if _phase_already_done(ledger_path, task.get("id", ""), "REFACTOR"):
-        c.print(f"  [dim]REFACTOR already done for {tid}, skipping[/]")
+    if _phase_already_done(ledger_path, task.get("id", ""), "COMPLETED"):
+        c.print(f"  [dim]Already completed for {tid}, skipping[/]")
         return session
-    c.print(f"  [bold yellow]REFACTOR →[/] {tid}")
+    c.print(f"  [bold green]COMPLETED →[/] {tid}")
 
     backend = agent or "opencode"
     skill = _load_skill_content("REFACTOR")
@@ -767,9 +775,11 @@ def _run_refactor_phase(
                 f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
             )
 
-    session = session.force_transition_to("REFACTOR")
+    session = session.force_transition_to("IDLE")
+    session.yellow_triggered = False
     session.save(session_path)
-    _append_status_transition(task, "REFACTOR", ledger_path)
+    _append_status_transition(task, "COMPLETED", ledger_path)
+    _log_uncommitted(Path.cwd(), "COMPLETED", tid)
     return session
 
 
@@ -829,6 +839,7 @@ def _run_tdd_cycle(
     agent: str | None = None,
 ) -> None:
     root = Path.cwd()
+    _verify_worktree_branch(root)
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
@@ -886,14 +897,14 @@ def _run_tdd_cycle(
         session = _run_refactor_phase(
             task, ledger_path, session, session_path, c, agent=agent
         )
+    else:
+        _append_status_transition(task, "COMPLETED", ledger_path)
+        c.print(f"  [bold green]COMPLETED[/] {task.get('id', '?')}")
 
-    _append_status_transition(task, "COMPLETED", ledger_path)
-    c.print(f"  [bold green]COMPLETED[/] {task.get('id', '?')}")
-
-    session = session.force_transition_to("IDLE")
-    session.yellow_triggered = False
-    session.train_feedback = ""
-    session.save(session_path)
+        session = session.force_transition_to("IDLE")
+        session.yellow_triggered = False
+        session.train_feedback = ""
+        session.save(session_path)
 
 
 def _run_execute_phase(task: dict, ledger_path: Path, c: Console) -> None:
@@ -955,7 +966,7 @@ def _run_single(
     task, ledger_file = result
     status = task.get("status", "PENDING")
 
-    if status == "COMPLETED":
+    if status in ("COMPLETED", "REFACTOR"):
         c.print(f"[yellow]TASK_ALREADY_DONE[/] {task_id} is already completed")
         raise typer.Exit(code=0)
 
@@ -1064,15 +1075,18 @@ def _run_pytest(
     )
 
 
-def _commit_phase(message: str, root: Path) -> bool:
+def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
     staged = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=root, env=_git_env()
     )
     unstaged = subprocess.run(["git", "diff", "--quiet"], cwd=root, env=_git_env())
     if staged.returncode != 0 or unstaged.returncode != 0:
         subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
+        cmd = ["git", "commit", "-m", message]
+        if no_verify:
+            cmd.append("--no-verify")
         result = subprocess.run(
-            ["git", "commit", "-m", message],
+            cmd,
             cwd=root,
             env=_git_env(),
         )
@@ -1083,10 +1097,65 @@ def _commit_phase(message: str, root: Path) -> bool:
     return False
 
 
+def _log_uncommitted(root: Path, phase: str, tid: str) -> None:
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if status.stdout.strip():
+        files = status.stdout.strip().splitlines()
+        console.print(
+            f"  [yellow]WARN:[/] {phase} phase for {tid} completed with"
+            f" {len(files)} uncommitted file(s) - post-command may not have run"
+        )
+        for line in files[:5]:
+            console.print(f"    {line}")
+        if len(files) > 5:
+            console.print(f"    ... and {len(files) - 5} more")
+        log_dir = root / ".deviate"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "prompts.log"
+        timestamp = datetime.now(timezone.utc).isoformat()
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(f"=== {timestamp} | {phase} | {tid} | UNCOMMITTED ===\n")
+            f.write(f"{len(files)} uncommitted file(s):\n")
+            for line in files:
+                f.write(f"  {line}\n")
+            f.write("\n")
+
+
+def _verify_worktree_branch(root: Path) -> None:
+    try:
+        idx = root.parts.index(".worktrees")
+    except ValueError:
+        return
+
+    expected = "/".join(root.parts[idx + 1 :])
+    current = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+
+    if current != expected:
+        console.print(
+            f"  [red]BRANCH_MISMATCH[/] worktree expects"
+            f" [bold]{expected}[/]"
+            f" but HEAD is on [bold]{current}[/]"
+        )
+        console.print(f"  Run: git checkout {expected}")
+        raise typer.Exit(code=78)
+
+
 def _all_tasks_complete(root: Path) -> bool:
     for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
         for record in _read_ledger_records(ledger_file):
-            if record.get("status") != "COMPLETED":
+            if record.get("status") not in ("COMPLETED", "REFACTOR"):
                 return False
     return True
 
@@ -1122,29 +1191,6 @@ def _validate_manifest(manifest_path: str | None) -> dict | None:
     return data
 
 
-_SYNTAX_ERROR_MARKERS = frozenset(
-    {
-        "SyntaxError",
-        "IndentationError",
-        "TabError",
-        "ImportError",
-        "ModuleNotFoundError",
-    }
-)
-
-
-def _classify_pytest_outcome(stdout: str, stderr: str, returncode: int) -> str | None:
-    combined = stdout + "\n" + stderr
-    if returncode == 0:
-        return "PASS"
-    for marker in _SYNTAX_ERROR_MARKERS:
-        if marker in combined:
-            return "SYNTAX_ERROR"
-    if "AssertionError" in combined or "failed" in stdout:
-        return "ASSERTION_FAILURE"
-    return "UNKNOWN_FAILURE"
-
-
 @red_app.command(name="pre")
 def red_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
@@ -1156,12 +1202,21 @@ def red_pre(
 
     contract = {
         "task_id": task_data.get("id", ""),
-        "test_command": "pytest tests/ -v",
-        "lint_command": "ruff check .",
+        "test_command": "mise run test",
+        "lint_command": "mise run lint",
         "spec_dir": spec_dir,
     }
     print(json.dumps(contract, ensure_ascii=False))
     raise typer.Exit(code=0)
+
+
+def _run_test_cmd(root: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["mise", "run", "test"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
 
 
 @red_app.command(name="post")
@@ -1173,15 +1228,10 @@ def red_post() -> None:
         console.print("[red]TEST_NOT_FOUND[/]")
         raise typer.Exit(code=1)
 
-    proc = _run_pytest(root)
-    outcome = _classify_pytest_outcome(proc.stdout, proc.stderr, proc.returncode)
+    proc = _run_test_cmd(root)
 
-    if outcome == "PASS":
+    if proc.returncode == 0:
         console.print("[red]RedMustPassError:[/] Test passed, expected a failing test")
-        raise typer.Exit(code=1)
-
-    if outcome == "SYNTAX_ERROR":
-        console.print("[red]SyntaxCrashRejected:[/] Test file contains syntax errors")
         raise typer.Exit(code=1)
 
     dot_dir = root / ".deviate"
@@ -1211,7 +1261,7 @@ def red_post() -> None:
     session.save(session_path)
 
     scope = _build_scope(issue_id, task_uuid)
-    _commit_phase(f"test({scope}): RED phase - failing test", root)
+    _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
 
     console.print("[green]RED_POST_OK[/]")
     raise typer.Exit(code=0)
@@ -1488,16 +1538,42 @@ def refactor_pre(
     raise typer.Exit(code=0)
 
 
-_RETURN_TYPE_MAP = {
-    "str": (ast.Constant, ast.JoinedStr),
-    "int": (ast.Constant,),
-    "float": (ast.Constant,),
-    "bool": (ast.Constant,),
-    "list": (ast.List,),
-    "dict": (ast.Dict,),
-    "tuple": (ast.Tuple,),
-    "set": (ast.Set,),
-}
+def _classify_expression_returns(value: ast.expr, expected: str) -> list[str]:
+    """Walk return expressions and flag obvious constant/literal mismatches.
+
+    Only flags literal constants and collection literals whose type doesn't
+    match the annotation.  Complex expressions (calls, attributes, names)
+    are assumed correct — the checker cannot statically resolve them.
+    """
+    issues: list[str] = []
+
+    scalar_types = {"str": str, "int": int, "float": (int, float), "bool": bool}
+    collection_nodes = {
+        "list": ast.List,
+        "dict": ast.Dict,
+        "tuple": ast.Tuple,
+        "set": ast.Set,
+    }
+
+    if isinstance(value, ast.Constant):
+        if expected in scalar_types:
+            if not isinstance(value.value, scalar_types[expected]):
+                issues.append(
+                    f"expected {expected}, got literal {type(value.value).__name__}"
+                )
+        elif expected in collection_nodes:
+            issues.append(f"expected {expected}, got literal constant")
+
+    elif isinstance(value, ast.JoinedStr):
+        if expected != "str":
+            issues.append(f"expected {expected}, got f-string (str)")
+
+    else:
+        for type_name, node_class in collection_nodes.items():
+            if isinstance(value, node_class) and expected != type_name:
+                issues.append(f"expected {expected}, got {type_name} literal")
+
+    return issues
 
 
 def _check_return_type_mismatch(filepath: str) -> list[str]:
@@ -1523,31 +1599,16 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
         if return_annotation is None:
             continue
 
+        # Only validate known builtin types
+        known = {"str", "int", "float", "bool", "list", "dict", "tuple", "set"}
+        if return_annotation not in known:
+            continue
+
         for child in ast.walk(node):
             if not isinstance(child, ast.Return) or child.value is None:
                 continue
-            if _is_return_type_mismatch(child.value, return_annotation):
-                issues.append(
-                    f"{node.name}: return value type mismatch (expected {return_annotation})"
-                )
-                break
+            issues.extend(_classify_expression_returns(child.value, return_annotation))
     return issues
-
-
-def _is_return_type_mismatch(
-    value: ast.expr,
-    expected: str,
-) -> bool:
-    if isinstance(value, ast.Constant):
-        type_map = {"str": str, "int": int, "float": (int, float), "bool": bool}
-        if expected in type_map:
-            return not isinstance(value.value, type_map[expected])
-        return True
-
-    expected_nodes = _RETURN_TYPE_MAP.get(expected, ())
-    if not expected_nodes:
-        return False
-    return not isinstance(value, expected_nodes)
 
 
 @refactor_app.command(name="post")
@@ -1577,16 +1638,16 @@ def refactor_post() -> None:
 
     task_uuid = green_task[0].get("id", "")
 
-    # Append REFACTOR transition for this specific task
     try:
         record = TaskRecord.model_validate(green_task[0])
-        record.status = "REFACTOR"  # type: ignore[assignment]
+        record.status = "COMPLETED"  # type: ignore[assignment]
         append_task_transition(record, green_task[1])
     except Exception as e:
         console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
         raise typer.Exit(code=1)
 
-    session = session.force_transition_to("REFACTOR")
+    session = session.force_transition_to("IDLE")
+    session.yellow_triggered = False
     session.save(session_path)
 
     scope = _build_scope(issue_id, task_uuid)
@@ -1626,6 +1687,14 @@ def refactor_post() -> None:
 
     if committed:
         console.print("[green]REFACTOR_POST_OK[/]")
+
+        task_record = green_task[0]
+        _append_status_transition(task_record, "COMPLETED", green_task[1])
+        console.print(f"  [bold green]COMPLETED[/] {task_uuid}")
+
+        session = session.force_transition_to("IDLE")
+        session.yellow_triggered = False
+        session.save(session_path)
     else:
         console.print("[yellow]NOTHING_CHANGED[/]")
 

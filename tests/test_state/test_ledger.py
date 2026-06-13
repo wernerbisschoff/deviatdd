@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from deviate.state.ledger import (
+    AdhocRecord,
     IssueRecord,
     TaskRecord,
     append_issue_record,
@@ -297,3 +298,81 @@ class TestResolveIssueRecord:
         ledger_path = tmp_path / "issues.jsonl"
         result = resolve_issue_record("nonexistent-id", ledger_path)
         assert result is None
+
+
+class TestAdhocRecord:
+    def test_adhoc_record_schema(self):
+        record = AdhocRecord(
+            issue_id="adhoc-001",
+            description="Fix typo in README",
+        )
+        assert record.issue_id == "adhoc-001"
+        assert record.description == "Fix typo in README"
+        assert record.execution_mode == "DIRECT"
+        assert record.status == "PENDING"
+        assert record.timestamp is not None
+
+    def test_adhoc_record_explicit_execution_mode(self):
+        record = AdhocRecord(
+            issue_id="adhoc-002",
+            description="Build auth system",
+            execution_mode="TDD",
+        )
+        assert record.execution_mode == "TDD"
+
+    def test_adhoc_record_explicit_status(self):
+        record = AdhocRecord(
+            issue_id="adhoc-003",
+            description="Completed record",
+            status="COMPLETED",
+        )
+        assert record.status == "COMPLETED"
+
+    def test_adhoc_record_invalid_status(self):
+        with pytest.raises(ValidationError):
+            AdhocRecord(
+                issue_id="adhoc-004",
+                description="Invalid status",
+                status="INVALID",
+            )
+
+    def test_adhoc_record_invalid_execution_mode(self):
+        with pytest.raises(ValidationError):
+            AdhocRecord(
+                issue_id="adhoc-005",
+                description="Invalid mode",
+                execution_mode="INVALID",
+            )
+
+    def test_adhoc_record_empty_description(self):
+        with pytest.raises(ValidationError):
+            AdhocRecord(
+                issue_id="adhoc-006",
+                description="",
+            )
+
+    def test_adhoc_record_empty_issue_id(self):
+        with pytest.raises(ValidationError):
+            AdhocRecord(
+                issue_id="",
+                description="Empty issue ID",
+            )
+
+    def test_adhoc_record_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            AdhocRecord(
+                issue_id="adhoc-007",
+                description="Extra field",
+                extra_field="should_fail",
+            )
+
+    def test_adhoc_record_serialization_roundtrip(self):
+        import json
+
+        record = AdhocRecord(
+            issue_id="adhoc-008",
+            description="Round trip test",
+        )
+        data = json.loads(record.model_dump_json())
+        restored = AdhocRecord.model_validate(data)
+        assert restored == record

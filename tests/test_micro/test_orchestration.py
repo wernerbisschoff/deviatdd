@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
@@ -78,7 +79,6 @@ class TestMicroOrchestration:
             )
             assert "RED" in result.output
             assert "GREEN" in result.output
-            assert "REFACTOR" in result.output
             assert "COMPLETED" in result.output
 
             session_data = json.loads(
@@ -287,4 +287,83 @@ class TestMicroOrchestration:
             statuses = [json.loads(line).get("status") for line in ledger_lines if line]
             assert statuses.count("FAILED") >= 1, (
                 f"Expected at least one FAILED status: {statuses}"
+            )
+
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_judge_rejection_triggers_green_retry(
+        self, mock_agent, tmp_git_repo: Path
+    ):
+        """JUDGE_REJECTED must not skip GREEN on TRAIN retry.
+
+        Regression test: the _phase_already_done ledger check in
+        _run_green_phase was blocking re-runs after JUDGE_REJECTED
+        because the GREEN ledger entry was never removed on rejection.
+        Now _run_green_phase checks session.train_feedback and runs
+        regardless of the ledger when feedback is present.
+        """
+        call_log: list[str] = []
+
+        def _judge_reject_once(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            call_log.append(phase)
+            tid = kwargs.get("task_id", "TSK-004-11")
+            if phase == "JUDGE":
+                judge_count = sum(1 for p in call_log if p == "JUDGE")
+                if judge_count == 1:
+                    return HandoverManifest(
+                        phase="JUDGE",
+                        status="FAILURE",
+                        task_id=tid,
+                        rationale="Incomplete — missing required logic",
+                        train_feedback="Implement the missing logic per spec",
+                    ), ""
+            return HandoverManifest(
+                phase=phase,
+                status="SUCCESS",
+                task_id=tid,
+            ), ""
+
+        mock_agent.side_effect = _judge_reject_once
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-11",
+                issue_id="ISS-001-004",
+                description="Judge reject + train retry",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            Path("README.md").write_text("# test\n")
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: setup"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["run", "TSK-004-11"])
+
+            assert "JUDGE_REJECTED" in result.output, (
+                f"Expected JUDGE_REJECTED: {result.output}"
+            )
+            assert "TRAIN" in result.output, f"Expected TRAIN retry: {result.output}"
+            assert "GREEN already done" not in result.output, (
+                "GREEN must NOT be skipped during TRAIN retry after rejection:\n"
+                f"{result.output}"
+            )
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
             )
