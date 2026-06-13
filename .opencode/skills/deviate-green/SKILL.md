@@ -68,10 +68,8 @@ files:
     purpose: "Implement functional JWTService encoder routines matching technical specs"
   - path: "tests/auth/test_jwt.py"
     action: "unchanged"
-test:
-  command: "pytest tests/auth/test_jwt.py"
-  status: "PASS"
-  output: "tests/auth/test_jwt.py . [100%]\n1 passed in 0.02s"
+status: "PASS"
+verification_command: "pytest tests/auth/test_jwt.py"
 git_ledger:
   commit_sha: "b2c3d4e5"
   message: "feat(TASK-104): implement minimal logic to pass acceptance tests"
@@ -101,7 +99,8 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 1. Extract the target `{TASK_ID}` and test file path from the pre-script contract or RED handover manifest
 2. Read the target test file to isolate the exact assertion expectations
 3. Load system requirements inside `specs/constitution.md`, functional scopes inside `prd.md`, technical contracts inside `spec.md`, and type signatures inside `data-model.md`
-4. Parse test framework conventions from the test file
+4. Read the task description in `tasks.md` — this may contain updated context or **Judge Feedback** from a previous JUDGE/TRAIN rejection cycle
+5. Parse test framework conventions from the test file
 </step>
 
 <step id="implementation">
@@ -139,10 +138,8 @@ files:
     purpose: "{IMPLEMENTATION_PURPOSE}"
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
-test:
-  command: "{VERIFICATION_COMMAND}"
-  status: "PASS"
-  output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
+status: "PASS"
+verification_command: "{VERIFICATION_COMMAND}"
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
@@ -183,10 +180,8 @@ files:
     purpose: "{IMPLEMENTATION_PURPOSE}"
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
-test:
-  command: "{VERIFICATION_COMMAND}"
-  status: "PASS"
-  output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
+status: "PASS"
+verification_command: "{VERIFICATION_COMMAND}"
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
