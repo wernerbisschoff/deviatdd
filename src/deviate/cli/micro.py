@@ -114,6 +114,63 @@ def _build_agent_prompt(skill_content: str, phase: str, task: dict, root: Path) 
     return skill_content.replace("$ARGUMENTS", task_context)
 
 
+_TOOL_CALL_INDICATORS = frozenset(
+    {
+        '"tool_use"',
+        '"tool_calls"',
+        "tool_use",
+        "tool_calls",
+        '"function"',
+        "<function_calls>",
+        "<invoke ",
+    }
+)
+
+
+def _is_tool_call(line: str) -> bool:
+    lower = line.lower().strip()
+    return any(ind in lower for ind in _TOOL_CALL_INDICATORS)
+
+
+def _make_output_handler(c: Console) -> Callable[[str], None]:
+    in_thinking = False
+    thinking_buf: list[str] = []
+
+    def handler(line: str) -> None:
+        nonlocal in_thinking, thinking_buf
+
+        stripped = line.strip()
+        if not stripped:
+            return
+
+        if "<thinking" in stripped.lower():
+            in_thinking = True
+            thinking_buf = [stripped]
+            return
+
+        if in_thinking:
+            if "</thinking>" in stripped.lower():
+                thinking_buf.append(stripped)
+                content = " ".join(thinking_buf)
+                content = (
+                    content.replace("<thinking>", "")
+                    .replace("</thinking>", "")
+                    .replace("<Thinking>", "")
+                    .replace("</Thinking>", "")
+                )
+                c.print(f"[dim]{content[:600]}[/]")
+                in_thinking = False
+                thinking_buf = []
+                return
+            thinking_buf.append(stripped)
+            return
+
+        if _is_tool_call(stripped):
+            c.print("[dim].[/]", end="")
+
+    return handler
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -125,7 +182,8 @@ def _invoke_agent(
     _save_agent_log(phase, task_id, "prompt", prompt)
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
-        manifest = backend.invoke(prompt)
+        output_handler = _make_output_handler(c)
+        manifest = backend.invoke(prompt, output_callback=output_handler)
         _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
         return manifest
     except AgentBinaryNotFoundError:

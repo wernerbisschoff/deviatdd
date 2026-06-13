@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
 import time
+from collections.abc import Callable
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ValidationError
 
 from deviate.state.config import AgentConfig
+
+OutputCallback = Callable[[str], None]
 
 
 class HandoverManifest(BaseModel):
@@ -105,11 +109,105 @@ class AgentBackend:
                 f"Handover manifest failed schema validation: {e}"
             )
 
+    def _invoke_blocking(
+        self,
+        proc: subprocess.Popen[bytes],
+        cmd: list[str],
+        prompt: str,
+        timeout_secs: int,
+        backend_name: str,
+    ) -> tuple[str, str]:
+        try:
+            stdout_bytes, stderr_bytes = proc.communicate(
+                input=prompt.encode("utf-8"),
+                timeout=timeout_secs,
+            )
+        except subprocess.TimeoutExpired as e:
+            proc.kill()
+            proc.wait()
+            partial_out = e.output.decode("utf-8") if e.output else ""
+            partial_err = e.stderr.decode("utf-8") if e.stderr else ""
+            raise AgentTimeoutError(
+                f"Agent backend '{backend_name}' timed out "
+                f"after {timeout_secs}s"
+                f" (retried once with 30s backoff)",
+                partial_stdout=partial_out,
+                partial_stderr=partial_err,
+            )
+        stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
+        stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+        if proc.returncode != 0:
+            raise AgentSubprocessError(
+                message=stderr or f"Agent exited with code {proc.returncode}",
+                exit_code=proc.returncode,
+            )
+        return stdout, stderr
+
+    def _invoke_streaming(
+        self,
+        proc: subprocess.Popen[bytes],
+        cmd: list[str],
+        prompt: str,
+        timeout_secs: int,
+        backend_name: str,
+        output_callback: OutputCallback,
+    ) -> tuple[str, str]:
+        proc.stdin.write(prompt.encode("utf-8"))
+        proc.stdin.close()
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        stdout_done = False
+
+        def read_stdout() -> None:
+            nonlocal stdout_done
+            for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
+                stdout_lines.append(line)
+                output_callback(line)
+            stdout_done = True
+
+        def read_stderr() -> None:
+            for raw_line in proc.stderr:
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
+                stderr_lines.append(line)
+
+        threads = [
+            threading.Thread(target=read_stdout),
+            threading.Thread(target=read_stderr),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=timeout_secs)
+
+        if not stdout_done or any(t.is_alive() for t in threads):
+            proc.kill()
+            for t in threads:
+                t.join(timeout=5)
+            raise AgentTimeoutError(
+                f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
+                partial_stdout="\n".join(stdout_lines),
+                partial_stderr="\n".join(stderr_lines),
+            )
+
+        proc.wait()
+        stdout = "\n".join(stdout_lines)
+        stderr = "\n".join(stderr_lines)
+
+        if proc.returncode != 0:
+            raise AgentSubprocessError(
+                message=stderr or f"Agent exited with code {proc.returncode}",
+                exit_code=proc.returncode,
+            )
+        return stdout, stderr
+
     def invoke(
         self,
         prompt: str,
         backend: Literal["opencode", "claude", "droid"] | None = None,
         timeout: int | None = None,
+        output_callback: OutputCallback | None = None,
     ) -> HandoverManifest:
         backend_name: Literal["opencode", "claude", "droid"] = (
             backend or self.config.backend
@@ -120,29 +218,6 @@ class AgentBackend:
 
         cmd = backend_cmd.split()
         effective_timeout = timeout or self.config.timeout
-
-        def _try_communicate(
-            proc: subprocess.Popen[bytes],
-            timeout_secs: int,
-        ) -> tuple[bytes, bytes]:
-            try:
-                stdout_bytes, stderr_bytes = proc.communicate(
-                    input=prompt.encode("utf-8"),
-                    timeout=timeout_secs,
-                )
-                return stdout_bytes, stderr_bytes
-            except subprocess.TimeoutExpired as e:
-                proc.kill()
-                proc.wait()
-                partial_out = e.output.decode("utf-8") if e.output else ""
-                partial_err = e.stderr.decode("utf-8") if e.stderr else ""
-                raise AgentTimeoutError(
-                    f"Agent backend '{backend_name}' timed out "
-                    f"after {effective_timeout}s"
-                    f" (retried once with 30s backoff)",
-                    partial_stdout=partial_out,
-                    partial_stderr=partial_err,
-                )
 
         try:
             proc = subprocess.Popen(
@@ -157,27 +232,34 @@ class AgentBackend:
             )
 
         try:
-            stdout_bytes, stderr_bytes = _try_communicate(proc, effective_timeout)
+            if output_callback is not None:
+                stdout, stderr = self._invoke_streaming(
+                    proc, cmd, prompt, effective_timeout, backend_name, output_callback
+                )
+            else:
+                stdout, stderr = self._invoke_blocking(
+                    proc, cmd, prompt, effective_timeout, backend_name
+                )
         except AgentTimeoutError:
             time.sleep(30)
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                stdout_bytes, stderr_bytes = _try_communicate(proc, effective_timeout)
-            except AgentTimeoutError:
-                raise
-
-        stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
-        stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
-
-        if proc.returncode != 0:
-            raise AgentSubprocessError(
-                message=stderr or f"Agent exited with code {proc.returncode}",
-                exit_code=proc.returncode,
+            retry_proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            if output_callback is not None:
+                stdout, stderr = self._invoke_streaming(
+                    retry_proc,
+                    cmd,
+                    prompt,
+                    effective_timeout,
+                    backend_name,
+                    output_callback,
+                )
+            else:
+                stdout, stderr = self._invoke_blocking(
+                    retry_proc, cmd, prompt, effective_timeout, backend_name
+                )
 
         return self.parse_output(stdout, backend_name)
