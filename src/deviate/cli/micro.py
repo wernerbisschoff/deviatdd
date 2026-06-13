@@ -1064,15 +1064,18 @@ def _run_pytest(
     )
 
 
-def _commit_phase(message: str, root: Path) -> bool:
+def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
     staged = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=root, env=_git_env()
     )
     unstaged = subprocess.run(["git", "diff", "--quiet"], cwd=root, env=_git_env())
     if staged.returncode != 0 or unstaged.returncode != 0:
         subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
+        cmd = ["git", "commit", "-m", message]
+        if no_verify:
+            cmd.append("--no-verify")
         result = subprocess.run(
-            ["git", "commit", "-m", message],
+            cmd,
             cwd=root,
             env=_git_env(),
         )
@@ -1211,7 +1214,7 @@ def red_post() -> None:
     session.save(session_path)
 
     scope = _build_scope(issue_id, task_uuid)
-    _commit_phase(f"test({scope}): RED phase - failing test", root)
+    _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
 
     console.print("[green]RED_POST_OK[/]")
     raise typer.Exit(code=0)
