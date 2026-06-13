@@ -184,8 +184,16 @@ def _invoke_agent(
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
         output_handler = _make_output_handler(c)
-        manifest = backend.invoke(prompt, output_callback=output_handler)
+        raw_lines: list[str] = []
+
+        def collecting_handler(line: str) -> None:
+            raw_lines.append(line)
+            output_handler(line)
+
+        manifest = backend.invoke(prompt, output_callback=collecting_handler)
         _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
+        if raw_lines:
+            _save_agent_log(phase, task_id, "raw_output", "\n".join(raw_lines))
         return manifest, ""
     except AgentBinaryNotFoundError:
         c.print(
