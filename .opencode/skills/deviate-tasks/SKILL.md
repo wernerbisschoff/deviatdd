@@ -40,7 +40,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 3. **Prefix Invariance Placement Rule**: All systematic definitions, roles, execution sequences, and parsing schemas sit statically at the absolute head. Volatile parameters (target plan text, code repository file maps) occupy the trailing edge inside `<context>`.
 4. **Context-Instruction Isolation (The Markov Blanket)**: Never mix operational instructions or framework requirements inside data payload nodes.
 5. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
-6. **Transition Status Architecture**: Initialize tasks strictly with empty completion brackets `- [ ] `. You must NEVER emit `- [x]` (completed) or `- [/]` (in-progress) markers.
+6. **Task Status Boundary**: Task status lives exclusively in `tasks.jsonl` (the append-only ledger). `tasks.md` is a human-readable reference — it must NOT contain status markers.
 7. **Output Schema Constraint**: Write the task ledger content directly to `<tasks_target>` using the Standard Markdown format defined in `<output_format_schemas>`. The file content is exactly the ledger body — no preamble, no postamble, no XML wrapper tags. The post-script will read the file, validate, and commit.
 
 </system_instructions>
@@ -91,7 +91,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    ```
    deviate tasks post
    ```
-   The post-script reads the file, validates required sections, task ID format (`T{NNN}`), and locked checkboxes (`- [ ] `, never `- [x]`), then commits and advances the session to IDLE. Unchecked tasks generate a warning but are NOT rejected (tasks are pending by design on initial creation). If validation fails, it prints a diagnostic. Fix the file and re-run. Use `--force` only with documented justification.
+   The post-script validates required sections and task ID format (`T{NNN}`), then commits and advances the session to IDLE. If validation fails, it prints a diagnostic. Fix the file and re-run. Use `--force` only with documented justification.
 
 **TERMINATE HERE. Do NOT proceed to implementation. Hand off to the TDD phase.**
 </execution_sequence>
@@ -159,7 +159,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 
 ### Tasks
 
-- [ ] T001: <Description of Vertical Slice>
+- T001: <Description of Vertical Slice>
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
@@ -176,7 +176,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
     - **Edge Cases**: Handle <error scenario> by <action>
     - **Acceptance**: <concrete done criteria>
 
-- [ ] T002: <Description>
+- T002: <Description>
   - **Type**: Feature_Batch
   - **Mode**: IMMEDIATE
   - **Verification**: `npm run lint`
@@ -255,7 +255,7 @@ def find_repo_root() -> Path:  # BAD — untestable
 <action>Detect and reject; require human to resolve dependency graph before task generation.</action>
 </case>
 <case condition="Post-script rejects output">
-<action>Halt, fix the violations, and re-run the post-script. Task check-boxes are programmatically locked; never emit `- [x]`.</action>
+<action>Halt, fix the violations, and re-run the post-script.</action>
 </case>
 </edge_case_handling>
 

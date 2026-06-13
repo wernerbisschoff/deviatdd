@@ -29,7 +29,7 @@ CRITICAL CONTEXT INFERENCE & PHYSICS INVARIANTS:
 
 This is the **RED** (test-writing) phase of the DeviaTDD micro-cycle. Use it when:
 - An active TDD task exists in `tasks.md`
-- The task is in `[ ]` (pending) or `[/]` (in-progress) state
+- The task has a PENDING status in the `tasks.jsonl` ledger (or no ledger entry yet)
 - Tests need to be written before implementation code
 
 After completion, the `deviate-green` skill should be invoked for the implementation phase.
@@ -60,11 +60,10 @@ Target_Artifact: `tests/auth/test_jwt.py`
 phase: RED
 task_id: "TASK-104"
 feature_slug: "auth-jwt"
-test_suite:
-  file_path: "tests/auth/test_jwt.py"
-  verification_command: "pytest tests/auth/test_jwt.py"
-  status: "FAIL"
-  expected_failure_node: "NameError: name 'JWTService' is not defined"
+status: "FAIL"
+test_file: "tests/auth/test_jwt.py"
+verification_command: "pytest tests/auth/test_jwt.py"
+expected_failure_node: "NameError: name 'JWTService' is not defined"
 traceability_anchors:
   requirement_id: "FR-A1"
   acceptance_criteria: "AC-03"
@@ -134,11 +133,11 @@ Target_Artifact: `path/to/test_file.ext`
 phase: RED
 task_id: "{TASK_ID}"
 feature_slug: "{FEATURE_SLUG}"
-test_suite:
-  file_path: "path/to/test_file.ext"
-  verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
-  status: "FAIL"
-  expected_failure_node: "{EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}"
+status: "FAIL"
+test_file: "path/to/test_file.ext"
+verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
+expected_failure_node: |
+  {EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}
 traceability_anchors:
   requirement_id: "FR-{ID}"
   acceptance_criteria: "AC-{ID}"
@@ -178,11 +177,11 @@ Target_Artifact: `path/to/test_file.ext`
 phase: RED
 task_id: "{TASK_ID}"
 feature_slug: "{FEATURE_SLUG}"
-test_suite:
-  file_path: "path/to/test_file.ext"
-  verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
-  status: "FAIL"
-  expected_failure_node: "{EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}"
+status: "FAIL"
+test_file: "path/to/test_file.ext"
+verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
+expected_failure_node: |
+  {EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}
 traceability_anchors:
   requirement_id: "FR-{ID}"
   acceptance_criteria: "AC-{ID}"
