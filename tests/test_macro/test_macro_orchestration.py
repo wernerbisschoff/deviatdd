@@ -5,6 +5,7 @@ from contextlib import chdir
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import typer
 import pytest
 
 from tests.conftest import _git_env
@@ -183,9 +184,9 @@ class TestMacroOrchestration:
         _setup_macro_workspace(tmp_git_repo, target_slug="001-test-feature")
 
         with chdir(tmp_git_repo):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(typer.Exit) as exc_info:
                 _macro_run(target="001-test-feature", from_phase="invalid_phase")
-            assert exc_info.value.code != 0
+            assert exc_info.value.exit_code != 0
 
     def test_macro_bucket_not_found(
         self,
@@ -204,9 +205,9 @@ class TestMacroOrchestration:
         )
 
         with chdir(tmp_git_repo):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(typer.Exit) as exc_info:
                 _macro_run(target="nonexistent-slug")
-            assert exc_info.value.code != 0
+            assert exc_info.value.exit_code != 0
 
     def test_macro_dry_run_no_artifacts(
         self,
@@ -265,9 +266,9 @@ class TestMacroOrchestration:
             )
 
             with chdir(tmp_git_repo):
-                with pytest.raises(SystemExit) as exc_info:
+                with pytest.raises(typer.Exit) as exc_info:
                     _macro_run(target="001-test-feature")
-                assert exc_info.value.code != 0
+                assert exc_info.value.exit_code != 0
 
         mock_explore_pre.assert_called_once()
         mock_invoke.assert_called_once()

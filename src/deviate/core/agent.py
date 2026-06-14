@@ -27,6 +27,9 @@ class HandoverManifest(BaseModel):
     test_changes: dict[str, Any] | None = None
     rationale: str | None = None
     next_phase: str | None = None
+    files_touched: list[str] | None = None
+    verification_result: str | None = None
+    error_details: str | None = None
 
     model_config = {"extra": "allow"}
 
@@ -70,6 +73,7 @@ BACKEND_COMMANDS: dict[str, str] = {
     "opencode": "opencode run",
     "claude": "claude -p",
     "droid": "droid exec",
+    "aider": "aider",
 }
 
 
@@ -240,11 +244,11 @@ class AgentBackend:
     def invoke(
         self,
         prompt: str,
-        backend: Literal["opencode", "claude", "droid"] | None = None,
+        backend: Literal["opencode", "claude", "droid", "aider"] | None = None,
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
     ) -> HandoverManifest:
-        backend_name: Literal["opencode", "claude", "droid"] = (
+        backend_name: Literal["opencode", "claude", "droid", "aider"] = (
             backend or self.config.backend
         )
         backend_cmd = BACKEND_COMMANDS.get(backend_name)
@@ -290,9 +294,9 @@ class AgentBackend:
         return self.parse_output(stdout, backend_name)
 
 
-class AiderBackend:
+class AiderBackend(AgentBackend):
     def __init__(self, config: AgentConfig | None = None) -> None:
-        self.config = config or AgentConfig()
+        super().__init__(config)
 
     def _build_aider_command(
         self, prompt: str, aider_cfg: Any, repo_root: Path
@@ -403,17 +407,32 @@ class AiderBackend:
                 ["mise", "run", "test"], capture_output=True, text=True
             )
         except FileNotFoundError:
+            manifest.status = "FAIL"
+            manifest.verification_result = "FAIL"
+            manifest.error_details = "mise binary not found — post-guard cannot verify"
             return manifest
 
         if guard_result.returncode != 0:
             manifest.status = "FAIL"
+            manifest.verification_result = "FAIL"
+            manifest.error_details = (
+                f"POST_GUARD_FAILED: mise run test exited with code {guard_result.returncode}\n"
+                f"{guard_result.stdout}\n{guard_result.stderr}"
+            ).strip()
 
         return manifest
 
-    def invoke(self, prompt: str) -> HandoverManifest:
+    def invoke(
+        self,
+        prompt: str,
+        backend: str | None = None,
+        timeout: int | None = None,
+        output_callback: OutputCallback | None = None,
+        repo_path: Path | None = None,
+    ) -> HandoverManifest:
         aider_cfg = self.config.aider
-        repo_root = Path.cwd()
-        effective_timeout = self.config.timeout
+        repo_root = repo_path or Path.cwd()
+        effective_timeout = timeout or self.config.timeout
 
         cmd = self._build_aider_command(prompt, aider_cfg, repo_root)
         result = self._run_with_retry(cmd, effective_timeout)
