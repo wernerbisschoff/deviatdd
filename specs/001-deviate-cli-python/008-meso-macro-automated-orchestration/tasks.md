@@ -79,6 +79,35 @@
 ### Tasks
 
 - TSK-008-03: Implement `deviate meso` automated pipeline command
+  - **Judge Feedback**: The _meso_run() function must call the existing pre/post functions
+    - **Judge Feedback**: in the correct order:
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 1. Call _specify_pre(issue_id=..., force=force, dry_run=dry_run)
+    - **Judge Feedback**:    before the SPECIFY agent invocation to set up worktree and session.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 2. After SPECIFY agent invocation with manifest.status == "PASS",
+    - **Judge Feedback**:    call _specify_post(force=force) to validate spec.md Gherkin syntax,
+    - **Judge Feedback**:    commit the artifact, and advance session to TASKS.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 3. Call _tasks_pre(force=force, dry_run=dry_run) before the TASKS
+    - **Judge Feedback**:    agent invocation (already done).
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 4. After TASKS agent invocation with manifest.status == "PASS",
+    - **Judge Feedback**:    call _tasks_post(force=force, issue_id=issue_id) to validate tasks.md
+    - **Judge Feedback**:    content, commit the artifact, and advance session to IDLE.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 5. Add blocking-dependency validation for explicit --issue targets
+    - **Judge Feedback**:    (currently only auto-discovery filters blocked issues).
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 6. Update tests to assert the call sequence — mock/patch _specify_pre,
+    - **Judge Feedback**:    _specify_post, _tasks_post and verify they are called with correct
+    - **Judge Feedback**:    arguments. Each test must assert the full pre→agent→post sequence,
+    - **Judge Feedback**:    not just final session state.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 7. Add tests for:
+    - **Judge Feedback**:    - Blocking dependency rejection with --issue
+    - **Judge Feedback**:    - NO_UNBLOCKED_ISSUES error (auto-discovery path)
+    - **Judge Feedback**:    - --force guard bypass in meso pipeline context
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
