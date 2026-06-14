@@ -5,6 +5,10 @@ from enum import Enum
 from typing import Any
 
 
+def _resolve_task_id(data: dict[str, Any]) -> str:
+    return data.get("id", data.get("task_id", ""))
+
+
 class MarkdownStatus(str, Enum):
     PENDING = "[ ]"
     IN_PROGRESS = "[/]"
@@ -64,10 +68,6 @@ class OrchestrationMonitor:
         if event_type not in VALID_EVENT_TYPES:
             raise ValueError(f"Unknown event type: {event_type}")
 
-    @staticmethod
-    def _resolve_task_id(data: dict[str, Any]) -> str:
-        return data.get("id", data.get("task_id", ""))
-
     def push_event(self, event_type: str, **data: Any) -> None:
         self._validate_event(event_type)
         handler = self._dispatch.get(event_type)
@@ -79,7 +79,7 @@ class OrchestrationMonitor:
             emit_jsonl(event_type, **data)
 
     def _on_task_started(self, data: dict[str, Any]) -> None:
-        task_id = self._resolve_task_id(data)
+        task_id = _resolve_task_id(data)
         if (
             task_id in self._tasks
             and self._tasks[task_id].marker is not MarkdownStatus.PENDING
@@ -93,7 +93,7 @@ class OrchestrationMonitor:
         )
 
     def _on_phase_change(self, data: dict[str, Any]) -> None:
-        task_id = self._resolve_task_id(data)
+        task_id = _resolve_task_id(data)
         if task_id not in self._tasks:
             self._tasks[task_id] = TaskStatus(
                 id=task_id,
@@ -107,7 +107,7 @@ class OrchestrationMonitor:
             self._tasks[task_id].marker = MarkdownStatus.IN_PROGRESS
 
     def _on_task_completed(self, data: dict[str, Any]) -> None:
-        task_id = self._resolve_task_id(data)
+        task_id = _resolve_task_id(data)
         if task_id not in self._tasks:
             self._tasks[task_id] = TaskStatus(
                 id=task_id,
@@ -120,7 +120,7 @@ class OrchestrationMonitor:
         self._tasks[task_id].phase = data.get("phase", self._tasks[task_id].phase)
 
     def _on_task_failed(self, data: dict[str, Any]) -> None:
-        task_id = self._resolve_task_id(data)
+        task_id = _resolve_task_id(data)
         if task_id not in self._tasks:
             self._tasks[task_id] = TaskStatus(
                 id=task_id,

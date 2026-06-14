@@ -135,6 +135,29 @@ def _is_tool_call(line: str) -> bool:
     return any(ind in lower for ind in _TOOL_CALL_INDICATORS)
 
 
+def _make_agent_output_callback(
+    monitor: OrchestrationMonitor | None,
+    task_id: str,
+    phase: str,
+) -> Callable[[str], None] | None:
+    if monitor is None:
+        return None
+
+    def _callback(line: str) -> None:
+        monitor.push_event("agent_output", task_id=task_id, phase=phase, line=line)
+
+    return _callback
+
+
+def _maybe_push_event(
+    monitor: OrchestrationMonitor | None,
+    event_type: str,
+    **data: str | None,
+) -> None:
+    if monitor:
+        monitor.push_event(event_type, **data)
+
+
 def _make_output_handler(c: Console) -> Callable[[str], None]:
     in_thinking = False
     thinking_buf: list[str] = []
@@ -552,13 +575,7 @@ def _run_red_phase(
     skill = _load_skill_content("RED")
     if skill:
         prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
-        agent_output_callback: Callable[[str], None] | None = None
-        if monitor:
-
-            def _red_output(line: str) -> None:
-                monitor.push_event("agent_output", task_id=tid, phase="RED", line=line)
-
-            agent_output_callback = _red_output
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
         manifest, _ = _invoke_agent(
             prompt,
             c,
@@ -614,15 +631,7 @@ def _run_green_phase(
             prompt += (
                 f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
             )
-        agent_output_callback: Callable[[str], None] | None = None
-        if monitor:
-
-            def _green_output(line: str) -> None:
-                monitor.push_event(
-                    "agent_output", task_id=tid, phase="GREEN", line=line
-                )
-
-            agent_output_callback = _green_output
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
         manifest, timeout_ctx = _invoke_agent(
             prompt,
             c,
@@ -734,15 +743,7 @@ def _run_judge_phase(
         if spec_content:
             prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
 
-        agent_output_callback: Callable[[str], None] | None = None
-        if monitor:
-
-            def _judge_output(line: str) -> None:
-                monitor.push_event(
-                    "agent_output", task_id=tid, phase="JUDGE", line=line
-                )
-
-            agent_output_callback = _judge_output
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
         manifest, _ = _invoke_agent(
             prompt,
             c,
@@ -822,15 +823,7 @@ def _run_refactor_phase(
     skill = _load_skill_content("REFACTOR")
     if skill:
         prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
-        agent_output_callback: Callable[[str], None] | None = None
-        if monitor:
-
-            def _refactor_output(line: str) -> None:
-                monitor.push_event(
-                    "agent_output", task_id=tid, phase="REFACTOR", line=line
-                )
-
-            agent_output_callback = _refactor_output
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
         manifest, _ = _invoke_agent(
             prompt,
             c,
@@ -874,15 +867,7 @@ def _run_yellow_phase(
     skill = _load_skill_content("YELLOW")
     if skill:
         prompt = _build_agent_prompt(skill, "YELLOW", task, Path.cwd())
-        agent_output_callback: Callable[[str], None] | None = None
-        if monitor:
-
-            def _yellow_output(line: str) -> None:
-                monitor.push_event(
-                    "agent_output", task_id=tid, phase="YELLOW", line=line
-                )
-
-            agent_output_callback = _yellow_output
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "YELLOW")
         manifest, _ = _invoke_agent(
             prompt,
             c,
@@ -938,8 +923,9 @@ def _run_tdd_cycle(
     tid = task.get("id", "?")
     task_desc = task.get("description", "")
 
-    if monitor:
-        monitor.push_event("phase_change", id=tid, phase="RED", description=task_desc)
+    _maybe_push_event(
+        monitor, "phase_change", id=tid, phase="RED", description=task_desc
+    )
     session = _run_red_phase(
         task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
     )
@@ -949,20 +935,18 @@ def _run_tdd_cycle(
     judge_passed = no_judge
 
     while not judge_passed:
-        if monitor:
-            monitor.push_event(
-                "phase_change", id=tid, phase="GREEN", description=task_desc
-            )
+        _maybe_push_event(
+            monitor, "phase_change", id=tid, phase="GREEN", description=task_desc
+        )
         session = _run_green_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
 
         if session.yellow_triggered:
             c.print("  [yellow]YELLOW requested by GREEN — running YELLOW phase[/]")
-            if monitor:
-                monitor.push_event(
-                    "phase_change", id=tid, phase="YELLOW", description=task_desc
-                )
+            _maybe_push_event(
+                monitor, "phase_change", id=tid, phase="YELLOW", description=task_desc
+            )
             session = _run_yellow_phase(
                 task,
                 ledger_path,
@@ -975,10 +959,9 @@ def _run_tdd_cycle(
             session.yellow_triggered = False
             session.save(session_path)
             c.print("  [yellow]Re-running GREEN after YELLOW[/]")
-            if monitor:
-                monitor.push_event(
-                    "phase_change", id=tid, phase="GREEN", description=task_desc
-                )
+            _maybe_push_event(
+                monitor, "phase_change", id=tid, phase="GREEN", description=task_desc
+            )
             session = _run_green_phase(
                 task,
                 ledger_path,
@@ -993,10 +976,9 @@ def _run_tdd_cycle(
             judge_passed = True
             break
 
-        if monitor:
-            monitor.push_event(
-                "phase_change", id=tid, phase="JUDGE", description=task_desc
-            )
+        _maybe_push_event(
+            monitor, "phase_change", id=tid, phase="JUDGE", description=task_desc
+        )
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
@@ -1020,10 +1002,9 @@ def _run_tdd_cycle(
             judge_passed = True
 
     if not no_refactor:
-        if monitor:
-            monitor.push_event(
-                "phase_change", id=tid, phase="REFACTOR", description=task_desc
-            )
+        _maybe_push_event(
+            monitor, "phase_change", id=tid, phase="REFACTOR", description=task_desc
+        )
         session = _run_refactor_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
