@@ -1152,6 +1152,16 @@ def _meso_run(
     if skip_specify:
         console.print("[yellow]RECOVERY[/] spec.md exists — skipping SPECIFY phase")
 
+    # ── Determine worktree path early for recovery guard ──────────────
+    worktree_path = Path.cwd() / ".worktrees" / f"feat/{epic_slug}/{issue_slug}"
+
+    if skip_specify and not worktree_path.exists():
+        console.print(
+            f"[red]RECOVERY_FAILED[/] skip_specify is True but worktree "
+            f"does not exist at {worktree_path}"
+        )
+        raise typer.Exit(code=1)
+
     # ── Dry-run mode ─────────────────────────────────────────────────
     if dry_run:
         console.print("[bold][yellow]DRY_RUN[/] — no state will be mutated[/]")
@@ -1166,7 +1176,6 @@ def _meso_run(
     if not skip_specify:
         _specify_pre(issue_id=issue_id, force=force, dry_run=False)
 
-    worktree_path = Path.cwd() / ".worktrees" / f"feat/{epic_slug}/{issue_slug}"
     ctx = chdir(worktree_path) if worktree_path.exists() else nullcontext()
     with ctx:
         if not skip_specify:

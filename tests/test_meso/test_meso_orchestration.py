@@ -297,17 +297,43 @@ class TestMesoOrchestration:
             tmp_git_repo, issue_id="ISS-001-001", create_spec_md=True
         )
 
-        with chdir(tmp_git_repo):
-            dot_dir = tmp_git_repo / ".deviate"
-            session = SessionState(
-                current_phase="SPECIFY", active_issue_id="ISS-001-001"
-            )
-            session.save(dot_dir / "session.json")
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        worktree_path.mkdir(parents=True)
+        wt_dot_dir = worktree_path / ".deviate"
+        wt_dot_dir.mkdir(parents=True)
+        session = SessionState(current_phase="SPECIFY", active_issue_id="ISS-001-001")
+        session.save(wt_dot_dir / "session.json")
+        wt_specs = worktree_path / "specs"
+        wt_specs.mkdir(parents=True)
+        (wt_specs / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\nlint_command = ruff\n"
+        )
+        import json
 
+        (wt_specs / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-001-001",
+                    "type": "feature",
+                    "title": "Test Meso Issue",
+                    "status": "BACKLOG",
+                    "source_file": "specs/test-epic/issues/iss-001.md",
+                }
+            )
+            + "\n"
+        )
+        spec_dir = wt_specs / "test-epic" / "iss-001"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "spec.md").write_text(
+            "# Spec\n\n**Scenario 1:**\n- **Given** precondition\n"
+            "- **When** action\n- **Then** result\n"
+        )
+
+        with chdir(tmp_git_repo):
             with patch("subprocess.run", _make_mock_subprocess()):
                 _meso_run(issue_id="ISS-001-001")
 
-            loaded = SessionState.load(dot_dir / "session.json")
+            loaded = SessionState.load(wt_dot_dir / "session.json")
             assert loaded.current_phase == "IDLE"
 
         assert mock_invoke.call_count == 1

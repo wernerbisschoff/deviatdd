@@ -369,6 +369,15 @@ class AiderBackend(AgentBackend):
                 files_touched=files_touched,
             )
 
+        if error_lines:
+            return HandoverManifest(
+                phase="aider",
+                status="FAIL",
+                verification_result="FAIL",
+                error_details="\n".join(error_lines),
+                files_touched=files_touched,
+            )
+
         return HandoverManifest(
             phase="aider",
             status="PASS",

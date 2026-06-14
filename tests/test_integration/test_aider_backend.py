@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import os
 import subprocess
-from contextlib import contextmanager
+from contextlib import chdir
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,16 +14,6 @@ from deviate.core.agent import (
     HandoverManifest,
 )
 from deviate.state.config import AgentConfig, DeviateConfig
-
-
-@contextmanager
-def chdir(path: Path) -> Path:
-    cwd = Path.cwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(cwd)
 
 
 SAMPLE_SUCCESS = """\

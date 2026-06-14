@@ -127,12 +127,12 @@ class OrchestrationMonitor:
 
     def _on_task_started(self, data: dict[str, Any]) -> None:
         task_id = _resolve_task_id(data)
-        self._agent_output_buffer.clear()
         if (
             task_id in self._tasks
             and self._tasks[task_id].marker is not MarkdownStatus.PENDING
         ):
             return
+        self._agent_output_buffer.clear()
         self._tasks[task_id] = TaskStatus(
             id=task_id,
             description=data.get("description", ""),
