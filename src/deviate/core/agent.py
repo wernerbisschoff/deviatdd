@@ -327,6 +327,7 @@ class AiderBackend:
             raise AiderParseError("Aider returned empty output")
 
         files_touched: list[str] = []
+        error_lines: list[str] = []
         for line in stdout.splitlines():
             m = re.match(r"^Applied edit to (.+)\.$", line)
             if m:
@@ -335,12 +336,11 @@ class AiderBackend:
             m = re.match(r"^Added (.+) to the chat\.$", line)
             if m:
                 files_touched.append(m.group(1).strip())
+                continue
+            if "FAILED" in line or "Error" in line or "Traceback" in line:
+                error_lines.append(line)
 
         if "Tests:" in stdout and "failed" in stdout:
-            error_lines: list[str] = []
-            for line in stdout.splitlines():
-                if "FAILED" in line or "Error" in line or "Traceback" in line:
-                    error_lines.append(line)
             return HandoverManifest(
                 phase="aider",
                 status="FAIL",
@@ -372,17 +372,11 @@ class AiderBackend:
             files_touched=files_touched,
         )
 
-    def invoke(self, prompt: str) -> HandoverManifest:
-        aider_cfg = self.config.aider
-        repo_root = Path.cwd()
-        effective_timeout = self.config.timeout
-
-        cmd = self._build_aider_command(prompt, aider_cfg, repo_root)
-
+    def _run_with_retry(
+        self, cmd: list[str], timeout: int
+    ) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=effective_timeout
-            )
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError:
             raise AgentBinaryNotFoundError(
                 "Agent binary not found on PATH for backend: aider"
@@ -390,8 +384,8 @@ class AiderBackend:
         except subprocess.TimeoutExpired:
             time.sleep(30)
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=effective_timeout
+                return subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=timeout
                 )
             except FileNotFoundError:
                 raise AgentBinaryNotFoundError(
@@ -399,9 +393,30 @@ class AiderBackend:
                 )
             except subprocess.TimeoutExpired:
                 raise AgentTimeoutError(
-                    f"Aider backend timed out after {effective_timeout}s "
+                    f"Aider backend timed out after {timeout}s "
                     f"(retried once with 30s backoff)"
                 )
+
+    def _run_post_guard(self, manifest: HandoverManifest) -> HandoverManifest:
+        try:
+            guard_result = subprocess.run(
+                ["mise", "run", "test"], capture_output=True, text=True
+            )
+        except FileNotFoundError:
+            return manifest
+
+        if guard_result.returncode != 0:
+            manifest.status = "FAIL"
+
+        return manifest
+
+    def invoke(self, prompt: str) -> HandoverManifest:
+        aider_cfg = self.config.aider
+        repo_root = Path.cwd()
+        effective_timeout = self.config.timeout
+
+        cmd = self._build_aider_command(prompt, aider_cfg, repo_root)
+        result = self._run_with_retry(cmd, effective_timeout)
 
         if result.returncode != 0:
             raise AgentSubprocessError(
@@ -416,14 +431,4 @@ class AiderBackend:
                 phase="aider", status="PASS", verification_result="UNKNOWN"
             )
 
-        try:
-            guard_result = subprocess.run(
-                ["mise", "run", "test"], capture_output=True, text=True
-            )
-        except FileNotFoundError:
-            return manifest
-
-        if guard_result.returncode != 0:
-            manifest.status = "FAIL"
-
-        return manifest
+        return self._run_post_guard(manifest)
