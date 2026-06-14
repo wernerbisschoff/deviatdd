@@ -134,6 +134,12 @@
     - **Acceptance**: Full meso pipeline executes end-to-end with mocked agent. Dry-run produces zero side effects. Interrupted runs resume correctly. All error paths exit with specific error codes.
 
 - TSK-008-04: Implement `deviate macro` automated pipeline command
+  - **Judge Feedback**: Two spec violations to fix:
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 1. **DRY_RUN emission (US-006 AC-1, AC-3)**:
+    - **Judge Feedback**:    Current `_macro_run()` dry-run branch only prints a phase label and continues.
+    - **Judge Feedback**:    Must assemble and emit the phase contract and slim prompt to stdout for each phase,
+    - **Judge Feedback**:    exactly as `_meso_run()` does for meso. Example pattern from meso:
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration

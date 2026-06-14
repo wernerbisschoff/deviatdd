@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 
 from deviate.state.config import DeviateConfig, SessionState
-from deviate.cli.macro import explore_app, research_app, prd_app, shard_app
+from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app
 from deviate.cli.meso import meso_app, pr, specify, tasks
 from deviate.cli.micro import (
     e2e_app,
@@ -349,6 +349,7 @@ cli.command(name="specify")(specify)
 cli.command(name="tasks")(tasks)
 cli.command(name="pr")(pr)
 cli.add_typer(meso_app, name="meso")
+cli.add_typer(macro_app, name="macro")
 cli.add_typer(red_app, name="red")
 cli.add_typer(green_app, name="green")
 cli.add_typer(yellow_app, name="yellow")

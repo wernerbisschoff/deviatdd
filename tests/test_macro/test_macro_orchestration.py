@@ -92,31 +92,17 @@ class TestMacroOrchestration:
         _setup_macro_workspace(tmp_git_repo, target_slug="001-test-feature")
 
         with (
-            patch(
-                "deviate.cli.macro._explore_pre", create=True
-            ) as mock_explore_pre,
-            patch(
-                "deviate.cli.macro._explore_post", create=True
-            ) as mock_explore_post,
-            patch(
-                "deviate.cli.macro._research_pre", create=True
-            ) as mock_research_pre,
+            patch("deviate.cli.macro._explore_pre", create=True) as mock_explore_pre,
+            patch("deviate.cli.macro._explore_post", create=True) as mock_explore_post,
+            patch("deviate.cli.macro._research_pre", create=True) as mock_research_pre,
             patch(
                 "deviate.cli.macro._research_post", create=True
             ) as mock_research_post,
             patch("deviate.cli.macro._prd_pre", create=True) as mock_prd_pre,
-            patch(
-                "deviate.cli.macro._prd_post", create=True
-            ) as mock_prd_post,
-            patch(
-                "deviate.cli.macro._shard_pre", create=True
-            ) as mock_shard_pre,
-            patch(
-                "deviate.cli.macro._shard_post", create=True
-            ) as mock_shard_post,
-            patch(
-                "deviate.core.agent.AgentBackend.invoke"
-            ) as mock_invoke,
+            patch("deviate.cli.macro._prd_post", create=True) as mock_prd_post,
+            patch("deviate.cli.macro._shard_pre", create=True) as mock_shard_pre,
+            patch("deviate.cli.macro._shard_post", create=True) as mock_shard_post,
+            patch("deviate.core.agent.AgentBackend.invoke") as mock_invoke,
         ):
             mock_invoke.return_value = MagicMock(
                 status="PASS",
@@ -127,9 +113,7 @@ class TestMacroOrchestration:
             with chdir(tmp_git_repo):
                 _macro_run(target="001-test-feature")
 
-                loaded = SessionState.load(
-                    tmp_git_repo / ".deviate" / "session.json"
-                )
+                loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
                 assert loaded.current_phase == "IDLE", (
                     f"Expected IDLE, got {loaded.current_phase}"
                 )
@@ -166,15 +150,9 @@ class TestMacroOrchestration:
         with (
             patch("deviate.cli.macro._prd_pre", create=True) as mock_prd_pre,
             patch("deviate.cli.macro._prd_post", create=True) as mock_prd_post,
-            patch(
-                "deviate.cli.macro._shard_pre", create=True
-            ) as mock_shard_pre,
-            patch(
-                "deviate.cli.macro._shard_post", create=True
-            ) as mock_shard_post,
-            patch(
-                "deviate.core.agent.AgentBackend.invoke"
-            ) as mock_invoke,
+            patch("deviate.cli.macro._shard_pre", create=True) as mock_shard_pre,
+            patch("deviate.cli.macro._shard_post", create=True) as mock_shard_post,
+            patch("deviate.core.agent.AgentBackend.invoke") as mock_invoke,
         ):
             mock_invoke.return_value = MagicMock(
                 status="PASS",
@@ -185,9 +163,7 @@ class TestMacroOrchestration:
             with chdir(tmp_git_repo):
                 _macro_run(target="001-test-feature", from_phase="prd")
 
-                loaded = SessionState.load(
-                    tmp_git_repo / ".deviate" / "session.json"
-                )
+                loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
                 assert loaded.current_phase == "IDLE", (
                     f"Expected IDLE, got {loaded.current_phase}"
                 )
@@ -248,9 +224,7 @@ class TestMacroOrchestration:
 
         _setup_macro_workspace(tmp_git_repo, target_slug="001-test-feature")
 
-        with patch(
-            "deviate.core.agent.AgentBackend.invoke"
-        ) as mock_invoke:
+        with patch("deviate.core.agent.AgentBackend.invoke") as mock_invoke:
             mock_invoke.return_value = MagicMock(
                 status="PASS",
                 phase="explore",
@@ -260,9 +234,7 @@ class TestMacroOrchestration:
             with chdir(tmp_git_repo):
                 _macro_run(target="001-test-feature", dry_run=True)
 
-                loaded = SessionState.load(
-                    tmp_git_repo / ".deviate" / "session.json"
-                )
+                loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
                 assert loaded.current_phase == "IDLE", (
                     "Dry run should not advance session"
                 )
@@ -286,15 +258,9 @@ class TestMacroOrchestration:
         )
 
         with (
-            patch(
-                "deviate.cli.macro._explore_pre", create=True
-            ) as mock_explore_pre,
-            patch(
-                "deviate.cli.macro._explore_post", create=True
-            ) as mock_explore_post,
-            patch(
-                "deviate.core.agent.AgentBackend.invoke"
-            ) as mock_invoke,
+            patch("deviate.cli.macro._explore_pre", create=True) as mock_explore_pre,
+            patch("deviate.cli.macro._explore_post", create=True) as mock_explore_post,
+            patch("deviate.core.agent.AgentBackend.invoke") as mock_invoke,
         ):
             mock_invoke.return_value = MagicMock(
                 status="PASS",
