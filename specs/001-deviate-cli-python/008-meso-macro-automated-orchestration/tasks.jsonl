@@ -14,3 +14,4 @@
 {"id":"TSK-008-04","issue_id":"ISS-001-008","description":"Implement `deviate macro` automated pipeline command","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-14T13:21:21.625935Z"}
 {"id":"TSK-008-04","issue_id":"ISS-001-008","description":"Implement `deviate macro` automated pipeline command","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-14T13:51:14.663509Z"}
 {"id":"TSK-008-04","issue_id":"ISS-001-008","description":"Implement `deviate macro` automated pipeline command","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-14T13:21:21.625935Z"}
+{"id":"TSK-008-05","issue_id":"ISS-001-008","description":"Register `meso` and `macro` commands in CLI tree and run integration verification","status":"RED","execution_mode":"TDD","created_at":"2026-06-14T13:58:45.873844Z"}
