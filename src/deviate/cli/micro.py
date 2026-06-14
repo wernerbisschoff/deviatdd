@@ -29,6 +29,8 @@ from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.state.config import AgentConfig, PytestReportConfig, SessionState
+from deviate.ui.monitor import OrchestrationMonitor
+from deviate.ui.render import is_interactive
 from deviate.state.ledger import (
     TaskRecord,
     append_task_transition,
@@ -178,6 +180,7 @@ def _invoke_agent(
     backend_name: str = "opencode",
     task_id: str = "",
     phase: str = "",
+    output_callback: Callable[[str], None] | None = None,
 ) -> tuple[HandoverManifest | None, str]:
     c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
     _save_agent_log(phase, task_id, "prompt", prompt)
@@ -189,6 +192,8 @@ def _invoke_agent(
         def collecting_handler(line: str) -> None:
             raw_lines.append(line)
             output_handler(line)
+            if output_callback:
+                output_callback(line)
 
         manifest = backend.invoke(prompt, output_callback=collecting_handler)
         _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
@@ -535,6 +540,7 @@ def _run_red_phase(
     session_path: Path,
     c: Console,
     agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "RED"):
@@ -546,8 +552,20 @@ def _run_red_phase(
     skill = _load_skill_content("RED")
     if skill:
         prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
+        agent_output_callback: Callable[[str], None] | None = None
+        if monitor:
+
+            def _red_output(line: str) -> None:
+                monitor.push_event("agent_output", task_id=tid, phase="RED", line=line)
+
+            agent_output_callback = _red_output
         manifest, _ = _invoke_agent(
-            prompt, c, backend_name=backend, task_id=tid, phase="RED"
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="RED",
+            output_callback=agent_output_callback,
         )
         if manifest is None:
             raise PhaseFailedError(
@@ -575,6 +593,7 @@ def _run_green_phase(
     session_path: Path,
     c: Console,
     agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "GREEN"):
@@ -595,8 +614,22 @@ def _run_green_phase(
             prompt += (
                 f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
             )
+        agent_output_callback: Callable[[str], None] | None = None
+        if monitor:
+
+            def _green_output(line: str) -> None:
+                monitor.push_event(
+                    "agent_output", task_id=tid, phase="GREEN", line=line
+                )
+
+            agent_output_callback = _green_output
         manifest, timeout_ctx = _invoke_agent(
-            prompt, c, backend_name=backend, task_id=tid, phase="GREEN"
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="GREEN",
+            output_callback=agent_output_callback,
         )
         if manifest is None and timeout_ctx:
             c.print(
@@ -676,6 +709,7 @@ def _run_judge_phase(
     session_path: Path,
     c: Console,
     agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold magenta]JUDGE →[/] {tid}")
@@ -700,8 +734,22 @@ def _run_judge_phase(
         if spec_content:
             prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
 
+        agent_output_callback: Callable[[str], None] | None = None
+        if monitor:
+
+            def _judge_output(line: str) -> None:
+                monitor.push_event(
+                    "agent_output", task_id=tid, phase="JUDGE", line=line
+                )
+
+            agent_output_callback = _judge_output
         manifest, _ = _invoke_agent(
-            prompt, c, backend_name=backend, task_id=tid, phase="JUDGE"
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="JUDGE",
+            output_callback=agent_output_callback,
         )
         if manifest is None:
             raise PhaseFailedError(
@@ -762,6 +810,7 @@ def _run_refactor_phase(
     session_path: Path,
     c: Console,
     agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "COMPLETED"):
@@ -773,8 +822,22 @@ def _run_refactor_phase(
     skill = _load_skill_content("REFACTOR")
     if skill:
         prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
+        agent_output_callback: Callable[[str], None] | None = None
+        if monitor:
+
+            def _refactor_output(line: str) -> None:
+                monitor.push_event(
+                    "agent_output", task_id=tid, phase="REFACTOR", line=line
+                )
+
+            agent_output_callback = _refactor_output
         manifest, _ = _invoke_agent(
-            prompt, c, backend_name=backend, task_id=tid, phase="REFACTOR"
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="REFACTOR",
+            output_callback=agent_output_callback,
         )
         if manifest is None:
             raise PhaseFailedError(
@@ -802,6 +865,7 @@ def _run_yellow_phase(
     session_path: Path,
     c: Console,
     agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     c.print(f"  [bold magenta]YELLOW →[/] {tid}")
@@ -810,8 +874,22 @@ def _run_yellow_phase(
     skill = _load_skill_content("YELLOW")
     if skill:
         prompt = _build_agent_prompt(skill, "YELLOW", task, Path.cwd())
+        agent_output_callback: Callable[[str], None] | None = None
+        if monitor:
+
+            def _yellow_output(line: str) -> None:
+                monitor.push_event(
+                    "agent_output", task_id=tid, phase="YELLOW", line=line
+                )
+
+            agent_output_callback = _yellow_output
         manifest, _ = _invoke_agent(
-            prompt, c, backend_name=backend, task_id=tid, phase="YELLOW"
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="YELLOW",
+            output_callback=agent_output_callback,
         )
         if manifest is None:
             raise PhaseFailedError(
@@ -849,6 +927,7 @@ def _run_tdd_cycle(
     no_judge: bool = False,
     no_refactor: bool = False,
     agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
 ) -> None:
     root = Path.cwd()
     _verify_worktree_branch(root)
@@ -856,35 +935,70 @@ def _run_tdd_cycle(
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
 
-    session = _run_red_phase(task, ledger_path, session, session_path, c, agent=agent)
+    tid = task.get("id", "?")
+    task_desc = task.get("description", "")
+
+    if monitor:
+        monitor.push_event("phase_change", id=tid, phase="RED", description=task_desc)
+    session = _run_red_phase(
+        task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+    )
 
     train_attempts = 0
     max_train_attempts = 3
     judge_passed = no_judge
 
     while not judge_passed:
+        if monitor:
+            monitor.push_event(
+                "phase_change", id=tid, phase="GREEN", description=task_desc
+            )
         session = _run_green_phase(
-            task, ledger_path, session, session_path, c, agent=agent
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
 
         if session.yellow_triggered:
             c.print("  [yellow]YELLOW requested by GREEN — running YELLOW phase[/]")
+            if monitor:
+                monitor.push_event(
+                    "phase_change", id=tid, phase="YELLOW", description=task_desc
+                )
             session = _run_yellow_phase(
-                task, ledger_path, session, session_path, c, agent=agent
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                agent=agent,
+                monitor=monitor,
             )
             session.yellow_triggered = False
             session.save(session_path)
             c.print("  [yellow]Re-running GREEN after YELLOW[/]")
+            if monitor:
+                monitor.push_event(
+                    "phase_change", id=tid, phase="GREEN", description=task_desc
+                )
             session = _run_green_phase(
-                task, ledger_path, session, session_path, c, agent=agent
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                agent=agent,
+                monitor=monitor,
             )
 
         if no_judge:
             judge_passed = True
             break
 
+        if monitor:
+            monitor.push_event(
+                "phase_change", id=tid, phase="JUDGE", description=task_desc
+            )
         session = _run_judge_phase(
-            task, ledger_path, session, session_path, c, agent=agent
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
 
         if session.train_feedback:
@@ -906,8 +1020,12 @@ def _run_tdd_cycle(
             judge_passed = True
 
     if not no_refactor:
+        if monitor:
+            monitor.push_event(
+                "phase_change", id=tid, phase="REFACTOR", description=task_desc
+            )
         session = _run_refactor_phase(
-            task, ledger_path, session, session_path, c, agent=agent
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
     else:
         _append_status_transition(task, "COMPLETED", ledger_path)
@@ -942,6 +1060,7 @@ def _dispatch_task(
     no_refactor: bool = False,
     agent: str | None = None,
     batch_mode: bool = False,
+    monitor: OrchestrationMonitor | None = None,
 ) -> None:
     mode = task.get("execution_mode", "TDD")
     c.print(f"[cyan]Processing {task.get('id', '?')} ({mode})[/]")
@@ -961,6 +1080,7 @@ def _dispatch_task(
             no_judge=no_judge,
             no_refactor=no_refactor,
             agent=agent,
+            monitor=monitor,
         )
     else:
         _run_execute_phase(task, ledger_path, c)
@@ -999,6 +1119,7 @@ def _run_all(
     no_judge: bool = False,
     no_refactor: bool = False,
     agent: str | None = None,
+    json_mode: bool = False,
 ) -> None:
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
@@ -1015,32 +1136,49 @@ def _run_all(
         c.print(f"[yellow]{msg}[/]")
         raise typer.Exit(code=0)
 
+    non_interactive = not is_interactive()
+    monitor = OrchestrationMonitor(c, json_mode=json_mode or non_interactive)
+
     any_failed = False
-    for task, ledger_file in pending:
-        tid = task.get("id", "?")
-        attempts = 0
-        while attempts < 2:
-            try:
-                _dispatch_task(
-                    task,
-                    ledger_file,
-                    c,
-                    no_judge=no_judge,
-                    no_refactor=no_refactor,
-                    agent=agent,
-                    batch_mode=True,
+    try:
+        with monitor:
+            for task, ledger_file in pending:
+                tid = task.get("id", "?")
+                monitor.push_event(
+                    "task_started", id=tid, description=task.get("description", "")
                 )
-                break
-            except Exception as exc:
-                attempts += 1
-                if attempts >= 2:
-                    c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
-                    _append_status_transition(task, "FAILED", ledger_file)
-                    any_failed = True
-                else:
-                    c.print(f"  [yellow]RETRY[/] {tid} (attempt {attempts + 1})")
-        if any_failed:
-            break
+                attempts = 0
+                while attempts < 2:
+                    try:
+                        _dispatch_task(
+                            task,
+                            ledger_file,
+                            c,
+                            no_judge=no_judge,
+                            no_refactor=no_refactor,
+                            agent=agent,
+                            batch_mode=True,
+                            monitor=monitor,
+                        )
+                        monitor.push_event("task_completed", id=tid)
+                        break
+                    except (PhaseFailedError, RedPhaseError) as exc:
+                        attempts += 1
+                        if attempts >= 2:
+                            c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
+                            monitor.push_event(
+                                "task_failed", id=tid, error_reason=str(exc)
+                            )
+                            _append_status_transition(task, "FAILED", ledger_file)
+                            any_failed = True
+                        else:
+                            c.print(
+                                f"  [yellow]RETRY[/] {tid} (attempt {attempts + 1})"
+                            )
+                if any_failed:
+                    break
+    except KeyboardInterrupt:
+        monitor.signal_keyboard_interrupt()
 
     if any_failed:
         raise typer.Exit(code=1)
@@ -1877,6 +2015,7 @@ def run_command(
         None, "--no-refactor", help="Skip REFACTOR phase"
     ),
     agent: str | None = typer.Option(None, "--agent", help="Override agent backend"),
+    json_mode: bool = typer.Option(False, "--json", help="Emit JSONL output"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print resolved task and exit"
     ),
@@ -1946,6 +2085,7 @@ def run_command(
             no_judge=skip_judge,
             no_refactor=skip_refactor,
             agent=agent,
+            json_mode=json_mode,
         )
         raise typer.Exit(code=0)
 

@@ -93,6 +93,25 @@
 ### Tasks
 
 - TSK-001-03: Wire OrchestrationMonitor into `deviate run --all` with Agent Output Streaming and `--json` Flag
+  - **Judge Feedback**: The implementation is missing two spec requirements:
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 1. **Agent output streaming not wired** (FR-ADHOC-001 / "Integration into `deviate run --all` wiring agent subprocess stdout/stderr into the monitor"):
+    - **Judge Feedback**:    - The spec explicitly states agent stdout/stderr must be pushed as `agent_output` events to the monitor
+    - **Judge Feedback**:    - No mechanism passes agent subprocess output from `_invoke_agent`'s output_callback through to `monitor.push_event("agent_output", ...)`
+    - **Judge Feedback**:    - The `_dispatch_task` → `_run_tdd_cycle` → phase functions chain has no parameter to accept/receive the monitor instance
+    - **Judge Feedback**: 
+    - **Judge Feedback**:    Fix approach:
+    - **Judge Feedback**:    - Pass `monitor` or an output callback factory through `_dispatch_task` → `_run_tdd_cycle` → each phase function
+    - **Judge Feedback**:    - In each phase function (e.g., `_run_green_phase`), create a composite output handler that calls both `_make_output_handler(c)` (for console display) and `monitor.push_event("agent_output", ...)` (for monitor ingestion)
+    - **Judge Feedback**:    - Remove the unused `batch_mode` parameter from `_dispatch_task` if it becomes orphaned
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 2. **`phase_change` events not emitted** (spec lists `phase_change` as one of six event types):
+    - **Judge Feedback**:    - The monitor has `_on_phase_change` handler but `_run_all` never calls `monitor.push_event("phase_change", ...)`
+    - **Judge Feedback**:    - The status bar in the display will never update with phase transitions
+    - **Judge Feedback**: 
+    - **Judge Feedback**:    Fix approach:
+    - **Judge Feedback**:    - In each phase function (or in `_run_tdd_cycle`), push `phase_change` events: `monitor.push_event("phase_change", phase="RED")` etc.
+    - **Judge Feedback**:    - This requires the monitor reference to be available in the TDD cycle (same plumbing fix as #1)
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration

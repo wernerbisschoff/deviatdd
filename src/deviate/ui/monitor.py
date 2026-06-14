@@ -73,6 +73,10 @@ class OrchestrationMonitor:
         handler = self._dispatch.get(event_type)
         if handler is not None:
             handler(data)
+        if self._json_mode:
+            from deviate.ui.render import emit_jsonl
+
+            emit_jsonl(event_type, **data)
 
     def _on_task_started(self, data: dict[str, Any]) -> None:
         task_id = self._resolve_task_id(data)
