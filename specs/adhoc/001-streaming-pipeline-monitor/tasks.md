@@ -6,6 +6,24 @@
 ### Tasks
 
 - TSK-001-01: Implement OrchestrationMonitor with State Machine, Task Markers, and Failure Handling
+  - **Judge Feedback**: The next GREEN attempt must add:
+    - **Judge Feedback**: 1. A render() method on OrchestrationMonitor that serves as a stub delegation
+    - **Judge Feedback**:    point for Phase 2 render functions. It should accept no required args and
+    - **Judge Feedback**:    can be a no-op or call a placeholder, but the method MUST exist so the
+    - **Judge Feedback**:    integration layer (Phase 3) has a stable API to call. Example:
+    - **Judge Feedback**:      def render(self) -> None:
+    - **Judge Feedback**:          """Delegate to render functions. Stub for Phase 2 integration."""
+    - **Judge Feedback**:          pass
+    - **Judge Feedback**: 2. A 6th unit test — the acceptance criteria explicitly requires "6+ unit
+    - **Judge Feedback**:    tests passing". Add a test for an edge case from the task details, e.g.,
+    - **Judge Feedback**:    test_monitor_task_completed_without_started() asserting graceful creation
+    - **Judge Feedback**:    when task_completed arrives without prior task_started.
+    - **Judge Feedback**: 3. Extract a TaskStatus dataclass (or TypedDict/NamedTuple) to replace the
+    - **Judge Feedback**:    raw dict[str, dict] internal storage. The refactor step is explicit:
+    - **Judge Feedback**:    "Extract TaskStatus dataclass for type safety". Even a simple dataclass
+    - **Judge Feedback**:    with fields: id, description, marker, phase, error_reason.
+    - **Judge Feedback**: 4. Consider extracting _validate_event() for event type dispatch instead of
+    - **Judge Feedback**:    the current if/elif chain.
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
