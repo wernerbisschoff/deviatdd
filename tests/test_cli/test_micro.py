@@ -1,11 +1,52 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import warnings
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
+
+from deviate.cli.__init__ import cli
+from deviate.core.agent import HandoverManifest
+from deviate.state.config import SessionState
+from deviate.ui.monitor import OrchestrationMonitor
+
+
+runner = CliRunner()
+
+
+def _setup_issue_ledger(
+    root: Path, issue_id: str, epic: str, slug: str, tasks: list[dict]
+) -> None:
+    issues_dir = root / "specs"
+    issues_dir.mkdir(exist_ok=True)
+    (issues_dir / "issues.jsonl").write_text(
+        json.dumps(
+            {"issue_id": issue_id, "source_file": f"specs/{epic}/{slug}/spec.md"}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    feature_dir = issues_dir / epic / slug
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    with open(feature_dir / "tasks.jsonl", "w") as f:
+        for task in tasks:
+            f.write(json.dumps(task) + "\n")
+    tasks_md = ["# Tasks\n", "\n"]
+    for task in tasks:
+        tasks_md.append(f"- {task['id']}: {task['description']}\n")
+    (feature_dir / "tasks.md").write_text("".join(tasks_md), encoding="utf-8")
+    (feature_dir / "spec.md").write_text("# Spec", encoding="utf-8")
+
+
+def _setup_session(root: Path, issue_id: str) -> None:
+    dot_dir = root / ".deviate"
+    dot_dir.mkdir(exist_ok=True)
+    session = SessionState(active_issue_id=issue_id)
+    session.save(dot_dir / "session.json")
 
 
 class TestPytestReportConfig:
@@ -67,3 +108,87 @@ class TestRunPytestJsonReport:
             x for x in w if "pytest-json-report" in str(x.message).lower()
         ]
         assert len(plugin_warnings) > 0
+
+
+ISSUE_ID = "ISS-TEST-MON"
+EPIC = "adhoc"
+SLUG = "monitor-int"
+
+
+class TestRunAllMonitorIntegration:
+    """OrchestrationMonitor wiring in `deviate run --all`."""
+
+    @pytest.fixture
+    def env(self, tmp_git_repo: Path) -> Path:
+        tasks = [
+            {
+                "id": "TSK-001-01",
+                "issue_id": ISSUE_ID,
+                "description": "Test task 1",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+        ]
+        _setup_issue_ledger(tmp_git_repo, ISSUE_ID, EPIC, SLUG, tasks)
+        _setup_session(tmp_git_repo, ISSUE_ID)
+        return tmp_git_repo
+
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_creates_monitor_in_run_all(
+        self, mock_invoke_agent: MagicMock, env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(env)
+        mock_invoke_agent.return_value = (
+            HandoverManifest(phase="RED", status="SUCCESS"),
+            "",
+        )
+        mock_monitor = MagicMock(spec=OrchestrationMonitor)
+        with patch("deviate.cli.micro.OrchestrationMonitor", return_value=mock_monitor):
+            result = runner.invoke(cli, ["run", "--all"])
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+        mock_monitor.__enter__.assert_called_once()
+        assert mock_monitor.push_event.called
+        mock_monitor.__exit__.assert_called_once()
+
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_json_flag_toggles_monitor_mode(
+        self, mock_invoke_agent: MagicMock, env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(env)
+        mock_invoke_agent.return_value = (
+            HandoverManifest(phase="RED", status="SUCCESS"),
+            "",
+        )
+        result = runner.invoke(cli, ["run", "--all", "--json"])
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+        assert '"event":' in result.output
+
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("sys.stdout.isatty", return_value=False)
+    def test_non_tty_emits_jsonl(
+        self,
+        mock_isatty: MagicMock,
+        mock_invoke_agent: MagicMock,
+        env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(env)
+        mock_invoke_agent.return_value = (
+            HandoverManifest(phase="RED", status="SUCCESS"),
+            "",
+        )
+        result = runner.invoke(cli, ["run", "--all"])
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+        assert '"event":' in result.output
+
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_interrupt_during_run_all(
+        self, mock_invoke_agent: MagicMock, env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(env)
+        mock_invoke_agent.side_effect = KeyboardInterrupt()
+        mock_monitor = MagicMock(spec=OrchestrationMonitor)
+        with patch("deviate.cli.micro.OrchestrationMonitor", return_value=mock_monitor):
+            result = runner.invoke(cli, ["run", "--all"])
+        assert mock_monitor.signal_keyboard_interrupt.called
+        assert result.exit_code == 0
