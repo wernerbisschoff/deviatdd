@@ -7,3 +7,4 @@
 {"id":"TSK-002-02","issue_id":"ISS-ADH-002","description":"Implement full AiderBackend class with invocation, parsing, context injection, and post-guard","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-14T16:04:38.337291Z"}
 {"id": "TSK-002-03", "issue_id": "ISS-ADH-002", "description": "Aider backend integration test with full pipeline wiring", "status": "COMPLETED", "execution_mode": "TDD", "created_at": "2026-06-14T16:12:30.585242+00:00"}
 {"id":"TSK-002-03","issue_id":"ISS-ADH-002","description":"Aider backend integration test with full pipeline wiring","status":"RED","execution_mode":"TDD","created_at":"2026-06-14T16:12:52.263204Z"}
+{"id":"TSK-002-03","issue_id":"ISS-ADH-002","description":"Aider backend integration test with full pipeline wiring","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-14T16:12:52.263204Z"}
