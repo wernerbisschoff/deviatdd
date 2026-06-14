@@ -18,6 +18,7 @@ from deviate.cli._common import (
     with_json_quiet,
 )
 from deviate.cli.feature import _create_feature_branch, _derive_slug
+from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
@@ -32,6 +33,7 @@ from deviate.core.worktree import (
     detect_remote,
     remove_worktree,
 )
+from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import SessionState, TransitionViolationError
 from deviate.state.ledger import (
     IssueRecord,
@@ -40,6 +42,7 @@ from deviate.state.ledger import (
     append_task_record,
     resolve_issue_record,
     select_unblocked_candidates,
+    select_next_unblocked_issue,
 )
 
 
@@ -964,6 +967,166 @@ def _pr_run(
             f"Pass --merge to mark COMPLETED. URL: {pr_url}"
         )
     _save_session(session, session_path, "TASKS")
+
+
+# ---------------------------------------------------------------------------
+# Meso automated pipeline
+# ---------------------------------------------------------------------------
+
+
+def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
+    repo_root = Path.cwd()
+    constitution_path = repo_root / "specs" / "constitution.md"
+    claude_path = repo_root / "CLAUDE.md"
+    return assemble_prompt(
+        template_name=phase,
+        context=contract,
+        constitution_path=constitution_path,
+        claude_path=claude_path,
+    )
+
+
+def _meso_discover_and_sequence() -> str | None:
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    issue = select_next_unblocked_issue(ledger_path)
+    if issue is None:
+        return None
+    return issue.issue_id
+
+
+@with_json_quiet
+def _meso_run(
+    issue_id: str | None = None,
+    dry_run: bool = False,
+    force: bool = False,
+) -> None:
+    dot_dir = _resolve_dot_deviate()
+    if not dot_dir.exists():
+        _handle_missing_dot_dir("MESO")
+
+    session_path = dot_dir / "session.json"
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+
+    # ── Discover issue if not specified ──────────────────────────────
+    if issue_id is None:
+        discovered = _meso_discover_and_sequence()
+        if discovered is None:
+            console.print("[red]NO_UNBLOCKED_ISSUES[/] no unblocked BACKLOG issues")
+            raise SystemExit(1)
+        issue_id = discovered
+        console.print(f"[green]DISCOVERED[/] {issue_id}")
+
+    # ── Check COMPLETED ──────────────────────────────────────────────
+    if _is_issue_completed(issue_id, ledger_path):
+        console.print(f"[red]ISSUE_COMPLETED[/] {issue_id} is already COMPLETED")
+        raise SystemExit(1)
+
+    # ── Check progress → reset ──────────────────────────────────────
+    record = resolve_issue_record(issue_id, ledger_path)
+    if record and record.status not in ("BACKLOG", "DRAFT"):
+        console.print(
+            f"[yellow]PROGRESS_RESET[/] {issue_id} ({record.status})"
+            " — resetting to BACKLOG"
+        )
+        reset = record.model_copy(update={"status": "BACKLOG"})
+        append_issue_transition(reset, ledger_path)
+
+    # Re-resolve after possible reset
+    record = resolve_issue_record(issue_id, ledger_path)
+    epic_slug = _resolve_bucket_dir(record.source_file) if record else ""
+    issue_slug = _source_stem(record.source_file) if record else ""
+    issue_title = record.title if record else ""
+
+    contract: dict[str, str] = {
+        "issue_id": issue_id,
+        "issue_title": issue_title,
+        "epic_slug": epic_slug,
+        "issue_slug": issue_slug,
+    }
+
+    # ── Recovery: spec.md already exists? ────────────────────────────
+    spec_path = _find_spec_md(issue_id)
+    skip_specify = spec_path is not None
+    if skip_specify:
+        console.print("[yellow]RECOVERY[/] spec.md exists — skipping SPECIFY phase")
+
+    # ── Dry-run mode ─────────────────────────────────────────────────
+    if dry_run:
+        console.print("[bold][yellow]DRY_RUN[/] — no state will be mutated[/]")
+        if not skip_specify:
+            prompt = _build_slim_prompt("specify", contract)
+            print(prompt)
+        prompt = _build_slim_prompt("tasks", contract)
+        print(prompt)
+        return
+
+    # ── SPECIFY phase ────────────────────────────────────────────────
+    if not skip_specify:
+        session = SessionState.load(session_path)
+        session = session.force_transition_to("SPECIFY")
+        session.active_issue_id = issue_id
+
+        prompt = _build_slim_prompt("specify", contract)
+        backend = AgentBackend()
+        try:
+            manifest = backend.invoke(prompt)
+        except AgentSubprocessError as e:
+            console.print(f"[red]SPECIFY_FAILED[/] {e}")
+            raise SystemExit(1)
+
+        if manifest.status != "PASS":
+            console.print(
+                f"[red]SPECIFY_FAILED[/] agent returned status: {manifest.status}"
+            )
+            raise SystemExit(1)
+
+        session.save(session_path)
+
+    # ── Advance to TASKS ─────────────────────────────────────────────
+    session = SessionState.load(session_path)
+    session = session.force_transition_to("TASKS")
+    session.active_issue_id = issue_id
+    session.save(session_path)
+
+    # ── TASKS phase ──────────────────────────────────────────────────
+    _tasks_pre(force=force, dry_run=False)
+
+    prompt = _build_slim_prompt("tasks", contract)
+    backend = AgentBackend()
+    try:
+        manifest = backend.invoke(prompt)
+    except AgentSubprocessError as e:
+        console.print(f"[red]TASKS_FAILED[/] {e}")
+        raise SystemExit(1)
+
+    if manifest.status != "PASS":
+        console.print(f"[red]TASKS_FAILED[/] agent returned status: {manifest.status}")
+        raise SystemExit(1)
+
+    # ── Advance to IDLE ──────────────────────────────────────────────
+    session = SessionState.load(session_path)
+    session = session.force_transition_to("IDLE")
+    session.save(session_path)
+    console.print("[green]MESO[/] pipeline complete — session at IDLE")
+
+
+meso_app = typer.Typer(no_args_is_help=True)
+
+
+@meso_app.command("run")
+def meso_run_command(
+    issue: str | None = typer.Option(
+        None, "--issue", help="Target issue ID (default: next unblocked BACKLOG)"
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Emit prompts and contracts without side effects",
+    ),
+    force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
+) -> None:
+    """Run the meso automated pipeline (specify → tasks)"""
+    _meso_run(issue_id=issue, dry_run=dry_run, force=force)
 
 
 # ---------------------------------------------------------------------------

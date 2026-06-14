@@ -38,9 +38,7 @@ def _setup_minimal_workspace(
 
     issue_body_dir = spec_root / "test-epic" / "issues"
     issue_body_dir.mkdir(parents=True)
-    (issue_body_dir / "iss-001.md").write_text(
-        "# Test Issue\n\nFR-001: do the thing\n"
-    )
+    (issue_body_dir / "iss-001.md").write_text("# Test Issue\n\nFR-001: do the thing\n")
 
     prd_dir = spec_root / "test-epic"
     (prd_dir / "prd.md").write_text("# PRD\n\nFR-001: do the thing\n")
@@ -178,7 +176,9 @@ class TestMesoOrchestration:
 
         with chdir(tmp_git_repo):
             dot_dir = tmp_git_repo / ".deviate"
-            session = SessionState(current_phase="SPECIFY", active_issue_id="ISS-001-001")
+            session = SessionState(
+                current_phase="SPECIFY", active_issue_id="ISS-001-001"
+            )
             session.save(dot_dir / "session.json")
 
             with patch("subprocess.run", _make_mock_subprocess()):
@@ -253,7 +253,9 @@ class TestMesoOrchestration:
 
         with chdir(tmp_git_repo):
             dot_dir = tmp_git_repo / ".deviate"
-            session = SessionState(current_phase="SPECIFY", active_issue_id="ISS-001-001")
+            session = SessionState(
+                current_phase="SPECIFY", active_issue_id="ISS-001-001"
+            )
             session.save(dot_dir / "session.json")
 
             with patch("subprocess.run", _make_mock_subprocess()):
