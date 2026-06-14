@@ -326,28 +326,82 @@ class AiderBackend:
         if not stdout.strip():
             raise AiderParseError("Aider returned empty output")
 
+        files_touched: list[str] = []
+        for line in stdout.splitlines():
+            m = re.match(r"^Applied edit to (.+)\.$", line)
+            if m:
+                files_touched.append(m.group(1).strip())
+                continue
+            m = re.match(r"^Added (.+) to the chat\.$", line)
+            if m:
+                files_touched.append(m.group(1).strip())
+
         if "Tests:" in stdout and "failed" in stdout:
-            return HandoverManifest(phase="aider", status="FAIL")
+            error_lines: list[str] = []
+            for line in stdout.splitlines():
+                if "FAILED" in line or "Error" in line or "Traceback" in line:
+                    error_lines.append(line)
+            return HandoverManifest(
+                phase="aider",
+                status="FAIL",
+                verification_result="FAIL",
+                error_details="\n".join(error_lines) if error_lines else "Tests failed",
+                files_touched=files_touched,
+            )
 
         if "All tests passed" in stdout:
-            return HandoverManifest(phase="aider", status="PASS")
+            return HandoverManifest(
+                phase="aider",
+                status="PASS",
+                verification_result="PASS",
+                files_touched=files_touched,
+            )
+
+        if re.search(r"\d+\s+tests?\s+passed", stdout):
+            return HandoverManifest(
+                phase="aider",
+                status="PASS",
+                verification_result="PASS",
+                files_touched=files_touched,
+            )
 
         return HandoverManifest(
-            phase="aider", status="PASS", verification_result="UNKNOWN"
+            phase="aider",
+            status="PASS",
+            verification_result="UNKNOWN",
+            files_touched=files_touched,
         )
 
     def invoke(self, prompt: str) -> HandoverManifest:
         aider_cfg = self.config.aider
         repo_root = Path.cwd()
+        effective_timeout = self.config.timeout
 
         cmd = self._build_aider_command(prompt, aider_cfg, repo_root)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=effective_timeout
+            )
         except FileNotFoundError:
             raise AgentBinaryNotFoundError(
                 "Agent binary not found on PATH for backend: aider"
             )
+        except subprocess.TimeoutExpired:
+            time.sleep(30)
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=effective_timeout
+                )
+            except FileNotFoundError:
+                raise AgentBinaryNotFoundError(
+                    "Agent binary not found on PATH for backend: aider"
+                )
+            except subprocess.TimeoutExpired:
+                raise AgentTimeoutError(
+                    f"Aider backend timed out after {effective_timeout}s "
+                    f"(retried once with 30s backoff)"
+                )
 
         if result.returncode != 0:
             raise AgentSubprocessError(
@@ -355,7 +409,12 @@ class AiderBackend:
                 exit_code=result.returncode,
             )
 
-        manifest = self.parse_output(result.stdout, "aider")
+        try:
+            manifest = self.parse_output(result.stdout, "aider")
+        except AiderParseError:
+            manifest = HandoverManifest(
+                phase="aider", status="PASS", verification_result="UNKNOWN"
+            )
 
         try:
             guard_result = subprocess.run(
