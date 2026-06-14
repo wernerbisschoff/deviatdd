@@ -370,6 +370,10 @@ def _find_all_pending_tasks(
     ledger_of: dict[str, Path] = {}
     for rec, ledger_file in _collect_latest_task_records(root):
         tid = rec["id"]
+        rec_issue = rec.get("issue_id", "")
+        if issue_id is not None and rec_issue and rec_issue != issue_id:
+            _log(f"  skipping {tid} from issue {rec_issue} (expected {issue_id})")
+            continue
         latest[tid] = rec
         ledger_of[tid] = ledger_file
         _log(f"  ledger record: {tid} → {rec.get('status')} ({ledger_file.name})")
@@ -514,10 +518,9 @@ def _resolve_first_pending(root: Path, issue_id: str) -> tuple[dict, Path] | Non
 
 def _build_scope(issue_id: str, task_id: str) -> str:
     """Return the task ID as scope (already TSK-NNN-NN format)."""
-    issue_match = re.search(r"ISS-(\d+)", issue_id)
-    if not issue_match:
-        return issue_id
-    return task_id
+    if task_id and task_id != "?":
+        return task_id
+    return issue_id
 
 
 def _run_red_phase(
@@ -555,7 +558,8 @@ def _run_red_phase(
     session = session.force_transition_to("RED")
     session.save(session_path)
     _append_status_transition(task, "RED", ledger_path)
-    _log_uncommitted(Path.cwd(), "RED", tid)
+    if _log_uncommitted(Path.cwd(), "RED", tid):
+        _auto_commit_fallback("RED", tid, Path.cwd(), session, task)
     return session
 
 
@@ -613,7 +617,8 @@ def _run_green_phase(
     session.train_feedback = ""
     session.save(session_path)
     _append_status_transition(task, "GREEN", ledger_path)
-    _log_uncommitted(Path.cwd(), "GREEN", tid)
+    if _log_uncommitted(Path.cwd(), "GREEN", tid):
+        _auto_commit_fallback("GREEN", tid, Path.cwd(), session, task)
     return session
 
 
@@ -757,7 +762,7 @@ def _run_refactor_phase(
     if _phase_already_done(ledger_path, task.get("id", ""), "COMPLETED"):
         c.print(f"  [dim]Already completed for {tid}, skipping[/]")
         return session
-    c.print(f"  [bold green]COMPLETED →[/] {tid}")
+    c.print(f"  [bold green]REFACTOR →[/] {tid}")
 
     backend = agent or "opencode"
     skill = _load_skill_content("REFACTOR")
@@ -779,7 +784,9 @@ def _run_refactor_phase(
     session.yellow_triggered = False
     session.save(session_path)
     _append_status_transition(task, "COMPLETED", ledger_path)
-    _log_uncommitted(Path.cwd(), "COMPLETED", tid)
+    if _log_uncommitted(Path.cwd(), "REFACTOR", tid):
+        _auto_commit_fallback("REFACTOR", tid, Path.cwd(), session, task)
+    c.print(f"  [bold green]COMPLETED[/] {tid}")
     return session
 
 
@@ -1097,7 +1104,7 @@ def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
     return False
 
 
-def _log_uncommitted(root: Path, phase: str, tid: str) -> None:
+def _log_uncommitted(root: Path, phase: str, tid: str) -> bool:
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=root,
@@ -1125,6 +1132,35 @@ def _log_uncommitted(root: Path, phase: str, tid: str) -> None:
             for line in files:
                 f.write(f"  {line}\n")
             f.write("\n")
+        return True
+    return False
+
+
+_PHASE_COMMIT_MESSAGES = {
+    "RED": "test({scope}): RED phase - failing test",
+    "GREEN": "feat({scope}): GREEN phase - implementation passes tests",
+    "REFACTOR": "refactor({scope}): REFACTOR phase - code cleanup",
+}
+
+
+def _auto_commit_fallback(
+    phase: str, tid: str, root: Path, session: SessionState, task: dict
+) -> None:
+    """Auto-commit uncommitted files after a phase if the agent didn't.
+
+    Only fires when there are actual uncommitted changes — if the agent
+    already committed, this is a no-op (``_commit_phase`` returns early
+    when the worktree is clean).
+    """
+    msg_template = _PHASE_COMMIT_MESSAGES.get(phase)
+    if msg_template is None:
+        return
+    issue_id = session.active_issue_id or task.get("issue_id", "")
+    scope = _build_scope(issue_id, tid)
+    msg = msg_template.format(scope=scope)
+    no_verify = phase == "RED"
+    if _commit_phase(msg, root, no_verify=no_verify):
+        console.print("  [dim]auto-commit fallback — uncommitted files committed[/]")
 
 
 def _verify_worktree_branch(root: Path) -> None:

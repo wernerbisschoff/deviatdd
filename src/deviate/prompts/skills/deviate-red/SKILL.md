@@ -71,9 +71,6 @@ traceability_anchors:
     - "Given unexpired payload, When encoded, Then matching signature generated"
 assertions_established:
   - "assert service.encode(payload) is not None"
-git_ledger:
-  commit_sha: "a1b2c3d4e5"
-  message: "test(TASK-104): add failing acceptance criteria tests"
 next_phase: "/deviate-green"
 ```
 ````
@@ -120,6 +117,15 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
    If lint fails, fix the issues and re-run.
 </step>
 
+<step id="post_script">
+After tests are written and verified failing, commit them before emitting the handover manifest:
+```bash
+deviate red post
+```
+
+The post-script stages the test file and commits with `--no-verify` (pre-commit hooks are bypassed because RED-phase tests are intentionally failing).
+</step>
+
 <step id="handover_emission">
 Emit the structured handover manifest. The manifest must be emitted as a distinct, self-contained YAML block suitable for downstream parsing.
 
@@ -151,21 +157,9 @@ traceability_anchors:
 assertions_established:
   - "{ASSERTION_CRITERIA_1}"
   - "{ASSERTION_CRITERIA_2}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "test({TASK_ID}): add failing acceptance criteria tests"
 next_phase: "/deviate-green"
 ```
 
-</step>
-
-<step id="post_script">
-After tests are written and the handover manifest is generated, run the post-script to commit:
-```bash
-deviate red post
-```
-
-The post-script stages the test file and commits with `--no-verify` (pre-commit hooks are bypassed because RED-phase tests are intentionally failing).
 </step>
 
 </execution_sequence>
@@ -196,9 +190,6 @@ traceability_anchors:
 assertions_established:
   - "{ASSERTION_CRITERIA_1}"
   - "{ASSERTION_CRITERIA_2}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "test({TASK_ID}): add failing acceptance criteria tests"
 next_phase: "/deviate-green"
 ```
 </output_format_schemas>
