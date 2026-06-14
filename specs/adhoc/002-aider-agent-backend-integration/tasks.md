@@ -23,6 +23,33 @@
     - **Acceptance**: `AiderConfig` validates, serializes/deserializes, rejects extra fields, and nests correctly under `AgentConfig.aider` in `DeviateConfig`. The Literal `"aider"` is accepted for `AgentConfig.backend`.
 
 - TSK-002-02: Implement full AiderBackend class with invocation, parsing, context injection, and post-guard
+  - **Judge Feedback**: Fix the following issues in order:
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 1. **Restore AiderParseError for malformed output (US-003-AIDER-PARSE AC4)**: 
+    - **Judge Feedback**:    parse_output() must raise AiderParseError when output is empty or unparseable per spec. 
+    - **Judge Feedback**:    In invoke(), wrap self.parse_output() in try/except AiderParseError → instead of propagating 
+    - **Judge Feedback**:    the exception, return a HandoverManifest with status="PASS", verification_result="UNKNOWN" 
+    - **Judge Feedback**:    so the pipeline doesn't hard-abort and falls through to the post-guard.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 2. **Add verification_result="FAIL" on parse failure (US-003-AIDER-PARSE AC2)**:
+    - **Judge Feedback**:    When "Tests:" and "failed" are detected, return HandoverManifest with 
+    - **Judge Feedback**:    verification_result="FAIL" alongside the existing status="FAIL" and error_details.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 3. **Use self.config.timeout instead of hardcoded 180 (US-001-AIDER-BACKEND)**:
+    - **Judge Feedback**:    The timeout in invoke() should be self.config.timeout (default 600 from AgentConfig), 
+    - **Judge Feedback**:    not a hardcoded 180. Pass effective_timeout to both subprocess.run calls and the 
+    - **Judge Feedback**:    AgentTimeoutError message.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 4. **Fix test_aider_invoke_timeout_retry**:
+    - **Judge Feedback**:    The test mocks subprocess.run with only 2 side_effect elements, but invoke() calls 
+    - **Judge Feedback**:    subprocess.run 3 times (aider, retry-aider, post-guard). The test needs a 3rd element 
+    - **Judge Feedback**:    for the guard result (MagicMock with returncode=0, stdout="1 passed"), and 
+    - **Judge Feedback**:    call_count assertion needs updating to 3.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 5. **Ensure test_aider_output_parse_malformed passes**:
+    - **Judge Feedback**:    After fixing #1, this existing test (from TSK-002-01) will pass again.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: Verification command: mise run test -k "TestAiderBackend" -v
   - **Judge Feedback**: The AiderBackend class correctly handles invocation, constitution checks, post-guard,
     - **Judge Feedback**: and AiderParseError fallthrough. However, the following spec requirements were missed:
     - **Judge Feedback**: 
