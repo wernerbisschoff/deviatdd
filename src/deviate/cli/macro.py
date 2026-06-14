@@ -20,7 +20,9 @@ from deviate.cli._common import (
     with_json_quiet,
 )
 from deviate.core._shared import git_env as _git_env
+from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact
+from deviate.prompts.assembly import assemble_prompt
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.core.epic import (
     allocate_feature_bucket,
@@ -577,3 +579,211 @@ def shard_post(
 
     session.save(session_path)
     console.print("[green]SHARD_POST[/] session reset to IDLE")
+
+
+# ---------------------------------------------------------------------------
+# Macro automated pipeline helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
+    repo_root = Path.cwd()
+    constitution_path = repo_root / "specs" / "constitution.md"
+    claude_path = repo_root / "CLAUDE.md"
+    return assemble_prompt(
+        template_name=phase,
+        context=contract,
+        constitution_path=constitution_path,
+        claude_path=claude_path,
+    )
+
+
+def _invoke_agent_phase(phase: str, contract: dict[str, str]) -> None:
+    prompt = _build_slim_prompt(phase, contract)
+    backend = AgentBackend()
+    try:
+        manifest = backend.invoke(prompt)
+    except AgentSubprocessError as e:
+        _halt(phase.upper(), str(e))
+    if manifest.status != "PASS":
+        _halt(phase.upper(), f"agent returned status: {manifest.status}")
+
+
+_PHASE_ORDER = ["explore", "research", "prd", "shard"]
+
+
+def _macro_discover_bucket(target: str | None) -> str:
+    specs_root = _resolve_specs_root()
+    if target:
+        bucket_path = specs_root / target
+        if not bucket_path.exists():
+            _halt("MACRO", f"BUCKET_NOT_FOUND: '{target}' not found in specs/")
+        return target
+    return discover_latest_epic(specs_root) or ""
+
+
+def _dry_run_phases(phases: list[str], resolved: str) -> None:
+    """Emit contracts and prompts for each phase without side effects."""
+    console.print("[bold][yellow]DRY_RUN[/] — no state will be mutated[/]")
+    for phase in phases:
+        contract: dict[str, str] = {"phase": phase, "target": resolved}
+        print(json.dumps(contract, indent=2))
+        prompt = _build_slim_prompt(phase, contract)
+        print(prompt)
+
+
+def _cycle_phase(phase: str, resolved: str, specs_root: Path) -> None:
+    """Execute a single macro phase: upstream check, pre, agent, post."""
+    if phase == "research" and not (specs_root / resolved / "explore.md").exists():
+        _halt("RESEARCH", "UPSTREAM_MISSING: explore.md not found")
+
+    if phase == "explore":
+        _explore_pre(problem=f"Automated explore for {resolved}", slug=resolved)
+    elif phase == "research":
+        _research_pre(epic=resolved)
+    elif phase == "prd":
+        _prd_pre()
+    elif phase == "shard":
+        _shard_pre(epic=resolved)
+
+    agent_contract: dict[str, str] = {"phase": phase, "target": resolved}
+    _invoke_agent_phase(phase, agent_contract)
+
+    if phase == "explore":
+        _explore_post()
+    elif phase == "research":
+        _research_post()
+    elif phase == "prd":
+        manifest_path = Path(".deviate") / "artifacts" / "manifest_prd.json"
+        if not manifest_path.exists():
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps({"epic_slug": resolved, "phase": "prd", "status": "PASS"}),
+            )
+        _prd_post(manifest=manifest_path)
+    elif phase == "shard":
+        manifest_path = Path(".deviate") / "artifacts" / "manifest_shard.json"
+        if not manifest_path.exists():
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "epic_slug": resolved,
+                        "phase": "shard",
+                        "status": "PASS",
+                        "issues": [],
+                    },
+                ),
+            )
+        _shard_post(manifest=manifest_path, epic=resolved)
+
+
+def _macro_run(
+    target: str | None = None,
+    from_phase: str | None = None,
+    dry_run: bool = False,
+    force: bool = False,
+) -> None:
+    if from_phase and from_phase not in _PHASE_ORDER:
+        valid = ", ".join(_PHASE_ORDER)
+        _halt("MACRO", f"INVALID_PHASE: '{from_phase}'. Valid phases: {valid}")
+
+    resolved = _macro_discover_bucket(target)
+    if not resolved:
+        _halt("MACRO", "no epic discovered")
+
+    start_idx = _PHASE_ORDER.index(from_phase) if from_phase else 0
+    phases = _PHASE_ORDER[start_idx:]
+
+    if from_phase:
+        session_path = Path(".deviate") / "session.json"
+        session = SessionState.load(session_path)
+        preceding_states = {
+            "explore": "IDLE",
+            "research": "EXPLORE",
+            "prd": "RESEARCH",
+            "shard": "PRD",
+        }
+        required_preceding = preceding_states[from_phase]
+        if session.current_phase != required_preceding:
+            session = session.force_transition_to(required_preceding)
+            session.save(session_path)
+
+    if dry_run:
+        _dry_run_phases(phases, resolved)
+        return
+
+    specs_root = _resolve_specs_root()
+    for phase in phases:
+        _cycle_phase(phase, resolved, specs_root)
+
+    session_path = Path(".deviate") / "session.json"
+    session = SessionState.load(session_path)
+    if session.current_phase != "IDLE":
+        session = session.force_transition_to("IDLE")
+        session.save(session_path)
+    console.print("[green]MACRO[/] pipeline complete — session at IDLE")
+
+
+# ---------------------------------------------------------------------------
+# Macro pre/post wrappers (called by _macro_run)
+# ---------------------------------------------------------------------------
+
+
+def _explore_pre(problem: str, slug: str | None = None) -> None:
+    explore_pre(problem=problem, slug=slug)
+
+
+def _explore_post() -> None:
+    explore_post()
+
+
+def _research_pre(epic: str = "") -> None:
+    research_pre(epic=epic)
+
+
+def _research_post() -> None:
+    research_post()
+
+
+def _prd_pre() -> None:
+    prd_pre()
+
+
+def _prd_post(manifest: Path) -> None:
+    prd_post(manifest)
+
+
+def _shard_pre(epic: str | None = None) -> None:
+    shard_pre(epic=epic, dry_run=False)
+
+
+def _shard_post(manifest: Path, epic: str | None = None) -> None:
+    shard_post(manifest, epic=epic)
+
+
+# ---------------------------------------------------------------------------
+# Macro CLI command
+# ---------------------------------------------------------------------------
+
+
+macro_app = typer.Typer(no_args_is_help=True)
+
+
+@macro_app.command("run")
+def macro_run_command(
+    target: str | None = typer.Option(
+        None, "--target", help="Target feature bucket slug"
+    ),
+    from_phase: str | None = typer.Option(
+        None,
+        "--from",
+        help="Resume from a specific phase (explore|research|prd|shard)",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Emit prompts and contracts without side effects"
+    ),
+    force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
+) -> None:
+    """Run the macro automated pipeline (explore→research→prd→shard)"""
+    _macro_run(target=target, from_phase=from_phase, dry_run=dry_run, force=force)

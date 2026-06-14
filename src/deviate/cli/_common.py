@@ -96,7 +96,7 @@ def _extract_issue_num(issue_id: str) -> str:
 
 def _halt(phase: str, message: str) -> None:
     console.print(f"[red]{phase}_HALTED: {message}[/]")
-    raise typer.Exit(code=1)
+    raise SystemExit(1)
 
 
 def _handle_missing_dot_dir(phase: str) -> None:
