@@ -1119,7 +1119,7 @@ def _execute_task_with_retry(
             )
             monitor.push_event("task_completed", id=tid)
             return True
-        except (PhaseFailedError, RedPhaseError) as exc:
+        except Exception as exc:
             if attempt == 1:
                 c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
                 monitor.push_event("task_failed", id=tid, error_reason=str(exc))
@@ -1170,6 +1170,7 @@ def _run_all(
                     any_failed = True
     except KeyboardInterrupt:
         monitor.signal_keyboard_interrupt()
+        raise typer.Exit(code=130)
 
     if any_failed:
         raise typer.Exit(code=1)

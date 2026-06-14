@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -45,12 +46,14 @@ class OrchestrationMonitor:
         self._interrupted = False
         self._exited = False
         self.display_active = False
+        self._agent_output_buffer: deque[str] = deque(maxlen=5)
         self._dispatch: dict[str, Any] = {
             "task_started": self._on_task_started,
             "phase_change": self._on_phase_change,
             "task_completed": self._on_task_completed,
             "task_failed": self._on_task_failed,
             "pipeline_complete": self._on_pipeline_complete,
+            "agent_output": self._on_agent_output,
         }
 
     def __enter__(self) -> OrchestrationMonitor:
@@ -98,7 +101,7 @@ class OrchestrationMonitor:
             self._tasks[task_id] = TaskStatus(
                 id=task_id,
                 description=data.get("description", ""),
-                marker=MarkdownStatus.PENDING,
+                marker=MarkdownStatus.IN_PROGRESS,
                 phase=data.get("phase", ""),
             )
             return
@@ -133,6 +136,11 @@ class OrchestrationMonitor:
         self._tasks[task_id].marker = MarkdownStatus.FAILED
         self._tasks[task_id].error_reason = data.get("error_reason", "")
         self._tasks[task_id].phase = data.get("phase", self._tasks[task_id].phase)
+
+    def _on_agent_output(self, data: dict[str, Any]) -> None:
+        line = data.get("line", "")
+        if line:
+            self._agent_output_buffer.append(line)
 
     def _on_pipeline_complete(self, data: dict[str, Any]) -> None:
         self.display_active = False

@@ -196,7 +196,7 @@ class TestRunAllMonitorIntegration:
         with patch("deviate.cli.micro.OrchestrationMonitor", return_value=mock_monitor):
             result = runner.invoke(cli, ["run", "--all"])
         assert mock_monitor.signal_keyboard_interrupt.called
-        assert result.exit_code == 0
+        assert result.exit_code == 130
 
 
 def _build_e2e_tasks() -> list[dict]:
