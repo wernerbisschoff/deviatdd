@@ -51,6 +51,42 @@ class TestAgentConfigModel:
         with pytest.raises(ValidationError):
             AgentConfig(backend="opencode", timeout=600, unknown_field="x")
 
+    def test_agent_config_aider_backend_valid(self):
+        config = AgentConfig(backend="aider")
+        assert config.backend == "aider"
+
+    def test_agent_config_aider_backend_with_config(self):
+        from deviate.state.config import AiderConfig
+
+        config = AgentConfig(
+            backend="aider",
+            aider=AiderConfig(model="deepseek", auto_commits=True),
+        )
+        assert config.aider is not None
+        assert config.aider.model == "deepseek"
+        assert config.aider.auto_commits is True
+
+    def test_agent_config_aider_defaults_nested(self):
+        config = AgentConfig(backend="aider")
+        from deviate.state.config import AiderConfig
+
+        assert isinstance(config.aider, AiderConfig)
+        assert config.aider.model == "claude-sonnet-4-20250514"
+        assert config.aider.auto_commits is False
+        assert config.aider.yes_mode is True
+
+    def test_agent_config_aider_in_deviate_config(self):
+        from deviate.state.config import AiderConfig
+
+        deviate = DeviateConfig(
+            agent=AgentConfig(
+                backend="aider",
+                aider=AiderConfig(model="deepseek"),
+            )
+        )
+        assert deviate.agent.backend == "aider"
+        assert deviate.agent.aider.model == "deepseek"
+
 
 class TestHandoverManifestModel:
     def test_handover_manifest_parsed_from_yaml(self):

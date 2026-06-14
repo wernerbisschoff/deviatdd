@@ -11,6 +11,60 @@ from deviate.state.config import (
 )
 
 
+class TestAiderConfig:
+    def test_aider_config_defaults(self):
+        from deviate.state.config import AiderConfig
+
+        config = AiderConfig()
+        assert config.model == "claude-sonnet-4-20250514"
+        assert config.auto_commits is False
+        assert config.suggest_shell_commands is False
+        assert config.yes_mode is True
+
+    def test_aider_config_default_read_files(self):
+        from deviate.state.config import AiderConfig
+
+        config = AiderConfig()
+        assert config.read_files == ["specs/constitution.md", "CLAUDE.md"]
+
+    def test_aider_config_custom_values(self):
+        from deviate.state.config import AiderConfig
+
+        config = AiderConfig(
+            model="deepseek",
+            auto_commits=True,
+            suggest_shell_commands=True,
+            yes_mode=False,
+            read_files=["README.md"],
+        )
+        assert config.model == "deepseek"
+        assert config.auto_commits is True
+        assert config.suggest_shell_commands is True
+        assert config.yes_mode is False
+        assert config.read_files == ["README.md"]
+
+    def test_aider_config_rejects_extra_fields(self):
+        from deviate.state.config import AiderConfig
+
+        with pytest.raises(ValidationError):
+            AiderConfig(unknown_field="value")
+
+    def test_aider_config_json_round_trip(self):
+        import json
+        from deviate.state.config import AiderConfig
+
+        config = AiderConfig(
+            model="deepseek",
+            auto_commits=True,
+            suggest_shell_commands=True,
+            yes_mode=False,
+            read_files=["README.md"],
+        )
+        data = json.loads(config.model_dump_json())
+        restored = AiderConfig.model_validate(data)
+        assert restored == config
+
+
 class TestDeviateConfig:
     def test_default_values(self):
         config = DeviateConfig()
