@@ -112,6 +112,25 @@
     - **Acceptance**: All AiderBackend methods tested. Invocation builds correct flag combinations from config. Output parsing handles success, failure, ambiguous, and malformed cases. Post-guard runs unconditionally after successful aider exit. Missing constitution is a hard abort.
 
 - TSK-002-03: Aider backend integration test with full pipeline wiring
+  - **Judge Feedback**: TSK-002-03 violated the TDD cycle in two ways:
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 1. PRE-COMMITTED TESTS: The file tests/test_integration/test_aider_backend.py was committed
+    - **Judge Feedback**:    in commit 26b3f42 BEFORE the RED phase (19368f2). Red-phase commits MUST contain only
+    - **Judge Feedback**:    failing tests — the test file must be committed as part of the RED phase, not before it.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 2. EMPTY GREEN: The GREEN commit (f8e0a4c) contains zero source/implementation changes.
+    - **Judge Feedback**:    The GREEN phase MUST produce code (in src/ or tests/) that makes the RED-phase test pass.
+    - **Judge Feedback**:    A GREEN commit that only updates tasks.jsonl is a no-op — it does not advance the
+    - **Judge Feedback**:    implementation state.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: For the next GREEN attempt:
+    - **Judge Feedback**: - Ensure the RED phase creates a minimal failing test first (e.g., asserting that
+    - **Judge Feedback**:   AiderBackend.invoke() returns a HandoverManifest — the test should fail because
+    - **Judge Feedback**:   the method doesn't exist yet, or returns None).
+    - **Judge Feedback**: - The GREEN phase must then implement the AiderBackend code that makes that test pass.
+    - **Judge Feedback**: - Do NOT pre-commit test files outside the RED/GREEN cycle.
+    - **Judge Feedback**: - Verify: `git log` should show RED commit introducing failing test, then GREEN commit
+    - **Judge Feedback**:   introducing impl. Both commits should touch src/ or tests/, not just tasks.jsonl.
   - **Type**: Migration
   - **Mode**: IMMEDIATE
   - **Verification**: `pytest tests/test_integration/test_aider_backend.py -v`
