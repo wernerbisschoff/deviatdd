@@ -226,9 +226,9 @@ def _invoke_agent(
         return manifest, ""
     except AgentBinaryNotFoundError:
         c.print(
-            f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
+            f"  [red]AGENT_NOT_AVAILABLE[/] {backend_name} backend binary not found on PATH"
         )
-        return None, ""
+        raise typer.Exit(code=1)
     except AgentTimeoutError as exc:
         partial_output = exc.partial_stdout or ""
         if exc.partial_stderr:
