@@ -40,13 +40,10 @@ def build_task_table(tasks: list[TaskStatus]) -> Table:
 
 
 def render_agent_buffer(lines: list[str]) -> Panel:
-    width = shutil.get_terminal_size().columns
-    if width < 1:
-        width = 80
     recent = lines[-5:]
     if not recent:
         return Panel(Text("(awaiting output)"))
-    renderables = [Text(_truncate_line(line, width)) for line in recent]
+    renderables = [Text(_truncate_line(line)) for line in recent]
     return Panel(Group(*renderables))
 
 
