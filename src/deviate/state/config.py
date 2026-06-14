@@ -8,9 +8,22 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class AiderConfig(BaseModel):
+    model: str = "claude-sonnet-4-20250514"
+    auto_commits: bool = False
+    suggest_shell_commands: bool = False
+    yes_mode: bool = True
+    read_files: list[str] = Field(
+        default_factory=lambda: ["specs/constitution.md", "CLAUDE.md"]
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class AgentConfig(BaseModel):
-    backend: Literal["opencode", "claude", "droid"] = "opencode"
+    backend: Literal["opencode", "claude", "droid", "aider"] = "opencode"
     timeout: int = Field(default=600, gt=0)
+    aider: AiderConfig = Field(default_factory=AiderConfig)
 
     model_config = {"extra": "forbid"}
 

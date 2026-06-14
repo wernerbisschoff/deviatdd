@@ -1,1 +1,2 @@
 {"id":"TSK-002-01","issue_id":"ISS-ADH-002","description":"Add AiderConfig model and extend AgentConfig wiring","status":"RED","execution_mode":"TDD","created_at":"2026-06-14T14:59:20.831787Z"}
+{"id":"TSK-002-01","issue_id":"ISS-ADH-002","description":"Add AiderConfig model and extend AgentConfig wiring","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-14T14:59:20.831787Z"}
