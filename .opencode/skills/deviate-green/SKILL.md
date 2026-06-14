@@ -70,9 +70,6 @@ files:
     action: "unchanged"
 status: "PASS"
 verification_command: "pytest tests/auth/test_jwt.py"
-git_ledger:
-  commit_sha: "b2c3d4e5"
-  message: "feat(TASK-104): implement minimal logic to pass acceptance tests"
 next_phase: "/deviate-refactor"
 ```
 ````
@@ -119,8 +116,22 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
    If lint fails, fix issues and re-run both test and lint until both pass.
 </step>
 
+<step id="post_script">
+After implementation is complete and verified, commit before emitting the handover manifest:
+```bash
+deviate green post
+```
+
+The post-script stages the implementation files, runs precommit hooks, and commits with the conventional format.
+
+If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-script again:
+```bash
+deviate green post
+```
+</step>
+
 <step id="handover_emission">
-After the implementation is verified passing, generate the HANDOVER_MANIFEST.
+After the implementation is committed, generate the HANDOVER_MANIFEST.
 
 CRITICAL: The manifest MUST be a valid YAML code block delimited by ```yaml and ```.
 ALL string values in the YAML MUST be wrapped in double quotes (" ").
@@ -145,24 +156,7 @@ files:
     action: "modified|unchanged"
 status: "PASS"
 verification_command: "{VERIFICATION_COMMAND}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
 next_phase: "/deviate-refactor"
-```
-</step>
-
-<step id="post_script">
-After implementation is complete and verified, run the post-script to commit:
-```bash
-deviate green post
-```
-
-The post-script stages the implementation files, runs precommit hooks, and commits with the conventional format.
-
-If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-script again:
-```bash
-deviate green post
 ```
 </step>
 
@@ -187,9 +181,6 @@ files:
     action: "modified|unchanged"
 status: "PASS"
 verification_command: "{VERIFICATION_COMMAND}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
 next_phase: "/deviate-refactor"
 ```
 </output_format_schemas>

@@ -163,9 +163,6 @@ reasoning:
       rationale: "<WHY_THIS_PATTERN>"
 artifacts:
   - "<FUNCTIONS_ADDED_OR_MODIFIED>"
-commit:
-  sha: "<COMMIT_SHA>"
-  message: "refactor({TASK_ID}): improve structure"
 previous_phase: "/deviate-green"
 next_phase: "/deviate-red (fresh cycle) | /tools:pr (all complete)"
 ```
