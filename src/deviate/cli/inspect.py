@@ -116,6 +116,8 @@ def issues_list_command(
     )
     if json_flag:
         typer.echo(json.dumps(issues))
+    elif quiet:
+        pass
     else:
         table = Table(title="Issues")
         table.add_column("ID", style="cyan")
@@ -173,6 +175,8 @@ def tasks_list_command(
     )
     if json_flag:
         typer.echo(json.dumps(tasks))
+    elif quiet:
+        pass
     else:
         table = Table(title="Tasks")
         table.add_column("ID", style="cyan")

@@ -243,7 +243,8 @@ def filter_tasks(ledger_path: Path, filter_obj: LedgerFilter) -> list[TaskRecord
     for r in result:
         try:
             tasks.append(TaskRecord.model_validate(r))
-        except PydanticValidationError:
+        except PydanticValidationError as e:
+            warnings.warn(f"Skipping invalid task record: {e}")
             continue
     return tasks
 
