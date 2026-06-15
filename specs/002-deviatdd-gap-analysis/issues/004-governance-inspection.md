@@ -24,7 +24,7 @@ type: feature
 
 **User Journey**: A developer runs `deviate constitution pre` to validate `specs/constitution.md` and extract test/lint/typecheck commands. The output is a JSON contract with extracted commands. Then `deviate constitution post <manifest>` validates constitution sections and commits. Separately, a developer wants to see all issues: `deviate issues list --json` parses `specs/issues.jsonl` bottom-up and emits a JSON array. `deviate tasks list --status PENDING` shows only pending tasks in a Rich table. During `deviate init`, placeholders in `constitution_seed.md` are validated to ensure all 6 `${VARIABLE}` tokens are present.
 
-**System Response**: `constitution pre` reads `specs/constitution.md`, validates sections, extracts `test_command`, `lint_command`, `typecheck_command` from `## TESTING_PROTOCOLS`. Missing constitution → `FAILURE` with reason. `constitution post` validates section structure and commits. `issues list` parses `specs/issues.jsonl` bottom-up with `--type`, `--status`, `--json` filters. `tasks list` parses active issue's `tasks.jsonl` with status derivation. Missing ledger → empty result set (not error). `validate_placeholders()` checks all 6 variables are present in the seed template.
+**System Response**: `constitution pre` reads `specs/constitution.md`, validates sections, extracts `test_command`, `lint_command`, `typecheck_command` from `## TESTING_PROTOCOLS`. Missing constitution → `FAILURE` with reason. `constitution post` validates section structure and commits. `issues list` parses `specs/issues.jsonl` bottom-up with `--type`, `--status`, `--json` filters. For claimed (SPECIFIED) issues, the corresponding `feat/<epic_slug>/<issue_slug>` branch existence on remote is checked via `git ls-remote --heads`. Issues claimed without a matching remote branch are flagged with a `🟡 ORPHAN_CLAIM` warning in the Rich table and a dedicated `"orphan_claim": true` field in JSON mode. `tasks list` parses active issue's `tasks.jsonl` with status derivation. Missing ledger → empty result set (not error). `validate_placeholders()` checks all 6 variables are present in the seed template.
 
 ## [SCOPE_BOUNDARIES]
 
@@ -33,6 +33,9 @@ type: feature
 - `deviate constitution post <manifest>` — validate sections, commit
 - `validate_placeholders(seed_path)` — audit all 6 `${VARIABLE}` placeholders in seed template
 - `deviate issues list [--type] [--status] [--json]` — parse `specs/issues.jsonl` bottom-up, Rich table or JSON
+  - For each issue with status `SPECIFIED`, derive branch name as `feat/<epic_slug>/<issue_slug>` from `source_file` using `_resolve_bucket_dir`/`_source_stem` logic, check via `git ls-remote --heads <remote> <branch>`
+  - If remote branch absent → flag as orphan claim: `🟡 ORPHAN_CLAIM` badge in table, `"orphan_claim": true` in JSON
+  - Remote auto-detected via `detect_remote()`; unreachable remote → all SPECIFIED issues show `"orphan_claim": null` (unknown, not false)
 - `deviate tasks list [--type] [--status] [--json]` — parse active issue's `tasks.jsonl`, Rich table or JSON
 - Missing ledger → empty result set (not error)
 - Malformed JSONL lines → skip with stderr warning
@@ -62,6 +65,8 @@ type: feature
 | AC-005-02 | `constitution pre` with missing constitution → `status: FAILURE` with descriptive reason |
 | AC-006-01 | `issues list --json` with 3 issues → valid JSON array on stdout |
 | AC-006-02 | `tasks list --status PENDING` → only PENDING tasks in Rich table |
+| AC-006-03 | `issues list --json` with a SPECIFIED issue that has no remote branch → `"orphan_claim": true` in that entry |
+| AC-006-04 | `issues list` with a SPECIFIED issue that has matching remote branch → no orphan flag (or `"orphan_claim": false` in JSON) |
 | AC-014-01 | `validate_placeholders()` confirms all 6 variables present in `constitution_seed.md` |
 
 ### Data Model Entities
@@ -70,7 +75,7 @@ type: feature
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
 - `tests/test_cli/test_constitution.py` — `test_constitution_pre_emits_commands`, `test_constitution_pre_missing_file`
-- `tests/test_cli/test_inspect.py` — `test_issues_list_json`, `test_tasks_list_status_filter`, `test_issues_list_empty_ledger`
+- `tests/test_cli/test_inspect.py` — `test_issues_list_json`, `test_tasks_list_status_filter`, `test_issues_list_empty_ledger`, `test_issues_list_orphan_claim_detected`, `test_issues_list_orphan_claim_branch_exists`, `test_issues_list_orphan_claim_remote_unreachable`
 - `tests/test_core/test_constitution.py` — `test_validate_placeholders_all_present`, `test_validate_placeholders_missing_var`
 - `tests/test_state/test_ledger.py` — `test_ledger_filter_query`, `test_ledger_filter_empty`
 
