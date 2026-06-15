@@ -90,6 +90,7 @@ _SKILL_NAMES: dict[str, str | None] = {
     "YELLOW": "deviate-yellow",
     "JUDGE": "deviate-judge",
     "REFACTOR": "deviate-refactor",
+    "EXECUTE": "deviate-execute",
 }
 
 
@@ -465,6 +466,7 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
 
 
 _TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[.\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
+_MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 
 
 def _find_all_pending_tasks(
@@ -492,7 +494,8 @@ def _find_all_pending_tasks(
         if tasks_md is not None:
             fallback = tasks_md.parent / "tasks.jsonl"
             content = tasks_md.read_text(encoding="utf-8")
-            for line in content.splitlines():
+            content_lines = content.splitlines()
+            for i, line in enumerate(content_lines):
                 m = _TASK_LINE_RE.match(line)
                 if m is None:
                     continue
@@ -511,7 +514,13 @@ def _find_all_pending_tasks(
                     _log(f"    → status={latest[tid].get('status')}, including")
                     results.append((latest[tid], ledger_of.get(tid, fallback)))
                 else:
-                    _log("    → no ledger entry for this issue, assuming PENDING")
+                    mode = "TDD"
+                    for j in range(i + 1, min(i + 10, len(content_lines))):
+                        mode_m = _MODE_LINE_RE.match(content_lines[j])
+                        if mode_m:
+                            mode = mode_m.group(1)
+                            break
+                    _log(f"    → no ledger entry, mode={mode}")
                     results.append(
                         (
                             {
@@ -519,7 +528,7 @@ def _find_all_pending_tasks(
                                 "issue_id": issue_id,
                                 "description": m.group(2).strip(),
                                 "status": "PENDING",
-                                "execution_mode": "TDD",
+                                "execution_mode": mode,
                             },
                             fallback,
                         )
@@ -1132,9 +1141,38 @@ def _run_tdd_cycle(
         session.save(session_path)
 
 
-def _run_execute_phase(task: dict, ledger_path: Path, c: Console) -> None:
+def _run_execute_phase(
+    task: dict,
+    ledger_path: Path,
+    c: Console,
+    agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
+) -> None:
     tid = task.get("id", "?")
     c.print(f"  [bold green]EXECUTE →[/] {tid}")
+
+    backend = agent or "opencode"
+    skill = _load_skill_content("EXECUTE")
+    if skill:
+        prompt = _build_agent_prompt(skill, "EXECUTE", task, Path.cwd())
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
+        manifest, _ = _invoke_agent(
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="EXECUTE",
+            output_callback=agent_output_callback,
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"EXECUTE phase agent error for {tid}: agent returned no manifest"
+            )
+        if manifest.status.upper() in ("FAILURE", "ERROR"):
+            raise PhaseFailedError(
+                f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            )
+
     _append_status_transition(task, "COMPLETED", ledger_path)
     c.print(f"  [bold green]COMPLETED[/] {tid}")
 
@@ -1178,7 +1216,7 @@ def _dispatch_task(
             monitor=monitor,
         )
     else:
-        _run_execute_phase(task, ledger_path, c)
+        _run_execute_phase(task, ledger_path, c, agent=agent, monitor=monitor)
 
 
 def _run_single(

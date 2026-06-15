@@ -63,7 +63,7 @@ class TaskRecord(BaseModel):
     status: Literal[
         "PENDING", "RED", "GREEN", "JUDGE", "REFACTOR", "COMPLETED", "FAILED"
     ] = "PENDING"
-    execution_mode: Literal["TDD", "DIRECT", "E2E"] = "TDD"
+    execution_mode: Literal["TDD", "DIRECT", "E2E", "IMMEDIATE"] = "TDD"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = {"extra": "forbid"}
