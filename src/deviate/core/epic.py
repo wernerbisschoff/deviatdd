@@ -38,7 +38,7 @@ def _extract_prefix_num(slug: str) -> int:
 
 
 def _find_next_epic_num(root: Path) -> int:
-    if not root.exists():
+    if not root.is_dir():
         return 1
     nums = [
         _extract_prefix_num(d.name)
