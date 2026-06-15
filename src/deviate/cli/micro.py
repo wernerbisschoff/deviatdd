@@ -1922,6 +1922,11 @@ def judge_pre() -> None:
 # ---------------------------------------------------------------------------
 
 
+_NON_DETERMINISTIC = re.compile(
+    r"(0x[0-9a-fA-F]+|id='\d+'|pytest-\d+/|\[?[a-f0-9]{7}\])"
+)
+
+
 def _normalize_pytest_output(output: str) -> str:
     lines: list[str] = []
     for line in output.splitlines():
@@ -1932,7 +1937,8 @@ def _normalize_pytest_output(output: str) -> str:
             continue
         if stripped.startswith(".") and stripped.endswith("%]"):
             continue
-        lines.append(stripped)
+        normalized = _NON_DETERMINISTIC.sub("", stripped)
+        lines.append(normalized)
     return "\n".join(lines)
 
 
