@@ -105,39 +105,51 @@ mock_pytest.side_effect = [
 ]
 ```
 
+## Spec Alignment (MANDATORY)
+
+- `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are the authoritative
+  source-of-truth documents for the DeviaTDD architecture. Any change to CLI commands,
+  phase workflows, model routing, file structure, or HITL gates MUST be reflected in
+  both documents.
+- When adding, removing, or renaming a CLI command, skill, or phase, update both spec
+  files in the same commit.
+- When the ADHOC-003 restructured workflow changes (Shard+Specify merged, Plan phase,
+  Gate 2 repositioned), keep these docs in sync with the actual implementation.
+
 ## DeviaTDD Phase Architecture
 
 ### Macro Layer — Feature Scoping
 - `/explore` → **DeepSeek V4 Flash**: Fast scan of codebase structure, dependencies, and patterns. Outputs `explore.md` (what exists, not what to do).
 - `/research` → **Qwen3.7-Plus [Thinking Mode]**: Consumes `explore.md`, performs architectural analysis. Outputs `design.md` (trade-offs, decisions) and `data-model.md` (schemas, relationships).
 - `/prd` → **Qwen3.7-Plus [Thinking Mode]**: Translates `design.md` into immutable user requirements and acceptance criteria in `prd.md`.
-- `/shard` → **Qwen3.7-Plus [Thinking Mode]**: Breaks PRD into ~5 independent vertical-slice issues (3-10 bounds). Each issue is end-to-end testable.
+- `/shard` → **Qwen3.7-Plus [Thinking Mode]**: Breaks PRD into spec-enriched issue files with Gherkin AC, user stories, and edge cases (merged with Specify). Target ~5 issues (3-10 bounds).
 
 ### Meso Layer — Issue Engineering
-- `/specify` → **DeepSeek V4 Pro**: Converts issue data into functional contract `spec.md` (business boundaries, edge cases — no implementation).
-- **[HITL Gate 2]**: Human reviews `spec.md` before task decomposition proceeds.
-- `/tasks` → **DeepSeek V4 Pro** (same continuous thread as /specify for prefix cache): Decomposes `spec.md` into ~5 TDD-cycle tasks with implementation hints (3-10 bounds). Merged former `/plan` role. Appends terminal `type: "e2e"` task.
+- **[HITL Gate 2]**: Human reviews spec-enriched shard issues before planning proceeds.
+- `/plan` → **DeepSeek V4 Pro** (planned): Per-issue localized research — scans current codebase, analyzes prior issue implementations, produces `plan.md` with implementation strategy.
+- `/tasks` → **DeepSeek V4 Pro**: Decomposes spec-enriched issue + `plan.md` into ~5 TDD-cycle tasks with implementation hints (3-10 bounds). Appends terminal `type: "e2e"` task.
+- `/specify` → **Deprecated** (merged into shard). Legacy skill redirects to new workflow.
 
 ### Micro Layer — TDD Sandbox
 - **RED** → **DeepSeek V4 Flash**: Write failing test; verified to fail due to missing implementation.
-- **GREEN** → **DeepSeek V4 Flash**: Write production code to pass test; tamper guard reverts unauthorized test edits.
-- **YELLOW** → **DeepSeek V4 Flash** (conditional): If RED test is flawed, propose amendment for isolated judge approval/rejection.
-- **JUDGE** → **DeepSeek V4 Pro**: Isolated compliance gate evaluates `git diff` against `spec.md` for security and structural violations.
+- **GREEN** → **DeepSeek V4 Flash**: Write production code to pass test; TamperGuard reverts unauthorized test edits. If tampering detected, session transitions to YELLOW.
+- **YELLOW** → **DeepSeek V4 Pro** (conditional, TamperGuard-triggered): Propose amendment for isolated judge approval/rejection. NOT in `_PHASE_MAP` — conditional branch between GREEN and JUDGE.
+- **JUDGE** → **DeepSeek V4 Pro**: Isolated compliance gate evaluates `git diff` against `spec.md`. On violation: `git revert` (never `git reset --hard`), persist `RollbackSnapshot`, inject `<judge_feedback>`, route back to GREEN.
 - **REFACTOR** → **DeepSeek V4 Flash**: Polish implementation; regression gate re-runs tests, rolls back on failure.
 
 ### Fast-Path
-- `/adhoc` → **Qwen3.7-Plus [Thinking Mode]**: Compresses Explore + Research + PRD + Shard for low/medium complexity tasks via complexity gate.
+- `/adhoc` → **Qwen3.7-Plus [Thinking Mode]**: Compresses Explore + Research + PRD + Shard for low/medium complexity tasks via `ComplexityGate`. Produces spec-enriched issues directly.
 
 ### HITL Gates
 - **Gate 1**: After `/research`, before `/prd` — human approves design and data model.
-- **Gate 2**: After `/specify`, before `/tasks` — human approves functional contract.
+- **Gate 2**: After `/shard`, before `/plan` — human reviews spec-enriched issue files.
 - **Gate 3**: After all tasks complete — human approves merge.
 
 ### Model Routing Rationale
 - **Explorers (low-cost ingestion)**: `/explore`, RED/GREEN/REFACTOR → V4 Flash for high-volume reading and code generation.
 - **Architects (premium strategic logic)**: `/research`, `/prd`, `/shard`, `/adhoc` → Qwen3.7-Plus [Thinking Mode] for abstract reasoning and constraint satisfaction.
-- **Translators (cached engineering)**: `/specify` + `/tasks` → V4 Pro in single continuous thread for 90%+ prefix cache discount.
-- **Compliance gate**: JUDGE → V4 Pro for isolated security and drift verification.
+- **Translators (cached engineering)**: `/plan` + `/tasks` → V4 Pro in single continuous thread per issue for 90%+ prefix cache discount.
+- **Compliance gates**: YELLOW, JUDGE → V4 Pro for isolated security and drift verification.
 
 ## Python-Only Architecture
 
