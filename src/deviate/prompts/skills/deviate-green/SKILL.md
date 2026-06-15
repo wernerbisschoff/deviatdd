@@ -79,6 +79,11 @@ next_phase: "/deviate-refactor"
 
 <execution_sequence>
 
+<!-- CRITICAL: Post-command execution is MANDATORY. Agents that skip this step
+     leave uncommitted files and break the downstream pipeline. The orchestrator
+     only verifies work was committed via this command; manual git commits are
+     not detected and trigger fallback warnings. -->
+
 <step id="pre_script">
 Run the pre-script to discover the active TDD task and emit a JSON contract:
 ```bash
@@ -117,17 +122,27 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 </step>
 
 <step id="post_script">
-After implementation is complete and verified, commit before emitting the handover manifest:
+**⚠️ MANDATORY — YOU MUST RUN THIS COMMAND. DO NOT SKIP.**
+
+You MUST execute the following command using the **Bash tool**. Do NOT use `git add`, `git commit`, or any other git command to commit files. Only `deviate green post` is the accepted way to complete this phase.
+
+Failure to run this command will:
+- Leave files uncommitted
+- Trigger fallback warnings in the orchestrator
+- Risk phase rejection
+
 ```bash
 deviate green post
 ```
 
-The post-script stages the implementation files, runs precommit hooks, and commits with the conventional format.
+The post-command stages all changed files, runs pre-commit hooks (lint, format-check, tests), updates the task ledger, and creates the commit with the conventional format.
 
-If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-script again:
+If the post-command returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-command again:
 ```bash
 deviate green post
 ```
+
+Do NOT proceed to the handover manifest until this command completes successfully (exit code 0).
 </step>
 
 <step id="handover_emission">

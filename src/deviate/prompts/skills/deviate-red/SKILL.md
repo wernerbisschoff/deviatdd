@@ -80,6 +80,11 @@ next_phase: "/deviate-green"
 
 <execution_sequence>
 
+<!-- CRITICAL: Post-command execution is MANDATORY. Agents that skip this step
+     leave uncommitted files and break the downstream pipeline. The orchestrator
+     only verifies work was committed via this command; manual git commits are
+     not detected and trigger fallback warnings. -->
+
 <step id="pre_script">
 Run the pre-script to discover the active TDD task and emit a JSON contract:
 ```bash
@@ -118,12 +123,27 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 </step>
 
 <step id="post_script">
-After tests are written and verified failing, commit them before emitting the handover manifest:
+**⚠️ MANDATORY — YOU MUST RUN THIS COMMAND. DO NOT SKIP.**
+
+You MUST execute the following command using the **Bash tool**. Do NOT use `git add`, `git commit`, or any other git command to commit files. Only `deviate red post` is the accepted way to complete this phase.
+
+Failure to run this command will:
+- Leave files uncommitted
+- Trigger fallback warnings in the orchestrator
+- Risk phase rejection
+
 ```bash
 deviate red post
 ```
 
-The post-script stages the test file and commits with `--no-verify` (pre-commit hooks are bypassed because RED-phase tests are intentionally failing).
+The post-command stages all changed files, verifies tests are still failing (expected for RED), updates the task ledger, and commits with `--no-verify` (pre-commit hooks are bypassed because RED-phase tests are intentionally failing).
+
+If the post-command returns a non-zero exit code, inspect the error output, fix the underlying issue, then re-run:
+```bash
+deviate red post
+```
+
+Do NOT proceed to the handover manifest until this command completes successfully.
 </step>
 
 <step id="handover_emission">
