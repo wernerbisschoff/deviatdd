@@ -23,6 +23,7 @@ VALID_EVENT_TYPES = frozenset(
         "phase_change",
         "task_completed",
         "task_failed",
+        "pipeline_halted",
         "pipeline_complete",
         "agent_output",
     }
