@@ -625,9 +625,7 @@ def _run_red_phase(
 
     session = session.force_transition_to("RED")
     session.save(session_path)
-    _append_status_transition(task, "RED", ledger_path)
-    if _log_uncommitted(Path.cwd(), "RED", tid):
-        _auto_commit_fallback("RED", tid, Path.cwd(), session, task)
+    _verify_clean_worktree(Path.cwd(), "RED", tid)
     return session
 
 
@@ -691,9 +689,7 @@ def _run_green_phase(
         session.yellow_triggered = True
     session.train_feedback = ""
     session.save(session_path)
-    _append_status_transition(task, "GREEN", ledger_path)
-    if _log_uncommitted(Path.cwd(), "GREEN", tid):
-        _auto_commit_fallback("GREEN", tid, Path.cwd(), session, task)
+    _verify_clean_worktree(Path.cwd(), "GREEN", tid)
     return session
 
 
@@ -872,9 +868,7 @@ def _run_refactor_phase(
     session = session.force_transition_to("IDLE")
     session.yellow_triggered = False
     session.save(session_path)
-    _append_status_transition(task, "COMPLETED", ledger_path)
-    if _log_uncommitted(Path.cwd(), "REFACTOR", tid):
-        _auto_commit_fallback("REFACTOR", tid, Path.cwd(), session, task)
+    _verify_clean_worktree(Path.cwd(), "REFACTOR", tid)
     c.print(f"  [bold green]COMPLETED[/] {tid}")
     return session
 
@@ -1299,7 +1293,7 @@ def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
     return False
 
 
-def _log_uncommitted(root: Path, phase: str, tid: str) -> bool:
+def _verify_clean_worktree(root: Path, phase: str, tid: str) -> None:
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=root,
@@ -1309,53 +1303,20 @@ def _log_uncommitted(root: Path, phase: str, tid: str) -> bool:
     )
     if status.stdout.strip():
         files = status.stdout.strip().splitlines()
-        console.print(
-            f"  [yellow]WARN:[/] {phase} phase for {tid} completed with"
-            f" {len(files)} uncommitted file(s) - post-command may not have run"
-        )
-        for line in files[:5]:
-            console.print(f"    {line}")
-        if len(files) > 5:
-            console.print(f"    ... and {len(files) - 5} more")
         log_dir = root / ".deviate"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "prompts.log"
         timestamp = datetime.now(timezone.utc).isoformat()
         with log_path.open("a", encoding="utf-8") as f:
-            f.write(f"=== {timestamp} | {phase} | {tid} | UNCOMMITTED ===\n")
+            f.write(f"=== {timestamp} | {phase} | {tid} | POST_CMD_FAILURE ===\n")
             f.write(f"{len(files)} uncommitted file(s):\n")
             for line in files:
                 f.write(f"  {line}\n")
             f.write("\n")
-        return True
-    return False
-
-
-_PHASE_COMMIT_MESSAGES = {
-    "RED": "test({scope}): RED phase - failing test",
-    "GREEN": "feat({scope}): GREEN phase - implementation passes tests",
-    "REFACTOR": "refactor({scope}): REFACTOR phase - code cleanup",
-}
-
-
-def _auto_commit_fallback(
-    phase: str, tid: str, root: Path, session: SessionState, task: dict
-) -> None:
-    """Auto-commit uncommitted files after a phase if the agent didn't.
-
-    Only fires when there are actual uncommitted changes — if the agent
-    already committed, this is a no-op (``_commit_phase`` returns early
-    when the worktree is clean).
-    """
-    msg_template = _PHASE_COMMIT_MESSAGES.get(phase)
-    if msg_template is None:
-        return
-    issue_id = session.active_issue_id or task.get("issue_id", "")
-    scope = _build_scope(issue_id, tid)
-    msg = msg_template.format(scope=scope)
-    no_verify = phase == "RED"
-    if _commit_phase(msg, root, no_verify=no_verify):
-        console.print("  [dim]auto-commit fallback — uncommitted files committed[/]")
+        raise PhaseFailedError(
+            f"{phase} phase agent for {tid} did not commit all files \u2014 "
+            f"{len(files)} uncommitted file(s) remain after post-command"
+        )
 
 
 def _verify_worktree_branch(root: Path) -> None:

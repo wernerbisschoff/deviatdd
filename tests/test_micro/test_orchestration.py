@@ -55,8 +55,11 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
 
 
 class TestMicroOrchestration:
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_single_task_full_cycle(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_single_task_full_cycle(
+        self, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -88,8 +91,11 @@ class TestMicroOrchestration:
                 f"Expected session to be IDLE after full cycle, got {session_data}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_session_tracks_active_phase(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_session_tracks_active_phase(
+        self, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -114,8 +120,9 @@ class TestMicroOrchestration:
                 f"Expected last_command to be set, got {session_data}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_no_judge_flag(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_no_judge_flag(self, mock_agent, mock_verify, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -140,8 +147,9 @@ class TestMicroOrchestration:
                 f"JUDGE phase should be skipped with --no-judge: {result.output}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_no_refactor_flag(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_no_refactor_flag(self, mock_agent, mock_verify, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -166,8 +174,9 @@ class TestMicroOrchestration:
                 f"REFACTOR phase should be skipped with --no-refactor: {result.output}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_agent_flag(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_agent_flag(self, mock_agent, mock_verify, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -192,8 +201,11 @@ class TestMicroOrchestration:
                 f"Expected task to complete with --agent: {result.output}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_ledger_updates_on_each_phase(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_ledger_updates_on_each_phase(
+        self, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -217,14 +229,22 @@ class TestMicroOrchestration:
             assert "PENDING" in statuses, (
                 f"Expected PENDING in ledger statuses: {statuses}"
             )
-            assert "RED" in statuses, f"Expected RED in ledger statuses: {statuses}"
-            assert "GREEN" in statuses, f"Expected GREEN in ledger statuses: {statuses}"
-            assert "COMPLETED" in statuses, (
-                f"Expected COMPLETED in ledger statuses: {statuses}"
+            assert "JUDGE" in statuses, f"Expected JUDGE in ledger statuses: {statuses}"
+            assert "RED" not in statuses, (
+                "RED status is written by post command (mocked)"
+            )
+            assert "GREEN" not in statuses, (
+                "GREEN status is written by post command (mocked)"
+            )
+            assert "COMPLETED" not in statuses, (
+                "COMPLETED is written by post command (mocked)"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_all_processes_all_pending(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_all_processes_all_pending(
+        self, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -289,9 +309,10 @@ class TestMicroOrchestration:
                 f"Expected at least one FAILED status: {statuses}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_judge_rejection_triggers_green_retry(
-        self, mock_agent, tmp_git_repo: Path
+        self, mock_agent, mock_verify, tmp_git_repo: Path
     ):
         """JUDGE_REJECTED must not skip GREEN on TRAIN retry.
 
