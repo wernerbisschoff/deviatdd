@@ -16,6 +16,8 @@ def _has_changes_to_stage(files: list[Path], repo: Path) -> bool:
             capture_output=True,
             text=True,
         )
+        if result.returncode != 0:
+            raise RuntimeError(f"git status failed for {f}: {result.stderr.strip()}")
         if result.stdout.strip():
             return True
     return False
