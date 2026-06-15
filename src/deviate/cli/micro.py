@@ -1588,11 +1588,9 @@ def green_post() -> None:
     if committed:
         console.print("[green]GREEN_POST_OK[/]")
     else:
-        console.print(
-            "[yellow]YELLOW_TRIGGERED[/] (nothing to commit or commit failed)"
-        )
+        console.print("[red]COMMIT_FAILED[/] (nothing to commit or commit failed)")
 
-    raise typer.Exit(code=0)
+    raise typer.Exit(code=0 if committed else 1)
 
 
 # ---------------------------------------------------------------------------
