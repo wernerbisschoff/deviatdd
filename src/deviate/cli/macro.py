@@ -24,6 +24,7 @@ from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact
 from deviate.prompts.assembly import assemble_prompt
 from deviate.core.constitution import extract_commands, resolve_constitution
+from deviate.cli.feature import _derive_slug
 from deviate.core.epic import (
     allocate_feature_bucket,
     discover_latest_epic,
@@ -217,10 +218,11 @@ def explore_pre(
     session, session_path = _load_and_transition("EXPLORE")
 
     specs_root = _resolve_specs_root()
-    bucket_path = specs_root / slug if slug else None
+    final_slug = slug or _derive_slug(problem)
+    bucket_path = specs_root / final_slug if final_slug else None
     is_greenfield = not (bucket_path and bucket_path.exists())
 
-    bucket = allocate_feature_bucket(slug)
+    bucket = allocate_feature_bucket(final_slug)
     console.print(f"[green]BUCKET_CREATED[/] {bucket}")
 
     spec_target_rel = str(bucket / "explore.md")
@@ -230,17 +232,17 @@ def explore_pre(
         "EXPLORE",
         session,
         session_path,
-        epic_id=slug or "",
+        epic_id=final_slug or "",
         is_greenfield=is_greenfield,
-        feature_slug=slug,
+        feature_slug=final_slug,
         feature_dir=str(bucket),
         specs_directory=str(specs_root),
         spec_target=spec_target_rel,
         spec_target_abs=spec_target_abs,
-        feature_bucket=slug,
+        feature_bucket=final_slug,
         explore_path=str(bucket / "explore.md"),
         problem=problem,
-        slug=slug,
+        slug=final_slug,
         bucket_path=str(bucket),
         issue_id="",
     )

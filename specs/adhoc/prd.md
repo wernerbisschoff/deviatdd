@@ -36,4 +36,4 @@
 
 ### Acceptance Criteria
 1. **AC-ADHOC-004-01**: Given a git diff scope (working tree or branch), When `deviate review pre` is invoked, Then it emits a JSON contract containing git state, diff files, constitution path, and resolved PRD path (epic first, adhoc fallback).
-2. **AC-ADHOC-004-02**: Given a review report is generated with `Fix Instructions`, When `deviate review post` is invoked with the report path, Then it is saved as `review-report.md`, staged, and the post status is `SUCCESS`.
+2. **AC-ADHOC-004-02**: Given a review report is generated with `Fix Instructions`, When `deviate review post` is invoked with the report path, Then it is saved as a timestamped `review-report-{timestamp}.md` under `.deviate/review/reports/`, and the post status is `SUCCESS`. Reports are advisory artifacts — never committed or staged.

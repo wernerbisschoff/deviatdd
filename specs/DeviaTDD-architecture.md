@@ -57,7 +57,10 @@ Breaks a business goal down into standard development project containers.
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
-`/deviate-plan` phase for per-issue localized research.
+`/deviate-plan` phase for per-issue localized research. Code review is handled by the
+`deviate review pre/post` command pair (see `src/deviate/cli/review.py`), which gathers git
+state, governance context, and PRD traceability, then persists review reports to
+`.deviate/review/reports/`.
 
 * **Shard+Specify (merged):** The `/deviate-shard` skill now produces issue files with full
   spec-level detail: user stories (US-NNN), Gherkin acceptance criteria (Given/When/Then),

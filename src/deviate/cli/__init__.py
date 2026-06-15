@@ -26,6 +26,7 @@ from deviate.cli.adhoc import adhoc_app
 from deviate.cli.constitution import constitution_app
 from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
+from deviate.cli.review import review_app
 from deviate.core.skills import detect_agents, discover_skills, install_skill
 
 cli = typer.Typer(no_args_is_help=True)
@@ -299,7 +300,7 @@ def _ensure_gitignore(workdir: Path) -> None:
     dot_dir = workdir / ".deviate"
     dot_dir.mkdir(parents=True, exist_ok=True)
     gitignore = dot_dir / ".gitignore"
-    entries = ["session.json", "artifacts/", "prompts.log"]
+    entries = ["session.json", "artifacts/", "prompts.log", "reports/"]
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")
         for entry in entries:
@@ -364,4 +365,5 @@ cli.add_typer(adhoc_app, name="adhoc")
 cli.add_typer(constitution_app, name="constitution")
 cli.add_typer(feature_app, name="feature")
 cli.add_typer(inspect_app, name="inspect")
+cli.add_typer(review_app, name="review")
 cli.command(name="run")(run_command)

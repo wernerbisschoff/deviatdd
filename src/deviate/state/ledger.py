@@ -249,6 +249,33 @@ def filter_tasks(ledger_path: Path, filter_obj: LedgerFilter) -> list[TaskRecord
     return tasks
 
 
+class RollbackSnapshot(BaseModel):
+    phase: str
+    branch: str
+    commit_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    reason: str
+    restored: bool = False
+    model_config = {"extra": "forbid"}
+
+
+ROLLBACK_LEDGER_NAME = "rollback.jsonl"
+
+
+def append_rollback_snapshot(snapshot: RollbackSnapshot, deviate_dir: Path) -> bool:
+    """Persist a RollbackSnapshot to .deviate/rollback.jsonl.
+
+    Idempotency is checked on the (phase, commit_sha) compound key so that
+    re-running the same rollback does not create duplicate entries.
+    """
+    ledger_path = deviate_dir / ROLLBACK_LEDGER_NAME
+    return _append_with_compound_key(
+        record_json=snapshot.model_dump_json(),
+        key_fields=["phase", "commit_sha"],
+        ledger_path=ledger_path,
+    )
+
+
 class AdhocRecord(BaseModel):
     issue_id: str = Field(min_length=1)
     description: str = Field(min_length=1)

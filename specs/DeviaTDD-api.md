@@ -438,7 +438,35 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ---
 
-### 7. (Removed — Context Sync)
+### 7. Code Review & Quality Gates
+
+#### `deviate review pre [--base <branch>] [--branch <branch>]`
+
+* **Source:** `src/deviate/cli/review.py`
+* **Description:** Gathers git state and governance context for code review. Computes the
+  unified diff between the merge-base of `--base` (default: `main`) and `--branch` (default:
+  `HEAD`), resolves the constitution path, resolves the PRD path from the branch name,
+  and checks for existing review reports. Emits a JSON contract with all gathered context
+  for consumption by the review skill.
+* **Input Parameters:**
+  * `--base <branch>` (Base branch for merge-base computation; default: `main`)
+  * `--branch <branch>` (Target branch for self-contained review; default: `HEAD`)
+* **Output Artifacts:** JSON contract with `diff`, `constitution_path`, `prd_path`,
+  `constitution_warning`, `prd_warning`, `base_branch`, `report_exists`, `timestamp`.
+
+#### `deviate review post [<content>]`
+
+* **Source:** `src/deviate/cli/review.py`
+* **Description:** Persists a review report markdown file and marks the review as complete.
+  If no content argument is provided, reads from stdin (supports pipe-mode for programmatic
+  usage). Writes the report to `.deviate/review/reports/review-report-{timestamp}.md`.
+* **Input Parameters:**
+  * `<content>` (Optional positional: report markdown content. If omitted, reads from stdin.)
+* **Output Artifacts:** `.deviate/review/reports/review-report-{timestamp}.md`
+
+---
+
+### 8. (Removed — Context Sync)
 
 The `deviate context` concept was evaluated and removed. Reasoning:
 - Every phase/prompt already injects the constitution and relevant specs, making redundant

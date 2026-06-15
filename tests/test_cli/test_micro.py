@@ -435,3 +435,4 @@ class TestRunAllMonitorE2E:
         assert "TSK-001-03" not in started_ids, (
             "Pipeline should halt after failure — TSK-001-03 should not start"
         )
+        assert result.exit_code != 0, "Expected non-zero exit code when pipeline halts"
