@@ -407,6 +407,10 @@ class TestRunAllMonitorE2E:
 
         result = runner.invoke(cli, ["run", "--all", "--json"])
 
+        assert result.exit_code == 1, (
+            f"Expected exit code 1 on failure, got {result.exit_code}"
+        )
+
         all_lines = [line for line in result.output.splitlines() if line.strip()]
         events = [json.loads(line) for line in all_lines if line.startswith("{")]
         event_types = [e["event"] for e in events]
@@ -422,8 +426,12 @@ class TestRunAllMonitorE2E:
             f"Expected TSK-001-02 to fail, got {failed_id}"
         )
 
+        assert "pipeline_halted" in event_types, (
+            "Expected pipeline_halted event when task failure halts pipeline"
+        )
+
         task_started_events = [e for e in events if e["event"] == "task_started"]
         started_ids = [e.get("id", e.get("task_id", "")) for e in task_started_events]
-        assert "TSK-001-03" in started_ids, (
-            "Remaining tasks should continue after failure — expected TSK-001-03 to start"
+        assert "TSK-001-03" not in started_ids, (
+            "Pipeline should halt after failure — TSK-001-03 should not start"
         )
