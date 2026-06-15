@@ -123,7 +123,42 @@ If the post-script exits non-zero, fix the underlying issue and retry.
    ```bash
    git commit -m "$commit_subject" -m "Mode: DIRECT" -m "Validation: manual-fallback"
    ```
-4. If the manual commit also fails, surface `git status` and `git log -1` to the user with a clear explanation
+ 4. If the manual commit also fails, surface `git status` and `git log -1` to the user with a clear explanation
+</step>
+
+<step id="handover_emission">
+Emit the structured handover manifest. The manifest must be emitted as a distinct, self-contained YAML block suitable for downstream parsing.
+
+CRITICAL: The manifest MUST be a valid YAML code block delimited by ```yaml and ```.
+ALL string values in the YAML MUST be wrapped in double quotes (" ").
+A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
+Output NOTHING outside the YAML block — no explanations, no commentary.
+
+If the post-script committed successfully (exit 0, no manual fallback needed), emit:
+
+```yaml
+phase: "EXECUTE"
+task_id: "{TASK_ID}"
+status: "PASS"
+```
+
+If manual fallback was used, include the commit_sha:
+
+```yaml
+phase: "EXECUTE"
+task_id: "{TASK_ID}"
+status: "PASS"
+commit_sha: "{SHORT_SHA}"
+```
+
+If the implementation failed validation and cannot be resolved, emit:
+
+```yaml
+phase: "EXECUTE"
+task_id: "{TASK_ID}"
+status: "FAILURE"
+rationale: "{WHY_IT_FAILED}"
+```
 </step>
 
 </execution_sequence>
