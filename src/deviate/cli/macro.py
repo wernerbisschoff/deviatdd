@@ -26,7 +26,6 @@ from deviate.prompts.assembly import assemble_prompt
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.core.epic import (
     allocate_feature_bucket,
-    discover_epic,
     discover_latest_epic,
     resolve_active_feature,
 )
@@ -204,23 +203,6 @@ def explore_pre(
     bucket = allocate_feature_bucket(slug)
     console.print(f"[green]BUCKET_CREATED[/] {bucket}")
 
-    record = IssueRecord(
-        issue_id=str(uuid.uuid4()),
-        type="feature",
-        title=problem,
-        status="DRAFT",
-        source_file=str(bucket / "explore.md"),
-        timestamp=datetime.now(timezone.utc),
-    )
-    ledger_path = specs_root / "issues.jsonl"
-    appended = append_issue_record(record, ledger_path)
-    if appended:
-        console.print(f"[green]LEDGER_APPENDED[/] {record.issue_id}")
-    else:
-        console.print(
-            f"[yellow]LEDGER_IDEMPOTENT[/] record for {record.issue_id} already exists"
-        )
-
     spec_target_rel = str(bucket / "explore.md")
     spec_target_abs = str((bucket / "explore.md").resolve())
 
@@ -240,17 +222,21 @@ def explore_pre(
         problem=problem,
         slug=slug,
         bucket_path=str(bucket),
-        issue_id=record.issue_id,
+        issue_id="",
     )
 
 
 @explore_app.command("post")
-def explore_post() -> None:
+def explore_post(
+    epic: str | None = typer.Option(
+        None, "--epic", help="Epic slug (e.g. 003-prompt-optimization)"
+    ),
+) -> None:
     """Validate explore.md and commit"""
     session, session_path = _load_session("EXPLORE")
 
     specs_root = _resolve_specs_root()
-    epic_slug = resolve_active_feature(specs_root)
+    epic_slug = epic or discover_latest_epic(specs_root)
     if not epic_slug:
         _halt("EXPLORE", "no active feature bucket found")
 
@@ -336,14 +322,18 @@ def research_pre(
 
 
 @research_app.command("post")
-def research_post() -> None:
+def research_post(
+    epic: str | None = typer.Option(
+        None, "--epic", help="Epic slug (e.g. 003-prompt-optimization)"
+    ),
+) -> None:
     """Scan for constitutional violations, commit artifacts"""
     session, session_path = _load_session("RESEARCH")
 
     _validate_constitution("RESEARCH")
 
     specs_root = _resolve_specs_root()
-    epic_slug = resolve_active_feature(specs_root)
+    epic_slug = epic or resolve_active_feature(specs_root)
     if not epic_slug:
         _halt("RESEARCH", "no active feature bucket found")
 
@@ -380,13 +370,16 @@ prd_app = typer.Typer(no_args_is_help=True, help="PRD phase commands")
 @prd_app.command("pre")
 @with_json_quiet
 def prd_pre(
+    epic: str | None = typer.Option(
+        None, "--epic", help="Epic slug (e.g. 003-prompt-optimization)"
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview contract without side effects"
     ),
 ) -> None:
     """Discover epic slug, resolve upstream artifacts"""
     specs_root = _resolve_specs_root()
-    epic_slug = discover_epic(specs_root)
+    epic_slug = epic or discover_latest_epic(specs_root)
     if not epic_slug:
         _halt("PRD", "no epic discovered")
     epic_dir = specs_root / epic_slug

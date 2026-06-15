@@ -37,12 +37,31 @@ def _extract_prefix_num(slug: str) -> int:
         return 0
 
 
+def _find_next_epic_num(root: Path) -> int:
+    if not root.exists():
+        return 1
+    nums = [
+        _extract_prefix_num(d.name)
+        for d in root.iterdir()
+        if d.is_dir() and _extract_prefix_num(d.name) > 0
+    ]
+    return max(nums, default=0) + 1
+
+
 def allocate_feature_bucket(slug: str, specs_root: Path | None = None) -> Path:
     root = _resolve_specs_root(specs_root)
-    bucket = root / slug
+
+    if _extract_prefix_num(slug) > 0:
+        bucket = root / slug
+        bucket.mkdir(parents=True, exist_ok=True)
+        return bucket
+
+    next_num = _find_next_epic_num(root)
+    numbered_slug = f"{next_num:03d}-{slug}"
+    bucket = root / numbered_slug
     bucket.mkdir(parents=True, exist_ok=True)
     return bucket
 
 
 def resolve_active_feature(specs_root: Path | None = None) -> str:
-    return discover_epic(specs_root)
+    return discover_latest_epic(specs_root)
