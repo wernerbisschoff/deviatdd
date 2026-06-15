@@ -118,30 +118,6 @@ def _build_agent_prompt(skill_content: str, phase: str, task: dict, root: Path) 
     return skill_content.replace("$ARGUMENTS", task_context)
 
 
-_TOOL_CALL_INDICATORS = frozenset(
-    {
-        '"tool_use"',
-        '"tool_calls"',
-        "tool_use",
-        "tool_calls",
-        '"function"',
-        "<function_calls>",
-        "<invoke ",
-        "<tool_call",
-        "<use_tool",
-        "[Tool",
-        '"name": "',
-        '"type":"tool',
-        '"type": "tool',
-    }
-)
-
-
-def _is_tool_call(line: str) -> bool:
-    lower = line.lower().strip()
-    return any(ind in lower for ind in _TOOL_CALL_INDICATORS)
-
-
 def _make_agent_output_callback(
     monitor: OrchestrationMonitor | None,
     task_id: str,
@@ -198,12 +174,8 @@ def _make_output_handler(c: Console) -> Callable[[str], None]:
             thinking_buf.append(stripped)
             return
 
-        if _is_tool_call(stripped):
-            c.print("[dim].[/]", end="")
-            sys.stdout.flush()
-            return
-
-        c.print(stripped)
+        c.print("[dim].[/]", end="")
+        sys.stdout.flush()
 
     return handler
 
