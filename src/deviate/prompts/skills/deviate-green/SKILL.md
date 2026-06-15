@@ -129,8 +129,8 @@ You MUST execute the following command using the **Bash tool**. Do NOT use `git 
 
 Failure to run this command will:
 - Leave files uncommitted
-- Trigger fallback warnings in the orchestrator
-- Risk phase rejection
+- Cause the phase to fail (no fallback commit)
+- Require re-running the phase from scratch
 
 ```bash
 deviate green post
