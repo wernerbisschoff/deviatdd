@@ -73,7 +73,8 @@ class TestRunCommand:
                 f"Expected task to reach COMPLETED state: {result.output}"
             )
 
-    def test_run_dispatches_immediate_task_to_execute(self, tmp_path: Path):
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_run_dispatches_immediate_task_to_execute(self, mock_agent, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
