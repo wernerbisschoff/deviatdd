@@ -32,16 +32,13 @@ class TestExplorePre:
             )
             assert result.exit_code == 0, result.output
 
-            bucket = spec_root / "test-slug"
+            bucket = spec_root / "001-test-slug"
             assert bucket.is_dir(), f"Feature bucket {bucket} should exist"
 
             ledger_path = spec_root / "issues.jsonl"
-            assert ledger_path.exists(), "ledger should exist"
-            lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
-            assert len(lines) >= 1, "expected at least 1 ledger record"
-            record = json.loads(lines[-1])
-            assert record["type"] == "feature"
-            assert record["source_file"] == "specs/test-slug/explore.md"
+            assert not ledger_path.exists(), (
+                "explore pre should not append to issues ledger"
+            )
 
     def test_explore_pre_rejects_missing_constitution(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
