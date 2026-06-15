@@ -689,7 +689,21 @@ def _run_green_phase(
         session.yellow_triggered = True
     session.train_feedback = ""
     session.save(session_path)
-    _verify_clean_worktree(Path.cwd(), "GREEN", tid)
+    try:
+        _verify_clean_worktree(Path.cwd(), "GREEN", tid)
+    except PhaseFailedError as e:
+        c.print(f"  [red]CLEAN_WORKTREE_FAILED[/] {e}")
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD~1"],
+            cwd=Path.cwd(),
+            capture_output=True,
+            env=_git_env(),
+        )
+        session = session.force_transition_to("RED")
+        session.train_feedback = str(e)
+        session.yellow_triggered = False
+        session.save(session_path)
+        return session
     return session
 
 
@@ -1001,6 +1015,23 @@ def _run_tdd_cycle(
                 agent=agent,
                 monitor=monitor,
             )
+
+        if session.train_feedback:
+            train_attempts += 1
+            if train_attempts >= max_train_attempts:
+                c.print(
+                    f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
+                    f"after {max_train_attempts} attempts"
+                )
+                raise PhaseFailedError(
+                    f"GREEN phase post-cleanup failed for {task.get('id', '?')} "
+                    f"after {max_train_attempts} train attempts"
+                )
+            c.print(
+                f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                f" — GREEN phase post-cleanup failed, retrying with feedback[/]"
+            )
+            continue
 
         if no_judge:
             judge_passed = True
@@ -1411,6 +1442,15 @@ def _run_test_cmd(root: Path) -> subprocess.CompletedProcess:
     )
 
 
+def _run_format_cmd(root: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["mise", "run", "format"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+
 @red_app.command(name="post")
 def red_post() -> None:
     root = Path.cwd()
@@ -1425,6 +1465,12 @@ def red_post() -> None:
     if proc.returncode == 0:
         console.print("[red]RedMustPassError:[/] Test passed, expected a failing test")
         raise typer.Exit(code=1)
+
+    fmt = _run_format_cmd(root)
+    if fmt.returncode != 0:
+        console.print(f"[yellow]Format stderr:[/] {fmt.stderr.strip()}")
+        if fmt.stdout.strip():
+            console.print(f"[yellow]Format stdout:[/] {fmt.stdout.strip()}")
 
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
