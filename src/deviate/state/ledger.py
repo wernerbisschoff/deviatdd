@@ -192,6 +192,63 @@ def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
     )
 
 
+class LedgerFilter(BaseModel):
+    entity_type: Literal["issue", "task"]
+    status_filter: str | None = None
+    limit: int = Field(default=20, gt=0)
+    offset: int = Field(default=0, ge=0)
+    sort_by: Literal["created_at", "timestamp", "status"] = "created_at"
+    sort_desc: bool = True
+    model_config = {"extra": "forbid"}
+
+
+def _read_ledger_strict(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    records: list[dict] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                raise ValueError(f"Malformed JSONL line {line_no} in {path}")
+    return records
+
+
+def filter_tasks(ledger_path: Path, filter_obj: LedgerFilter) -> list[TaskRecord]:
+    records = _read_ledger_strict(ledger_path)
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for rec in records:
+        task_id = rec.get("id")
+        if task_id and task_id in seen:
+            continue
+        if task_id:
+            seen.add(task_id)
+        deduped.append(rec)
+    if filter_obj.status_filter:
+        deduped = [r for r in deduped if r.get("status") == filter_obj.status_filter]
+    sort_key = filter_obj.sort_by
+    deduped.sort(
+        key=lambda r: r.get(sort_key, "") or "",
+        reverse=filter_obj.sort_desc,
+    )
+    start = filter_obj.offset
+    end = start + filter_obj.limit
+    result = deduped[start:end]
+    tasks: list[TaskRecord] = []
+    for r in result:
+        try:
+            tasks.append(TaskRecord.model_validate(r))
+        except PydanticValidationError as e:
+            warnings.warn(f"Skipping invalid task record: {e}")
+            continue
+    return tasks
+
+
 class AdhocRecord(BaseModel):
     issue_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
@@ -216,56 +273,7 @@ def _parse_timestamp(value: object) -> datetime:
         return datetime.min.replace(tzinfo=timezone.utc)
 
 
-def select_next_unblocked_issue(ledger_path: Path) -> IssueRecord | None:
-    records = _read_ledger(ledger_path)
-    if not records:
-        return None
-
-    # Build latest status map from ALL records (feature + event entries).
-    status_map: dict[str, str] = {}
-    for data in records:
-        issue_id = data.get("issue_id")
-        status = data.get("status")
-        if issue_id and status:
-            status_map[issue_id] = status
-
-    # Collect feature entries (type == "feature") — these carry metadata.
-    features: list[dict] = [r for r in records if r.get("type") == "feature"]
-
-    # Group features by issue_id, take the last per id.
-    feature_map: dict[str, dict] = {}
-    for f in features:
-        feature_map[f["issue_id"]] = f
-
-    # Filter: latest status is BACKLOG, no blockers, or all blockers COMPLETED.
-    candidates: list[IssueRecord] = []
-    for issue_id, feature in feature_map.items():
-        latest_status = status_map.get(issue_id, "BACKLOG")
-        if latest_status != "BACKLOG":
-            continue
-        blocked_by = feature.get("blocked_by", [])
-        is_unblocked = True
-        for dep_id in blocked_by:
-            dep_status = status_map.get(dep_id, "UNKNOWN")
-            if dep_status != "COMPLETED":
-                is_unblocked = False
-                break
-        if is_unblocked:
-            candidates.append(IssueRecord.model_validate(feature))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda r: r.created_at or r.timestamp)
-    return candidates[0]
-
-
-def select_unblocked_candidates(ledger_path: Path) -> list[IssueRecord]:
-    """Return all unblocked BACKLOG issue records, sorted oldest-first.
-
-    Multi-candidate version of ``select_next_unblocked_issue`` used by the
-    try-claim loop in the specify pre command.
-    """
+def _get_unblocked_backlog_features(ledger_path: Path) -> list[IssueRecord]:
     records = _read_ledger(ledger_path)
     if not records:
         return []
@@ -299,3 +307,17 @@ def select_unblocked_candidates(ledger_path: Path) -> list[IssueRecord]:
 
     candidates.sort(key=lambda r: r.created_at or r.timestamp)
     return candidates
+
+
+def select_next_unblocked_issue(ledger_path: Path) -> IssueRecord | None:
+    candidates = _get_unblocked_backlog_features(ledger_path)
+    return candidates[0] if candidates else None
+
+
+def select_unblocked_candidates(ledger_path: Path) -> list[IssueRecord]:
+    """Return all unblocked BACKLOG issue records, sorted oldest-first.
+
+    Multi-candidate version of ``select_next_unblocked_issue`` used by the
+    try-claim loop in the specify pre command.
+    """
+    return _get_unblocked_backlog_features(ledger_path)

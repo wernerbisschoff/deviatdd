@@ -70,12 +70,8 @@ def _load_session_accept(
 
     If ``force`` is ``True``, skip phase validation entirely.
     """
-    dot_dir = Path(".deviate")
     phase_tag = phases[0] if phases else "?"
-    if not dot_dir.exists():
-        _handle_missing_dot_dir(phase_tag)
-    session_path = dot_dir / "session.json"
-    session = SessionState.load(session_path)
+    session, session_path = _load_or_create_session(phase_tag)
     if force:
         return session, session_path
     if phases and session.current_phase not in phases:

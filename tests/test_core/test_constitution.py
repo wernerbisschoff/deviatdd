@@ -8,6 +8,7 @@ from deviate.core.constitution import (
     extract_commands,
     resolve_constitution,
     validate_constitution,
+    validate_placeholders,
 )
 
 
@@ -61,3 +62,57 @@ class TestExtractCommands:
         path.write_text("## [3_TESTING_PROTOCOLS]\n")
         commands = extract_commands(path)
         assert commands == {}
+
+
+class TestValidatePlaceholders:
+    REQUIRED = frozenset(
+        {
+            "PROJECT_NAME",
+            "REPO_ROOT",
+            "TARGET_BACKEND_FRAMEWORK",
+            "TARGET_PACKAGE_MANAGER",
+            "TARGET_TEST_RUNNER",
+            "TARGET_COVERAGE_MINIMUM",
+        }
+    )
+
+    def _make_seed(self, tmp_path: Path, variables: set[str]) -> Path:
+        path = tmp_path / "constitution_seed.md"
+        lines = ["# Test Seed\n"]
+        for var in sorted(variables):
+            lines.append(f"${{{var}}}\n")
+        path.write_text("".join(lines))
+        return path
+
+    def test_validate_placeholders_all_present(self, tmp_path: Path):
+        path = self._make_seed(tmp_path, self.REQUIRED)
+        result = validate_placeholders(path)
+        assert result.all_present is True
+        assert sorted(result.variables) == sorted(self.REQUIRED)
+        assert result.missing == []
+
+    def test_validate_placeholders_missing_variable(self, tmp_path: Path):
+        present = self.REQUIRED - {"TARGET_COVERAGE_MINIMUM"}
+        path = self._make_seed(tmp_path, present)
+        result = validate_placeholders(path)
+        assert result.all_present is False
+        assert result.missing == ["TARGET_COVERAGE_MINIMUM"]
+
+    def test_validate_placeholders_file_not_found(self):
+        with pytest.raises(FileNotFoundError):
+            validate_placeholders(Path("/nonexistent/seed.md"))
+
+    def test_validate_placeholders_empty_file(self, tmp_path: Path):
+        path = tmp_path / "empty_seed.md"
+        path.write_text("")
+        result = validate_placeholders(path)
+        assert result.all_present is False
+        assert sorted(result.missing) == sorted(self.REQUIRED)
+
+    def test_validate_placeholders_extra_variables_ignored(self, tmp_path: Path):
+        extras = self.REQUIRED | {"EXTRA_VAR", "ANOTHER_EXTRA"}
+        path = self._make_seed(tmp_path, extras)
+        result = validate_placeholders(path)
+        assert result.all_present is True
+        assert "EXTRA_VAR" not in result.variables
+        assert result.missing == []

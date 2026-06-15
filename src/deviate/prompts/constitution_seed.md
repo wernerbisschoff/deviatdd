@@ -22,6 +22,7 @@
 - Python 3.13
 - Target: CLI application (`deviate`)
 - Framework: Typer (CLI entry points) with Rich for terminal I/O
+- Backend framework: ${TARGET_BACKEND_FRAMEWORK}
 
 ### [2_2_FRONTEND]
 - None (CLI-only application; no web or GUI frontend)
@@ -40,7 +41,9 @@
 
 ### [2_5_TOOLING]
 - Package manager: `uv`
+- Package manager identifier: ${TARGET_PACKAGE_MANAGER}
 - Test runner: `pytest`
+- Test runner identifier: ${TARGET_TEST_RUNNER}
 - Linter: `ruff` (lint + format)
 - E2E testing: `bats` (Bash automated test system)
 - Task runner: `mise` (see `mise.toml` for all tasks)
@@ -59,6 +62,7 @@
 
 ### [3_2_COVERAGE]
 - Coverage target: >= 80% (configurable via `.deviate/config.toml`)
+- Coverage minimum threshold: ${TARGET_COVERAGE_MINIMUM}
 - RED phase tests must fail with `AssertionError` or `NotImplementedError` — syntax crashes are rejected
 - GREEN phase must pass all tests; Tamper Guard resets unauthorized test edits
 - REFACTOR phase runs regression gate: tests must re-pass after polish

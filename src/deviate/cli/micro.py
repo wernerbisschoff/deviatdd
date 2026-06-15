@@ -261,7 +261,7 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
         claude_text = _try_parse_claude_text(stripped)
         if claude_text is not None:
             if claude_text.strip():
-                c.print(f"[dim]{claude_text[:600]}[/]")
+                c.print(claude_text[:600], style="dim", markup=False)
             return
 
         if _is_tool_call(stripped):
@@ -269,7 +269,7 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
             sys.stdout.flush()
             return
 
-        c.print(f"[dim]{stripped[:600]}[/]")
+        c.print(stripped[:600], style="dim", markup=False)
 
     return handler
 
@@ -1753,6 +1753,17 @@ def green_post() -> None:
     session.save(session_path)
 
     scope = _build_scope(issue_id, task_uuid)
+    status_check = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if not status_check.stdout.strip():
+        console.print("[green]GREEN_POST_OK[/]")
+        raise typer.Exit(code=0)
+
     committed = _commit_phase(
         f"feat({scope}): GREEN phase - implementation passes tests", root
     )
@@ -1760,7 +1771,7 @@ def green_post() -> None:
     if committed:
         console.print("[green]GREEN_POST_OK[/]")
     else:
-        console.print("[red]COMMIT_FAILED[/] (nothing to commit or commit failed)")
+        console.print("[red]COMMIT_FAILED[/]")
 
     raise typer.Exit(code=0 if committed else 1)
 
