@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 
@@ -15,8 +16,9 @@ from deviate.core.commit import commit_artifact
 constitution_app = typer.Typer(no_args_is_help=True)
 
 
-def _emit_failure(reason: str) -> None:
+def _fail_with(reason: str) -> NoReturn:
     print(json.dumps({"status": "FAILURE", "reason": reason}))
+    raise typer.Exit(code=1)
 
 
 @constitution_app.command()
@@ -26,17 +28,14 @@ def pre() -> None:
     const_path = repo_root / "specs" / "constitution.md"
 
     if not const_path.exists():
-        _emit_failure(f"constitution.md not found at {const_path}")
-        raise typer.Exit(code=1)
+        _fail_with(f"constitution.md not found at {const_path}")
 
     if not validate_constitution(const_path):
-        _emit_failure("constitution validation failed")
-        raise typer.Exit(code=1)
+        _fail_with("constitution validation failed")
 
     missing = validate_sections(const_path, ["## TESTING_PROTOCOLS"])
     if missing:
-        _emit_failure(f"Missing required section: {missing[0]}")
-        raise typer.Exit(code=1)
+        _fail_with(f"Missing required section: {missing[0]}")
 
     commands = extract_commands(const_path)
     print(json.dumps(commands))
@@ -50,8 +49,7 @@ def post(
     manifest_path = Path(manifest)
 
     if not manifest_path.exists():
-        _emit_failure(f"manifest not found at {manifest_path}")
-        raise typer.Exit(code=1)
+        _fail_with(f"manifest not found at {manifest_path}")
 
     manifest_data = json.loads(manifest_path.read_text())
     sections = manifest_data.get("sections", [])
@@ -61,8 +59,7 @@ def post(
 
     missing = validate_sections(const_path, sections)
     if missing:
-        _emit_failure(f"Missing sections: {', '.join(missing)}")
-        raise typer.Exit(code=1)
+        _fail_with(f"Missing sections: {', '.join(missing)}")
 
     commit_artifact(path=const_path, message="Update constitution")
     print(json.dumps({"status": "SUCCESS"}))
