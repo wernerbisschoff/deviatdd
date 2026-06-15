@@ -107,17 +107,23 @@ Run lint to ensure code quality:
 
 ### STEP_5: POST_SCRIPT
 
-After refactoring is complete and verified passing, run the post-script to stage and commit:
+**⚠️ MANDATORY — YOU MUST RUN THIS COMMAND. DO NOT SKIP.**
+
+You MUST execute the following command using the **Bash tool**. Do NOT use `git add`, `git commit`, or any other git command to commit files. Only `deviate refactor post` is the accepted way to complete this phase.
+
 ```bash
 deviate refactor post
 ```
+**IMPORTANT**: The post-script runs the full test suite via precommit hooks. Allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script stages the refactored files, runs precommit hooks, and commits with the conventional format.
 
-If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue. Fix the underlying problem, re-run tests to confirm, then invoke the post-script again:
+If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue. Fix the underlying problem, re-run tests to confirm, then invoke the post-command again:
 ```bash
 deviate refactor post
 ```
+
+Do NOT proceed to the handover manifest until this command completes successfully.
 
 </execution_sequence>
 

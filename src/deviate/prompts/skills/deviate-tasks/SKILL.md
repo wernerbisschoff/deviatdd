@@ -91,7 +91,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    ```
    deviate tasks post
    ```
-   The post-script validates required sections and task ID format (`T{NNN}`), then commits and advances the session to IDLE. If validation fails, it prints a diagnostic. Fix the file and re-run. Use `--force` only with documented justification.
+   The post-script validates required sections and task ID format (`T{NNN}`), then commits and advances the session to IDLE. The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command. If validation fails, it prints a diagnostic. Fix the file and re-run. Use `--force` only with documented justification.
 
 **TERMINATE HERE. Do NOT proceed to implementation. Hand off to the TDD phase.**
 </execution_sequence>

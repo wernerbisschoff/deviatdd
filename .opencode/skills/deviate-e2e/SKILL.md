@@ -168,6 +168,7 @@ After E2E testing is complete, run the post-script to stage and commit:
 ```bash
 deviate e2e post
 ```
+**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script stages all E2E test files, runs precommit hooks, and commits with the conventional format.
 
