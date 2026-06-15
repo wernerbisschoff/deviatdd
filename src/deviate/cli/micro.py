@@ -118,6 +118,40 @@ def _build_agent_prompt(skill_content: str, phase: str, task: dict, root: Path) 
     return skill_content.replace("$ARGUMENTS", task_context)
 
 
+_TOOL_CALL_INDICATORS = frozenset(
+    {
+        '"tool_use"',
+        '"tool_calls"',
+        "tool_use",
+        "tool_calls",
+        '"function"',
+        "<function_calls>",
+        "<invoke ",
+        "<tool_call",
+        "<use_tool",
+        "[Tool",
+        '"name": "',
+        '"type":"tool',
+        '"type": "tool',
+    }
+)
+
+
+def _is_tool_call(line: str) -> bool:
+    lower = line.lower().strip()
+    return any(ind in lower for ind in _TOOL_CALL_INDICATORS)
+
+
+def _try_parse_claude_text(line: str) -> str | None:
+    try:
+        data = json.loads(line)
+        if isinstance(data, dict) and data.get("type") == "text":
+            return data.get("text", "")
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
 def _make_agent_output_callback(
     monitor: OrchestrationMonitor | None,
     task_id: str,
@@ -174,8 +208,18 @@ def _make_output_handler(c: Console) -> Callable[[str], None]:
             thinking_buf.append(stripped)
             return
 
-        c.print("[dim].[/]", end="")
-        sys.stdout.flush()
+        claude_text = _try_parse_claude_text(stripped)
+        if claude_text is not None:
+            if claude_text.strip():
+                c.print(f"[dim]{claude_text[:600]}[/]")
+            return
+
+        if _is_tool_call(stripped):
+            c.print("[dim].[/]", end="")
+            sys.stdout.flush()
+            return
+
+        c.print(f"[dim]{stripped[:600]}[/]")
 
     return handler
 
@@ -202,6 +246,7 @@ def _invoke_agent(
                 output_callback(line)
 
         manifest = backend.invoke(prompt, output_callback=collecting_handler)
+        c.print("")
         _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
         if raw_lines:
             _save_agent_log(phase, task_id, "raw_output", "\n".join(raw_lines))
