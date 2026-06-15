@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 import typer
+import yaml
 from rich.console import Console
 
 from deviate.core.agent import (
@@ -39,6 +40,11 @@ from deviate.state.ledger import (
 
 console = Console()
 _verbose: bool = False
+
+_YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)
+_YAML_FENCE_CLOSE_RE = re.compile(r"^```+\s*$")
+_MANIFEST_HEADER_RE = re.compile(r"^##\s*\[(?:HANDOVER_MANIFEST|MINIMAL_HANDOVER)\]")
+_DEVIATE_MICRO_HEADER_RE = re.compile(r"^# DeviaTDD Micro")
 
 
 def _log(msg: str) -> None:
@@ -175,16 +181,59 @@ def _maybe_push_event(
         monitor.push_event(event_type, **data)
 
 
-def _make_output_handler(c: Console) -> Callable[[str], None]:
+def _emit_yaml_summary(yaml_lines: list[str], c: Console) -> None:
+    yaml_text = "\n".join(yaml_lines)
+    try:
+        data = yaml.safe_load(yaml_text)
+    except Exception:
+        return
+    if not isinstance(data, dict):
+        return
+
+    phase = data.get("phase", "")
+    status = data.get("status", "")
+    verdict = data.get("verdict", "")
+
+    if phase:
+        status_str = status or verdict
+        if status_str:
+            c.print(f"  [dim]{phase} \u2192 {status_str}[/]")
+        else:
+            c.print(f"  [dim]{phase} complete[/]")
+
+
+def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], None]:
     in_thinking = False
     thinking_buf: list[str] = []
+    in_yaml = False
+    yaml_lines: list[str] = []
 
     def handler(line: str) -> None:
-        nonlocal in_thinking, thinking_buf
+        nonlocal in_thinking, thinking_buf, in_yaml, yaml_lines
 
         stripped = line.strip()
         if not stripped:
             return
+
+        if not verbose:
+            if _YAML_FENCE_OPEN_RE.match(stripped):
+                in_yaml = True
+                yaml_lines = []
+                return
+
+            if in_yaml:
+                if _YAML_FENCE_CLOSE_RE.match(stripped):
+                    _emit_yaml_summary(yaml_lines, c)
+                    in_yaml = False
+                    yaml_lines = []
+                    return
+                yaml_lines.append(stripped)
+                return
+
+            if _MANIFEST_HEADER_RE.match(stripped):
+                return
+            if _DEVIATE_MICRO_HEADER_RE.match(stripped):
+                return
 
         if "<thinking" in stripped.lower():
             in_thinking = True
@@ -236,7 +285,7 @@ def _invoke_agent(
     _save_agent_log(phase, task_id, "prompt", prompt)
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
-        output_handler = _make_output_handler(c)
+        output_handler = _make_output_handler(c, verbose=_verbose)
         raw_lines: list[str] = []
 
         def collecting_handler(line: str) -> None:
