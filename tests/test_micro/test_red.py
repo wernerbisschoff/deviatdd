@@ -74,10 +74,16 @@ class TestRedPre:
 
 
 class TestRedPost:
+    @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._run_test_cmd")
-    def test_red_post_validates_test_fails(self, mock_run_test, tmp_git_repo: Path):
+    def test_red_post_validates_test_fails(
+        self, mock_run_test, mock_run_format, tmp_git_repo: Path
+    ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="1 failed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -137,12 +143,16 @@ class TestRedPost:
             )
             assert "RedMustPassError" in result.output
 
+    @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._run_test_cmd")
     def test_red_post_accepts_syntax_error_as_fail(
-        self, mock_run_test, tmp_git_repo: Path
+        self, mock_run_test, mock_run_format, tmp_git_repo: Path
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="SyntaxError: invalid syntax"
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
