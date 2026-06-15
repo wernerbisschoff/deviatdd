@@ -1149,31 +1149,102 @@ def _run_execute_phase(
     monitor: OrchestrationMonitor | None = None,
 ) -> None:
     tid = task.get("id", "?")
-    c.print(f"  [bold green]EXECUTE →[/] {tid}")
+    c.print(f"  [bold green]EXECUTE \u2192[/] {tid}")
 
     backend = agent or "opencode"
-    skill = _load_skill_content("EXECUTE")
-    if skill:
-        prompt = _build_agent_prompt(skill, "EXECUTE", task, Path.cwd())
-        agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
-        manifest, _ = _invoke_agent(
-            prompt,
-            c,
-            backend_name=backend,
-            task_id=tid,
-            phase="EXECUTE",
-            output_callback=agent_output_callback,
-        )
-        if manifest is None:
-            raise PhaseFailedError(
-                f"EXECUTE phase agent error for {tid}: agent returned no manifest"
+    root = Path.cwd()
+
+    spec_content = _resolve_spec_md(root, task)
+    has_spec = bool(spec_content)
+    train_feedback = ""
+    max_judge_attempts = 3
+
+    for attempt in range(max_judge_attempts):
+        skill = _load_skill_content("EXECUTE")
+        if skill:
+            prompt = _build_agent_prompt(skill, "EXECUTE", task, root)
+            if train_feedback:
+                prompt += f"\n\n<train_feedback>\n{train_feedback}\n</train_feedback>\n"
+            agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
+            manifest, _ = _invoke_agent(
+                prompt,
+                c,
+                backend_name=backend,
+                task_id=tid,
+                phase="EXECUTE",
+                output_callback=agent_output_callback,
             )
-        if manifest.status.upper() in ("FAILURE", "ERROR"):
-            raise PhaseFailedError(
-                f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            if manifest is None:
+                raise PhaseFailedError(
+                    f"EXECUTE phase agent error for {tid}: agent returned no manifest"
+                )
+            if manifest.status.upper() in ("FAILURE", "ERROR"):
+                raise PhaseFailedError(
+                    f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
+                )
+
+        if not has_spec:
+            break
+
+        diff = subprocess.run(
+            ["git", "diff", "HEAD~1..HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+        if not diff.strip():
+            c.print(f"  [dim]JUDGE_SKIP \u2014 no diff in commit for {tid}[/]")
+            break
+
+        c.print(f"  [bold magenta]JUDGE \u2192[/] {tid} (spec compliance)")
+        judge_skill = _load_skill_content("JUDGE")
+        if judge_skill:
+            judge_prompt = _build_agent_prompt(judge_skill, "JUDGE", task, root)
+            judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
+            judge_prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
+
+            judge_manifest, _ = _invoke_agent(
+                judge_prompt,
+                c,
+                backend_name=backend,
+                task_id=tid,
+                phase="JUDGE",
             )
 
-    _append_status_transition(task, "COMPLETED", ledger_path)
+            if judge_manifest is None:
+                raise PhaseFailedError(
+                    f"JUDGE phase agent error for {tid}: agent returned no manifest"
+                )
+
+            if judge_manifest.status.upper() in ("FAILURE", "ERROR"):
+                feedback = judge_manifest.rationale or ""
+                tf = getattr(judge_manifest, "train_feedback", None)
+                if tf:
+                    feedback = tf
+
+                c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
+
+                subprocess.run(
+                    ["git", "reset", "--hard", "HEAD~1"],
+                    cwd=root,
+                    capture_output=True,
+                    env=_git_env(),
+                )
+
+                if attempt < max_judge_attempts - 1:
+                    train_feedback = feedback
+                    c.print(
+                        f"  [yellow]RETRY EXECUTE ({attempt + 2}/{max_judge_attempts})[/]"
+                    )
+                    continue
+                raise PhaseFailedError(
+                    f"EXECUTE phase failed for {tid} "
+                    f"after {max_judge_attempts} JUDGE attempts: {feedback}"
+                )
+
+        break
+
     c.print(f"  [bold green]COMPLETED[/] {tid}")
 
 
@@ -2049,11 +2120,36 @@ def execute_pre(
 
 @execute_app.command(name="post")
 def execute_post(
-    manifest: str | None = typer.Argument(None, help="Path to manifest file"),
+    task_id: str | None = typer.Argument(
+        None, help="Task ID (auto-discovered from session if empty)"
+    ),
+    subject: str = typer.Argument(
+        "", help="Commit subject (auto-generated from task ID if empty)"
+    ),
+    body: str | None = typer.Argument(None, help="Optional commit body"),
 ) -> None:
     root = Path.cwd()
-    _validate_manifest(manifest)
-    _commit_phase("feat: EXECUTE phase \u2014 direct execution result", root)
+
+    if task_id:
+        result = _find_task_record(root, task_id)
+    else:
+        result = _resolve_task_context(None, root)
+
+    if result is not None:
+        task_record, ledger_path = result
+        resolved_task_id = task_record.get("id", task_id or "?")
+        _append_status_transition(task_record, "COMPLETED", ledger_path)
+    else:
+        resolved_task_id = task_id or "?"
+
+    if not subject:
+        subject = f"feat({resolved_task_id}): execute result"
+
+    message = subject
+    if body:
+        message += "\n\n" + body
+
+    _commit_phase(message, root)
     raise typer.Exit(code=0)
 
 
@@ -2081,8 +2177,13 @@ def e2e_post(
     manifest: str | None = typer.Argument(None, help="Path to manifest file"),
 ) -> None:
     root = Path.cwd()
-    _validate_manifest(manifest)
-    _commit_phase("feat: E2E phase \u2014 verification results", root)
+    manifest_data = _validate_manifest(manifest)
+    subject = (
+        manifest_data.get("commit_subject", "feat: E2E phase")
+        if manifest_data
+        else "feat: E2E phase"
+    )
+    _commit_phase(subject, root)
     raise typer.Exit(code=0)
 
 
@@ -2112,8 +2213,13 @@ def hotfix_post(
     manifest: str | None = typer.Argument(None, help="Path to manifest file"),
 ) -> None:
     root = Path.cwd()
-    _validate_manifest(manifest)
-    _commit_phase("feat: HOTFIX phase \u2014 bug fix", root)
+    manifest_data = _validate_manifest(manifest)
+    subject = (
+        manifest_data.get("commit_subject", "feat: HOTFIX phase")
+        if manifest_data
+        else "feat: HOTFIX phase"
+    )
+    _commit_phase(subject, root)
     raise typer.Exit(code=0)
 
 
