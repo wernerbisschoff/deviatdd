@@ -27,3 +27,13 @@
 4. **AC-ADHOC-003-04**: Given a new `/deviate-plan` skill, When invoked on a specified issue, Then it performs localized codebase research (what changed since epic-level explore), analyzes prior issue implementations, and produces a planning document that contextualizes the issue for current codebase state before `/deviate-tasks` runs.
 5. **AC-ADHOC-003-05**: Given the architecture docs (`DeviaTDD-api.md`, `DeviaTDD-architecture.md`), When updated, Then the workflow diagrams reflect the new flow: Macro(Explore→Research→PRD→Shard+Specify) → Meso(Plan→Tasks) → Micro(RED→GREEN→JUDGE→REFACTOR), with HITL Gate 2 moved to after shard.
 6. **AC-ADHOC-003-06**: Given the `/deviate-tasks` skill, When it reads an issue for decomposition, Then it consumes the spec-enriched issue format directly (no separate spec.md lookup needed).
+
+## FR-ADHOC-004: DeviaTDD Code Review Skill — /deviate-review with Constitution & PRD Anchoring
+
+- **Description**: Create a `deviate`-integrated `/deviate-review` code review skill that performs structured multi-domain code review over a defined git scope, with mandatory constitution compliance checking and PRD anchoring. The skill follows the DeviaTDD pre/post command pattern and always references either the epic PRD (`specs/{EPIC_SLUG}/prd.md`) or the adhoc PRD (`specs/adhoc/prd.md`).
+- **Preconditions**: Git repository with `specs/constitution.md` present. At least one PRD exists (epic or adhoc). `deviate` CLI is installed.
+- **Inputs/Outputs**: Input: git diff scope, constitution, PRD. Output: structured review report in markdown (report in `review-report.md`, machine-parseable `Fix Instructions` block).
+
+### Acceptance Criteria
+1. **AC-ADHOC-004-01**: Given a git diff scope (working tree or branch), When `deviate review pre` is invoked, Then it emits a JSON contract containing git state, diff files, constitution path, and resolved PRD path (epic first, adhoc fallback).
+2. **AC-ADHOC-004-02**: Given a review report is generated with `Fix Instructions`, When `deviate review post` is invoked with the report path, Then it is saved as `review-report.md`, staged, and the post status is `SUCCESS`.
