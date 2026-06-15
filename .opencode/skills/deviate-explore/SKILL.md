@@ -142,6 +142,7 @@ Run the post-script to validate and commit the artifact:
 ```bash
 deviate explore post
 ```
+**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script reads `<spec_target>`, validates the required section headers and the verbatim-evidence rule on FILE_REGISTRY rows, commits the change with `docs({epic_id}): scaffold explore.md` (referencing the feature bucket epic, not a phantom issue), and returns `STATUS: SUCCESS` on stdout. If validation fails, fix only the markdown formatting in explore.md and re-run.
 </step>

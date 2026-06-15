@@ -69,6 +69,7 @@ files:
   - path: "tests/auth/test_jwt.py"
     action: "unchanged"
 status: "PASS"
+yellow_trigger: false
 verification_command: "pytest tests/auth/test_jwt.py"
 next_phase: "/deviate-refactor"
 ```
@@ -78,6 +79,11 @@ next_phase: "/deviate-refactor"
 </few_shot_examples>
 
 <execution_sequence>
+
+<!-- CRITICAL: Post-command execution is MANDATORY. Agents that skip this step
+     leave uncommitted files and break the downstream pipeline. The orchestrator
+     only verifies work was committed via this command; manual git commits are
+     not detected and trigger fallback warnings. -->
 
 <step id="pre_script">
 Run the pre-script to discover the active TDD task and emit a JSON contract:
@@ -117,17 +123,30 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 </step>
 
 <step id="post_script">
-After implementation is complete and verified, commit before emitting the handover manifest:
+**⚠️ MANDATORY — YOU MUST RUN THIS COMMAND. DO NOT SKIP.**
+
+You MUST execute the following command using the **Bash tool**. Do NOT use `git add`, `git commit`, or any other git command to commit files. Only `deviate green post` is the accepted way to complete this phase.
+
+Failure to run this command will:
+- Leave files uncommitted
+- Trigger fallback warnings in the orchestrator
+- Risk phase rejection
+
+```bash
+deviate green post
+```
+**IMPORTANT**: The post-command runs the full test suite via precommit hooks. Allocate a timeout of at least 180s (3 minutes) when running this command.
+
+The post-command stages all changed files, runs pre-commit hooks (lint, format-check, tests), updates the task ledger, and creates the commit with the conventional format.
+
+If the post-command returns a non-zero exit code or output contains `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-command again:
 ```bash
 deviate green post
 ```
 
-The post-script stages the implementation files, runs precommit hooks, and commits with the conventional format.
+If `deviate green post` still fails after 3 attempts (tests persistently fail or hook issues cannot be resolved), do NOT emit a PASS handover manifest. Instead, emit a YELLOW_TRIGGER manifest (see handover_emission step) with `yellow_trigger: true`, a rationale explaining why tests cannot pass, and `test_changes` describing what test modifications may be needed.
 
-If the post-script returns `COMMIT_FAILED`, inspect the pre-commit hook output to identify the issue (lint, format-check, or test failures). Fix the underlying problem, re-run tests to confirm, then invoke the post-script again:
-```bash
-deviate green post
-```
+Do NOT proceed to a PASS handover manifest until the post-command completes successfully (exit code 0, output contains `GREEN_POST_OK`).
 </step>
 
 <step id="handover_emission">
@@ -155,8 +174,22 @@ files:
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
 status: "PASS"
+yellow_trigger: false
 verification_command: "{VERIFICATION_COMMAND}"
 next_phase: "/deviate-refactor"
+```
+
+If tests persistently fail and `deviate green post` cannot commit after 3 attempts, emit this instead:
+
+```yaml
+phase: "GREEN"
+task_id: "{TASK_ID}"
+status: "FAIL"
+yellow_trigger: true
+test_changes:
+  "{TEST_FILE_PATH}": "{DESCRIPTION_OF_NEEDED_CHANGE}"
+rationale: "{WHY_TESTS_CANNOT_PASS_WITH_CURRENT_IMPLEMENTATION_APPROACH}"
+next_phase: "/deviate-yellow"
 ```
 </step>
 
@@ -180,6 +213,7 @@ files:
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
 status: "PASS"
+yellow_trigger: false
 verification_command: "{VERIFICATION_COMMAND}"
 next_phase: "/deviate-refactor"
 ```
@@ -196,7 +230,8 @@ next_phase: "/deviate-refactor"
 | Lint fails | Fix lint issues, re-run tests and lint until both pass |
 | Contract drift detected | Halt and report API signature conflict with `spec.md` or `data-model.md` |
 | Test file not found | Read RED handover manifest for test file path; if missing, search for test files matching the task_id |
-| Post-script returns COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
+| Post-script returns non-zero exit code or COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post`. After 3 failed attempts, emit YELLOW_TRIGGER manifest (see handover_emission) |
+| Tests persistently fail after 3 implementation attempts | Do NOT emit PASS. Emit `yellow_trigger: true` manifest with `rationale` and `test_changes`. The orchestrator will route to YELLOW phase for isolated amendment review |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
 
 </edge_case_handling>
