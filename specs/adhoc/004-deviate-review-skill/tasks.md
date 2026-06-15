@@ -49,6 +49,11 @@
     - **Acceptance**: 4 unit tests passing. Contract always emitted even with empty diff. Constitution path resolved as absolute path when file exists.
 
 - TSK-004-03: Implement pre command advanced — PRD resolution, report_exists check, custom --base, self-contained --branch mode
+  - **Judge Feedback**: The next GREEN attempt must address two issues:
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 1. RESTORE micro.py: Revert the changes to `src/deviate/cli/micro.py`. The break, the `[red]Pipeline halted` print, and the `monitor.push_event("pipeline_halted", ...)` call must all be restored. The defensive exclusions in spec.md explicitly prohibit modifying the TDD cycle body in `micro.py`. If removing the pipeline halt is intentional, it must be a separate task with its own spec amendment.
+    - **Judge Feedback**: 
+    - **Judge Feedback**: 2. ADD constitution_warning field: In `_resolve_constitution_path` or in the contract construction at `pre()`, add a `constitution_warning` field set to `true` when `constitution_path` is `None`. The spec US-006-AC-2 requires: "When no specs/constitution.md is found, the contract's constitution_path is null and a constitution_warning: true field is emitted." Update the contract dict to include:
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
