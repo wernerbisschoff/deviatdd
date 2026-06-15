@@ -34,7 +34,9 @@ from deviate.ui.monitor import OrchestrationMonitor
 
 
 from deviate.state.ledger import (
+    RollbackSnapshot,
     TaskRecord,
+    append_rollback_snapshot,
     append_task_transition,
 )
 
@@ -1183,6 +1185,8 @@ def _run_execute_phase(
                     f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
                 )
 
+        _verify_clean_worktree(root, "EXECUTE", tid)
+
         if not has_spec:
             break
 
@@ -1224,6 +1228,29 @@ def _run_execute_phase(
                     feedback = tf
 
                 c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
+
+                branch = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                ).stdout.strip()
+                commit_sha = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                ).stdout.strip()
+                if commit_sha:
+                    snapshot = RollbackSnapshot(
+                        phase="JUDGE",
+                        branch=branch,
+                        commit_sha=commit_sha,
+                        reason=feedback[:500],
+                    )
+                    append_rollback_snapshot(snapshot, root / ".deviate")
 
                 subprocess.run(
                     ["git", "reset", "--hard", "HEAD~1"],
@@ -1922,6 +1949,11 @@ def judge_pre() -> None:
 # ---------------------------------------------------------------------------
 
 
+_NON_DETERMINISTIC = re.compile(
+    r"(0x[0-9a-fA-F]+|id='\d+'|pytest-\d+/|\[?[a-f0-9]{7}\])"
+)
+
+
 def _normalize_pytest_output(output: str) -> str:
     lines: list[str] = []
     for line in output.splitlines():
@@ -1932,7 +1964,8 @@ def _normalize_pytest_output(output: str) -> str:
             continue
         if stripped.startswith(".") and stripped.endswith("%]"):
             continue
-        lines.append(stripped)
+        normalized = _NON_DETERMINISTIC.sub("", stripped)
+        lines.append(normalized)
     return "\n".join(lines)
 
 
