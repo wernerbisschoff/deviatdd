@@ -141,6 +141,7 @@ Run the post-script to mark the task complete, stage files, run precommit hooks,
 ```bash
 deviate execute post "$PLAN_TARGET"
 ```
+**IMPORTANT**: The post-script runs the full test suite via precommit hooks. Allocate a timeout of at least 180s (3 minutes) when running this command.
 
 Use `--dry-run` to preview the post-phase actions without mutating:
 ```bash

@@ -114,6 +114,7 @@ You MUST execute the following command using the **Bash tool**. Do NOT use `git 
 ```bash
 deviate refactor post
 ```
+**IMPORTANT**: The post-script runs the full test suite via precommit hooks. Allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script stages the refactored files, runs precommit hooks, and commits with the conventional format.
 

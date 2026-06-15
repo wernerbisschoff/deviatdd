@@ -135,6 +135,7 @@ Failure to run this command will:
 ```bash
 deviate green post
 ```
+**IMPORTANT**: The post-command runs the full test suite via precommit hooks. Allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-command stages all changed files, runs pre-commit hooks (lint, format-check, tests), updates the task ledger, and creates the commit with the conventional format.
 

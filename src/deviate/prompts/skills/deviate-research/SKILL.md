@@ -201,6 +201,7 @@ Run the post-script to validate, commit, and emit the gate status:
 ```bash
 deviate research post
 ```
+**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script reads both output files, validates required sections, and commits. For greenfield projects (`is_greenfield=true`), it also stages the bootstrapped `<repo_root>/specs/constitution.md` and uses commit message `docs({epic_id}): scaffold constitution, design, and data model`. For existing projects, it commits with `docs({epic_id}): scaffold design.md and data-model.md`. The post-script returns `STATUS: AWAITING_HITL_GATE_1` on stdout.
 

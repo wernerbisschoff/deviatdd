@@ -137,6 +137,7 @@ After writing tasks.md, run the post-script to commit the task artifacts:
 ```bash
 deviate hotfix post
 ```
+**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script stages and commits the tasks.md file with a conventional commit message.
 </step>

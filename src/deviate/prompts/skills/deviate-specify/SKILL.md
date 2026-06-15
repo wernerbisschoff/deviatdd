@@ -72,7 +72,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    ```
    deviate specify post
    ```
-   The post-script reads the spec.md file, validates required sections, Gherkin blocks, and FR traceability, then commits and advances the session to TASKS. If validation fails, it prints a diagnostic; re-run with `--force` only with documented justification.
+   The post-script reads the spec.md file, validates required sections, Gherkin blocks, and FR traceability, then commits and advances the session to TASKS. The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command. If validation fails, it prints a diagnostic; re-run with `--force` only with documented justification.
 6. Hand off to `/deviate-tasks`. **TERMINATE HERE. Do NOT write tasks.md.** `deviate tasks pre` is the first step of `/deviate-tasks`, not this phase.
 </execution_sequence>
 
