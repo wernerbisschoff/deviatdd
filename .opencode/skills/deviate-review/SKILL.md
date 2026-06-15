@@ -2,6 +2,7 @@
 name: deviate-review
 description: Review code changes and identify high-confidence, actionable bugs with DeviaTDD governance enforcement
 category: deviatdd-meso-layer
+model_tier: v4-pro
 version: 1.0.0
 aliases:
   - review
