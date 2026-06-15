@@ -935,18 +935,8 @@ def _pr_run(
     if not body_file.exists():
         console.print(f"[red]BODY_FILE_NOT_FOUND[/] {body_file}")
         raise typer.Exit(code=1)
-    title = _pr_title(issue_id, record.title, record.type)
-    cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
-    if merge:
-        cmd.append("--merge")
-    elif auto_merge:
-        cmd.append("--auto-merge")
-    result = subprocess.run(cmd, capture_output=True, text=True, env=_git_env())
-    if result.returncode != 0:
-        console.print(f"[red]PR_CREATE_FAILED[/] {result.stderr.strip()}")
-        raise typer.Exit(code=1)
-    pr_url = result.stdout.strip()
-    console.print(f"[green]PR_CREATED[/] {pr_url}")
+
+    repo_root = Path.cwd()
 
     completed = record.model_copy(
         update={
@@ -961,6 +951,63 @@ def _pr_run(
         console.print(
             f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
         )
+
+    try:
+        subprocess.run(
+            ["git", "add", str(ledger_path)],
+            cwd=repo_root,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "--no-verify",
+                "-m",
+                f"chore({issue_id}): mark COMPLETED in ledger",
+            ],
+            cwd=repo_root,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        console.print("[green]LEDGER_COMMITTED[/]")
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.strip() if e.stderr else ""
+        if "nothing to commit" in stderr:
+            console.print("[yellow]LEDGER_UNCHANGED[/] no ledger changes to commit")
+        else:
+            console.print(f"[yellow]COMMIT_LEDGER_WARN[/] {stderr}")
+
+    try:
+        subprocess.run(
+            ["git", "push", "-u", "origin", "HEAD"],
+            cwd=repo_root,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        console.print("[green]BRANCH_PUSHED[/]")
+    except subprocess.CalledProcessError as e:
+        console.print(
+            f"[yellow]PUSH_WARN[/] {e.stderr.strip() if e.stderr else 'push failed'}"
+        )
+
+    title = _pr_title(issue_id, record.title, record.type)
+    cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
+    if merge:
+        cmd.append("--merge")
+    elif auto_merge:
+        cmd.append("--auto-merge")
+    result = subprocess.run(cmd, capture_output=True, text=True, env=_git_env())
+    if result.returncode != 0:
+        console.print(f"[red]PR_CREATE_FAILED[/] {result.stderr.strip()}")
+        raise typer.Exit(code=1)
+    pr_url = result.stdout.strip()
+    console.print(f"[green]PR_CREATED[/] {pr_url}")
+
     _save_session(session, session_path, "TASKS")
 
 

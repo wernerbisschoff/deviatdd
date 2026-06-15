@@ -304,8 +304,8 @@ class TestPrRun:
                 check=True,
             )
 
+            original_run = subprocess.run
             with patch("subprocess.run") as mock_run:
-                real_run = subprocess.run
 
                 def side_effect(args, **kwargs):
                     args_str = " ".join(args) if isinstance(args, list) else args
@@ -314,7 +314,7 @@ class TestPrRun:
                         mock.returncode = 0
                         mock.stdout = "https://github.com/owner/repo/pull/42\n"
                         return mock
-                    return real_run(args, **kwargs)
+                    return original_run(args, **kwargs)
 
                 mock_run.side_effect = side_effect
 
@@ -374,8 +374,8 @@ class TestPrRun:
                 check=True,
             )
 
+            original_run = subprocess.run
             with patch("subprocess.run") as mock_run:
-                real_run = subprocess.run
 
                 def side_effect(args, **kwargs):
                     args_str = " ".join(args) if isinstance(args, list) else args
@@ -384,7 +384,7 @@ class TestPrRun:
                         mock.returncode = 0
                         mock.stdout = "https://github.com/owner/repo/pull/42\n"
                         return mock
-                    return real_run(args, **kwargs)
+                    return original_run(args, **kwargs)
 
                 mock_run.side_effect = side_effect
 
