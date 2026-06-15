@@ -165,6 +165,7 @@ Run the post-script to register issues in the ledger, stage files, and commit:
 ```bash
 deviate shard post "$PLAN_TARGET"
 ```
+**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
 The post-script:
 1. Reads the manifest from `$PLAN_TARGET`
