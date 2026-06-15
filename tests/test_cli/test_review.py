@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from contextlib import chdir
 from pathlib import Path
@@ -11,6 +12,85 @@ from deviate.cli import cli
 from tests.conftest import _git_env
 
 runner = CliRunner()
+
+
+class TestReviewPost:
+    """RED-phase tests for TSK-004-04: post command — report persistence with no-commit enforcement."""
+
+    def test_review_post_persists_report(self, tmp_git_repo: Path) -> None:
+        """UT-10: Post writes report to .deviate/review/reports/review-report-{timestamp}.md."""
+        report_content = "# Review Report\n\n## Summary\nAll good."
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "post", report_content])
+
+        assert result.exit_code == 0
+        reports_dir = tmp_git_repo / ".deviate" / "review" / "reports"
+        assert reports_dir.is_dir(), "reports directory should exist"
+        files = list(reports_dir.iterdir())
+        assert len(files) == 1, "Expected exactly one report file"
+        report_file = files[0]
+        assert re.match(r"review-report-\d{8}T\d{6}\.md$", report_file.name), (
+            f"Unexpected report filename: {report_file.name}"
+        )
+        assert report_file.read_text(encoding="utf-8") == report_content
+
+    def test_review_post_no_artifact(self, tmp_git_repo: Path) -> None:
+        """UT-11: Graceful handling when no report data provided."""
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "post"])
+
+        assert result.exit_code == 0
+        reports_dir = tmp_git_repo / ".deviate" / "review" / "reports"
+        assert not reports_dir.exists(), "No reports directory should be created"
+        assert (
+            "no report content provided" in result.stdout.lower()
+            or "skip" in result.stdout.lower()
+        )
+
+    def test_review_post_no_commit(self, tmp_git_repo: Path) -> None:
+        """UT-12: After post, git status shows no staged/committed changes."""
+        subprocess.run(
+            ["git", "branch", "-m", "main"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        (tmp_git_repo / "dummy.txt").write_text("project file\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "dummy.txt"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "initial project content"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        report_content = "# Review Report\n\nReview findings."
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "post", report_content])
+
+        assert result.exit_code == 0
+
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert not staged, f"Found staged changes: {staged}"
+
+        reports_dir = tmp_git_repo / ".deviate" / "review" / "reports"
+        assert reports_dir.is_dir(), "report should have been written"
+        files = list(reports_dir.iterdir())
+        assert len(files) == 1
+        report_file = files[0]
+        assert report_file.read_text(encoding="utf-8") == report_content
 
 
 class TestReviewPreCore:
