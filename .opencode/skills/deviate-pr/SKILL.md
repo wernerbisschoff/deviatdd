@@ -14,12 +14,12 @@ aliases:
 
 This skill operates as the final gate in the Specify-Tasks-TDD meso workflow. It handles the pull request lifecycle:
 1. Creates a PR from the current worktree branch
-2. Optionally waits for merge (or merges directly if authorized)
-3. Upon successful merge, appends a COMPLETED event to `specs/issues.jsonl`
+2. Optionally merges directly (if `--merge` is specified)
+3. On successful PR creation, appends a COMPLETED event to `specs/issues.jsonl` — regardless of whether the PR was merged
 4. This natively unblocks dependent issues via the existing `blocked_by` logic in the ledger
 
 CRITICAL INVARIANTS:
-1. **Ledger Update Rule**: Only append COMPLETED event after PR is merged (not just opened). The event format: `{"issue_id":"ISS-XXX","status":"COMPLETED","timestamp":"..."}`
+1. **Ledger Update Rule**: Append COMPLETED event after PR is successfully created (not only after merge). The event format: `{"issue_id":"ISS-XXX","status":"COMPLETED","timestamp":"..."}`
 2. **Worktree Context**: The script runs from within the worktree. Use `find_repo_root` to locate the main repo and ledger.
 3. **Idempotency**: If the issue already has a COMPLETED event, do not append a duplicate.
 4. **GitHub CLI Required**: Requires `gh` for PR operations. If unavailable, surface clear error.
