@@ -6,3 +6,4 @@
 {"id": "TSK-004-03", "issue_id": "ISS-ADH-004", "description": "Implement pre command advanced \u2014 PRD resolution, report_exists check, custom --base, self-contained --branch mode", "status": "GREEN", "execution_mode": "TDD", "created_at": "2026-06-15T15:09:42.033739Z"}
 {"id":"TSK-004-03","issue_id":"ISS-ADH-004","description":"Implement pre command advanced — PRD resolution, report_exists check, custom --base, self-contained --branch mode","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-15T15:09:42.033739Z"}
 {"id":"TSK-004-04","issue_id":"ISS-ADH-004","description":"Implement post command — report persistence with no-commit enforcement","status":"RED","execution_mode":"TDD","created_at":"2026-06-15T15:32:19.982344Z"}
+{"id":"TSK-004-04","issue_id":"ISS-ADH-004","description":"Implement post command — report persistence with no-commit enforcement","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-15T15:32:19.982344Z"}

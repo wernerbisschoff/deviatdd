@@ -139,6 +139,18 @@ def _check_existing_reports(repo: Path) -> bool:
 
 
 @review_app.command()
-def post() -> None:
+def post(
+    content: str | None = typer.Argument(None, help="Report markdown content"),
+) -> None:
     """Persist review report and mark review complete."""
-    console.print("[green]OK[/] no-op")
+    if not content:
+        console.print("[yellow]SKIP[/] no report content provided")
+        raise typer.Exit(code=0)
+
+    repo = Path.cwd()
+    reports_dir = repo / ".deviate" / "review" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    report_file = reports_dir / f"review-report-{timestamp}.md"
+    report_file.write_text(content, encoding="utf-8")
