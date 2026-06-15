@@ -1,6 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+_REQUIRED_PLACEHOLDERS: frozenset[str] = frozenset(
+    {
+        "PROJECT_NAME",
+        "REPO_ROOT",
+        "TARGET_BACKEND_FRAMEWORK",
+        "TARGET_PACKAGE_MANAGER",
+        "TARGET_TEST_RUNNER",
+        "TARGET_COVERAGE_MINIMUM",
+    }
+)
+
+
+@dataclass
+class PlaceholderAuditResult:
+    all_present: bool
+    variables: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
+
+
+def validate_placeholders(seed_path: Path) -> PlaceholderAuditResult:
+    raise NotImplementedError
 
 
 def resolve_constitution(repo_root: Path) -> Path:
