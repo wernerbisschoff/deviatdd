@@ -63,6 +63,30 @@ def _load_and_transition(phase: str) -> tuple[SessionState, Path]:
     return session, session_path
 
 
+def _load_session_accept(
+    *phases: str, force: bool = False
+) -> tuple[SessionState, Path]:
+    """Load session, accepting any of the given phases.
+
+    If ``force`` is ``True``, skip phase validation entirely.
+    """
+    dot_dir = Path(".deviate")
+    phase_tag = phases[0] if phases else "?"
+    if not dot_dir.exists():
+        _handle_missing_dot_dir(phase_tag)
+    session_path = dot_dir / "session.json"
+    session = SessionState.load(session_path)
+    if force:
+        return session, session_path
+    if phases and session.current_phase not in phases:
+        joined = " | ".join(phases)
+        _halt(
+            phase_tag,
+            f"session is in '{session.current_phase}' expected one of '{joined}'",
+        )
+    return session, session_path
+
+
 def _load_session(phase: str) -> tuple[SessionState, Path]:
     session, session_path = _load_or_create_session(phase)
     if session.current_phase != phase:
@@ -231,9 +255,10 @@ def explore_post(
     epic: str | None = typer.Option(
         None, "--epic", help="Epic slug (e.g. 003-prompt-optimization)"
     ),
+    force: bool = typer.Option(False, "--force", help="Bypass phase validation"),
 ) -> None:
     """Validate explore.md and commit"""
-    session, session_path = _load_session("EXPLORE")
+    session, session_path = _load_session_accept("EXPLORE", force=force)
 
     specs_root = _resolve_specs_root()
     epic_slug = epic or discover_latest_epic(specs_root)
@@ -326,9 +351,10 @@ def research_post(
     epic: str | None = typer.Option(
         None, "--epic", help="Epic slug (e.g. 003-prompt-optimization)"
     ),
+    force: bool = typer.Option(False, "--force", help="Bypass phase validation"),
 ) -> None:
     """Scan for constitutional violations, commit artifacts"""
-    session, session_path = _load_session("RESEARCH")
+    session, session_path = _load_session_accept("RESEARCH", force=force)
 
     _validate_constitution("RESEARCH")
 
@@ -412,9 +438,10 @@ def prd_pre(
 @prd_app.command("post")
 def prd_post(
     manifest: Path = typer.Argument(..., help="Path to manifest JSON file"),
+    force: bool = typer.Option(False, "--force", help="Bypass phase validation"),
 ) -> None:
     """Read manifest, validate PRD, commit"""
-    session, session_path = _load_session("PRD")
+    session, session_path = _load_session_accept("PRD", force=force)
 
     manifest_data = _load_manifest(manifest, "PRD")
 
@@ -518,9 +545,10 @@ def shard_post(
     epic: str | None = typer.Option(
         None, "--epic", help="Override epic slug from manifest"
     ),
+    force: bool = typer.Option(False, "--force", help="Bypass phase validation"),
 ) -> None:
     """Validate shard output, register issues as BACKLOG, reset session to IDLE"""
-    session, session_path = _load_session("SHARD")
+    session, session_path = _load_session_accept("SHARD", force=force)
 
     manifest_data = _load_manifest(manifest, "SHARD")
 
@@ -625,7 +653,9 @@ def _dry_run_phases(phases: list[str], resolved: str) -> None:
         print(prompt)
 
 
-def _cycle_phase(phase: str, resolved: str, specs_root: Path) -> None:
+def _cycle_phase(
+    phase: str, resolved: str, specs_root: Path, force: bool = False
+) -> None:
     """Execute a single macro phase: upstream check, pre, agent, post."""
     if phase == "research" and not (specs_root / resolved / "explore.md").exists():
         _halt("RESEARCH", "UPSTREAM_MISSING: explore.md not found")
@@ -643,9 +673,9 @@ def _cycle_phase(phase: str, resolved: str, specs_root: Path) -> None:
     _invoke_agent_phase(phase, agent_contract)
 
     if phase == "explore":
-        _explore_post()
+        _explore_post(force=force)
     elif phase == "research":
-        _research_post()
+        _research_post(force=force)
     elif phase == "prd":
         manifest_path = Path(".deviate") / "artifacts" / "manifest_prd.json"
         if not manifest_path.exists():
@@ -653,7 +683,7 @@ def _cycle_phase(phase: str, resolved: str, specs_root: Path) -> None:
             manifest_path.write_text(
                 json.dumps({"epic_slug": resolved, "phase": "prd", "status": "PASS"}),
             )
-        _prd_post(manifest=manifest_path)
+        _prd_post(manifest=manifest_path, force=force)
     elif phase == "shard":
         manifest_path = Path(".deviate") / "artifacts" / "manifest_shard.json"
         if not manifest_path.exists():
@@ -668,7 +698,7 @@ def _cycle_phase(phase: str, resolved: str, specs_root: Path) -> None:
                     },
                 ),
             )
-        _shard_post(manifest=manifest_path, epic=resolved)
+        _shard_post(manifest=manifest_path, epic=resolved, force=force)
 
 
 def _macro_run(
@@ -708,7 +738,7 @@ def _macro_run(
 
     specs_root = _resolve_specs_root()
     for phase in phases:
-        _cycle_phase(phase, resolved, specs_root)
+        _cycle_phase(phase, resolved, specs_root, force=force)
 
     session_path = Path(".deviate") / "session.json"
     session = SessionState.load(session_path)
@@ -727,32 +757,32 @@ def _explore_pre(problem: str, slug: str | None = None) -> None:
     explore_pre(problem=problem, slug=slug)
 
 
-def _explore_post() -> None:
-    explore_post()
+def _explore_post(force: bool = False) -> None:
+    explore_post(force=force)
 
 
 def _research_pre(epic: str = "") -> None:
     research_pre(epic=epic)
 
 
-def _research_post() -> None:
-    research_post()
+def _research_post(force: bool = False) -> None:
+    research_post(force=force)
 
 
 def _prd_pre() -> None:
     prd_pre()
 
 
-def _prd_post(manifest: Path) -> None:
-    prd_post(manifest)
+def _prd_post(manifest: Path, force: bool = False) -> None:
+    prd_post(manifest, force=force)
 
 
 def _shard_pre(epic: str | None = None) -> None:
     shard_pre(epic=epic, dry_run=False)
 
 
-def _shard_post(manifest: Path, epic: str | None = None) -> None:
-    shard_post(manifest, epic=epic)
+def _shard_post(manifest: Path, epic: str | None = None, force: bool = False) -> None:
+    shard_post(manifest, epic=epic, force=force)
 
 
 # ---------------------------------------------------------------------------

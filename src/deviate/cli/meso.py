@@ -644,7 +644,7 @@ def _specify_pre(
 
 
 def _specify_post(force: bool = False) -> None:
-    session, session_path = _load_session("SPECIFY")
+    session, session_path = _load_session_accept("SPECIFY", force=force)
     issue_id = session.active_issue_id
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
@@ -825,7 +825,7 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
 
 
 def _tasks_post(force: bool = False, issue_id: str | None = None) -> None:
-    session, session_path = _load_session("TASKS")
+    session, session_path = _load_session_accept("TASKS", force=force)
     resolved_issue_id = issue_id or session.active_issue_id
     if not resolved_issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
