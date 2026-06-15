@@ -322,7 +322,6 @@ class TestPrRun:
                     cli, ["pr", "run", "--body-file", str(body_file)]
                 )
                 assert result.exit_code == 0, result.output
-                assert "PR created but not merged" in result.output
 
                 lines = ledger.read_text(encoding="utf-8").strip().splitlines()
                 completed = [
@@ -331,8 +330,8 @@ class TestPrRun:
                     if json.loads(line).get("issue_id") == "ISS-001-001"
                     and json.loads(line).get("status") == "COMPLETED"
                 ]
-                assert len(completed) == 0, (
-                    "COMPLETED should NOT be set without --merge"
+                assert len(completed) == 1, (
+                    "COMPLETED should always be set on PR create"
                 )
 
     def test_pr_run_with_merge_marks_completed(self, tmp_git_repo: Path) -> None:

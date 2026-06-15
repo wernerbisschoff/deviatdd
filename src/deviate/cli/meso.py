@@ -948,24 +948,18 @@ def _pr_run(
     pr_url = result.stdout.strip()
     console.print(f"[green]PR_CREATED[/] {pr_url}")
 
-    if merge:
-        completed = record.model_copy(
-            update={
-                "status": "COMPLETED",
-                "timestamp": datetime.now(timezone.utc),
-            }
-        )
-        appended = append_issue_transition(completed, ledger_path)
-        if appended:
-            console.print(f"[green]COMPLETED[/] {issue_id} → COMPLETED")
-        else:
-            console.print(
-                f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
-            )
+    completed = record.model_copy(
+        update={
+            "status": "COMPLETED",
+            "timestamp": datetime.now(timezone.utc),
+        }
+    )
+    appended = append_issue_transition(completed, ledger_path)
+    if appended:
+        console.print(f"[green]COMPLETED[/] {issue_id} → COMPLETED")
     else:
         console.print(
-            f"[yellow]PR_CREATED[/] {issue_id} — PR created but not merged. "
-            f"Pass --merge to mark COMPLETED. URL: {pr_url}"
+            f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
         )
     _save_session(session, session_path, "TASKS")
 
