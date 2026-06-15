@@ -34,11 +34,11 @@ def pre() -> None:
     print(json.dumps(contract, indent=2))
 
 
-def _compute_diff(repo: Path) -> str:
-    """Compute unified diff against merge-base with main."""
+def _compute_merge_base(commit_a: str, commit_b: str, repo: Path) -> str:
+    """Compute merge base between two commits."""
     try:
-        merge_base = subprocess.run(
-            ["git", "merge-base", "main", "HEAD"],
+        return subprocess.run(
+            ["git", "merge-base", commit_a, commit_b],
             cwd=repo,
             env=_git_env(),
             capture_output=True,
@@ -48,18 +48,28 @@ def _compute_diff(repo: Path) -> str:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
 
+
+def _gather_diff(base: str, head: str, repo: Path) -> str:
+    """Gather unified diff between base and head commits."""
     try:
-        result = subprocess.run(
-            ["git", "diff", f"{merge_base}..HEAD"],
+        return subprocess.run(
+            ["git", "diff", f"{base}..{head}"],
             cwd=repo,
             env=_git_env(),
             capture_output=True,
             text=True,
             check=True,
-        )
-        return result.stdout
+        ).stdout
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
+
+
+def _compute_diff(repo: Path) -> str:
+    """Compute unified diff against merge-base with main."""
+    merge_base = _compute_merge_base("main", "HEAD", repo)
+    if not merge_base:
+        return ""
+    return _gather_diff(merge_base, "HEAD", repo)
 
 
 def _resolve_constitution_path(repo: Path) -> str | None:

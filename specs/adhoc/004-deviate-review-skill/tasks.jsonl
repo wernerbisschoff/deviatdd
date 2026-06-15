@@ -1,3 +1,5 @@
 {"id":"TSK-004-01","issue_id":"ISS-ADH-004","description":"Create review.py module with pre/post stubs and register review subcommand","status":"FAILED","execution_mode":"IMMEDIATE","created_at":"2026-06-15T13:57:58.679953Z"}
 {"id":"TSK-004-02","issue_id":"ISS-ADH-004","description":"Implement pre command core — contract emission, git diff, constitution path resolution","status":"RED","execution_mode":"TDD","created_at":"2026-06-15T14:00:04.848854Z"}
 {"id":"TSK-004-02","issue_id":"ISS-ADH-004","description":"Implement pre command core — contract emission, git diff, constitution path resolution","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-15T14:00:04.848854Z"}
+{"id":"TSK-004-02","issue_id":"ISS-ADH-004","description":"Implement pre command core — contract emission, git diff, constitution path resolution","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-15T14:03:20.096020Z"}
+{"id":"TSK-004-02","issue_id":"ISS-ADH-004","description":"Implement pre command core — contract emission, git diff, constitution path resolution","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-15T14:00:04.848854Z"}
