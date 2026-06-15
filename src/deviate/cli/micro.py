@@ -1397,21 +1397,28 @@ def _run_all(
                     agent=agent,
                 ):
                     any_failed = True
+                    c.print(
+                        "[red]Pipeline halted: task failure breaks dependency chain[/]"
+                    )
+                    monitor.push_event(
+                        "pipeline_halted",
+                        task_id=task.get("id", "?"),
+                    )
+                    break
     except KeyboardInterrupt:
         monitor.signal_keyboard_interrupt()
         raise typer.Exit(code=130)
 
     total = len(pending)
-    failed_count = monitor.failed_count
     pipeline_status = (
         "interrupted"
         if monitor.interrupted
-        else ("completed_with_failures" if any_failed else "completed")
+        else ("halted" if any_failed else "completed")
     )
     monitor.push_event(
         "pipeline_complete",
         total=total,
-        failed=failed_count,
+        failed=monitor.failed_count,
         status=pipeline_status,
     )
 
