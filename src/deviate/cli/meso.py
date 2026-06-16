@@ -14,7 +14,6 @@ from deviate.cli._common import (
     _extract_epic_num,
     _extract_issue_num,
     _handle_missing_dot_dir,
-    _handle_transition_error,
     _run_pre_commit_hooks,
     console,
     with_json_quiet,
@@ -35,7 +34,7 @@ from deviate.core.worktree import (
     remove_worktree,
 )
 from deviate.prompts.assembly import assemble_prompt
-from deviate.state.config import SessionState, TransitionViolationError
+from deviate.state.config import SessionState
 from deviate.state.ledger import (
     IssueRecord,
     TaskRecord,
@@ -65,36 +64,18 @@ def _load_session(phase: str) -> tuple[SessionState, Path]:
         _handle_missing_dot_dir(phase)
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
-    if session.current_phase != phase:
-        console.print(
-            f"[red]PHASE_MISMATCH[/] session is in '{session.current_phase}', "
-            f"expected '{phase}'"
-        )
-        raise typer.Exit(code=1)
     return session, session_path
 
 
 def _load_session_accept(
     *phases: str, force: bool = False
 ) -> tuple[SessionState, Path]:
-    """Load session, accepting any of the given phases.
-
-    If ``force`` is ``True``, skip phase validation entirely.
-    """
+    """Load session — state is purely descriptive, no phase gating."""
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
         _handle_missing_dot_dir(phases[0] if phases else "?")
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
-    if force:
-        return session, session_path
-    if phases and session.current_phase not in phases:
-        joined = " | ".join(phases)
-        console.print(
-            f"[red]PHASE_MISMATCH[/] session is in '{session.current_phase}', "
-            f"expected one of '{joined}'"
-        )
-        raise typer.Exit(code=1)
     return session, session_path
 
 
@@ -705,10 +686,7 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
         console.print(f"[red]COMMIT_FAILED[/] {e}")
         raise typer.Exit(code=1)
 
-    try:
-        session = session.transition_to("TASKS")
-    except TransitionViolationError as e:
-        _handle_transition_error("PLAN", e)
+    session = session.transition_to("TASKS")
     _save_session(session, session_path, "TASKS")
 
 
@@ -726,10 +704,7 @@ def _tasks_legacy(issue_id: str) -> None:
     if tasks_jsonl.exists():
         console.print(f"[yellow]SKIP[/] tasks already provisioned for {issue_slug}")
         raise typer.Exit(code=0)
-    try:
-        session = session.transition_to("TASKS")
-    except TransitionViolationError as e:
-        _handle_transition_error("TASKS", e)
+    session = session.transition_to("TASKS")
     session.active_issue_id = issue_id
     session.save(session_path)
 
@@ -766,10 +741,7 @@ def _tasks_legacy(issue_id: str) -> None:
         console.print(f"[red]ERROR[/] Failed to append task record {task.id}")
         raise typer.Exit(code=1)
 
-    try:
-        session = session.transition_to("IDLE")
-    except TransitionViolationError as e:
-        _handle_transition_error("TASKS", e)
+    session = session.transition_to("IDLE")
     session.save(session_path)
     console.print(f"[green]TASKS[/] 1 task(s) provisioned for {issue_slug}")
 
@@ -913,10 +885,7 @@ def _tasks_post(
     except Exception as e:
         console.print(f"[red]COMMIT_FAILED[/] {e}")
         raise typer.Exit(code=1)
-    try:
-        session = session.transition_to("IDLE")
-    except TransitionViolationError as e:
-        _handle_transition_error("TASKS", e)
+    session = session.transition_to("IDLE")
     _save_session(session, session_path, "IDLE")
 
 
