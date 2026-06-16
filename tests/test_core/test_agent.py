@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
+from deviate.core.agent import BACKEND_COMMANDS
 from deviate.state.config import AgentConfig, DeviateConfig
 
 
@@ -199,6 +200,71 @@ class TestAgentBackendInvocation:
         args, _ = mock_popen.call_args
         cmd_str = " ".join(args[0]) if isinstance(args[0], list) else str(args[0])
         assert "claude" in cmd_str
+
+
+class TestStubAgentBackend:
+    def test_stub_backend_registered_in_commands(self):
+        assert "stub" in BACKEND_COMMANDS
+        assert BACKEND_COMMANDS["stub"] == "stub"
+
+    def test_stub_backend_returns_valid_manifest(self):
+        from deviate.core.agent import StubAgentBackend
+
+        backend = StubAgentBackend()
+        manifest = backend.invoke("test prompt")
+
+        assert manifest.phase == "RED"
+        assert manifest.status == "success"
+        assert manifest.task_id is None
+
+    def test_stub_backend_no_subprocess(self):
+        from deviate.core.agent import StubAgentBackend
+
+        with patch("subprocess.Popen") as mock_popen:
+            backend = StubAgentBackend()
+            backend.invoke("test prompt")
+
+        mock_popen.assert_not_called()
+
+    def test_stub_backend_fires_output_callback(self):
+        from deviate.core.agent import StubAgentBackend
+
+        callback_calls: list[str] = []
+
+        def callback(text: str) -> None:
+            callback_calls.append(text)
+
+        backend = StubAgentBackend()
+        backend.invoke("test prompt", output_callback=callback)
+
+        assert len(callback_calls) == 1
+        assert "test prompt" in callback_calls[0]
+
+    def test_stub_backend_accepts_timeout(self):
+        from deviate.core.agent import StubAgentBackend
+
+        backend = StubAgentBackend()
+        manifest = backend.invoke("test prompt", timeout=999)
+
+        assert manifest.phase == "RED"
+        assert manifest.status == "success"
+
+    def test_stub_backend_manifest_is_handover_manifest_type(self):
+        from deviate.core.agent import HandoverManifest, StubAgentBackend
+
+        backend = StubAgentBackend()
+        manifest = backend.invoke("test prompt")
+
+        assert isinstance(manifest, HandoverManifest)
+
+    def test_stub_backend_invoke_signature_matches_agent_backend(self):
+        import inspect
+        from deviate.core.agent import AgentBackend, StubAgentBackend
+
+        ab_sig = inspect.signature(AgentBackend.invoke)
+        sb_sig = inspect.signature(StubAgentBackend.invoke)
+
+        assert ab_sig.parameters.keys() == sb_sig.parameters.keys()
 
 
 class TestAgentBackendErrors:
