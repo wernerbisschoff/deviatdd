@@ -12,46 +12,49 @@ _TASK_LINE_PATTERN = re.compile(r"^- (TSK-\d{3}-\d{2}): (.+)")
 _MODE_PATTERN = re.compile(r"\*\*Mode\*\*:\s*(\S+)")
 
 
-def generate_jsonl_from_md(tasks_md: Path, issue_id: str) -> list[dict]:
+def generate_jsonl_from_md(tasks_md: Path, issue_id: str) -> list[TaskRecord]:
     content = tasks_md.read_text(encoding="utf-8")
-    records: list[dict] = []
+    records: list[TaskRecord] = []
     current_id: str | None = None
     current_desc: str | None = None
     current_mode: str = "TDD"
 
     for line in content.splitlines():
-        m = _TASK_LINE_PATTERN.match(line)
-        if m:
+        task_match = _TASK_LINE_PATTERN.match(line)
+        if task_match:
             if current_id:
                 records.append(
-                    {
-                        "id": current_id,
-                        "issue_id": issue_id,
-                        "description": current_desc,
-                        "status": "PENDING",
-                        "execution_mode": current_mode,
-                    }
+                    _build_task_record(current_id, issue_id, current_desc, current_mode)
                 )
-            current_id = m.group(1)
-            current_desc = m.group(2).strip()
+            current_id = task_match.group(1)
+            current_desc = task_match.group(2).strip()
             current_mode = "TDD"
         elif current_id:
-            mode_m = _MODE_PATTERN.search(line)
-            if mode_m:
-                current_mode = mode_m.group(1)
+            mode_match = _MODE_PATTERN.search(line)
+            if mode_match:
+                current_mode = mode_match.group(1)
 
     if current_id:
         records.append(
-            {
-                "id": current_id,
-                "issue_id": issue_id,
-                "description": current_desc,
-                "status": "PENDING",
-                "execution_mode": current_mode,
-            }
+            _build_task_record(current_id, issue_id, current_desc, current_mode)
         )
 
     return records
+
+
+def _build_task_record(
+    task_id: str,
+    issue_id: str,
+    description: str | None,
+    execution_mode: str,
+) -> TaskRecord:
+    return TaskRecord(
+        id=task_id,
+        issue_id=issue_id,
+        description=description or "",
+        status="PENDING",
+        execution_mode=execution_mode,
+    )
 
 
 def validate_tasks_jsonl(records: list[dict]) -> list[str]:

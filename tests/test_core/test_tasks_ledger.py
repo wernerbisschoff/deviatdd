@@ -24,17 +24,17 @@ class TestGenerateJsonlFromMd:
         records = generate_jsonl_from_md(tasks_md, issue_id="ISS-002-005")
 
         assert len(records) == 2
-        assert records[0]["id"] == "TSK-005-06"
-        assert records[0]["issue_id"] == "ISS-002-005"
-        assert records[0]["description"] == "Implement tasks.jsonl proposal pattern"
-        assert records[0]["status"] == "PENDING"
-        assert records[0]["execution_mode"] == "TDD"
+        assert records[0].id == "TSK-005-06"
+        assert records[0].issue_id == "ISS-002-005"
+        assert records[0].description == "Implement tasks.jsonl proposal pattern"
+        assert records[0].status == "PENDING"
+        assert records[0].execution_mode == "TDD"
 
-        assert records[1]["id"] == "TSK-005-07"
-        assert records[1]["issue_id"] == "ISS-002-005"
-        assert records[1]["description"] == "Do something else"
-        assert records[1]["status"] == "PENDING"
-        assert records[1]["execution_mode"] == "IMMEDIATE"
+        assert records[1].id == "TSK-005-07"
+        assert records[1].issue_id == "ISS-002-005"
+        assert records[1].description == "Do something else"
+        assert records[1].status == "PENDING"
+        assert records[1].execution_mode == "IMMEDIATE"
 
     def test_empty_tasks_md_returns_empty_list(self, tmp_path: Path):
         from deviate.core.tasks_ledger import generate_jsonl_from_md

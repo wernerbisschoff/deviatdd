@@ -883,26 +883,21 @@ def _tasks_post(
     proposal_path = tasks_md.with_name("tasks.jsonl.proposal")
     records = generate_jsonl_from_md(tasks_md, resolved_issue_id)
 
+    validation_errors = validate_tasks_jsonl([rec.model_dump() for rec in records])
+    if validation_errors:
+        for err in validation_errors:
+            console.print(f"[red]VALIDATION_ERROR[/] {err}")
+        raise typer.Exit(code=1)
+
     if confirm:
-        validation_errors = validate_tasks_jsonl(records)
-        if validation_errors:
-            for err in validation_errors:
-                console.print(f"[red]VALIDATION_ERROR[/] {err}")
-            raise typer.Exit(code=1)
         for rec in records:
-            task = TaskRecord(
-                id=rec["id"],
-                issue_id=rec["issue_id"],
-                description=rec["description"],
-                status=rec["status"],
-                execution_mode=rec["execution_mode"],
-            )
-            append_task_record(task, tasks_jsonl)
+            append_task_record(rec, tasks_jsonl)
         if proposal_path.exists():
             proposal_path.unlink()
     else:
         proposal_path.parent.mkdir(parents=True, exist_ok=True)
-        proposal_path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+        proposal_lines = "\n".join(rec.model_dump_json() for rec in records)
+        proposal_path.write_text(proposal_lines + "\n")
 
     _run_pre_commit_hooks()
 
