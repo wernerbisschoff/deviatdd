@@ -15,3 +15,4 @@
 {"id":"TSK-003-04","issue_id":"ISS-002-003","description":"Specify Pre — auto-invoke feature create when session absent","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-13T16:38:24.858169Z"}
 {"id":"TSK-003-04","issue_id":"ISS-002-003","description":"Specify Pre — auto-invoke feature create when session absent","status":"REFACTOR","execution_mode":"TDD","created_at":"2026-06-13T16:38:24.858169Z"}
 {"id":"TSK-003-02","issue_id":"ISS-002-003","description":"Adhoc CLI — pre (classification + record) and post (completion + validation)","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-16T11:30:02.703093Z"}
+{"id":"TSK-003-04","issue_id":"ISS-002-003","description":"Specify Pre — auto-invoke feature create when session absent","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-16T11:48:28.832462Z"}
