@@ -184,9 +184,9 @@ The current meso-layer has a redundant `/deviate-specify` step that merely refor
 
 | Variable | Value |
 |----------|-------|
-| STATUS | SPECIFY_PENDING_COMMIT |
+| STATUS | SHARD_PENDING_COMMIT |
 | EPIC_SLUG | adhoc |
 | BRANCH_NAME | feat/adhoc/003-meso-layer-restructuring |
 | SPEC_PATH | specs/adhoc/003-meso-layer-restructuring/spec.md |
 | ISSUE_ID | ISS-ADH-003 |
-| NEXT_ACTION | Run `deviate specify post` to validate, commit, and advance to TASKS |
+| NEXT_ACTION | Run `deviate plan pre` to begin the localized research phase |
