@@ -262,6 +262,7 @@ class RollbackSnapshot(BaseModel):
     phase: str
     branch: str
     commit_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
+    red_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reason: str
     restored: bool = False
