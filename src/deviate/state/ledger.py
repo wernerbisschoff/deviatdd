@@ -61,7 +61,16 @@ class TaskRecord(BaseModel):
     issue_id: str
     description: str = Field(min_length=1)
     status: Literal[
-        "PENDING", "RED", "GREEN", "JUDGE", "REFACTOR", "COMPLETED", "FAILED"
+        "PENDING",
+        "RED",
+        "GREEN",
+        "YELLOW",
+        "YELLOW_APPROVED",
+        "YELLOW_REJECTED",
+        "JUDGE",
+        "REFACTOR",
+        "COMPLETED",
+        "FAILED",
     ] = "PENDING"
     execution_mode: Literal["TDD", "DIRECT", "E2E", "IMMEDIATE"] = "TDD"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
