@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from contextlib import chdir, nullcontext
 from datetime import datetime, timezone
@@ -383,6 +384,21 @@ def _try_claim_issue(
         wt_spec_dir = Path(worktree_path) / Path(spec_target_rel).parent
         wt_spec_dir.mkdir(parents=True, exist_ok=True)
 
+        # ── Detect remote if not specified ────────────────────────────
+        if remote is None:
+            try:
+                r = subprocess.run(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                )
+                if r.returncode == 0:
+                    remote = "origin"
+            except Exception:
+                pass
+
         # ── Commit and push claim ──────────────────────────────────────
         if claimed:
             try:
@@ -446,18 +462,33 @@ def _specify_pre(
     issue_id: str | None = None,
     force: bool = False,
     dry_run: bool = False,
-) -> None:
-    console.print(
-        "[yellow]DEPRECATED[/] 'deviate specify pre' is deprecated. "
-        "The SPECIFY phase has been merged into 'deviate shard'."
+) -> dict | None:
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    if issue_id is None:
+        console.print("[red]ISSUE_ID_REQUIRED[/] specify pre requires --issue <id>")
+        raise typer.Exit(code=1)
+    record = resolve_issue_record(issue_id, ledger_path)
+    if record is None:
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
+        raise typer.Exit(code=1)
+    result = _try_claim_issue(
+        record,
+        repo_root=Path.cwd(),
+        ledger_path=ledger_path,
+        force=force,
+        dry_run=dry_run,
     )
-    raise typer.Exit(code=0)
+    if result is None:
+        console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]WORKTREE[/] {result['worktree_path']}")
+    return result
 
 
 def _specify_post(force: bool = False) -> None:
     console.print(
-        "[yellow]DEPRECATED[/] 'deviate specify post' is deprecated. "
-        "The SPECIFY phase has been merged into 'deviate shard'."
+        "[yellow]SETUP_NOOP[/] specify post is not needed — "
+        "setup is a single pre step"
     )
     raise typer.Exit(code=0)
 
@@ -904,16 +935,25 @@ def _meso_run(
         print(prompt)
         return
 
-    worktree_path = Path.cwd() / ".worktrees" / f"feat/{epic_slug}/{issue_slug}"
-    ctx = chdir(worktree_path) if worktree_path.exists() else nullcontext()
-    with ctx:
-        # ── TASKS phase — advance session if needed ──────────────────
-        session = SessionState.load(session_path)
-        if session.current_phase != "TASKS":
-            session = session.force_transition_to("TASKS")
-            session.active_issue_id = issue_id
-            session.save(session_path)
+    # ── Setup step: create worktree and claim issue ──────────────────
+    setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
+    worktree_path = Path(setup_result["worktree_path"])
 
+    # ── TASKS phase — advance session (in original repo) ────────────
+    dot_dir = _resolve_dot_deviate()
+    session_path = (dot_dir / "session.json").resolve()
+    session = SessionState.load(session_path)
+    if session.current_phase != "TASKS":
+        session = session.force_transition_to("TASKS")
+        session.active_issue_id = issue_id
+        session.save(session_path)
+
+    # Sync .deviate/ to worktree so downstream functions find the session
+    if dot_dir.exists():
+        shutil.copytree(str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True)
+
+    ctx = chdir(worktree_path)
+    with ctx:
         _tasks_pre(force=force, dry_run=False)
 
         _invoke_agent_phase("tasks", contract)
@@ -943,7 +983,7 @@ def meso_run_command(
     ),
     force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
 ) -> None:
-    """Run the meso automated pipeline (specify → tasks)"""
+    """Run the meso automated pipeline (setup → tasks)"""
     _meso_run(issue_id=issue, dry_run=dry_run, force=force)
 
 
@@ -966,14 +1006,13 @@ def specify(
         None, "--issue", help="Issue ID for pre subcommand"
     ),
 ) -> None:
-    """Deprecated: specify has been merged into shard"""
-    console.print(
-        "[yellow]DEPRECATED[/] 'deviate specify' is deprecated. "
-        "The SPECIFY phase has been merged into 'deviate shard'. "
-        "Use 'deviate shard' instead — shard now produces spec-enriched "
-        "issue files directly."
-    )
-    raise typer.Exit(code=0)
+    """Setup: create worktree and claim issue for the given issue ID"""
+    if issue_id == "pre":
+        _specify_pre(issue_id=issue, force=force, dry_run=dry_run)
+    elif issue_id == "post":
+        _specify_post(force=force)
+    else:
+        _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
 
 
 def tasks(

@@ -23,19 +23,19 @@ def _git_env() -> dict[str, str]:
 
 
 class TestSpecifyPre:
-    def test_specify_pre_emits_deprecation(self, tmp_git_repo: Path) -> None:
+    def test_specify_pre_requires_issue_flag(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["specify", "pre", "--force"])
-            assert result.exit_code == 0, result.output
-            assert "DEPRECATED" in result.output
+            assert result.exit_code == 1, result.output
+            assert "ISSUE_ID_REQUIRED" in result.output
 
 
 class TestSpecifyPost:
-    def test_specify_post_emits_deprecation(self, tmp_git_repo: Path) -> None:
+    def test_specify_post_is_noop(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["specify", "post"])
             assert result.exit_code == 0, result.output
-            assert "DEPRECATED" in result.output
+            assert "SETUP_NOOP" in result.output
 
 
 class TestTasksPre:

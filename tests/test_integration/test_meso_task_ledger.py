@@ -11,6 +11,8 @@ from deviate.cli import cli
 from deviate.state.config import SessionState
 from deviate.state.ledger import IssueRecord, TaskRecord
 
+from tests.conftest import _git_env
+
 runner = CliRunner()
 
 MESO_ISSUE_ID = "ISS-100"
@@ -60,13 +62,13 @@ class TestMesoTaskLedger:
         post_content = tasks_jsonl.read_text()
         assert post_content == pre_content, "File content changed on re-run"
 
-    def test_specify_emits_deprecation(self, meso_workspace: Path) -> None:
+    def test_specify_nonexistent_issue_fails(self, meso_workspace: Path) -> None:
         result = runner.invoke(cli, ["specify", "NONEXISTENT"])
-        assert result.exit_code == 0
-        assert "DEPRECATED" in result.output
+        assert result.exit_code == 1, result.output
+        assert "ISSUE_NOT_FOUND" in result.output
 
-    def test_empty_issues_ledger(self, tmp_path: Path) -> None:
-        with chdir(tmp_path):
+    def test_empty_issues_ledger(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -77,11 +79,11 @@ class TestMesoTaskLedger:
             ledger.write_text("")
 
             result = runner.invoke(cli, ["specify", "ISS-200"])
-            assert result.exit_code == 0
-            assert "DEPRECATED" in result.output
+            assert result.exit_code == 1, result.output
+            assert "ISSUE_NOT_FOUND" in result.output
 
-    def test_malformed_jsonl_in_ledger(self, tmp_path: Path) -> None:
-        with chdir(tmp_path):
+    def test_malformed_jsonl_in_ledger(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -102,12 +104,27 @@ class TestMesoTaskLedger:
                 "also not valid\n" + valid.model_dump_json() + "\n" + "trash\n"
             )
 
-            result = runner.invoke(cli, ["specify", "ISS-300"])
+            import subprocess
+
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "setup ledger"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["specify", "ISS-300", "--dry-run"])
             assert result.exit_code == 0, result.output
-            assert "DEPRECATED" in result.output
+            assert "DRY_RUN" in result.output
 
     def test_missing_dotdir_graceful(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["specify", "any-id"])
-            assert result.exit_code == 0
-            assert "DEPRECATED" in result.output
+            assert result.exit_code == 1, result.output
+            assert "ISSUE_NOT_FOUND" in result.output
