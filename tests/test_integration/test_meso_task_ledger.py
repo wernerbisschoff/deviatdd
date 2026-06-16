@@ -18,18 +18,11 @@ MESO_BUCKET = "test-epic"
 
 
 class TestMesoTaskLedger:
-    def test_full_specify_tasks_cycle(self, meso_workspace: Path) -> None:
-        result = runner.invoke(cli, ["specify", MESO_ISSUE_ID])
-        assert result.exit_code == 0, result.output
-
-        spec_dir = Path("specs") / MESO_BUCKET
-        assert spec_dir.is_dir(), f"spec dir {spec_dir} not created"
-        spec_md = spec_dir / "spec.md"
-        assert spec_md.is_file(), f"spec.md not created at {spec_md}"
-
+    def test_full_tasks_cycle(self, meso_workspace: Path) -> None:
         result = runner.invoke(cli, ["tasks", MESO_ISSUE_ID])
         assert result.exit_code == 0, result.output
 
+        spec_dir = Path("specs") / MESO_BUCKET
         tasks_jsonl = spec_dir / "tasks.jsonl"
         assert tasks_jsonl.is_file(), f"tasks.jsonl not created at {tasks_jsonl}"
 
@@ -47,9 +40,6 @@ class TestMesoTaskLedger:
         )
 
     def test_tasks_idempotency_full_cycle(self, meso_workspace: Path) -> None:
-        result = runner.invoke(cli, ["specify", MESO_ISSUE_ID])
-        assert result.exit_code == 0, result.output
-
         result = runner.invoke(cli, ["tasks", MESO_ISSUE_ID])
         assert result.exit_code == 0, result.output
 
@@ -70,10 +60,10 @@ class TestMesoTaskLedger:
         post_content = tasks_jsonl.read_text()
         assert post_content == pre_content, "File content changed on re-run"
 
-    def test_invalid_issue_id_rejected(self, meso_workspace: Path) -> None:
+    def test_specify_emits_deprecation(self, meso_workspace: Path) -> None:
         result = runner.invoke(cli, ["specify", "NONEXISTENT"])
-        assert result.exit_code != 0
-        assert "INVALID_ISSUE_ID" in result.output
+        assert result.exit_code == 0
+        assert "DEPRECATED" in result.output
 
     def test_empty_issues_ledger(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
@@ -87,8 +77,8 @@ class TestMesoTaskLedger:
             ledger.write_text("")
 
             result = runner.invoke(cli, ["specify", "ISS-200"])
-            assert result.exit_code != 0
-            assert "INVALID_ISSUE_ID" in result.output
+            assert result.exit_code == 0
+            assert "DEPRECATED" in result.output
 
     def test_malformed_jsonl_in_ledger(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
@@ -102,7 +92,7 @@ class TestMesoTaskLedger:
                 type="feature",
                 title="Valid Issue in Malformed Ledger",
                 status="SHARDED",
-                source_file="specs/test-epic/issues/valid-issue-malformed.md",  # stem = valid-issue-malformed
+                source_file="specs/test-epic/issues/valid-issue-malformed.md",
                 timestamp=datetime.now(timezone.utc),
             )
             ledger = Path("specs") / "issues.jsonl"
@@ -114,12 +104,10 @@ class TestMesoTaskLedger:
 
             result = runner.invoke(cli, ["specify", "ISS-300"])
             assert result.exit_code == 0, result.output
-
-            spec_dir = Path("specs") / "test-epic"
-            assert spec_dir.is_dir(), f"Expected {spec_dir} despite malformed lines"
+            assert "DEPRECATED" in result.output
 
     def test_missing_dotdir_graceful(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["specify", "any-id"])
-            assert result.exit_code != 0
-            assert "HALTED" in result.output
+            assert result.exit_code == 0
+            assert "DEPRECATED" in result.output

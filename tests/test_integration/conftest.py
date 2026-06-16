@@ -26,7 +26,7 @@ def mock_workspace(tmp_path: Path) -> Path:
 def meso_workspace(tmp_path: Path) -> Path:
     dot_dir = tmp_path / ".deviate"
     dot_dir.mkdir(parents=True)
-    session = SessionState(current_phase="IDLE")
+    session = SessionState(current_phase="SPECIFY")
     session.save(dot_dir / "session.json")
 
     issue = IssueRecord(
