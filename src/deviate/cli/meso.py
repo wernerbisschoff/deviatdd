@@ -4,7 +4,7 @@ import json
 import re
 import shutil
 import subprocess
-from contextlib import chdir, nullcontext
+from contextlib import chdir
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -312,6 +312,30 @@ def _emit_contract(
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_linked_worktree(cwd: Path | None = None) -> bool:
+    """True if *cwd* is inside a linked (non-main) git worktree."""
+    cwd = cwd or Path.cwd()
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        if r.returncode != 0:
+            return False
+        # Main worktree → ".git", linked worktree → absolute path
+        return r.stdout.strip() != ".git"
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Specify — new pre/post subcommand behavior
 # ---------------------------------------------------------------------------
 
@@ -487,10 +511,202 @@ def _specify_pre(
 
 def _specify_post(force: bool = False) -> None:
     console.print(
-        "[yellow]SETUP_NOOP[/] specify post is not needed — "
-        "setup is a single pre step"
+        "[yellow]SETUP_NOOP[/] specify post is not needed — setup is a single pre step"
     )
     raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# Plan — pre / post subcommand behavior
+# ---------------------------------------------------------------------------
+
+
+def _discover_unclaimed() -> str:
+    """Return the next unblocked BACKLOG issue ID, or halt."""
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    if not ledger_path.exists():
+        console.print("[red]NO_LEDGER[/] specs/issues.jsonl not found")
+        raise typer.Exit(code=1)
+    issue = select_next_unblocked_issue(ledger_path)
+    if issue is None:
+        console.print("[red]NO_UNBLOCKED_ISSUES[/] no BACKLOG issue available")
+        raise typer.Exit(code=1)
+    return issue.issue_id
+
+
+def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
+    """Claim *issue_id* via ``_specify_pre``, advance session to PLAN,
+    sync ``.deviate/`` to the new worktree.
+
+    Returns the worktree path.
+    """
+    dot_dir = _resolve_dot_deviate()
+    setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
+    if setup_result is None:
+        raise typer.Exit(code=1)
+
+    if not dry_run:
+        session_path = dot_dir / "session.json"
+        session = SessionState.load(session_path)
+        session = session.force_transition_to("PLAN")
+        session.active_issue_id = issue_id
+        session.save(session_path)
+
+        wt_path = Path(setup_result["worktree_path"])
+        if dot_dir.exists():
+            shutil.copytree(str(dot_dir), str(wt_path / ".deviate"), dirs_exist_ok=True)
+
+        console.print(f"[green]WORKTREE[/] setup at {wt_path}")
+        console.print("[green]SESSION[/] advanced to PLAN")
+
+    return Path(setup_result["worktree_path"])
+
+
+@with_json_quiet
+def _plan_pre(
+    issue_id: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Emit a plan-pre contract.
+
+    *Not in a linked worktree* — auto-claim + setup:
+      - ``issue_id`` given → claim that specific issue.
+      - No ``issue_id`` → discover next unblocked BACKLOG issue.
+
+    *Inside a linked worktree* — emit the JSON contract for the agent.
+    """
+    # ── Auto-claim + setup (not in linked worktree) ────────────────────
+    if not _is_linked_worktree():
+        rid = issue_id if issue_id is not None else _discover_unclaimed()
+        _claim_and_setup(rid, force, dry_run)
+        raise typer.Exit(code=0)
+
+    # ── Contract mode (inside worktree or from _meso_run) ──────────────
+    session, _ = _load_session_accept("SPECIFY", "PLAN", force=force)
+    resolved_issue_id = issue_id or session.active_issue_id or ""
+    if not resolved_issue_id:
+        console.print(
+            "[red]NO_ACTIVE_ISSUE[/] provide --issue or run from a worktree "
+            "with active_issue_id in session"
+        )
+        raise typer.Exit(code=1)
+
+    repo_root = Path.cwd()
+    worktree_full = str(repo_root)
+    branch_name = ""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=_git_env(),
+        )
+        branch_name = r.stdout.strip()
+    except Exception:
+        pass
+    console.print(f"[green]WORKTREE[/] {worktree_full} [{branch_name}]")
+
+    spec_path: str = ""
+    status: str = "READY"
+    if resolved_issue_id:
+        found = _find_spec_md(resolved_issue_id)
+        if found is None:
+            status = "SPEC_NOT_FOUND"
+            console.print(
+                f"[red]SPEC_NOT_FOUND[/] no spec.md for issue {resolved_issue_id}"
+            )
+        else:
+            spec_path = str(found)
+            console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+    else:
+        status = "SPEC_NOT_FOUND"
+        console.print("[red]NO_ACTIVE_ISSUE[/]")
+
+    plan_target: str = ""
+    if resolved_issue_id:
+        ledger_path = _resolve_specs_root() / "issues.jsonl"
+        record = resolve_issue_record(resolved_issue_id, ledger_path)
+        if record is not None:
+            bucket = _resolve_bucket_dir(record.source_file)
+            slug = _source_stem(record.source_file)
+            plan_target = str(_resolve_specs_root() / bucket / slug / "plan.md")
+
+    (
+        constitution_path,
+        constitution_test_command,
+        constitution_lint_command,
+    ) = _resolve_constitution_commands(repo_root)
+
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping side effects")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    contract = {
+        "issue_id": resolved_issue_id,
+        "spec_path": spec_path,
+        "plan_target": plan_target,
+        "worktree_full": worktree_full,
+        "branch_name": branch_name,
+        "constitution_path": constitution_path,
+        "constitution_test_command": constitution_test_command,
+        "constitution_lint_command": constitution_lint_command,
+        "timestamp": timestamp,
+        "status": status,
+        "phase": "plan_pre",
+        "force": force,
+        "dry_run": dry_run,
+    }
+    print(json.dumps(contract, indent=2))
+
+
+def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
+    """Validate plan.md, commit it, and advance session to TASKS."""
+    session, session_path = _load_session_accept("PLAN", force=force)
+    resolved_issue_id = issue_id or session.active_issue_id
+    if not resolved_issue_id:
+        console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
+        raise typer.Exit(code=1)
+
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    record = resolve_issue_record(resolved_issue_id, ledger_path)
+    if record is None:
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {resolved_issue_id}")
+        raise typer.Exit(code=1)
+
+    bucket = _resolve_bucket_dir(record.source_file)
+    slug = _source_stem(record.source_file)
+    plan_md = _resolve_specs_root() / bucket / slug / "plan.md"
+    if not plan_md.exists():
+        console.print(f"[red]PLAN_NOT_FOUND[/] {plan_md}")
+        raise typer.Exit(code=1)
+    content = plan_md.read_text(encoding="utf-8").strip()
+    if not content and not force:
+        console.print("[red]PLAN_EMPTY[/] plan.md is empty")
+        raise typer.Exit(code=1)
+
+    _run_pre_commit_hooks()
+
+    epic_num = _extract_epic_num(bucket)
+    issue_num = _extract_issue_num(resolved_issue_id)
+    try:
+        sha = commit_artifact(
+            plan_md,
+            f"docs({epic_num}-{issue_num}): create plan.md",
+            repo=Path.cwd(),
+        )
+        console.print(f"[green]COMMITTED[/] plan.md at {sha[:8]}")
+    except Exception as e:
+        console.print(f"[red]COMMIT_FAILED[/] {e}")
+        raise typer.Exit(code=1)
+
+    try:
+        session = session.transition_to("TASKS")
+    except TransitionViolationError as e:
+        _handle_transition_error("PLAN", e)
+    _save_session(session, session_path, "TASKS")
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +778,7 @@ def _tasks_legacy(issue_id: str) -> None:
 
 @with_json_quiet
 def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
-    session, _ = _load_session_accept("SPECIFY", "TASKS", force=force)
+    session, _ = _load_session_accept("PLAN", "SPECIFY", "TASKS", force=force)
 
     issue_id = session.active_issue_id or ""
 
@@ -939,21 +1155,29 @@ def _meso_run(
     setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
     worktree_path = Path(setup_result["worktree_path"])
 
-    # ── TASKS phase — advance session (in original repo) ────────────
+    # ── PLAN phase — advance session (in original repo) ──────────────
     dot_dir = _resolve_dot_deviate()
     session_path = (dot_dir / "session.json").resolve()
     session = SessionState.load(session_path)
-    if session.current_phase != "TASKS":
-        session = session.force_transition_to("TASKS")
+    if session.current_phase != "PLAN":
+        session = session.force_transition_to("PLAN")
         session.active_issue_id = issue_id
         session.save(session_path)
 
     # Sync .deviate/ to worktree so downstream functions find the session
     if dot_dir.exists():
-        shutil.copytree(str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True)
+        shutil.copytree(
+            str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
+        )
 
     ctx = chdir(worktree_path)
     with ctx:
+        _plan_pre(force=force, dry_run=False)
+
+        _invoke_agent_phase("plan", contract)
+
+        _plan_post(force=force, issue_id=issue_id)
+
         _tasks_pre(force=force, dry_run=False)
 
         _invoke_agent_phase("tasks", contract)
@@ -983,7 +1207,7 @@ def meso_run_command(
     ),
     force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
 ) -> None:
-    """Run the meso automated pipeline (setup → tasks)"""
+    """Run the meso automated pipeline (setup → plan → tasks)"""
     _meso_run(issue_id=issue, dry_run=dry_run, force=force)
 
 
@@ -1013,6 +1237,25 @@ def specify(
         _specify_post(force=force)
     else:
         _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
+
+
+def plan(
+    issue_id: str = typer.Argument(..., help="Issue ID (or 'pre' / 'post')"),
+    force: bool = typer.Option(False, "--force", help="Force operation"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without side effects"
+    ),
+    issue: str | None = typer.Option(
+        None, "--issue", help="Issue ID for pre subcommand"
+    ),
+) -> None:
+    """Plan phase: pre (research + emit) or post (validate, commit)"""
+    if issue_id == "pre":
+        _plan_pre(issue_id=issue, force=force, dry_run=dry_run)
+    elif issue_id == "post":
+        _plan_post(force=force, issue_id=issue)
+    else:
+        _plan_pre(issue_id=issue_id, force=force, dry_run=dry_run)
 
 
 def tasks(

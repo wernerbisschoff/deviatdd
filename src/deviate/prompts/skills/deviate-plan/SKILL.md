@@ -32,9 +32,16 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 <execution_sequence>
 
-1. **Resolve the Issue Target**: Read the `<user_input>` container at the bottom of this file. Extract the issue file path, issue ID, and any additional context. If the issue file path is not provided, locate the spec-enriched issue file in `specs/<epic>/issues/` corresponding to the active issue.
+1. **Setup — claim issue + enter worktree**: Run ``deviate plan pre`` from the current directory.
+   - If you are NOT inside a linked worktree, this command discovers the next unblocked
+     BACKLOG issue, creates a worktree, claims the issue, and prints the worktree path.
+     ``cd`` into the printed worktree path and run ``deviate plan pre`` again.
+   - If you ARE inside a linked worktree, the command emits a JSON contract on stdout.
+     Parse it to extract ``issue_id``, ``spec_path``, ``plan_target``, ``branch_name``,
+     and ``worktree_full``.
+   - If ``status`` is ``SPEC_NOT_FOUND`` or ``NO_ACTIVE_ISSUE`` — halt.
 
-2. **Issue File Analysis**: Read the spec-enriched issue file. Extract:
+2. **Issue File Analysis**: Read the spec-enriched issue file at ``spec_path``. Extract:
    - `[SYSTEM_TOPOLOGY_MAPPING]` — target workstations, file paths, and epic domain
    - `[THE_PROBLEM_CONTRACT]` — the user/system journey this issue delivers
    - `[SCOPE_BOUNDARIES]` — hard inclusions and defensive exclusions
@@ -129,6 +136,9 @@ Write the plan as `plan.md` in the issue workspace directory (adjacent to the is
 
 | Condition | Action |
 |---|---|
+| ``deviate plan pre`` reports a worktree was created | ``cd`` into the printed worktree path and re-run ``deviate plan pre``. |
+| ``deviate plan pre`` reports NO_UNBLOCKED_ISSUES | Halt — no issue available to plan. |
+| ``deviate plan pre`` emits JSON contract (inside worktree) | Continue to step 2. |
 | Issue file not found at the expected path | Search `specs/<epic>/issues/` for the matching file. If still not found, halt with ISSUE_FILE_NOT_FOUND. |
 | Issue file missing required spec sections (`[USER_STORIES_LEDGER]`, `[ATDD_ACCEPTANCE_CRITERIA]`) | Halt with INCOMPLETE_ISSUE_SPEC. The issue must be re-generated with full spec sections before planning can proceed. |
 | Issue file has spec sections but some are empty | Proceed with available sections. Add a `[WARNING]` note in the plan for empty sections. |

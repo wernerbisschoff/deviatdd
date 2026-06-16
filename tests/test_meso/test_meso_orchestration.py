@@ -85,6 +85,7 @@ def _make_mock_subprocess() -> MagicMock:
 
 
 class TestMesoOrchestration:
+    @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
     @patch("deviate.core.agent.AgentBackend.invoke")
     @patch("deviate.cli.micro._run_pytest")
@@ -93,6 +94,7 @@ class TestMesoOrchestration:
         mock_pytest: MagicMock,
         mock_invoke: MagicMock,
         mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
         tmp_git_repo: Path,
     ) -> None:
         mock_invoke.return_value = MagicMock(
@@ -115,9 +117,11 @@ class TestMesoOrchestration:
                 f"Expected IDLE, got {loaded.current_phase}"
             )
 
-        assert mock_invoke.call_count == 1
+        assert mock_invoke.call_count == 2
+        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
         mock_tasks_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
 
+    @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
     @patch("deviate.core.agent.AgentBackend.invoke")
     @patch("deviate.cli.micro._run_pytest")
@@ -126,6 +130,7 @@ class TestMesoOrchestration:
         mock_pytest: MagicMock,
         mock_invoke: MagicMock,
         mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
         tmp_git_repo: Path,
     ) -> None:
         mock_invoke.return_value = MagicMock(
@@ -147,8 +152,10 @@ class TestMesoOrchestration:
             assert loaded.current_phase == "IDLE"
             assert loaded.active_issue_id == "ISS-001-004"
 
+        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-004")
         mock_tasks_post.assert_called_once_with(force=False, issue_id="ISS-001-004")
 
+    @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
     @patch("deviate.core.agent.AgentBackend.invoke")
     @patch("deviate.cli.micro._run_pytest")
@@ -157,6 +164,7 @@ class TestMesoOrchestration:
         mock_pytest: MagicMock,
         mock_invoke: MagicMock,
         mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
         tmp_git_repo: Path,
     ) -> None:
         mock_invoke.return_value = MagicMock(
@@ -194,6 +202,7 @@ class TestMesoOrchestration:
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "IDLE"
 
+        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
         mock_tasks_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
 
     def test_meso_completed_issue_aborts(
@@ -236,6 +245,7 @@ class TestMesoOrchestration:
 
         mock_invoke.assert_not_called()
 
+    @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
     @patch("deviate.core.agent.AgentBackend.invoke")
     @patch("deviate.cli.micro._run_pytest")
@@ -244,6 +254,7 @@ class TestMesoOrchestration:
         mock_pytest: MagicMock,
         mock_invoke: MagicMock,
         mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
         tmp_git_repo: Path,
     ) -> None:
         mock_invoke.return_value = MagicMock(
@@ -272,13 +283,16 @@ class TestMesoOrchestration:
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "IDLE"
 
-        assert mock_invoke.call_count == 1
+        assert mock_invoke.call_count == 2
+        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
         mock_tasks_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
 
+    @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.micro._run_pytest")
     def test_meso_agent_failure_aborts(
         self,
         mock_pytest: MagicMock,
+        mock_plan_post: MagicMock,
         tmp_git_repo: Path,
     ) -> None:
         from deviate.core.agent import AgentSubprocessError
@@ -293,17 +307,22 @@ class TestMesoOrchestration:
             with patch("subprocess.run", _make_mock_subprocess()):
                 with patch(
                     "deviate.core.agent.AgentBackend.invoke",
-                    side_effect=AgentSubprocessError(
-                        "TASKS failed: agent exited with code 1", exit_code=1
-                    ),
+                    side_effect=[
+                        MagicMock(status="PASS", phase="plan"),
+                        AgentSubprocessError(
+                            "TASKS failed: agent exited with code 1", exit_code=1
+                        ),
+                    ],
                 ):
                     with pytest.raises(SystemExit) as exc_info:
                         _meso_run(issue_id="ISS-001-001")
             assert exc_info.value.code != 0
 
             loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
-            assert loaded.current_phase == "TASKS", (
-                "Session advances to TASKS before agent invocation"
+            assert loaded.current_phase == "PLAN", (
+                "Session advances to PLAN before plan invoke; "
+                "plan post runs after plan invoke so task failure "
+                "leaves session at PLAN"
             )
 
     def test_meso_blocked_issue_rejected(
@@ -344,6 +363,7 @@ class TestMesoOrchestration:
                     _meso_run()
             assert exc_info.value.code != 0
 
+    @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
     @patch("deviate.core.agent.AgentBackend.invoke")
     @patch("deviate.cli.micro._run_pytest")
@@ -352,6 +372,7 @@ class TestMesoOrchestration:
         mock_pytest: MagicMock,
         mock_invoke: MagicMock,
         mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
         tmp_git_repo: Path,
     ) -> None:
         mock_invoke.return_value = MagicMock(
@@ -384,6 +405,7 @@ class TestMesoOrchestration:
             loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
             assert loaded.current_phase == "IDLE"
 
+        mock_plan_post.assert_called_once_with(force=True, issue_id="ISS-001-002")
         mock_tasks_post.assert_called_once_with(force=True, issue_id="ISS-001-002")
 
 
