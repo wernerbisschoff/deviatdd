@@ -221,6 +221,24 @@ class TestTaskRecord:
         restored = TaskRecord.model_validate(data)
         assert restored == record
 
+    def test_task_record_status_includes_yellow_approved(self):
+        record = TaskRecord(
+            id="TSK-005-01",
+            issue_id="ISS-002-005",
+            description="test",
+            status="YELLOW_APPROVED",
+        )
+        assert record.status == "YELLOW_APPROVED"
+
+    def test_task_record_status_includes_yellow_rejected(self):
+        record = TaskRecord(
+            id="TSK-005-01",
+            issue_id="ISS-002-005",
+            description="test",
+            status="YELLOW_REJECTED",
+        )
+        assert record.status == "YELLOW_REJECTED"
+
 
 class TestAppendTaskRecord:
     def test_append_task_record_new(self, tmp_path: Path):
