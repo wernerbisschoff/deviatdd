@@ -88,6 +88,7 @@ class TestSessionState:
             "PRD",
             "SHARD",
             "SPECIFY",
+            "PLAN",
             "TASKS",
             "RED",
             "GREEN",
@@ -124,6 +125,16 @@ class TestSessionState:
 
     def test_transition_specify_to_tasks(self):
         session = SessionState(current_phase="SPECIFY")
+        result = session.transition_to("TASKS")
+        assert result.current_phase == "TASKS"
+
+    def test_transition_specify_to_plan(self):
+        session = SessionState(current_phase="SPECIFY")
+        result = session.transition_to("PLAN")
+        assert result.current_phase == "PLAN"
+
+    def test_transition_plan_to_tasks(self):
+        session = SessionState(current_phase="PLAN")
         result = session.transition_to("TASKS")
         assert result.current_phase == "TASKS"
 

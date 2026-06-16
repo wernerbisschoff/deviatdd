@@ -1,6 +1,6 @@
 ---
 name: deviate-tasks
-description: Decompose spec.md into a granular task decomposition (tasks.md) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
+description: Decompose a spec-enriched issue file (with embedded-first fallback to spec.md) into a granular task decomposition (tasks.md) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
 category: deviatdd-meso-layer
 version: 1.0.0
 aliases:
@@ -14,7 +14,9 @@ aliases:
 
 <system_instructions>
 
-This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim from `/deviate-specify`, locates `spec.md`, validates its required sections, and checks for optional research artifacts) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
+This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim, locates the spec source, validates its required sections, and checks for optional research artifacts) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
+
+**Embedded-First Spec Consumption**: The tasks pipeline reads spec content from the issue file itself when embedded sections are present — the issue file carries `## [USER_STORIES_LEDGER]`, `## [ATDD_ACCEPTANCE_CRITERIA]`, and other spec sections directly. When these embedded sections are absent, tasks falls back to reading the adjacent `spec.md` file in the same issue directory. Embedded sections take precedence when both exist.
 
 **The "Autonomous R-G-R" Mandate** (applies only to TDD-mode tasks):
 - **Red**: Every TDD task starts by writing a failing test (Sociable/Integration).
@@ -27,16 +29,17 @@ This system operates strictly as an isolated, deterministic execution compilatio
 - **Context Consolidation**: Files that share a logical capability MUST be in the same task.
 - **Maximize Signal-to-Noise**: Group files so the agent has full "Workstation" context in a single Turn.
 
-**Meso Workflow Position**: Specify → Tasks → TDD (red-green-refactor)
-- **Specify**: Precedes this phase. Created `spec.md`.
+**Meso Workflow Position**: Shard+Specify → [HITL Gate 2] → Plan → Tasks → TDD (red-green-refactor)
+- **Shard+Specify**: Precedes this phase. Produces spec-enriched issue files with embedded `[USER_STORIES_LEDGER]`, `[ATDD_ACCEPTANCE_CRITERIA]`, `[EDGE_CASES_AND_BOUNDARIES]`, and `[PERFORMANCE_CONSTRAINTS]` sections.
+- **Plan** (HITL Gate 2 → Plan): Optional per-issue localized research phase producing `plan.md`. When absent, tasks reads directly from the spec-enriched issue file.
 - **Tasks** (this phase): Write `tasks.md` only. Commit it. STOP.
 - **TDD**: Begins after the tasks artifact is committed.
 
-Research artifacts (`design.md`, `data-model.md`) produced by the `deviate-research` skill may exist alongside `spec.md` and serve as supplementary input for workstation mapping and architectural context.
+Research artifacts (`design.md`, `data-model.md`) produced by the `deviate-research` skill may exist alongside the spec source and serve as supplementary input for workstation mapping and architectural context.
 
 CRITICAL INFERENCE PHYSICS INVARIANTS:
-1. **Context Reuse Rule**: This phase typically follows `/deviate-specify` in the same conversation. Reuse `BRANCH_NAME`, `WORKTREE_PATH`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG` from the specify contract in your context. Do NOT re-run the specify pre-script.
-2. **Input Resolution Rule**: The tasks pre-script emits a JSON contract on stdout. Parse `spec_path`, `tasks_target`, `design_path` (optional), `data_model_path` (optional) from that contract directly. Do NOT re-derive.
+1. **Context Reuse Rule**: This phase typically follows `/deviate-shard` or `/deviate-plan` in the same conversation. Reuse `BRANCH_NAME`, `WORKTREE_PATH`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG` from the shard/plan contract in your context. Do NOT re-run the shard or plan pre-script.
+2. **Input Resolution Rule**: The tasks pre-script emits a JSON contract on stdout. Parse `spec_path`, `tasks_target`, `design_path` (optional), `data_model_path` (optional) from that contract directly. The `spec_path` may refer to either the issue file (with embedded `[USER_STORIES_LEDGER]` and `[ATDD_ACCEPTANCE_CRITERIA]` sections) or a standalone `spec.md` — read whichever is provided. Do NOT re-derive.
 3. **Prefix Invariance Placement Rule**: All systematic definitions, roles, execution sequences, and parsing schemas sit statically at the absolute head. Volatile parameters (target plan text, code repository file maps) occupy the trailing edge inside `<context>`.
 4. **Context-Instruction Isolation (The Markov Blanket)**: Never mix operational instructions or framework requirements inside data payload nodes.
 5. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
@@ -51,12 +54,12 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    ```
    deviate tasks pre
    ```
-   The pre-script detects the worktree via `Path.cwd()` — it must run from inside the worktree. It accepts the session in either SPECIFY or TASKS phase (the specify post-script may or may not have run yet). Use `--force` to bypass any phase validation. The contract on stdout contains: `branch_name`, `worktree_full`, `spec_path` (the spec.md you must read, resolved from the active issue ID), `tasks_target` (where to write tasks.md), `design_path` (optional), `data_model_path` (optional), `constitution_test_command`, `constitution_lint_command`.
-   - If the pre-script emits `STATUS: SPEC_NOT_FOUND` or `STATUS: NO_ACTIVE_ISSUE`, surface the status. The `/deviate-specify` phase must produce a valid spec.md for the active issue first.
+   The pre-script detects the worktree via `Path.cwd()` — it must run from inside the worktree. It accepts the session in SHARD, PLAN, or TASKS phase (the shard/plan post-script may or may not have run yet). Use `--force` to bypass any phase validation. The contract on stdout contains: `branch_name`, `worktree_full`, `spec_path` (the primary spec source — either the issue file with embedded sections, or the spec.md fallback, resolved from the active issue ID), `tasks_target` (where to write tasks.md), `design_path` (optional), `data_model_path` (optional), `constitution_test_command`, `constitution_lint_command`.
+   - If the pre-script emits `STATUS: SPEC_NOT_FOUND` or `STATUS: NO_ACTIVE_ISSUE`, surface the status. The `/deviate-shard` phase must produce a valid spec-enriched issue file for the active issue first.
 
-2. Read `spec_path` (the full file on disk) for user stories, acceptance criteria, and project structure. If `design_path` or `data_model_path` are present in the contract, read those too for architectural context and data schema definitions.
+2. Read the spec source from `spec_path` — this is the issue file itself when it contains embedded `## [USER_STORIES_LEDGER]` and `## [ATDD_ACCEPTANCE_CRITERIA]` sections (primary path). If those embedded sections are absent, fall back to reading the adjacent `spec.md` file in the same issue directory (legacy path). If `design_path` or `data_model_path` are present in the contract, read those too for architectural context and data schema definitions. Embedded sections take precedence when both exist.
 
-3. **Workstation Mapping**: Map all files touched by each user story from `spec.md`'s `SYSTEM_TOPOLOGY_MAPPING` and `PROJECT_STRUCTURE` sections. Group related files (e.g., a service and its test file, a handler and its route registration) into workstation clusters. Derive phases from logical groupings of related user stories.
+3. **Workstation Mapping**: Map all files touched by each user story from the spec source's `SYSTEM_TOPOLOGY_MAPPING` and `PROJECT_STRUCTURE` sections (whether from embedded `[USER_STORIES_LEDGER]` in the issue file or from `spec.md`). Group related files (e.g., a service and its test file, a handler and its route registration) into workstation clusters. Derive phases from logical groupings of related user stories.
 
 4. **Task Construction**:
     - **4a. Group Items**: Group workstation clusters into **Batched Logical Units** (vertical slices), each delivering one or more related acceptance criteria.
@@ -75,7 +78,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
     - **4e. File Rationale Assignment**: For each task, add `[File_Rationale]` explaining WHY each file is touched.
 
 5. **Traceability Audit**:
-    - Read `spec.md` `SCOPE_BOUNDARIES > Defensive Exclusions` section and verify no task touches files related to anti-goals
+    - Read the spec source's `SCOPE_BOUNDARIES > Defensive Exclusions` section and verify no task touches files related to anti-goals
     - Read `design.md` `RISK_REGISTER` or `CONSTRAINTS` sections (if available) and incorporate into task generation
     - Verify phase-to-story mapping
     - Flag orphaned files
@@ -240,15 +243,24 @@ def find_repo_root() -> Path:  # BAD — untestable
 
 <edge_case_handling>
 <case condition="Pre-script emits STATUS: NOT_IN_WORKTREE or STATUS: SPEC_NOT_FOUND">
-<action>Stop. The /deviate-specify phase must complete (and commit spec.md) before tasks can run. Surface the status to the human operator.</action>
+<action>Stop. The /deviate-shard phase must produce a valid spec-enriched issue file (or a spec.md must exist as fallback) before tasks can run. Surface the status to the human operator.</action>
 </case>
-<case condition="spec.md is empty or missing required sections">
-<action>Halt with Failure_State: "Invalid spec.md — missing required sections". Require human to run /deviate-specify first.</action>
+<case condition="Issue file contains embedded ## [USER_STORIES_LEDGER] and ## [ATDD_ACCEPTANCE_CRITERIA] sections">
+<action>Read spec from the issue file directly — this is the primary path. Do NOT look for a separate spec.md. Per spec AC-ADHOC-003-07, embedded sections take precedence over spec.md when both exist.</action>
 </case>
-<case condition="spec.md is missing or incomplete">
+<case condition="Issue file lacks embedded spec sections (no USER_STORIES_LEDGER or ATDD_ACCEPTANCE_CRITERIA)">
+<action>Fall back to reading the adjacent spec.md file in the same issue directory. This is the legacy path — log a notice that the issue file lacks embedded spec sections, then proceed with spec.md as the spec source.</action>
+</case>
+<case condition="Both issue file embedded sections AND spec.md exist">
+<action>Embedded sections take precedence per spec AC-ADHOC-003-07. Read from the issue file; ignore spec.md. Document the precedence decision in a note.</action>
+</case>
+<case condition="spec.md is empty or missing required sections (fallback path only)">
+<action>Halt with Failure_State: "Invalid spec source — missing required sections". Require human to run /deviate-shard first to produce a valid spec-enriched issue.</action>
+</case>
+<case condition="spec.md is missing or incomplete (fallback path only)">
 <action>Continue with available spec sections. Add `[WARNING]` to tasks touching undefined areas.</action>
 </case>
-<case condition="No test command available from spec.md or constitution">
+<case condition="No test command available from spec source or constitution">
 <action>Generate Verification commands using repository conventions (pytest, npm test) as defaults. Document inferred commands in a note.</action>
 </case>
 <case condition="Circular dependencies detected between tasks">
