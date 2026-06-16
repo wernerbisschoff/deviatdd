@@ -64,7 +64,8 @@ BACKEND_COMMANDS: dict[str, str] = {
 }
 
 
-_YAML_BLOCK_RE = re.compile(r"```(?:yaml)\s*\n(.*?)```", re.DOTALL)
+_YAML_BLOCK_RE = re.compile(r"```(?:yaml)?\s*\n(.*?)```", re.DOTALL)
+_YAML_MAPPING_START_RE = re.compile(r"^[\w_]+:\s", re.MULTILINE)
 
 
 class AgentBackend:
@@ -76,13 +77,27 @@ class AgentBackend:
         m = _YAML_BLOCK_RE.search(text)
         if m:
             return m.group(1).strip()
+
+        m = _YAML_MAPPING_START_RE.search(text)
+        if m:
+            return text[m.start() :].strip()
+
         return text.strip()
 
     @staticmethod
     def _yaml_error_hint(text: str) -> str:
-        if not re.search(r"```\s*yaml", text, re.IGNORECASE):
+        has_yaml_fence = bool(re.search(r"```\s*yaml", text, re.IGNORECASE))
+        has_yaml_content = bool(_YAML_MAPPING_START_RE.search(text))
+        if not has_yaml_fence and has_yaml_content:
             return (
-                " No ```yaml code block found — wrap the manifest in a ```yaml block."
+                " Expected ```yaml block, found inline YAML —"
+                " wrap in ```yaml for reliability, or ensure"
+                " no explanatory text precedes the YAML content."
+            )
+        if not has_yaml_fence:
+            return (
+                " No YAML handover manifest detected in agent output."
+                " The agent must emit a YAML manifest (plain or in a ```yaml block)."
             )
         if re.search(r"(?<!\"):\s+\w", text):
             return " Check that all YAML string values are double-quoted."
@@ -109,8 +124,10 @@ class AgentBackend:
             )
 
         if not isinstance(data, dict):
+            hint = AgentBackend._yaml_error_hint(stdout)
             raise MalformedHandoverManifestError(
-                "YAML handover manifest is not a mapping"
+                f"YAML handover manifest is not a mapping (got {type(data).__name__})."
+                f" The manifest must be a key: value mapping.{hint}"
             )
 
         try:
