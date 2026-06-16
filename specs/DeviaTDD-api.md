@@ -192,7 +192,9 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 All meso-layer commands follow the `pre`/`post` subcommand pattern. Every `pre` subcommand
 accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 
-#### `deviate specify pre [--issue <id>] [--force] [--dry-run]`
+> **Deprecated:** Specify functionality is absorbed into shard. Shard now produces spec-enriched issue files with full Gherkin AC, user stories, and edge cases — no separate specify step. The `/deviate-tasks` skill reads these embedded specs directly. See `deviate shard pre/post` and `deviate plan pre/post` below.
+
+#### `deviate specify pre [--issue <id>] [--force] [--dry-run]` (Legacy)
 
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Selects and claims an issue. If `--issue` is given, selects that specific
@@ -206,7 +208,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Session:** Transitions to SPECIFY with `active_issue_id` set.
 * **Common Flags:** `--json`, `--quiet`
 
-#### `deviate specify post [--force]`
+#### `deviate specify post [--force]` (Legacy)
 
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Validates `spec.md` Gherkin syntax via `validate_gherkin_syntax()`,
@@ -218,15 +220,28 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Direct positional-argument interface. Validates the issue exists, creates
   the spec directory, forces session to SPECIFY with `active_issue_id` set.
 
+#### `deviate plan pre [--issue <id>] [--dry-run]` (Planned — CLI not yet created)
+
+* **Source:** `src/deviate/cli/meso.py` (planned)
+* **Description:** NEW per-issue localized research phase. Loads the spec-enriched issue file (scanning `## [USER_STORIES_LEDGER]` and `## [ATDD_ACCEPTANCE_CRITERIA]` sections), scans current codebase state via git log and issue ledger, analyzes what prior issues have implemented, and identifies integration points, dependencies, and potential conflicts. Emits a JSON contract for the agent to produce `plan.md` with implementation strategy, file mappings, and risk assessment.
+* **Session:** Transitions to PLAN with `active_issue_id` set.
+* **Common Flags:** `--json`, `--quiet`
+
+#### `deviate plan post [--force]` (Planned — CLI not yet created)
+
+* **Source:** `src/deviate/cli/meso.py` (planned)
+* **Description:** Validates `plan.md` exists and is non-empty, runs pre-commit hooks, commits `docs({scope}): add plan.md`, and transitions session to TASKS.
+
 #### `deviate tasks pre [--force] [--dry-run]`
 
 * **Source:** `src/deviate/cli/meso.py`
-* **Description:** Loads session (accepts SPECIFY or TASKS), resolves `spec.md` from the
-  active issue, detects worktree and branch, resolves constitution commands, and emits JSON
-  contract with spec_path, tasks_target, worktree info. The agent decomposes `spec.md` into
-  `tasks.md` (the *what/why/how* document) and the CLI writes the corresponding rows to
-  `tasks.jsonl` (the *append-only event ledger*). See §3 for the `tasks.md` vs `tasks.jsonl`
-  distinction.
+* **Description:** Loads session (accepts PLAN or TASKS), resolves the spec-enriched issue file
+  (reads embedded `## [USER_STORIES_LEDGER]` and `## [ATDD_ACCEPTANCE_CRITERIA]` sections; falls
+  back to `spec.md` when absent), detects worktree and branch, resolves constitution commands,
+  and emits JSON contract with spec_path, plan_path, tasks_target, worktree info. The agent
+  decomposes the spec into `tasks.md` (the *what/why/how* document) and the CLI writes the
+  corresponding rows to `tasks.jsonl` (the *append-only event ledger*). See §3 for the
+  `tasks.md` vs `tasks.jsonl` distinction.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate tasks post [--force] [--issue-id]`
