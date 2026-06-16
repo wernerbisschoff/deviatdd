@@ -43,7 +43,13 @@ Evaluate the implementation against these dimensions:
 2. **No Shortcuts**: Are there any placeholder implementations, hardcoded values, incomplete branches, or "TODO" workarounds that defer real logic?
 3. **Test Integrity**: Do the existing tests actually validate the spec's acceptance criteria? Were tests modified to weaken assertions?
 4. **Structural Integrity**: Does the implementation match the interfaces, type signatures, and module contracts defined in `spec.md`?
-5. **Security & Governance**: Any hardcoded secrets, command injection, or bypassed gates?
+5. **Security & Governance**: Evaluate the diff against these dimensions:
+   - **Secrets**: Any hardcoded API keys, tokens, passwords, or credentials in code
+   - **Injection**: Unsanitized input passed to `subprocess.run`, `os.system`, or `eval` — especially with user-controlled variables
+   - **Path traversal**: Unsanitized path construction from user input or file reads
+   - **Permission/authorization**: Missing access checks in handler functions, overly permissive defaults
+   - **Dependency risk**: New imports in `pyproject.toml` or requirements files without review context
+   - **Secrets in logs**: Any `print`, `console.print`, or log call that exposes secret values
 
 </evaluation_criteria>
 
@@ -65,8 +71,10 @@ Evaluate the implementation against these dimensions:
    - Hardcoded return values instead of computed results
    - Exception handlers that silently swallow errors
    - Tests that pass with weak assertions (e.g., `assert True`)
-   - Missing edge cases or error handling
-   - Modifications to tests that change expected behavior (tamper)
+    - Missing edge cases or error handling
+    - Secrets leaked in code, tests, or config files
+    - Unsanitized subprocess calls with user-influenced arguments
+    - Modifications to tests that change expected behavior (tamper)
 4. Check that no protected modules (marked `Module:` in `spec.md`) were modified.
 
 ### STEP 3: EMIT_VERDICT
