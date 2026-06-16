@@ -12,7 +12,6 @@ from deviate.cli._common import (
     _extract_epic_num,
     _halt,
     _handle_missing_dot_dir,
-    _handle_transition_error,
     _load_manifest,
     _run_pre_commit_hooks,
     _validate_constitution,
@@ -38,7 +37,7 @@ from deviate.core.validation import (
     validate_sections,
     validate_yaml_frontmatter,
 )
-from deviate.state.config import SessionState, TransitionViolationError
+from deviate.state.config import SessionState
 from deviate.state.ledger import IssueRecord, _read_ledger, append_issue_record
 
 
@@ -57,37 +56,21 @@ def _load_or_create_session(phase: str) -> tuple[SessionState, Path]:
 
 def _load_and_transition(phase: str) -> tuple[SessionState, Path]:
     session, session_path = _load_or_create_session(phase)
-    try:
-        session = session.transition_to(phase)
-    except TransitionViolationError as e:
-        _handle_transition_error(phase, e)
+    session = session.transition_to(phase)
     return session, session_path
 
 
 def _load_session_accept(
     *phases: str, force: bool = False
 ) -> tuple[SessionState, Path]:
-    """Load session, accepting any of the given phases.
-
-    If ``force`` is ``True``, skip phase validation entirely.
-    """
+    """Load session, accepting any phase — state is purely descriptive."""
     phase_tag = phases[0] if phases else "?"
     session, session_path = _load_or_create_session(phase_tag)
-    if force:
-        return session, session_path
-    if phases and session.current_phase not in phases:
-        joined = " | ".join(phases)
-        _halt(
-            phase_tag,
-            f"session is in '{session.current_phase}' expected one of '{joined}'",
-        )
     return session, session_path
 
 
 def _load_session(phase: str) -> tuple[SessionState, Path]:
     session, session_path = _load_or_create_session(phase)
-    if session.current_phase != phase:
-        _halt(phase, f"session is in '{session.current_phase}' not '{phase}'")
     return session, session_path
 
 
@@ -105,7 +88,9 @@ def _load_session_for_phase(
         session_path = dot_dir / "session.json"
         session = SessionState.load(session_path)
         return session, session_path
-    return _load_and_transition(phase)
+    session, session_path = _load_or_create_session(phase)
+    session = session.transition_to(phase)
+    return session, session_path
 
 
 def _resolve_specs_root() -> Path:
@@ -591,11 +576,7 @@ def shard_post(
 
     _run_pre_commit_hooks()
 
-    try:
-        session = session.transition_to("IDLE")
-    except TransitionViolationError as e:
-        _handle_transition_error("SHARD", e)
-
+    session = session.transition_to("IDLE")
     session.save(session_path)
     console.print("[green]SHARD_POST[/] session reset to IDLE")
 
