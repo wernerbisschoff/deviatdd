@@ -26,6 +26,7 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
+from deviate.core.cache_discipline import CacheDiscipline, CacheStore
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
@@ -68,7 +69,12 @@ def _save_agent_log(phase: str, task_id: str, label: str, content: str) -> None:
 def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
     if not ledger_path.exists():
         return False
-    for rec in _read_ledger_records(ledger_path):
+    records = _read_ledger_records(ledger_path)
+    last_pending_idx = -1
+    for i, rec in enumerate(records):
+        if rec.get("id") == task_id and rec.get("status") == "PENDING":
+            last_pending_idx = i
+    for rec in records[last_pending_idx + 1 :]:
         if rec.get("id") == task_id and rec.get("status") == phase:
             return True
     return False
@@ -328,6 +334,10 @@ def _invoke_agent(
         return None, ""
 
 
+_YELLOW_DECISION_REJECTED = "rejected"
+_YELLOW_DECISION_APPROVED = "approved"
+
+
 _TIMEOUT_SUMMARY_PROMPT = """\
 The previous agent attempt for the GREEN (implementation) phase timed out.
 Partial output from that attempt is below.
@@ -467,7 +477,8 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
     return [(latest[tid], ledger_of[tid]) for tid in latest]
 
 
-_TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[.\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
+_BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
+_TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
 _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 
 
@@ -475,77 +486,98 @@ def _find_all_pending_tasks(
     root: Path, issue_id: str | None = None
 ) -> list[tuple[dict, Path]]:
     _log(f"find_all_pending_tasks: issue_id={issue_id}, root={root}")
-    latest: dict[str, dict] = {}
-    ledger_of: dict[str, Path] = {}
+
+    latest_by_issue: dict[tuple[str, str], dict] = {}
+    ledger_of_by_issue: dict[tuple[str, str], Path] = {}
     for rec, ledger_file in _collect_latest_task_records(root):
         tid = rec["id"]
         rec_issue = rec.get("issue_id", "")
-        if issue_id is not None and rec_issue and rec_issue != issue_id:
+        if not rec_issue:
+            continue
+        if issue_id is not None and rec_issue != issue_id:
             _log(f"  skipping {tid} from issue {rec_issue} (expected {issue_id})")
             continue
-        latest[tid] = rec
-        ledger_of[tid] = ledger_file
-        _log(f"  ledger record: {tid} → {rec.get('status')} ({ledger_file.name})")
+        key = (rec_issue, tid)
+        latest_by_issue[key] = rec
+        ledger_of_by_issue[key] = ledger_file
+        _log(
+            f"  ledger record: {tid} ({rec_issue})"
+            f" → {rec.get('status')} ({ledger_file.name})"
+        )
 
     seen: set[str] = set()
     results: list[tuple[dict, Path]] = []
+
+    def _process_one_tasks_md(md_path: Path, md_issue_id: str) -> None:
+        fallback = md_path.parent / "tasks.jsonl"
+        content_lines = md_path.read_text(encoding="utf-8").splitlines()
+        for i, line in enumerate(content_lines):
+            m = _TASK_LINE_RE.match(line)
+            if m is None:
+                continue
+            tid = m.group(2)
+            checkbox = m.group(1)
+            _log(f"  tasks.md task: {tid} (issue={md_issue_id})")
+            seen.add(tid)
+            key = (md_issue_id, tid)
+            rec = latest_by_issue.get(key)
+            if rec is not None:
+                if rec.get("status") in _TERMINAL_STATUSES:
+                    _log(f"    → terminal ({rec.get('status')}), skipping")
+                    continue
+                _log(f"    → status={rec.get('status')}, including")
+                results.append((rec, ledger_of_by_issue.get(key, fallback)))
+                continue
+            if checkbox and checkbox.lower() == "x":
+                _log("    → checked [x] in tasks.md, skipping")
+                continue
+            mode = "TDD"
+            for j in range(i + 1, min(i + 10, len(content_lines))):
+                mode_m = _MODE_LINE_RE.match(content_lines[j])
+                if mode_m:
+                    mode = mode_m.group(1)
+                    break
+            _log(f"    → no ledger entry, mode={mode}")
+            results.append(
+                (
+                    {
+                        "id": tid,
+                        "issue_id": md_issue_id,
+                        "description": m.group(3).strip(),
+                        "status": "PENDING",
+                        "execution_mode": mode,
+                    },
+                    fallback,
+                )
+            )
 
     if issue_id is not None:
         tasks_md = _find_tasks_md_for_issue(root, issue_id)
         _log(f"  tasks_md: {tasks_md}")
         if tasks_md is not None:
-            fallback = tasks_md.parent / "tasks.jsonl"
-            content = tasks_md.read_text(encoding="utf-8")
-            content_lines = content.splitlines()
-            for i, line in enumerate(content_lines):
-                m = _TASK_LINE_RE.match(line)
-                if m is None:
-                    continue
-                tid = m.group(1)
-                _log(f"  tasks.md task: {tid}")
-                seen.add(tid)
-                if tid in latest:
-                    rec = latest[tid]
-                    if (
-                        rec.get("issue_id") == issue_id
-                        and rec.get("status") in _TERMINAL_STATUSES
-                    ):
-                        _log(f"    → terminal ({rec.get('status')}), skipping")
-                        continue
-                if tid in latest and latest[tid].get("issue_id") == issue_id:
-                    _log(f"    → status={latest[tid].get('status')}, including")
-                    results.append((latest[tid], ledger_of.get(tid, fallback)))
-                else:
-                    mode = "TDD"
-                    for j in range(i + 1, min(i + 10, len(content_lines))):
-                        mode_m = _MODE_LINE_RE.match(content_lines[j])
-                        if mode_m:
-                            mode = mode_m.group(1)
-                            break
-                    _log(f"    → no ledger entry, mode={mode}")
-                    results.append(
-                        (
-                            {
-                                "id": tid,
-                                "issue_id": issue_id,
-                                "description": m.group(2).strip(),
-                                "status": "PENDING",
-                                "execution_mode": mode,
-                            },
-                            fallback,
-                        )
-                    )
+            _process_one_tasks_md(tasks_md, issue_id)
+    else:
+        for tasks_md in sorted(root.glob("specs/**/tasks.md")):
+            md_issue_id = _resolve_md_issue_id(tasks_md)
+            _log(f"  tasks_md: {tasks_md} → issue_id={md_issue_id}")
+            _process_one_tasks_md(tasks_md, md_issue_id)
 
-    for tid, rec in latest.items():
+    for (rec_issue, tid), rec in latest_by_issue.items():
         if tid in seen:
             continue
-        if issue_id is not None and rec.get("issue_id") != issue_id:
+        if issue_id is not None and rec_issue != issue_id:
             continue
         if rec.get("status") not in _TERMINAL_STATUSES:
-            _log(f"  orphan ledger task: {tid} ({rec.get('status')}), including")
-            results.append((rec, ledger_of[tid]))
+            _log(
+                f"  orphan ledger task: {tid} ({rec_issue}"
+                f", {rec.get('status')}), including"
+            )
+            results.append((rec, ledger_of_by_issue[(rec_issue, tid)]))
         else:
-            _log(f"  orphan ledger task: {tid} ({rec.get('status')}), skipping")
+            _log(
+                f"  orphan ledger task: {tid} ({rec_issue}"
+                f", {rec.get('status')}), skipping"
+            )
 
     _log(f"  total pending: {len(results)}")
     return results
@@ -575,6 +607,46 @@ def _find_tasks_md_for_issue(root: Path, issue_id: str) -> Path | None:
     tasks_md = root / "specs" / epic / slug / "tasks.md"
     if tasks_md.exists():
         return tasks_md
+    return None
+
+
+def _resolve_md_issue_id(md_path: Path) -> str:
+    """Derive issue_id from a tasks.md's sibling tasks.jsonl."""
+    ledger_path = md_path.parent / "tasks.jsonl"
+    if not ledger_path.exists():
+        return ""
+    for rec in _read_ledger_records(ledger_path):
+        iid = rec.get("issue_id", "")
+        if iid:
+            return iid
+    return ""
+
+
+def _resolve_issue_id_from_branch(root: Path) -> str | None:
+    """Derive issue_id from the current git branch via issues.jsonl."""
+    try:
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    m = _BRANCH_SLUG_RE.match(branch)
+    if not m:
+        return None
+    bucket = m.group(1)
+    slug = m.group(2)
+    target = f"{bucket}/issues/{slug}.md"
+    ledger_path = root / "specs" / "issues.jsonl"
+    if not ledger_path.exists():
+        return None
+    for rec in _read_ledger_records(ledger_path):
+        src = rec.get("source_file", "")
+        if target in src:
+            return rec.get("issue_id")
     return None
 
 
@@ -809,6 +881,99 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> None:
         tasks_md.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
+def _resolve_red_boundary_sha(root: Path) -> str:
+    session_path = root / ".deviate" / "session.json"
+    if session_path.exists():
+        session = SessionState.load(session_path)
+        if session.red_commit_sha:
+            return session.red_commit_sha
+    _log("No RED commit SHA in session — falling back to root commit scan")
+    root_sha = subprocess.run(
+        ["git", "rev-list", "--max-parents=0", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    has_content = subprocess.run(
+        ["git", "ls-tree", "-r", root_sha],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    if has_content:
+        return root_sha
+    children = (
+        subprocess.run(
+            ["git", "rev-list", "--reverse", f"{root_sha}..HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        .stdout.strip()
+        .splitlines()
+    )
+    return children[0] if children else root_sha
+
+
+def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
+    branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    red_sha = _resolve_red_boundary_sha(root)
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    snapshot = RollbackSnapshot(
+        phase=phase,
+        branch=branch,
+        commit_sha=commit_sha,
+        red_sha=red_sha,
+        reason=reason[:500],
+    )
+    append_rollback_snapshot(snapshot, root / ".deviate")
+
+    # Discard any uncommitted session state that would conflict with revert
+    subprocess.run(
+        ["git", "checkout", "--quiet", "--", ".deviate/"],
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
+
+    if red_sha == commit_sha:
+        revert_args = ["git", "revert", "--no-edit", "HEAD"]
+    else:
+        revert_args = ["git", "revert", "--no-edit", f"{red_sha}..HEAD"]
+    result = subprocess.run(
+        revert_args,
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or "unknown revert failure"
+        _log(f"git revert failed: {stderr}")
+        subprocess.run(
+            ["git", "revert", "--abort"],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+        raise RuntimeError(f"git revert failed: {stderr}")
+    return red_sha
+
+
 def _run_judge_phase(
     task: dict,
     ledger_path: Path,
@@ -861,12 +1026,7 @@ def _run_judge_phase(
             if hasattr(manifest, "train_feedback") and manifest.train_feedback:
                 feedback = manifest.train_feedback
 
-            subprocess.run(
-                ["git", "reset", "--hard", "HEAD~1"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
+            _execute_rollback(root, feedback)
 
             tasks_md = _resolve_tasks_md(root, task)
             if tasks_md is not None:
@@ -955,7 +1115,7 @@ def _run_yellow_phase(
     c: Console,
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
-) -> SessionState:
+) -> tuple[SessionState, str]:
     tid = task.get("id", "?")
     c.print(f"  [bold magenta]YELLOW →[/] {tid}")
 
@@ -985,20 +1145,84 @@ def _run_yellow_phase(
                 check=False,
             )
             c.print("  [dim]Reverted test changes, re-running GREEN[/]")
+            _append_status_transition(task, "YELLOW_REJECTED", ledger_path)
+            return session, _YELLOW_DECISION_REJECTED
 
     session = session.force_transition_to("YELLOW")
+    session.yellow_triggered = False
     session.save(session_path)
-    _append_status_transition(task, "YELLOW", ledger_path)
-    return session
+    _append_status_transition(task, "YELLOW_APPROVED", ledger_path)
+    return session, _YELLOW_DECISION_APPROVED
 
 
 _PHASE_MAP: dict[str, Callable] = {
     "RED": _run_red_phase,
     "GREEN": _run_green_phase,
-    "YELLOW": _run_yellow_phase,
     "JUDGE": _run_judge_phase,
     "REFACTOR": _run_refactor_phase,
 }
+
+
+def _finish_tdd_cycle(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    no_refactor: bool,
+    monitor: OrchestrationMonitor | None = None,
+    agent: str | None = None,
+) -> SessionState:
+    tid = task.get("id", "?")
+    if not no_refactor:
+        _maybe_push_event(
+            monitor,
+            "phase_change",
+            task_id=tid,
+            phase="REFACTOR",
+            description=task.get("description", ""),
+        )
+        session = _run_refactor_phase(
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+        )
+    else:
+        _append_status_transition(task, "COMPLETED", ledger_path)
+        c.print(f"  [bold green]COMPLETED[/] {tid}")
+        session = session.force_transition_to("IDLE")
+        session.yellow_triggered = False
+        session.train_feedback = ""
+        session.save(session_path)
+    return session
+
+
+def _capture_cache_store(root: Path, task: dict, agent: str | None) -> CacheStore:
+    model = agent or "opencode"
+    test_files: dict[str, str] = {}
+    tests_dir = root / "tests"
+    if tests_dir.exists():
+        for tf in sorted(tests_dir.rglob("test_*.py")):
+            try:
+                test_files[str(tf.relative_to(root))] = tf.read_text(encoding="utf-8")
+            except Exception:
+                pass
+    return CacheStore(
+        model=model,
+        tool_definitions=[],
+        system_prompt="",
+        test_files=test_files,
+    )
+
+
+def _validate_cache_store(
+    phase: str,
+    root: Path,
+    task: dict,
+    agent: str | None,
+    previous: CacheStore | None,
+) -> CacheStore:
+    current = _capture_cache_store(root, task, agent)
+    CacheDiscipline.validate(phase=phase, current=current, previous=previous)
+    return current
 
 
 def _run_tdd_cycle(
@@ -1009,15 +1233,74 @@ def _run_tdd_cycle(
     no_refactor: bool = False,
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
+    start_phase: str | None = None,
 ) -> None:
     root = Path.cwd()
+    tid = task.get("id", "?")
+    if _phase_already_done(ledger_path, tid, "COMPLETED"):
+        c.print(f"  [dim]Already completed for {tid}, skipping[/]")
+        return
     _verify_worktree_branch(root)
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
 
-    tid = task.get("id", "?")
     task_desc = task.get("description", "")
+
+    cache_store = _capture_cache_store(root, task, agent)
+
+    if start_phase == "JUDGE":
+        _maybe_push_event(
+            monitor,
+            "phase_change",
+            task_id=tid,
+            phase="JUDGE",
+            description=task_desc,
+        )
+        session = _run_judge_phase(
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+        )
+        cache_store = _validate_cache_store("REFACTOR", root, task, agent, cache_store)
+        session = _finish_tdd_cycle(
+            task, ledger_path, session, session_path, c, no_refactor, agent=agent
+        )
+        return
+
+    if start_phase == "YELLOW":
+        cache_store = _validate_cache_store("YELLOW", root, task, agent, cache_store)
+        _maybe_push_event(
+            monitor,
+            "phase_change",
+            task_id=tid,
+            phase="YELLOW",
+            description=task_desc,
+        )
+        session, _ = _run_yellow_phase(
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+        )
+        cache_store = _validate_cache_store("JUDGE", root, task, agent, cache_store)
+        _maybe_push_event(
+            monitor,
+            "phase_change",
+            task_id=tid,
+            phase="JUDGE",
+            description=task_desc,
+        )
+        session = _run_judge_phase(
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+        )
+        cache_store = _validate_cache_store("REFACTOR", root, task, agent, cache_store)
+        session = _finish_tdd_cycle(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            no_refactor,
+            monitor=monitor,
+            agent=agent,
+        )
+        return
 
     _maybe_push_event(
         monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
@@ -1031,6 +1314,7 @@ def _run_tdd_cycle(
     judge_passed = no_judge
 
     while not judge_passed:
+        cache_store = _validate_cache_store("GREEN", root, task, agent, cache_store)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="GREEN", description=task_desc
         )
@@ -1039,7 +1323,9 @@ def _run_tdd_cycle(
         )
 
         if session.yellow_triggered:
-            c.print("  [yellow]YELLOW requested by GREEN — running YELLOW phase[/]")
+            cache_store = _validate_cache_store(
+                "YELLOW", root, task, agent, cache_store
+            )
             _maybe_push_event(
                 monitor,
                 "phase_change",
@@ -1047,7 +1333,7 @@ def _run_tdd_cycle(
                 phase="YELLOW",
                 description=task_desc,
             )
-            session = _run_yellow_phase(
+            session, decision = _run_yellow_phase(
                 task,
                 ledger_path,
                 session,
@@ -1056,25 +1342,27 @@ def _run_tdd_cycle(
                 agent=agent,
                 monitor=monitor,
             )
-            session.yellow_triggered = False
-            session.save(session_path)
-            c.print("  [yellow]Re-running GREEN after YELLOW[/]")
-            _maybe_push_event(
-                monitor,
-                "phase_change",
-                task_id=tid,
-                phase="GREEN",
-                description=task_desc,
-            )
-            session = _run_green_phase(
-                task,
-                ledger_path,
-                session,
-                session_path,
-                c,
-                agent=agent,
-                monitor=monitor,
-            )
+            if decision == _YELLOW_DECISION_REJECTED:
+                c.print("  [yellow]Re-running GREEN after YELLOW[/]")
+                cache_store = _validate_cache_store(
+                    "GREEN", root, task, agent, cache_store
+                )
+                _maybe_push_event(
+                    monitor,
+                    "phase_change",
+                    task_id=tid,
+                    phase="GREEN",
+                    description=task_desc,
+                )
+                session = _run_green_phase(
+                    task,
+                    ledger_path,
+                    session,
+                    session_path,
+                    c,
+                    agent=agent,
+                    monitor=monitor,
+                )
 
         if session.train_feedback:
             train_attempts += 1
@@ -1097,6 +1385,7 @@ def _run_tdd_cycle(
             judge_passed = True
             break
 
+        cache_store = _validate_cache_store("JUDGE", root, task, agent, cache_store)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="JUDGE", description=task_desc
         )
@@ -1122,25 +1411,17 @@ def _run_tdd_cycle(
         else:
             judge_passed = True
 
-    if not no_refactor:
-        _maybe_push_event(
-            monitor,
-            "phase_change",
-            task_id=tid,
-            phase="REFACTOR",
-            description=task_desc,
-        )
-        session = _run_refactor_phase(
-            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
-        )
-    else:
-        _append_status_transition(task, "COMPLETED", ledger_path)
-        c.print(f"  [bold green]COMPLETED[/] {task.get('id', '?')}")
-
-        session = session.force_transition_to("IDLE")
-        session.yellow_triggered = False
-        session.train_feedback = ""
-        session.save(session_path)
+    cache_store = _validate_cache_store("REFACTOR", root, task, agent, cache_store)
+    session = _finish_tdd_cycle(
+        task,
+        ledger_path,
+        session,
+        session_path,
+        c,
+        no_refactor,
+        monitor=monitor,
+        agent=agent,
+    )
 
 
 def _run_execute_phase(
@@ -1229,35 +1510,7 @@ def _run_execute_phase(
 
                 c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
 
-                branch = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                ).stdout.strip()
-                commit_sha = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                ).stdout.strip()
-                if commit_sha:
-                    snapshot = RollbackSnapshot(
-                        phase="JUDGE",
-                        branch=branch,
-                        commit_sha=commit_sha,
-                        reason=feedback[:500],
-                    )
-                    append_rollback_snapshot(snapshot, root / ".deviate")
-
-                subprocess.run(
-                    ["git", "reset", "--hard", "HEAD~1"],
-                    cwd=root,
-                    capture_output=True,
-                    env=_git_env(),
-                )
+                _execute_rollback(root, feedback)
 
                 if attempt < max_judge_attempts - 1:
                     train_feedback = feedback
@@ -1292,6 +1545,7 @@ def _dispatch_task(
     agent: str | None = None,
     batch_mode: bool = False,
     monitor: OrchestrationMonitor | None = None,
+    start_phase: str | None = None,
 ) -> None:
     mode = task.get("execution_mode", "TDD")
     c.print(f"[cyan]Processing {task.get('id', '?')} ({mode})[/]")
@@ -1312,6 +1566,7 @@ def _dispatch_task(
             no_refactor=no_refactor,
             agent=agent,
             monitor=monitor,
+            start_phase=start_phase,
         )
     else:
         _run_execute_phase(task, ledger_path, c, agent=agent, monitor=monitor)
@@ -1329,9 +1584,24 @@ def _run_single(
     task, ledger_file = result
     status = task.get("status", "PENDING")
 
-    if status in ("COMPLETED", "REFACTOR"):
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+
+    if session.current_phase == "IDLE" and status in (
+        "COMPLETED",
+        "REFACTOR",
+        "JUDGE",
+        "YELLOW",
+    ):
         c.print(f"[yellow]TASK_ALREADY_DONE[/] {task_id} is already completed")
         raise typer.Exit(code=0)
+
+    start_phase = (
+        session.current_phase if session.current_phase not in ("IDLE", "RED") else None
+    )
 
     _dispatch_task(
         task,
@@ -1341,6 +1611,7 @@ def _run_single(
         no_refactor=no_refactor,
         agent=agent,
         batch_mode=False,
+        start_phase=start_phase,
     )
 
 
@@ -1399,6 +1670,8 @@ def _run_all(
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
     issue_id = session.active_issue_id
+    if not issue_id:
+        issue_id = _resolve_issue_id_from_branch(root) or issue_id
 
     pending = _find_all_pending_tasks(root, issue_id=issue_id)
     if not pending:
@@ -1693,6 +1966,16 @@ def red_post() -> None:
     scope = _build_scope(issue_id, task_uuid)
     _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
 
+    head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    session.red_commit_sha = head_sha
+    session.save(session_path)
+
     console.print("[green]RED_POST_OK[/]")
     raise typer.Exit(code=0)
 
@@ -1766,6 +2049,19 @@ def green_post() -> None:
 
     if tamper_verdict == TamperVerdict.TAMPER_DETECTED:
         console.print("[yellow]TAMPER_DETECTED[/]")
+        console.print("[yellow]YELLOW_TRIGGERED[/]")
+        # Transition to YELLOW and append YELLOW to ledger,
+        # bypassing the normal GREEN commit flow.
+        try:
+            record = TaskRecord.model_validate(red_task[0])
+            record.status = "YELLOW"
+            append_task_transition(record, red_task[1])
+        except Exception as e:
+            console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
+            raise typer.Exit(code=1)
+        session = session.force_transition_to("YELLOW")
+        session.save(session_path)
+        raise typer.Exit(code=0)
 
     # Append GREEN transition for this specific task
     try:
@@ -1845,12 +2141,15 @@ def yellow_pre(
     root = Path.cwd()
     _resolve_task_context(task, root)
 
+    if not _load_skill_content("YELLOW"):
+        console.print("[yellow]SKILL_NOT_FOUND[/] deviate-yellow")
+
     changed = _detect_phase_changes(root)
     test_files = [str(f) for f in _find_test_files(root)]
 
     contract = {
         "proposed_changes": changed,
-        "rationale": "YELLOW phase — review proposed test amendments",
+        "rationale": "YELLOW phase - review proposed test amendments",
         "test_files": test_files,
     }
     print(json.dumps(contract, ensure_ascii=False))
@@ -1869,6 +2168,10 @@ def yellow_post(
         raise typer.Exit(code=1)
 
     root = Path.cwd()
+
+    if not _load_skill_content("YELLOW"):
+        console.print("[yellow]SKILL_NOT_FOUND[/] deviate-yellow")
+
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
@@ -1879,14 +2182,25 @@ def yellow_post(
         console.print("NO_CHANGES_PROPOSED")
         raise typer.Exit(code=0)
 
+    # Find latest YELLOW or GREEN task across all ledger files
+    latest_task: tuple[dict, Path] | None = None
+    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
+        for rec in _read_ledger_records(ledger_file):
+            if rec.get("status") in ("GREEN", "YELLOW"):
+                latest_task = (rec, ledger_file)
+
     if approved:
-        _commit_phase("feat: YELLOW phase — approved amendments", root)
-        session = session.force_transition_to("GREEN")
+        _commit_phase("feat: YELLOW phase - approved amendments", root)
+        if latest_task is not None:
+            _append_status_transition(latest_task[0], "YELLOW_APPROVED", latest_task[1])
+        session = session.force_transition_to("JUDGE")
         session.save(session_path)
         console.print("[green]YELLOW_POST_OK[/]")
 
     if rejected:
         subprocess.run(["git", "restore", "."], cwd=root, env=_git_env(), check=False)
+        if latest_task is not None:
+            _append_status_transition(latest_task[0], "YELLOW_REJECTED", latest_task[1])
         session = session.force_transition_to("GREEN")
         session.save(session_path)
         console.print("[yellow]YELLOW_REVERTED[/]")
@@ -1914,6 +2228,10 @@ def _find_protected_modules(root: Path) -> list[str]:
 @judge_app.command(name="pre")
 def judge_pre() -> None:
     root = Path.cwd()
+
+    if not _load_skill_content("JUDGE"):
+        console.print("[yellow]SKILL_NOT_FOUND[/] deviate-judge")
+
     changed = _detect_phase_changes(root)
 
     protected = _find_protected_modules(root)

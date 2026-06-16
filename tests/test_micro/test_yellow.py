@@ -152,3 +152,132 @@ class TestYellowPost:
             assert restored == original, (
                 "Expected test file to be restored to original state"
             )
+
+
+class TestYellowPostTransitions:
+    def test_yellow_post_approved_transitions_to_judge(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="YELLOW")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-005-04",
+                issue_id="ISS-002-005",
+                description="YELLOW approved to JUDGE",
+                status="YELLOW",
+            )
+            ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            test_file = Path("tests") / "test_judge_transition.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_pass():\n    assert True\n")
+
+            implementation = Path("src") / "impl.py"
+            implementation.parent.mkdir(parents=True)
+            implementation.write_text("# implementation\n")
+
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "feat: state for YELLOW post"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            test_file.write_text(
+                "def test_pass():\n    assert True\n\ndef test_extra():\n    assert 1 == 1\n"
+            )
+
+            result = runner.invoke(cli, ["yellow", "post", "--approved"])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+
+            session_data = json.loads(
+                (dot_dir / "session.json").read_text(encoding="utf-8")
+            )
+            assert session_data.get("current_phase") == "JUDGE", (
+                f"Expected session to be JUDGE, got {session_data.get('current_phase')}: {result.output}"
+            )
+
+            ledger_lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")
+            statuses = [
+                json.loads(line).get("status", "") for line in ledger_lines if line
+            ]
+            assert "YELLOW_APPROVED" in statuses, (
+                f"Expected YELLOW_APPROVED in ledger: {statuses}"
+            )
+
+    def test_yellow_post_rejected_transitions_to_green(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="YELLOW")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-005-04",
+                issue_id="ISS-002-005",
+                description="YELLOW rejected to GREEN",
+                status="YELLOW",
+            )
+            ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            test_file = Path("tests") / "test_rejected.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_pass():\n    assert True\n")
+
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "test: initial test for rejection"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            original = test_file.read_text()
+
+            test_file.write_text(
+                "def test_pass():\n    assert True\n\ndef test_tampered():\n    assert 1 == 1\n"
+            )
+
+            result = runner.invoke(cli, ["yellow", "post", "--rejected"])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+
+            session_data = json.loads(
+                (dot_dir / "session.json").read_text(encoding="utf-8")
+            )
+            assert session_data.get("current_phase") == "GREEN", (
+                f"Expected session to be GREEN, got {session_data.get('current_phase')}: {result.output}"
+            )
+
+            restored = test_file.read_text()
+            assert restored == original, (
+                "Expected test file to be restored to original state"
+            )
+
+            ledger_lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")
+            statuses = [
+                json.loads(line).get("status", "") for line in ledger_lines if line
+            ]
+            assert "YELLOW_REJECTED" in statuses, (
+                f"Expected YELLOW_REJECTED in ledger: {statuses}"
+            )

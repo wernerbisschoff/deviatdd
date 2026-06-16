@@ -71,6 +71,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
         4. Does this task fix a **bug**? → **TDD** (write regression test first)
         5. Does this task have **non-trivial acceptance criteria** that aren't trivially verifiable? → **TDD**
         6. Otherwise → **IMMEDIATE** (when in doubt, prefer IMMEDIATE over speculative TDD)
+        7. Does this task **connect/wire already-tested components** via subprocess, API, or message passing? → **TDD** with system-edge mock boundary (mock `subprocess.Popen`, assert CLI args/env/stdin)
 
         A single phase can contain both modes. Do NOT default to TDD — TDD carries cost; use it where it earns its keep.
     - **4c. Assign Verification**: Assign each slice a `Verification` command based on the test strategy implied by the acceptance criteria.
