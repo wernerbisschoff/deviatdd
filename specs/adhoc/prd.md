@@ -37,3 +37,18 @@
 ### Acceptance Criteria
 1. **AC-ADHOC-004-01**: Given a git diff scope (working tree or branch), When `deviate review pre` is invoked, Then it emits a JSON contract containing git state, diff files, constitution path, and resolved PRD path (epic first, adhoc fallback).
 2. **AC-ADHOC-004-02**: Given a review report is generated with `Fix Instructions`, When `deviate review post` is invoked with the report path, Then it is saved as a timestamped `review-report-{timestamp}.md` under `.deviate/review/reports/`, and the post status is `SUCCESS`. Reports are advisory artifacts — never committed or staged.
+
+## FR-ADHOC-005: Per-Phase Model Configuration with Configurable Model Routing
+
+- **Description**: Introduce a per-phase model configuration layer that allows users to specify which LLM model each DeviaTDD phase uses. The configuration lives in `.deviate/config.toml` under a `[models]` section with a reserved `default` key (applies to all phases) and per-phase override keys. Both `opencode` and `droid` backends receive `--model <id>`. The `claude` backend ignores model config. Phases without an explicit entry fall through to `default`, and when neither exists no `--model` flag is emitted.
+- **Preconditions**: `.deviate/config.toml` exists (created by `deviate init`). Both `opencode run --model` and `droid exec --model` flags are validated. Constitution §`Model Tiering` already documents the intended routing.
+- **Inputs/Outputs**: Input: `[models]` section in config with optional `default` key and phase-specific keys. Output: model-aware agent invocation that resolves `phase → override → default → none` and passes `--model <id>` when resolved.
+
+### Acceptance Criteria
+1. **AC-ADHOC-005-01**: Given `.deviate/config.toml` contains `[models]\ndefault = "opencode/deepseek-v4-flash"`, When any phase invokes the agent, Then the command includes `--model opencode/deepseek-v4-flash`.
+2. **AC-ADHOC-005-02**: Given `.deviate/config.toml` has `[models]\ndefault = "opencode/deepseek-v4-flash"\njudge = "opencode/deepseek-v4-pro"`, When the JUDGE phase invokes the agent, Then the command includes `--model opencode/deepseek-v4-pro` (override wins), and when RED invokes, Then the command includes `--model opencode/deepseek-v4-flash` (default applies).
+3. **AC-ADHOC-005-03**: Given `.deviate/config.toml` has no `[models]` section, When any phase invokes the agent, Then no `--model` flag is appended.
+4. **AC-ADHOC-005-04**: Given `.deviate/config.toml` has `[models]\nplan = "deepseek-v4-pro"`, When the PLAN phase uses the `droid` backend, Then the command includes `["droid", "exec", "--model", "deepseek-v4-pro"]`.
+5. **AC-ADHOC-005-05**: Given `.deviate/config.toml` has `[models]\nred = "opencode/deepseek-v4-flash"`, When the RED phase uses the `claude` backend, Then the command is `["claude", "-p"]` without `--model`.
+6. **AC-ADHOC-005-06**: Given the constitution documents the default model tiering, When `deviate init` generates `.deviate/config.toml`, Then the `[models]` section is absent.
+7. **AC-ADHOC-005-07**: Given a TDD cycle with different models configured per phase, When the cycle runs, Then each phase invocation uses the resolved model for that phase and the handover manifest is parsed consistently.
