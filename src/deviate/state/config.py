@@ -36,20 +36,6 @@ _VALID_PHASES = frozenset(
     }
 )
 
-_MACRO_TRANSITION_MAP: dict[str, tuple[str, ...]] = {
-    "IDLE": ("EXPLORE",),
-    "EXPLORE": ("RESEARCH",),
-    "RESEARCH": ("PRD",),
-    "PRD": ("SHARD",),
-    "SHARD": ("IDLE", "SPECIFY"),
-    "SPECIFY": ("TASKS", "PLAN"),
-    "PLAN": ("TASKS",),
-    "TASKS": ("IDLE",),
-}
-
-_MACRO_PHASES = frozenset({"IDLE", "EXPLORE", "RESEARCH", "PRD", "SHARD"})
-_MESO_PHASES = frozenset({"SPECIFY", "PLAN", "TASKS"})
-
 _PHASE_ARTIFACT_MAP: dict[str, tuple[str, ...]] = {
     "RESEARCH": ("explore.md",),
     "PRD": ("design.md", "data-model.md"),
@@ -58,13 +44,6 @@ _PHASE_ARTIFACT_MAP: dict[str, tuple[str, ...]] = {
     "PLAN": ("plan.md",),
     "TASKS": ("spec.md", "tasks.md"),
 }
-
-
-def _find_source_for(target: str) -> str | None:
-    for source, targets in _MACRO_TRANSITION_MAP.items():
-        if target in targets:
-            return source
-    return None
 
 
 class TransitionViolationError(Exception):
@@ -158,16 +137,6 @@ class SessionState(BaseModel):
         return v
 
     def transition_to(self, phase: str) -> SessionState:
-        expected_next: tuple[str, ...] | None = _MACRO_TRANSITION_MAP.get(
-            self.current_phase
-        )
-        if expected_next is None or phase not in expected_next:
-            expected_current = _find_source_for(phase)
-            raise TransitionViolationError(
-                f"cannot transition from '{self.current_phase}' to '{phase}': "
-                f"expected '{expected_current}' -> '{phase}', "
-                f"current '{self.current_phase}' -> '{expected_next}'"
-            )
         return SessionState(
             current_phase=phase,
             active_issue_id=self.active_issue_id,

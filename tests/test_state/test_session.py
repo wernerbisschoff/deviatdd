@@ -37,36 +37,23 @@ class TestValidTransitions:
         assert result.current_phase == "IDLE"
 
 
-class TestTransitionViolations:
-    def test_transition_violation_skip_phase(self):
-        from deviate.state.config import TransitionViolationError
+class TestAnyTransitionAllowed:
+    """transition_to no longer enforces a state machine — all transitions succeed."""
 
+    def test_skip_phase_is_allowed(self):
         session = SessionState(current_phase="IDLE")
-        with pytest.raises(TransitionViolationError) as exc_info:
-            session.transition_to("PRD")
-        msg = str(exc_info.value)
-        assert "EXPLORE" in msg
-        assert "IDLE" in msg
+        result = session.transition_to("PRD")
+        assert result.current_phase == "PRD"
 
-    def test_transition_violation_duplicate(self):
-        from deviate.state.config import TransitionViolationError
-
+    def test_duplicate_phase_is_allowed(self):
         session = SessionState(current_phase="EXPLORE")
-        with pytest.raises(TransitionViolationError) as exc_info:
-            session.transition_to("EXPLORE")
-        msg = str(exc_info.value)
-        assert "IDLE" in msg
-        assert "EXPLORE" in msg
+        result = session.transition_to("EXPLORE")
+        assert result.current_phase == "EXPLORE"
 
-    def test_transition_violation_backwards(self):
-        from deviate.state.config import TransitionViolationError
-
+    def test_backwards_transition_is_allowed(self):
         session = SessionState(current_phase="PRD")
-        with pytest.raises(TransitionViolationError) as exc_info:
-            session.transition_to("RESEARCH")
-        msg = str(exc_info.value)
-        assert "SHARD" in msg
-        assert "PRD" in msg
+        result = session.transition_to("RESEARCH")
+        assert result.current_phase == "RESEARCH"
 
 
 class TestSessionPersistence:
@@ -141,15 +128,10 @@ class TestSessionPersistence:
 
 
 class TestDualModePhaseOrdering:
-    def test_strict_phase_ordering_rejects_skip(self):
-        from deviate.state.config import TransitionViolationError
-
+    def test_skip_to_meso_is_allowed(self):
         session = SessionState(current_phase="IDLE")
-        with pytest.raises(TransitionViolationError) as exc_info:
-            session.transition_to("SPECIFY")
-        msg = str(exc_info.value)
-        assert "SPECIFY" in msg
-        assert "IDLE" in msg
+        result = session.transition_to("SPECIFY")
+        assert result.current_phase == "SPECIFY"
 
 
 class TestFilesystemDivergence:

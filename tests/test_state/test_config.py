@@ -7,7 +7,6 @@ from deviate.state.config import (
     DeviateConfig,
     ProfileConfig,
     SessionState,
-    TransitionViolationError,
 )
 
 
@@ -118,10 +117,10 @@ class TestSessionState:
         restored = SessionState.model_validate(data)
         assert restored == session
 
-    def test_transition_idle_to_specify_rejected(self):
+    def test_transition_idle_to_specify_is_allowed(self):
         session = SessionState(current_phase="IDLE")
-        with pytest.raises(TransitionViolationError):
-            session.transition_to("SPECIFY")
+        result = session.transition_to("SPECIFY")
+        assert result.current_phase == "SPECIFY"
 
     def test_transition_specify_to_tasks(self):
         session = SessionState(current_phase="SPECIFY")
@@ -153,7 +152,7 @@ class TestSessionState:
         result = session.transition_to("EXPLORE")
         assert result.current_phase == "EXPLORE"
 
-    def test_transition_specify_to_shard_rejected(self):
+    def test_transition_specify_to_shard_is_allowed(self):
         session = SessionState(current_phase="SPECIFY")
-        with pytest.raises(TransitionViolationError):
-            session.transition_to("SHARD")
+        result = session.transition_to("SHARD")
+        assert result.current_phase == "SHARD"
