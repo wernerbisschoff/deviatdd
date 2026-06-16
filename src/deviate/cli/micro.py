@@ -471,8 +471,8 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
     return [(latest[tid], ledger_of[tid]) for tid in latest]
 
 
-_BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+)$")
-_TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(.)\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
+_BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
+_TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
 _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 
 
@@ -876,6 +876,12 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> None:
 
 
 def _resolve_red_boundary_sha(root: Path) -> str:
+    session_path = root / ".deviate" / "session.json"
+    if session_path.exists():
+        session = SessionState.load(session_path)
+        if session.red_commit_sha:
+            return session.red_commit_sha
+    _log("No RED commit SHA in session — falling back to root commit scan")
     root_sha = subprocess.run(
         ["git", "rev-list", "--max-parents=0", "HEAD"],
         cwd=root,
@@ -906,7 +912,7 @@ def _resolve_red_boundary_sha(root: Path) -> str:
     return children[0] if children else root_sha
 
 
-def _execute_rollback(root: Path, reason: str) -> str:
+def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     branch = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=root,
@@ -923,19 +929,36 @@ def _execute_rollback(root: Path, reason: str) -> str:
         env=_git_env(),
     ).stdout.strip()
     snapshot = RollbackSnapshot(
-        phase="JUDGE",
+        phase=phase,
         branch=branch,
         commit_sha=commit_sha,
         red_sha=red_sha,
         reason=reason[:500],
     )
     append_rollback_snapshot(snapshot, root / ".deviate")
+
+    # Discard any uncommitted session state that would conflict with revert
     subprocess.run(
-        ["git", "revert", "--no-edit", f"{red_sha}..HEAD"],
+        ["git", "checkout", "--quiet", "--", ".deviate/"],
         cwd=root,
         capture_output=True,
         env=_git_env(),
     )
+
+    if red_sha == commit_sha:
+        revert_args = ["git", "revert", "--no-edit", "HEAD"]
+    else:
+        revert_args = ["git", "revert", "--no-edit", f"{red_sha}..HEAD"]
+    result = subprocess.run(
+        revert_args,
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or "unknown revert failure"
+        _log(f"git revert failed: {stderr}")
+        raise RuntimeError(f"git revert failed: {stderr}")
     return red_sha
 
 
@@ -1886,6 +1909,16 @@ def red_post() -> None:
     scope = _build_scope(issue_id, task_uuid)
     _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
 
+    head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    session.red_commit_sha = head_sha
+    session.save(session_path)
+
     console.print("[green]RED_POST_OK[/]")
     raise typer.Exit(code=0)
 
@@ -2051,8 +2084,7 @@ def yellow_pre(
     root = Path.cwd()
     _resolve_task_context(task, root)
 
-    skill = _load_skill_content("YELLOW")
-    if not skill:
+    if not _load_skill_content("YELLOW"):
         console.print("[yellow]SKILL_NOT_FOUND[/] deviate-yellow")
 
     changed = _detect_phase_changes(root)
@@ -2060,7 +2092,7 @@ def yellow_pre(
 
     contract = {
         "proposed_changes": changed,
-        "rationale": "YELLOW phase — review proposed test amendments",
+        "rationale": "YELLOW phase - review proposed test amendments",
         "test_files": test_files,
     }
     print(json.dumps(contract, ensure_ascii=False))
@@ -2080,8 +2112,7 @@ def yellow_post(
 
     root = Path.cwd()
 
-    skill = _load_skill_content("YELLOW")
-    if not skill:
+    if not _load_skill_content("YELLOW"):
         console.print("[yellow]SKILL_NOT_FOUND[/] deviate-yellow")
 
     dot_dir = root / ".deviate"
@@ -2102,7 +2133,7 @@ def yellow_post(
                 latest_task = (rec, ledger_file)
 
     if approved:
-        _commit_phase("feat: YELLOW phase — approved amendments", root)
+        _commit_phase("feat: YELLOW phase - approved amendments", root)
         if latest_task is not None:
             _append_status_transition(latest_task[0], "YELLOW_APPROVED", latest_task[1])
         session = session.force_transition_to("JUDGE")
@@ -2141,8 +2172,7 @@ def _find_protected_modules(root: Path) -> list[str]:
 def judge_pre() -> None:
     root = Path.cwd()
 
-    skill = _load_skill_content("JUDGE")
-    if not skill:
+    if not _load_skill_content("JUDGE"):
         console.print("[yellow]SKILL_NOT_FOUND[/] deviate-judge")
 
     changed = _detect_phase_changes(root)
