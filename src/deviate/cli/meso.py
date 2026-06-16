@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
-from contextlib import chdir, nullcontext
+from contextlib import chdir
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -18,20 +19,16 @@ from deviate.cli._common import (
     console,
     with_json_quiet,
 )
-from deviate.cli.feature import _create_feature_branch, _derive_slug
+
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
-from deviate.core.validation import (
-    validate_gherkin_syntax,
-)
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
-    detect_remote,
     remove_worktree,
 )
 from deviate.prompts.assembly import assemble_prompt
@@ -42,7 +39,6 @@ from deviate.state.ledger import (
     append_issue_transition,
     append_task_record,
     resolve_issue_record,
-    select_unblocked_candidates,
     select_next_unblocked_issue,
 )
 
@@ -224,24 +220,13 @@ def _setup_mise(worktree_path: Path | None = None) -> None:
 
 
 def _specify_legacy(issue_id: str) -> None:
-    record = _resolve_and_validate_issue(issue_id, "SPECIFY")
-    session_path = _resolve_dot_deviate() / "session.json"
-    session = SessionState.load(session_path)
-    issue_slug = _resolve_bucket_dir(record.source_file)
-    spec_dir = _resolve_specs_root() / issue_slug
-    if spec_dir.exists():
-        console.print(f"[yellow]SKIP[/] specs/{issue_slug}/ already exists")
-    else:
-        spec_dir.mkdir(parents=True, exist_ok=True)
-        console.print(f"[green]CREATE[/] specs/{issue_slug}/")
-    spec_md = spec_dir / "spec.md"
-    if not spec_md.exists():
-        spec_md.write_text("")
-        console.print(f"[green]CREATE[/] specs/{issue_slug}/spec.md")
-    session = session.force_transition_to("SPECIFY")
-    session.active_issue_id = issue_id
-    session.save(session_path)
-    console.print("[green]SPECIFY[/] session advanced to SPECIFY phase")
+    console.print(
+        "[yellow]DEPRECATED[/] 'deviate specify' is deprecated. "
+        "The SPECIFY phase has been merged into 'deviate shard'. "
+        "Use 'deviate shard' instead — shard now produces spec-enriched "
+        "issue files directly."
+    )
+    raise typer.Exit(code=0)
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +312,30 @@ def _emit_contract(
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_linked_worktree(cwd: Path | None = None) -> bool:
+    """True if *cwd* is inside a linked (non-main) git worktree."""
+    cwd = cwd or Path.cwd()
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        if r.returncode != 0:
+            return False
+        # Main worktree → ".git", linked worktree → absolute path
+        return r.stdout.strip() != ".git"
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Specify — new pre/post subcommand behavior
 # ---------------------------------------------------------------------------
 
@@ -399,6 +408,21 @@ def _try_claim_issue(
         wt_spec_dir = Path(worktree_path) / Path(spec_target_rel).parent
         wt_spec_dir.mkdir(parents=True, exist_ok=True)
 
+        # ── Detect remote if not specified ────────────────────────────
+        if remote is None:
+            try:
+                r = subprocess.run(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                )
+                if r.returncode == 0:
+                    remote = "origin"
+            except Exception:
+                pass
+
         # ── Commit and push claim ──────────────────────────────────────
         if claimed:
             try:
@@ -462,222 +486,226 @@ def _specify_pre(
     issue_id: str | None = None,
     force: bool = False,
     dry_run: bool = False,
-) -> None:
-    dot_dir = _resolve_dot_deviate()
-    repo_root = Path.cwd()
+) -> dict | None:
     ledger_path = _resolve_specs_root() / "issues.jsonl"
-
-    # ── Auto-create feature workspace if session is absent ────────────
-    session_path = dot_dir / "session.json"
-    session_absent = not session_path.exists()
-    if not session_absent:
-        existing = SessionState.load(session_path)
-        session_absent = (
-            existing.current_phase == "IDLE" and existing.active_issue_id is None
-        )
-    if session_absent and issue_id is not None:
-        record = resolve_issue_record(issue_id, ledger_path)
-        if record is None:
-            console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
-            raise typer.Exit(code=1)
-
-        slug = _derive_slug(record.title)
-        spec_dir = repo_root / "specs" / slug
-        spec_dir.mkdir(parents=True, exist_ok=True)
-        _create_feature_branch(slug, repo_root)
-        console.print(f"[green]FEATURE_CREATE[/] created specs/{slug}/")
-        dot_dir.mkdir(parents=True, exist_ok=True)
-        fresh_session = SessionState()
-        fresh_session.save(session_path)
-        console.print("[green]SESSION_CREATE[/] session initialized")
-        session = fresh_session
-    else:
-        if not dot_dir.exists():
-            _handle_missing_dot_dir("SPECIFY")
-        session = SessionState.load(session_path)
-
-    # ── Detect remote (non-dry-run only) ────────────────────────────────
-    remote: str | None = None
-    if not dry_run:
-        try:
-            remote = detect_remote(repo_root)
-        except RuntimeError:
-            console.print(
-                "[red]NO_REMOTE[/] no git remotes configured — cannot push claim"
-            )
-            raise typer.Exit(code=1)
-
-    # ── Resolve and claim ──────────────────────────────────────────────
-    claim_result: dict | None = None
-
-    if issue_id is not None:
-        # ── Explicit issue: single attempt, fail hard ──────────────────
-        issue = resolve_issue_record(issue_id, ledger_path)
-        if issue is None:
-            console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id}")
-            raise typer.Exit(code=1)
-
-        if _is_issue_completed(issue_id, ledger_path):
-            console.print(f"[red]COMPLETED[/] issue {issue_id} is already COMPLETED")
-            raise typer.Exit(code=1)
-
-        console.print(f"[green]SELECTED[/] {issue_id} — {issue.title}")
-        claim_result = _try_claim_issue(
-            issue, repo_root, ledger_path, remote, force, dry_run
-        )
-        if claim_result is None:
-            console.print("[red]CLAIM_FAILED[/] could not claim specified issue")
-            raise typer.Exit(code=1)
-
-    else:
-        # ── Auto-select: try-claim loop ────────────────────────────────
-        candidates = select_unblocked_candidates(ledger_path)
-        if not candidates:
-            console.print(
-                "[red]NO_UNBLOCKED_BACKLOG[/] no unblocked BACKLOG issues found"
-            )
-            raise typer.Exit(code=1)
-
-        for candidate in candidates:
-            console.print(f"[blue]TRYING[/] {candidate.issue_id} — {candidate.title}")
-            claim_result = _try_claim_issue(
-                candidate, repo_root, ledger_path, remote, force, dry_run
-            )
-            if claim_result is not None:
-                break
-
-        if claim_result is None:
-            console.print(
-                "[red]ALL_CLAIMS_FAILED[/] could not claim any unblocked "
-                "issue — all branches already on remote or push failed"
-            )
-            raise typer.Exit(code=1)
-
-    # ── Extract claim result ───────────────────────────────────────────
-    resolved_id = claim_result["resolved_id"]
-    issue = claim_result["issue"]
-    epic_slug = claim_result["epic_slug"]
-    issue_slug = claim_result["issue_slug"]
-    branch = claim_result["branch"]
-    spec_target_rel = claim_result["spec_target_rel"]
-    worktree_path = claim_result["worktree_path"]
-
-    # ── Issue body ─────────────────────────────────────────────────────
-    issue_body = _read_issue_body(issue.source_file, repo_root)
-    body_len = len(issue_body)
-    console.print(f"[green]BODY[/] read {body_len} chars from {issue.source_file}")
-
-    # ── PRD traceability ───────────────────────────────────────────────
-    prd_path = repo_root / "specs" / epic_slug / "prd.md"
-    prd_reqs: list[str] = []
-    if prd_path.exists():
-        prd_text = prd_path.read_text(encoding="utf-8")
-        prd_reqs = sorted(set(re.findall(r"FR-\d+(?:[_-]\d+)?", prd_text)))
-        traceability_status, traceability_details = _validate_prd_traceability(
-            issue_body, prd_path
-        )
-    else:
-        traceability_status = "FAIL"
-        traceability_details = f"PRD not found at {prd_path}"
-
-    console.print(f"[green]TRACEABILITY[/] {traceability_status}")
-
-    # ── Constitution ───────────────────────────────────────────────────
-    constitution_path, constitution_test_command, constitution_lint_command = (
-        _resolve_constitution_commands(repo_root)
+    if issue_id is None:
+        console.print("[red]ISSUE_ID_REQUIRED[/] specify pre requires --issue <id>")
+        raise typer.Exit(code=1)
+    record = resolve_issue_record(issue_id, ledger_path)
+    if record is None:
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
+        raise typer.Exit(code=1)
+    result = _try_claim_issue(
+        record,
+        repo_root=Path.cwd(),
+        ledger_path=ledger_path,
+        force=force,
+        dry_run=dry_run,
     )
-
-    # ── Resolve git branch name ────────────────────────────────────────
-    git_branch = branch
-    if not dry_run:
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=worktree_path,
-                env=_git_env(),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            git_branch = result.stdout.strip()
-        except Exception:
-            pass
-
-    # ── Session ────────────────────────────────────────────────────────
-    session = session.force_transition_to("SPECIFY")
-    session.active_issue_id = resolved_id
-    session.save(session_path)
-    if not dry_run:
-        wt_dot_dir = Path(worktree_path) / ".deviate"
-        wt_dot_dir.mkdir(parents=True, exist_ok=True)
-        session.save(wt_dot_dir / "session.json")
-        console.print(f"[green]SESSION_SYNC[/] session written to {wt_dot_dir}")
-    console.print(
-        f"[green]SPECIFY_PRE[/] session advanced to SPECIFY with {resolved_id}"
-    )
-
-    # ── Emit JSON contract ─────────────────────────────────────────────
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    contract = _emit_contract(
-        status="READY" if not dry_run else "DRY_RUN",
-        phase="specify",
-        issue_id=resolved_id,
-        issue_title=issue.title,
-        issue_body=issue_body,
-        epic_slug=epic_slug,
-        issue_slug=issue_slug,
-        branch_name=branch,
-        worktree_path=worktree_path,
-        spec_target=spec_target_rel,
-        spec_target_abs=str(Path(worktree_path) / spec_target_rel),
-        prd_requirements=prd_reqs,
-        traceability_status=traceability_status,
-        traceability_details=traceability_details,
-        constitution_path=constitution_path,
-        constitution_test_command=constitution_test_command,
-        constitution_lint_command=constitution_lint_command,
-        repo_root=str(repo_root),
-        git_branch=git_branch,
-        timestamp=timestamp,
-    )
-    console.print(contract)
+    if result is None:
+        console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]WORKTREE[/] {result['worktree_path']}")
+    return result
 
 
 def _specify_post(force: bool = False) -> None:
-    session, session_path = _load_session_accept("SPECIFY", force=force)
-    issue_id = session.active_issue_id
-    if not issue_id:
+    console.print(
+        "[yellow]SETUP_NOOP[/] specify post is not needed — setup is a single pre step"
+    )
+    raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# Plan — pre / post subcommand behavior
+# ---------------------------------------------------------------------------
+
+
+def _discover_unclaimed() -> str:
+    """Return the next unblocked BACKLOG issue ID, or halt."""
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    if not ledger_path.exists():
+        console.print("[red]NO_LEDGER[/] specs/issues.jsonl not found")
+        raise typer.Exit(code=1)
+    issue = select_next_unblocked_issue(ledger_path)
+    if issue is None:
+        console.print("[red]NO_UNBLOCKED_ISSUES[/] no BACKLOG issue available")
+        raise typer.Exit(code=1)
+    return issue.issue_id
+
+
+def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
+    """Claim *issue_id* via ``_specify_pre``, advance session to PLAN,
+    sync ``.deviate/`` to the new worktree.
+
+    Returns the worktree path.
+    """
+    dot_dir = _resolve_dot_deviate()
+    setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
+    if setup_result is None:
+        raise typer.Exit(code=1)
+
+    if not dry_run:
+        session_path = dot_dir / "session.json"
+        session = SessionState.load(session_path)
+        session = session.force_transition_to("PLAN")
+        session.active_issue_id = issue_id
+        session.save(session_path)
+
+        wt_path = Path(setup_result["worktree_path"])
+        if dot_dir.exists():
+            shutil.copytree(str(dot_dir), str(wt_path / ".deviate"), dirs_exist_ok=True)
+
+        console.print(f"[green]WORKTREE[/] setup at {wt_path}")
+        console.print("[green]SESSION[/] advanced to PLAN")
+
+    return Path(setup_result["worktree_path"])
+
+
+@with_json_quiet
+def _plan_pre(
+    issue_id: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Emit a plan-pre contract.
+
+    *Not in a linked worktree* — auto-claim + setup:
+      - ``issue_id`` given → claim that specific issue.
+      - No ``issue_id`` → discover next unblocked BACKLOG issue.
+
+    *Inside a linked worktree* — emit the JSON contract for the agent.
+    """
+    # ── Auto-claim + setup (not in linked worktree) ────────────────────
+    if not _is_linked_worktree():
+        rid = issue_id if issue_id is not None else _discover_unclaimed()
+        _claim_and_setup(rid, force, dry_run)
+        raise typer.Exit(code=0)
+
+    # ── Contract mode (inside worktree or from _meso_run) ──────────────
+    session, _ = _load_session_accept("SPECIFY", "PLAN", force=force)
+    resolved_issue_id = issue_id or session.active_issue_id or ""
+    if not resolved_issue_id:
+        console.print(
+            "[red]NO_ACTIVE_ISSUE[/] provide --issue or run from a worktree "
+            "with active_issue_id in session"
+        )
+        raise typer.Exit(code=1)
+
+    repo_root = Path.cwd()
+    worktree_full = str(repo_root)
+    branch_name = ""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=_git_env(),
+        )
+        branch_name = r.stdout.strip()
+    except Exception:
+        pass
+    console.print(f"[green]WORKTREE[/] {worktree_full} [{branch_name}]")
+
+    spec_path: str = ""
+    status: str = "READY"
+    if resolved_issue_id:
+        found = _find_spec_md(resolved_issue_id)
+        if found is None:
+            status = "SPEC_NOT_FOUND"
+            console.print(
+                f"[red]SPEC_NOT_FOUND[/] no spec.md for issue {resolved_issue_id}"
+            )
+        else:
+            spec_path = str(found)
+            console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+    else:
+        status = "SPEC_NOT_FOUND"
+        console.print("[red]NO_ACTIVE_ISSUE[/]")
+
+    plan_target: str = ""
+    if resolved_issue_id:
+        ledger_path = _resolve_specs_root() / "issues.jsonl"
+        record = resolve_issue_record(resolved_issue_id, ledger_path)
+        if record is not None:
+            bucket = _resolve_bucket_dir(record.source_file)
+            slug = _source_stem(record.source_file)
+            plan_target = str(_resolve_specs_root() / bucket / slug / "plan.md")
+
+    (
+        constitution_path,
+        constitution_test_command,
+        constitution_lint_command,
+    ) = _resolve_constitution_commands(repo_root)
+
+    if dry_run:
+        console.print("[yellow]DRY_RUN[/] skipping side effects")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    contract = {
+        "issue_id": resolved_issue_id,
+        "spec_path": spec_path,
+        "plan_target": plan_target,
+        "worktree_full": worktree_full,
+        "branch_name": branch_name,
+        "constitution_path": constitution_path,
+        "constitution_test_command": constitution_test_command,
+        "constitution_lint_command": constitution_lint_command,
+        "timestamp": timestamp,
+        "status": status,
+        "phase": "plan_pre",
+        "force": force,
+        "dry_run": dry_run,
+    }
+    print(json.dumps(contract, indent=2))
+
+
+def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
+    """Validate plan.md, commit it, and advance session to TASKS."""
+    session, session_path = _load_session_accept("PLAN", force=force)
+    resolved_issue_id = issue_id or session.active_issue_id
+    if not resolved_issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
-    spec_path = _find_spec_md(issue_id)
-    if spec_path is None:
-        console.print("[red]SPEC_NOT_FOUND[/] could not find spec.md for issue")
+
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    record = resolve_issue_record(resolved_issue_id, ledger_path)
+    if record is None:
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {resolved_issue_id}")
         raise typer.Exit(code=1)
-    content = spec_path.read_text(encoding="utf-8")
-    errors = validate_gherkin_syntax(content)
-    if errors:
-        if force:
-            for err in errors:
-                console.print(f"[yellow]WARNING[/] {err}")
-        else:
-            for err in errors:
-                console.print(f"[red]GHERKIN_ERROR[/] {err}")
-            raise typer.Exit(code=1)
-    epic_slug = spec_path.parent.parent.name
-    epic_num = _extract_epic_num(epic_slug)
-    issue_num = _extract_issue_num(issue_id)
+
+    bucket = _resolve_bucket_dir(record.source_file)
+    slug = _source_stem(record.source_file)
+    plan_md = _resolve_specs_root() / bucket / slug / "plan.md"
+    if not plan_md.exists():
+        console.print(f"[red]PLAN_NOT_FOUND[/] {plan_md}")
+        raise typer.Exit(code=1)
+    content = plan_md.read_text(encoding="utf-8").strip()
+    if not content and not force:
+        console.print("[red]PLAN_EMPTY[/] plan.md is empty")
+        raise typer.Exit(code=1)
+
+    _run_pre_commit_hooks()
+
+    epic_num = _extract_epic_num(bucket)
+    issue_num = _extract_issue_num(resolved_issue_id)
     try:
         sha = commit_artifact(
-            spec_path, f"docs({epic_num}-{issue_num}): create spec.md", repo=Path.cwd()
+            plan_md,
+            f"docs({epic_num}-{issue_num}): create plan.md",
+            repo=Path.cwd(),
         )
-        console.print(f"[green]COMMITTED[/] spec.md at {sha[:8]}")
+        console.print(f"[green]COMMITTED[/] plan.md at {sha[:8]}")
     except Exception as e:
         console.print(f"[red]COMMIT_FAILED[/] {e}")
         raise typer.Exit(code=1)
+
     try:
         session = session.transition_to("TASKS")
     except TransitionViolationError as e:
-        _handle_transition_error("SPECIFY", e)
+        _handle_transition_error("PLAN", e)
     _save_session(session, session_path, "TASKS")
 
 
@@ -750,7 +778,7 @@ def _tasks_legacy(issue_id: str) -> None:
 
 @with_json_quiet
 def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
-    session, _ = _load_session_accept("SPECIFY", "TASKS", force=force)
+    session, _ = _load_session_accept("PLAN", "SPECIFY", "TASKS", force=force)
 
     issue_id = session.active_issue_id or ""
 
@@ -1116,39 +1144,39 @@ def _meso_run(
         "issue_slug": issue_slug,
     }
 
-    # ── Recovery: spec.md already exists? ────────────────────────────
-    spec_path = _find_spec_md(issue_id)
-    skip_specify = spec_path is not None
-    if skip_specify:
-        console.print("[yellow]RECOVERY[/] spec.md exists — skipping SPECIFY phase")
-
     # ── Dry-run mode ─────────────────────────────────────────────────
     if dry_run:
         console.print("[bold][yellow]DRY_RUN[/] — no state will be mutated[/]")
-        if not skip_specify:
-            prompt = _build_slim_prompt("specify", contract)
-            print(prompt)
         prompt = _build_slim_prompt("tasks", contract)
         print(prompt)
         return
 
-    # ── SPECIFY phase ────────────────────────────────────────────────
-    if not skip_specify:
-        _specify_pre(issue_id=issue_id, force=force, dry_run=False)
+    # ── Setup step: create worktree and claim issue ──────────────────
+    setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
+    worktree_path = Path(setup_result["worktree_path"])
 
-    worktree_path = Path.cwd() / ".worktrees" / f"feat/{epic_slug}/{issue_slug}"
-    ctx = chdir(worktree_path) if worktree_path.exists() else nullcontext()
+    # ── PLAN phase — advance session (in original repo) ──────────────
+    dot_dir = _resolve_dot_deviate()
+    session_path = (dot_dir / "session.json").resolve()
+    session = SessionState.load(session_path)
+    if session.current_phase != "PLAN":
+        session = session.force_transition_to("PLAN")
+        session.active_issue_id = issue_id
+        session.save(session_path)
+
+    # Sync .deviate/ to worktree so downstream functions find the session
+    if dot_dir.exists():
+        shutil.copytree(
+            str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
+        )
+
+    ctx = chdir(worktree_path)
     with ctx:
-        if not skip_specify:
-            _invoke_agent_phase("specify", contract)
-            _specify_post(force=force)
+        _plan_pre(force=force, dry_run=False)
 
-        # ── TASKS phase — advance session if needed ──────────────────
-        session = SessionState.load(session_path)
-        if session.current_phase != "TASKS":
-            session = session.force_transition_to("TASKS")
-            session.active_issue_id = issue_id
-            session.save(session_path)
+        _invoke_agent_phase("plan", contract)
+
+        _plan_post(force=force, issue_id=issue_id)
 
         _tasks_pre(force=force, dry_run=False)
 
@@ -1179,7 +1207,7 @@ def meso_run_command(
     ),
     force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
 ) -> None:
-    """Run the meso automated pipeline (specify → tasks)"""
+    """Run the meso automated pipeline (setup → plan → tasks)"""
     _meso_run(issue_id=issue, dry_run=dry_run, force=force)
 
 
@@ -1202,13 +1230,32 @@ def specify(
         None, "--issue", help="Issue ID for pre subcommand"
     ),
 ) -> None:
-    """Specify phase: pre (select issue, create worktree) or post (validate, commit)"""
+    """Setup: create worktree and claim issue for the given issue ID"""
     if issue_id == "pre":
         _specify_pre(issue_id=issue, force=force, dry_run=dry_run)
     elif issue_id == "post":
         _specify_post(force=force)
     else:
-        _specify_legacy(issue_id)
+        _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
+
+
+def plan(
+    issue_id: str = typer.Argument(..., help="Issue ID (or 'pre' / 'post')"),
+    force: bool = typer.Option(False, "--force", help="Force operation"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without side effects"
+    ),
+    issue: str | None = typer.Option(
+        None, "--issue", help="Issue ID for pre subcommand"
+    ),
+) -> None:
+    """Plan phase: pre (research + emit) or post (validate, commit)"""
+    if issue_id == "pre":
+        _plan_pre(issue_id=issue, force=force, dry_run=dry_run)
+    elif issue_id == "post":
+        _plan_post(force=force, issue_id=issue)
+    else:
+        _plan_pre(issue_id=issue_id, force=force, dry_run=dry_run)
 
 
 def tasks(

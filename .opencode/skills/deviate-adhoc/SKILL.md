@@ -48,18 +48,20 @@ CRITICAL INSTRUCTION INVARIANTS:
       > Append-only. Managed automatically by /spec:adhoc. Do not edit manually.
       ```
    b) Read the current PRD to determine the next FR index (`FR-ADHOC-NNN`).
-   c) Append the new FR section in this format:
-      ```
-      ## FR-ADHOC-NNN: [Short descriptive title]
-      - **Description**: [1-2 sentence behavioral assertion]
-      - **Preconditions**: [State/config required before execution]
-      - **Inputs/Outputs**: [Typed inputs and expected outputs]
-      - **Acceptance Criteria**:
-        1. AC-ADHOC-NNN-01: Given [state], When [trigger], Then [assertion]
-        2. AC-ADHOC-NNN-02: Given [alt state], When [trigger], Then [assertion]
-      ```
+    c) Append the new FR section in this format:
+       ```
+       ## FR-ADHOC-NNN: [Short descriptive title]
+       - **Description**: [1-2 sentence behavioral assertion]
+       - **Preconditions**: [State/config required before execution]
+       - **Inputs/Outputs**: [Typed inputs and expected outputs]
+       - **User Stories**:
+         1. US-NNN-01: As a [user role], I want [capability] so that [value]
+       - **Acceptance Criteria**:
+         1. AC-ADHOC-NNN-01: Given [state], When [trigger], Then [assertion]
+         2. AC-ADHOC-NNN-02: Given [state], When [trigger], Then [assertion]
+       ```
 
-5. **Issue File Generation**: Write the issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md` using the exact output schema defined below. The slug is derived from the user's description (kebab-case, max 40 chars).
+5. **Issue File Generation**: Write the spec-enriched issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md`. The issue must contain `[USER_STORIES_LEDGER]`, `[ATDD_ACCEPTANCE_CRITERIA]`, `[EDGE_CASES_AND_BOUNDARIES]`, and `[PERFORMANCE_CONSTRAINTS]` sections in the same order as the shard canonical format (see `src/deviate/prompts/skills/deviate-shard/SKILL.md`). The slug is derived from the user's description (kebab-case, max 40 chars).
 
 6. **Ledger Registration**: Run the issues ledger registration to capture the issue ID.
 
@@ -73,6 +75,8 @@ CRITICAL INSTRUCTION INVARIANTS:
 </execution_sequence>
 
 <output_format_schemas>
+<!-- Canonical issue section ordering reference: src/deviate/prompts/skills/deviate-shard/SKILL.md — issue file section headers and ordering must stay in sync with shard -->
+
 ## [DISCOVERY_AUDIT]
 - **Target Files Identified**: [List of existing files to modify and new files to create, with relative paths]
 - **Existing Patterns**: [Relevant patterns, hooks, utilities, or conventions found in the codebase that this task should follow]
@@ -81,6 +85,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 ## [REQUIREMENTS_SYNTHESIS]
 - **FR-ADHOC-NNN**: [One-sentence functional requirement]
+- **US-NNN-01**: As a [user role], I want [capability] so that [value]. *(Ref: FR-ADHOC-NNN)*
 - **AC-ADHOC-NNN-01**: Given [state], When [trigger], Then [assertion]
 - **AC-ADHOC-NNN-02**: Given [state], When [trigger], Then [assertion]
 
@@ -118,6 +123,26 @@ issue_id: ISS-NNN
 - **Requirements Tokens**: `FR-ADHOC-NNN`
 - **Acceptance Criteria Tokens**: `AC-ADHOC-NNN-01`, `AC-ADHOC-NNN-02`
 - **Data Model Entities**: [Entity names if applicable]
+
+## [USER_STORIES_LEDGER]
+<!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
+- **US-NNN-01**: As a [user role], I want [capability] so that [value]. *(Ref: FR-ADHOC-NNN)*
+
+## [ATDD_ACCEPTANCE_CRITERIA]
+<!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
+**Scenario NNN**: [Scenario title]
+**Given** [precondition]
+**When** [trigger action]
+**Then** [expected outcome]
+
+## [EDGE_CASES_AND_BOUNDARIES]
+<!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
+- [Edge case or boundary condition description]
+
+## [PERFORMANCE_CONSTRAINTS]
+<!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
+- L_max: [Latency limit in ms]
+- Throughput: [Throughput requirement]
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 - **Unit Sandbox Targets**: [Explicit test file paths and test case names]

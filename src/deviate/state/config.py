@@ -23,6 +23,7 @@ _VALID_PHASES = frozenset(
         "PRD",
         "SHARD",
         "SPECIFY",
+        "PLAN",
         "TASKS",
         "RED",
         "GREEN",
@@ -41,18 +42,20 @@ _MACRO_TRANSITION_MAP: dict[str, tuple[str, ...]] = {
     "RESEARCH": ("PRD",),
     "PRD": ("SHARD",),
     "SHARD": ("IDLE", "SPECIFY"),
-    "SPECIFY": ("TASKS",),
+    "SPECIFY": ("TASKS", "PLAN"),
+    "PLAN": ("TASKS",),
     "TASKS": ("IDLE",),
 }
 
 _MACRO_PHASES = frozenset({"IDLE", "EXPLORE", "RESEARCH", "PRD", "SHARD"})
-_MESO_PHASES = frozenset({"SPECIFY", "TASKS"})
+_MESO_PHASES = frozenset({"SPECIFY", "PLAN", "TASKS"})
 
 _PHASE_ARTIFACT_MAP: dict[str, tuple[str, ...]] = {
     "RESEARCH": ("explore.md",),
     "PRD": ("design.md", "data-model.md"),
     "SHARD": ("prd.md",),
     "SPECIFY": ("spec.md",),
+    "PLAN": ("plan.md",),
     "TASKS": ("spec.md", "tasks.md"),
 }
 
@@ -93,8 +96,13 @@ def validate_filesystem_state(
 
 def reconstruct_from_worktree(worktree: Path) -> SessionState:
     has_spec = (worktree / "spec.md").exists()
+    has_plan = (worktree / "plan.md").exists()
     has_tasks = (worktree / "tasks.md").exists()
-    if has_spec and has_tasks:
+    if has_plan and has_tasks:
+        phase = "TASKS"
+    elif has_plan:
+        phase = "PLAN"
+    elif has_spec and has_tasks:
         phase = "TASKS"
     elif has_spec:
         phase = "SPECIFY"

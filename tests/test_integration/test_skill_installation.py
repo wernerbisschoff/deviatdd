@@ -68,7 +68,7 @@ class TestSkillInstallation:
             "deviate.cli._get_agent_skill_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
-        target = tmp_path / ".claude" / "skills" / "deviate-specify" / "SKILL.md"
+        target = tmp_path / ".claude" / "skills" / "deviate-shard" / "SKILL.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("STALE CONTENT", encoding="utf-8")
         (tmp_path / ".claude").mkdir(exist_ok=True)

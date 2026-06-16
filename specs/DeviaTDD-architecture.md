@@ -57,10 +57,11 @@ Breaks a business goal down into standard development project containers.
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
-`/deviate-plan` phase for per-issue localized research. Code review is handled by the
-`deviate review pre/post` command pair (see `src/deviate/cli/review.py`), which gathers git
-state, governance context, and PRD traceability, then persists review reports to
-`.deviate/review/reports/`.
+`/deviate-plan` phase for per-issue localized research. A lightweight PR/merge review is handled by the `/deviate-review` skill using
+`deviate review pre` (see `src/deviate/cli/review.py`) at HITL Gate 3. It
+runs a fast single-pass scan (V4 Flash) over ledger integrity, cross-task
+consistency, and security surface — surfacing findings in chat for human
+judgment rather than persisting report files.
 
 * **Shard+Specify (merged):** The `/deviate-shard` skill now produces issue files with full
   spec-level detail: user stories (US-NNN), Gherkin acceptance criteria (Given/When/Then),
@@ -505,7 +506,7 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 6. **The Elastic Governance Rule:** The `deviate run` command supports `--profile [full|fast|secure]` to control which phases execute. `full` runs the complete RED → GREEN → [YELLOW?] → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as composable overrides that take precedence over profile defaults. Execution profiles and agent backends are configured via `DeviateConfig.agent.backend`.
 
-7. **Atomic Concurrency Protocol (Git Reference Locks):** To eliminate TOCTOU race conditions across distributed terminal instances, the `deviate specify pre` command uses try-claim semantics: `select_unblocked_candidates()` returns all available BACKLOG issues, and the worker iterates through them attempting `claim_issue()` combined with `create_worktree()` and `git push -u <remote> <branch>`. The server serializes concurrent pushes; the first successful push wins. The `tasks.jsonl` ledger records the authoritative outcome.
+7. **Atomic Concurrency Protocol (Git Reference Locks):** To eliminate TOCTOU race conditions across distributed terminal instances, the issue claim workflow (formerly `deviate specify pre`, now part of the Plan phase orchestration) uses try-claim semantics: `select_unblocked_candidates()` returns all available BACKLOG issues, and the worker iterates through them attempting `claim_issue()` combined with `create_worktree()` and `git push -u <remote> <branch>`. The server serializes concurrent pushes; the first successful push wins. The `tasks.jsonl` ledger records the authoritative outcome.
 
 8. **The Session Continuity Principle:** Session state is persisted to `.deviate/session.json` after each CLI command. The `SessionState` class tracks `current_phase`, `active_issue_id`, and `last_command`. Macro and meso phases transition through `transition_to()` with validation from `_MACRO_TRANSITION_MAP`. Micro phases use `force_transition_to()`. The `_run_single()` function checks `session.current_phase` and supports resume from YELLOW/JUDGE/REFACTOR via optional `start_phase` parameter. Model continuity and KV cache management are delegated to the calling environment.
 

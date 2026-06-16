@@ -23,182 +23,19 @@ def _git_env() -> dict[str, str]:
 
 
 class TestSpecifyPre:
-    def test_specify_pre_auto_selects_unblocked_issue(self, tmp_git_repo: Path) -> None:
+    def test_specify_pre_requires_issue_flag(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="IDLE")
-            session.save(dot_dir / "session.json")
-
-            spec_root = Path("specs")
-            spec_root.mkdir(parents=True)
-            (spec_root / "constitution.md").write_text("# Constitution\n")
-
-            ledger = spec_root / "issues.jsonl"
-            now = datetime.now(timezone.utc)
-
-            iss1 = IssueRecord(
-                issue_id="ISS-001-001",
-                type="feature",
-                title="Oldest unblocked",
-                status="BACKLOG",
-                source_file="specs/test-epic/issues/iss-001.md",
-                timestamp=now,
-            )
-            iss2 = IssueRecord(
-                issue_id="ISS-001-002",
-                type="feature",
-                title="Blocked issue",
-                status="BACKLOG",
-                source_file="specs/test-epic/issues/iss-002.md",
-                timestamp=datetime.now(timezone.utc),
-                blocked_by=["ISS-001-003"],
-            )
-            ledger.write_text(
-                iss1.model_dump_json() + "\n" + iss2.model_dump_json() + "\n"
-            )
-            # Commit ledger so worktree checkout inherits it
-            subprocess.run(
-                ["git", "add", "specs/issues.jsonl"],
-                cwd=tmp_git_repo,
-                env=_git_env(),
-                check=True,
-            )
-            subprocess.run(
-                ["git", "commit", "-m", "add issues ledger"],
-                cwd=tmp_git_repo,
-                env=_git_env(),
-                check=True,
-            )
-
             result = runner.invoke(cli, ["specify", "pre", "--force"])
-            assert result.exit_code == 0, result.output
-
-            loaded = SessionState.load(dot_dir / "session.json")
-            assert loaded.current_phase == "SPECIFY"
-            assert loaded.active_issue_id == "ISS-001-001"
-
-            wt_output = subprocess.run(
-                ["git", "worktree", "list"],
-                cwd=tmp_git_repo,
-                env=_git_env(),
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-            assert len(wt_output.strip().splitlines()) >= 2, (
-                "expected at least 2 worktrees (main + newly created)"
-            )
-
-            wt_ledger = (
-                tmp_git_repo
-                / ".worktrees"
-                / "feat"
-                / "test-epic"
-                / "iss-001"
-                / "specs"
-                / "issues.jsonl"
-            )
-            assert wt_ledger.exists(), "expected worktree ledger to exist"
-            ledger_lines = wt_ledger.read_text(encoding="utf-8").strip().splitlines()
-            claims = [
-                json.loads(line)
-                for line in ledger_lines
-                if json.loads(line).get("issue_id") == "ISS-001-001"
-                and json.loads(line).get("status") == "SPECIFIED"
-            ]
-            assert len(claims) >= 1, (
-                "expected ISS-001-001 claim (SPECIFIED) in worktree ledger"
-            )
-
-    def test_specify_pre_errors_when_no_backlog(self, tmp_git_repo: Path) -> None:
-        with chdir(tmp_git_repo):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="IDLE")
-            session.save(dot_dir / "session.json")
-
-            spec_root = Path("specs")
-            spec_root.mkdir(parents=True)
-            (spec_root / "constitution.md").write_text("# Constitution\n")
-            (spec_root / "issues.jsonl").write_text("")
-
-            result = runner.invoke(cli, ["specify", "pre"])
-            assert result.exit_code != 0
+            assert result.exit_code == 1, result.output
+            assert "ISSUE_ID_REQUIRED" in result.output
 
 
 class TestSpecifyPost:
-    def test_specify_post_validates_and_commits(self, tmp_git_repo: Path) -> None:
+    def test_specify_post_is_noop(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(
-                current_phase="SPECIFY", active_issue_id="ISS-001-001"
-            )
-            session.save(dot_dir / "session.json")
-
-            spec_root = Path("specs")
-            spec_root.mkdir(parents=True)
-            bucket_dir = spec_root / "test-specify" / "iss-001"
-            bucket_dir.mkdir(parents=True)
-            (spec_root / "constitution.md").write_text("# Constitution\n")
-
-            spec_md = bucket_dir / "spec.md"
-            spec_md.write_text(
-                "# Spec Title\n\n"
-                "**Scenario 1: Test scenario**\n\n"
-                "- **Given** a precondition\n"
-                "- **When** an action occurs\n"
-                "- **Then** a result is observed\n"
-            )
-
-            ledger = spec_root / "issues.jsonl"
-            record = IssueRecord(
-                issue_id="ISS-001-001",
-                type="feature",
-                title="Test",
-                status="BACKLOG",
-                source_file="specs/test-specify/issues/iss-001.md",
-                timestamp=datetime.now(timezone.utc),
-            )
-            ledger.write_text(record.model_dump_json() + "\n")
-
             result = runner.invoke(cli, ["specify", "post"])
             assert result.exit_code == 0, result.output
-
-            log = subprocess.run(
-                ["git", "log", "--oneline", "-5"],
-                cwd=tmp_git_repo,
-                env=_git_env(),
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-            assert "spec.md" in log or "SPECIFY" in log.upper()
-
-            loaded = SessionState.load(dot_dir / "session.json")
-            assert loaded.current_phase == "TASKS"
-
-    def test_specify_post_rejects_invalid_gherkin(self, tmp_git_repo: Path) -> None:
-        with chdir(tmp_git_repo):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="SPECIFY")
-            session.save(dot_dir / "session.json")
-
-            spec_root = Path("specs")
-            spec_root.mkdir(parents=True)
-            bucket_dir = spec_root / "test-invalid"
-            bucket_dir.mkdir(parents=True)
-            (spec_root / "constitution.md").write_text("# Constitution\n")
-
-            spec_md = bucket_dir / "spec.md"
-            spec_md.write_text(
-                "# Bad Spec\n\n**Scenario 1: Incomplete**\n\n- **Given** only given\n"
-            )
-
-            result = runner.invoke(cli, ["specify", "post"])
-            assert result.exit_code != 0
+            assert "SETUP_NOOP" in result.output
 
 
 class TestTasksPre:

@@ -44,7 +44,8 @@ CRITICAL INSTRUCTION INVARIANTS:
 ```text
 Pass 1 (Topological Layout): [Trace tracking tokens to repo path workstations; group FRs into clusters (zero or more per slice); verify cumulative coverage across all slices]
 Pass 2 (Boundary Demarcation): [Isolate inclusion vs exclusion constraints for each feature slice]
-Pass 3 (Verification Mapping): [Verify that each AC maps to an explicit end-to-end bash execution path validation block]
+Pass 3 (Horizontal Slice Audit): [Verify each slice cuts through multiple layers (database, API, logic, UI) with complete end-to-end behavior; flag HORIZONTAL_SLICE_DETECTED and re-cluster]
+Pass 4 (Verification Mapping): [Verify that each AC maps to an explicit end-to-end bash execution path validation block]
 ```
 
 ## [SHARD_GENERATION_MANIFEST]
@@ -103,8 +104,10 @@ Execute the Internal ICoT (Pass 1-4) to cluster related FRs into vertical slices
 For each vertical slice:
 1. Group one or more related FRs (or zero for enabling slices such as tooling, infrastructure, or refactoring) into a cohesive, independently verifiable feature
 2. Ensure the slice cuts through ALL layers (database, API, logic, UI) — enabling slices with zero FRs are exempt from this requirement
-3. Verify the slice is non-trivial — it must warrant its own spec + plan phase
-4. Map blocked_by and coordinates_with dependencies across slices
+3. Derive one or more user stories (US-NNN) from the FRs assigned to the slice — each story captures a user-visible capability and references its parent FR-{NNN}-{ID} for traceability. Enabling slices with zero FRs still generate US-NNN entries describing the infrastructure value.
+4. Map acceptance criteria (bold `**Given**`/`**When**`/`**Then**` Gherkin blocks) to each user story covering happy path, error states, and edge cases
+5. Verify the slice is non-trivial — it must warrant its own spec + plan phase
+6. Map blocked_by and coordinates_with dependencies across slices
 </step>
 
 <step id="issue_generation">
@@ -114,6 +117,10 @@ For each vertical slice, generate a shard issue markdown file. Each file must in
 - `## [THE_PROBLEM_CONTRACT]` — narrative of the user/system journey
 - `## [SCOPE_BOUNDARIES]` — Hard Inclusions and Defensive Exclusions
 - `## [UPSTREAM_REQUIREMENT_TRACING]` — FR and AC tokens
+- `## [USER_STORIES_LEDGER]` — US-NNN user stories with FR traceability (each US references a parent FR-{NNN}-{ID})
+- `## [ATDD_ACCEPTANCE_CRITERIA]` — bold `**Given**`/`**When**`/`**Then**` Gherkin scenarios for each user story, covering happy path, error states, and edge cases
+- `## [EDGE_CASES_AND_BOUNDARIES]` — edge cases, error states, boundary conditions
+- `## [PERFORMANCE_CONSTRAINTS]` — latency, throughput, resource limits
 - `## [MULTI_TIERED_VERIFICATION_TARGETS]` — unit and integration test paths
 - `## [DEMONSTRATION_PATH]` — exact bash commands for end-to-end verification
 
