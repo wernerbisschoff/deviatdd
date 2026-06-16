@@ -312,17 +312,17 @@ def _get_unblocked_backlog_features(ledger_path: Path) -> list[IssueRecord]:
         if issue_id and status:
             status_map[issue_id] = status
 
-    features: list[dict] = [r for r in records if r.get("type") == "feature"]
-    feature_map: dict[str, dict] = {}
-    for f in features:
-        feature_map[f["issue_id"]] = f
+    typed: list[dict] = [r for r in records if r.get("type") is not None]
+    issue_map: dict[str, dict] = {}
+    for f in typed:
+        issue_map[f["issue_id"]] = f
 
     candidates: list[IssueRecord] = []
-    for issue_id, feature in feature_map.items():
+    for issue_id, record in issue_map.items():
         latest_status = status_map.get(issue_id, "BACKLOG")
         if latest_status != "BACKLOG":
             continue
-        blocked_by = feature.get("blocked_by", [])
+        blocked_by = record.get("blocked_by", [])
         is_unblocked = True
         for dep_id in blocked_by:
             dep_status = status_map.get(dep_id, "UNKNOWN")
@@ -330,7 +330,7 @@ def _get_unblocked_backlog_features(ledger_path: Path) -> list[IssueRecord]:
                 is_unblocked = False
                 break
         if is_unblocked:
-            candidates.append(IssueRecord.model_validate(feature))
+            candidates.append(IssueRecord.model_validate(record))
 
     candidates.sort(key=lambda r: r.created_at or r.timestamp)
     return candidates
