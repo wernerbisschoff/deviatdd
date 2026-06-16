@@ -17,6 +17,16 @@ class CacheDisciplineViolation(Exception):
 
 class CacheDiscipline:
     @staticmethod
+    def _check_drift(
+        current_val: object,
+        previous_val: object,
+        label: str,
+        message: str,
+    ) -> None:
+        if current_val != previous_val:
+            raise CacheDisciplineViolation(message)
+
+    @staticmethod
     def validate(
         phase: str,
         current: CacheStore,
@@ -26,22 +36,30 @@ class CacheDiscipline:
         if previous is None:
             return
 
-        if current.model != previous.model:
-            raise CacheDisciplineViolation(
-                f"model_switch: {previous.model} -> {current.model}"
-            )
+        CacheDiscipline._check_drift(
+            current.model,
+            previous.model,
+            "model",
+            f"model_switch: {previous.model} -> {current.model}",
+        )
 
-        if current.tool_definitions != previous.tool_definitions:
-            raise CacheDisciplineViolation(
-                "tool_change: tool definitions differ between phases"
-            )
+        CacheDiscipline._check_drift(
+            current.tool_definitions,
+            previous.tool_definitions,
+            "tool_definitions",
+            "tool_change: tool definitions differ between phases",
+        )
 
-        if current.system_prompt != previous.system_prompt:
-            raise CacheDisciplineViolation(
-                "prompt_change: system prompt mutated between phases"
-            )
+        CacheDiscipline._check_drift(
+            current.system_prompt,
+            previous.system_prompt,
+            "system_prompt",
+            "prompt_change: system prompt mutated between phases",
+        )
 
-        if current.test_files != previous.test_files:
-            raise CacheDisciplineViolation(
-                "test_change: test files modified between phases"
-            )
+        CacheDiscipline._check_drift(
+            current.test_files,
+            previous.test_files,
+            "test_files",
+            "test_change: test files modified between phases",
+        )
