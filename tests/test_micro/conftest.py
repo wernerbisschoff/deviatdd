@@ -62,5 +62,8 @@ def mock_micro_subprocess():
     ``_detect_phase_changes``, ``_commit_phase``, etc.).  Agent and
     pytest subprocesses are blocked with safe defaults.
     """
-    with patch("deviate.cli.micro.subprocess", _MockSubprocess()):
+    with (
+        patch("deviate.cli.micro.subprocess", _MockSubprocess()),
+        patch("deviate.core.agent.subprocess", _MockSubprocess()),
+    ):
         yield

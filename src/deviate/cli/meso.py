@@ -20,11 +20,13 @@ from deviate.cli._common import (
     with_json_quiet,
 )
 
+from pydantic import ValidationError
+
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
-from deviate.core.tasks_ledger import generate_jsonl_from_md, validate_tasks_jsonl
+from deviate.core.tasks_ledger import generate_jsonl_from_md
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
 from deviate.core.worktree import (
@@ -881,12 +883,12 @@ def _tasks_post(
 
     tasks_jsonl = tasks_md.with_name("tasks.jsonl")
     proposal_path = tasks_md.with_name("tasks.jsonl.proposal")
-    records = generate_jsonl_from_md(tasks_md, resolved_issue_id)
-
-    validation_errors = validate_tasks_jsonl([rec.model_dump() for rec in records])
-    if validation_errors:
-        for err in validation_errors:
-            console.print(f"[red]VALIDATION_ERROR[/] {err}")
+    try:
+        records = generate_jsonl_from_md(tasks_md, resolved_issue_id)
+    except ValidationError as e:
+        for err in e.errors():
+            loc = ".".join(str(part) for part in err["loc"])
+            console.print(f"[red]VALIDATION_ERROR[/] {loc}: {err['msg']}")
         raise typer.Exit(code=1)
 
     if confirm:
@@ -897,7 +899,7 @@ def _tasks_post(
     else:
         proposal_path.parent.mkdir(parents=True, exist_ok=True)
         proposal_lines = "\n".join(rec.model_dump_json() for rec in records)
-        proposal_path.write_text(proposal_lines + "\n")
+        proposal_path.write_text(proposal_lines + "\n", encoding="utf-8")
 
     _run_pre_commit_hooks()
 

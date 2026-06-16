@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from deviate.state.ledger import TaskRecord
 
 
-_TASK_LINE_PATTERN = re.compile(r"^- (TSK-\d{3}-\d{2}): (.+)")
+_TASK_LINE_PATTERN = re.compile(r"^\s*-\s+(?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.+)")
 _MODE_PATTERN = re.compile(r"\*\*Mode\*\*:\s*(\S+)")
 
 

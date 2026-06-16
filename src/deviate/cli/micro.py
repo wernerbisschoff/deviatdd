@@ -26,6 +26,7 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
+from deviate.core.cache_discipline import CacheDiscipline, CacheStore
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
@@ -68,7 +69,12 @@ def _save_agent_log(phase: str, task_id: str, label: str, content: str) -> None:
 def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
     if not ledger_path.exists():
         return False
-    for rec in _read_ledger_records(ledger_path):
+    records = _read_ledger_records(ledger_path)
+    last_pending_idx = -1
+    for i, rec in enumerate(records):
+        if rec.get("id") == task_id and rec.get("status") == "PENDING":
+            last_pending_idx = i
+    for rec in records[last_pending_idx + 1 :]:
         if rec.get("id") == task_id and rec.get("status") == phase:
             return True
     return False
@@ -958,6 +964,12 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     if result.returncode != 0:
         stderr = result.stderr.strip() or "unknown revert failure"
         _log(f"git revert failed: {stderr}")
+        subprocess.run(
+            ["git", "revert", "--abort"],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
         raise RuntimeError(f"git revert failed: {stderr}")
     return red_sha
 
@@ -1183,6 +1195,36 @@ def _finish_tdd_cycle(
     return session
 
 
+def _capture_cache_store(root: Path, task: dict, agent: str | None) -> CacheStore:
+    model = agent or "opencode"
+    test_files: dict[str, str] = {}
+    tests_dir = root / "tests"
+    if tests_dir.exists():
+        for tf in sorted(tests_dir.rglob("test_*.py")):
+            try:
+                test_files[str(tf.relative_to(root))] = tf.read_text(encoding="utf-8")
+            except Exception:
+                pass
+    return CacheStore(
+        model=model,
+        tool_definitions=[],
+        system_prompt="",
+        test_files=test_files,
+    )
+
+
+def _validate_cache_store(
+    phase: str,
+    root: Path,
+    task: dict,
+    agent: str | None,
+    previous: CacheStore | None,
+) -> CacheStore:
+    current = _capture_cache_store(root, task, agent)
+    CacheDiscipline.validate(phase=phase, current=current, previous=previous)
+    return current
+
+
 def _run_tdd_cycle(
     task: dict,
     ledger_path: Path,
@@ -1205,6 +1247,8 @@ def _run_tdd_cycle(
 
     task_desc = task.get("description", "")
 
+    cache_store = _capture_cache_store(root, task, agent)
+
     if start_phase == "JUDGE":
         _maybe_push_event(
             monitor,
@@ -1216,12 +1260,14 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
+        cache_store = _validate_cache_store("REFACTOR", root, task, agent, cache_store)
         session = _finish_tdd_cycle(
             task, ledger_path, session, session_path, c, no_refactor, agent=agent
         )
         return
 
     if start_phase == "YELLOW":
+        cache_store = _validate_cache_store("YELLOW", root, task, agent, cache_store)
         _maybe_push_event(
             monitor,
             "phase_change",
@@ -1232,6 +1278,7 @@ def _run_tdd_cycle(
         session, _ = _run_yellow_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
+        cache_store = _validate_cache_store("JUDGE", root, task, agent, cache_store)
         _maybe_push_event(
             monitor,
             "phase_change",
@@ -1242,6 +1289,7 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
+        cache_store = _validate_cache_store("REFACTOR", root, task, agent, cache_store)
         session = _finish_tdd_cycle(
             task,
             ledger_path,
@@ -1266,6 +1314,7 @@ def _run_tdd_cycle(
     judge_passed = no_judge
 
     while not judge_passed:
+        cache_store = _validate_cache_store("GREEN", root, task, agent, cache_store)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="GREEN", description=task_desc
         )
@@ -1274,6 +1323,9 @@ def _run_tdd_cycle(
         )
 
         if session.yellow_triggered:
+            cache_store = _validate_cache_store(
+                "YELLOW", root, task, agent, cache_store
+            )
             _maybe_push_event(
                 monitor,
                 "phase_change",
@@ -1292,6 +1344,9 @@ def _run_tdd_cycle(
             )
             if decision == _YELLOW_DECISION_REJECTED:
                 c.print("  [yellow]Re-running GREEN after YELLOW[/]")
+                cache_store = _validate_cache_store(
+                    "GREEN", root, task, agent, cache_store
+                )
                 _maybe_push_event(
                     monitor,
                     "phase_change",
@@ -1330,6 +1385,7 @@ def _run_tdd_cycle(
             judge_passed = True
             break
 
+        cache_store = _validate_cache_store("JUDGE", root, task, agent, cache_store)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="JUDGE", description=task_desc
         )
@@ -1355,6 +1411,7 @@ def _run_tdd_cycle(
         else:
             judge_passed = True
 
+    cache_store = _validate_cache_store("REFACTOR", root, task, agent, cache_store)
     session = _finish_tdd_cycle(
         task,
         ledger_path,
@@ -1997,7 +2054,7 @@ def green_post() -> None:
         # bypassing the normal GREEN commit flow.
         try:
             record = TaskRecord.model_validate(red_task[0])
-            record.status = "YELLOW"  # type: ignore[assignment]
+            record.status = "YELLOW"
             append_task_transition(record, red_task[1])
         except Exception as e:
             console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
