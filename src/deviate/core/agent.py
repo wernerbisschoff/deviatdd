@@ -61,6 +61,7 @@ BACKEND_COMMANDS: dict[str, str] = {
     "opencode": "opencode run",
     "claude": "claude -p",
     "droid": "droid exec",
+    "stub": "stub",
 }
 
 
@@ -291,3 +292,21 @@ class AgentBackend:
                 )
 
         return self.parse_output(stdout, backend_name)
+
+
+class StubAgentBackend:
+    def __init__(self, config: AgentConfig | None = None) -> None:
+        self.config = config or AgentConfig()
+        self._invoked = False
+
+    def invoke(
+        self,
+        prompt: str,
+        backend: Literal["opencode", "claude", "droid", "stub"] | None = None,
+        timeout: int | None = None,
+        output_callback: OutputCallback | None = None,
+    ) -> HandoverManifest:
+        self._invoked = True
+        if output_callback is not None:
+            output_callback(prompt)
+        return HandoverManifest(phase="RED", status="success")
