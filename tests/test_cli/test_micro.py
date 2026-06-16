@@ -10,9 +10,12 @@ import pytest
 from typer.testing import CliRunner
 
 from deviate.cli.__init__ import cli
+from deviate.cli.micro import _run_judge_phase
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
+from deviate.state.ledger import TaskRecord, append_task_transition
 from deviate.ui.monitor import OrchestrationMonitor
+from tests.conftest import _git_env
 
 
 runner = CliRunner()
@@ -436,3 +439,376 @@ class TestRunAllMonitorE2E:
             "Pipeline should halt after failure — TSK-001-03 should not start"
         )
         assert result.exit_code != 0, "Expected non-zero exit code when pipeline halts"
+
+
+class TestJudgeTrainRollback:
+    """US-004-ROLLBACK / US-010-HITL: JUDGE train rollback with git revert and RED boundary."""
+
+    def _setup_judge_env(self, root: Path) -> tuple[dict, Path, Path, Path]:
+        """Setup session, ledger, and task state for judge phase tests."""
+        dot_dir = root / ".deviate"
+        dot_dir.mkdir(exist_ok=True)
+        session = SessionState(active_issue_id="ISS-002-005")
+        session_path = dot_dir / "session.json"
+        session.save(session_path)
+
+        ledger_dir = (
+            root / "specs" / "002-deviatdd-gap-analysis" / "005-micro-layer-integrity"
+        )
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        ledger_path = ledger_dir / "tasks.jsonl"
+        task = {
+            "id": "TSK-005-05",
+            "issue_id": "ISS-002-005",
+            "description": "Test train rollback",
+            "execution_mode": "TDD",
+        }
+        record = TaskRecord(**task)
+        append_task_transition(record, ledger_path)
+
+        return task, ledger_path, session_path, dot_dir
+
+    def _setup_git_repo_with_green_commits(self, root: Path) -> tuple[str, list[str]]:
+        """Create git history: [initial] → RED → GREEN1 → GREEN2.
+
+        Returns (red_sha, green_shas).
+        """
+        red_file = root / "feature.py"
+        red_file.write_text("def feature(): pass")
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-005-05): RED phase"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        red_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+
+        green1_file = root / "feature_test.py"
+        green1_file.write_text("def test_feature(): pass")
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-005-05): GREEN phase"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        green1_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+
+        green2_file = root / "refactor.py"
+        green2_file.write_text("def refactored(): pass")
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-005-05): GREEN refactor"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        green2_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+
+        return red_sha, [green1_sha, green2_sha]
+
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_judge_train_rollback_all_commits_since_red(
+        self,
+        mock_skill: MagicMock,
+        mock_invoke: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        red_sha, green_shas = self._setup_git_repo_with_green_commits(root)
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        mock_skill.return_value = "# JUDGE skill content"
+        mock_invoke.return_value = (
+            HandoverManifest(
+                phase="JUDGE",
+                status="FAILURE",
+                rationale="Compliance violation",
+            ),
+            "",
+        )
+
+        from rich.console import Console
+
+        c = Console()
+
+        session = SessionState.load(session_path)
+        _run_judge_phase(
+            task=task,
+            ledger_path=ledger_path,
+            session=session,
+            session_path=session_path,
+            c=c,
+        )
+
+        session_after = SessionState.load(session_path)
+        assert session_after.current_phase == "GREEN", (
+            f"Expected GREEN phase after rollback, got {session_after.current_phase}"
+        )
+        assert session_after.train_feedback == "Compliance violation"
+
+        assert not (root / "feature_test.py").exists(), (
+            "GREEN-introduced file must be reverted after rollback"
+        )
+        assert not (root / "refactor.py").exists(), "All GREEN commits must be reverted"
+
+        assert (root / "feature.py").exists(), (
+            "RED-introduced file must be preserved after rollback"
+        )
+
+        log_after = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+        assert red_sha[:7] in log_after, (
+            "RED commit must remain in git history after rollback"
+        )
+
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_judge_rollback_preserves_red(
+        self,
+        mock_skill: MagicMock,
+        mock_invoke: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        red_sha, _ = self._setup_git_repo_with_green_commits(root)
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        mock_skill.return_value = "# JUDGE skill content"
+        mock_invoke.return_value = (
+            HandoverManifest(
+                phase="JUDGE",
+                status="FAILURE",
+                rationale="Violation",
+            ),
+            "",
+        )
+
+        from rich.console import Console
+
+        c = Console()
+        session = SessionState.load(session_path)
+        _run_judge_phase(
+            task=task,
+            ledger_path=ledger_path,
+            session=session,
+            session_path=session_path,
+            c=c,
+        )
+
+        log_after = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+        assert red_sha[:7] in log_after, (
+            "RED commit SHA must still appear in git log after rollback"
+        )
+
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_judge_no_violation_proceeds(
+        self,
+        mock_skill: MagicMock,
+        mock_invoke: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        self._setup_git_repo_with_green_commits(root)
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        mock_skill.return_value = "# JUDGE skill content"
+        mock_invoke.return_value = (
+            HandoverManifest(phase="JUDGE", status="SUCCESS"),
+            "",
+        )
+
+        log_before = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+
+        from rich.console import Console
+
+        c = Console()
+        session = SessionState.load(session_path)
+        result = _run_judge_phase(
+            task=task,
+            ledger_path=ledger_path,
+            session=session,
+            session_path=session_path,
+            c=c,
+        )
+
+        assert result.current_phase == "JUDGE", (
+            f"Expected JUDGE phase on clean pass, got {result.current_phase}"
+        )
+
+        log_after = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+        assert log_before == log_after, (
+            "git log must be unchanged when no violation detected"
+        )
+
+
+class TestFindTaskRecord:
+    """_find_task_record returns the latest (last) matching record."""
+
+    def test_find_task_record_returns_latest_status(self, tmp_path: Path):
+        from deviate.cli.micro import _find_task_record
+
+        records = [
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "test",
+                "status": "PENDING",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "test",
+                "status": "RED",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "test",
+                "status": "GREEN",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "test",
+                "status": "JUDGE",
+            },
+        ]
+        ledger_path = tmp_path / "specs" / "005-micro-layer" / "tasks.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+        for r in records:
+            ledger_path.open("a").write(json.dumps(r) + "\n")
+
+        result = _find_task_record(tmp_path, "TSK-005-07")
+        assert result is not None, "Expected to find the task record"
+        task, ledger_file = result
+        assert task["status"] == "JUDGE", (
+            f"Expected latest status JUDGE, got {task['status']}"
+        )
+        assert ledger_file == ledger_path
+
+    def test_find_task_record_multiple_entries_returns_last(self, tmp_path: Path):
+        from deviate.cli.micro import _find_task_record
+
+        ledger_path = tmp_path / "specs" / "adhoc" / "tasks.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+        for r in [
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "PENDING",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "RED",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "GREEN",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "YELLOW",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "YELLOW_APPROVED",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "JUDGE",
+            },
+            {
+                "id": "TSK-005-07",
+                "issue_id": "ISS-002-005",
+                "description": "first",
+                "status": "COMPLETED",
+            },
+        ]:
+            ledger_path.open("a").write(json.dumps(r) + "\n")
+
+        result = _find_task_record(tmp_path, "TSK-005-07")
+        assert result is not None
+        task, ledger_file = result
+        assert task["status"] == "COMPLETED", (
+            f"Expected COMPLETED as last record, got {task['status']}"
+        )
