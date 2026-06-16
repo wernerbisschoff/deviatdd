@@ -128,13 +128,14 @@ mock_pytest.side_effect = [
 - **[HITL Gate 2]**: Human reviews spec-enriched shard issues before planning proceeds.
 - `/plan` → **DeepSeek V4 Pro** (planned): Per-issue localized research — scans current codebase, analyzes prior issue implementations, produces `plan.md` with implementation strategy.
 - `/tasks` → **DeepSeek V4 Pro**: Decomposes spec-enriched issue + `plan.md` into ~5 TDD-cycle tasks with implementation hints (3-10 bounds). Appends terminal `type: "e2e"` task.
+- `/review` → **DeepSeek V4 Flash**: Lightweight PR/merge scan at HITL Gate 3 — checks ledger integrity, cross-task consistency, and security surface. Chat-based output, no report file.
 - `/specify` → **Deprecated** (merged into shard). Legacy skill redirects to new workflow.
 
 ### Micro Layer — TDD Sandbox
 - **RED** → **DeepSeek V4 Flash**: Write failing test; verified to fail due to missing implementation.
 - **GREEN** → **DeepSeek V4 Flash**: Write production code to pass test; TamperGuard reverts unauthorized test edits. If tampering detected, session transitions to YELLOW.
 - **YELLOW** → **DeepSeek V4 Pro** (conditional, TamperGuard-triggered): Propose amendment for isolated judge approval/rejection. NOT in `_PHASE_MAP` — conditional branch between GREEN and JUDGE.
-- **JUDGE** → **DeepSeek V4 Pro**: Isolated compliance gate evaluates `git diff` against `spec.md`. On violation: `git revert` (never `git reset --hard`), persist `RollbackSnapshot`, inject `<judge_feedback>`, route back to GREEN.
+- **JUDGE** → **DeepSeek V4 Pro**: Isolated compliance gate evaluates `git diff` against `spec.md` and security rubrics (secrets, injection, path traversal, auth gaps). On violation: `git revert` (never `git reset --hard`), persist `RollbackSnapshot`, inject `<judge_feedback>`, route back to GREEN.
 - **REFACTOR** → **DeepSeek V4 Flash**: Polish implementation; regression gate re-runs tests, rolls back on failure.
 
 ### Fast-Path
@@ -149,7 +150,7 @@ mock_pytest.side_effect = [
 - **Explorers (low-cost ingestion)**: `/explore`, RED/GREEN/REFACTOR → V4 Flash for high-volume reading and code generation.
 - **Architects (premium strategic logic)**: `/research`, `/prd`, `/shard`, `/adhoc` → Qwen3.7-Plus [Thinking Mode] for abstract reasoning and constraint satisfaction.
 - **Translators (cached engineering)**: `/plan` + `/tasks` → V4 Pro in single continuous thread per issue for 90%+ prefix cache discount.
-- **Compliance gates**: YELLOW, JUDGE → V4 Pro for isolated security and drift verification.
+- **Compliance gates**: YELLOW, JUDGE → V4 Pro for isolated compliance + security verification (injection, secrets, path traversal).
 
 ## Python-Only Architecture
 
@@ -163,6 +164,47 @@ the `prompts/` directory. The `mise.toml` file defines all task execution via
 
 When a skill file references `<SKILL_DIR>/<script>.sh`, resolve `<SKILL_DIR>` to
 `src/deviate/prompts/skills/<name>/` and use `deviate <subcommand>` instead.
+
+## 📚 Context-Aware Documentation (MANDATORY)
+
+The `context` CLI (`~/.local/share/mise/installs/node/24.14.0/bin/context`) is a local-first documentation
+MCP server for AI agents. It provides offline-queryable API docs for all project dependencies.
+**Always prefer `context query <lib> <topic>` over web fetching** — results are local, instant, and
+token-cheap.
+
+### Installed Packages
+
+| Package | Sections | Coverage |
+|---------|----------|----------|
+| `python@3.13` | 5,047 | stdlib + library reference |
+| `typer@0.12` | 302 | CLI framework |
+| `rich@13.8` | 170 | terminal formatting |
+| `pytest@9.0` | 952 | test framework |
+| `pydantic@2.13.4` | 508 | data validation |
+
+### Query Usage
+
+```
+context query <library@version> "<topic>"
+```
+
+Examples:
+```
+context query python@3.13 "subprocess run"
+context query typer@0.12 "create command"
+context query rich@13.8 "console print"
+context query pytest@9.0 "fixture scope"
+context query pydantic@2.13.4 "BaseModel field types"
+```
+
+### Documentation Refresh
+
+When a dependency version changes, update its docs:
+```
+context add <git-repo-url> --name <lib> --path docs --tag <semver>
+```
+
+See `/Users/werner/Development/tools/context/` for the tool source.
 
 ## Prompt Edit Discipline
 
