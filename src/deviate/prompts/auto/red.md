@@ -63,9 +63,6 @@ traceability_anchors:
     - "Given unexpired payload, When encoded, Then matching signature generated"
 assertions_established:
   - "assert service.encode(payload) is not None"
-git_ledger:
-  commit_sha: "a1b2c3d4e5"
-  message: "test(TASK-104): add failing acceptance criteria tests"
 ```
 </handover_manifest>
 </output_payload>
@@ -139,6 +136,8 @@ git_ledger:
 <output_format_schemas>
 Emit exclusively the finalized human-readable Markdown blueprint document satisfying the structural constraints of the output layout specification. Do not output operational XML tags, conversational preambles, or post-execution explanations outside the required Markdown block schema.
 
+**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations after your response (add, commit, branch management). Do NOT run `git add`, `git commit`, `git checkout -b`, or any other git mutation command. Writing files to disk is sufficient. Any git commands you run will create duplicate commits and corrupt the pipeline.
+
 # DeviaTDD Micro Red: {TASK_ID}
 
 Status: TEST_WRITTEN_FAILING
@@ -166,9 +165,6 @@ traceability_anchors:
 assertions_established:
   - "{ASSERTION_CRITERIA_1}"
   - "{ASSERTION_CRITERIA_2}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "test({TASK_ID}): add failing acceptance criteria tests"
 ```
 </handover_manifest>
 </output_format_schemas>
