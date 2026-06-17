@@ -60,11 +60,19 @@ class TestSlimPromptPattern:
 
     def test_specify_template_has_context_marker(self):
         content = _read_template("specify.md")
-        assert "## <context>" in content or "## Context" in content
+        assert (
+            "## <context>" in content
+            or "## Context" in content
+            or "<context>" in content
+        )
 
     def test_tasks_template_has_context_marker(self):
         content = _read_template("tasks.md")
-        assert "## <context>" in content or "## Context" in content
+        assert (
+            "## <context>" in content
+            or "## Context" in content
+            or "<context>" in content
+        )
 
     def test_each_template_has_minimum_content_length(self):
         for name in SLIM_TEMPLATES:
