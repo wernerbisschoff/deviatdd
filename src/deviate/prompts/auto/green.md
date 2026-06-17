@@ -121,15 +121,14 @@ test:
   command: "{VERIFICATION_COMMAND}"
   status: "PASS"
   output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
 ```
 </step>
 
 </execution_sequence>
 
 <output_format_schemas>
+**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations after your response (add, commit, branch management). Do NOT run `git add`, `git commit`, `git checkout -b`, or any other git mutation command. Writing files to disk is sufficient. Any git commands you run will create duplicate commits and corrupt the pipeline.
+
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
@@ -152,9 +151,6 @@ test:
   command: "{VERIFICATION_COMMAND}"
   status: "PASS"
   output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
-git_ledger:
-  commit_sha: "{COMMIT_SHA}"
-  message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
 ```
 </output_format_schemas>
 

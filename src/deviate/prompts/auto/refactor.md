@@ -130,13 +130,12 @@ reasoning:
       rationale: "<WHY_THIS_PATTERN>"
 artifacts:
   - "<FUNCTIONS_ADDED_OR_MODIFIED>"
-commit:
-  sha: "<COMMIT_SHA>"
-  message: "refactor({TASK_ID}): improve structure"
 ```
 </handover_manifest>
 
 </output_contract>
+
+**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations after your response (add, commit, branch management). Do NOT run `git add`, `git commit`, `git checkout -b`, or any other git mutation command. Writing files to disk is sufficient. Any git commands you run will create duplicate commits and corrupt the pipeline.
 
 <quality_indicators>
 Refactor is successful if:

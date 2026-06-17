@@ -818,9 +818,43 @@ def _run_red_phase(
     if manifest.yellow_trigger:
         c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
 
+    root = Path.cwd()
+    issue_id = task.get("issue_id", "")
+    scope = _build_scope(issue_id, tid)
+
+    test_files = _find_test_files(root)
+    if test_files:
+        proc = _run_test_cmd(root)
+        if proc.returncode == 0:
+            raise PhaseFailedError(
+                f"RED phase test passed for {tid}, expected a failing test"
+            )
+
+    _run_format_cmd(root)
+
+    try:
+        record = TaskRecord.model_validate(task)
+        record.status = "RED"
+        append_task_transition(record, ledger_path)
+    except Exception as e:
+        raise PhaseFailedError(f"RED phase ledger update failed for {tid}: {e}")
+
     session = session.force_transition_to("RED")
     session.save(session_path)
-    _verify_clean_worktree(Path.cwd(), "RED", tid)
+
+    _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
+
+    head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    session.red_commit_sha = head_sha
+    session.save(session_path)
+
+    _verify_clean_worktree(root, "RED", tid)
     return session
 
 
@@ -880,8 +914,30 @@ def _run_green_phase(
         session.yellow_triggered = True
     session.train_feedback = ""
     session.save(session_path)
+
+    root = Path.cwd()
+    issue_id = task.get("issue_id", "")
+    scope = _build_scope(issue_id, tid)
+
+    proc = _run_test_cmd(root)
+    if proc.returncode != 0:
+        raise PhaseFailedError(
+            f"GREEN phase tests failed for {tid}: {proc.stderr.strip() or proc.stdout.strip()}"
+        )
+
+    _run_format_cmd(root)
+
     try:
-        _verify_clean_worktree(Path.cwd(), "GREEN", tid)
+        record = TaskRecord.model_validate(task)
+        record.status = "GREEN"
+        append_task_transition(record, ledger_path)
+    except Exception as e:
+        raise PhaseFailedError(f"GREEN phase ledger update failed for {tid}: {e}")
+
+    _commit_phase(f"feat({scope}): GREEN phase - implementation", root)
+
+    try:
+        _verify_clean_worktree(root, "GREEN", tid)
     except PhaseFailedError as e:
         c.print(f"  [red]CLEAN_WORKTREE_FAILED[/] {e}")
         subprocess.run(
@@ -1072,7 +1128,8 @@ def _run_judge_phase(
         raise PhaseFailedError(
             f"JUDGE phase agent error for {tid}: agent returned no manifest"
         )
-    if manifest.status.upper() in ("FAILURE", "ERROR"):
+    verdict = getattr(manifest, "verdict", "")
+    if verdict.upper() == "COMPLIANCE_VIOLATION":
         c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
 
         feedback = manifest.rationale or ""
@@ -1150,10 +1207,31 @@ def _run_refactor_phase(
             f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
         )
 
+    root = Path.cwd()
+    issue_id = task.get("issue_id", "")
+    scope = _build_scope(issue_id, tid)
+
+    proc = _run_test_cmd(root)
+    if proc.returncode != 0:
+        raise PhaseFailedError(
+            f"REFACTOR phase tests failed for {tid}: {proc.stderr.strip() or proc.stdout.strip()}"
+        )
+
+    _run_format_cmd(root)
+
+    try:
+        record = TaskRecord.model_validate(task)
+        record.status = "COMPLETED"
+        append_task_transition(record, ledger_path)
+    except Exception as e:
+        raise PhaseFailedError(f"REFACTOR phase ledger update failed for {tid}: {e}")
+
+    _commit_phase(f"refactor({scope}): REFACTOR phase - cleanup", root)
+
     session = session.force_transition_to("IDLE")
     session.yellow_triggered = False
     session.save(session_path)
-    _verify_clean_worktree(Path.cwd(), "REFACTOR", tid)
+    _verify_clean_worktree(root, "REFACTOR", tid)
     c.print(f"  [bold green]COMPLETED[/] {tid}")
     return session
 
@@ -1185,7 +1263,8 @@ def _run_yellow_phase(
         raise PhaseFailedError(
             f"YELLOW phase agent error for {tid}: agent returned no manifest"
         )
-    if manifest.status.upper() == "FAILURE":
+    verdict = getattr(manifest, "verdict", "")
+    if verdict.upper() == "REJECTED":
         c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
         subprocess.run(
             ["git", "restore", "."],
@@ -1495,23 +1574,28 @@ def _run_execute_phase(
         prompt = _build_auto_prompt("execute", task, root)
         if train_feedback:
             prompt += f"\n\n<train_feedback>\n{train_feedback}\n</train_feedback>\n"
-            agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
-            manifest, _ = _invoke_agent(
-                prompt,
-                c,
-                backend_name=backend,
-                task_id=tid,
-                phase="EXECUTE",
-                output_callback=agent_output_callback,
+
+        agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
+        manifest, _ = _invoke_agent(
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="EXECUTE",
+            output_callback=agent_output_callback,
+        )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"EXECUTE phase agent error for {tid}: agent returned no manifest"
             )
-            if manifest is None:
-                raise PhaseFailedError(
-                    f"EXECUTE phase agent error for {tid}: agent returned no manifest"
-                )
-            if manifest.status.upper() in ("FAILURE", "ERROR"):
-                raise PhaseFailedError(
-                    f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
-                )
+        if manifest.status.upper() in ("FAILURE", "ERROR"):
+            raise PhaseFailedError(
+                f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            )
+
+        issue_id = task.get("issue_id", "")
+        scope = _build_scope(issue_id, tid)
+        _commit_phase(f"feat({scope}): EXECUTE phase - {tid}", root)
 
         _verify_clean_worktree(root, "EXECUTE", tid)
 
@@ -1546,7 +1630,8 @@ def _run_execute_phase(
                 f"JUDGE phase agent error for {tid}: agent returned no manifest"
             )
 
-        if judge_manifest.status.upper() in ("FAILURE", "ERROR"):
+        verdict = getattr(judge_manifest, "verdict", "")
+        if verdict.upper() == "COMPLIANCE_VIOLATION":
             feedback = judge_manifest.rationale or ""
             tf = getattr(judge_manifest, "train_feedback", None)
             if tf:
@@ -1570,6 +1655,12 @@ def _run_execute_phase(
         break
 
     c.print(f"  [bold green]COMPLETED[/] {tid}")
+    try:
+        record = TaskRecord.model_validate(task)
+        record.status = "COMPLETED"
+        append_task_transition(record, ledger_path)
+    except Exception as e:
+        c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
 
 
 class PhaseFailedError(Exception):
