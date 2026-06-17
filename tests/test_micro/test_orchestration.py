@@ -492,9 +492,8 @@ class TestMicroOrchestration:
                 f"Expected JUDGE_REJECTED: {result.output}"
             )
             assert "TRAIN" in result.output, f"Expected TRAIN retry: {result.output}"
-            assert "GREEN already done" not in result.output, (
-                "GREEN must NOT be skipped during TRAIN retry after rejection:\n"
-                f"{result.output}"
+            assert "GREEN →" in result.output.split("TRAIN")[-1], (
+                "GREEN must re-run during TRAIN retry after rejection"
             )
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"

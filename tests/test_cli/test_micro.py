@@ -631,11 +631,9 @@ class TestJudgeTrainRollback:
         )
         assert session_after.train_feedback == "Compliance violation"
 
-        assert not (root / "feature_test.py").exists(), (
-            "GREEN-introduced file must be reverted after rollback"
+        assert (root / "feature_test.py").exists(), (
+            "GREEN-introduced file must remain on disk after soft reset"
         )
-        assert not (root / "refactor.py").exists(), "All GREEN commits must be reverted"
-
         assert (root / "feature.py").exists(), (
             "RED-introduced file must be preserved after rollback"
         )

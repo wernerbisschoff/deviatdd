@@ -1052,7 +1052,7 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     )
     append_rollback_snapshot(snapshot, root / ".deviate")
 
-    # Discard any uncommitted session state that would conflict with revert
+    # Discard any uncommitted session state
     subprocess.run(
         ["git", "checkout", "--quiet", "--", ".deviate/"],
         cwd=root,
@@ -1060,26 +1060,13 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     )
 
-    if red_sha == commit_sha:
-        revert_args = ["git", "revert", "--no-edit", "HEAD"]
-    else:
-        revert_args = ["git", "revert", "--no-edit", f"{red_sha}..HEAD"]
-    result = subprocess.run(
-        revert_args,
+    # Soft reset to RED boundary — keeps GREEN's files staged
+    subprocess.run(
+        ["git", "reset", "--soft", red_sha],
         cwd=root,
         capture_output=True,
         env=_git_env(),
     )
-    if result.returncode != 0:
-        stderr = result.stderr.strip() or "unknown revert failure"
-        _log(f"git revert failed: {stderr}")
-        subprocess.run(
-            ["git", "revert", "--abort"],
-            cwd=root,
-            capture_output=True,
-            env=_git_env(),
-        )
-        raise RuntimeError(f"git revert failed: {stderr}")
     return red_sha
 
 
@@ -1130,7 +1117,10 @@ def _run_judge_phase(
         if hasattr(manifest, "train_feedback") and manifest.train_feedback:
             feedback = manifest.train_feedback
 
-        _execute_rollback(root, feedback)
+        try:
+            _execute_rollback(root, feedback)
+        except Exception as e:
+            c.print(f"  [yellow]ROLLBACK_FAILED[/] {e} — proceeding with train feedback")
 
         tasks_md = _resolve_tasks_md(root, task)
         if tasks_md is not None:
@@ -1621,7 +1611,10 @@ def _run_execute_phase(
 
             c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
 
-            _execute_rollback(root, feedback)
+            try:
+                _execute_rollback(root, feedback)
+            except Exception as e:
+                c.print(f"  [yellow]ROLLBACK_FAILED[/] {e} — proceeding with retry")
 
             if attempt < max_judge_attempts - 1:
                 train_feedback = feedback
