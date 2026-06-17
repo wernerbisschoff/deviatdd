@@ -100,8 +100,38 @@ class DeviateConfig(BaseModel):
     timeout_seconds: int = Field(default=300, gt=0)
     agent_export_mode: Literal["local", "global"] = "local"
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    models: dict[str, str] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
+
+
+def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
+    if not models:
+        return None
+    phase_lower = phase.lower()
+    lookup = {k.lower(): v for k, v in models.items() if v}
+    if phase_lower in lookup:
+        return lookup[phase_lower]
+    if "default" in lookup:
+        return lookup["default"]
+    return None
+
+
+def load_models_from_config(root: Path) -> dict[str, str]:
+    config_path = root / ".deviate" / "config.toml"
+    if not config_path.exists():
+        return {}
+    try:
+        import tomllib
+
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+        models = data.get("models", {})
+        if isinstance(models, dict):
+            return {k: str(v) for k, v in models.items()}
+        return {}
+    except Exception:
+        return {}
 
 
 class PytestReportConfig(BaseModel):

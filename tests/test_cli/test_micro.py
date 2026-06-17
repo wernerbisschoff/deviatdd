@@ -309,6 +309,7 @@ class TestRunAllMonitorE2E:
             task_id: str = "",
             phase: str = "",
             output_callback: object = None,
+            **kwargs: object,
         ) -> tuple[HandoverManifest | None, str]:
             if output_callback is not None:
                 output_callback(f"[{phase}] Starting {task_id}...")
@@ -376,6 +377,7 @@ class TestRunAllMonitorE2E:
             task_id: str = "",
             phase: str = "",
             output_callback: object = None,
+            **kwargs: object,
         ) -> tuple[HandoverManifest | None, str]:
             if output_callback is not None:
                 line_a = f"Line {len(emitted_lines) + 1}: {task_id} {phase} step 1"
@@ -437,6 +439,7 @@ class TestRunAllMonitorE2E:
             task_id: str = "",
             phase: str = "",
             output_callback: object = None,
+            **kwargs: object,
         ) -> tuple[HandoverManifest | None, str]:
             if task_id == "TSK-001-02" and phase == "RED":
                 return (

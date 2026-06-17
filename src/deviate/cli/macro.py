@@ -38,7 +38,7 @@ from deviate.core.validation import (
     validate_sections,
     validate_yaml_frontmatter,
 )
-from deviate.state.config import SessionState
+from deviate.state.config import SessionState, resolve_phase_model
 from deviate.state.ledger import IssueRecord, _read_ledger, append_issue_record
 
 
@@ -657,7 +657,23 @@ def _invoke_agent_phase(phase: str, contract: dict[str, str]) -> None:
     prompt = _build_slim_prompt(phase, contract)
     backend = AgentBackend()
     try:
-        manifest = backend.invoke(prompt)
+        root = Path.cwd()
+        config_path = root / ".deviate" / "config.toml"
+        model = None
+        if config_path.exists():
+            try:
+                import tomllib
+
+                with open(config_path, "rb") as f:
+                    data = tomllib.load(f)
+                models = data.get("models", {})
+                if isinstance(models, dict):
+                    model = resolve_phase_model(
+                        phase, {k: str(v) for k, v in models.items()}
+                    )
+            except Exception:
+                pass
+        manifest = backend.invoke(prompt, model=model)
     except AgentSubprocessError as e:
         _halt(phase.upper(), str(e))
     if manifest.status != "PASS":
