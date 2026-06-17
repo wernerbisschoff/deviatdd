@@ -75,9 +75,9 @@ class TestJudgePre:
 
     def test_judge_pre_violation(self, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
-            spec_dir = Path("specs") / "004-micro-layer"
+            spec_dir = Path("specs") / "004-micro-layer" / "issues"
             spec_dir.mkdir(parents=True)
-            spec_file = spec_dir / "spec.md"
+            spec_file = spec_dir / "ISS-TEST-001.md"
             spec_file.write_text(
                 "# Protected Module\n\nModule: src/deviate/core/protected.py\n"
             )
