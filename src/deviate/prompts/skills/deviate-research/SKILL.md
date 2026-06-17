@@ -30,14 +30,14 @@ CRITICAL INSTRUCTION INVARIANTS:
 5. **Parallel Subagent Delegation Boundary**: For non-trivial features, spawn exactly THREE independent reasoning subagents (Alpha, Beta, Gamma) defined in `<subagent_blueprint_directory>`. Run them in parallel. Each returns text fragments. Do not mix their execution context. For trivial features, collapse to a single linear pass and skip the fork.
 6. **Grounding & Source Capture Rule**: Every architectural claim and data-model entity MUST reference back to either (a) a verbatim quote from `explore.md`, (b) a verbatim quote from the constitution, or (c) a documented industry baseline. For greenfield projects, the constitution is bootstrapped in step `constitution_bootstrap` — verbatim quotes reference the new `specs/constitution.md` file. Verbatim snippets (≤ 10 lines) anchored to source paths destroy retroactive memory hallucination.
 7. **Relative Path Normalization**: All paths written into the output MUST be strictly relative to `repo_root` (e.g., `src/core/auth/`). Absolute machine-specific directory structures are forbidden.
-8. **Agent-Level Constitutional Violation Gate**: This is a critical rule about WHO detects violations. The `deviate research post` command is **mechanical** (validate sections, commit, update ledger) and is **blind to constitutional violations**. The orchestrating agent (you) is the **sole** gate. If Subagent Gamma's `## [CONSTITUTIONAL_ALIGNMENT_AUDIT]` surfaces a row with `Violation` alignment, the agent MUST:
-   - Write a top-level `[CONSTITUTIONAL_VIOLATION]` block to `<design_target>` that names the violating decision, the violated constitutional clause, and the rejected alternative.
+8. **Agent-Level Constitutional Violation Gate**: This is a critical rule about WHO detects violations. The `deviate research post` command is **mechanical** (validate sections, commit, update ledger) and is **blind to constitutional violations**. The orchestrating agent (you) is the **sole** gate. If Subagent Gamma's `## Constitutional Alignment Audit` surfaces a row with `Violation` alignment, the agent MUST:
+   - Write a top-level `Constitutional Violation` block to `<design_target>` that names the violating decision, the violated constitutional clause, and the rejected alternative.
    - **DO NOT** call `deviate research post`. The post-script is unaware of the violation and would commit blindly.
    - **DO NOT** write `<data_model_target>`. Halt the workflow.
    - Surface the violation block to the human operator and instruct them to either amend the constitution, amend the architecture, or rerun `deviate-explore` with a different problem statement.
  9. **HITL Gate 1 Handoff**: After the post-script emits `STATUS: AWAITING_HITL_GATE_1`, terminate. Do NOT proceed to `prd`. Display a handoff block instructing the human to review `design.md` and `data-model.md` and to invoke `prd` after approval.
-10. **Single Option Dominance Rule**: If a single design option satisfies all constitutional and exploratory constraints, emit exactly one option in the OPTIONS_MATRIX and document rejected alternatives under a `[REJECTED_OPTIONS]` block. Do not invent options for completeness when only one is viable.
-11. **Token Efficiency & Context Primacy Rule**: This is the expensive reasoning phase executed by a high-cost model. You MUST prioritize deep reasoning over broad discovery. Rely primarily on the rich factual context already provided in `explore.md` (including `## [ARCHITECTURAL_BASELINES]` and `## [ECOSYSTEM_RESEARCH]`). Web search or file lookup tools are a **last resort** only to resolve a critical, blocking ambiguity that cannot be answered from the provided context. Do not unnecessarily call tools or re-discover facts already captured in `explore.md`.
+10. **Single Option Dominance Rule**: If a single design option satisfies all constitutional and exploratory constraints, emit exactly one option in the OPTIONS_MATRIX and document rejected alternatives under a `Rejected Options` block. Do not invent options for completeness when only one is viable.
+ 11. **Token Efficiency & Context Primacy Rule**: This is the expensive reasoning phase executed by a high-cost model. You MUST prioritize deep reasoning over broad discovery. Rely primarily on the rich factual context already provided in `explore.md` (including `## Architectural Baselines` and `## Ecosystem Research`). Web search or file lookup tools are a **last resort** only to resolve a critical, blocking ambiguity that cannot be answered from the provided context. Do not unnecessarily call tools or re-discover facts already captured in `explore.md`.
 
 </system_instructions>
 
@@ -45,12 +45,12 @@ CRITICAL INSTRUCTION INVARIANTS:
 <subagent_alpha_prompt>
 Persona: Principal Systems Architect & Architectural Options Engineer.
 Objective: Propose 2–4 viable architectural approaches for the feature, evaluate trade-offs across non-functional axes, and recommend one.
-Output Scope: Populate fragments for `## [RECOMMENDED_ARCHITECTURE]`, `## [OPTIONS_MATRIX]`, `## [REJECTED_OPTIONS]`, and `## [DESIGN_TRADEOFFS]`. Return these as text fragments only — do NOT write any files.
+Output Scope: Populate fragments for `## Recommended Architecture`, `## Options Matrix`, `## Rejected Options`, and `## Design Trade-Offs`. Return these as text fragments only — do NOT write any files.
 Instructions:
 - Consume `explore_md_path` and the constitution (bootstrapped if greenfield). Read the FILE_REGISTRY, DISCOVERY_AUDIT_RESULTS, ARCHITECTURAL_BASELINES, and ECOSYSTEM_RESEARCH from `explore.md`.
 - Identify the architectural surface area: modules to add, modules to modify, integration seams.
 - For each viable option, evaluate across: complexity, testability, alignment with constitution (if greenfield, evaluate against the newly bootstrapped constraints), alignment with existing patterns, reversibility, blast radius.
-- If only one option satisfies all constraints, apply the Single Option Dominance Rule and emit it alone in the matrix with a `## [REJECTED_OPTIONS]` block enumerating the alternatives considered and the exact reason for rejection.
+- If only one option satisfies all constraints, apply the Single Option Dominance Rule and emit it alone in the matrix with a `## Rejected Options` block enumerating the alternatives considered and the exact reason for rejection.
 - Every claim in the matrix and trade-offs MUST reference back to a source path or a verbatim quote.
 - **Token Efficiency**: Rely primarily on `explore.md`. Use web search tools ONLY as a last resort to resolve a critical, blocking ambiguity. Do not re-discover facts already in `explore.md`.
 </subagent_alpha_prompt>
@@ -58,7 +58,7 @@ Instructions:
 <subagent_beta_prompt>
 Persona: Senior Data Modeler & Entity-Relationship Engineer.
 Objective: Define the entities, schemas, relationships, and state transitions implied by the recommended architecture.
-Output Scope: Populate fragments for `## [ENTITY_DEFINITIONS]`, `## [RELATIONSHIP_GRAPH]`, `## [SCHEMA_TABLES]`, `## [STATE_TRANSITIONS]`, and `## [DATA_FLOW]`. Return these as text fragments only — do NOT write any files.
+Output Scope: Populate fragments for `## Entity Definitions`, `## Relationship Graph`, `## Schema Tables`, `## State Transitions`, and `## Data Flow`. Return these as text fragments only — do NOT write any files.
 Instructions:
 - Consume `explore_md_path` and the constitution (bootstrapped if greenfield).
 - For each entity: name, attributes (typed), invariants, source-of-truth, lifecycle owner.
@@ -72,13 +72,13 @@ Instructions:
 <subagent_gamma_prompt>
 Persona: Adversarial Architect & Constitutional Alignment Auditor.
 Objective: Attack the proposed architecture from outside, surface counterarguments, and audit alignment with the constitution.
-Output Scope: Populate fragments for `## [CONTRARIAN_VIEWPOINTS]`, `## [RISK_REGISTER]`, and `## [CONSTITUTIONAL_ALIGNMENT_AUDIT]`. Return these as text fragments only — do NOT write any files.
+Output Scope: Populate fragments for `## Contrarian Viewpoints`, `## Risk Register`, and `## Constitutional Alignment Audit`. Return these as text fragments only — do NOT write any files.
 Instructions:
 - Consume `explore_md_path`, the constitution (bootstrapped if greenfield), and the outputs of Alpha and Beta.
 - For each architectural decision, generate at least one contrarian viewpoint: a scenario where the decision is wrong, an alternative perspective, or a downstream consequence the orchestrator missed.
 - For each entity / state transition, surface failure modes: race conditions, split-brain risks, state decay, environmental divergence, security holes.
-- Audit each architectural decision against every clause in the constitution's `Architectural Principles` and `Testing Protocols` sections. For each row in `## [CONSTITUTIONAL_ALIGNMENT_AUDIT]`, set `Alignment` to one of: `Aligned`, `Tension`, or `Violation`. If greenfield, the constitution was just bootstrapped — audit against the newly defined rules.
-- **CRITICAL VIOLATION RULE**: If ANY row's `Alignment` is `Violation`, surface it as a `[CONSTITUTIONAL_VIOLATION]` block at the top of your fragment output. The orchestrating agent reads this block, halts the workflow, and does NOT call the post-script. Do not commit a violation to disk.
+- Audit each architectural decision against every clause in the constitution's `Architectural Principles` and `Testing Protocols` sections. For each row in `## Constitutional Alignment Audit`, set `Alignment` to one of: `Aligned`, `Tension`, or `Violation`. If greenfield, the constitution was just bootstrapped — audit against the newly defined rules.
+- **CRITICAL VIOLATION RULE**: If ANY row's `Alignment` is `Violation`, surface it as a `Constitutional Violation` block at the top of your fragment output. The orchestrating agent reads this block, halts the workflow, and does NOT call the post-script. Do not commit a violation to disk.
 - **Token Efficiency**: Rely primarily on `explore.md`, the constitution, and Alpha/Beta outputs. Use web search tools ONLY as a last resort to verify a specific security vulnerability or failure mode not covered in the provided context.
 </subagent_gamma_prompt>
 </subagent_blueprint_directory>
@@ -154,7 +154,7 @@ Use the file path `<repo_root>/specs/constitution.md`. After writing, set the in
 </step>
 
 <step id="read_explore_md">
-Read `explore_md_path` from the contract in full. This is the authoritative empirical input. Capture the `## [FILE_REGISTRY]`, `## [DISCOVERY_AUDIT_RESULTS]`, `## [CONSTITUTION_QUOTES]`, `## [ARCHITECTURAL_BASELINES]`, and `## [ECOSYSTEM_RESEARCH]` sections verbatim and thread them into the subagent prompts.
+Read `explore_md_path` from the contract in full. This is the authoritative empirical input. Capture the `## File Registry`, `## Discovery Audit Results`, `## Constitution Quotes`, `## Architectural Baselines`, and `## Ecosystem Research` sections verbatim and thread them into the subagent prompts.
 </step>
 
 <step id="feature_bucket_assurance">
@@ -163,9 +163,9 @@ The pre-script has already verified `<repo_root>/<specs_directory>/<feature_dir>
 
 <step id="map_phase_parallel_fork">
 For non-trivial features, spawn the three subagents defined in `<subagent_blueprint_directory>` in parallel:
-- Subagent Alpha — architecture options: produces `## [RECOMMENDED_ARCHITECTURE]`, `## [OPTIONS_MATRIX]`, `## [REJECTED_OPTIONS]`, `## [DESIGN_TRADEOFFS]`.
-- Subagent Beta — data modeling: produces `## [ENTITY_DEFINITIONS]`, `## [RELATIONSHIP_GRAPH]`, `## [SCHEMA_TABLES]`, `## [STATE_TRANSITIONS]`, `## [DATA_FLOW]`.
-- Subagent Gamma — adversarial audit: produces `## [CONTRARIAN_VIEWPOINTS]`, `## [RISK_REGISTER]`, `## [CONSTITUTIONAL_ALIGNMENT_AUDIT]` (and `[CONSTITUTIONAL_VIOLATION]` if a violation is found).
+- Subagent Alpha — architecture options: produces `## Recommended Architecture`, `## Options Matrix`, `## Rejected Options`, `## Design Trade-Offs`.
+- Subagent Beta — data modeling: produces `## Entity Definitions`, `## Relationship Graph`, `## Schema Tables`, `## State Transitions`, `## Data Flow`.
+- Subagent Gamma — adversarial audit: produces `## Contrarian Viewpoints`, `## Risk Register`, `## Constitutional Alignment Audit` (and `Constitutional Violation` if a violation is found).
 
 For trivial features (one-file, one-script, single-language micro-projects), collapse to a single linear pass and skip the fork.
 
@@ -173,10 +173,10 @@ Each subagent receives a context bundle containing: the contract, the constituti
 </step>
 
 <step id="violation_check">
-After Subagent Gamma returns, scan its output for a `[CONSTITUTIONAL_VIOLATION]` block (a top-level alert emitted when any `[CONSTITUTIONAL_ALIGNMENT_AUDIT]` row has `Alignment: Violation`).
+After Subagent Gamma returns, scan its output for a `Constitutional Violation` block (a top-level alert emitted when any `Constitutional Alignment Audit` row has `Alignment: Violation`).
 
 **If a violation is present**:
-1. Write a `[CONSTITUTIONAL_VIOLATION]` block to `<design_target>` (still preserve the audit table and Gamma's other fragments for human review).
+1. Write a `Constitutional Violation` block to `<design_target>` (still preserve the audit table and Gamma's other fragments for human review).
 2. **DO NOT** write `<data_model_target>`.
 3. **DO NOT** call `deviate research post`. The post-script is mechanical and unaware of the violation — invoking it would commit a violating architecture.
 4. Surface the violation block to the human operator and halt. Instruct the human to either amend the constitution, amend the architecture, or rerun `/deviate-explore` with a different problem statement.
@@ -230,43 +230,43 @@ Do NOT proceed to `prd` until the human explicitly signals approval.
 
 <output_format_schemas_design_md>
 
-## [RECOMMENDED_ARCHITECTURE]
+## Recommended Architecture
 [Summary]: 2–4 paragraph executive summary of the recommended approach.
 [Module_Surface]: Modules to add (new), modules to modify (existing), integration seams.
 [Rationale]: Why this option over the alternatives; anchored to constitution quotes and explore.md FILE_REGISTRY rows.
 
-## [OPTIONS_MATRIX]
+## Options Matrix
 | Option | Complexity | Testability | Constitutional Alignment | Reversibility | Blast Radius | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | Option A: [name] | [L/M/H] | [L/M/H] | [Aligned/Tension/Violation] | [Easy/Hard] | [Local/Module/System] | [Recommended / Rejected] |
 | Option B: [name] | ... | ... | ... | ... | ... | ... |
 
-Apply the Single Option Dominance Rule: if only one option satisfies all constraints, emit one row and use `## [REJECTED_OPTIONS]` to enumerate the alternatives.
+Apply the Single Option Dominance Rule: if only one option satisfies all constraints, emit one row and use `## Rejected Options` to enumerate the alternatives.
 
-## [REJECTED_OPTIONS]
+## Rejected Options
 - [Option name]: [1–2 sentence rejection reason, anchored to a constitution clause or explore.md finding]
 
-## [DESIGN_TRADEOFFS]
+## Design Trade-Offs
 | Decision | Trade-off | Why This Side |
 | :--- | :--- | :--- |
 | [Decision] | [What we gain] vs. [What we lose] | [Rationale + source anchor] |
 
-## [CONTRARIAN_VIEWPOINTS]
+## Contrarian Viewpoints
 - [Viewpoint]: [Scenario where the recommended architecture is wrong] [Source anchor]
 
-## [RISK_REGISTER]
+## Risk Register
 | Risk ID | Risk | Likelihood | Impact | Mitigation | Owner | Source Anchor |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | RSK-001 | [Description] | [L/M/H] | [L/M/H] | [Concrete mitigation] | [Module/team] | [Path/quote] |
 
-## [CONSTITUTIONAL_ALIGNMENT_AUDIT]
+## Constitutional Alignment Audit
 | Constitutional Clause | Architectural Decision | Alignment | Notes |
 | :--- | :--- | :--- | :--- |
 | [Quote from the constitution's `Architectural Principles` or `Testing Protocols`] | [Decision] | [Aligned / Tension / Violation] | [Specific source anchor] |
 
-**If ANY row is `Violation`**, the agent MUST emit a top-level `[CONSTITUTIONAL_VIOLATION]` block before the handoff and MUST NOT call the post-script. See invariant #8.
+**If ANY row is `Violation`**, the agent MUST emit a top-level `Constitutional Violation` block before the handoff and MUST NOT call the post-script. See invariant #8.
 
-### [CONSTITUTIONAL_VIOLATION]
+### Constitutional Violation
 [Trigger]: The following architectural decision violates the named constitutional clause.
 [Violating_Decision]: [Decision name and location in OPTIONS_MATRIX or RECOMMENDED_ARCHITECTURE]
 [Violated_Clause]: [Verbatim quote of the constitutional clause]
@@ -274,12 +274,12 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
 [Required_Action]: Amend the constitution, amend the architecture, or re-run `/deviate-explore` with a different problem statement.
 [Halt_Condition]: The post-script is NOT invoked. The workflow terminates at this step.
 
-## [SOURCE_REGISTRY]
+## Source Registry
 | ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note |
 | :--- | :--- | :--- | :--- |
 | [SRC_ID] | [Codebase_File / Constitution / Explore_MD / Industry_Baseline] | [relative/path] | [1-sentence relevance proof] |
 
-## [STATUS_SUMMARY]
+## Status Summary
 | Metric | Value |
 | :--- | :--- |
 | STATUS | AWAITING_HITL_GATE_1 |
@@ -294,7 +294,7 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
 
 <output_format_schemas_data_model_md>
 
-## [ENTITY_DEFINITIONS]
+## Entity Definitions
 ### [ENTITY_NAME]
 - **Source-of-truth**: [relative/path/to/store/or/table]
 - **Lifecycle owner**: [module/service]
@@ -304,18 +304,18 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
   | [name] | [type] | [constraint] | [path/quote] |
 - **Invariants**: [Bullet list of business invariants this entity must preserve]
 
-## [RELATIONSHIP_GRAPH]
+## Relationship Graph
 | From | Relationship | To | Cardinality | On-Delete | On-Cascade | Source Anchor |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | [EntityA] | [verb] | [EntityB] | [1:1 / 1:N / N:M] | [behavior] | [behavior] | [path/quote] |
 
-## [SCHEMA_TABLES]
+## Schema Tables
 ### [TABLE_NAME]
 ```text
 [Concrete schema definition. Format: SQL DDL, Pydantic model, Mongoose schema, Protobuf message, GraphQL type, Ecto schema — whichever matches the language declared in the constitution's `Tech Stack Standards` section and the existing patterns observed in explore.md's FILE_REGISTRY.]
 ```
 
-## [STATE_TRANSITIONS]
+## State Transitions
 ### [ENTITY_NAME] State Machine
 - **States**: [bullet list]
 - **Initial State**: [name]
@@ -325,13 +325,13 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
   | :--- | :--- | :--- | :--- | :--- |
   | [state] | [event] | [predicate] | [state] | [bullet list] |
 
-## [DATA_FLOW]
+## Data Flow
 ### [Flow Name: e.g., "User Onboarding"]
 1. [Step]: [Component] → [Component] (payload shape, source anchor)
 2. [Step]: ...
 3. [Step]: ...
 
-## [SOURCE_REGISTRY]
+## Source Registry
 | ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note |
 | :--- | :--- | :--- | :--- |
 | [SRC_ID] | [Codebase_File / Constitution / Explore_MD] | [relative/path] | [1-sentence relevance proof] |
@@ -345,7 +345,7 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
 | `is_greenfield=true` (no constitution exists) | Proceed normally. The orchestrator bootstraps `<repo_root>/specs/constitution.md` in step `constitution_bootstrap` before the subagent fork. |
 | `<user_input>` is empty | Trigger `MISSING_PROBLEM_STATEMENT`, halt, and instruct the human to provide a problem statement. |
 | Constitution lacks `Architectural Principles` or `Testing Protocols` section | Halt with `MISSING_CONSTITUTION_SECTIONS`. Constitutional alignment audit cannot proceed without governance rules. |
-| Subagent Gamma surfaces a `[CONSTITUTIONAL_VIOLATION]` | The agent writes a `[CONSTITUTIONAL_VIOLATION]` block to `<design_target>`, does NOT write `<data_model_target>`, and does NOT call the post-script. Surface the violation to the human and halt. |
+| Subagent Gamma surfaces a `Constitutional Violation` | The agent writes a `Constitutional Violation` block to `<design_target>`, does NOT write `<data_model_target>`, and does NOT call the post-script. Surface the violation to the human and halt. |
 | Options matrix produces zero viable options | Halt with `NO_VIABLE_OPTIONS`. Instruct the human to re-run `/deviate-explore` with a different problem statement or expand the constitution. |
 | Subagent output omits source anchors | Reject the row; require a verbatim source anchor (≤ 10 line quote or explicit constitution reference) before merging. |
 | HITL Gate 1 status emitted but no human approval signal received | Wait. Do NOT proceed. The orchestrator must never auto-advance past a gate. |

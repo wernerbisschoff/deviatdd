@@ -39,7 +39,7 @@ CRITICAL INSTRUCTION INVARIANTS:
    - Identify existing patterns, hooks, utilities, or components that the task should extend or integrate with
    - Map target files (both existing files to modify and new files to create)
    - Determine scope boundaries: what is in-scope vs defensively excluded
-   - Output findings in a `## [DISCOVERY_AUDIT]` block
+   - Output findings in a `## Discovery Audit` block
 
 4. **Shared PRD Lifecycle**:
    a) Check if `specs/adhoc/prd.md` exists. If not, create it with a minimal header:
@@ -70,29 +70,29 @@ CRITICAL INSTRUCTION INVARIANTS:
    git add -A && git commit --no-verify -m "docs(adhoc): add issue {ISSUE_ID} - {title}"
    ```
 
-8. **Output Summary**: Display the `## [DISCOVERY_AUDIT]`, the `## [TARGET_ISSUE_EMISSION]`, and the `## [LEDGER_REGISTRATION]` blocks to the user in clean Markdown. Do NOT emit the full PRD contents — only confirm the FR section was appended.
+8. **Output Summary**: Display the `## Discovery Audit`, the `## Target Issue Emission`, and the `## Ledger Registration` blocks to the user in clean Markdown. Do NOT emit the full PRD contents — only confirm the FR section was appended.
 
 </execution_sequence>
 
 <output_format_schemas>
 <!-- Canonical issue section ordering reference: src/deviate/prompts/skills/deviate-shard/SKILL.md — issue file section headers and ordering must stay in sync with shard -->
 
-## [DISCOVERY_AUDIT]
+## Discovery Audit
 - **Target Files Identified**: [List of existing files to modify and new files to create, with relative paths]
 - **Existing Patterns**: [Relevant patterns, hooks, utilities, or conventions found in the codebase that this task should follow]
 - **Scope Boundary**: [Brief: what's in scope]
 - **Excluded**: [Brief: what's explicitly out of scope]
 
-## [REQUIREMENTS_SYNTHESIS]
+## Requirements Synthesis
 - **FR-ADHOC-NNN**: [One-sentence functional requirement]
 - **US-NNN-01**: As a [user role], I want [capability] so that [value]. *(Ref: FR-ADHOC-NNN)*
 - **AC-ADHOC-NNN-01**: Given [state], When [trigger], Then [assertion]
 - **AC-ADHOC-NNN-02**: Given [state], When [trigger], Then [assertion]
 
-## [SHARED_PRD_APPEND]
+## Shared PRD Append
 Appended FR-ADHOC-NNN section to `specs/adhoc/prd.md`.
 
-## [TARGET_ISSUE_EMISSION]
+## Target Issue Emission
 **File_Target_Path**: `specs/adhoc/issues/{NNN}-{slug}.md`
 
 ````markdown
@@ -104,57 +104,57 @@ coordinates_with: []
 issue_id: ISS-NNN
 ---
 
-## [SYSTEM_TOPOLOGY_MAPPING]
+## System Topology Mapping
 - **Epic Target Domain**: `specs/adhoc/`
 - **Local Issue File**: `issues/{NNN}-{slug}.md`
 - **Primary Architectural Workstation**: [Relative paths to files/modules impacted]
 
-## [THE_PROBLEM_CONTRACT]
+## The Problem Contract
 [1-2 sentences: what user/system journey this issue delivers, why it matters]
 
-## [SCOPE_BOUNDARIES]
+## Scope Boundaries
 ### Hard Inclusions
 - [Explicit architectural item, layer integration, or data transition required]
 
 ### Defensive Exclusions
 - [Explicit boundary limit, mocked component constraint, or deferred feature to block code drift]
 
-## [UPSTREAM_REQUIREMENT_TRACING]
+## Upstream Requirement Tracing
 - **Requirements Tokens**: `FR-ADHOC-NNN`
 - **Acceptance Criteria Tokens**: `AC-ADHOC-NNN-01`, `AC-ADHOC-NNN-02`
 - **Data Model Entities**: [Entity names if applicable]
 
-## [USER_STORIES_LEDGER]
+## User Stories Ledger
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
 - **US-NNN-01**: As a [user role], I want [capability] so that [value]. *(Ref: FR-ADHOC-NNN)*
 
-## [ATDD_ACCEPTANCE_CRITERIA]
+## ATDD Acceptance Criteria
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
 **Scenario NNN**: [Scenario title]
 **Given** [precondition]
 **When** [trigger action]
 **Then** [expected outcome]
 
-## [EDGE_CASES_AND_BOUNDARIES]
+## Edge Cases and Boundaries
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
 - [Edge case or boundary condition description]
 
-## [PERFORMANCE_CONSTRAINTS]
+## Performance Constraints
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
 - L_max: [Latency limit in ms]
 - Throughput: [Throughput requirement]
 
-## [MULTI_TIERED_VERIFICATION_TARGETS]
+## Multi-Tiered Verification Targets
 - **Unit Sandbox Targets**: [Explicit test file paths and test case names]
 - **Integration Sandbox Targets**: [Cross-module or end-to-end test targets]
 
-## [DEMONSTRATION_PATH]
+## Demonstration Path
 ```bash
 # Exact, copy-pasteable verification command
 ```
 ````
 
-## [LEDGER_REGISTRATION]
+## Ledger Registration
 ```
 Ledger registration: adhoc issue created
 → ISSUE_ID: ISS-NNN
