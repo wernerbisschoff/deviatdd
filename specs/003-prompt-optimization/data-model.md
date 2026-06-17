@@ -3,7 +3,7 @@
 
 ---
 
-## [ENTITY_DEFINITIONS]
+## Entity Definitions
 
 ### PromptTemplate
 - **Source-of-truth**: `src/deviate/prompts/` directory tree, indexed via `importlib.resources.files("deviate.prompts")`
@@ -217,7 +217,7 @@
 
 ---
 
-## [RELATIONSHIP_GRAPH]
+## Relationship Graph
 
 | From | Relationship | To | Cardinality | On-Delete | On-Cascade | Source Anchor |
 |------|-------------|----|------------|-----------|------------|---------------|
@@ -246,7 +246,7 @@
 
 ---
 
-## [SCHEMA_TABLES]
+## Schema Tables
 
 All schemas use Pydantic v2 models (Python 3.13, Pydantic >=2.0 per constitution.md:80).
 
@@ -567,7 +567,7 @@ class OptimizationAttempt(BaseModel):
 
 ---
 
-## [STATE_TRANSITIONS]
+## State Transitions
 
 ### TemplateVariant.status State Machine
 
@@ -669,7 +669,7 @@ class OptimizationAttempt(BaseModel):
 
 ---
 
-## [DATA_FLOW]
+## Data Flow
 
 ### Data Flow 1: Prompt Evaluation Cycle
 
@@ -796,7 +796,7 @@ _build_agent_prompt() -> $ARGUMENTS->JSON ---------->|  (YAML)    |
 
 ---
 
-## [SOURCE_REGISTRY]
+## Source Registry
 
 | ID | Type | Source / Path | Relevance Note |
 |----|------|---------------|----------------|

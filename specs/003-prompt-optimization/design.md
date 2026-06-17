@@ -3,7 +3,7 @@
 
 ---
 
-## [PROBLEM_DEFINITION]
+## Problem Definition
 
 [Statement]: Investigate prompt optimization tools, techniques, and best practices (Promptfoo, LangSmith, Agenta, etc.) with the goal of codifying guidelines for DeviaTDD's prompt templates (currently 30+ prompt/skill files) and identifying token-efficiency opportunities.
 
@@ -11,11 +11,11 @@
 
 [Exclusions]: Implementation code, test generation — all deferred to the `specify + tasks + TDD` pipeline.
 
-**Source**: explore.md §PROBLEM_DEFINITION (L7-13)
+**Source**: explore.md §Problem Definition (L7-13)
 
 ---
 
-## [SYSTEM_TOPOLOGY_MAPPING]
+## System Topology
 
 ### Modules to Add
 
@@ -40,11 +40,11 @@
 
 The cache layer is a drop-in enhancement to `assembly.py` — `assemble_prompt()` acquires an optional `optimize_cache: bool = True` parameter that delegates to the new module. The validator integrates into the existing `mise run check` pipeline as a new pytest marker `@pytest.mark.prompt_quality`, and into the EXPLORE→RESEARCH gate as an automated pre-flight check. No API surface changes to `src/deviate/cli/micro.py` or `src/deviate/cli/macro.py` — they continue calling the same `assemble_prompt()` and `_build_agent_prompt()` signatures.
 
-**Source**: explore.md FILE_REGISTRY (L347-395), assembly.py (L53-62), macro.py (L298-344), micro.py (L121-133)
+**Source**: explore.md File Registry (L347-395), assembly.py (L53-62), macro.py (L298-344), micro.py (L121-133)
 
 ---
 
-## [THE_PROBLEM_CONTRACT]
+## The Problem Contract
 
 This epic delivers a **Dual-Layer Prompt Optimization System** that addresses two independent but complementary concerns:
 
@@ -60,11 +60,11 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 - Duplication audit — shared prose flagged for extraction into `prefix.md`
 - `deviate prompt check` and `deviate prompt stats` CLI commands
 
-**Source**: explore.md PROBLEM_DEFINITION (L7-13), ECOSYSTEM_RESEARCH (L238-343), ARCHITECTURAL_BASELINES (L124-234)
+**Source**: explore.md Problem Definition (L7-13), Ecosystem Research (L238-343), Architectural Baselines (L124-234)
 
 ---
 
-## [SCOPE_BOUNDARIES]
+## Scope Boundaries
 
 **In Scope**:
 - Codification of prompt engineering standards as a constitution appendix
@@ -83,11 +83,11 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 - Model-tier enforcement in AgentBackend (pre-existing gap outside this epic — explore.md L165-174)
 - Runtime agent prompt quality scoring during TDD phases (validator is a build-time CI gate)
 
-**Source**: explore.md PROBLEM_DEFINITION (L7-13), ARCHITECTURAL_BASELINES (L128-164), ECOSYSTEM_RESEARCH (L240-301); constitution.md L19-22
+**Source**: explore.md Problem Definition (L7-13), Architectural Baselines (L128-164), ECOSYSTEM_RESEARCH (L240-301); constitution.md L19-22
 
 ---
 
-## [PERFORMANCE_CONSTRAINTS]
+## Performance Constraints
 
 | Constraint | Target | Source |
 |-----------|--------|--------|
@@ -101,7 +101,7 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 
 ---
 
-## [MULTI_TIERED_VERIFICATION_TARGETS]
+## Verification Targets
 
 ### Tier 1 — Unit Tests (pytest, every commit)
 
@@ -110,9 +110,9 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 | `load_template()` and `assemble_prompt()` regression | `tests/test_meso/test_prompt_assembly.py` | explore.md L389 |
 | Static template validation (existence, frontmatter, content) | `tests/test_meso/test_auto_prompt_templates.py` | explore.md L390 |
 | Skill discovery and installation | `tests/test_core/test_skills.py`, `tests/test_integration/test_skill_installation.py` | explore.md L391-392 |
-| Cache-optimized assembly produces functionally equivalent output to legacy | New: `tests/test_prompts/test_cache_aware.py` | design.md RECOMMENDED_ARCHITECTURE |
-| Validator checks (structural, variable, token budget, duplication) | New: `tests/test_prompts/test_validator.py` | design.md RECOMMENDED_ARCHITECTURE |
-| `deviate prompt check` and `deviate prompt stats` CLI commands | New: `tests/test_cli/test_prompt.py` | design.md RECOMMENDED_ARCHITECTURE |
+| Cache-optimized assembly produces functionally equivalent output to legacy | New: `tests/test_prompts/test_cache_aware.py` | design.md Recommended Architecture |
+| Validator checks (structural, variable, token budget, duplication) | New: `tests/test_prompts/test_validator.py` | design.md Recommended Architecture |
+| `deviate prompt check` and `deviate prompt stats` CLI commands | New: `tests/test_cli/test_prompt.py` | design.md Recommended Architecture |
 
 ### Tier 2 — Lint & Quality (ruff, every commit)
 
@@ -120,7 +120,7 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 |--------|---------|--------|
 | Python lint | `ruff check .` | constitution.md L54 |
 | Python formatting | `ruff format --check .` | constitution.md L42 |
-| Prompt quality | `deviate prompt check` (pytest marker) | design.md RECOMMENDED_ARCHITECTURE |
+| Prompt quality | `deviate prompt check` (pytest marker) | design.md Recommended Architecture |
 
 ### Tier 3 — Integration (bats, CI gate)
 
@@ -130,7 +130,7 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 
 ---
 
-## [ATDD_ACCEPTANCE_CRITERIA_LEDGER]
+## Acceptance Criteria
 
 **Scenario 1: Prompt quality check passes on valid templates**
 - **Given** all 33 prompt templates exist in `src/deviate/prompts/` with valid structure
@@ -166,11 +166,11 @@ This epic delivers a **Dual-Layer Prompt Optimization System** that addresses tw
 - **Given** `specs/constitution.md` has the new Prompt Engineering Standards appendix
 - **When** `deviate prompt check` is invoked
 - **Then** every template is validated against the rubric in the appendix (structural integrity, variable completeness, token budget, duplication)
-- **Source**: constitution.md §4_DEFINITION_OF_DONE (L64-72); explore.md PROBLEM_DEFINITION (L7-13)
+- **Source**: constitution.md §4 Definition of Done (L64-72); explore.md PROBLEM_DEFINITION (L7-13)
 
 ---
 
-## [RECOMMENDED_ARCHITECTURE]
+## Recommended Architecture
 
 ### Executive Summary
 
@@ -196,7 +196,7 @@ This architecture is **Python-only** (Python 3.13, Typer, Rich — constitution.
 
 ---
 
-## [OPTIONS_MATRIX]
+## Options Matrix
 
 | Option | Complexity | Testability | Constitutional Alignment | Reversibility | Blast Radius | Verdict |
 |--------|-----------|-------------|-------------------------|---------------|-------------|---------|
@@ -206,7 +206,7 @@ This architecture is **Python-only** (Python 3.13, Typer, Rich — constitution.
 
 ---
 
-## [REJECTED_OPTIONS]
+## Rejected Options
 
 - **Custom Evaluator Only (No Caching Restructuring)**: Satisfies constitutional constraints (Python-only, pytest-integrable) but addresses only "codify guidelines" and leaves "identifying token-efficiency opportunities" unanswered. The 50x-120x cache discount (explore.md:317-318) is entirely untapped. The validator module from this option is absorbed into the recommended architecture's Layer 2.
 
@@ -216,7 +216,7 @@ This architecture is **Python-only** (Python 3.13, Typer, Rich — constitution.
 
 ---
 
-## [DESIGN_TRADE_OFF_MATRIX]
+## Trade-off Analysis
 
 | Decision | Trade-off | Why This Side |
 |----------|-----------|---------------|
@@ -229,7 +229,7 @@ This architecture is **Python-only** (Python 3.13, Typer, Rich — constitution.
 
 ---
 
-## [CONTRARIAN_VIEWPOINTS]
+## Contrarian Viewpoints
 
 **CV-1: The problem to solve is not token count, it's template duplication.** Each skill and auto template independently re-states "CRITICAL INSTRUCTION INVARIANTS" that mirror constitution.md. If these invariants were injected once as a shared prefix (as `inject_constitution()` already does for auto templates, assembly.py:21-42), the per-invocation token count would drop without an optimization framework. **Source**: explore.md L128-136, assembly.py L21-42.
 
@@ -245,7 +245,7 @@ This architecture is **Python-only** (Python 3.13, Typer, Rich — constitution.
 
 ---
 
-## [RISK_REGISTER]
+## Risk Register
 
 | Risk ID | Risk | Likelihood | Impact | Mitigation | Owner | Source Anchor |
 |---------|------|-----------|--------|------------|-------|---------------|
@@ -254,12 +254,12 @@ This architecture is **Python-only** (Python 3.13, Typer, Rich — constitution.
 | RSK-003 | tiktoken counts diverge from actual model tokenization | Low | Low — slight inaccuracy | Use cl100k_base as conservative over-estimate; document margin | Architect | explore.md L314-321 |
 | RSK-004 | Three-segment assembly changes agent behavior | Medium | Medium | Output-comparison tests: both legacy and optimized must produce behaviorally equivalent prompts | Developer | assembly.py L53-62 |
 | RSK-005 | Standards without enforced automation create process drift | High | Low — docs only | Add pytest-based validation tests for prompt invariants | Developer | explore.md L52-56 |
-| RSK-006 | Shared prefix.md changes affect 11 auto templates simultaneously | Medium | Medium | Prefix.md changes trigger full auto template test suite | Developer | FILE_REGISTRY explore.md L347-395 |
+| RSK-006 | Shared prefix.md changes affect 11 auto templates simultaneously | Medium | Medium | Prefix.md changes trigger full auto template test suite | Developer | File Registry explore.md L347-395 |
 | RSK-007 | Cache optimization couples independent phases | Low | Medium | Keep per-phase static prefixes independent; no shared blocks across model tiers | Architect | explore.md L312-320; constitution.md L14 |
 
 ---
 
-## [CONSTITUTIONAL_ALIGNMENT_AUDIT]
+## Constitutional Alignment Audit
 
 | Constitutional Clause (Verbatim Quote) | Architectural Decision | Alignment | Notes |
 |----------|----------------------|-----------|-------|
@@ -285,7 +285,7 @@ Gamma's audit identified constitutional violations for **Promptfoo adoption** (N
 
 ---
 
-## [SOURCE_REGISTRY]
+## Source Registry
 
 | ID | Type | Source / Path | Relevance Note |
 |----|------|---------------|----------------|
@@ -304,7 +304,7 @@ Gamma's audit identified constitutional violations for **Promptfoo adoption** (N
 
 ---
 
-## [SYSTEM_STATUS_SUMMARY]
+## Status Summary
 
 | Metric | Value |
 |--------|-------|
