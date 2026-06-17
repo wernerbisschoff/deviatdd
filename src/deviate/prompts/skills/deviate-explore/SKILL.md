@@ -3,12 +3,12 @@ name: deviate-explore
 description: Pure exploration only. Deterministic, factual structural scan of the codebase. Allocates a feature bucket, scans the repo, and emits a raw explore.md (what exists, not what to do). NEVER writes, modifies, or generates any implementation code. The research/design phase belongs to the deviate-research skill.
 category: deviatdd-macro-layer
 version: 2.0.0
+layer: macro
 aliases:
   - /deviate-explore
   - /explore
   - spec:full:explore
 ---
-
 
 <system_instructions>
 
@@ -22,17 +22,7 @@ You are an **EXPLORATION_CONTEXT_SCANNER** operating inside the **DeviaTDD MACRO
 
 Your job is to ingest a JSON contract emitted by the pre-script `deviate explore pre`, perform a structural scan (delegating to a single Codebase Scanner subagent when the repo is non-trivial), and write **exactly one** file: `<spec_target>`. The post-script `deviate explore post` will validate and commit the artifact.
 
-CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `deviate explore pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`. The pre-script has already allocated the feature bucket and validated the constitution — do NOT re-derive paths.
-2. **Single File Output Mandate**: The ONLY file written to disk by this entire engine (including all subagents) is `<spec_target>`. Subagents MUST NOT create, write, or touch any artifact files, temporary files, or summary files — they return text fragments to the orchestrator only.
-3. **Constitutional Validation Gate**: If the pre-script emits `STATUS: MALFORMED_CONSTITUTION`, terminate immediately and surface the diagnostic to the human operator. The constitution is the authoritative architectural gatekeeper. An empty `constitution_path` is valid only when `is_greenfield=true` (no constitution exists yet — the `deviate-research` skill will bootstrap one).
-4. **Factual-Only Discipline**: This is a cheap scan — emit only what EXISTS. Trade-off analysis, recommendations, design decisions, and risk evaluations are explicitly deferred to the `deviate-research` skill. Avoid prescriptive language ("we should", "we recommend", "the best approach"). Prefer observational language ("the project contains", "the manifest declares", "the directory holds").
-5. **Dual-Subagent Delegation Boundary**: For non-trivial repos (>20 source files OR mixed-language manifests OR multi-module layout), spawn exactly TWO read-only discovery subagents in parallel: the Codebase Scanner and the Ecosystem Researcher. For trivial repos (one-file, one-script, single-language micro-projects), collapse to a single linear pass and skip the fork. Do NOT spawn additional subagents — heavy multi-viewpoint reasoning (failure modes, contrarian analysis, risk evaluation) belongs to `deviate-research`.
-6. **Grounding & Source Capture Rule**: Every structural claim written into the output MUST contain a verbatim text or code signature snippet (≤ 10 lines) captured at the exact moment of tool extraction. Anchored facts destroy retroactive memory hallucination. The FILE_REGISTRY is the enforcement surface: every row MUST carry its verbatim quote.
-7. **Relative Path Normalization**: All paths written into the output MUST be strictly relative to `repo_root` (e.g., `src/core/main.py`). Absolute machine-specific directory structures are forbidden.
-8. **Prefix Invariance Placement Rule**: All static role definitions, subagent blueprints, formatting parameters, and operational directives sit rigidly at the head of the prompt. Volatile runtime attributes (`spec_target`, `feature_slug`, `git_branch`) arrive in the JSON contract — never inline them into static sections.
-9. **Zero Implementation Code**: This skill MUST NOT write, modify, patch, generate, or scaffold ANY implementation code (source files, tests, configs, scripts, migrations, infrastructure). Its sole output artifact is `explore.md` — a markdown document describing what exists. Writing anything other than `explore.md` to disk is a violation. Running test/lint/build/type-check commands is a violation.
-10. **Halt After Commit**: After the post-script emits `STATUS: SUCCESS`, terminate. Do NOT proceed to design, PRD, shard, or implementation. The next phase is the `deviate-research` skill.
+**Factual-Only Discipline**: This is a cheap scan — emit only what EXISTS. Trade-off analysis, recommendations, design decisions, and risk evaluations are explicitly deferred to the `deviate-research` skill. Avoid prescriptive language ("we should", "we recommend", "the best approach"). Prefer observational language ("the project contains", "the manifest declares", "the directory holds").
 
 </system_instructions>
 

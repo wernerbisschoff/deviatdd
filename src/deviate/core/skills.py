@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib.resources
-import shutil
+import re
 from pathlib import Path
 
 
@@ -34,18 +34,82 @@ def resolve_skill(name: str, skills_root: Path | None = None) -> Path:
     return skill_path
 
 
+# ---------------------------------------------------------------------------
+# Layer prefix for cache-invariant skill composition
+# ---------------------------------------------------------------------------
+
+_LAYER_RE = re.compile(r"^layer:\s*(.+)\s*$", re.MULTILINE)
+_YAML_FM_RE = re.compile(r"^(---\n.*?\n---)\n", re.DOTALL)
+
+
+def _read_text(path: Path) -> str | None:
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def _resolve_core_dir() -> Path | None:
+    try:
+        return Path(importlib.resources.files("deviate.prompts").joinpath("core"))
+    except (ModuleNotFoundError, TypeError):
+        fallback = Path("src/deviate/prompts/core")
+        return fallback if fallback.exists() else None
+
+
+def compose_skill_body(raw: str, core_dir: Path) -> str | None:
+    """Compose a skill body by prepending core.md and layer-skill.md.
+
+    Returns the full composed text (frontmatter + prefix + original body),
+    or *None* if *raw* has no valid YAML frontmatter.
+
+    The *core_dir* must contain ``core.md`` and ``{layer}-skill.md`` files.
+    """
+    fm_match = _YAML_FM_RE.match(raw)
+    if not fm_match:
+        return None
+
+    frontmatter = fm_match.group(1)
+    body = raw[fm_match.end() :].lstrip()
+
+    parts: list[str] = []
+    core = _read_text(core_dir / "core.md")
+    if core:
+        parts.append(core)
+
+    layer_match = _LAYER_RE.search(frontmatter)
+    if layer_match:
+        layer = layer_match.group(1).strip()
+        layer_content = _read_text(core_dir / f"{layer}-skill.md")
+        if layer_content:
+            parts.append(layer_content)
+
+    prefix = "\n\n".join(parts) if parts else None
+    if prefix:
+        body = f"{prefix}\n\n{body}"
+
+    return f"{frontmatter}\n\n{body}"
+
+
 def install_skill(name: str, target_dir: Path, skills_root: Path | None = None) -> bool:
     skill_path = resolve_skill(name, skills_root)
     target_path = target_dir / name / "SKILL.md"
-    try:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-    except (FileNotFoundError, FileExistsError):
-        target_path.parent.mkdir(parents=False, exist_ok=True)
-    if target_path.exists() and target_path.read_text(
-        encoding="utf-8"
-    ) == skill_path.read_text(encoding="utf-8"):
+
+    raw = _read_text(skill_path)
+    if raw is None:
         return False
-    shutil.copy2(skill_path, target_path)
+
+    core_dir = _resolve_core_dir()
+    if core_dir is None:
+        return False
+
+    composed = compose_skill_body(raw, core_dir)
+    if composed is None:
+        return False
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if target_path.exists() and target_path.read_text(encoding="utf-8") == composed:
+        return False
+
+    target_path.write_text(composed, encoding="utf-8")
     return True
 
 
