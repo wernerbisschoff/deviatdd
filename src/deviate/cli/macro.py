@@ -33,6 +33,7 @@ from deviate.core.prd import extract_prd_requirements
 from deviate.core.repo import find_repo_root
 from deviate.core.validation import (
     ARTIFACT_VALIDATORS,
+    extract_section_body,
     validate_artifact,
     validate_sections,
     validate_yaml_frontmatter,
@@ -373,6 +374,37 @@ def research_post(
 # PRD
 # ---------------------------------------------------------------------------
 
+
+def _check_pending_hitl_decisions(design_path: Path) -> list[str]:
+    """Check design.md for unresolved HITL decisions.
+
+    Returns a list of pending decision descriptions. If empty, Gate 1 is clear.
+    """
+    if not design_path.exists():
+        # Let the existence check above handle this
+        return []
+
+    content = design_path.read_text(encoding="utf-8")
+    section_body = extract_section_body(content, "Pending HITL Decisions")
+    if not section_body:
+        # Section missing — the ARTIFACT_VALIDATORS check will catch this
+        # during research_post; treat as clear for PRD to proceed
+        return []
+
+    import re
+
+    pending_rows: list[str] = []
+    for line in section_body.splitlines():
+        line = line.strip()
+        # Match table data rows: starts with | and ends with | PENDING |
+        if line.startswith("|") and re.search(r"\|\s*PENDING\s*\|", line):
+            # Extract the Decision ID column (first cell after opening pipe)
+            parts = [p.strip() for p in line.split("|")]
+            decision_id = parts[1] if len(parts) > 1 else "?"
+            pending_rows.append(decision_id)
+    return pending_rows
+
+
 prd_app = typer.Typer(no_args_is_help=True, help="PRD phase commands")
 
 
@@ -398,6 +430,21 @@ def prd_pre(
     if missing:
         paths = "\n  - ".join(str(specs_root / epic_slug / a) for a in missing)
         _halt("PRD", f"missing upstream artifacts\n  - {paths}")
+
+    design_path = epic_dir / "design.md"
+    pending = _check_pending_hitl_decisions(design_path)
+    if pending:
+        console.print("[red]HITL GATE 1 — UNRESOLVED DECISIONS[/]")
+        console.print(
+            "The following items in `## Pending HITL Decisions` require human resolution:"
+        )
+        for item in pending:
+            console.print(f"  [yellow]•[/] {item}")
+        console.print()
+        console.print(
+            "Edit design.md to resolve each item (set Status to `RESOLVED`), then re-run."
+        )
+        _halt("PRD", "HITL Gate 1 not passed — pending decisions exist")
 
     session, session_path = _load_session_for_phase("PRD", dry_run=dry_run)
 
