@@ -840,20 +840,20 @@ def _run_green_phase(
 
 
 def _resolve_spec_md(root: Path, task: dict) -> str:
+    """Read spec-enriched issue file content for *task*.
+
+    The issue file IS the spec — spec sections are embedded in the issue
+    file markdown.  No separate ``spec.md`` exists.
+    """
     issue_id = task.get("issue_id", "")
     if not issue_id:
         return ""
     source_file = _resolve_issue_source_file(root, issue_id)
     if not source_file:
         return ""
-    parts = PurePosixPath(source_file)
-    if len(parts.parts) < 3:
-        return ""
-    epic = parts.parent.parent.name
-    slug = parts.stem
-    spec_path = root / "specs" / epic / slug / "spec.md"
-    if spec_path.exists():
-        return spec_path.read_text(encoding="utf-8")
+    issue_path = root / source_file
+    if issue_path.exists():
+        return issue_path.read_text(encoding="utf-8")
     return ""
 
 
@@ -2215,7 +2215,7 @@ def yellow_post(
 
 def _find_protected_modules(root: Path) -> list[str]:
     modules: list[str] = []
-    for spec_file in sorted(root.glob("specs/**/spec.md")):
+    for spec_file in sorted(root.glob("specs/**/issues/*.md")):
         content = spec_file.read_text(encoding="utf-8")
         for line in content.splitlines():
             stripped = line.strip()

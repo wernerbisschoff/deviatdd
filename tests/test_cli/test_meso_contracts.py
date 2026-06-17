@@ -105,11 +105,24 @@ class TestMesoContracts:
     def test_tasks_pre_contract_has_required_fields(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             self._setup_git_repo(tmp_path)
-            self._setup_minimal_env(tmp_path, session_phase="SPECIFY")
+            self._setup_minimal_env(
+                tmp_path, session_phase="SPECIFY", active_issue_id="ISS-TEST-001"
+            )
 
-            epic_dir = tmp_path / "specs" / "test-epic"
-            epic_dir.mkdir(parents=True, exist_ok=True)
-            (epic_dir / "spec.md").write_text("# Spec\n\nTest spec.\n")
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "ISS-TEST-001",
+                "type": "feature",
+                "title": "Test",
+                "status": "BACKLOG",
+                "source_file": "specs/test-epic/issues/ISS-TEST-001.md",
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+
+            issue_dir = specs_dir / "test-epic" / "issues"
+            issue_dir.mkdir(parents=True, exist_ok=True)
+            (issue_dir / "ISS-TEST-001.md").write_text("# Spec\n\nTest spec.\n")
 
             result = runner.invoke(cli, ["tasks", "pre"])
             assert result.exit_code == 0, result.output
@@ -151,11 +164,27 @@ class TestMesoContracts:
     def test_tasks_pre_dry_run_does_not_append_ledger(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             self._setup_git_repo(tmp_path)
-            self._setup_minimal_env(tmp_path, session_phase="SPECIFY")
+            self._setup_minimal_env(
+                tmp_path, session_phase="SPECIFY", active_issue_id="ISS-TEST-002"
+            )
+
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "ISS-TEST-002",
+                "type": "feature",
+                "title": "Test",
+                "status": "BACKLOG",
+                "source_file": "specs/test-epic/issues/ISS-TEST-002.md",
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+
+            issue_dir = specs_dir / "test-epic" / "issues"
+            issue_dir.mkdir(parents=True, exist_ok=True)
+            (issue_dir / "ISS-TEST-002.md").write_text("# Spec\n\nTest spec.\n")
 
             epic_dir = tmp_path / "specs" / "test-epic"
             epic_dir.mkdir(parents=True, exist_ok=True)
-            (epic_dir / "spec.md").write_text("# Spec\n\nTest spec.\n")
 
             ledger_path = epic_dir / "tasks.jsonl"
             ledger_path.write_text("")
