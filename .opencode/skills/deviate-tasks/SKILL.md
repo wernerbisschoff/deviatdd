@@ -3,6 +3,7 @@ name: deviate-tasks
 description: Decompose a spec-enriched issue file (with embedded-first fallback to spec.md) into a granular task decomposition (tasks.md) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
 category: deviatdd-meso-layer
 version: 1.0.0
+layer: meso
 aliases:
   - tasks
   - /deviate-tasks
@@ -10,6 +11,57 @@ aliases:
   - spec.core.tasks
   - /tasks
 ---
+
+## DeviaTDD Universal Invariants
+
+The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+
+1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
+
+2. **Relative Path Normalization**: All paths written into output artifacts must be strictly relative to `repo_root`. Absolute machine-specific paths are forbidden.
+
+3. **Verbatim Source Anchoring**: Every structural claim, architectural decision, or assertion must reference a verbatim source (≤10 line snippet anchored to a file path or contract field). Rows without source anchors are subject to post-script rejection.
+
+4. **Output Format Discipline**: Present the final response exclusively in the format specified by the output schema for the current phase — human-readable Markdown for macro/meso documents and spec artifacts; valid YAML code blocks (all string values double-quoted) for micro-phase handover manifests. Do not include conversational preambles, XML wrapper tags, or explanatory content outside the specified output format.
+
+5. **Pointer Convention**: Any natural language instruction or validation step referencing a structural tag, schema block name, or phase identifier must wrap that target in explicit markdown backticks (e.g., `tasks.md`, `spec.md`, `/research`).
+
+6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
+
+## KV Cache Preservation
+
+Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
+
+
+## Meso Layer Execution Model
+
+This phase operates inside the **DeviaTDD MESO LAYER** — localized research, planning, and task decomposition per issue.
+
+### Shared Meso Disciplines
+
+1. **Worktree Execution**: This phase runs inside a dedicated git worktree for a single issue. The pre-script resolves the worktree path and branch. All file operations are relative to the worktree root.
+
+2. **Issue/Spec Loading**: Read the spec-enriched issue file at `spec_path`. The issue file contains user stories, Gherkin acceptance criteria, edge cases, performance constraints, and a system topology mapping section.
+
+3. **Ledger State**: Issue state lives in `specs/issues.jsonl`. Task state lives in `tasks.jsonl`. Do NOT store task state in markdown files. `tasks.md` is a human-readable reference only.
+
+4. **Post-Script Validation**: The post-script validates required sections, updates the ledger, commits, and advances the session state. If validation fails, fix the output and re-run.
+
+5. **Branch Discipline**: All work happens on the dedicated issue branch. Do NOT switch branches or modify the main branch. Do NOT run `git checkout -b` or branch-switching commands — the worktree is pre-configured.
+
+6. **Zero Speculative Scope**: Analyze only files directly mapped in the system topology mapping. Do not expand scope beyond the issue's declared workstation files.
+
+7. **Deterministic Discovery**: Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
+
+<step id="handover_emission">
+After the post script completes, emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
+</step>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>
 
 
 <system_instructions>
@@ -39,12 +91,7 @@ Research artifacts (`design.md`, `data-model.md`) produced by the `deviate-resea
 
 CRITICAL INFERENCE PHYSICS INVARIANTS:
 1. **Context Reuse Rule**: This phase typically follows `/deviate-shard` or `/deviate-plan` in the same conversation. Reuse `BRANCH_NAME`, `WORKTREE_PATH`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG` from the shard/plan contract in your context. Do NOT re-run the shard or plan pre-script.
-2. **Input Resolution Rule**: The tasks pre-script emits a JSON contract on stdout. Parse `spec_path`, `tasks_target`, `design_path` (optional), `data_model_path` (optional) from that contract directly. The `spec_path` may refer to either the issue file (with embedded `[USER_STORIES_LEDGER]` and `[ATDD_ACCEPTANCE_CRITERIA]` sections) or a standalone `spec.md` — read whichever is provided. Do NOT re-derive.
-3. **Prefix Invariance Placement Rule**: All systematic definitions, roles, execution sequences, and parsing schemas sit statically at the absolute head. Volatile parameters (target plan text, code repository file maps) occupy the trailing edge inside `<context>`.
-4. **Context-Instruction Isolation (The Markov Blanket)**: Never mix operational instructions or framework requirements inside data payload nodes.
-5. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
-6. **Task Status Boundary**: Task status lives exclusively in `tasks.jsonl` (the append-only ledger). `tasks.md` is a human-readable reference — it must NOT contain status markers.
-7. **Output Schema Constraint**: Write the task ledger content directly to `<tasks_target>` using the Standard Markdown format defined in `<output_format_schemas>`. The file content is exactly the ledger body — no preamble, no postamble, no XML wrapper tags. The post-script will read the file, validate, and commit.
+2. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
 
 </system_instructions>
 
