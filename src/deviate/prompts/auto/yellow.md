@@ -23,6 +23,10 @@ After completion:
 
 </system_instructions>
 
+<spec_content>
+{spec_content}
+</spec_content>
+
 <proposal_schema>
 
 The GREEN phase emits the YELLOW proposal as structured JSON embedded in its YAML handover manifest:
@@ -56,7 +60,7 @@ The GREEN phase emits the YELLOW proposal as structured JSON embedded in its YAM
 1. Receive the YELLOW proposal from the orchestrator (emitted by the GREEN phase)
 2. Parse the proposed test changes: which files are modified, created, or deleted
 3. Read the rationale for each change
-4. Cross-reference with the `spec.md` acceptance criteria to ensure the changes do not invalidate existing contracts
+4. Cross-reference with `<spec_content>` acceptance criteria to ensure the changes do not invalidate existing contracts
 
 ### STEP_2: EVALUATE_CHANGES
 
@@ -71,7 +75,9 @@ Generate the evaluation verdict:
 
 ```yaml
 phase: YELLOW
+status: "PASS"
 task_id: "{TASK_ID}"
+next_phase: "GREEN"
 verdict: "APPROVED" | "REJECTED"
 summary: "One-sentence outcome"
 rationale_evaluation:
@@ -95,7 +101,6 @@ impact_assessment:
   coverage_change: "NEUTRAL" | "INCREASED" | "DECREASED"
   spec_coverage_maintained: true | false
   regression_risk: "LOW" | "MEDIUM" | "HIGH"
-next_action: "amend" | "revert"
 ```
 
 </execution_sequence>
@@ -106,7 +111,9 @@ Emit exclusively the YAML evaluation verdict block. Do not output conversational
 
 ```yaml
 phase: YELLOW
+status: "PASS"
 task_id: "{TASK_ID}"
+next_phase: "GREEN"
 verdict: "APPROVED" | "REJECTED"
 summary: "..."
 rationale_evaluation:
@@ -118,7 +125,6 @@ impact_assessment:
   coverage_change: "NEUTRAL" | "INCREASED" | "DECREASED"
   spec_coverage_maintained: true | false
   regression_risk: "LOW" | "MEDIUM" | "HIGH"
-next_action: "amend" | "revert"
 ```
 
 </output_format_schemas>

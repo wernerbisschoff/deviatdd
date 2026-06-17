@@ -36,12 +36,16 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **DeviaTDD MESO LAY
 <execution_sequence>
 
 <step id="contract_loaded">
-The CLI orchestrator has run `deviate tasks pre` and resolved the contract. Available context: `branch_name`, `worktree_full`, `spec_path`, `tasks_target`, `design_path`, `data_model_path`. Do NOT run `deviate tasks pre` — the orchestrator handles it.
+The CLI orchestrator has run `deviate tasks pre` and resolved the contract. Available context: `branch_name`, `worktree_full`, `spec_path`, `plan_path`, `tasks_target`, `design_path`, `data_model_path`. Do NOT run `deviate tasks pre` — the orchestrator handles it.
 </step>
 
 <step id="context_loading">
-Read `spec_path` in full for user stories, acceptance criteria, and project structure. If `design_path` or `data_model_path` are present, read those too.
+Read `{spec_path}` in full for user stories, acceptance criteria, and project structure. Read the plan below for the implementation strategy, workstation mapping, and risk assessment. If `design_path` or `data_model_path` are present, read those too.
 </step>
+
+<plan_content>
+{plan_content}
+</plan_content>
 
 <step id="workstation_mapping">
 Map all files touched by each user story from spec.md's system topology mapping. Group related files into workstation clusters. Derive phases from logical groupings.
@@ -57,7 +61,7 @@ For each workstation cluster:
 </step>
 
 <step id="write_tasks">
-Write the task decomposition to `<tasks_target>` following the output format schema. Write exactly the tasks content — no preamble, no postamble.
+Write the task decomposition to `{tasks_target}` following the output format schema. Write exactly the tasks content — no preamble, no postamble.
 </step>
 
 <step id="post_orchestrated">

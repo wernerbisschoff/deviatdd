@@ -277,6 +277,7 @@ class AgentBackend:
         backend: Literal["opencode", "claude", "droid"] | None = None,
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
+        cwd: str | None = None,
     ) -> HandoverManifest:
         backend_name: Literal["opencode", "claude", "droid"] = (
             backend or self.config.backend
@@ -288,13 +289,16 @@ class AgentBackend:
         cmd = backend_cmd.split()
         effective_timeout = timeout or self.config.timeout
 
+        popen_kwargs: dict[str, Any] = dict(
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if cwd is not None:
+            popen_kwargs["cwd"] = cwd
+
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
+            proc = subprocess.Popen(cmd, **popen_kwargs)
         except FileNotFoundError:
             raise AgentBinaryNotFoundError(
                 f"Agent binary not found on PATH for backend: {backend_name}"
@@ -311,12 +315,7 @@ class AgentBackend:
                 )
         except AgentTimeoutError:
             time.sleep(30)
-            retry_proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
+            retry_proc = subprocess.Popen(cmd, **popen_kwargs)
             if output_callback is not None:
                 stdout, stderr = self._invoke_streaming(
                     retry_proc,
@@ -345,6 +344,7 @@ class StubAgentBackend(AgentBackend):
         backend: Literal["opencode", "claude", "droid", "stub"] | None = None,
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
+        cwd: str | None = None,
     ) -> HandoverManifest:
         self._invoked = True
         if output_callback is not None:
