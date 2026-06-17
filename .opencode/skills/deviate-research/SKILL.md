@@ -38,6 +38,7 @@ CRITICAL INSTRUCTION INVARIANTS:
  9. **HITL Gate 1 Handoff**: After the post-script emits `STATUS: AWAITING_HITL_GATE_1`, terminate. Do NOT proceed to `prd`. Display a handoff block instructing the human to review `design.md` and `data-model.md` and to invoke `prd` after approval.
 10. **Single Option Dominance Rule**: If a single design option satisfies all constitutional and exploratory constraints, emit exactly one option in the OPTIONS_MATRIX and document rejected alternatives under a `Rejected Options` block. Do not invent options for completeness when only one is viable.
  11. **Token Efficiency & Context Primacy Rule**: This is the expensive reasoning phase executed by a high-cost model. You MUST prioritize deep reasoning over broad discovery. Rely primarily on the rich factual context already provided in `explore.md` (including `## Architectural Baselines` and `## Ecosystem Research`). Web search or file lookup tools are a **last resort** only to resolve a critical, blocking ambiguity that cannot be answered from the provided context. Do not unnecessarily call tools or re-discover facts already captured in `explore.md`.
+ 12. **Pending HITL Decisions Rule**: The `## Pending HITL Decisions` table in `<design_target>` MUST be populated with every decision that: (a) reverses or deviates from the explore brief, (b) rejects a tool or approach explicitly requested during explore, (c) introduces architectural changes not anticipated in explore, or (d) otherwise requires human judgment. If no such decisions exist, the table MUST contain zero rows (only the header and metadata comment). The `deviate prd pre` command will block PRD generation on any row with Status `PENDING` — this is the mechanism that enforces HITL Gate 1.
 
 </system_instructions>
 
@@ -186,6 +187,8 @@ After Subagent Gamma returns, scan its output for a `Constitutional Violation` b
 
 <step id="reduce_phase">
 Merge markdown fragments from Alpha, Beta, and Gamma into the two output contracts. Audit inconsistencies against the constitution. Enforce relative paths and verbatim evidence quotes on every row of every matrix.
+
+**Populate `## Pending HITL Decisions`**: Before writing `<design_target>`, review all architectural decisions in the merged output. For each decision that reverses the explore brief, rejects a tool explicitly asked for in explore, introduces novel architecture, or otherwise requires human judgment, add a row to the `## Pending HITL Decisions` table with Status `PENDING`. If no such decisions exist, leave the table with zero data rows (header + metadata comment only).
 </step>
 
 <step id="write_design_md">
@@ -217,6 +220,10 @@ HITL GATE 1 — Design Approval
 REVIEW:
   - <relative path to design.md>
   - <relative path to data-model.md>
+
+⚠  CHECK `## Pending HITL Decisions` in design.md — any PENDING items MUST
+   be resolved before PRD can proceed. The `deviate prd pre` command will
+   reject PRD generation until all items show RESOLVED.
 
 APPROVED → Run the `prd` skill next.
 CHANGES REQUESTED → Provide the specific edits; the orchestrator will re-run with the diff applied.
@@ -263,6 +270,17 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
 | Constitutional Clause | Architectural Decision | Alignment | Notes |
 | :--- | :--- | :--- | :--- |
 | [Quote from the constitution's `Architectural Principles` or `Testing Protocols`] | [Decision] | [Aligned / Tension / Violation] | [Specific source anchor] |
+
+## Pending HITL Decisions
+
+<!-- HITL_DECISIONS -->
+<!-- Populate with decisions that explicitly reverse or deviate from the explore brief, reject tools requested in the explore phase, introduce novel architecture not anticipated during explore, or otherwise require human judgment before PRD proceeds. If empty (zero rows), PRD may proceed automatically. -->
+
+| Decision ID | Question | Context | Impact | Recommended Resolution | Status |
+|---|---|---|---|---|---|
+| `HITL-001` | [Short question] | [1-2 sentence context linking to explore.md or design.md] | [What changes if this decision goes the other way] | [What the design recommends] | `PENDING` / `RESOLVED` |
+
+**Gate Rule**: If ANY row has Status `PENDING`, the `deviate prd pre` command will halt and display this table to the human operator. The human MUST resolve each PENDING row (either by changing the Status to `RESOLVED` or by amending the design) before PRD can proceed.
 
 **If ANY row is `Violation`**, the agent MUST emit a top-level `Constitutional Violation` block before the handoff and MUST NOT call the post-script. See invariant #8.
 
@@ -348,7 +366,7 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
 | Subagent Gamma surfaces a `Constitutional Violation` | The agent writes a `Constitutional Violation` block to `<design_target>`, does NOT write `<data_model_target>`, and does NOT call the post-script. Surface the violation to the human and halt. |
 | Options matrix produces zero viable options | Halt with `NO_VIABLE_OPTIONS`. Instruct the human to re-run `/deviate-explore` with a different problem statement or expand the constitution. |
 | Subagent output omits source anchors | Reject the row; require a verbatim source anchor (≤ 10 line quote or explicit constitution reference) before merging. |
-| HITL Gate 1 status emitted but no human approval signal received | Wait. Do NOT proceed. The orchestrator must never auto-advance past a gate. |
+| HITL Gate 1 status emitted but no human approval signal received | Wait. Do NOT proceed. The orchestrator must never auto-advance past a gate. The `## Pending HITL Decisions` section must have zero PENDING rows before PRD is allowed to run. |
 | `design.md` and `data-model.md` reference each other's sections | Allowed; cite the cross-reference with the relative path. |
 
 </edge_case_handling>

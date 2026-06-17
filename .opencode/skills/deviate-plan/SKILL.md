@@ -79,6 +79,8 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 7. **Generate `plan.md`**: Write the planning document to the issue workspace directory. The file must follow the `<output_format_schemas>` below. Write exactly the plan content — no preamble, no postamble, no XML wrapper tags.
 
+8. **Commit `plan.md`**: Run ``deviate plan post`` (still inside the worktree). This command validates plan.md (non-empty, correct path), runs pre-commit hooks (lint + full test suite), commits the plan with a conventional commit message, and advances the session to TASKS. If validation fails, fix the plan and re-run.
+
 </execution_sequence>
 
 
