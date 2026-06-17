@@ -8,15 +8,11 @@ This phase is followed by **HITL Gate 1** — the human reviews `design.md` and 
 
 Your job is to ingest a JSON contract emitted by `deviate research pre`, dispatch three independent reasoning subagent forks, and write **exactly two** files: `<design_target>` and `<data_model_target>`.
 
-CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `deviate research pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`.
-2. **Two-File Output Mandate**: ONLY `<design_target>` and `<data_model_target>` are written. Subagents return text fragments only.
-3. **Architectural Discipline**: Perform trade-off analysis, evaluate options, define data shapes, surface risks. Do NOT preempt `/prd`, `/shard`, or implementation.
-4. **Parallel Subagent Delegation**: Spawn Alpha (architecture options), Beta (data modeling), Gamma (adversarial audit) in parallel.
-5. **Grounding Rule**: Every claim MUST reference a verbatim quote from `explore.md`, the constitution, or a documented industry baseline.
-6. **Constitutional Violation Gate**: If Gamma surfaces a `CONSTITUTIONAL_VIOLATION`, write it to `design_target`, do NOT write `data_model_target`, do NOT call the post-script. Halt and surface to the human.
-7. **Single Option Dominance Rule**: If only one option satisfies all constraints, emit one option with a REJECTED_OPTIONS block.
-8. **Automated Execution Invariant**: Execute all steps autonomously. Do not ask questions.
+### Phase-Specific Invariants
+
+1. **Architectural Discipline**: Perform trade-off analysis, evaluate options, define data shapes, surface risks. Do NOT preempt `/prd`, `/shard`, or implementation.
+
+2. **Single Option Dominance Rule**: If only one option satisfies all constraints, emit one option with a Rejected Options block.
 
 </system_instructions>
 
@@ -28,30 +24,23 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 <execution_sequence>
 
-<step id="pre_script">
-```bash
-deviate research pre [<epic> | --feature <value>]
-```
-
-The JSON contract on stdout contains: `status`, `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`.
-
-If `status` is `EXPLORE_NOT_FOUND` — halt and instruct to run `/explore` first.
-If `status` is `READY` — proceed.
+<step id="contract_loaded">
+The CLI orchestrator has run `deviate research pre` and resolved the contract. Available context: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT run `deviate research pre` — the orchestrator handles it.
 </step>
 
 <step id="constitution_bootstrap">
-If `is_greenfield=true` and no constitution exists, bootstrap `<repo_root>/specs/constitution.md` from exploration findings (FILE_REGISTRY, ECOSYSTEM_RESEARCH, ARCHITECTURAL_BASELINES) using the standard constitution format. This is the only exception to the two-file mandate.
+If `is_greenfield=true` and no constitution exists, bootstrap `<repo_root>/specs/constitution.md` from exploration findings (file registry, ecosystem research, architectural baselines) using the standard constitution format. This is the only exception to the two-file mandate.
 </step>
 
 <step id="read_explore_md">
-Read `explore_md_path` in full. Capture FILE_REGISTRY, DISCOVERY_AUDIT_RESULTS, CONSTITUTION_QUOTES, ARCHITECTURAL_BASELINES, ECOSYSTEM_RESEARCH.
+Read `explore_md_path` in full. Capture file registry, discovery audit results, constitution quotes, architectural baselines, ecosystem research.
 </step>
 
 <step id="parallel_fork">
 Spawn three subagents in parallel:
-- **Alpha (Architecture Options)**: Outputs RECOMMENDED_ARCHITECTURE, OPTIONS_MATRIX, REJECTED_OPTIONS, DESIGN_TRADEOFFS.
-- **Beta (Data Modeling)**: Outputs ENTITY_DEFINITIONS, RELATIONSHIP_GRAPH, SCHEMA_TABLES, STATE_TRANSITIONS, DATA_FLOW.
-- **Gamma (Adversarial Audit)**: Outputs CONTRARIAN_VIEWPOINTS, RISK_REGISTER, CONSTITUTIONAL_ALIGNMENT_AUDIT.
+- **Alpha (Architecture Options)**: Outputs recommended architecture, options matrix, rejected options, design trade-offs.
+- **Beta (Data Modeling)**: Outputs entity definitions, relationship graph, schema tables, state transitions, data flow.
+- **Gamma (Adversarial Audit)**: Outputs contrarian viewpoints, risk register, constitutional alignment audit.
 
 For trivial features, collapse to single linear pass.
 </step>
@@ -72,34 +61,31 @@ Write the architecture, options, trade-offs, recommendation, contrarian viewpoin
 Write entities, relationships, schemas, state transitions, and data flow to `<data_model_target>`.
 </step>
 
-<step id="post_script">
-```bash
-deviate research post
-```
-Validates all research artifacts and creates a single commit. Returns `STATUS: AWAITING_HITL_GATE_1`. Do NOT proceed to `/prd`.
+<step id="post_orchestrated">
+The CLI orchestrator runs `deviate research post` after your response to validate artifacts and create a single commit. Returns `STATUS: AWAITING_HITL_GATE_1`. Do NOT run it yourself.
 </step>
 
 </execution_sequence>
 
 <output_format_schemas_design_md>
-## [RECOMMENDED_ARCHITECTURE]
-## [OPTIONS_MATRIX]
-## [REJECTED_OPTIONS]
-## [DESIGN_TRADEOFFS]
-## [CONTRARIAN_VIEWPOINTS]
-## [RISK_REGISTER]
-## [CONSTITUTIONAL_ALIGNMENT_AUDIT]
-## [SOURCE_REGISTRY]
-## [STATUS_SUMMARY]
+## Recommended Architecture
+## Options Matrix
+## Rejected Options
+## Design Trade-Offs
+## Contrarian Viewpoints
+## Risk Register
+## Constitutional Alignment Audit
+## Source Registry
+## Status Summary
 </output_format_schemas_design_md>
 
 <output_format_schemas_data_model_md>
-## [ENTITY_DEFINITIONS]
-## [RELATIONSHIP_GRAPH]
-## [SCHEMA_TABLES]
-## [STATE_TRANSITIONS]
-## [DATA_FLOW]
-## [SOURCE_REGISTRY]
+## Entity Definitions
+## Relationship Graph
+## Schema Tables
+## State Transitions
+## Data Flow
+## Source Registry
 </output_format_schemas_data_model_md>
 
 <edge_case_handling>
@@ -112,7 +98,3 @@ Validates all research artifacts and creates a single commit. Returns `STATUS: A
 | HITL Gate 1 emitted but no human approval | Wait. Do not auto-advance. |
 </edge_case_handling>
 
-## <context>
-<user_input>
-$ARGUMENTS
-</user_input>
