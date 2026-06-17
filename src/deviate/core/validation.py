@@ -25,6 +25,7 @@ ARTIFACT_VALIDATORS: dict[str, list[str]] = {
         "Contrarian Viewpoints",
         "Risk Register",
         "Constitutional Alignment Audit",
+        "Pending HITL Decisions",
         "Source Registry",
         "Status Summary",
     ],
