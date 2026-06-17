@@ -141,12 +141,16 @@ class TestRunAllMonitorIntegration:
         _setup_session(tmp_git_repo, ISSUE_ID)
         return tmp_git_repo
 
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_creates_monitor_in_run_all(
         self,
         mock_invoke_agent: MagicMock,
         mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
         env: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -154,6 +158,12 @@ class TestRunAllMonitorIntegration:
         mock_invoke_agent.return_value = (
             HandoverManifest(phase="RED", status="SUCCESS"),
             "",
+        )
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         mock_monitor = MagicMock(spec=OrchestrationMonitor)
         with patch("deviate.cli.micro.OrchestrationMonitor", return_value=mock_monitor):
@@ -163,12 +173,16 @@ class TestRunAllMonitorIntegration:
         assert mock_monitor.push_event.called
         mock_monitor.__exit__.assert_called_once()
 
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_json_flag_toggles_monitor_mode(
         self,
         mock_invoke_agent: MagicMock,
         mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
         env: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -177,16 +191,26 @@ class TestRunAllMonitorIntegration:
             HandoverManifest(phase="RED", status="SUCCESS"),
             "",
         )
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
         result = runner.invoke(cli, ["run", "--all", "--json"])
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert '"event":' in result.output
 
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_non_tty_uses_text_output(
         self,
         mock_invoke_agent: MagicMock,
         mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
         env: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -194,6 +218,12 @@ class TestRunAllMonitorIntegration:
         mock_invoke_agent.return_value = (
             HandoverManifest(phase="RED", status="SUCCESS"),
             "",
+        )
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         result = runner.invoke(cli, ["run", "--all"])
         assert result.exit_code == 0, f"CLI failed: {result.output}"
@@ -248,22 +278,27 @@ class TestRunAllMonitorE2E:
         _setup_session(tmp_git_repo, E2E_ISSUE_ID)
         return tmp_git_repo
 
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
-    @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
     def test_run_all_with_live_display_agent_output(
         self,
         mock_load_skill: MagicMock,
         mock_invoke_agent: MagicMock,
-        mock_run_pytest: MagicMock,
         mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
         env3: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_pytest.return_value = subprocess.CompletedProcess(
+        mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         mock_load_skill.return_value = "# Dummy skill content"
 
@@ -308,22 +343,27 @@ class TestRunAllMonitorE2E:
 
         assert "Traceback" not in result.output
 
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
-    @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
     def test_agent_output_lines_in_fifo_order(
         self,
         mock_load_skill: MagicMock,
         mock_invoke_agent: MagicMock,
-        mock_run_pytest: MagicMock,
         mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
         env3: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_pytest.return_value = subprocess.CompletedProcess(
+        mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         mock_load_skill.return_value = "# Dummy skill content"
 
@@ -366,22 +406,27 @@ class TestRunAllMonitorE2E:
                 f"FIFO order violation: expected {emitted!r}, got {event.get('line')!r}"
             )
 
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
-    @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
     def test_failing_task_continues_remaining(
         self,
         mock_load_skill: MagicMock,
         mock_invoke_agent: MagicMock,
-        mock_run_pytest: MagicMock,
         mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
         env3: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_pytest.return_value = subprocess.CompletedProcess(
+        mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
         )
         mock_load_skill.return_value = "# Dummy skill content"
 
@@ -560,7 +605,8 @@ class TestJudgeTrainRollback:
         mock_invoke.return_value = (
             HandoverManifest(
                 phase="JUDGE",
-                status="FAILURE",
+                status="SUCCESS",
+                verdict="COMPLIANCE_VIOLATION",
                 rationale="Compliance violation",
             ),
             "",

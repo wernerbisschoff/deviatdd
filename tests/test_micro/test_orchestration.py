@@ -238,14 +238,14 @@ class TestMicroOrchestration:
                 f"Expected PENDING in ledger statuses: {statuses}"
             )
             assert "JUDGE" in statuses, f"Expected JUDGE in ledger statuses: {statuses}"
-            assert "RED" not in statuses, (
-                "RED status is written by post command (mocked)"
+            assert "RED" in statuses, (
+                "RED status is now written directly by _run_red_phase"
             )
-            assert "GREEN" not in statuses, (
-                "GREEN status is written by post command (mocked)"
+            assert "GREEN" in statuses, (
+                "GREEN status is now written directly by _run_green_phase"
             )
-            assert "COMPLETED" not in statuses, (
-                "COMPLETED is written by post command (mocked)"
+            assert "COMPLETED" in statuses, (
+                "COMPLETED status is now written directly by _run_refactor_phase"
             )
 
     def _mock_yellow_approved_manifest(*args, **kwargs):
@@ -279,7 +279,8 @@ class TestMicroOrchestration:
         if phase == "YELLOW":
             return HandoverManifest(
                 phase="YELLOW",
-                status="FAILURE",
+                status="SUCCESS",
+                verdict="REJECTED",
                 task_id=tid,
                 rationale="Amendments rejected — test changes invalid",
             ), ""
@@ -442,7 +443,8 @@ class TestMicroOrchestration:
                 if judge_count == 1:
                     return HandoverManifest(
                         phase="JUDGE",
-                        status="FAILURE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_VIOLATION",
                         task_id=tid,
                         rationale="Incomplete — missing required logic",
                         train_feedback="Implement the missing logic per spec",
