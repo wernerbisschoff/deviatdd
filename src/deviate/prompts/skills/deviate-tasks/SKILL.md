@@ -3,6 +3,7 @@ name: deviate-tasks
 description: Decompose a spec-enriched issue file (with embedded-first fallback to spec.md) into a granular task decomposition (tasks.md) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
 category: deviatdd-meso-layer
 version: 1.0.0
+layer: meso
 aliases:
   - tasks
   - /deviate-tasks
@@ -10,7 +11,6 @@ aliases:
   - spec.core.tasks
   - /tasks
 ---
-
 
 <system_instructions>
 
@@ -39,12 +39,7 @@ Research artifacts (`design.md`, `data-model.md`) produced by the `deviate-resea
 
 CRITICAL INFERENCE PHYSICS INVARIANTS:
 1. **Context Reuse Rule**: This phase typically follows `/deviate-shard` or `/deviate-plan` in the same conversation. Reuse `BRANCH_NAME`, `WORKTREE_PATH`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG` from the shard/plan contract in your context. Do NOT re-run the shard or plan pre-script.
-2. **Input Resolution Rule**: The tasks pre-script emits a JSON contract on stdout. Parse `spec_path`, `tasks_target`, `design_path` (optional), `data_model_path` (optional) from that contract directly. The `spec_path` may refer to either the issue file (with embedded `[USER_STORIES_LEDGER]` and `[ATDD_ACCEPTANCE_CRITERIA]` sections) or a standalone `spec.md` — read whichever is provided. Do NOT re-derive.
-3. **Prefix Invariance Placement Rule**: All systematic definitions, roles, execution sequences, and parsing schemas sit statically at the absolute head. Volatile parameters (target plan text, code repository file maps) occupy the trailing edge inside `<context>`.
-4. **Context-Instruction Isolation (The Markov Blanket)**: Never mix operational instructions or framework requirements inside data payload nodes.
-5. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
-6. **Task Status Boundary**: Task status lives exclusively in `tasks.jsonl` (the append-only ledger). `tasks.md` is a human-readable reference — it must NOT contain status markers.
-7. **Output Schema Constraint**: Write the task ledger content directly to `<tasks_target>` using the Standard Markdown format defined in `<output_format_schemas>`. The file content is exactly the ledger body — no preamble, no postamble, no XML wrapper tags. The post-script will read the file, validate, and commit.
+2. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
 
 </system_instructions>
 

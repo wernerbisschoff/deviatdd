@@ -1,14 +1,14 @@
 ---
 name: deviate-execute
 description: Use when executing a single task directly (without TDD cycle) — for low-complexity tasks, trivial changes, docs updates, or simple refactors with existing test coverage
-category: deviattd-macro-layer
+category: deviattd-micro-layer
 version: 1.0.0
+layer: micro
 aliases:
   - execute
   - /spec.execute
   - /x
 ---
-
 
 <system_instructions>
 
