@@ -811,7 +811,7 @@ def _run_red_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
-    red_model = _resolve_model_for_phase("RED", root)
+    red_model = resolve_model_for_phase("RED", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -893,7 +893,7 @@ def _run_green_phase(
     if session.train_feedback:
         prompt += f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
-    green_model = _resolve_model_for_phase("GREEN", root)
+    green_model = resolve_model_for_phase("GREEN", root)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -1109,7 +1109,7 @@ def _run_judge_phase(
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
-    judge_model = _resolve_model_for_phase("JUDGE", root)
+    judge_model = resolve_model_for_phase("JUDGE", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -1191,7 +1191,7 @@ def _run_refactor_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
-    refactor_model = _resolve_model_for_phase("REFACTOR", root)
+    refactor_model = resolve_model_for_phase("REFACTOR", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -1249,7 +1249,7 @@ def _run_yellow_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("yellow", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "YELLOW")
-    yellow_model = _resolve_model_for_phase("YELLOW", root)
+    yellow_model = resolve_model_for_phase("YELLOW", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -1562,7 +1562,7 @@ def _run_execute_phase(
     has_spec = bool(spec_content)
     train_feedback = ""
     max_judge_attempts = 3
-    execute_model = _resolve_model_for_phase("EXECUTE", root)
+    execute_model = resolve_model_for_phase("EXECUTE", root)
 
     for attempt in range(max_judge_attempts):
         prompt = _build_auto_prompt("execute", task, root)
@@ -2740,10 +2740,6 @@ def _resolve_agent_config(root: Path, agent: str | None) -> str | None:
         return data.get("agent", {}).get("backend") or None
     except Exception:
         return None
-
-
-def _resolve_model_for_phase(phase: str, root: Path) -> str | None:
-    return resolve_model_for_phase(phase, root)
 
 
 def _validate_profile(value: str) -> str:

@@ -4,3 +4,5 @@
 {"id":"TSK-005-01","issue_id":"ISS-ADH-005","description":"Add ModelPhaseMap model and model_config_resolve helper","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-17T16:56:39.734869Z"}
 {"id":"TSK-005-02","issue_id":"ISS-ADH-005","description":"Add model parameter to AgentBackend.invoke() and inject --model flag","status":"RED","execution_mode":"TDD","created_at":"2026-06-17T17:28:31.084514Z"}
 {"id":"TSK-005-02","issue_id":"ISS-ADH-005","description":"Add model parameter to AgentBackend.invoke() and inject --model flag","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-17T17:45:08.474784Z"}
+{"id":"TSK-005-02","issue_id":"ISS-ADH-005","description":"Add model parameter to AgentBackend.invoke() and inject --model flag","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-17T17:46:23.606749Z"}
+{"id":"TSK-005-02","issue_id":"ISS-ADH-005","description":"Add model parameter to AgentBackend.invoke() and inject --model flag","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-17T18:02:26.596825Z"}
