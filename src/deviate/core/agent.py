@@ -67,6 +67,19 @@ BACKEND_COMMANDS: dict[str, str] = {
 
 _YAML_BLOCK_RE = re.compile(r"```(?:yaml)?\s*\n(.*?)```", re.DOTALL)
 _YAML_MAPPING_START_RE = re.compile(r"^[\w_]+:\s", re.MULTILINE)
+_YAML_HANDOVER_MARKER_RE = re.compile(
+    r"\[HANDOVER_MANIFEST\]\s*(?:\n```(?:yaml)?\s*\n)?(.*?)(?:\n```\s*)?$",
+    re.DOTALL,
+)
+
+
+def _strip_md_for_yaml(text: str) -> str:
+    """Strip markdown artifacts that confuse YAML parsing in bare output."""
+    text = re.sub(r"^\[HANDOVER_MANIFEST\]\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", text)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    return text.strip()
 
 
 class AgentBackend:
@@ -79,16 +92,37 @@ class AgentBackend:
         if m:
             return m.group(1).strip()
 
+        m = _YAML_HANDOVER_MARKER_RE.search(text)
+        if m:
+            candidate = m.group(1).strip()
+            if candidate:
+                return candidate
+
         m = _YAML_MAPPING_START_RE.search(text)
         if m:
             return text[m.start() :].strip()
 
-        return text.strip()
+        cleaned = _strip_md_for_yaml(text)
+        if cleaned:
+            try:
+                yaml.safe_load(cleaned)
+            except yaml.YAMLError:
+                return ""
+            return cleaned
+
+        return ""
 
     @staticmethod
     def _yaml_error_hint(text: str) -> str:
         has_yaml_fence = bool(re.search(r"```\s*yaml", text, re.IGNORECASE))
         has_yaml_content = bool(_YAML_MAPPING_START_RE.search(text))
+        has_handover_marker = bool(re.search(r"\[HANDOVER_MANIFEST\]", text))
+        if has_handover_marker and not has_yaml_fence:
+            return (
+                " Found [HANDOVER_MANIFEST] marker but could not extract YAML —"
+                " ensure the YAML content follows the marker,"
+                " optionally inside a ```yaml block."
+            )
         if not has_yaml_fence and has_yaml_content:
             return (
                 " Expected ```yaml block, found inline YAML —"
@@ -115,6 +149,12 @@ class AgentBackend:
             )
 
         yaml_text = AgentBackend._extract_yaml_block(stdout)
+
+        if not yaml_text:
+            hint = AgentBackend._yaml_error_hint(stdout)
+            raise MalformedHandoverManifestError(
+                f"No YAML handover manifest detected in agent output.{hint}"
+            )
 
         try:
             data = yaml.safe_load(yaml_text)
