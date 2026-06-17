@@ -105,16 +105,20 @@ def _is_issue_completed(issue_id: str, ledger_path: Path) -> bool:
     return record.status == "COMPLETED"
 
 
-def _find_spec_md(issue_id: str) -> Path | None:
+def _find_issue_file(issue_id: str) -> Path | None:
+    """Resolve the spec-enriched issue file for *issue_id*.
+
+    The issue file IS the spec — it contains ``[USER_STORIES_LEDGER]``,
+    ``[ATDD_ACCEPTANCE_CRITERIA]``, and all other spec sections embedded
+    as markdown sections.  No separate ``spec.md`` exists.
+    """
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     record = resolve_issue_record(issue_id, ledger_path)
-    if record is None:
+    if record is None or not record.source_file:
         return None
-    bucket = _resolve_bucket_dir(record.source_file)
-    slug = _source_stem(record.source_file)
-    spec_path = _resolve_specs_root() / bucket / slug / "spec.md"
-    if spec_path.exists():
-        return spec_path
+    issue_path = Path(record.source_file)
+    if issue_path.exists():
+        return issue_path
     return None
 
 
@@ -301,20 +305,21 @@ def _emit_contract(
 
 
 def _is_linked_worktree(cwd: Path | None = None) -> bool:
-    """True if *cwd* is inside a linked (non-main) git worktree."""
+    """True if *cwd* is inside a linked (non-main) git worktree.
+
+    Distinguishes linked worktrees (``.git`` is a file containing
+    ``/worktrees/``) from git submodules (``.git`` is a file containing
+    ``/modules/``) and main repos (``.git`` is a directory).
+    """
     cwd = cwd or Path.cwd()
+    git_path = cwd / ".git"
+    if not git_path.exists():
+        return False
+    if git_path.is_dir():
+        return False  # Main worktree — .git is a directory
     try:
-        r = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        )
-        if r.returncode != 0:
-            return False
-        # Main worktree → ".git", linked worktree → absolute path
-        return r.stdout.strip() != ".git"
+        content = git_path.read_text(encoding="utf-8").strip()
+        return "/worktrees/" in content
     except Exception:
         return False
 
@@ -596,17 +601,19 @@ def _plan_pre(
     spec_path: str = ""
     status: str = "READY"
     if resolved_issue_id:
-        found = _find_spec_md(resolved_issue_id)
+        found = _find_issue_file(resolved_issue_id)
         if found is None:
-            status = "SPEC_NOT_FOUND"
+            status = "ISSUE_NOT_FOUND"
             console.print(
-                f"[red]SPEC_NOT_FOUND[/] no spec.md for issue {resolved_issue_id}"
+                f"[red]ISSUE_NOT_FOUND[/] issue file not found for {resolved_issue_id}"
             )
         else:
             spec_path = str(found)
-            console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
+            console.print(
+                f"[green]SPEC_DISCOVERED[/] {spec_path} (issue file IS the spec)"
+            )
     else:
-        status = "SPEC_NOT_FOUND"
+        status = "ISSUE_NOT_FOUND"
         console.print("[red]NO_ACTIVE_ISSUE[/]")
 
     plan_target: str = ""
@@ -757,14 +764,16 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
 
     issue_id = session.active_issue_id or ""
 
-    # Resolve spec.md from the active issue (not rglob — avoids wrong-file bug)
+    # Resolve issue file (the spec-enriched issue IS the spec)
     spec_path: str = ""
     status: str = "READY"
     if issue_id:
-        found = _find_spec_md(issue_id)
+        found = _find_issue_file(issue_id)
         if found is None:
-            status = "SPEC_NOT_FOUND"
-            console.print(f"[red]SPEC_NOT_FOUND[/] no spec.md for issue {issue_id}")
+            status = "ISSUE_NOT_FOUND"
+            console.print(
+                f"[red]ISSUE_NOT_FOUND[/] issue file not found for {issue_id}"
+            )
         else:
             spec_path = str(found)
             console.print(f"[green]SPEC_DISCOVERED[/] {spec_path}")
@@ -795,7 +804,7 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
         _resolve_constitution_commands(repo_root)
     )
 
-    # Resolve tasks_target alongside spec.md (per-issue, not per-epic)
+    # Resolve tasks_target (per-issue, not per-epic)
     tasks_target: str = ""
     if issue_id:
         ledger_path = _resolve_specs_root() / "issues.jsonl"
