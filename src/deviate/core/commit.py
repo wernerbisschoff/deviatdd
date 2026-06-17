@@ -60,6 +60,19 @@ def stage_and_commit(message: str, files: list[Path], repo: Path | None = None) 
     return result.stdout.strip()
 
 
+def stage_files(files: list[Path], repo: Path | None = None) -> None:
+    """Stage specific files without committing."""
+    repo = repo or Path.cwd()
+    if not _has_changes_to_stage(files, repo):
+        return
+    subprocess.run(
+        ["git", "add", "--"] + [str(f) for f in files],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+    )
+
+
 def commit_artifact(path: Path, message: str, repo: Path | None = None) -> str:
     repo = repo or Path.cwd()
     return stage_and_commit(message=message, files=[path], repo=repo)

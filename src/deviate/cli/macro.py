@@ -20,7 +20,7 @@ from deviate.cli._common import (
 )
 from deviate.core._shared import git_env as _git_env
 from deviate.core.agent import AgentBackend, AgentSubprocessError
-from deviate.core.commit import commit_artifact
+from deviate.core.commit import commit_artifact, stage_and_commit
 from deviate.prompts.assembly import assemble_prompt
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.cli.feature import _derive_slug
@@ -337,7 +337,7 @@ def research_post(
     ),
     force: bool = typer.Option(False, "--force", help="Bypass phase validation"),
 ) -> None:
-    """Scan for constitutional violations, commit artifacts"""
+    """Validate research artifacts and create a single commit for all"""
     session, session_path = _load_session_accept("RESEARCH", force=force)
 
     _validate_constitution("RESEARCH")
@@ -347,6 +347,7 @@ def research_post(
     if not epic_slug:
         _halt("RESEARCH", "no active feature bucket found")
 
+    artifacts: list[Path] = []
     for artifact, atype in (
         ("design.md", "design"),
         ("data-model.md", "data_model"),
@@ -362,10 +363,19 @@ def research_post(
             _halt(
                 "RESEARCH", f"{artifact} missing sections: {', '.join(result.errors)}"
             )
-        _run_pre_commit_hooks()
-        epic_num = _extract_epic_num(epic_slug)
-        commit_artifact(path, f"docs({epic_num}): create {artifact}", repo=Path.cwd())
-        console.print(f"[green]COMMITTED[/] {path}")
+        artifacts.append(path)
+
+    # Include constitution.md if it was created/modified (greenfield bootstrap)
+    const_path = resolve_constitution(Path.cwd())
+    if const_path and const_path.exists():
+        artifacts.append(const_path)
+
+    _run_pre_commit_hooks()
+
+    epic_num = _extract_epic_num(epic_slug)
+    message = f"docs({epic_num}): add research artifacts (design.md, data-model.md)"
+    sha = stage_and_commit(message=message, files=artifacts, repo=Path.cwd())
+    console.print(f"[green]COMMITTED[/] research artifacts at {sha[:8]}")
 
     _save_session(session, session_path, "RESEARCH")
 
@@ -784,7 +794,7 @@ def _explore_pre(problem: str, slug: str | None = None) -> None:
 
 
 def _explore_post(force: bool = False) -> None:
-    explore_post(force=force)
+    explore_post(epic=None, force=force)
 
 
 def _research_pre(epic: str = "") -> None:
@@ -792,7 +802,7 @@ def _research_pre(epic: str = "") -> None:
 
 
 def _research_post(force: bool = False) -> None:
-    research_post(force=force)
+    research_post(epic=None, force=force)
 
 
 def _prd_pre() -> None:
