@@ -49,6 +49,7 @@ _YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)
 _YAML_FENCE_CLOSE_RE = re.compile(r"^```+\s*$")
 _MANIFEST_HEADER_RE = re.compile(r"^##\s*\[(?:HANDOVER_MANIFEST|MINIMAL_HANDOVER)\]")
 _DEVIATE_MICRO_HEADER_RE = re.compile(r"^# DeviaTDD Micro")
+_HANDOVER_XML_RE = re.compile(r"^</?handover_manifest>\s*$")
 
 
 def _log(msg: str) -> None:
@@ -243,6 +244,8 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
             if _MANIFEST_HEADER_RE.match(stripped):
                 return
             if _DEVIATE_MICRO_HEADER_RE.match(stripped):
+                return
+            if _HANDOVER_XML_RE.match(stripped):
                 return
 
         if "<thinking" in stripped.lower():
@@ -811,7 +814,7 @@ def _run_red_phase(
         raise PhaseFailedError(
             f"RED phase agent error for {tid}: agent returned no manifest"
         )
-    if manifest.status.upper() in ("FAILURE", "ERROR"):
+    if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
         raise PhaseFailedError(
             f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
         )
@@ -903,7 +906,7 @@ def _run_green_phase(
         raise PhaseFailedError(
             f"GREEN phase agent error for {tid}: agent returned no manifest"
         )
-    if manifest.status.upper() in ("FAILURE", "ERROR"):
+    if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
         raise PhaseFailedError(
             f"GREEN phase failed for {tid}: {manifest.rationale or 'unknown'}"
         )
@@ -1202,7 +1205,7 @@ def _run_refactor_phase(
         raise PhaseFailedError(
             f"REFACTOR phase agent error for {tid}: agent returned no manifest"
         )
-    if manifest.status.upper() in ("FAILURE", "ERROR"):
+    if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
         raise PhaseFailedError(
             f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
         )
@@ -1588,7 +1591,7 @@ def _run_execute_phase(
             raise PhaseFailedError(
                 f"EXECUTE phase agent error for {tid}: agent returned no manifest"
             )
-        if manifest.status.upper() in ("FAILURE", "ERROR"):
+        if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
             raise PhaseFailedError(
                 f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
             )
