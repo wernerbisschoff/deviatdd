@@ -37,28 +37,15 @@ class TestSkillInstallation:
             "deviate.cli._get_agent_skill_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
-        target_dir = tmp_path / ".claude" / "skills"
-        target_dir.mkdir(parents=True)
-        src = (
-            Path(__file__).resolve().parent.parent.parent
-            / "src"
-            / "deviate"
-            / "prompts"
-            / "skills"
-        )
-        for skill_dir in src.iterdir():
-            if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-                target = target_dir / skill_dir.name / "SKILL.md"
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(
-                    (skill_dir / "SKILL.md").read_text(encoding="utf-8"),
-                    encoding="utf-8",
-                )
-        (tmp_path / ".claude").mkdir(exist_ok=True)
+        (tmp_path / ".claude").mkdir(parents=True)
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["init"])
-            assert result.exit_code == 0
-            assert "SKIP" in result.output
+            # First install — all skills get composed (INSTALL expected)
+            first = runner.invoke(cli, ["init"])
+            assert first.exit_code == 0
+            # Second install — identical content (SKIP expected)
+            second = runner.invoke(cli, ["init"])
+            assert second.exit_code == 0
+            assert "SKIP" in second.output
 
     def test_skill_idempotency_overwrite_stale(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

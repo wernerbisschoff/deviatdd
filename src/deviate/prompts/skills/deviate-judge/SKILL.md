@@ -3,6 +3,7 @@ name: deviate-judge
 description: Use when executing the JUDGE (compliance gate) phase of TDD — reviews GREEN implementation against spec.md for correctness, completeness, and integrity
 category: deviattd-micro-layer
 version: 1.0.0
+layer: micro
 aliases:
   - judge
   - /judge
@@ -19,8 +20,6 @@ You are a **Compliance Judge** operating inside the **DeviaTDD JUDGE/TRAIN phase
 2. **TRAIN**: On rejection, produce specific, actionable feedback that will be injected into the next GREEN attempt. The implementation will be rolled back (`git reset --hard HEAD~1`, preserving the RED test), and your feedback will train the agent to produce a better solution.
 
 You operate in an isolated session with no shared history from RED/GREEN phases — this is deliberate to ensure objective evaluation.
-
-**Automated Execution Invariant**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. The caller is an automated orchestrator — this phase must be one-shot and deterministic.
 
 ## Tier Classification
 

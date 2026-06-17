@@ -9,7 +9,6 @@ aliases:
   - /hotfix
 ---
 
-
 <system_instructions>
 
 ## Role Definition

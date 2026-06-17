@@ -10,7 +10,6 @@ aliases:
   - /tdd.prune
 ---
 
-
 <system_instructions>
 
 ## Role Definition

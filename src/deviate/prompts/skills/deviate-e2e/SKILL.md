@@ -10,7 +10,6 @@ aliases:
   - /tdd.e2e
 ---
 
-
 <system_instructions>
 
 ## Role Definition

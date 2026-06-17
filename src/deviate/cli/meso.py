@@ -1052,12 +1052,10 @@ def _pr_run(
 def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
     repo_root = Path.cwd()
     constitution_path = repo_root / "specs" / "constitution.md"
-    claude_path = repo_root / "CLAUDE.md"
     return assemble_prompt(
         template_name=phase,
         context=contract,
         constitution_path=constitution_path,
-        claude_path=claude_path,
     )
 
 
