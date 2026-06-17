@@ -117,21 +117,28 @@ def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
     return None
 
 
-def load_models_from_config(root: Path) -> dict[str, str]:
+def resolve_model_for_phase(phase: str, root: Path) -> str | None:
+    """Load `[models]` from `.deviate/config.toml` and resolve *phase*.
+
+    Resolution order:
+        1. Phase-specific key (case-insensitive)
+        2. ``default`` key
+        3. ``None`` (no model flag)
+    """
     config_path = root / ".deviate" / "config.toml"
     if not config_path.exists():
-        return {}
+        return None
     try:
         import tomllib
 
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
         models = data.get("models", {})
-        if isinstance(models, dict):
-            return {k: str(v) for k, v in models.items()}
-        return {}
+        if not isinstance(models, dict):
+            return None
+        return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
     except Exception:
-        return {}
+        return None
 
 
 class PytestReportConfig(BaseModel):

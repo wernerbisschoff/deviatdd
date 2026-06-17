@@ -31,7 +31,7 @@ from deviate.core.worktree import (
     remove_worktree,
 )
 from deviate.prompts.assembly import assemble_prompt
-from deviate.state.config import SessionState, resolve_phase_model
+from deviate.state.config import SessionState, resolve_model_for_phase
 from deviate.state.ledger import (
     IssueRecord,
     TaskRecord,
@@ -1045,21 +1045,7 @@ def _invoke_agent_phase(
     backend = AgentBackend()
     try:
         root = Path(cwd) if cwd else Path.cwd()
-        config_path = root / ".deviate" / "config.toml"
-        model = None
-        if config_path.exists():
-            try:
-                import tomllib
-
-                with open(config_path, "rb") as f:
-                    data = tomllib.load(f)
-                models = data.get("models", {})
-                if isinstance(models, dict):
-                    model = resolve_phase_model(
-                        phase, {k: str(v) for k, v in models.items()}
-                    )
-            except Exception:
-                pass
+        model = resolve_model_for_phase(phase, root)
         manifest = backend.invoke(prompt, cwd=cwd, model=model)
     except AgentSubprocessError as e:
         console.print(f"[red]{phase.upper()}_FAILED[/] {e}")

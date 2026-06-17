@@ -35,7 +35,7 @@ from deviate.state.config import (
     AgentConfig,
     PytestReportConfig,
     SessionState,
-    resolve_phase_model,
+    resolve_model_for_phase,
 )
 from deviate.ui.monitor import OrchestrationMonitor
 
@@ -2743,20 +2743,7 @@ def _resolve_agent_config(root: Path, agent: str | None) -> str | None:
 
 
 def _resolve_model_for_phase(phase: str, root: Path) -> str | None:
-    config_path = root / ".deviate" / "config.toml"
-    if not config_path.exists():
-        return None
-    try:
-        import tomllib
-
-        with open(config_path, "rb") as f:
-            data = tomllib.load(f)
-        models = data.get("models", {})
-        if not isinstance(models, dict):
-            return None
-        return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
-    except Exception:
-        return None
+    return resolve_model_for_phase(phase, root)
 
 
 def _validate_profile(value: str) -> str:
