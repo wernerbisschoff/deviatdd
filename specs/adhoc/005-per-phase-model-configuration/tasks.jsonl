@@ -8,3 +8,5 @@
 {"id":"TSK-005-02","issue_id":"ISS-ADH-005","description":"Add model parameter to AgentBackend.invoke() and inject --model flag","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-17T18:02:26.596825Z"}
 {"id":"TSK-005-03","issue_id":"ISS-ADH-005","description":"Thread per-phase model resolution through micro.py agent invocations","status":"RED","execution_mode":"TDD","created_at":"2026-06-17T18:07:29.170069Z"}
 {"id":"TSK-005-03","issue_id":"ISS-ADH-005","description":"Thread per-phase model resolution through micro.py agent invocations","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-17T18:22:42.398342Z"}
+{"id":"TSK-005-03","issue_id":"ISS-ADH-005","description":"Thread per-phase model resolution through micro.py agent invocations","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-17T18:43:11.071861Z"}
+{"id":"TSK-005-03","issue_id":"ISS-ADH-005","description":"Thread per-phase model resolution through micro.py agent invocations","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-17T18:22:42.398342Z"}

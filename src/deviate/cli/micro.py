@@ -1386,14 +1386,13 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        cache_store = _capture_cache_store(root, task, agent)
+
         session = _finish_tdd_cycle(
             task, ledger_path, session, session_path, c, no_refactor, agent=agent
         )
         return
 
     if start_phase == "YELLOW":
-        cache_store = _capture_cache_store(root, task, agent)
         _maybe_push_event(
             monitor,
             "phase_change",
@@ -1414,7 +1413,7 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        cache_store = _capture_cache_store(root, task, agent)
+
         session = _finish_tdd_cycle(
             task,
             ledger_path,
@@ -1433,14 +1432,11 @@ def _run_tdd_cycle(
     session = _run_red_phase(
         task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
     )
-    cache_store = _capture_cache_store(root, task, agent)
-
     train_attempts = 0
     max_train_attempts = 3
     judge_passed = no_judge
 
     while not judge_passed:
-        cache_store = _capture_cache_store(root, task, agent)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="GREEN", description=task_desc
         )
@@ -1449,7 +1445,6 @@ def _run_tdd_cycle(
         )
 
         if session.yellow_triggered:
-            cache_store = _capture_cache_store(root, task, agent)
             _maybe_push_event(
                 monitor,
                 "phase_change",
@@ -1468,7 +1463,7 @@ def _run_tdd_cycle(
             )
             if decision == _YELLOW_DECISION_REJECTED:
                 c.print("  [yellow]Re-running GREEN after YELLOW[/]")
-                cache_store = _capture_cache_store(root, task, agent)
+
                 _maybe_push_event(
                     monitor,
                     "phase_change",
@@ -1507,7 +1502,6 @@ def _run_tdd_cycle(
             judge_passed = True
             break
 
-        cache_store = _capture_cache_store(root, task, agent)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="JUDGE", description=task_desc
         )
@@ -1612,12 +1606,14 @@ def _run_execute_phase(
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
+        judge_model = resolve_model_for_phase("JUDGE", root)
         judge_manifest, _ = _invoke_agent(
             judge_prompt,
             c,
             backend_name=backend,
             task_id=tid,
             phase="JUDGE",
+            model=judge_model,
         )
 
         if judge_manifest is None:
