@@ -27,11 +27,11 @@ CRITICAL INSTRUCTION INVARIANTS:
 6. **Context Packaging Invariant**: Each generated issue file behaves as an immutable context packet for a downstream automated agent. You must programmatically inject the precise entities it mutates (referencing data contracts from the PRD), the explicit boundaries of what it must NOT do (Defensive Exclusions), and the target testing hooks required to satisfy Acceptance Test-Driven Development (ATDD).
 7. **Feature Slug & Relative Path Normalization**: Resolve the feature folder path index from the execution context matching the layout pattern `specs/{NNN}-{FEATURE_SLUG}/`. Every single path output, file target, test workspace module, or script reference written into the issue bodies must be strictly written as a relative path calculated from the workspace root directory (e.g., `src/core/runner.py`). Absolute local machine structures are completely forbidden.
 8. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-001-004`, `ISS-001-005`, ...). Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-001-004"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
-9. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute four sequential mental loops inside an internal engineering ledger block (`## [INTERNAL_ICOT_LEDGER]`):
+9. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute four sequential mental loops inside an internal engineering ledger block (`## Internal ICoT Ledger`):
     - Pass 1 (Topological Layout): Group related FR-{NNN}-{ID} tokens into cohesive feature clusters. Each cluster becomes one vertical slice. A slice may contain zero or more FRs (enabling/infrastructure/tooling slices may have zero). Verify cumulative coverage: every FR-{NNN}-{ID} token from the PRD must appear in at least one slice. Map each cluster to its structural architectural workstations and lay out the execution graph across the Macro ➔ Meso ➔ Micro layer boundaries.
    - Pass 2 (Boundary Demarcation Pass): Establish the explicit defensive exclusion criteria for every vertical slice to prevent optimization drift. Each slice must be self-contained and large enough to warrant independent specification.
     - Pass 3 (Horizontal Slice Audit): For every candidate slice, enumerate the layers it touches (database, API, business logic, UI/interface). If the slice contains one or more FRs and touches only ONE layer, mark it as HORIZONTAL_SLICE_DETECTED and re-cluster with adjacent FRs until it cuts through at least two layers with complete end-to-end behavior. Enabling slices (zero FRs) are exempt from the multi-layer requirement but must still deliver a complete, independently verifiable capability. Log any slices that failed this audit and how they were resolved.
-   - Pass 4 (Verification Mapping Pass): Pair every tracked acceptance criterion token (`AC-{NNN}-{ID}-{NN}`) within the slice with an executable, copy-pasteable terminal verification command block (`## [DEMONSTRATION_PATH]`).
+   - Pass 4 (Verification Mapping Pass): Pair every tracked acceptance criterion token (`AC-{NNN}-{ID}-{NN}`) within the slice with an executable, copy-pasteable terminal verification command block (`## Demonstration Path`).
 10. **Template Engine Safety**: Preserve all double-curly variable syntax markers or configuration properties as inert string values using raw, literal string encapsulation to guarantee zero parsing or compile-time syntax errors within local dotfile template managers like Chezmoi or Jinja.
 11. **Output Format Constraint**: Present the final response exclusively using human-readable Markdown syntax headers, bullet configurations, and text patterns. Do not encapsulate or wrap output blocks within XML structural boundaries. Ensure frontmatter blocks generated within inner file schema emissions utilize explicit line-level escaping or safe literal formatting so they do not interrupt or prematurely terminate parent formatting lines.
 12. **Local Issue Registry Invariant**: All issues are registered in the local append-only `specs/issues.jsonl` ledger. The post-script handles registration inline — no external scripts are required.
@@ -40,7 +40,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 <output_format_schemas>
 
-## [INTERNAL_ICOT_LEDGER]
+## Internal ICoT Ledger
 ```text
 Pass 1 (Topological Layout): [Trace tracking tokens to repo path workstations; group FRs into clusters (zero or more per slice); verify cumulative coverage across all slices]
 Pass 2 (Boundary Demarcation): [Isolate inclusion vs exclusion constraints for each feature slice]
@@ -48,14 +48,14 @@ Pass 3 (Horizontal Slice Audit): [Verify each slice cuts through multiple layers
 Pass 4 (Verification Mapping): [Verify that each AC maps to an explicit end-to-end bash execution path validation block]
 ```
 
-## [SHARD_GENERATION_MANIFEST]
-### [COMPILATION_METADATA]
+## Shard Generation Manifest
+### Compilation Metadata
 - **Target Feature Workspace**: `specs/{NNN}-{FEATURE_SLUG}/`
 - **Upstream PRD Baseline**: `specs/{NNN}-{FEATURE_SLUG}/prd.md`
 - **Total Derived Feature Verticals**: [Integer count of shards created]
 - **Status**: DETERMINISTIC_SYNTHESIS_COMPLETE
 
-### [SUMMARY_TOPOLOGY_TABLE]
+### Summary Topology Table
 | Index | Local Issue File | PRD Requirements Tokens | Demonstration Path Blueprint | Blocked By | Coordinates With |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 000 | `000-[kebab-slug].md` | FR-NNN-01, FR-NNN-02, ..., AC-NNN-01-01, ... | [Verification Script Path] | [] | [] |
@@ -99,7 +99,7 @@ If the PRD is missing `FR-{NNN}-{ID}` or `AC-{NNN}-{ID}-{NN}` tokens, trigger `M
 </step>
 
 <step id="vertical_slicing">
-Execute the Internal ICoT (Pass 1-4) to cluster related FRs into vertical slices (zero or more FRs per slice; enabling slices may carry zero). Verify cumulative FR coverage across all slices — every FR from the PRD must appear in at least one slice. Write the ICoT ledger as `## [INTERNAL_ICOT_LEDGER]` in the output.
+Execute the Internal ICoT (Pass 1-4) to cluster related FRs into vertical slices (zero or more FRs per slice; enabling slices may carry zero). Verify cumulative FR coverage across all slices — every FR from the PRD must appear in at least one slice. Write the ICoT ledger as `## Internal ICoT Ledger` in the output.
 
 For each vertical slice:
 1. Group one or more related FRs (or zero for enabling slices such as tooling, infrastructure, or refactoring) into a cohesive, independently verifiable feature
@@ -113,16 +113,16 @@ For each vertical slice:
 <step id="issue_generation">
 For each vertical slice, generate a shard issue markdown file. Each file must include:
 - YAML frontmatter with `title`, `labels`, `source_file`, `blocked_by`, `coordinates_with`, `issue_id`
-- `## [SYSTEM_TOPOLOGY_MAPPING]` — epic domain, local file path, workstation paths
-- `## [THE_PROBLEM_CONTRACT]` — narrative of the user/system journey
-- `## [SCOPE_BOUNDARIES]` — Hard Inclusions and Defensive Exclusions
-- `## [UPSTREAM_REQUIREMENT_TRACING]` — FR and AC tokens
-- `## [USER_STORIES_LEDGER]` — US-NNN user stories with FR traceability (each US references a parent FR-{NNN}-{ID})
-- `## [ATDD_ACCEPTANCE_CRITERIA]` — bold `**Given**`/`**When**`/`**Then**` Gherkin scenarios for each user story, covering happy path, error states, and edge cases
-- `## [EDGE_CASES_AND_BOUNDARIES]` — edge cases, error states, boundary conditions
-- `## [PERFORMANCE_CONSTRAINTS]` — latency, throughput, resource limits
-- `## [MULTI_TIERED_VERIFICATION_TARGETS]` — unit and integration test paths
-- `## [DEMONSTRATION_PATH]` — exact bash commands for end-to-end verification
+- `## System Topology Mapping` — epic domain, local file path, workstation paths
+- `## The Problem Contract` — narrative of the user/system journey
+- `## Scope Boundaries` — Hard Inclusions and Defensive Exclusions
+- `## Upstream Requirement Tracing` — FR and AC tokens
+- `## User Stories Ledger` — US-NNN user stories with FR traceability (each US references a parent FR-{NNN}-{ID})
+- `## ATDD Acceptance Criteria` — bold `**Given**`/`**When**`/`**Then**` Gherkin scenarios for each user story, covering happy path, error states, and edge cases
+- `## Edge Cases and Boundaries` — edge cases, error states, boundary conditions
+- `## Performance Constraints` — latency, throughput, resource limits
+- `## Multi-Tiered Verification Targets` — unit and integration test paths
+- `## Demonstration Path` — exact bash commands for end-to-end verification
 
 Write each file to `<repo_root>/<issues_dir>/<NNN>-<kebab-slug>.md`.
 </step>
