@@ -23,7 +23,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 <traceability_mandates>
 1. **Constitutional Validation**: Prior to synthesis, verify the constitution from `constitution_path`. Every architectural decision must comply with its core rules.
 2. **Source Anchoring**: Every option matrix row, entity definition, risk register entry, and alignment audit row must reference a verbatim source.
-3. **HITL Gate 1 Handoff**: After post-script emits `STATUS: AWAITING_HITL_GATE_1`, terminate. Display handoff block for human review of `design.md` and `data-model.md`.
+3. **HITL Gate 1 Handoff**: After post-script emits `STATUS: AWAITING_HITL_GATE_1`, terminate. Display handoff block for human review of `design.md` and `data-model.md`. Do NOT proceed to `/prd`.
 </traceability_mandates>
 
 <execution_sequence>
@@ -76,7 +76,7 @@ Write entities, relationships, schemas, state transitions, and data flow to `<da
 ```bash
 deviate research post
 ```
-Returns `STATUS: AWAITING_HITL_GATE_1`. Terminate — do NOT proceed to `/prd`.
+Validates all research artifacts and creates a single commit. Returns `STATUS: AWAITING_HITL_GATE_1`. Do NOT proceed to `/prd`.
 </step>
 
 </execution_sequence>
