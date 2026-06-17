@@ -55,6 +55,18 @@ deviate plan post
 Validates plan.md exists with required sections, then commits and advances session to TASKS.
 </step>
 
+<step id="handover_emission">
+After the post script completes, emit the HANDOVER_MANIFEST:
+
+```yaml
+phase: PLAN
+status: PASS
+issue_id: {issue_id}
+rationale: "plan.md written, validated, and committed"
+next_phase: "TASKS"
+```
+</step>
+
 </execution_sequence>
 
 <output_format_schemas>
@@ -90,6 +102,15 @@ Validates plan.md exists with required sections, then commits and advances sessi
 - **Architecture**: <three-layer alignment>
 - **Testing**: <framework, approach>
 - **Git Isolation**: <invariants>
+
+## [HANDOVER_MANIFEST]
+```yaml
+phase: PLAN
+status: PASS
+issue_id: "{issue_id}"
+rationale: "plan.md written, validated, and committed"
+next_phase: "TASKS"
+```
 
 </output_format_schemas>
 
