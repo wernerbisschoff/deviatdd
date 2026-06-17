@@ -19,13 +19,10 @@ from deviate.cli._common import (
     with_json_quiet,
 )
 
-from pydantic import ValidationError
-
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
-from deviate.core.tasks_ledger import generate_jsonl_from_md
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
 from deviate.core.worktree import (
@@ -839,7 +836,6 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
 def _tasks_post(
     force: bool = False,
     issue_id: str | None = None,
-    confirm: bool = False,
 ) -> None:
     session, session_path = _load_session_accept("TASKS", force=force)
     resolved_issue_id = issue_id or session.active_issue_id
@@ -861,26 +857,6 @@ def _tasks_post(
     if not content and not force:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
-
-    tasks_jsonl = tasks_md.with_name("tasks.jsonl")
-    proposal_path = tasks_md.with_name("tasks.jsonl.proposal")
-    try:
-        records = generate_jsonl_from_md(tasks_md, resolved_issue_id)
-    except ValidationError as e:
-        for err in e.errors():
-            loc = ".".join(str(part) for part in err["loc"])
-            console.print(f"[red]VALIDATION_ERROR[/] {loc}: {err['msg']}")
-        raise typer.Exit(code=1)
-
-    if confirm:
-        for rec in records:
-            append_task_record(rec, tasks_jsonl)
-        if proposal_path.exists():
-            proposal_path.unlink()
-    else:
-        proposal_path.parent.mkdir(parents=True, exist_ok=True)
-        proposal_lines = "\n".join(rec.model_dump_json() for rec in records)
-        proposal_path.write_text(proposal_lines + "\n", encoding="utf-8")
 
     _run_pre_commit_hooks()
 
@@ -1059,12 +1035,16 @@ def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
     )
 
 
-def _invoke_agent_phase(phase: str, contract: dict[str, str]) -> None:
+def _invoke_agent_phase(
+    phase: str,
+    contract: dict[str, str],
+    cwd: str | None = None,
+) -> None:
     """Build a slim prompt, invoke the agent, and abort on failure."""
     prompt = _build_slim_prompt(phase, contract)
     backend = AgentBackend()
     try:
-        manifest = backend.invoke(prompt)
+        manifest = backend.invoke(prompt, cwd=cwd)
     except AgentSubprocessError as e:
         console.print(f"[red]{phase.upper()}_FAILED[/] {e}")
         raise SystemExit(1) from e
@@ -1140,15 +1120,14 @@ def _meso_run(
     issue_slug = _source_stem(record.source_file) if record else ""
     issue_title = record.title if record else ""
 
-    contract: dict[str, str] = {
-        "issue_id": issue_id,
-        "issue_title": issue_title,
-        "epic_slug": epic_slug,
-        "issue_slug": issue_slug,
-    }
-
     # ── Dry-run mode ─────────────────────────────────────────────────
     if dry_run:
+        contract: dict[str, str] = {
+            "issue_id": issue_id,
+            "issue_title": issue_title,
+            "epic_slug": epic_slug,
+            "issue_slug": issue_slug,
+        }
         console.print("[bold][yellow]DRY_RUN[/] — no state will be mutated[/]")
         prompt = _build_slim_prompt("tasks", contract)
         print(prompt)
@@ -1173,17 +1152,41 @@ def _meso_run(
             str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
         )
 
+    # Build contract with absolute worktree paths so agent writes files
+    # to the exact worktree location regardless of tool re-rooting.
+    src_file = record.source_file if record else ""
+    spec_path = src_file if src_file.startswith("/") else str(worktree_path / src_file)
+    plan_dir = worktree_path / "specs" / epic_slug / issue_slug
+    tasks_dir = worktree_path / "specs" / epic_slug / issue_slug
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    contract: dict[str, str] = {
+        "issue_id": issue_id,
+        "issue_title": issue_title,
+        "epic_slug": epic_slug,
+        "issue_slug": issue_slug,
+        "worktree_full": str(worktree_path),
+        "spec_path": spec_path,
+        "plan_path": str(plan_dir / "plan.md"),
+        "tasks_target": str(tasks_dir / "tasks.md"),
+    }
+
     ctx = chdir(worktree_path)
     with ctx:
         _plan_pre(force=force, dry_run=False)
 
-        _invoke_agent_phase("plan", contract)
+        _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
 
         _plan_post(force=force, issue_id=issue_id)
 
+        plan_md = Path(contract["plan_path"])
+        contract["plan_content"] = (
+            plan_md.read_text(encoding="utf-8") if plan_md.exists() else ""
+        )
+
         _tasks_pre(force=force, dry_run=False)
 
-        _invoke_agent_phase("tasks", contract)
+        _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
 
         _tasks_post(force=force, issue_id=issue_id)
 
@@ -1270,15 +1273,12 @@ def tasks(
     issue: str | None = typer.Option(
         None, "--issue-id", help="Issue ID for post subcommand"
     ),
-    confirm: bool = typer.Option(
-        False, "--confirm", help="Confirm and write proposal to tasks.jsonl"
-    ),
 ) -> None:
     """Tasks phase: pre (detect worktree) or post (validate, commit)"""
     if issue_id == "pre":
         _tasks_pre(force=force, dry_run=dry_run)
     elif issue_id == "post":
-        _tasks_post(force=force, issue_id=issue, confirm=confirm)
+        _tasks_post(force=force, issue_id=issue)
     else:
         _tasks_legacy(issue_id)
 

@@ -23,14 +23,30 @@ After completion:
 
 </system_instructions>
 
+<task_content>
+{task_content}
+</task_content>
+
+<spec_content>
+{spec_content}
+</spec_content>
+
+<data_model_content>
+{data_model_content}
+</data_model_content>
+
+<prd_content>
+{prd_content}
+</prd_content>
+
 <evaluation_criteria>
 
 ### Categories of Violations
 
-1. **Protected Module Modification**: Changes to modules or interfaces marked as protected in `spec.md`. Includes core abstractions, public API contracts, and module boundary signatures.
+1. **Protected Module Modification**: Changes to modules or interfaces marked as protected in `<spec_content>`. Includes core abstractions, public API contracts, and module boundary signatures.
 2. **Gate Bypass Detection**: Evidence that a mandatory HITL gate, mandatory phase, or governance requirement was skipped or circumvented.
 3. **Security Violations**: Introduction of hardcoded credentials, environment variable leakage, unsafe deserialization, or command injection vectors.
-4. **Structural Drift**: Changes that deviate from the data models, type signatures, or architectural patterns defined in `spec.md` or `data-model.md`.
+4. **Structural Drift**: Changes that deviate from the data models, type signatures, or architectural patterns defined in `<spec_content>` or `<data_model_content>`.
 5. **Tamper Evidence**: Modifications to `tests/`, `specs/`, or configuration files outside the YELLOW-approved amendment protocol.
 
 ### Evaluation Dimensions
@@ -67,7 +83,9 @@ Generate a structured compliance verdict:
 
 ```yaml
 phase: JUDGE
+status: "PASS"
 task_id: "{TASK_ID}"
+next_phase: "IDLE"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 summary: "One-sentence outcome"
 violations:
@@ -87,7 +105,6 @@ diff_summary:
   files_modified: 3
   files_created: 2
   files_deleted: 0
-next_action: "proceed" | "abort"
 ```
 
 </execution_sequence>
@@ -98,7 +115,9 @@ Emit exclusively the YAML compliance verdict block. Do not output conversational
 
 ```yaml
 phase: JUDGE
+status: "PASS"
 task_id: "{TASK_ID}"
+next_phase: "IDLE"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 summary: "..."
 violations:
@@ -118,7 +137,6 @@ diff_summary:
   files_modified: 0
   files_created: 0
   files_deleted: 0
-next_action: "proceed" | "abort"
 ```
 
 </output_format_schemas>

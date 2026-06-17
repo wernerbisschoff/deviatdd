@@ -27,6 +27,7 @@ _LAYER_MAP: dict[str, str | None] = {
     "refactor": "micro-auto",
     "yellow": "micro-auto",
     "judge": "micro-auto",
+    "execute": "micro-auto",
 }
 
 _CORE_DIR = "deviate.prompts.core"
