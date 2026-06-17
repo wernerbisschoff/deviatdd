@@ -101,6 +101,149 @@ class TestPhaseModelRouting:
         assert resolve_model_for_phase("EXPLORE", config_with_models) == "fast/model"
 
 
+class TestModelPassedToInvokeAgent:
+    """Verify the resolved model is passed to _invoke_agent.
+
+    Unlike TestTddCycleIntegration which only checks resolve_model_for_phase
+    is called, these tests verify the returned model value flows through
+    to the _invoke_agent call.
+    """
+
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._save_agent_log")
+    @patch("deviate.cli.micro._find_test_files")
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._commit_phase")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_red_invoke_agent_receives_model(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_format: MagicMock,
+        mock_done: MagicMock,
+        mock_verify: MagicMock,
+        mock_commit: MagicMock,
+        mock_test: MagicMock,
+        mock_find_tests: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_red_phase
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_done.return_value = False
+        mock_find_tests.return_value = []
+        mock_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = "red/specific-model"
+        mock_agent.return_value = (
+            HandoverManifest(phase="RED", status="PASS"),
+            "",
+        )
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="abc123", stderr=""
+        )
+
+        task = {
+            "id": "TSK-005-03",
+            "issue_id": "ISS-ADH-005",
+            "description": "test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_red_phase(task, ledger_path, session, session_path, Console())
+
+        mock_resolve.assert_called_once_with("RED", cwd)
+        _, invoke_kwargs = mock_agent.call_args
+        assert invoke_kwargs.get("model") == "red/specific-model", (
+            f"Expected model='red/specific-model' in _invoke_agent call, "
+            f"got {invoke_kwargs.get('model')}"
+        )
+
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._save_agent_log")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_invoke_agent_receives_model(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = "judge/specific-model"
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        task = {
+            "id": "TSK-005-03",
+            "issue_id": "ISS-ADH-005",
+            "description": "test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_judge_phase(task, ledger_path, session, session_path, Console())
+
+        mock_resolve.assert_called_once_with("JUDGE", cwd)
+        _, invoke_kwargs = mock_agent.call_args
+        assert invoke_kwargs.get("model") == "judge/specific-model", (
+            f"Expected model='judge/specific-model' in _invoke_agent call, "
+            f"got {invoke_kwargs.get('model')}"
+        )
+
+
 class TestTddCycleIntegration:
     """Verify each TDD phase runner calls resolve_model_for_phase.
 
