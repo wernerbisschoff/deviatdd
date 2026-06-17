@@ -237,21 +237,15 @@ Three distinct substitution mechanisms coexist:
 
 ## [ECOSYSTEM_RESEARCH]
 
-### Promptfoo — Prompt Evaluation Framework
+### PromptFoo — Prompt Evaluation Framework
 
-**Source**: https://promptfoo.dev/docs/intro
+**Source**: https://www.promptfoo.dev/docs/intro
 
-CLI-first open-source prompt evaluation tool (22.2k GitHub stars). Enables test-driven LLM development with declarative YAML config, multi-provider support, automated scoring, and CI/CD integration. Recently acquired by OpenAI.
+CLI-first open-source prompt evaluation tool (22.2k GitHub stars, recently acquired by OpenAI). Enables test-driven LLM development with declarative YAML config, multi-provider support, automated scoring, and CI/CD integration. Used by DeviaTDD as the LLM-based evaluation layer (Layer 3), invoked as an external CLI via Python subprocess.
 
-```
-promptfoo is an open-source CLI and library for evaluating and red-teaming LLM apps.
-With promptfoo, you can: Build reliable prompts, models, and RAGs with benchmarks
-specific to your use-case; Secure your apps with automated red teaming and pentesting;
-Speed up evaluations with caching, concurrency, and live reloading;
-Score outputs automatically by defining metrics; Use as a CLI, library, or in CI/CD.
-```
+**Installation**: Node.js/npm only — no pip package available. Run via `npx promptfoo@latest <command>` (auto-downloads on first use) or install globally with `npm install -g promptfoo`.
 
-**Python provider integration**: Custom Python providers via `call_api(prompt, options, context)` function. Reference: `id: 'file://echo_provider.py'`.
+**Python provider integration**: Custom Python providers via `call_api(prompt, options, context)` function. Python detection priority: (1) `pythonExecutable` in config, (2) `PROMPTFOO_PYTHON` env var, (3) smart detection via `python -c "import sys; print(sys.executable)"`.
 
 ```
 # echo_provider.py
@@ -260,6 +254,21 @@ def call_api(prompt, options, context):
     prefix = config.get('prefix', 'Tell me about: ')
     return {"output": f"{prefix}{prompt}"}
 ```
+
+The return value supports `{"output": str}` for simple responses and `{"output": str, "tokenUsage": {"input": int, "output": int}, "cost": float}` for cost tracking.
+
+**CLI commands** (relevant to DeviaTDD integration):
+
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `promptfoo eval` | Run evaluation against config | `-c <path>` (config file), `--max-concurrency <n>`, `--delay <ms>`, `--no-cache`, `--description <text>` |
+| `promptfoo export eval <evalId>` | Export eval results as JSON | `-o <file>` (output file), `--include-media` |
+| `promptfoo view` | Start browser UI for result visualization | `-p <port>`, `-y` (auto-open) |
+| `promptfoo share [id]` | Create shareable URL for eval results | `--show-auth` |
+| `promptfoo retry <evalId>` | Retry failed/errored test cases | `-c <config>`, `--max-concurrency <n>` |
+| `promptfoo init [dir]` | Scaffold a new promptfoo project | `--no-interactive`, `--example <name>` |
+
+**Common flags**: `--env-file <path>` (load .env), `-v`/`--verbose` (debug logs), `--help`.
 
 **Config structure**:
 ```yaml
@@ -283,22 +292,41 @@ tests:
         value: output.toLowerCase().includes('bonjour')
 ```
 
-**Assertion types**: Deterministic (`contains-json`, `javascript`, `python`) + model-assisted (`llm-rubric`, `factuality`, `g-eval`, `similar`, `classifier`). Python assertions return `{"pass": bool, "score": float, "reason": str}`.
+Configs can reference tests from CSV files (`file://tests.csv`), Google Sheets (URL), or Azure Blob Storage (`az://`). Multiple configs can be combined: `promptfoo eval -c config1.yaml -c config2.yaml`. The `commandLineOptions` section in config sets defaults (`maxConcurrency`, `repeat`, `delay`, `cache`, `share`).
 
-**CI/CD integration**: Official `promptfoo/promptfoo-action@v1` GitHub Action. Path-filtered to `prompts/**` changes. Posts comparison results as PR comments.
+**Assertion types**: Full reference at https://www.promptfoo.dev/docs/configuration/expected-outputs/
 
-```yaml
-- name: Run promptfoo evaluation
-  uses: promptfoo/promptfoo-action@v1
-  with:
-    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-    prompts: 'prompts/**/*.json'
-    config: 'prompts/promptfooconfig.yaml'
-```
+| Syntax | Type | Example |
+|--------|------|---------|
+| `value` | `equals` | `Paris` |
+| `contains:value` | `contains` | `contains:Paris` |
+| `icontains:value` | `icontains` | `icontains:paris` |
+| `starts-with:value` | `starts-with` | `starts-with:The answer` |
+| `regex:pattern` | `regex` | `regex:^Hello.*world$` |
+| `is-json` | `is-json` | `is-json` |
+| `contains-json` | `contains-json` | `contains-json` |
+| `similar(threshold):value` | `similar` | `similar(0.8):Hello world` |
+| `llm-rubric:criteria` | `llm-rubric` | `llm-rubric:Is helpful and accurate` |
+| `grade:criteria` | `llm-rubric` | `grade:Does not mention being an AI` |
+| `factuality:reference` | `factuality` | `factuality:Paris is the capital of France` |
+| `javascript:code` | `javascript` | `javascript:output.length < 100` |
+| `fn:code` | `javascript` | `fn:output.includes('hello')` |
+| `python:code` | `python` | `python:len(output) > 10` |
+| `file://path` | External file | `file://assertions/custom.py` |
+| `not-type:value` | Negated | `not-contains:error` |
+| `levenshtein(N):value` | `levenshtein` | `levenshtein(5):expected text` |
+
+Python assertions receive output via `sys.argv[1]` and context via `sys.argv[2]` (JSON), returning `{"pass": bool, "score": float, "reason": str}`. Python assertion files can be referenced inline or via `file://` path.
+
+Named metrics (`metric` field on assertions) aggregate related results into UI-visible scores. Assertion `weight` (0.0-1.0) controls contribution to overall score. The `threshold` property applies to `similar`, `javascript`, `python`, `cost` types.
+
+**CI/CD integration**: Official `promptfoo/promptfoo-action@v1` GitHub Action. DeviaTDD does NOT use this — PromptFoo evals are manual/local only (HITL Gate 1 decision), using the `deviate prompt eval` CLI wrapper.
 
 **Caching**: Disk-based, 14-day default TTL. Cache keys include provider ID + prompt digest + config. Configured via env vars (`PROMPTFOO_CACHE_ENABLED`, `PROMPTFOO_CACHE_TYPE`, `PROMPTFOO_CACHE_TTL`).
 
-**Nunjucks template syntax**: Supports loops, conditionals, variable composition in prompt templates.
+**Nunjucks template syntax**: Supports loops, conditionals, variable composition in prompt templates. Access environment variables via `{{ env.VAR_NAME }}`.
+
+**Debugging**: `LOG_LEVEL=debug npx promptfoo@latest eval` for verbose logging. Python debugging via `PROMPTFOO_PYTHON_DEBUG_ENABLED=true` (enables `pdb.set_trace()` in providers). OpenTelemetry tracing with `pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http`.
 
 ### Other Prompt Optimization Tools
 
@@ -347,6 +375,9 @@ Batch processing adds 50% discount on top of caching discounts. Cache write cost
 | Path (Strictly Relative to Repo Root) | Type | Purpose | Verbatim Snippet (≤10 lines) |
 |---|---|---|---|
 | `src/deviate/prompts/assembly.py` | Codebase_File | Core prompt assembly engine — loads, injects constitution, substitutes variables | `def load_template(template_name: str) -> str:\n    package_dir = resources.files("deviate.prompts.auto")\n    template_path = package_dir / f"{template_name}.md"\n    if not template_path.is_file():\n        raise FileNotFoundError(\n            f"Template '{template_name}' not found at {template_path}"\n        )\n    return template_path.read_text(encoding="utf-8")` |
+| `src/deviate/prompts/cache_aware.py` | Codebase_File | Three-segment cache-optimized prompt assembly | `def assemble_cache_optimized_prompt(template_name, context, constitution_path, claude_path):` |
+| `src/deviate/prompts/validator.py` | Codebase_File | Deterministic prompt quality validation (4 checks) | `def validate_template(template: PromptTemplate) -> list[ValidationError]:` |
+| `src/deviate/prompts/eval.py` | Codebase_File | PromptFoo thin wrapper — canned config gen + subprocess | `def run_promptfoo_eval(template_path: str) -> subprocess.CompletedProcess:` |
 | `src/deviate/prompts/auto/__init__.py` | Codebase_File | Package marker | `from __future__ import annotations` |
 | `src/deviate/prompts/auto/explore.md` | Prompt_Template | Macro: codebase exploration (V4 Flash) | `<system_instructions>\n\n## [ROLE_DEFINITION]\n\nYou are an **EXPLORATION_CONTEXT_SCANNER** operating inside the **DeviaTDD MACRO LAYER / PHASE_EXPLORE**` |
 | `src/deviate/prompts/auto/research.md` | Prompt_Template | Macro: architectural analysis (Qwen 3.7+) | `<system_instructions>\n\n## [ROLE_DEFINITION]\n\nYou are a **SYSTEMS_ARCHITECT** operating inside the **DeviaTDD MACRO LAYER / PHASE_RESEARCH**` |
@@ -398,7 +429,7 @@ Batch processing adds 50% discount on top of caching discounts. Cache write cost
 ## [STATUS_SUMMARY]
 
 | Metric | Value |
-|---|---|
+|---|---|---|
 | STATUS | SUCCESS |
 | FEATURE_SLUG | `prompt-optimization` |
 | GIT_BRANCH | `main` |
@@ -406,5 +437,8 @@ Batch processing adds 50% discount on top of caching discounts. Cache write cost
 | EPIC_ID | `prompt-optimization` |
 | PROMPT_FILES_CATALOGUED | 33 (11 auto + 19 skills + 3 seed/governance) |
 | TOTAL_ESTIMATED_TOKENS | ~77,500 |
-| EVALUATION_FRAMEWORK_PRESENT | No (Promptfoo, LangSmith, Agenta all absent) |
-| NEXT_ACTION | Run the `deviate-research` skill |
+| EVALUATION_FRAMEWORK_PRESENT | PromptFoo — CLI (npm/npx), no pip package. Integrated via subprocess. |
+| PROMPTFOO_INSTALL | `npm install -g promptfoo` or `npx promptfoo@latest` |
+| PROMPTFOO_PYTHON_PROVIDER | `call_api(prompt, options, context)` — supports custom Python eval logic |
+| PROMPTFOO_ASSERTION_TYPES | 17 types: equals, contains, icontains, starts-with, regex, is-json, contains-json, similar, llm-rubric, factuality, javascript, python, levenshtein, not-contains, not-icontains, not-regex, is-valid-yaml |
+| NEXT_ACTION | HITL Gate 1 completed (2026-06-17). Proceed to `prd` skill with decisions: PromptFoo in scope, git-native variant mgmt, advisory budgets, programmatic prefix assembly |
