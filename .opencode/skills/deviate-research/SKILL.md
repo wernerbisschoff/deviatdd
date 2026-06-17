@@ -3,12 +3,59 @@ name: deviate-research
 description: Architectural analysis of the feature scope. Consumes `explore.md` and produces `design.md` (architecture, options matrix, design trade-offs, risk register, constitutional alignment audit) and `data-model.md` (entities, relationships, schemas, state machines). This is the expensive reasoning phase; do not run before `deviate-explore`.
 category: deviatdd-macro-layer
 version: 2.0.0
+layer: macro
 aliases:
   - /deviate-research
   - /research
   - spec:full:research
   - tools:research
 ---
+
+## DeviaTDD Universal Invariants
+
+The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+
+1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
+
+2. **Relative Path Normalization**: All paths written into output artifacts must be strictly relative to `repo_root`. Absolute machine-specific paths are forbidden.
+
+3. **Verbatim Source Anchoring**: Every structural claim, architectural decision, or assertion must reference a verbatim source (≤10 line snippet anchored to a file path or contract field). Rows without source anchors are subject to post-script rejection.
+
+4. **Output Format Discipline**: Present the final response exclusively in the format specified by the output schema for the current phase — human-readable Markdown for macro/meso documents and spec artifacts; valid YAML code blocks (all string values double-quoted) for micro-phase handover manifests. Do not include conversational preambles, XML wrapper tags, or explanatory content outside the specified output format.
+
+5. **Pointer Convention**: Any natural language instruction or validation step referencing a structural tag, schema block name, or phase identifier must wrap that target in explicit markdown backticks (e.g., `tasks.md`, `spec.md`, `/research`).
+
+6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
+
+## KV Cache Preservation
+
+Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
+
+
+## Macro Layer Execution Model
+
+This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
+
+### Shared Macro Disciplines
+
+1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket at `specs/{NNN}-{FEATURE_SLUG}/`. The bucket is created by the pre-script — do NOT re-derive paths from the problem statement.
+
+2. **Constitutional Validation Gate**: Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+
+3. **Output File Mandate**: Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+
+4. **Pre/Post Script Lifecycle**: Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+
+5. **HITL Gate Handoff**: After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+
+6. **Subagent Delegation**: For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+
+7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+
+## <context>
+<user_input>
+$ARGUMENTS
+</user_input>
 
 
 <system_instructions>
@@ -20,25 +67,14 @@ This phase is followed by **HITL Gate 1** — the human reviews `design.md` and 
 Your job is to ingest a JSON contract emitted by the pre-script `deviate research pre`, dispatch three independent reasoning subagent forks, and write **exactly two** files: `<design_target>` and `<data_model_target>`. The post-script `deviate research post` validates artifacts and creates a single commit.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `deviate research pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target` (absolute path to design.md), `data_model_target` (absolute path to data-model.md), `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, `is_greenfield` (boolean). The pre-script has already verified that `explore.md` exists and is non-empty — do NOT re-derive paths.
-2. **Two-File Output Mandate**: The ONLY files written to disk by this entire engine (including all subagents) are `<design_target>` and `<data_model_target>`. Subagents MUST NOT create, write, or touch any artifact files, temporary files, or summary files — they return text fragments to the orchestrator only.
-   - **Greenfield exception**: When `is_greenfield=true` (no constitution exists), the orchestrator ALSO writes `<repo_root>/specs/constitution.md` before the subagent fork. This is the only exception to the two-file mandate. The constitution is bootstrapped from exploration findings and governs the subagent architectural analysis.
-3. **Constitutional Validation Gate**: If the pre-script emits `STATUS: EXPLORE_NOT_FOUND` or returns an empty `explore_md_path`, terminate immediately.
-   - An empty `constitution_path` is valid when `is_greenfield=true` (no constitution exists yet — the orchestrator bootstraps one from exploration findings in step `constitution_bootstrap`).
-   - Do NOT terminate on `STATUS: MALFORMED_CONSTITUTION` — this status is no longer emitted; the pre-script passes `is_greenfield=true` and a warning instead.
-4. **Architectural Discipline**: This is the reasoning phase — perform trade-off analysis, evaluate options, define data shapes, surface risks. Do NOT preempt `specify` (functional contract), `tasks` (decomposition), or `prd` (immutable user requirements). The PRD translates the *decisions made here* into immutable user requirements; the spec translates them into functional contracts. Stay at the architectural altitude: WHAT the system will look like and WHY, not HOW it will be implemented line by line.
-5. **Parallel Subagent Delegation Boundary**: For non-trivial features, spawn exactly THREE independent reasoning subagents (Alpha, Beta, Gamma) defined in `<subagent_blueprint_directory>`. Run them in parallel. Each returns text fragments. Do not mix their execution context. For trivial features, collapse to a single linear pass and skip the fork.
-6. **Grounding & Source Capture Rule**: Every architectural claim and data-model entity MUST reference back to either (a) a verbatim quote from `explore.md`, (b) a verbatim quote from the constitution, or (c) a documented industry baseline. For greenfield projects, the constitution is bootstrapped in step `constitution_bootstrap` — verbatim quotes reference the new `specs/constitution.md` file. Verbatim snippets (≤ 10 lines) anchored to source paths destroy retroactive memory hallucination.
-7. **Relative Path Normalization**: All paths written into the output MUST be strictly relative to `repo_root` (e.g., `src/core/auth/`). Absolute machine-specific directory structures are forbidden.
- 8. **Agent-Level Constitutional Violation Gate**: This is a critical rule about WHO detects violations. The `deviate research post` command is **mechanical** (validate sections, commit, update ledger) and is **blind to constitutional violations**. The orchestrating agent (you) is the **sole** gate. If Subagent Gamma's `## Constitutional Alignment Audit` surfaces a row with `Violation` alignment, the agent MUST:
+1. **Architectural Discipline**: This is the reasoning phase — perform trade-off analysis, evaluate options, define data shapes, surface risks. Do NOT preempt `specify` (functional contract), `tasks` (decomposition), or `prd` (immutable user requirements). The PRD translates the *decisions made here* into immutable user requirements; the spec translates them into functional contracts. Stay at the architectural altitude: WHAT the system will look like and WHY, not HOW it will be implemented line by line.
+2. **Agent-Level Constitutional Violation Gate**: This is a critical rule about WHO detects violations. The `deviate research post` command is **mechanical** (validate sections, commit, update ledger) and is **blind to constitutional violations**. The orchestrating agent (you) is the **sole** gate. If Subagent Gamma's `## Constitutional Alignment Audit` surfaces a row with `Violation` alignment, the agent MUST:
    - Write a top-level `Constitutional Violation` block to `<design_target>` that names the violating decision, the violated constitutional clause, and the rejected alternative.
    - **DO NOT** call `deviate research post`. The post-script is unaware of the violation and would commit blindly.
    - **DO NOT** write `<data_model_target>`. Halt the workflow.
    - Surface the violation block to the human operator and instruct them to either amend the constitution, amend the architecture, or rerun `deviate-explore` with a different problem statement.
- 9. **Interactive HITL Gate 1**: After writing `<design_target>` and `<data_model_target>`, use the `question` tool to present key architectural decisions to the human operator. Wait for their answers. If they request changes, update the files and re-ask. Once resolved, call `deviate research post` to validate and create a single commit. Then terminate. Do NOT proceed to `prd` — that is the human's decision.
-10. **Single Option Dominance Rule**: If a single design option satisfies all constitutional and exploratory constraints, emit exactly one option in the OPTIONS_MATRIX and document rejected alternatives under a `Rejected Options` block. Do not invent options for completeness when only one is viable.
- 11. **Token Efficiency & Context Primacy Rule**: This is the expensive reasoning phase executed by a high-cost model. You MUST prioritize deep reasoning over broad discovery. Rely primarily on the rich factual context already provided in `explore.md` (including `## Architectural Baselines` and `## Ecosystem Research`). Web search or file lookup tools are a **last resort** only to resolve a critical, blocking ambiguity that cannot be answered from the provided context. Do not unnecessarily call tools or re-discover facts already captured in `explore.md`.
- 12. **Pending HITL Decisions Rule**: The `## Pending HITL Decisions` table in `<design_target>` MUST be populated with every decision that: (a) reverses or deviates from the explore brief, (b) rejects a tool or approach explicitly requested during explore, (c) introduces architectural changes not anticipated in explore, or (d) otherwise requires human judgment. If no such decisions exist, the table MUST contain zero rows (only the header and metadata comment). The `deviate prd pre` command will block PRD generation on any row with Status `PENDING` — this is the mechanism that enforces HITL Gate 1.
+3. **Token Efficiency & Context Primacy Rule**: This is the expensive reasoning phase executed by a high-cost model. You MUST prioritize deep reasoning over broad discovery. Rely primarily on the rich factual context already provided in `explore.md` (including `## Architectural Baselines` and `## Ecosystem Research`). Web search or file lookup tools are a **last resort** only to resolve a critical, blocking ambiguity that cannot be answered from the provided context. Do not unnecessarily call tools or re-discover facts already captured in `explore.md`.
+4. **Pending HITL Decisions Rule**: The `## Pending HITL Decisions` table in `<design_target>` MUST be populated with every decision that: (a) reverses or deviates from the explore brief, (b) rejects a tool or approach explicitly requested during explore, (c) introduces architectural changes not anticipated in explore, or (d) otherwise requires human judgment. If no such decisions exist, the table MUST contain zero rows (only the header and metadata comment). The `deviate prd pre` command will block PRD generation on any row with Status `PENDING` — this is the mechanism that enforces HITL Gate 1.
 
 </system_instructions>
 

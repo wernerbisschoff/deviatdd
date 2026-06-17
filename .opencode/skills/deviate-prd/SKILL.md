@@ -3,6 +3,7 @@ name: deviate-prd
 description: Compile exploration results into a Product Requirements Document (prd.md) — the singular, deeply coherent source of truth for downstream automated sharding into local issues via specs/issues.jsonl
 category: deviatdd-macro-layer
 version: 1.0.0
+layer: macro
 aliases:
   - prd
   - /deviate-prd
@@ -10,26 +11,66 @@ aliases:
   - spec.full.prd
 ---
 
+## DeviaTDD Universal Invariants
+
+The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+
+1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
+
+2. **Relative Path Normalization**: All paths written into output artifacts must be strictly relative to `repo_root`. Absolute machine-specific paths are forbidden.
+
+3. **Verbatim Source Anchoring**: Every structural claim, architectural decision, or assertion must reference a verbatim source (≤10 line snippet anchored to a file path or contract field). Rows without source anchors are subject to post-script rejection.
+
+4. **Output Format Discipline**: Present the final response exclusively in the format specified by the output schema for the current phase — human-readable Markdown for macro/meso documents and spec artifacts; valid YAML code blocks (all string values double-quoted) for micro-phase handover manifests. Do not include conversational preambles, XML wrapper tags, or explanatory content outside the specified output format.
+
+5. **Pointer Convention**: Any natural language instruction or validation step referencing a structural tag, schema block name, or phase identifier must wrap that target in explicit markdown backticks (e.g., `tasks.md`, `spec.md`, `/research`).
+
+6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
+
+## KV Cache Preservation
+
+Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
+
+
+## Macro Layer Execution Model
+
+This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
+
+### Shared Macro Disciplines
+
+1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket at `specs/{NNN}-{FEATURE_SLUG}/`. The bucket is created by the pre-script — do NOT re-derive paths from the problem statement.
+
+2. **Constitutional Validation Gate**: Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+
+3. **Output File Mandate**: Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+
+4. **Pre/Post Script Lifecycle**: Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+
+5. **HITL Gate Handoff**: After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+
+6. **Subagent Delegation**: For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+
+7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+
+## <context>
+<user_input>
+$ARGUMENTS
+</user_input>
+
 
 <system_instructions>
 
 This engine operates strictly as an isolated, production-grade Product Requirements Document (PRD) compiler and structural transpiler within a Spec-Driven Development (SDD) agentic workspace topology. Your objective is to ingest the unstructured results compiled during the feature exploration phase and compile them into an integrated, production-grade Product Requirements Document (`prd.md`). This document serves as the singular, deeply coherent source of truth for downstream automated sharding into local issues via specs/issues.jsonl. Eliminate all conversational filler, prefaces, and meta-commentary.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `deviate prd pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `timestamp`, `epic_slug`, `feature_dir` (relative path to the feature bucket under specs/), `prd_path` (absolute path to prd.md), `constitution_path`, `explore_md_path`, `design_md_path`, `data_model_md_path`, `plan_target` (absolute path for the execution manifest), and `dry_run`. The pre-script has already discovered the epic slug and validated upstream artifacts — do NOT re-derive paths.
-2. **Constitutional Validation Gate**: Prior to synthesizing requirements, verify the presence and structural readability of `specs/constitution.md` (from the contract's `constitution_path`). Every functional requirement, data invariant, and performance threshold must strictly inherit and comply with the core rules defined in the project constitution. Any conflicting parameters found in the input data must be isolated, labeled as Non-Compliant, and rejected.
-3. **Output Format Constraint**: Present the final response exclusively using human-readable Markdown syntax headers, bullet configurations, and text patterns as specified in the schema. Do not encapsulate or wrap output blocks within XML structural boundaries.
-4. **Ambiguity Interrogation & Halt Gate**: Scrutinize the upstream feature exploration data for hidden assumptions, missing technical schemas, unstated edge-case bounds, or protocol gaps. If any critical architectural parameters are unresolved, you must trigger an AMBIGUITY_INTERROGATION state: suppress the generation of the final product requirements sections, halt the primary execution pipeline, skip the Git commit block, and emit ONLY the `## Decision Readiness`, `## Clarification Log`, and `# SESSION_STATE` blocks to prompt the human stakeholder for precise structural inputs.
-5. **Feature Slug Path Normalization**: Enumerate feature folders within `specs/` matching the pattern `{NNN}-{FEATURE_SLUG}/`. Feature folders must strictly follow the zero-padded incremental sequence pattern. Every single path, schema reference, or module interface targeted by requirements must be written as a relative path calculated strictly from the workspace root (e.g., `src/core/main.py`). Absolute machine-specific paths are completely forbidden.
-6. **Cohesive Scope Invariant**: Evaluate the specified architecture as an un-fragmented whole. Do not decouple functional workflows from their technical schema limits. You must guarantee complete systemic closure: every functional mechanism, guardrail, or operational exception rule outlined in the exploration data must have an explicit, tracking match mapped inside the defined structural entities, configuration structures, or system boundaries.
-7. **Execution Lifecycle Protocols (Internal ICoT)**: Before producing output parameters, execute three sequential mental passes inside an internal engineering ledger block:
+1. **Ambiguity Interrogation & Halt Gate**: Scrutinize the upstream feature exploration data for hidden assumptions, missing technical schemas, unstated edge-case bounds, or protocol gaps. If any critical architectural parameters are unresolved, you must trigger an AMBIGUITY_INTERROGATION state: suppress the generation of the final product requirements sections, halt the primary execution pipeline, skip the Git commit block, and emit ONLY the `## Decision Readiness`, `## Clarification Log`, and `# SESSION_STATE` blocks to prompt the human stakeholder for precise structural inputs.
+2. **Cohesive Scope Invariant**: Evaluate the specified architecture as an un-fragmented whole. Do not decouple functional workflows from their technical schema limits. You must guarantee complete systemic closure: every functional mechanism, guardrail, or operational exception rule outlined in the exploration data must have an explicit, tracking match mapped inside the defined structural entities, configuration structures, or system boundaries.
+3. **Execution Lifecycle Protocols (Internal ICoT)**: Before producing output parameters, execute three sequential mental passes inside an internal engineering ledger block:
     - Pass 1 (Topological Layout): Map out the relationship matrices between the incoming data inputs and systemic entities.
     - Pass 2 (Flow Synthesis): Trace how data mutates over time across internal module boundaries, modeling the sequencing behavior.
     - Pass 3 (Modular Decomposition): Translate those verified system states into independent, cleanly shardable functional blocks.
-8. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax to allow a downstream `/shard` orchestration tool to slice the markdown cleanly into atomic issue cards (registered in specs/issues.jsonl) without structural loss.
-9. **Template Engine Safety**: Preserve all double-curly variable markers or local workspace configuration flags as inert string inputs via explicit escape syntax to ensure zero compilation syntax errors within local dotfile template managers like Chezmoi or Jinja.
-10. **Pointer Normalization**: Explicitly wrap all inline references to structural XML tags inside markdown backticks.
-11. **Implementation Phase**: After generating the PRD content, write it to `prd_path` from the contract. Then write the execution manifest to `plan_target` and run `deviate prd post` with the plan target path.
+4. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax to allow a downstream `/shard` orchestration tool to slice the markdown cleanly into atomic issue cards (registered in specs/issues.jsonl) without structural loss.
+5. **Template Engine Safety**: Preserve all double-curly variable markers or local workspace configuration flags as inert string inputs via explicit escape syntax to ensure zero compilation syntax errors within local dotfile template managers like Chezmoi or Jinja.
 
 </system_instructions>
 
