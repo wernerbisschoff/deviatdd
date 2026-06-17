@@ -50,8 +50,8 @@
 | `review_id` | `str` | Pattern `^REV-\d{3}-\d{2}$`. Unique per review event. | Pattern modeled after `TaskRecord.id` at `ledger.py:83` |
 | `stack_id` | `str \| None` | References `PRStackRecord.stack_id` when reviewing the full stack. Null for single-entry review. | |
 | `entry_branch` | `str \| None` | References `StackEntryRecord.branch_name` when reviewing a single PR. Null for full-stack reviews. | |
-| `reviewer` | `Literal["deviate","graphite-agent","human"]` | `"deviate"` = built-in skill; `"graphite-agent"` = Graphite's Diamond review; `"human"` = HITL Gate 3. | `explore.md` line 86: "Graphite AI Review (Diamond → Graphite Agent): Focuses on real bugs" |
-| `review_tool` | `str` | Tool used: `"deviate-review"`, `"graphite-agent"`, `"coderabbit"`. | `explore.md` line 91: "CodeRabbit: AI-native code review" |
+| `reviewer` | `Literal["deviate","human"]` | `"deviate"` = built-in skill; `"human"` = HITL Gate 3. Graphite AI Review is NOT integrated (free-tier constraint). | `deviate-review/SKILL.md` |
+| `review_tool` | `str` | Tool used: `"deviate-review"`. | `deviate-review/SKILL.md` |
 | `status` | `Literal["PENDING","IN_PROGRESS","APPROVED","CHANGES_REQUESTED","DISMISSED"]` | Default `"PENDING"`. | |
 | `summary` | `str` | Min length 1. Review summary text. | Existing `review post` pattern at `review.py:147-168` |
 | `violations` | `list[str]` | List of violation descriptions (security, constitution, style). Empty = clean review. | `deviate-review/SKILL.md`: "flagging cross-cutting issues that no single TDD cycle catches" |
@@ -163,7 +163,7 @@ class PRReviewRecord(BaseModel):
     review_id: str
     stack_id: str | None = None
     entry_branch: str | None = None
-    reviewer: Literal["deviate", "graphite-agent", "human"] = "deviate"
+    reviewer: Literal["deviate", "human"] = "deviate"
     review_tool: str = "deviate-review"
     status: Literal["PENDING", "IN_PROGRESS", "APPROVED", "CHANGES_REQUESTED", "DISMISSED"] = "PENDING"
     summary: str = Field(min_length=1)
@@ -349,11 +349,10 @@ def append_review_record(record: PRReviewRecord, ledger_path: Path) -> bool:
    Pattern: deviate-pr/SKILL.md pre-phase contract
 ```
 
-### Flow 3: Stack Review Cycle (Deviate + Optional Graphite AI Advisory)
+### Flow 3: Stack Review Cycle (Deviate-Review Skill)
 
-**Trigger**: PR stack status = `"SUBMITTED"`. Human or automated review initiated.
+**Trigger**: PR stack status = `"SUBMITTED"`. Review initiated via `deviate review`.
 
-> *`explore.md` line 86: "Graphite AI Review (Diamond → Graphite Agent): Focuses on real bugs — not just style issues or best practices."*
 > *`deviate-review/SKILL.md`: "lightweight single-pass scan over the PR's diff, flagging cross-cutting issues that no single TDD cycle catches"*
 
 ```
@@ -370,32 +369,25 @@ def append_review_record(record: PRReviewRecord, ledger_path: Path) -> bool:
      reviewer="deviate", review_tool="deviate-review",
      status="IN_PROGRESS", summary="", violations=[]
                            │
-4. AI Review Execution — two parallel paths:
-   ┌─────────────────────────────────────────────────────────┐
-   │ Path A: Built-in deviate-review skill                   │
-   │  - Scans ledger integrity (tasks→commits alignment)    │
-   │  - Scans cross-file consistency                        │
-   │  - Scans security surface                              │
-   │  Source: deviate-review/SKILL.md                       │
-   ├─────────────────────────────────────────────────────────┤
-   │ Path B: graphite-agent (Diamond) — ADVISORY ONLY       │
-   │  - Full codebase context analysis                      │
-   │  - Real bug detection (not style)                      │
-   │  - Custom rules + exclusions support                   │
-   │  Output tagged: [AI_ADVISORY]                          │
-   │  Source: explore.md §Ecosystem Research                │
-   └─────────────────────────────────────────────────────────┘
+4. deviate-review skill execution:
+   ┌────────────────────────────────────────────────┐
+   │ Built-in deviate-review scan (opencode agent) │
+   │  - Scans ledger integrity                      │
+   │  - Scans cross-file consistency                │
+   │  - Scans security surface                      │
+   │  - No external AI service required             │
+   │  Source: deviate-review/SKILL.md               │
+   └────────────────────────────────────────────────┘
                            │
 5. Append PRReviewRecord (transition):
      status="APPROVED" or status="CHANGES_REQUESTED",
      summary="<review findings>",
      violations=[...]
-   Tagged: [AI_ADVISORY: ...] for Graphite Agent findings
                            │
 6. console.print review summary (chat-based output, no file persistence)
    Source: deviate-review/SKILL.md: "Chat-based output, no report file"
                            │
-7. HITL Gate 3: Human reviews aggregated findings.
+7. HITL Gate 3: Human reviews findings and makes final decision.
    Source: specs/constitution.md: "Three mandatory gates... No gate may be programmatically bypassed."
                            │
 8. On APPROVED: stack → MERGING.
@@ -413,7 +405,7 @@ def append_review_record(record: PRReviewRecord, ledger_path: Path) -> bool:
 | SRC-05 | Codebase_File | `src/deviate/cli/meso.py` | Existing `_pr_pre()`/`_pr_run()` — Graphite extends these |
 | SRC-06 | Codebase_File | `src/deviate/cli/review.py` | Review pre/post — extended for stack review advisory |
 | SRC-07 | Skill | `src/deviate/prompts/skills/deviate-pr/SKILL.md` | PR orchestration skill — gains Graphite conditional branch |
-| SRC-08 | Skill | `src/deviate/prompts/skills/deviate-review/SKILL.md` | Review skill — extended with Graphite AI advisory supplement path |
+| SRC-08 | Skill | `src/deviate/prompts/skills/deviate-review/SKILL.md` | Review skill — extended for stack review (ledger integrity, cross-file consistency, security surface) |
 
 ## Status Summary
 
