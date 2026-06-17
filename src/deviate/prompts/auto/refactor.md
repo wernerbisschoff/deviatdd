@@ -21,14 +21,26 @@ After completion, the next task's RED phase begins a fresh cycle, or if all task
 
 </system_instructions>
 
+<task_content>
+{task_content}
+</task_content>
+
+<spec_content>
+{spec_content}
+</spec_content>
+
+<data_model_content>
+{data_model_content}
+</data_model_content>
+
 <execution_sequence>
 
 ### STEP_1: CONTRACT_LOADING
 
-Load architectural contracts using the resolved task context:
+Load architectural contracts from injected context:
 
-1. Read `<REPO_ROOT>/<SPEC_DIR>/spec.md` for technical specification
-2. Read `<REPO_ROOT>/<SPEC_DIR>/data-model.md` for data structures (if exists)
+1. Read `<spec_content>` above for technical specification
+2. Read `<data_model_content>` above for data structures (if present)
 
 **Purpose**: Validate refactoring decisions against architectural invariants.
 
@@ -91,9 +103,9 @@ Task: {TASK_ID} refactored and committed
 <handover_manifest>
 ```yaml
 phase: REFACTOR
-task_id: {TASK_ID}
-spec_dir: {SPEC_DIR}
-task_status: COMPLETE
+status: "PASS"
+task_id: "{TASK_ID}"
+next_phase: "IDLE"
 files:
   - path: path/to/source_file.ext
     action: modified
@@ -121,9 +133,6 @@ artifacts:
 commit:
   sha: "<COMMIT_SHA>"
   message: "refactor({TASK_ID}): improve structure"
-previous_phase: /deviate-green
-next_phase: /deviate-red (fresh cycle) | /tools:pr (all complete)
-```
 ```
 </handover_manifest>
 

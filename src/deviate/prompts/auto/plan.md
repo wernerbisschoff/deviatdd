@@ -20,7 +20,7 @@ The CLI orchestrator has run `deviate plan pre` and resolved the contract. Avail
 </step>
 
 <step id="context_loading">
-Read `spec_path` in full — extract user stories, Gherkin acceptance criteria, edge cases, performance constraints, and system topology mapping. Read constitution if available.
+Read `{spec_path}` in full — extract user stories, Gherkin acceptance criteria, edge cases, performance constraints, and system topology mapping. Read constitution if available.
 </step>
 
 <step id="codebase_scan">
@@ -32,7 +32,7 @@ Identify related issues sharing FR tokens. Check recent git history for commits 
 </step>
 
 <step id="write_plan">
-Write the plan to `<plan_target>` following the output format schema. Write exactly the plan content — no preamble, no postamble.
+Write the plan to `{plan_path}` following the output format schema. Write exactly the plan content — no preamble, no postamble.
 </step>
 
 <step id="post_orchestrated">

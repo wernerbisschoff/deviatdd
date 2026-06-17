@@ -13,9 +13,15 @@ This is the **RED** (test-writing) phase of the DeviaTDD micro-cycle. Use it whe
 - The task is in `[ ]` (pending) or `[/]` (in-progress) state
 - Tests need to be written before implementation code
 
-After completion, the `deviate-green` skill should be invoked for the implementation phase.
-
 </system_instructions>
+
+<task_content>
+{task_content}
+</task_content>
+
+<spec_content>
+{spec_content}
+</spec_content>
 
 <traceability_mandates>
 1. **Verbatim Objective Verification**: Extract the target `{TASK_ID}` defined inside the `tasks.md` state array. Trace this element directly back to its upstream declaration inside `specs/{FEATURE_SLUG}/spec.md`.
@@ -39,8 +45,12 @@ Target_Artifact: `tests/auth/test_jwt.py`
 <handover_manifest>
 ```yaml
 phase: RED
+status: "PASS"
 task_id: "TASK-104"
-feature_slug: "auth-jwt"
+test_file: "tests/auth/test_jwt.py"
+verification_command: "pytest tests/auth/test_jwt.py"
+expected_failure_node: "NameError: name 'JWTService' is not defined"
+next_phase: "GREEN"
 test_suite:
   file_path: "tests/auth/test_jwt.py"
   verification_command: "pytest tests/auth/test_jwt.py"
@@ -56,7 +66,6 @@ assertions_established:
 git_ledger:
   commit_sha: "a1b2c3d4e5"
   message: "test(TASK-104): add failing acceptance criteria tests"
-next_phase: "/deviate-green"
 ```
 </handover_manifest>
 </output_payload>
@@ -68,8 +77,8 @@ next_phase: "/deviate-green"
 <step id="context_loading">
 1. Extract the target `{TASK_ID}` from the orchestrator-provided context
 2. Resolve absolute paths for the feature workspace: `specs/{FEATURE_SLUG}/`
-3. Read the active task description from `tasks.md`
-4. Inspect `spec.md` to map data definitions, schemas, and API constraints
+3. Read the active task description from `<task_content>` above
+4. Inspect `<spec_content>` above for data definitions, schemas, and API constraints
 </step>
 
 <step id="test_writing">
@@ -99,8 +108,12 @@ Target_Artifact: `path/to/test_file.ext`
 <handover_manifest>
 ```yaml
 phase: RED
+status: "PASS"
 task_id: "{TASK_ID}"
-feature_slug: "{FEATURE_SLUG}"
+test_file: "path/to/test_file.ext"
+verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
+expected_failure_node: "{EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}"
+next_phase: "GREEN"
 test_suite:
   file_path: "path/to/test_file.ext"
   verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
@@ -117,7 +130,6 @@ assertions_established:
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "test({TASK_ID}): add failing acceptance criteria tests"
-next_phase: "/deviate-green"
 ```
 </handover_manifest>
 </step>
@@ -135,8 +147,12 @@ Target_Artifact: `path/to/test_file.ext`
 <handover_manifest>
 ```yaml
 phase: RED
+status: "PASS"
 task_id: "{TASK_ID}"
-feature_slug: "{FEATURE_SLUG}"
+test_file: "path/to/test_file.ext"
+verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
+expected_failure_node: "{EXACT_ASSERTION_ERROR_OR_COMPILER_STUB_MISSING}"
+next_phase: "GREEN"
 test_suite:
   file_path: "path/to/test_file.ext"
   verification_command: "{VERIFICATION_BINARY} path/to/test_file.ext"
@@ -153,7 +169,6 @@ assertions_established:
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "test({TASK_ID}): add failing acceptance criteria tests"
-next_phase: "/deviate-green"
 ```
 </handover_manifest>
 </output_format_schemas>

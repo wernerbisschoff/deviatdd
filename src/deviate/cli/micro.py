@@ -30,6 +30,7 @@ from deviate.core.cache_discipline import CacheDiscipline, CacheStore
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
+from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import AgentConfig, PytestReportConfig, SessionState
 from deviate.ui.monitor import OrchestrationMonitor
 
@@ -716,6 +717,70 @@ def _build_scope(issue_id: str, task_id: str) -> str:
     return issue_id
 
 
+def _build_auto_prompt(phase: str, task: dict, root: Path) -> str:
+    """Build a prompt from auto templates with context injected."""
+    issue_id = task.get("issue_id", "")
+    task_id = task.get("id", "")
+    source_file = _resolve_issue_source_file(root, issue_id) if issue_id else None
+
+    spec_content = _resolve_spec_md(root, task)
+
+    feature_slug = ""
+    issue_slug = ""
+    if source_file:
+        parts = PurePosixPath(source_file)
+        feature_slug = parts.parent.parent.name if len(parts.parts) >= 3 else ""
+        issue_slug = parts.stem
+
+    data_model_content = ""
+    if feature_slug and issue_slug:
+        dm_path = root / "specs" / feature_slug / issue_slug / "data-model.md"
+        if dm_path.exists():
+            data_model_content = dm_path.read_text(encoding="utf-8")
+
+    prd_content = ""
+    if feature_slug:
+        prd_path = root / "specs" / feature_slug / "prd.md"
+        if prd_path.exists():
+            prd_content = prd_path.read_text(encoding="utf-8")
+
+    task_content = json.dumps(task, indent=2)
+    test_command = task.get("verification", "")
+    lint_command = _resolve_lint_command(root)
+    verification_command = task.get("verification", "")
+    verification_binary = task.get("verification", "")
+
+    const_path = root / "specs" / "constitution.md"
+
+    context: dict[str, str] = {
+        "task_content": task_content,
+        "spec_content": spec_content,
+        "data_model_content": data_model_content,
+        "prd_content": prd_content,
+        "task_id": task_id,
+        "issue_id": issue_id,
+        "feature_slug": feature_slug,
+        "test_command": test_command,
+        "lint_command": lint_command,
+        "verification_command": verification_command,
+        "verification_binary": verification_binary,
+        "next_phase": "",
+    }
+    return assemble_prompt(
+        template_name=phase, context=context, constitution_path=const_path
+    )
+
+
+def _resolve_lint_command(root: Path) -> str:
+    const_path = root / "specs" / "constitution.md"
+    if const_path.exists():
+        from deviate.core.constitution import extract_commands
+
+        cmds = extract_commands(const_path)
+        return cmds.get("lint_command", "")
+    return ""
+
+
 def _run_red_phase(
     task: dict,
     ledger_path: Path,
@@ -732,28 +797,26 @@ def _run_red_phase(
     c.print(f"  [bold blue]RED →[/] {tid}")
 
     backend = agent or "opencode"
-    skill = _load_skill_content("RED")
-    if skill:
-        prompt = _build_agent_prompt(skill, "RED", task, Path.cwd())
-        agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
-        manifest, _ = _invoke_agent(
-            prompt,
-            c,
-            backend_name=backend,
-            task_id=tid,
-            phase="RED",
-            output_callback=agent_output_callback,
+    prompt = _build_auto_prompt("red", task, Path.cwd())
+    agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
+    manifest, _ = _invoke_agent(
+        prompt,
+        c,
+        backend_name=backend,
+        task_id=tid,
+        phase="RED",
+        output_callback=agent_output_callback,
+    )
+    if manifest is None:
+        raise PhaseFailedError(
+            f"RED phase agent error for {tid}: agent returned no manifest"
         )
-        if manifest is None:
-            raise PhaseFailedError(
-                f"RED phase agent error for {tid}: agent returned no manifest"
-            )
-        if manifest.status.upper() in ("FAILURE", "ERROR"):
-            raise PhaseFailedError(
-                f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
-            )
-        if manifest.yellow_trigger:
-            c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
+    if manifest.status.upper() in ("FAILURE", "ERROR"):
+        raise PhaseFailedError(
+            f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
+        )
+    if manifest.yellow_trigger:
+        c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
 
     session = session.force_transition_to("RED")
     session.save(session_path)
@@ -782,38 +845,34 @@ def _run_green_phase(
     c.print(f"  [bold green]GREEN →[/] {tid}")
 
     backend = agent or "opencode"
-    skill = _load_skill_content("GREEN")
-    if skill:
-        prompt = _build_agent_prompt(skill, "GREEN", task, Path.cwd())
-        if session.train_feedback:
-            prompt += (
-                f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
-            )
-        agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
-        manifest, timeout_ctx = _invoke_agent(
-            prompt,
-            c,
-            backend_name=backend,
-            task_id=tid,
-            phase="GREEN",
-            output_callback=agent_output_callback,
+    prompt = _build_auto_prompt("green", task, Path.cwd())
+    if session.train_feedback:
+        prompt += f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
+    agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
+    manifest, timeout_ctx = _invoke_agent(
+        prompt,
+        c,
+        backend_name=backend,
+        task_id=tid,
+        phase="GREEN",
+        output_callback=agent_output_callback,
+    )
+    if manifest is None and timeout_ctx:
+        c.print(
+            "  [yellow]TIMEOUT[/] GREEN agent timed out \u2014 summarizing context for retry"
         )
-        if manifest is None and timeout_ctx:
-            c.print(
-                "  [yellow]TIMEOUT[/] GREEN agent timed out \u2014 summarizing context for retry"
-            )
-            summary = _summarize_timeout_context(timeout_ctx, backend_name=backend)
-            session.train_feedback = summary
-            session.save(session_path)
-            raise PhaseFailedError(f"GREEN phase agent timed out for {tid}")
-        if manifest is None:
-            raise PhaseFailedError(
-                f"GREEN phase agent error for {tid}: agent returned no manifest"
-            )
-        if manifest.status.upper() in ("FAILURE", "ERROR"):
-            raise PhaseFailedError(
-                f"GREEN phase failed for {tid}: {manifest.rationale or 'unknown'}"
-            )
+        summary = _summarize_timeout_context(timeout_ctx, backend_name=backend)
+        session.train_feedback = summary
+        session.save(session_path)
+        raise PhaseFailedError(f"GREEN phase agent timed out for {tid}")
+    if manifest is None:
+        raise PhaseFailedError(
+            f"GREEN phase agent error for {tid}: agent returned no manifest"
+        )
+    if manifest.status.upper() in ("FAILURE", "ERROR"):
+        raise PhaseFailedError(
+            f"GREEN phase failed for {tid}: {manifest.rationale or 'unknown'}"
+        )
 
     session = session.force_transition_to("GREEN")
     if manifest and manifest.yellow_trigger:
@@ -987,73 +1046,67 @@ def _run_judge_phase(
     c.print(f"  [bold magenta]JUDGE →[/] {tid}")
 
     backend = agent or "opencode"
-    skill = _load_skill_content("JUDGE")
-    if skill:
-        root = Path.cwd()
+    root = Path.cwd()
 
-        diff = subprocess.run(
-            ["git", "diff", "HEAD~1..HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout
+    diff = subprocess.run(
+        ["git", "diff", "HEAD~1..HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout
 
-        spec_content = _resolve_spec_md(root, task)
+    prompt = _build_auto_prompt("judge", task, root)
+    prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
-        prompt = _build_agent_prompt(skill, "JUDGE", task, root)
-        prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
-        if spec_content:
-            prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
-
-        agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
-        manifest, _ = _invoke_agent(
-            prompt,
-            c,
-            backend_name=backend,
-            task_id=tid,
-            phase="JUDGE",
-            output_callback=agent_output_callback,
+    agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
+    manifest, _ = _invoke_agent(
+        prompt,
+        c,
+        backend_name=backend,
+        task_id=tid,
+        phase="JUDGE",
+        output_callback=agent_output_callback,
+    )
+    if manifest is None:
+        raise PhaseFailedError(
+            f"JUDGE phase agent error for {tid}: agent returned no manifest"
         )
-        if manifest is None:
-            raise PhaseFailedError(
-                f"JUDGE phase agent error for {tid}: agent returned no manifest"
+    if manifest.status.upper() in ("FAILURE", "ERROR"):
+        c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
+
+        feedback = manifest.rationale or ""
+        if hasattr(manifest, "train_feedback") and manifest.train_feedback:
+            feedback = manifest.train_feedback
+
+        _execute_rollback(root, feedback)
+
+        tasks_md = _resolve_tasks_md(root, task)
+        if tasks_md is not None:
+            _append_judge_feedback(tasks_md, tid, feedback)
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
             )
-        if manifest.status.upper() in ("FAILURE", "ERROR"):
-            c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"docs({tid}): add judge feedback for GREEN retry",
+                ],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
 
-            feedback = manifest.rationale or ""
-            if hasattr(manifest, "train_feedback") and manifest.train_feedback:
-                feedback = manifest.train_feedback
-
-            _execute_rollback(root, feedback)
-
-            tasks_md = _resolve_tasks_md(root, task)
-            if tasks_md is not None:
-                _append_judge_feedback(tasks_md, tid, feedback)
-                subprocess.run(
-                    ["git", "add", "-A"],
-                    cwd=root,
-                    capture_output=True,
-                    env=_git_env(),
-                )
-                subprocess.run(
-                    [
-                        "git",
-                        "commit",
-                        "-m",
-                        f"docs({tid}): add judge feedback for GREEN retry",
-                    ],
-                    cwd=root,
-                    capture_output=True,
-                    env=_git_env(),
-                )
-
-            session = session.force_transition_to("GREEN")
-            session.train_feedback = feedback
-            session.yellow_triggered = False
-            session.save(session_path)
-            return session
+        session = session.force_transition_to("GREEN")
+        session.train_feedback = feedback
+        session.yellow_triggered = False
+        session.save(session_path)
+        return session
 
     session = session.force_transition_to("JUDGE")
     session.train_feedback = ""
@@ -1078,26 +1131,24 @@ def _run_refactor_phase(
     c.print(f"  [bold green]REFACTOR →[/] {tid}")
 
     backend = agent or "opencode"
-    skill = _load_skill_content("REFACTOR")
-    if skill:
-        prompt = _build_agent_prompt(skill, "REFACTOR", task, Path.cwd())
-        agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
-        manifest, _ = _invoke_agent(
-            prompt,
-            c,
-            backend_name=backend,
-            task_id=tid,
-            phase="REFACTOR",
-            output_callback=agent_output_callback,
+    prompt = _build_auto_prompt("refactor", task, Path.cwd())
+    agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
+    manifest, _ = _invoke_agent(
+        prompt,
+        c,
+        backend_name=backend,
+        task_id=tid,
+        phase="REFACTOR",
+        output_callback=agent_output_callback,
+    )
+    if manifest is None:
+        raise PhaseFailedError(
+            f"REFACTOR phase agent error for {tid}: agent returned no manifest"
         )
-        if manifest is None:
-            raise PhaseFailedError(
-                f"REFACTOR phase agent error for {tid}: agent returned no manifest"
-            )
-        if manifest.status.upper() in ("FAILURE", "ERROR"):
-            raise PhaseFailedError(
-                f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
-            )
+    if manifest.status.upper() in ("FAILURE", "ERROR"):
+        raise PhaseFailedError(
+            f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
+        )
 
     session = session.force_transition_to("IDLE")
     session.yellow_triggered = False
@@ -1120,33 +1171,31 @@ def _run_yellow_phase(
     c.print(f"  [bold magenta]YELLOW →[/] {tid}")
 
     backend = agent or "opencode"
-    skill = _load_skill_content("YELLOW")
-    if skill:
-        prompt = _build_agent_prompt(skill, "YELLOW", task, Path.cwd())
-        agent_output_callback = _make_agent_output_callback(monitor, tid, "YELLOW")
-        manifest, _ = _invoke_agent(
-            prompt,
-            c,
-            backend_name=backend,
-            task_id=tid,
-            phase="YELLOW",
-            output_callback=agent_output_callback,
+    prompt = _build_auto_prompt("yellow", task, Path.cwd())
+    agent_output_callback = _make_agent_output_callback(monitor, tid, "YELLOW")
+    manifest, _ = _invoke_agent(
+        prompt,
+        c,
+        backend_name=backend,
+        task_id=tid,
+        phase="YELLOW",
+        output_callback=agent_output_callback,
+    )
+    if manifest is None:
+        raise PhaseFailedError(
+            f"YELLOW phase agent error for {tid}: agent returned no manifest"
         )
-        if manifest is None:
-            raise PhaseFailedError(
-                f"YELLOW phase agent error for {tid}: agent returned no manifest"
-            )
-        if manifest.status.upper() == "FAILURE":
-            c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
-            subprocess.run(
-                ["git", "restore", "."],
-                cwd=Path.cwd(),
-                env=_git_env(),
-                check=False,
-            )
-            c.print("  [dim]Reverted test changes, re-running GREEN[/]")
-            _append_status_transition(task, "YELLOW_REJECTED", ledger_path)
-            return session, _YELLOW_DECISION_REJECTED
+    if manifest.status.upper() == "FAILURE":
+        c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
+        subprocess.run(
+            ["git", "restore", "."],
+            cwd=Path.cwd(),
+            env=_git_env(),
+            check=False,
+        )
+        c.print("  [dim]Reverted test changes, re-running GREEN[/]")
+        _append_status_transition(task, "YELLOW_REJECTED", ledger_path)
+        return session, _YELLOW_DECISION_REJECTED
 
     session = session.force_transition_to("YELLOW")
     session.yellow_triggered = False
@@ -1443,11 +1492,9 @@ def _run_execute_phase(
     max_judge_attempts = 3
 
     for attempt in range(max_judge_attempts):
-        skill = _load_skill_content("EXECUTE")
-        if skill:
-            prompt = _build_agent_prompt(skill, "EXECUTE", task, root)
-            if train_feedback:
-                prompt += f"\n\n<train_feedback>\n{train_feedback}\n</train_feedback>\n"
+        prompt = _build_auto_prompt("execute", task, root)
+        if train_feedback:
+            prompt += f"\n\n<train_feedback>\n{train_feedback}\n</train_feedback>\n"
             agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
             manifest, _ = _invoke_agent(
                 prompt,
@@ -1483,45 +1530,42 @@ def _run_execute_phase(
             break
 
         c.print(f"  [bold magenta]JUDGE \u2192[/] {tid} (spec compliance)")
-        judge_skill = _load_skill_content("JUDGE")
-        if judge_skill:
-            judge_prompt = _build_agent_prompt(judge_skill, "JUDGE", task, root)
-            judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
-            judge_prompt += f"\n<spec>\n{spec_content}\n</spec>\n"
+        judge_prompt = _build_auto_prompt("judge", task, root)
+        judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
-            judge_manifest, _ = _invoke_agent(
-                judge_prompt,
-                c,
-                backend_name=backend,
-                task_id=tid,
-                phase="JUDGE",
+        judge_manifest, _ = _invoke_agent(
+            judge_prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="JUDGE",
+        )
+
+        if judge_manifest is None:
+            raise PhaseFailedError(
+                f"JUDGE phase agent error for {tid}: agent returned no manifest"
             )
 
-            if judge_manifest is None:
-                raise PhaseFailedError(
-                    f"JUDGE phase agent error for {tid}: agent returned no manifest"
+        if judge_manifest.status.upper() in ("FAILURE", "ERROR"):
+            feedback = judge_manifest.rationale or ""
+            tf = getattr(judge_manifest, "train_feedback", None)
+            if tf:
+                feedback = tf
+
+            c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
+
+            _execute_rollback(root, feedback)
+
+            if attempt < max_judge_attempts - 1:
+                train_feedback = feedback
+                c.print(
+                    f"  [yellow]RETRY EXECUTE ({attempt + 2}/{max_judge_attempts})[/]"
                 )
-
-            if judge_manifest.status.upper() in ("FAILURE", "ERROR"):
-                feedback = judge_manifest.rationale or ""
-                tf = getattr(judge_manifest, "train_feedback", None)
-                if tf:
-                    feedback = tf
-
-                c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
-
-                _execute_rollback(root, feedback)
-
-                if attempt < max_judge_attempts - 1:
-                    train_feedback = feedback
-                    c.print(
-                        f"  [yellow]RETRY EXECUTE ({attempt + 2}/{max_judge_attempts})[/]"
-                    )
-                    continue
-                raise PhaseFailedError(
-                    f"EXECUTE phase failed for {tid} "
-                    f"after {max_judge_attempts} JUDGE attempts: {feedback}"
-                )
+                continue
+            raise PhaseFailedError(
+                f"EXECUTE phase failed for {tid} "
+                f"after {max_judge_attempts} JUDGE attempts: {feedback}"
+            )
 
         break
 

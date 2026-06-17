@@ -22,9 +22,7 @@ This phase operates inside the **DeviaTDD MESO LAYER** — localized research, p
 
 7. **Deterministic Discovery**: Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
 
-<step id="handover_emission">
-Emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
-</step>
+**STDOUT OUTPUT MANDATE**: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write artifact files to their target paths only (not to stdout). The caller parses your stdout as raw YAML.
 
 <context>
 <user_input>

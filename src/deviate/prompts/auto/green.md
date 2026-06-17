@@ -13,14 +13,24 @@ This is the **GREEN** (implementation) phase of the DeviaTDD micro-cycle. Use it
 - The handover manifest from RED is available in conversation context
 - Implementation code needs to be written to pass the failing tests
 
-After completion, the `deviate-refactor` skill (or equivalent) should be invoked for code cleanup.
-
 </system_instructions>
 
+<task_content>
+{task_content}
+</task_content>
+
+<spec_content>
+{spec_content}
+</spec_content>
+
+<data_model_content>
+{data_model_content}
+</data_model_content>
+
 <traceability_and_compliance_mandates>
-1. **Contract Validation & Upstream Ingestion**: Extract the target `{TASK_ID}`, functional requirements (`FR-[ID]`), and acceptance criteria (`AC-[ID]`) from the preceding RED phase handover manifest context block. Validate these structural goals directly against `spec.md` and `data-model.md`.
+1. **Contract Validation & Upstream Ingestion**: Extract the target `{TASK_ID}`, functional requirements (`FR-[ID]`), and acceptance criteria (`AC-[ID]`) from the preceding RED phase handover manifest context block. Validate these structural goals directly against `<spec_content>` and `<data_model_content>` above.
 2. **Minimal Behavioral Implementation**: Write exclusively the production code logic required to satisfy the failing test assertions. Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
-3. **Contract Drift Detection**: If you detect that a test assertion generated during the previous Red phase directly violates or breaks structural schemas declared in `spec.md` or `data-model.md`, halt execution immediately and report an API signature conflict.
+3. **Contract Drift Detection**: If you detect that a test assertion generated during the previous Red phase directly violates or breaks structural schemas declared in `<spec_content>` or `<data_model_content>`, halt execution immediately and report an API signature conflict.
 4. **Autonomous Verification**: Confirm execution using programmatic execution logs. Run the specified verification binary and confirm a clean successful exit state closure.
 5. **Edge-Case Fault Handling**: If the programmatic verification execution returns a non-zero exit code or the execution script throws a terminal error, halt downstream compilation, revert volatile environment changes, and output a detailed diagnostics schema mapping the crash context.
 </traceability_and_compliance_mandates>
@@ -67,7 +77,7 @@ next_phase: "/deviate-refactor"
 <step id="context_loading">
 1. Extract the target `{TASK_ID}` and test file path from the orchestrator-provided context or RED handover manifest
 2. Read the target test file to isolate the exact assertion expectations
-3. Parse test framework conventions from the test file
+3. Validate against `<spec_content>` and `<data_model_content>` above
 </step>
 
 <step id="implementation">
@@ -97,8 +107,10 @@ Target_Artifact: `path/to/source_file.ext`
 ## Minimal Handover
 ```yaml
 phase: GREEN
+status: "PASS"
 task_id: "{TASK_ID}"
-feature_slug: "{FEATURE_SLUG}"
+verification_command: "{VERIFICATION_COMMAND}"
+next_phase: "REFACTOR"
 files:
   - path: "path/to/source_file.ext"
     action: "created|modified"
@@ -112,7 +124,6 @@ test:
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
-next_phase: "/deviate-refactor"
 ```
 </step>
 
@@ -127,8 +138,10 @@ Target_Artifact: `path/to/source_file.ext`
 ## Minimal Handover
 ```yaml
 phase: GREEN
+status: "PASS"
 task_id: "{TASK_ID}"
-feature_slug: "{FEATURE_SLUG}"
+verification_command: "{VERIFICATION_COMMAND}"
+next_phase: "REFACTOR"
 files:
   - path: "path/to/source_file.ext"
     action: "created|modified"
@@ -142,7 +155,6 @@ test:
 git_ledger:
   commit_sha: "{COMMIT_SHA}"
   message: "feat({TASK_ID}): implement minimal logic to pass acceptance tests"
-next_phase: "/deviate-refactor"
 ```
 </output_format_schemas>
 
