@@ -15,6 +15,29 @@ This is the **GREEN** (implementation) phase of the DeviaTDD micro-cycle. Use it
 
 </system_instructions>
 
+<green_lines>
+## FORBIDDEN ACTIONS — VIOLATIONS TRIGGER PIPELINE FAILURE
+
+You implement production code ONLY. The runner handles all verification, git
+operations, and ledger writes after receiving your manifest.
+
+**NEVER modify test files** — they are set in the RED phase and must remain
+unchanged. The CacheDiscipline validator detects test file modifications
+between phases and will FAIL the pipeline.
+
+Allowed:
+- Create/modify `src/` files (production code)
+- Create/modify any non-test implementation files
+
+Forbidden:
+- Modify any file under `tests/`
+- Run `git add`, `git commit`, `git checkout`, `git branch`, `git status`
+- Write to `specs/**/tasks.jsonl` or `.deviate/session.json`
+
+**If you modify tests: the pipeline will retry, and on the second attempt the
+task will fail permanently.**
+</green_lines>
+
 <task_content>
 {task_content}
 </task_content>
@@ -35,43 +58,6 @@ This is the **GREEN** (implementation) phase of the DeviaTDD micro-cycle. Use it
 5. **Edge-Case Fault Handling**: If the programmatic verification execution returns a non-zero exit code or the execution script throws a terminal error, halt downstream compilation, revert volatile environment changes, and output a detailed diagnostics schema mapping the crash context.
 </traceability_and_compliance_mandates>
 
-<few_shot_examples>
-<example>
-<pre_script_output>
-{"status":"READY","task_id":"TASK-104","test_command":"pytest tests/auth/test_jwt.py","lint_command":"ruff check .","spec_dir":"specs/001","feature_slug":"auth-jwt"}
-</pre_script_output>
-<output_payload>
-````markdown
-# DeviaTDD Micro Green: TASK-104
-
-Status: GREEN_STATE_ACHIEVED
-Target_Artifact: `src/auth/jwt.py`
-
-## Minimal Handover
-```yaml
-phase: GREEN
-task_id: "TASK-104"
-feature_slug: "auth-jwt"
-files:
-  - path: "src/auth/jwt.py"
-    action: "created"
-    purpose: "Implement functional JWTService encoder routines matching technical specs"
-  - path: "tests/auth/test_jwt.py"
-    action: "unchanged"
-test:
-  command: "pytest tests/auth/test_jwt.py"
-  status: "PASS"
-  output: "tests/auth/test_jwt.py . [100%]\n1 passed in 0.02s"
-git_ledger:
-  commit_sha: "b2c3d4e5"
-  message: "feat(TASK-104): implement minimal logic to pass acceptance tests"
-next_phase: "/deviate-refactor"
-```
-````
-</output_payload>
-</example>
-</few_shot_examples>
-
 <execution_sequence>
 
 <step id="context_loading">
@@ -82,7 +68,7 @@ next_phase: "/deviate-refactor"
 
 <step id="implementation">
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
-2. Maintain existing functional signatures — do not change test files
+2. Write ONLY production code — leave all `tests/` files untouched
 3. Add only the production code required — no speculative features
 4. **Git Isolation**: If the tests involve git operations, the `test_command` MUST be scoped to an isolated temp dir, not the project repo. Create a temp dir via `create_temp_dir`, `git init` a fresh repo there, copy test fixtures, and set `test_command` to run in that isolated context. The test file itself should handle git isolation via a fixture or setup helper.
 5. Run the `test_command` to verify the tests pass:
@@ -97,61 +83,41 @@ next_phase: "/deviate-refactor"
 </step>
 
 <step id="handover_emission">
-After the implementation is verified passing, generate the HANDOVER_MANIFEST:
+After the implementation is verified passing, emit the handover manifest:
 
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
 Target_Artifact: `path/to/source_file.ext`
 
-## Minimal Handover
+<handover_manifest>
 ```yaml
 phase: GREEN
 status: "PASS"
 task_id: "{TASK_ID}"
-verification_command: "{VERIFICATION_COMMAND}"
-next_phase: "REFACTOR"
-files:
-  - path: "path/to/source_file.ext"
-    action: "created|modified"
-    purpose: "{IMPLEMENTATION_PURPOSE}"
-  - path: "path/to/test_file.ext"
-    action: "modified|unchanged"
-test:
-  command: "{VERIFICATION_COMMAND}"
-  status: "PASS"
-  output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
 ```
+</handover_manifest>
 </step>
 
 </execution_sequence>
 
 <output_format_schemas>
-**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations after your response (add, commit, branch management). Do NOT run `git add`, `git commit`, `git checkout -b`, or any other git mutation command. Writing files to disk is sufficient. Any git commands you run will create duplicate commits and corrupt the pipeline.
+**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations, test verification, and ledger writes. Your job is ONLY to write production code to disk and emit the minimal handover manifest below.
 
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
 Target_Artifact: `path/to/source_file.ext`
 
-## Minimal Handover
+<handover_manifest>
 ```yaml
 phase: GREEN
 status: "PASS"
 task_id: "{TASK_ID}"
-verification_command: "{VERIFICATION_COMMAND}"
-next_phase: "REFACTOR"
-files:
-  - path: "path/to/source_file.ext"
-    action: "created|modified"
-    purpose: "{IMPLEMENTATION_PURPOSE}"
-  - path: "path/to/test_file.ext"
-    action: "modified|unchanged"
-test:
-  command: "{VERIFICATION_COMMAND}"
-  status: "PASS"
-  output: "{TRUNCATED_SUCCESSFUL_TEST_BINARY_STDOUT}"
 ```
+</handover_manifest>
+
+Use `status: "ERROR"` only for tool failures or unforeseen problems.
 </output_format_schemas>
 
 <edge_case_handling>
