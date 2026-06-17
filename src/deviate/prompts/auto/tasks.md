@@ -75,6 +75,18 @@ deviate tasks post
 Validates required sections and task ID format (`TSK-{NNN}-{NN}`), then commits and advances session to IDLE.
 </step>
 
+<step id="handover_emission">
+After the post script completes, emit the HANDOVER_MANIFEST:
+
+```yaml
+phase: TASKS
+status: PASS
+issue_id: {issue_id}
+rationale: "tasks.md written, validated, and committed"
+next_phase: "IDLE"
+```
+</step>
+
 </execution_sequence>
 
 <output_format_schemas>
@@ -114,6 +126,16 @@ Validates required sections and task ID format (`TSK-{NNN}-{NN}`), then commits 
 ## Universal Test Constraints (ALL TASKS)
 - Git Isolation Mandatory
 - repo_path parameter pattern
+
+## [HANDOVER_MANIFEST]
+```yaml
+phase: TASKS
+status: PASS
+issue_id: "{issue_id}"
+rationale: "tasks.md written, validated, and committed"
+next_phase: "IDLE"
+```
+
 </output_format_schemas>
 
 <edge_case_handling>
