@@ -66,6 +66,16 @@ Use `mise run <task>` for all execution:
 - **Imports**: Follow language conventions for import grouping (stdlib → third-party → local). Use absolute imports where idiomatic.
 - **Testing**: All new code must have corresponding tests.
 
+## Offline Context Documentation System
+
+The `context` CLI (`~/.local/share/mise/installs/node/24.14.0/bin/context`) is a local-first documentation MCP server for AI agents. It provides offline-queryable API docs for all project dependencies. **Always prefer `context query <library> <topic>` over web fetching** — results are local, instant, and token-cheap.
+
+### Usage Rules
+- **Discovery first**: Run `context list` to see available documentation packages before querying a library.
+- **Primary lookup**: Use `context query <library@version> "<topic>"` as the first and primary documentation mechanism for all library/framework API questions.
+- **Registration**: When a dependency is not yet indexed, use `context add <source>` (git repo URL) to register its documentation. See `/Users/werner/Development/tools/context/` for the tool source.
+- **Fallback hierarchy**: `context query` → training data → web fetch (last resort). Web fetching is only acceptable when `context` has no documentation for the required library.
+
 ### Quick-Start Workflow
 1. Run `deviate explore` to scan the codebase
 2. Run `deviate research` for architectural analysis
