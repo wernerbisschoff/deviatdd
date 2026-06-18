@@ -1,6 +1,7 @@
 import warnings
 from contextlib import chdir
 from pathlib import Path
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -168,3 +169,46 @@ class TestInitCommand:
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0, result.output
             assert session_path.exists()
+
+    def test_init_detects_context(self, tmp_path: Path):
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = "/usr/local/bin/context"
+                result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            content = config_path.read_text()
+            assert "use_context = true" in content
+
+    def test_init_missing_context(self, tmp_path: Path):
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = None
+                result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            content = config_path.read_text()
+            assert "use_context = false" in content
+
+    def test_init_context_governance_block(self, tmp_path: Path):
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = "/usr/local/bin/context"
+                result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+
+            claude_path = workdir / "CLAUDE.md"
+            assert claude_path.exists()
+            claude_content = claude_path.read_text()
+            assert "## Offline Context Documentation System" in claude_content
+            assert "context query" in claude_content
+            assert "context list" in claude_content
+            assert "context add" in claude_content
+
+            agents_path = workdir / "AGENTS.md"
+            assert agents_path.exists()
+            agents_content = agents_path.read_text()
+            assert "## Offline Context Documentation System" in agents_content

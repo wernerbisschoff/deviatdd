@@ -18,6 +18,8 @@ This phase operates inside the **DeviaTDD MESO LAYER** — localized research, p
 
 7. **Deterministic Discovery**: Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
 
+8. **Context Consultation Requirement**: Use `context query <library> <topic>` for understanding library APIs and framework conventions detected in the codebase. The `context` CLI provides offline, deterministic documentation lookups without network overhead. Prefer it over training data or web fetching.
+
 <step id="handover_emission">
 After the post script completes, emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
 </step>
