@@ -440,7 +440,7 @@ def _try_claim_issue(
 
             try:
                 subprocess.run(
-                    ["git", "push", "-u", remote, branch],
+                    ["git", "push", "--no-verify", "-u", remote, branch],
                     cwd=worktree_path,
                     env=_git_env(),
                     check=True,
@@ -1187,8 +1187,8 @@ def _meso_run(
     session = SessionState.load(session_path)
     if session.current_phase != "PLAN":
         session = session.force_transition_to("PLAN")
-        session.active_issue_id = issue_id
-        session.save(session_path)
+    session.active_issue_id = issue_id
+    session.save(session_path)
 
     # Sync .deviate/ to worktree so downstream functions find the session
     if dot_dir.exists():
