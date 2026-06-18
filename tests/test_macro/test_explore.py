@@ -31,6 +31,7 @@ class TestExploreCommand:
 
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "EXPLORE"
+            assert (Path("specs") / "explore").is_dir()
 
     def test_explore_pre_rejects_if_not_idle(self, tmp_path: Path):
         with chdir(tmp_path):
