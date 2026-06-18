@@ -1,6 +1,6 @@
 # Project Constitution
 
-[CONSTITUTION_VERSION]: 0.1.0
+[CONSTITUTION_VERSION]: 0.2.0
 
 ---
 
@@ -12,7 +12,8 @@
 - **Tamper Guard & Micro-Sandboxing**: GREEN phase resets test directories to post-RED commit state before evaluation. Micro-layer LLM execution (Aider) is strictly sandboxed: it is granted write access **only** to files matching `src/**/*.py`. All `tests/`, `specs/`, and configuration files are strictly read-only during Micro-layer execution. Any mutation outside this allow-list triggers an immediate rollback.
 - **Human-in-the-Loop (HITL)**: Three mandatory gates (Design Approval after research, Contract Sign-Off after shard, Final Merge Audit after micro) prevent autonomous drift. No gate may be programmatically bypassed.
 - **Session Continuity**: Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases. Model switching mid-task is prohibited.
-- **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, YELLOW, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`).
+- **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, YELLOW, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`). This tiering is enforced via `.deviate/config.toml` `[models]` section — the `default` key sets the fallback model, and per-phase keys override it.
+- **Config-Driven Model Routing**: Phase→model assignments are declared in `.deviate/config.toml` under `[models]`. The `default` key sets the model for all phases without an explicit entry. Any other key (e.g., `judge`, `plan`, `red`) is treated as a phase name. Resolution order: phase-specific key → `default` key → no model flag (backend-native default). Both `opencode` and `droid` backends support `--model`; `claude` backend ignores model config silently.
 
 ## [2_TECH_STACK_STANDARDS]
 
@@ -29,7 +30,7 @@
 - Session state: JSON files under `.deviate/`
 - Issue ledger: `specs/issues.jsonl` (append-only JSONL)
 - Task ledger: `specs/**/tasks.jsonl` (append-only JSONL)
-- Config: TOML via `.deviate/config.toml`
+- Config: TOML via `.deviate/config.toml`; `[models]` section for per-phase model assignment
 
 ### [2_4_INFRASTRUCTURE]
 - Micro-sandbox: Aider Python API (`aider.coders.Coder`) as LLM execution substrate
@@ -72,6 +73,7 @@
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
 ## [5_VERSION_HISTORY]
+- 0.2.0 — Added `[models]` config section for per-phase model routing; documented resolution order and backend support matrix
 - 0.1.0 — Initial constitution generation for DeviaTDD Python CLI
 
 ## [SEMANTIC_ANCHORS]
@@ -83,3 +85,5 @@
 - `VERSION_HISTORY`
 - File paths: `specs/constitution.md`, `specs/issues.jsonl`, `.deviate/config.toml`
 - Framework names: pytest, ruff, uv, rich, typer, bats, aider
+- Model config: `DeviateConfig.models`, `resolve_phase_model()`, `resolve_model_for_phase()` in `src/deviate/state/config.py`
+- `[models]` section in `.deviate/config.toml`
