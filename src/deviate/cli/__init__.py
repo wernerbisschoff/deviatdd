@@ -238,28 +238,6 @@ def _detect_context() -> bool:
     return shutil.which("context") is not None
 
 
-_GRAPHITE_GOVERNANCE_SECTION = """\
-## Graphite Stacked Changes Workflow
-
-When Graphite integration is enabled (`.deviate/config.toml` contains `graphite = true`):
-
-### Branch Creation
-- Use `gt create -am "<message>"` to create a branch with an automatic commit
-- If the working tree is clean, use `gt create -m "<message>"` instead
-
-### PR Submission
-- Use `gt submit --stack` to submit the entire stack for review
-
-### Syncing
-- Use `gt sync` to sync your stack with the remote
-
-### Anti-Patterns
-- Do NOT use `git checkout -b` alongside `gt` — it bypasses Graphite's stack tracking
-- Do NOT use `gh pr create` when Graphite is enabled — use `gt submit --stack`
-- Do NOT run `gt` commands outside a Graphite-tracked repository
-"""
-
-
 def _scaffold_dotfiles(
     workdir: Path, agent_export_mode: str, use_context: bool = False, graphite: bool = False
 ) -> None:
@@ -312,8 +290,10 @@ def _apply_governance(workdir: Path, graphite: bool = False) -> None:
     _upsert_governance_block(agents_path, agents_content)
 
     if graphite:
-        _upsert_governance_block(claude_path, _GRAPHITE_GOVERNANCE_SECTION)
-        _upsert_governance_block(agents_path, _GRAPHITE_GOVERNANCE_SECTION)
+        graphite_seed = _read_seed("deviate.prompts.governance", "graphite_seed.md")
+        if graphite_seed:
+            _upsert_governance_block(claude_path, graphite_seed)
+            _upsert_governance_block(agents_path, graphite_seed)
 
 
 def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
