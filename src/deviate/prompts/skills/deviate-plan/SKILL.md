@@ -53,6 +53,7 @@ CRITICAL INSTRUCTION INVARIANTS:
    d) If a `tasks.md` or prior `plan.md` exists in related issue directories, read it for prior implementation patterns
    e) If research artifacts (`design.md`, `data-model.md`) exist in the epic workspace, read them for architectural context
    f) Scan `specs/constitution.md` for applicable architectural invariants
+   g) Use `context query <library> <topic>` to understand library APIs and framework conventions detected in the codebase — provides offline, version-pinned documentation without network overhead
 
 4. **Prior Implementation Analysis**:
    a) Identify related issues in the issue ledger that share FR tokens or user story concerns

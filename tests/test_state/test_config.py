@@ -69,6 +69,16 @@ class TestDeviateConfig:
         models = {"default": "fast/model", "judge": "premium/model"}
         assert resolve_phase_model("judge", models) == "premium/model"
 
+    def test_use_context_default(self):
+        config = DeviateConfig()
+        assert config.use_context is False
+
+    def test_use_context_round_trip(self):
+        config = DeviateConfig(use_context=True)
+        data = json.loads(config.model_dump_json())
+        restored = DeviateConfig.model_validate(data)
+        assert restored.use_context is True
+
 
 class TestProfileConfig:
     def test_default_values(self):

@@ -620,6 +620,7 @@ class TestJudgeTrainRollback:
         c = Console()
 
         session = SessionState.load(session_path)
+        session.red_commit_sha = red_sha
         _run_judge_phase(
             task=task,
             ledger_path=ledger_path,
