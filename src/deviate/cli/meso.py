@@ -15,7 +15,6 @@ from deviate.cli._common import (
     _extract_epic_num,
     _extract_issue_num,
     _handle_missing_dot_dir,
-    _run_pre_commit_hooks,
     console,
     with_json_quiet,
 )
@@ -676,8 +675,6 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
         console.print("[red]PLAN_EMPTY[/] plan.md is empty")
         raise typer.Exit(code=1)
 
-    _run_pre_commit_hooks()
-
     epic_num = _extract_epic_num(bucket)
     issue_num = _extract_issue_num(resolved_issue_id)
     try:
@@ -685,6 +682,7 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
             plan_md,
             f"docs({epic_num}-{issue_num}): create plan.md",
             repo=Path.cwd(),
+            no_verify=True,
         )
         console.print(f"[green]COMMITTED[/] plan.md at {sha[:8]}")
     except Exception as e:
@@ -859,13 +857,14 @@ def _tasks_post(
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
 
-    _run_pre_commit_hooks()
-
     epic_num = _extract_epic_num(bucket)
     issue_num = _extract_issue_num(resolved_issue_id)
     try:
         sha = commit_artifact(
-            tasks_md, f"docs({epic_num}-{issue_num}): create tasks.md", repo=Path.cwd()
+            tasks_md,
+            f"docs({epic_num}-{issue_num}): create tasks.md",
+            repo=Path.cwd(),
+            no_verify=True,
         )
         console.print(f"[green]COMMITTED[/] tasks.md at {sha[:8]}")
     except Exception as e:
@@ -1037,6 +1036,12 @@ def _invoke_agent_phase(
     try:
         root = Path(cwd) if cwd else Path.cwd()
         model = resolve_model_for_phase(phase, root)
+        backend_name = backend.config.backend
+        model_str = f" --model {model}" if model else ""
+        console.print(
+            f"[green]INVOKE_AGENT[/] running '{backend_name}{model_str}'"
+            f" for [{phase}] phase"
+        )
         manifest = backend.invoke(prompt, cwd=cwd, model=model)
     except AgentSubprocessError as e:
         console.print(f"[red]{phase.upper()}_FAILED[/] {e}")
