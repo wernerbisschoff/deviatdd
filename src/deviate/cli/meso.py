@@ -930,6 +930,41 @@ def _pr_pre() -> None:
     print(json.dumps(contract, indent=2))
 
 
+def _run_gt_submit(repo_root: Path) -> None:
+    result = subprocess.run(
+        ["gt", "submit", "--stack"],
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if result.returncode != 0:
+        console.print(
+            f"[red]GT_SUBMIT_FAILED[/] {result.stderr.strip()}\n"
+            "Is Graphite CLI installed? Install with: npm install -g @withgraphite/graphite-cli"
+        )
+        raise typer.Exit(code=1)
+    console.print(f"[green]GT_SUBMIT[/] {result.stdout.strip()}")
+
+
+def _run_gh_pr_create(
+    title: str,
+    body_file: Path,
+    merge: bool = False,
+    auto_merge: bool = False,
+) -> None:
+    cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
+    if merge:
+        cmd.append("--merge")
+    elif auto_merge:
+        cmd.append("--auto-merge")
+    result = subprocess.run(cmd, capture_output=True, text=True, env=_git_env())
+    if result.returncode != 0:
+        console.print(f"[red]PR_CREATE_FAILED[/] {result.stderr.strip()}")
+        raise typer.Exit(code=1)
+    pr_url = result.stdout.strip()
+    console.print(f"[green]PR_CREATED[/] {pr_url}")
+
+
 def _pr_run(
     body_file: Path,
     merge: bool = False,
@@ -1011,33 +1046,9 @@ def _pr_run(
     title = _pr_title(issue_id, record.title, record.type)
 
     if resolve_graphite_config(repo_root):
-        result = subprocess.run(
-            ["gt", "submit", "--stack"],
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        )
-        if result.returncode != 0:
-            console.print(
-                f"[red]GT_SUBMIT_FAILED[/] {result.stderr.strip()}\n"
-                "Is Graphite CLI installed? Install with: npm install -g @withgraphite/graphite-cli"
-            )
-            raise typer.Exit(code=1)
-        console.print(f"[green]GT_SUBMIT[/] {result.stdout.strip()}")
-        _save_session(session, session_path, "TASKS")
-        return
-
-    cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
-    if merge:
-        cmd.append("--merge")
-    elif auto_merge:
-        cmd.append("--auto-merge")
-    result = subprocess.run(cmd, capture_output=True, text=True, env=_git_env())
-    if result.returncode != 0:
-        console.print(f"[red]PR_CREATE_FAILED[/] {result.stderr.strip()}")
-        raise typer.Exit(code=1)
-    pr_url = result.stdout.strip()
-    console.print(f"[green]PR_CREATED[/] {pr_url}")
+        _run_gt_submit(repo_root)
+    else:
+        _run_gh_pr_create(title, body_file, merge, auto_merge)
 
     _save_session(session, session_path, "TASKS")
 
