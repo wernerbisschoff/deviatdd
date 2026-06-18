@@ -25,7 +25,7 @@ class TestSkillInstallation:
         (tmp_path / ".claude").mkdir(parents=True)
         (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0
             assert "INSTALL" in result.output.upper()
 
@@ -40,10 +40,10 @@ class TestSkillInstallation:
         (tmp_path / ".claude").mkdir(parents=True)
         with chdir(tmp_path):
             # First install — all skills get composed (INSTALL expected)
-            first = runner.invoke(cli, ["init"])
+            first = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert first.exit_code == 0
             # Second install — identical content (SKIP expected)
-            second = runner.invoke(cli, ["init"])
+            second = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert second.exit_code == 0
             assert "SKIP" in second.output
 
@@ -60,7 +60,7 @@ class TestSkillInstallation:
         target.write_text("STALE CONTENT", encoding="utf-8")
         (tmp_path / ".claude").mkdir(exist_ok=True)
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "claude"])
             assert result.exit_code == 0
             content = target.read_text(encoding="utf-8")
             assert "STALE CONTENT" not in content
@@ -94,7 +94,7 @@ class TestSkillInstallation:
     def test_contract_handoff_defaults_to_session_json(self, tmp_path: Path):
         """US-006-INIT Scenario 4: contract handoff defaults to .deviate/session.json."""
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0
             assert (tmp_path / ".deviate" / "session.json").exists()
             gitignore = tmp_path / ".deviate" / ".gitignore"
@@ -112,7 +112,7 @@ class TestSkillInstallation:
         )
         (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             skill_path = tmp_path / ".opencode" / "skills" / "deviate-pr" / "SKILL.md"
             assert skill_path.exists()
@@ -130,7 +130,7 @@ class TestSkillInstallation:
         )
         (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             skill_path = tmp_path / ".opencode" / "skills" / "deviate-pr" / "SKILL.md"
             assert skill_path.exists()

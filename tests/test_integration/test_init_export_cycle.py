@@ -26,7 +26,9 @@ class TestFullInitCycle:
     def test_full_init_cycle_completes(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init", "--generate-constitution"])
+            result = runner.invoke(
+                cli, ["init", "--agent", "opencode", "--generate-constitution"]
+            )
             assert result.exit_code == 0, result.output
 
             dot_dir = workdir / ".deviate"
@@ -63,7 +65,7 @@ class TestFullInitCycle:
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             config_path = workdir / ".deviate" / "config.toml"
@@ -77,7 +79,7 @@ class TestFullInitCycle:
     def test_full_init_structure_valid_session(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             with open(workdir / ".deviate" / "session.json") as f:
@@ -88,7 +90,7 @@ class TestFullInitCycle:
     def test_init_performance_under_500ms(self, tmp_path: Path):
         with chdir(tmp_path):
             start = time.perf_counter()
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             elapsed = time.perf_counter() - start
 
             assert result.exit_code == 0, result.output
@@ -96,11 +98,11 @@ class TestFullInitCycle:
 
     def test_init_idempotent_performance(self, tmp_path: Path):
         with chdir(tmp_path):
-            result_first = runner.invoke(cli, ["init"])
+            result_first = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result_first.exit_code == 0, result_first.output
 
             start = time.perf_counter()
-            result_second = runner.invoke(cli, ["init"])
+            result_second = runner.invoke(cli, ["init", "--agent", "opencode"])
             elapsed = time.perf_counter() - start
 
             assert result_second.exit_code == 0, result_second.output
@@ -112,14 +114,18 @@ class TestFullInitCycle:
             dot_dir = workdir / ".deviate"
             dot_dir.mkdir()
             config_path = dot_dir / "config.toml"
-            config_path.write_text('profile = "custom"\n')
+            config_path.write_text(
+                'profile = "custom"\n\n[agent]\nbackend = "opencode"\n'
+            )
             session_path = dot_dir / "session.json"
             session_path.write_text('{"current_phase": "RED"}\n')
 
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
-            assert config_path.read_text() == 'profile = "custom"\n'
+            assert config_path.read_text() == (
+                'profile = "custom"\n\n[agent]\nbackend = "opencode"\n'
+            )
             assert session_path.read_text() == '{"current_phase": "RED"}\n'
 
     def test_init_idempotency_with_pre_existing_files(self, tmp_path: Path):
@@ -128,7 +134,7 @@ class TestFullInitCycle:
             dot_dir = workdir / ".deviate"
             dot_dir.mkdir()
             config_path = dot_dir / "config.toml"
-            original_config = 'profile = "custom"\n'
+            original_config = 'profile = "custom"\n\n[agent]\nbackend = "opencode"\n'
             config_path.write_text(original_config)
 
             session_path = dot_dir / "session.json"
@@ -149,7 +155,7 @@ class TestFullInitCycle:
             existing_agents = "# Existing AGENTS content\n"
             agents_path.write_text(existing_agents)
 
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             assert config_path.read_text() == original_config

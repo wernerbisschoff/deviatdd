@@ -8,6 +8,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.prompt import Prompt
 
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
@@ -30,11 +31,27 @@ from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
 from deviate.cli.review import review_app
 from deviate.core.skills import detect_agents, discover_skills, install_skill
+from deviate.ui.render import is_interactive
 
 cli = typer.Typer(no_args_is_help=True)
 console = Console()
 
 _GOVERNANCE_MODULE = "deviate.prompts.governance"
+
+# User-facing agent platform choices (selectable via --agent and the
+# interactive init prompt). Order is intentional: factory/droid (Droid
+# ecosystem) come first, then the third-party CLIs.
+AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode")
+
+# Map a user-facing agent name to the underlying backend that meso/micro
+# layers invoke. ``factory`` is the Factory Droid IDE — the meso/micro
+# commands still drive the ``droid`` binary under the hood.
+AGENT_TO_BACKEND: dict[str, str] = {
+    "factory": "droid",
+    "droid": "droid",
+    "claude": "claude",
+    "opencode": "opencode",
+}
 
 
 @cli.callback()
@@ -257,6 +274,120 @@ def _detect_context() -> bool:
     return shutil.which("context") is not None
 
 
+# ---------------------------------------------------------------------------
+# Agent selection
+# ---------------------------------------------------------------------------
+
+
+def _read_agent_backend_from_config(config_path: Path) -> str | None:
+    """Return the ``[agent].backend`` value stored in *config_path*.
+
+    Used by both init (to detect a previously persisted choice) and the
+    interactive prompt (to pre-select the current value as the default).
+    """
+    if not config_path.exists():
+        return None
+    try:
+        import tomllib
+
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return None
+    backend = data.get("agent", {}).get("backend")
+    return backend if isinstance(backend, str) and backend else None
+
+
+def _resolve_agent_to_backend(agent: str) -> str:
+    """Map a user-facing agent name to its underlying backend.
+
+    Falls back to the input value when it is already a valid backend
+    literal (``opencode``, ``claude``, ``droid``). Unknown values are
+    returned unchanged so the caller can surface a validation error.
+    """
+    return AGENT_TO_BACKEND.get(agent, agent)
+
+
+def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
+    """Surgically upsert ``[agent]\nbackend = "<value>"`` in *config_path*.
+
+    Preserves every other key/table in the file (similar in spirit to
+    :func:`_merge_flag_keys` for the boolean ``graphite`` / ``use_context``
+    keys, but for the nested ``[agent]`` table).
+
+    Returns ``True`` when the file was modified, ``False`` when the
+    existing ``[agent].backend`` already matches the requested value.
+    """
+    content = config_path.read_text(encoding="utf-8")
+    new_line = f'backend = "{backend}"'
+
+    block_pattern = re.compile(
+        r"^\[agent\]\s*\n(?:backend\s*=\s*.*\n?)+",
+        re.MULTILINE,
+    )
+    match = block_pattern.search(content)
+    if match:
+        if f'backend = "{backend}"' in match.group(0):
+            return False
+        content = block_pattern.sub(f"[agent]\n{new_line}\n", content)
+    else:
+        table_match = re.search(r"^\[.*\]\s*$", content, re.MULTILINE)
+        new_block = f"\n[agent]\n{new_line}\n"
+        if table_match:
+            idx = table_match.start()
+            content = content[:idx] + new_block.lstrip("\n") + "\n" + content[idx:]
+        else:
+            if content and not content.endswith("\n"):
+                content += "\n"
+            content += new_block
+    config_path.write_text(content, encoding="utf-8")
+    return True
+
+
+def _prompt_agent_selection(
+    workdir: Path,
+    config_path: Path,
+) -> str | None:
+    """Interactively prompt the user to pick an agent platform.
+
+    Returns the selected agent name, or ``None`` when the session is not
+    interactive (e.g. CI) — the caller is then expected to abort the
+    command with a clear error message.
+    """
+    if not is_interactive():
+        return None
+    existing = _read_agent_backend_from_config(config_path)
+    default = existing if existing in AGENT_CHOICES else None
+    try:
+        selected = Prompt.ask(
+            "Select agent platform",
+            choices=list(AGENT_CHOICES),
+            default=default,
+            console=console,
+        )
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if not selected or selected not in AGENT_CHOICES:
+        return None
+    return selected
+
+
+def _validate_agent_choice(value: str | None) -> str | None:
+    """Typer callback: validate ``--agent`` value and emit Typer error.
+
+    ``None`` is allowed — that means the user did not pass ``--agent`` and
+    the init command should fall through to config lookup / interactive
+    prompt.
+    """
+    if value is None:
+        return None
+    if value not in AGENT_CHOICES:
+        raise typer.BadParameter(
+            f"Invalid agent '{value}'. Must be one of: {', '.join(AGENT_CHOICES)}"
+        )
+    return value
+
+
 def _merge_flag_keys(config_path: Path, *, graphite: bool, use_context: bool) -> None:
     """Surgically update ``graphite`` and ``use_context`` keys in an existing TOML.
 
@@ -290,23 +421,45 @@ def _scaffold_dotfiles(
     use_context: bool = False,
     graphite: bool = False,
     force_update_flags: bool = False,
+    agent_backend: str | None = None,
 ) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
     _ensure_dir(dot_dir / "artifacts")
 
     config_path = dot_dir / "config.toml"
-    if config_path.exists() and not force_update_flags:
+    if config_path.exists() and not force_update_flags and agent_backend is None:
         console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     elif config_path.exists():
-        _merge_flag_keys(config_path, graphite=graphite, use_context=use_context)
-        console.print(f"  [green]UPDATE[/] {config_path.name} flags merged")
+        # Existing config: only touch the keys the caller asked us to touch.
+        # `use_context` and `graphite` are only ever upserted when the
+        # corresponding flag was passed (force_update_flags).  `agent_backend`
+        # is always upserted when provided so `--agent factory` can overwrite
+        # a previously persisted backend.
+        changed = False
+        if force_update_flags:
+            _merge_flag_keys(config_path, graphite=graphite, use_context=use_context)
+            changed = True
+        if agent_backend is not None:
+            changed = (
+                _write_agent_block_to_config(config_path, agent_backend) or changed
+            )
+        if changed:
+            console.print(f"  [green]UPDATE[/] {config_path.name} flags merged")
+        else:
+            console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     else:
         config = DeviateConfig(
             agent_export_mode=agent_export_mode,
             use_context=use_context,
             graphite=graphite,
         )
+        if agent_backend is not None:
+            config = config.model_copy(
+                update={
+                    "agent": config.agent.model_copy(update={"backend": agent_backend})
+                }
+            )
         _write_if_missing(config_path, _dict_to_toml(config.model_dump()))
 
     session = SessionState()
@@ -416,12 +569,33 @@ def init(
         help="Force-enable offline context CLI integration (overrides PATH detection)",
     ),
     agent: str | None = typer.Option(
-        None, "--agent", help="Override auto-detected agent platform"
+        None,
+        "--agent",
+        help="Override auto-detected agent platform",
+        callback=_validate_agent_choice,
     ),
 ) -> None:
     workdir = Path.cwd()
+    config_path = workdir / ".deviate" / "config.toml"
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
+
+    selected_agent: str | None = agent
+    if selected_agent is None:
+        existing_backend = _read_agent_backend_from_config(config_path)
+        if existing_backend is not None:
+            selected_agent = existing_backend
+        else:
+            selected_agent = _prompt_agent_selection(workdir, config_path)
+            if selected_agent is None:
+                console.print(
+                    "[red]NO_AGENT_SELECTED[/] No agent platform chosen."
+                    " Re-run `deviate init --agent <name>` with one of:"
+                    f" {', '.join(AGENT_CHOICES)}."
+                )
+                raise typer.Exit(code=1)
+
+    backend = _resolve_agent_to_backend(selected_agent)
 
     use_context = True if context else _detect_context()
     _scaffold_dotfiles(
@@ -430,14 +604,20 @@ def init(
         use_context=use_context,
         graphite=graphite,
         force_update_flags=graphite or context,
+        agent_backend=backend,
     )
 
     _apply_governance(workdir, graphite=graphite)
 
     _provision_constitution(workdir)
 
-    if agent:
-        active_agents = [agent]
+    if selected_agent and selected_agent in ("claude", "opencode", "factory"):
+        active_agents = [selected_agent]
+    elif selected_agent:
+        # droid backend has no own skills directory; fall back to auto-detect
+        # so any pre-existing .claude/.opencode/.factory dirs still get
+        # skills installed.
+        active_agents = detect_agents(workdir)
     else:
         active_agents = detect_agents(workdir)
 

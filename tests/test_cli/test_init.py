@@ -4,6 +4,7 @@ from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import _resolve_placeholder, cli
@@ -97,7 +98,7 @@ class TestInitCommand:
     def test_init_creates_dotfile_structure(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             assert (workdir / ".deviate" / "config.toml").exists()
             assert (workdir / ".deviate" / "session.json").exists()
@@ -105,7 +106,9 @@ class TestInitCommand:
     def test_init_creates_constitution(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init", "--generate-constitution"])
+            result = runner.invoke(
+                cli, ["init", "--agent", "opencode", "--generate-constitution"]
+            )
             assert result.exit_code == 0, result.output
             constitution_path = workdir / "specs" / "constitution.md"
             assert constitution_path.exists()
@@ -116,7 +119,7 @@ class TestInitCommand:
     def test_init_appends_governance_to_nonexistent_file(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             claude_path = workdir / "CLAUDE.md"
             assert claude_path.exists()
@@ -136,7 +139,7 @@ class TestInitCommand:
             )
             claude_path.write_text(existing_content)
 
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             content = claude_path.read_text()
@@ -151,10 +154,10 @@ class TestInitCommand:
             dotfile_dir = workdir / ".deviate"
             dotfile_dir.mkdir()
             config_path = dotfile_dir / "config.toml"
-            original_content = 'profile = "custom"\n'
+            original_content = 'profile = "custom"\n\n[agent]\nbackend = "opencode"\n'
             config_path.write_text(original_content)
 
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             assert config_path.read_text() == original_content
             assert "skip" in result.output.lower() or "already" in result.output.lower()
@@ -168,7 +171,7 @@ class TestInitCommand:
             config_path.write_text('profile = "default"\n')
             session_path = dotfile_dir / "session.json"
 
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             assert session_path.exists()
 
@@ -177,7 +180,7 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = "/usr/local/bin/context"
-                result = runner.invoke(cli, ["init"])
+                result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
@@ -188,7 +191,7 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(cli, ["init"])
+                result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
@@ -199,7 +202,7 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = "/usr/local/bin/context"
-                result = runner.invoke(cli, ["init"])
+                result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             claude_path = workdir / "CLAUDE.md"
@@ -221,7 +224,9 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(cli, ["init", "--context"])
+                result = runner.invoke(
+                    cli, ["init", "--agent", "opencode", "--context"]
+                )
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
@@ -233,7 +238,9 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = "/usr/local/bin/context"
-                result = runner.invoke(cli, ["init", "--context"])
+                result = runner.invoke(
+                    cli, ["init", "--agent", "opencode", "--context"]
+                )
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
@@ -243,7 +250,7 @@ class TestInitCommand:
         """--graphite persists `graphite` at TOML top-level, not nested under [models]."""
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             parsed = tomllib.loads(config_path.read_text())
@@ -258,7 +265,9 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(cli, ["init", "--context"])
+                result = runner.invoke(
+                    cli, ["init", "--agent", "opencode", "--context"]
+                )
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             parsed = tomllib.loads(config_path.read_text())
@@ -273,7 +282,9 @@ class TestInitCommand:
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(cli, ["init", "--graphite", "--context"])
+                result = runner.invoke(
+                    cli, ["init", "--agent", "opencode", "--graphite", "--context"]
+                )
             assert result.exit_code == 0, result.output
 
             config_path = workdir / ".deviate" / "config.toml"
@@ -290,7 +301,7 @@ class TestInitCommand:
         """init --graphite produces a config that resolve_graphite_config() reads as True."""
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             assert resolve_graphite_config(workdir) is True
 
@@ -298,11 +309,11 @@ class TestInitCommand:
         """Re-running init --graphite on existing repo persists graphite = true."""
         with chdir(tmp_path):
             workdir = tmp_path
-            runner.invoke(cli, ["init"])
+            runner.invoke(cli, ["init", "--agent", "opencode"])
             config_path = workdir / ".deviate" / "config.toml"
             assert "graphite = false" in config_path.read_text()
 
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("graphite") is True
@@ -312,12 +323,14 @@ class TestInitCommand:
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which", return_value=None):
-                runner.invoke(cli, ["init"])
+                runner.invoke(cli, ["init", "--agent", "opencode"])
             config_path = workdir / ".deviate" / "config.toml"
             assert "use_context = false" in config_path.read_text()
 
             with patch("shutil.which", return_value=None):
-                result = runner.invoke(cli, ["init", "--context"])
+                result = runner.invoke(
+                    cli, ["init", "--agent", "opencode", "--context"]
+                )
             assert result.exit_code == 0, result.output
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("use_context") is True
@@ -334,7 +347,7 @@ class TestInitCommand:
                 encoding="utf-8",
             )
 
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("graphite") is True
@@ -348,10 +361,10 @@ class TestInitCommand:
             dot_dir = workdir / ".deviate"
             dot_dir.mkdir()
             config_path = dot_dir / "config.toml"
-            original = 'profile = "preserved"\n'
+            original = 'profile = "preserved"\n\n[agent]\nbackend = "opencode"\n'
             config_path.write_text(original, encoding="utf-8")
 
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             assert config_path.read_text() == original
 
@@ -387,7 +400,7 @@ class TestInitGraphiteFlag:
         """AC-ADHOC-007-01: --graphite flag writes graphite = true in config.toml."""
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             assert config_path.exists()
@@ -398,7 +411,7 @@ class TestInitGraphiteFlag:
         """AC-ADHOC-007-02: Default init either omits graphite or sets false."""
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             assert config_path.exists()
@@ -410,7 +423,7 @@ class TestInitGraphiteFlag:
         """AC-ADHOC-007-03: Graphite section appears in governance seeds when enabled."""
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init", "--graphite"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
             for fname in ["CLAUDE.md", "AGENTS.md"]:
                 fpath = workdir / fname
@@ -422,7 +435,7 @@ class TestInitGraphiteFlag:
         """AC-ADHOC-007-04: No Graphite section when graphite disabled."""
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["init"])
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             for fname in ["CLAUDE.md", "AGENTS.md"]:
                 fpath = workdir / fname
@@ -516,3 +529,140 @@ class TestInitGraphiteFlag:
         assert "gt submit --stack" in updated
         assert "## Unrelated" in updated
         assert "Kept" in updated
+
+
+class TestInitAgentFlag:
+    """RED phase tests for the --agent flag persistence contract.
+
+    The flag must:
+        1. Write ``[agent].backend`` to ``.deviate/config.toml``.
+        2. Map user-facing agent names to the underlying meso/micro backend.
+        3. Be rejected at the Typer layer for unknown values.
+        4. Drive interactive selection when neither flag nor config provides
+           a choice.
+    """
+
+    def test_init_agent_factory_writes_droid_backend(self, tmp_path: Path):
+        """`--agent factory` persists ``backend = "droid"`` (Factory IDE → droid binary)."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "factory"])
+            assert result.exit_code == 0, result.output
+            config_path = tmp_path / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed["agent"]["backend"] == "droid"
+
+    def test_init_agent_droid_writes_droid_backend(self, tmp_path: Path):
+        """`--agent droid` persists ``backend = "droid"``."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "droid"])
+            assert result.exit_code == 0, result.output
+            config_path = tmp_path / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed["agent"]["backend"] == "droid"
+
+    def test_init_agent_claude_writes_claude_backend(self, tmp_path: Path):
+        """`--agent claude` persists ``backend = "claude"``."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "claude"])
+            assert result.exit_code == 0, result.output
+            config_path = tmp_path / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed["agent"]["backend"] == "claude"
+
+    def test_init_agent_opencode_writes_opencode_backend(self, tmp_path: Path):
+        """`--agent opencode` persists ``backend = "opencode"``."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            config_path = tmp_path / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed["agent"]["backend"] == "opencode"
+
+    def test_init_agent_factory_overwrites_existing_backend(self, tmp_path: Path):
+        """`--agent factory` overwrites a previously persisted `opencode` backend."""
+        with chdir(tmp_path):
+            runner.invoke(cli, ["init", "--agent", "opencode"])
+            config_path = tmp_path / ".deviate" / "config.toml"
+            assert (
+                tomllib.loads(config_path.read_text())["agent"]["backend"] == "opencode"
+            )
+
+            result = runner.invoke(cli, ["init", "--agent", "factory"])
+            assert result.exit_code == 0, result.output
+            assert tomllib.loads(config_path.read_text())["agent"]["backend"] == "droid"
+
+    def test_init_agent_rejects_unknown_value(self, tmp_path: Path):
+        """`--agent` rejects values outside the supported set."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "aider"])
+            assert result.exit_code != 0
+            assert "aider" in result.output
+
+    def test_init_agent_droid_routes_skills_to_detected_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """`--agent droid` does not own a skills dir; pre-existing dirs still receive skills."""
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".claude").mkdir()
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "droid"])
+            assert result.exit_code == 0, result.output
+            assert (tmp_path / ".claude" / "skills").exists()
+
+    def test_init_no_agent_no_config_non_interactive_errors(self, tmp_path: Path):
+        """Without `--agent`, no config, and no TTY → init exits with a clear error."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code != 0
+            assert "NO_AGENT_SELECTED" in result.output
+
+    def test_init_no_agent_uses_existing_config(self, tmp_path: Path):
+        """Without `--agent` but with a pre-populated ``[agent].backend``, init uses it."""
+        with chdir(tmp_path):
+            dot_dir = tmp_path / ".deviate"
+            dot_dir.mkdir()
+            (dot_dir / "config.toml").write_text(
+                '[agent]\nbackend = "claude"\n', encoding="utf-8"
+            )
+
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            parsed = tomllib.loads((dot_dir / "config.toml").read_text())
+            assert parsed["agent"]["backend"] == "claude"
+
+    def test_init_interactive_prompt_writes_choice_to_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """When interactive, the user-selected agent is persisted to config."""
+        monkeypatch.setattr("deviate.cli._prompt_agent_selection", lambda *_: "factory")
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            config_path = tmp_path / ".deviate" / "config.toml"
+            assert tomllib.loads(config_path.read_text())["agent"]["backend"] == "droid"
+
+    def test_init_interactive_prompt_default_is_existing_backend(self, tmp_path: Path):
+        """The interactive prompt should pre-select the current backend as default."""
+        from deviate.cli import _read_agent_backend_from_config
+
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir()
+        config_path = dot_dir / "config.toml"
+        config_path.write_text('[agent]\nbackend = "droid"\n', encoding="utf-8")
+        assert _read_agent_backend_from_config(config_path) == "droid"
+
+    def test_init_agent_choice_constant_exposes_supported_set(self):
+        from deviate.cli import AGENT_CHOICES
+
+        assert set(AGENT_CHOICES) == {"factory", "droid", "claude", "opencode"}
+
+    def test_init_agent_to_backend_mapping(self):
+        from deviate.cli import AGENT_TO_BACKEND
+
+        assert AGENT_TO_BACKEND["factory"] == "droid"
+        assert AGENT_TO_BACKEND["droid"] == "droid"
+        assert AGENT_TO_BACKEND["claude"] == "claude"
+        assert AGENT_TO_BACKEND["opencode"] == "opencode"
