@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
@@ -37,6 +38,12 @@ def _make_task_record(
         status=status,
         execution_mode=execution_mode,
     )
+
+
+def _git_env() -> dict[str, str]:
+    return {
+        k: v for k, v in __import__("os").environ.items() if not k.startswith("GIT_")
+    }
 
 
 def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
@@ -407,4 +414,48 @@ class TestSessionResume:
             assert result.exit_code == 0, result.output
             assert "TASK_ALREADY_DONE" in result.output, (
                 f"Expected TASK_ALREADY_DONE for JUDGE-latest task: {result.output}"
+            )
+
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_execute_phase_test_failure_retries_with_feedback(
+        self, mock_run_test, mock_agent, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="FAILED test_exec_fail\n1 failed", stderr=""
+        )
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-98",
+                issue_id="ISS-001-004",
+                description="Execute failure capture",
+                status="PENDING",
+                execution_mode="DIRECT",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            Path("README.md").write_text("# repo\n")
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: init"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["run", "TSK-004-98"])
+
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit when tests fail on EXECUTE, got {result.exit_code}: {result.output}"
+            )
+            assert "TEST_FAILURE" in result.output, (
+                f"Expected TEST_FAILURE message in output: {result.output}"
             )

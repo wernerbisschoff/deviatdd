@@ -14,6 +14,8 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
+7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+
 ## KV Cache Preservation
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.

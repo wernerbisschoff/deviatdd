@@ -932,7 +932,30 @@ def _run_green_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    _run_test_cmd(root)
+    test_result = _run_test_cmd(root)
+    if test_result.returncode != 0:
+        failure_output = test_result.stdout or ""
+        if test_result.stderr:
+            failure_output += "\n--- stderr ---\n" + test_result.stderr
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+        subprocess.run(
+            ["git", "clean", "-fd"],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+        session.train_feedback = (
+            "The test suite failed after GREEN implementation.\n\n"
+            f"<test_output>\n{failure_output}\n</test_output>"
+        )
+        session.save(session_path)
+        raise PhaseFailedError(f"GREEN phase tests failed for {tid}")
+
     _run_format_cmd(root)
 
     try:
@@ -948,9 +971,10 @@ def _run_green_phase(
         _verify_clean_worktree(root, "GREEN", tid)
     except PhaseFailedError as e:
         c.print(f"  [red]CLEAN_WORKTREE_FAILED[/] {e}")
+        boundary_sha = session.red_commit_sha or "HEAD~1"
         subprocess.run(
-            ["git", "reset", "--hard", "HEAD~1"],
-            cwd=Path.cwd(),
+            ["git", "reset", "--hard", boundary_sha],
+            cwd=root,
             capture_output=True,
             env=_git_env(),
         )
@@ -1010,7 +1034,17 @@ def _resolve_red_boundary_sha(root: Path) -> str:
         session = SessionState.load(session_path)
         if session.red_commit_sha:
             return session.red_commit_sha
-    _log("No RED commit SHA in session — falling back to root commit scan")
+    _log("No RED commit SHA in session — falling back to HEAD~1 as boundary")
+    parent = subprocess.run(
+        ["git", "rev-parse", "HEAD~1"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    if parent:
+        return parent
+    _log("HEAD~1 is empty — using root commit as last resort")
     root_sha = subprocess.run(
         ["git", "rev-list", "--max-parents=0", "HEAD"],
         cwd=root,
@@ -1018,27 +1052,7 @@ def _resolve_red_boundary_sha(root: Path) -> str:
         text=True,
         env=_git_env(),
     ).stdout.strip()
-    has_content = subprocess.run(
-        ["git", "ls-tree", "-r", root_sha],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
-    if has_content:
-        return root_sha
-    children = (
-        subprocess.run(
-            ["git", "rev-list", "--reverse", f"{root_sha}..HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        )
-        .stdout.strip()
-        .splitlines()
-    )
-    return children[0] if children else root_sha
+    return root_sha
 
 
 def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
@@ -1099,8 +1113,9 @@ def _run_judge_phase(
     backend = agent or "opencode"
     root = Path.cwd()
 
+    red_sha = session.red_commit_sha or "HEAD~1"
     diff = subprocess.run(
-        ["git", "diff", "HEAD~1..HEAD"],
+        ["git", "diff", f"{red_sha}..HEAD"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -1133,6 +1148,7 @@ def _run_judge_phase(
         if hasattr(manifest, "train_feedback") and manifest.train_feedback:
             feedback = manifest.train_feedback
 
+        session.save(session_path)
         try:
             _execute_rollback(root, feedback)
         except Exception as e:
@@ -1530,6 +1546,20 @@ def _run_execute_phase(
     max_judge_attempts = 3
     execute_model = resolve_model_for_phase("EXECUTE", root)
 
+    session_path = root / ".deviate" / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    pre_execute_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    session.red_commit_sha = pre_execute_sha
+    session.save(session_path)
+
     for attempt in range(max_judge_attempts):
         prompt = _build_auto_prompt("execute", task, root)
         if train_feedback:
@@ -1556,6 +1586,40 @@ def _run_execute_phase(
 
         issue_id = task.get("issue_id", "")
         scope = _build_scope(issue_id, tid)
+
+        test_result = _run_test_cmd(root)
+        if test_result.returncode != 0:
+            failure_output = test_result.stdout or ""
+            if test_result.stderr:
+                failure_output += "\n--- stderr ---\n" + test_result.stderr
+            train_feedback = (
+                "The test suite failed after EXECUTE implementation.\n\n"
+                f"<test_output>\n{failure_output}\n</test_output>"
+            )
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
+            subprocess.run(
+                ["git", "clean", "-fd"],
+                cwd=root,
+                capture_output=True,
+                env=_git_env(),
+            )
+            if attempt < max_judge_attempts - 1:
+                c.print(
+                    f"  [yellow]TEST_FAILURE on EXECUTE ({attempt + 2}/{max_judge_attempts})[/]"
+                )
+                continue
+            session.train_feedback = train_feedback
+            session.save(session_path)
+            raise PhaseFailedError(
+                f"EXECUTE phase tests failed for {tid} "
+                f"after {max_judge_attempts} attempts"
+            )
+
         _commit_phase(f"feat({scope}): EXECUTE phase - {tid}", root)
 
         _verify_clean_worktree(root, "EXECUTE", tid)
@@ -1564,7 +1628,7 @@ def _run_execute_phase(
             break
 
         diff = subprocess.run(
-            ["git", "diff", "HEAD~1..HEAD"],
+            ["git", "diff", f"{pre_execute_sha}..HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
