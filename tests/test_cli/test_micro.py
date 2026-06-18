@@ -309,6 +309,7 @@ class TestRunAllMonitorE2E:
             task_id: str = "",
             phase: str = "",
             output_callback: object = None,
+            **kwargs: object,
         ) -> tuple[HandoverManifest | None, str]:
             if output_callback is not None:
                 output_callback(f"[{phase}] Starting {task_id}...")
@@ -376,6 +377,7 @@ class TestRunAllMonitorE2E:
             task_id: str = "",
             phase: str = "",
             output_callback: object = None,
+            **kwargs: object,
         ) -> tuple[HandoverManifest | None, str]:
             if output_callback is not None:
                 line_a = f"Line {len(emitted_lines) + 1}: {task_id} {phase} step 1"
@@ -437,6 +439,7 @@ class TestRunAllMonitorE2E:
             task_id: str = "",
             phase: str = "",
             output_callback: object = None,
+            **kwargs: object,
         ) -> tuple[HandoverManifest | None, str]:
             if task_id == "TSK-001-02" and phase == "RED":
                 return (
@@ -855,4 +858,96 @@ class TestFindTaskRecord:
         task, ledger_file = result
         assert task["status"] == "COMPLETED", (
             f"Expected COMPLETED as last record, got {task['status']}"
+        )
+
+
+ISSUE_005 = "ISS-ADH-005"
+SLUG_005 = "005-per-phase-model-configuration"
+
+
+class TestPhaseModelRouting:
+    """AC-ADHOC-005-08: each TDD phase uses its configured model."""
+
+    @pytest.fixture
+    def env(self, tmp_git_repo: Path) -> Path:
+        tasks = [
+            {
+                "id": "TSK-005-01",
+                "issue_id": ISSUE_005,
+                "description": "Add ModelPhaseMap model",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+        ]
+        _setup_issue_ledger(tmp_git_repo, ISSUE_005, "adhoc", SLUG_005, tasks)
+        _setup_session(tmp_git_repo, ISSUE_005)
+
+        dot_dir = tmp_git_repo / ".deviate"
+        config_path = dot_dir / "config.toml"
+        config_path.write_text(
+            '[models]\ndefault = "fast/model"\njudge = "premium/model"\n'
+        )
+        return tmp_git_repo
+
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_phase_routes_model(
+        self,
+        mock_load_skill: MagicMock,
+        mock_invoke_agent: MagicMock,
+        mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
+        env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(env)
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_load_skill.return_value = "# Dummy skill content"
+
+        call_log: list[dict] = []
+
+        def invoke_side_effect(
+            prompt: str,
+            c: object,
+            backend_name: str = "opencode",
+            task_id: str = "",
+            phase: str = "",
+            output_callback: object = None,
+            model: str | None = None,
+        ) -> tuple[HandoverManifest | None, str]:
+            call_log.append(
+                {
+                    "phase": phase,
+                    "model": model,
+                    "backend": backend_name,
+                    "task_id": task_id,
+                }
+            )
+            return (HandoverManifest(phase=phase, status="SUCCESS"), "")
+
+        mock_invoke_agent.side_effect = invoke_side_effect
+
+        result = runner.invoke(cli, ["run", "--all", "--json"])
+
+        assert result.exit_code == 0
+
+        red_calls = [c for c in call_log if c["phase"] == "RED"]
+        assert len(red_calls) > 0
+        assert red_calls[0]["model"] == "fast/model", (
+            f"RED should use default model, got {red_calls[0]['model']}"
+        )
+
+        judge_calls = [c for c in call_log if c["phase"] == "JUDGE"]
+        assert len(judge_calls) > 0
+        assert judge_calls[0]["model"] == "premium/model", (
+            f"JUDGE should use premium/model, got {judge_calls[0]['model']}"
         )
