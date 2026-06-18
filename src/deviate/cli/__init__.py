@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 
 from deviate.state.config import DeviateConfig, SessionState
+from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app
 from deviate.cli.meso import meso_app, plan, pr, specify, tasks
 from deviate.cli.micro import (
@@ -32,6 +33,8 @@ from deviate.core.skills import detect_agents, discover_skills, install_skill
 
 cli = typer.Typer(no_args_is_help=True)
 console = Console()
+
+_GOVERNANCE_MODULE = "deviate.prompts.governance"
 
 
 @cli.callback()
@@ -185,6 +188,13 @@ def _resolve_seed(content: str) -> str:
     return re.sub(r"\$\{(\w+)\}", _resolve_placeholder_match, content)
 
 
+def _extract_section_heading(content: str) -> str | None:
+    match = re.search(r"^## (.+)$", content, re.MULTILINE)
+    if match:
+        return f"## {match.group(1)}"
+    return None
+
+
 def _read_seed(module: str, filename: str) -> str | None:
     try:
         seed = importlib.resources.files(module).joinpath(filename)
@@ -195,6 +205,11 @@ def _read_seed(module: str, filename: str) -> str | None:
 
 
 def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
+    section_header = _extract_section_heading(seed_content)
+    if section_header is None:
+        console.print("  [red]ERROR[/] Could not extract section heading from seed")
+        return
+
     if not target_path.exists():
         target_path.write_text(seed_content, encoding="utf-8")
         console.print(f"  [green]CREATE[/] {target_path.name}")
@@ -207,15 +222,13 @@ def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
         console.print(f"  [green]CREATE[/] {target_path.name}")
         return
 
-    section_header = "## DeviaTDD Orchestration Rules"
-
     if section_header not in existing:
         target_path.write_text(existing + "\n\n" + seed_content, encoding="utf-8")
         console.print(f"  [green]APPEND[/] {target_path.name}")
         return
 
     pattern = re.compile(
-        r"^## DeviaTDD Orchestration Rules.*?(?=^## |\Z)",
+        rf"^{re.escape(section_header)}.*?(?=^## |\Z)",
         re.MULTILINE | re.DOTALL,
     )
     existing = pattern.sub(lambda _: seed_content.strip(), existing)
@@ -228,13 +241,18 @@ def _detect_context() -> bool:
 
 
 def _scaffold_dotfiles(
-    workdir: Path, agent_export_mode: str, use_context: bool = False
+    workdir: Path,
+    agent_export_mode: str,
+    use_context: bool = False,
+    graphite: bool = False,
 ) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
     _ensure_dir(dot_dir / "artifacts")
 
-    config = DeviateConfig(agent_export_mode=agent_export_mode, use_context=use_context)
+    config = DeviateConfig(
+        agent_export_mode=agent_export_mode, use_context=use_context, graphite=graphite
+    )
     config_path = dot_dir / "config.toml"
     _write_if_missing(config_path, _dict_to_toml(config.model_dump()))
 
@@ -261,20 +279,24 @@ def _provision_constitution(workdir: Path) -> None:
     console.print("  [green]CREATE[/] specs/constitution.md")
 
 
-def _apply_governance(workdir: Path) -> None:
-    content = _read_seed("deviate.prompts.governance", "claudemd_seed.md")
-    if content is None:
-        return
-
+def _apply_governance(workdir: Path, graphite: bool = False) -> None:
     claude_path = workdir / "CLAUDE.md"
-    _upsert_governance_block(claude_path, content)
-
-    agents_content = _read_seed("deviate.prompts.governance", "agents_seed.md")
-    if agents_content is None:
+    claude_content = _read_seed(_GOVERNANCE_MODULE, "claudemd_seed.md")
+    if claude_content is None:
         return
+    _upsert_governance_block(claude_path, claude_content)
 
     agents_path = workdir / "AGENTS.md"
+    agents_content = _read_seed(_GOVERNANCE_MODULE, "agents_seed.md")
+    if agents_content is None:
+        return
     _upsert_governance_block(agents_path, agents_content)
+
+    if graphite:
+        content = _read_seed(_GOVERNANCE_MODULE, "graphite_seed.md")
+        if content:
+            _upsert_governance_block(claude_path, content)
+            _upsert_governance_block(agents_path, content)
 
 
 def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
@@ -332,6 +354,9 @@ def init(
     generate_constitution: bool = typer.Option(
         False, "--generate-constitution", help="Generate constitution boilerplate"
     ),
+    graphite: bool = typer.Option(
+        False, "--graphite", help="Enable Graphite CLI integration for stacked changes"
+    ),
     agent: str | None = typer.Option(
         None, "--agent", help="Override auto-detected agent platform"
     ),
@@ -340,9 +365,11 @@ def init(
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
-    _scaffold_dotfiles(workdir, agent_export_mode, use_context=_detect_context())
+    _scaffold_dotfiles(
+        workdir, agent_export_mode, use_context=_detect_context(), graphite=graphite
+    )
 
-    _apply_governance(workdir)
+    _apply_governance(workdir, graphite=graphite)
 
     _provision_constitution(workdir)
 
