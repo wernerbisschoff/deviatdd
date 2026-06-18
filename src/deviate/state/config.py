@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
@@ -109,7 +110,7 @@ def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
     if not models:
         return None
     phase_lower = phase.lower()
-    lookup = {k.lower(): v for k, v in models.items() if v}
+    lookup = {k.lower(): val for k, val in models.items() if val}
     if phase_lower in lookup:
         return lookup[phase_lower]
     if "default" in lookup:
@@ -129,15 +130,13 @@ def resolve_model_for_phase(phase: str, root: Path) -> str | None:
     if not config_path.exists():
         return None
     try:
-        import tomllib
-
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
         models = data.get("models", {})
         if not isinstance(models, dict):
             return None
         return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
-    except Exception:
+    except (FileNotFoundError, tomllib.TOMLDecodeError, KeyError, TypeError):
         return None
 
 

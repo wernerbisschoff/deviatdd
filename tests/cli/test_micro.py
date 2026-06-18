@@ -86,7 +86,7 @@ class TestPhaseModelRouting:
         """Unknown phase without explicit config -> uses default."""
         assert resolve_model_for_phase("SHARD", config_with_models) == "fast/model"
 
-    def test_phase_not_in_dict_no_default_returns_none(
+    def test_phase_not_in_dict_falls_back_to_default(
         self, config_default_only: Path
     ) -> None:
         """Phase not in models dict and default exists -> uses default."""

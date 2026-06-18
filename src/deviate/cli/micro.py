@@ -26,7 +26,6 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
-from deviate.core.cache_discipline import CacheDiscipline, CacheStore
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
@@ -1321,36 +1320,6 @@ def _finish_tdd_cycle(
         session.train_feedback = ""
         session.save(session_path)
     return session
-
-
-def _capture_cache_store(root: Path, task: dict, agent: str | None) -> CacheStore:
-    model = agent or "opencode"
-    test_files: dict[str, str] = {}
-    tests_dir = root / "tests"
-    if tests_dir.exists():
-        for tf in sorted(tests_dir.rglob("test_*.py")):
-            try:
-                test_files[str(tf.relative_to(root))] = tf.read_text(encoding="utf-8")
-            except Exception:
-                pass
-    return CacheStore(
-        model=model,
-        tool_definitions=[],
-        system_prompt="",
-        test_files=test_files,
-    )
-
-
-def _validate_cache_store(
-    phase: str,
-    root: Path,
-    task: dict,
-    agent: str | None,
-    previous: CacheStore | None,
-) -> CacheStore:
-    current = _capture_cache_store(root, task, agent)
-    CacheDiscipline.validate(phase=phase, current=current, previous=previous)
-    return current
 
 
 def _run_tdd_cycle(
