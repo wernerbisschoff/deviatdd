@@ -52,7 +52,9 @@ def _init_deviate(path: Path) -> None:
         "`LINT_COMMAND`: ruff check .\n"
     )
     with chdir(path):
-        runner.invoke(cli, ["init", "--agent-export-mode", "local"])
+        runner.invoke(
+            cli, ["init", "--agent-export-mode", "local", "--agent", "opencode"]
+        )
 
 
 def _find_bash_scripts() -> list[tuple[str, Path]]:

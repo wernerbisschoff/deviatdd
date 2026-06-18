@@ -5,6 +5,9 @@ agent_export_mode = "local"
 
 graphite = true
 use_context = true
+[agent]
+backend = "opencode"
+
 [models]
 default = "opencode-go/deepseek-v4-flash"
 plan = "opencode-go/deepseek-v4-pro"
