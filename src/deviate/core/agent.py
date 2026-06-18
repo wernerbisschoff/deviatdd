@@ -278,6 +278,7 @@ class AgentBackend:
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
         cwd: str | None = None,
+        model: str | None = None,
     ) -> HandoverManifest:
         backend_name: Literal["opencode", "claude", "droid"] = (
             backend or self.config.backend
@@ -287,6 +288,8 @@ class AgentBackend:
             raise AgentBinaryNotFoundError(f"Unknown backend: {backend_name}")
 
         cmd = backend_cmd.split()
+        if model is not None and backend_name != "claude":
+            cmd.extend(["--model", model])
         effective_timeout = timeout or self.config.timeout
 
         popen_kwargs: dict[str, Any] = dict(
@@ -345,6 +348,7 @@ class StubAgentBackend(AgentBackend):
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
         cwd: str | None = None,
+        model: str | None = None,
     ) -> HandoverManifest:
         self._invoked = True
         if output_callback is not None:

@@ -7,6 +7,7 @@ from deviate.state.config import (
     DeviateConfig,
     ProfileConfig,
     SessionState,
+    resolve_phase_model,
 )
 
 
@@ -42,6 +43,31 @@ class TestDeviateConfig:
         data = json.loads(config.model_dump_json())
         restored = DeviateConfig.model_validate(data)
         assert restored == config
+
+    def test_model_config_defaults(self):
+        config = DeviateConfig()
+        assert config.models == {}
+
+    def test_model_config_round_trip(self):
+        config = DeviateConfig(
+            models={"default": "fast/model", "judge": "premium/model"}
+        )
+        data = json.loads(config.model_dump_json())
+        restored = DeviateConfig.model_validate(data)
+        assert restored.models == {"default": "fast/model", "judge": "premium/model"}
+
+    def test_model_config_phase_lookup(self):
+        models = {"RED": "fast/model", "JUDGE": "premium/model"}
+        assert resolve_phase_model("RED", models) == "fast/model"
+        assert resolve_phase_model("PLAN", models) is None
+
+    def test_model_config_default_fallback(self):
+        models = {"default": "fast/model", "judge": "premium/model"}
+        assert resolve_phase_model("RED", models) == "fast/model"
+
+    def test_model_config_phase_overrides_default(self):
+        models = {"default": "fast/model", "judge": "premium/model"}
+        assert resolve_phase_model("judge", models) == "premium/model"
 
 
 class TestProfileConfig:
