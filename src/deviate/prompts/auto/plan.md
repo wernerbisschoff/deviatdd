@@ -16,7 +16,7 @@ You are a **PLANNING_ANALYST** operating inside the **DeviaTDD MESO LAYER / PHAS
 <execution_sequence>
 
 <step id="contract_loaded">
-The CLI orchestrator has run `deviate plan pre` and resolved the contract. Available context: `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`, `constitution_path`. Do NOT run `deviate plan pre` — the orchestrator handles it.
+The CLI orchestrator has run `deviate plan pre` and resolved the contract. Available context: `issue_id`, `spec_path`, `plan_path`, `worktree_full`, `branch_name`, `constitution_path`. Do NOT run `deviate plan pre` — the orchestrator handles it.
 </step>
 
 <step id="context_loading">
