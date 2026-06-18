@@ -6,3 +6,4 @@
 {"id":"TSK-007-02","issue_id":"ISS-ADH-007","description":"Add `--graphite` flag to `deviate init` and thread through to config persistence","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-18T12:57:01.047386Z"}
 {"id":"TSK-007-02","issue_id":"ISS-ADH-007","description":"Add `--graphite` flag to `deviate init` and thread through to config persistence","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-18T12:58:52.411514Z"}
 {"id":"TSK-007-03","issue_id":"ISS-ADH-007","description":"Create Graphite governance seed file and add conditional governance section","status":"RED","execution_mode":"TDD","created_at":"2026-06-18T13:02:22.116961Z"}
+{"id":"TSK-007-03","issue_id":"ISS-ADH-007","description":"Create Graphite governance seed file and add conditional governance section","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-18T13:10:22.115154Z"}

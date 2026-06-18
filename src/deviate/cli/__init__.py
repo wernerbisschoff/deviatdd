@@ -34,6 +34,8 @@ from deviate.core.skills import detect_agents, discover_skills, install_skill
 cli = typer.Typer(no_args_is_help=True)
 console = Console()
 
+_GOVERNANCE_MODULE = "deviate.prompts.governance"
+
 
 @cli.callback()
 def main() -> None:
@@ -275,25 +277,23 @@ def _provision_constitution(workdir: Path) -> None:
 
 
 def _apply_governance(workdir: Path, graphite: bool = False) -> None:
-    content = _read_seed("deviate.prompts.governance", "claudemd_seed.md")
-    if content is None:
-        return
-
     claude_path = workdir / "CLAUDE.md"
-    _upsert_governance_block(claude_path, content)
-
-    agents_content = _read_seed("deviate.prompts.governance", "agents_seed.md")
-    if agents_content is None:
+    claude_content = _read_seed(_GOVERNANCE_MODULE, "claudemd_seed.md")
+    if claude_content is None:
         return
+    _upsert_governance_block(claude_path, claude_content)
 
     agents_path = workdir / "AGENTS.md"
+    agents_content = _read_seed(_GOVERNANCE_MODULE, "agents_seed.md")
+    if agents_content is None:
+        return
     _upsert_governance_block(agents_path, agents_content)
 
     if graphite:
-        graphite_seed = _read_seed("deviate.prompts.governance", "graphite_seed.md")
-        if graphite_seed:
-            _upsert_governance_block(claude_path, graphite_seed)
-            _upsert_governance_block(agents_path, graphite_seed)
+        content = _read_seed(_GOVERNANCE_MODULE, "graphite_seed.md")
+        if content:
+            _upsert_governance_block(claude_path, content)
+            _upsert_governance_block(agents_path, content)
 
 
 def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
