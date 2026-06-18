@@ -592,3 +592,57 @@ class TestYellowHandoffContract:
                 "approved",
                 "rejected",
             ), f"Second element should be 'approved' or 'rejected', got '{result[1]}'"
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_green_phase_test_failure_captures_train_feedback(
+        self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="FAILED test_green_fail\n1 failed", stderr=""
+        )
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-99",
+                issue_id="ISS-001-004",
+                description="Test failure capture",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            Path("README.md").write_text("# repo\n")
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: init"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["run", "TSK-004-99"])
+
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit when tests fail on GREEN, got exit {result.exit_code}: {result.output}"
+            )
+            assert result.exception is not None, (
+                "Expected an exception from GREEN phase"
+            )
+
+            session_data = json.loads(
+                (dot_dir / "session.json").read_text(encoding="utf-8")
+            )
+            assert session_data.get("train_feedback", ""), (
+                "train_feedback should be set after test failure"
+            )
+            assert "FAILED test_green_fail" in session_data["train_feedback"], (
+                "train_feedback should contain the failing test output"
+            )
