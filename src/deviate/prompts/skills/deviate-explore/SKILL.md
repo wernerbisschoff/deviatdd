@@ -121,6 +121,8 @@ Both subagents are read-only. They do NOT write files, generate code, run tests,
 
 <step id="evidence_compilation">
 Merge fragments into the unified output contract. Audit inconsistencies against the constitution using only read operations. Enforce relative paths and verbatim evidence quotes on every row of the FILE_REGISTRY. If a manifest-declared dependency and a constitution-quoted `Tech Stack Standards` section disagree, surface both verbatim in `## Discovery Audit Results` under a `manifest-constitution divergence` flag — do not adjudicate.
+
+From the gathered data, compile the `## Scope Sizing` section: assess complexity based on the number of files the feature would modify, whether new modules or persistence would be needed, and whether external integrations are involved. This is a factual synthesis using the Architectural Baselines and File Registry — catalog the metrics, do not make architectural recommendations.
 </step>
 
 <step id="single_explore_md_output">
@@ -138,7 +140,7 @@ The post-script reads `<spec_target>`, validates the required section headers an
 </step>
 
 <step id="handoff_to_research">
-**TERMINATE HERE.** Do NOT proceed to design, PRD, shard, or implementation. Do NOT write any code. Do NOT run any tests. Display the contract summary and instruct the human operator to invoke the `deviate-research` skill next.
+**TERMINATE HERE.** Do NOT proceed to design, PRD, shard, or implementation. Do NOT write any code. Do NOT run any tests. Display the contract summary. Note the `## Scope Sizing` classification — the `deviate-research` skill will use it to offer the user the option of `/deviate-adhoc` for low/medium complexity features. Instruct the human operator to invoke the `deviate-research` skill next.
 </step>
 
 </execution_sequence>
@@ -190,6 +192,23 @@ Constitution excerpts quoted verbatim. No interpretation, inference, or classifi
 | [relative/path] | [Codebase_File / Manifest / Config / Test] | [1-sentence relevance proof] | [≤10 line quote captured at extraction time] |
 
 EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote are rejected by the post-script.
+
+## Scope Sizing
+
+| Metric | Value |
+| :--- | :--- |
+| Estimated Complexity | [Low / Medium / High] |
+| Files Likely Modified | [count + list key files] |
+| New Modules Required | [Yes / No] |
+| New Persistence / Data Models | [Yes / No] |
+| New External Integrations | [Yes / No] |
+| Upstream / Cross-Cutting Concerns | [description or "None"] |
+| Rationale | [1-2 sentence factual justification] |
+
+**Classification criteria** (factual only, no recommendation):
+- **Low**: Localized change, 1-3 files. No new modules, persistence, or integrations.
+- **Medium**: 2-5 files, potentially a new module or simple state. No new persistence layer.
+- **High**: Multi-module, new persistence/data models, new external integrations, or cross-cutting concerns.
 
 ## Status Summary
 | Metric | Value |
