@@ -346,3 +346,45 @@ class TestInitGraphiteFlag:
             assert fpath.exists()
             content = fpath.read_text()
             assert "## Graphite Stacked Changes Workflow" not in content
+
+    def test_init_graphite_governance_section_present(self, tmp_path: Path):
+        """AC-ADHOC-007-03: Graphite section present via _apply_governance."""
+        from deviate.cli import _apply_governance
+
+        _apply_governance(tmp_path, graphite=True)
+        for fname in ["CLAUDE.md", "AGENTS.md"]:
+            fpath = tmp_path / fname
+            assert fpath.exists()
+            content = fpath.read_text()
+            assert "## Graphite Stacked Changes Workflow" in content
+
+    def test_init_graphite_governance_section_absent(self, tmp_path: Path):
+        """AC-ADHOC-007-04: Graphite section absent via _apply_governance."""
+        from deviate.cli import _apply_governance
+
+        _apply_governance(tmp_path, graphite=False)
+        for fname in ["CLAUDE.md", "AGENTS.md"]:
+            fpath = tmp_path / fname
+            assert fpath.exists()
+            content = fpath.read_text()
+            assert "## Graphite Stacked Changes Workflow" not in content
+
+    def test_init_graphite_governance_idempotent(self, tmp_path: Path):
+        """Re-running _apply_governance updates existing Graphite section."""
+        from deviate.cli import _apply_governance
+
+        _apply_governance(tmp_path, graphite=True)
+        claude_path = tmp_path / "CLAUDE.md"
+        original = claude_path.read_text()
+        assert "## Graphite Stacked Changes Workflow" in original
+
+        outdated_section = "\n\n## Graphite Stacked Changes Workflow\n\nOutdated content\n\n## Unrelated\nKept\n"
+        claude_path.write_text(outdated_section, encoding="utf-8")
+
+        _apply_governance(tmp_path, graphite=True)
+        updated = claude_path.read_text()
+        assert "Outdated content" not in updated
+        assert "gt create -am" in updated
+        assert "gt submit --stack" in updated
+        assert "## Unrelated" in updated
+        assert "Kept" in updated
