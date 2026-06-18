@@ -103,8 +103,21 @@ class DeviateConfig(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     models: dict[str, str] = Field(default_factory=dict)
     use_context: bool = False
+    graphite: bool = Field(default=False)
 
     model_config = {"extra": "forbid"}
+
+
+def _load_deviate_config_toml(root: Path) -> dict | None:
+    """Load the `.deviate/config.toml` file, returning a dict or None."""
+    config_path = root / ".deviate" / "config.toml"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, "rb") as f:
+            return tomllib.load(f)
+    except Exception:
+        return None
 
 
 def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
@@ -127,18 +140,22 @@ def resolve_model_for_phase(phase: str, root: Path) -> str | None:
         2. ``default`` key
         3. ``None`` (no model flag)
     """
-    config_path = root / ".deviate" / "config.toml"
-    if not config_path.exists():
+    data = _load_deviate_config_toml(root)
+    if data is None:
         return None
-    try:
-        with open(config_path, "rb") as f:
-            data = tomllib.load(f)
-        models = data.get("models", {})
-        if not isinstance(models, dict):
-            return None
-        return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
-    except (FileNotFoundError, tomllib.TOMLDecodeError, KeyError, TypeError):
+    models = data.get("models", {})
+    if not isinstance(models, dict):
         return None
+    return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
+
+
+def resolve_graphite_config(root: Path) -> bool:
+    """Check whether the Graphite integration is enabled in `.deviate/config.toml`."""
+    data = _load_deviate_config_toml(root)
+    if data is None:
+        return False
+    value = data.get("graphite", False)
+    return value if isinstance(value, bool) else False
 
 
 class PytestReportConfig(BaseModel):

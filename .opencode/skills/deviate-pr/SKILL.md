@@ -42,7 +42,8 @@ CRITICAL INVARIANTS:
 1. **Ledger Update Rule**: Append COMPLETED event after PR is successfully created (not only after merge). The event format: `{"issue_id":"ISS-XXX","status":"COMPLETED","timestamp":"..."}`
 2. **Worktree Context**: The script runs from within the worktree. Use `find_repo_root` to locate the main repo and ledger.
 3. **Idempotency**: If the issue already has a COMPLETED event, do not append a duplicate.
-4. **GitHub CLI Required**: Requires `gh` for PR operations. If unavailable, surface clear error.
+4. **GitHub CLI Required**: Requires `gh` for PR operations (unless graphite is enabled). If unavailable, surface clear error.
+5. **Graphite Integration**: When `graphite = true` in `.deviate/config.toml`, the `deviate pr run` command uses `gt submit --stack` instead of `gh pr create`. The `--body-file` and `--auto-merge` flags are not supported in graphite mode — `gt submit --stack` uses the branch's commit history as the PR body. Requires `gt` CLI on `$PATH`.
 
 </system_instructions>
 
@@ -69,13 +70,13 @@ CRITICAL INVARIANTS:
     deviate pr run --body-file <path> [--merge] [--auto-merge]
     ```
     Options:
-    - `--body-file <path>`: Path to the PR body file generated in step 2 (required when creating a new PR)
-    - `--merge`: Merge the PR after creation (requires merge permissions)
-    - `--auto-merge`: Enable auto-merge on GitHub (PR merges when checks pass)
+    - `--body-file <path>`: Path to the PR body file generated in step 2 (auto-generated when omitted in non-graphite mode; NOT supported in graphite mode, where `gt submit --stack` derives the body from commit history)
+    - `--merge`: Merge the PR after creation (requires merge permissions; NOT supported in graphite mode)
+    - `--auto-merge`: Enable auto-merge on GitHub (PR merges when checks pass; NOT supported in graphite mode)
     - Without merge flags: Only create the PR, do not merge
 
 5. The script will:
-    - Create PR using the provided body file (or auto-generate if --body-file omitted)
+    - Create PR using the provided body file (or auto-generate if --body-file omitted; in graphite mode, uses `gt submit --stack` which derives the PR body from commit history)
     - Merge PR if `--merge` or `--auto-merge` specified
     - On successful merge, append COMPLETED event to ledger
     - Emit final status JSON
