@@ -3,6 +3,8 @@ llm_backend = "opencode"
 timeout_seconds = 300
 agent_export_mode = "local"
 
+graphite = true
+use_context = true
 [models]
 default = "opencode-go/deepseek-v4-flash"
 plan = "opencode-go/deepseek-v4-pro"

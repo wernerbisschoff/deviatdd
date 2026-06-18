@@ -101,3 +101,38 @@ class TestSkillInstallation:
             assert gitignore.exists()
             content = gitignore.read_text(encoding="utf-8")
             assert "session.json" in content
+
+    def test_init_graphite_emits_routing_section_in_pr_skill(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """`init --graphite` injects `## Graphite Routing` into installed deviate-pr SKILL.md."""
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".opencode").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            skill_path = tmp_path / ".opencode" / "skills" / "deviate-pr" / "SKILL.md"
+            assert skill_path.exists()
+            content = skill_path.read_text(encoding="utf-8")
+            assert "## Graphite Routing" in content
+            assert "gt submit --stack" in content
+
+    def test_init_without_graphite_omits_routing_section_in_pr_skill(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """`init` (no flag) installs deviate-pr SKILL.md without Graphite Routing."""
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".opencode").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            skill_path = tmp_path / ".opencode" / "skills" / "deviate-pr" / "SKILL.md"
+            assert skill_path.exists()
+            content = skill_path.read_text(encoding="utf-8")
+            assert "## Graphite Routing" not in content

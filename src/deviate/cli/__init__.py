@@ -68,17 +68,34 @@ def _serialize_value(key: str, value: object) -> str:
 
 def _dict_to_toml(data: dict) -> str:
     lines: list[str] = []
+    # Emit all scalar top-level keys FIRST, then all tables. TOML has no
+    # "back to root" syntax — once a [table] header is written, any subsequent
+    # bare keys are absorbed into that table. By ordering scalars before
+    # dicts, top-level scalars stay at root scope.
+    scalars: list[tuple[str, object]] = []
+    tables: list[tuple[str, dict]] = []
     for key, value in data.items():
         if value is None:
             continue
         if isinstance(value, dict):
-            lines.append(f"\n[{key}]")
-            for k, v in value.items():
-                line = _serialize_value(k, v)
-                if line:
-                    lines.append(line)
+            tables.append((key, value))
         else:
-            line = _serialize_value(key, value)
+            scalars.append((key, value))
+
+    for key, value in scalars:
+        line = _serialize_value(key, value)
+        if line:
+            lines.append(line)
+
+    for key, value in tables:
+        if not value:
+            # Skip empty tables — emitting `[key]` would still consume the
+            # section header even with no entries, and any later bare keys
+            # would nest under it.
+            continue
+        lines.append(f"\n[{key}]")
+        for k, v in value.items():
+            line = _serialize_value(k, v)
             if line:
                 lines.append(line)
     lines.append("")
@@ -240,21 +257,57 @@ def _detect_context() -> bool:
     return shutil.which("context") is not None
 
 
+def _merge_flag_keys(config_path: Path, *, graphite: bool, use_context: bool) -> None:
+    """Surgically update ``graphite`` and ``use_context`` keys in an existing TOML.
+
+    Preserves every other key/table (e.g. user-customised ``[models]``).
+    Used when ``init --graphite`` or ``init --context`` is re-run on a workspace
+    whose ``.deviate/config.toml`` already exists — the idempotency guard in
+    ``_write_if_missing`` would otherwise silently drop the new flag values.
+    """
+    content = config_path.read_text(encoding="utf-8")
+    for key, value in (("graphite", graphite), ("use_context", use_context)):
+        new_line = f"{key} = {'true' if value else 'false'}"
+        pattern = re.compile(rf"^{re.escape(key)}\s*=\s*.*$", re.MULTILINE)
+        if pattern.search(content):
+            content = pattern.sub(new_line, content)
+        else:
+            # Insert before the first [table] header if any, else append.
+            table_match = re.search(r"^\[.*\]\s*$", content, re.MULTILINE)
+            if table_match:
+                idx = table_match.start()
+                content = content[:idx] + f"{new_line}\n" + content[idx:]
+            else:
+                if content and not content.endswith("\n"):
+                    content += "\n"
+                content += f"{new_line}\n"
+    config_path.write_text(content, encoding="utf-8")
+
+
 def _scaffold_dotfiles(
     workdir: Path,
     agent_export_mode: str,
     use_context: bool = False,
     graphite: bool = False,
+    force_update_flags: bool = False,
 ) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
     _ensure_dir(dot_dir / "artifacts")
 
-    config = DeviateConfig(
-        agent_export_mode=agent_export_mode, use_context=use_context, graphite=graphite
-    )
     config_path = dot_dir / "config.toml"
-    _write_if_missing(config_path, _dict_to_toml(config.model_dump()))
+    if config_path.exists() and not force_update_flags:
+        console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
+    elif config_path.exists():
+        _merge_flag_keys(config_path, graphite=graphite, use_context=use_context)
+        console.print(f"  [green]UPDATE[/] {config_path.name} flags merged")
+    else:
+        config = DeviateConfig(
+            agent_export_mode=agent_export_mode,
+            use_context=use_context,
+            graphite=graphite,
+        )
+        _write_if_missing(config_path, _dict_to_toml(config.model_dump()))
 
     session = SessionState()
     session_path = dot_dir / "session.json"
@@ -319,7 +372,7 @@ def _install_skills_to_agents(workdir: Path, agents: list[str]) -> None:
             console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
             continue
         for skill_name in skills:
-            if install_skill(skill_name, target_dir):
+            if install_skill(skill_name, target_dir, workdir=workdir):
                 console.print(f"  [green]INSTALL[/] {skill_name} → {agent}")
             else:
                 console.print(f"  [yellow]SKIP[/] {skill_name} → {agent}")
@@ -357,6 +410,11 @@ def init(
     graphite: bool = typer.Option(
         False, "--graphite", help="Enable Graphite CLI integration for stacked changes"
     ),
+    context: bool = typer.Option(
+        False,
+        "--context",
+        help="Force-enable offline context CLI integration (overrides PATH detection)",
+    ),
     agent: str | None = typer.Option(
         None, "--agent", help="Override auto-detected agent platform"
     ),
@@ -365,8 +423,13 @@ def init(
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
+    use_context = True if context else _detect_context()
     _scaffold_dotfiles(
-        workdir, agent_export_mode, use_context=_detect_context(), graphite=graphite
+        workdir,
+        agent_export_mode,
+        use_context=use_context,
+        graphite=graphite,
+        force_update_flags=graphite or context,
     )
 
     _apply_governance(workdir, graphite=graphite)
