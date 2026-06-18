@@ -55,7 +55,12 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 2. **Constitutional Pre-Flight**: Check `specs/constitution.md`. If present, extract constraints that govern this task. If absent, note the gap and proceed — ad-hoc issues are exempt from constitutional requirements but should respect them if available.
 
-3. **Lightweight Discovery Pass**: Explore the codebase to ground the issue:
+2.5. **Existing Explore Check**: Check if `specs/explore/` contains an explore.md matching the problem description:
+    - Derive a kebab-case slug from the user's description. Check for `specs/explore/<slug>.md`.
+    - If found: read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md"`.
+    - If not found: proceed to step 3 (Lightweight Discovery Pass) as normal.
+
+3. **Lightweight Discovery Pass**: Skip this step if an existing explore.md was consumed in step 2.5. Otherwise, explore the codebase to ground the issue:
    - Use grep/glob to find files and modules relevant to the user's description
    - Identify existing patterns, hooks, utilities, or components that the task should extend or integrate with
    - Map target files (both existing files to modify and new files to create)

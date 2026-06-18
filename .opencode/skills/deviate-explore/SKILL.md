@@ -126,12 +126,12 @@ Instructions:
 <execution_sequence>
 
 <step id="pre_script">
-Derive a concise 2-3 word kebab-case slug from the problem statement (e.g. "auth-jwt", "worker-pool", "liveview-optimize"). Then run the pre-script to allocate the feature bucket, validate the constitution, and emit a JSON contract:
+Derive a concise 2-3 word kebab-case slug from the problem statement (e.g. "auth-jwt", "worker-pool", "liveview-optimize"). Then run the pre-script to initialize the explore directory, validate the constitution, and emit a JSON contract:
 ```bash
 deviate explore pre "<problem-statement>" --slug "<your-concise-slug>"
 ```
 
-The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target` (absolute path to the file the orchestrator will write), `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, and `is_greenfield` (boolean).
+The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir` (`specs/explore/`), `specs_directory`, `spec_target` (absolute path `specs/explore/<slug>.md` the orchestrator will write), `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id` (the explore slug), and `is_greenfield` (boolean).
 
 If the pre-script exits non-zero or emits a `STATUS: …` failure token:
 - Surface the token to the human operator verbatim.
@@ -151,9 +151,9 @@ If `is_greenfield` is false, capture the `Tech Stack Standards`, `Testing Protoc
 
 Quote the constitution sections as-is into the `## Constitution Quotes` section; do not classify, score, interpret, or assign any markers. The downstream `deviate-research` skill owns constitutional interpretation. Do NOT modify or create any constitution file.
 </step>
+<step id="explore_dir_verify">
 
-<step id="feature_bucket_verify">
-The pre-script has already created `<repo_root>/<specs_directory>/<feature_dir>`. Confirm the directory exists; if it does not, recreate it from the contract. Do not write or modify any other directory or file.
+The pre-script has already created `<repo_root>/specs/explore/`. Confirm the directory exists; if it does not, recreate it from the contract. Do not write or modify any other directory or file.
 </step>
 
 <step id="exploratory_scan">
@@ -179,15 +179,20 @@ Write the completed exploration artifact cleanly into `<spec_target>` — the ab
 <step id="post_script_validation">
 Run the post-script to validate and commit the artifact:
 ```bash
-deviate explore post
+deviate explore post --slug "<your-slug>"
 ```
 **IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
-The post-script reads `<spec_target>`, validates the required section headers and the verbatim-evidence rule on FILE_REGISTRY rows, commits the change with `docs({epic_id}): scaffold explore.md` (referencing the feature bucket epic, not a phantom issue), and returns `STATUS: SUCCESS` on stdout. If validation fails, fix only the markdown formatting in explore.md and re-run.
+The post-script reads `<spec_target>`, validates the required section headers and the verbatim-evidence rule on FILE_REGISTRY rows, commits the change with `docs(explore): scan <slug>`, and returns `STATUS: SUCCESS` on stdout. If validation fails, fix only the markdown formatting in explore.md and re-run.
 </step>
 
-<step id="handoff_to_research">
-**TERMINATE HERE.** Do NOT proceed to design, PRD, shard, or implementation. Do NOT write any code. Do NOT run any tests. Display the contract summary. Note the `## Scope Sizing` classification — the `deviate-research` skill will use it to offer the user the option of `/deviate-adhoc` for low/medium complexity features. Instruct the human operator to invoke the `deviate-research` skill next.
+<step id="handoff_to_research_or_adhoc">
+**TERMINATE HERE.** Do NOT proceed to design, PRD, shard, or implementation. Do NOT write any code. Do NOT run any tests. Display the contract summary.
+
+Read the `## Scope Sizing` section you compiled. Use `Estimated Complexity` to route:
+
+- **Low or Medium complexity**: Recommend `/deviate-adhoc` as the next step. Note that the `explore.md` is already on disk — `/deviate-adhoc` will detect and consume it automatically via its `Existing Explore Check` (step 2.5). Instruct the human operator to invoke the `deviate-adhoc` skill with the same problem statement.
+- **High complexity**: Recommend `/deviate-research` as the next step. Instruct the human operator to invoke the `deviate-research` skill with the explore slug.
 </step>
 
 </execution_sequence>
@@ -261,11 +266,10 @@ EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote a
 | Metric | Value |
 | :--- | :--- |
 | STATUS | SUCCESS |
-| FEATURE_SLUG | <value from contract> |
+| EXPLORE_SLUG | <value from contract> |
 | GIT_BRANCH | <value from contract> |
 | SPEC_TARGET | <relative path from contract> |
-| EPIC_ID | <value from contract> |
-| NEXT_ACTION | Run the `deviate-research` skill |
+| NEXT_ACTION | Run `/deviate-adhoc` (Low/Medium complexity) or `/deviate-research` (High complexity) — see `## Scope Sizing` |
 
 </output_format_schemas>
 
@@ -279,7 +283,7 @@ EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote a
 | Repository is empty (no source files, no manifests) | Halt with `EMPTY_REPO`. Do not write any files. |
 | Constitution lacks `Testing Protocols` section | Halt with `MISSING_TEST_CONFIG`. The orchestrator requires test/lint commands to wire the dev loop. |
 | Subagent output omits verbatim evidence on a FILE_REGISTRY row | Reject the row; require ≤ 10-line quote before merging. |
-| `spec_target` directory does not exist | Recreate it from the contract; do not write to any other directory. |
+| `spec_target` parent directory (`specs/explore/`) does not exist | Create it from the contract; do not write to any other directory. |
 | Manifest-constitution divergence observed | Quote BOTH verbatim; flag in DISCOVERY_AUDIT_RESULTS — do not adjudicate. |
 | Constitution quote appears to conflict with observed manifest | Quote both verbatim; flag as manifest-constitution divergence in DISCOVERY_AUDIT_RESULTS — do not adjudicate. |
 | Agent attempts to write/modify implementation code, tests, configs, or scripts | **OVERRIDE**: Stop immediately. This skill writes ONLY explore.md. Surface `STATUS: IMPLEMENTATION_DRIFT_DETECTED` and halt. |
