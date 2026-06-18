@@ -223,6 +223,10 @@ def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
     console.print(f"  [green]UPDATE[/] {target_path.name} block replaced")
 
 
+def _detect_context() -> bool:
+    return shutil.which("context") is not None
+
+
 def _scaffold_dotfiles(
     workdir: Path, agent_export_mode: str, use_context: bool = False
 ) -> None:
@@ -336,8 +340,7 @@ def init(
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
-    use_context = shutil.which("context") is not None
-    _scaffold_dotfiles(workdir, agent_export_mode, use_context=use_context)
+    _scaffold_dotfiles(workdir, agent_export_mode, use_context=_detect_context())
 
     _apply_governance(workdir)
 
