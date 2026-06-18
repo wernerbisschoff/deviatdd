@@ -26,12 +26,16 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
-from deviate.core.cache_discipline import CacheDiscipline, CacheStore
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
-from deviate.state.config import AgentConfig, PytestReportConfig, SessionState
+from deviate.state.config import (
+    AgentConfig,
+    PytestReportConfig,
+    SessionState,
+    resolve_model_for_phase,
+)
 from deviate.ui.monitor import OrchestrationMonitor
 
 
@@ -293,6 +297,7 @@ def _invoke_agent(
     task_id: str = "",
     phase: str = "",
     output_callback: Callable[[str], None] | None = None,
+    model: str | None = None,
 ) -> tuple[HandoverManifest | None, str]:
     c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
     _save_agent_log(phase, task_id, "prompt", prompt)
@@ -307,7 +312,9 @@ def _invoke_agent(
             if output_callback:
                 output_callback(line)
 
-        manifest = backend.invoke(prompt, output_callback=collecting_handler)
+        manifest = backend.invoke(
+            prompt, output_callback=collecting_handler, model=model
+        )
         c.print("")
         _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
         if raw_lines:
@@ -800,8 +807,10 @@ def _run_red_phase(
     c.print(f"  [bold blue]RED →[/] {tid}")
 
     backend = agent or "opencode"
-    prompt = _build_auto_prompt("red", task, Path.cwd())
+    root = Path.cwd()
+    prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
+    red_model = resolve_model_for_phase("RED", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -809,6 +818,7 @@ def _run_red_phase(
         task_id=tid,
         phase="RED",
         output_callback=agent_output_callback,
+        model=red_model,
     )
     if manifest is None:
         raise PhaseFailedError(
@@ -821,7 +831,6 @@ def _run_red_phase(
     if manifest.yellow_trigger:
         c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
 
-    root = Path.cwd()
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
@@ -878,10 +887,12 @@ def _run_green_phase(
     c.print(f"  [bold green]GREEN →[/] {tid}")
 
     backend = agent or "opencode"
-    prompt = _build_auto_prompt("green", task, Path.cwd())
+    root = Path.cwd()
+    prompt = _build_auto_prompt("green", task, root)
     if session.train_feedback:
         prompt += f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
+    green_model = resolve_model_for_phase("GREEN", root)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -889,6 +900,7 @@ def _run_green_phase(
         task_id=tid,
         phase="GREEN",
         output_callback=agent_output_callback,
+        model=green_model,
     )
     if manifest is None and timeout_ctx:
         c.print(
@@ -914,7 +926,6 @@ def _run_green_phase(
     session.train_feedback = ""
     session.save(session_path)
 
-    root = Path.cwd()
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
@@ -1097,6 +1108,7 @@ def _run_judge_phase(
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
+    judge_model = resolve_model_for_phase("JUDGE", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -1104,6 +1116,7 @@ def _run_judge_phase(
         task_id=tid,
         phase="JUDGE",
         output_callback=agent_output_callback,
+        model=judge_model,
     )
     if manifest is None:
         raise PhaseFailedError(
@@ -1174,8 +1187,10 @@ def _run_refactor_phase(
     c.print(f"  [bold green]REFACTOR →[/] {tid}")
 
     backend = agent or "opencode"
-    prompt = _build_auto_prompt("refactor", task, Path.cwd())
+    root = Path.cwd()
+    prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
+    refactor_model = resolve_model_for_phase("REFACTOR", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -1183,6 +1198,7 @@ def _run_refactor_phase(
         task_id=tid,
         phase="REFACTOR",
         output_callback=agent_output_callback,
+        model=refactor_model,
     )
     if manifest is None:
         raise PhaseFailedError(
@@ -1193,7 +1209,6 @@ def _run_refactor_phase(
             f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
         )
 
-    root = Path.cwd()
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
@@ -1230,8 +1245,10 @@ def _run_yellow_phase(
     c.print(f"  [bold magenta]YELLOW →[/] {tid}")
 
     backend = agent or "opencode"
-    prompt = _build_auto_prompt("yellow", task, Path.cwd())
+    root = Path.cwd()
+    prompt = _build_auto_prompt("yellow", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "YELLOW")
+    yellow_model = resolve_model_for_phase("YELLOW", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -1239,6 +1256,7 @@ def _run_yellow_phase(
         task_id=tid,
         phase="YELLOW",
         output_callback=agent_output_callback,
+        model=yellow_model,
     )
     if manifest is None:
         raise PhaseFailedError(
@@ -1304,36 +1322,6 @@ def _finish_tdd_cycle(
     return session
 
 
-def _capture_cache_store(root: Path, task: dict, agent: str | None) -> CacheStore:
-    model = agent or "opencode"
-    test_files: dict[str, str] = {}
-    tests_dir = root / "tests"
-    if tests_dir.exists():
-        for tf in sorted(tests_dir.rglob("test_*.py")):
-            try:
-                test_files[str(tf.relative_to(root))] = tf.read_text(encoding="utf-8")
-            except Exception:
-                pass
-    return CacheStore(
-        model=model,
-        tool_definitions=[],
-        system_prompt="",
-        test_files=test_files,
-    )
-
-
-def _validate_cache_store(
-    phase: str,
-    root: Path,
-    task: dict,
-    agent: str | None,
-    previous: CacheStore | None,
-) -> CacheStore:
-    current = _capture_cache_store(root, task, agent)
-    CacheDiscipline.validate(phase=phase, current=current, previous=previous)
-    return current
-
-
 def _run_tdd_cycle(
     task: dict,
     ledger_path: Path,
@@ -1367,14 +1355,13 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        cache_store = _capture_cache_store(root, task, agent)
+
         session = _finish_tdd_cycle(
             task, ledger_path, session, session_path, c, no_refactor, agent=agent
         )
         return
 
     if start_phase == "YELLOW":
-        cache_store = _capture_cache_store(root, task, agent)
         _maybe_push_event(
             monitor,
             "phase_change",
@@ -1395,7 +1382,7 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        cache_store = _capture_cache_store(root, task, agent)
+
         session = _finish_tdd_cycle(
             task,
             ledger_path,
@@ -1414,14 +1401,11 @@ def _run_tdd_cycle(
     session = _run_red_phase(
         task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
     )
-    cache_store = _capture_cache_store(root, task, agent)
-
     train_attempts = 0
     max_train_attempts = 3
     judge_passed = no_judge
 
     while not judge_passed:
-        cache_store = _capture_cache_store(root, task, agent)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="GREEN", description=task_desc
         )
@@ -1430,7 +1414,6 @@ def _run_tdd_cycle(
         )
 
         if session.yellow_triggered:
-            cache_store = _capture_cache_store(root, task, agent)
             _maybe_push_event(
                 monitor,
                 "phase_change",
@@ -1449,7 +1432,7 @@ def _run_tdd_cycle(
             )
             if decision == _YELLOW_DECISION_REJECTED:
                 c.print("  [yellow]Re-running GREEN after YELLOW[/]")
-                cache_store = _capture_cache_store(root, task, agent)
+
                 _maybe_push_event(
                     monitor,
                     "phase_change",
@@ -1488,7 +1471,6 @@ def _run_tdd_cycle(
             judge_passed = True
             break
 
-        cache_store = _capture_cache_store(root, task, agent)
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="JUDGE", description=task_desc
         )
@@ -1543,6 +1525,7 @@ def _run_execute_phase(
     has_spec = bool(spec_content)
     train_feedback = ""
     max_judge_attempts = 3
+    execute_model = resolve_model_for_phase("EXECUTE", root)
 
     for attempt in range(max_judge_attempts):
         prompt = _build_auto_prompt("execute", task, root)
@@ -1557,6 +1540,7 @@ def _run_execute_phase(
             task_id=tid,
             phase="EXECUTE",
             output_callback=agent_output_callback,
+            model=execute_model,
         )
         if manifest is None:
             raise PhaseFailedError(
@@ -1591,12 +1575,14 @@ def _run_execute_phase(
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
+        judge_model = resolve_model_for_phase("JUDGE", root)
         judge_manifest, _ = _invoke_agent(
             judge_prompt,
             c,
             backend_name=backend,
             task_id=tid,
             phase="JUDGE",
+            model=judge_model,
         )
 
         if judge_manifest is None:

@@ -109,7 +109,7 @@ mock_pytest.side_effect = [
 
 - `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are the authoritative
   source-of-truth documents for the DeviaTDD architecture. Any change to CLI commands,
-  phase workflows, model routing, file structure, or HITL gates MUST be reflected in
+  phase workflows, model routing, model configuration, file structure, or HITL gates MUST be reflected in
   both documents.
 - When adding, removing, or renaming a CLI command, skill, or phase, update both spec
   files in the same commit.
@@ -151,6 +151,37 @@ mock_pytest.side_effect = [
 - **Architects (premium strategic logic)**: `/research`, `/prd`, `/shard`, `/adhoc` → Qwen3.7-Plus [Thinking Mode] for abstract reasoning and constraint satisfaction.
 - **Translators (cached engineering)**: `/plan` + `/tasks` → V4 Pro in single continuous thread per issue for 90%+ prefix cache discount.
 - **Compliance gates**: YELLOW, JUDGE → V4 Pro for isolated compliance + security verification (injection, secrets, path traversal).
+
+### Per-Phase Model Configuration
+
+Model-to-phase assignments are declared in `.deviate/config.toml` under the `[models]`
+section rather than hardcoded:
+
+```toml
+[models]
+default = "opencode/deepseek-v4-flash"
+plan = "opencode/deepseek-v4-pro"
+judge = "opencode/deepseek-v4-pro"
+```
+
+**Resolution order** (case-insensitive):
+1. Phase-specific key (e.g., `judge`, `plan`, `red`)
+2. `default` key (fallback for all phases)
+3. No model flag — backend uses its native default
+
+**Backend support**: `opencode` and `droid` both accept `--model <id>`. The `claude`
+backend has no model flag — model config is silently ignored when `claude` is active.
+
+**Where it applies**: Every agent invocation across micro (`_run_red_phase`,
+`_run_green_phase`, `_run_judge_phase`, `_run_refactor_phase`, `_run_execute_phase`,
+`_run_yellow_phase`), meso (`_invoke_agent_phase` in `meso.py`), and macro
+(`_invoke_agent_phase` in `macro.py`) layers calls `resolve_model_for_phase()`
+from `src/deviate/state/config.py`.
+
+**Data model**: `DeviateConfig.models: dict[str, str]` (free-form dict, reserved
+`default` key). Serialized under `[models]` in `.deviate/config.toml`. The
+`resolve_phase_model()` function performs the case-insensitive lookup; the
+`AgentBackend.invoke()` method injects `--model <id>` when a model is resolved.
 
 ## Python-Only Architecture
 

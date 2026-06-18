@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
@@ -100,8 +101,43 @@ class DeviateConfig(BaseModel):
     timeout_seconds: int = Field(default=300, gt=0)
     agent_export_mode: Literal["local", "global"] = "local"
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    models: dict[str, str] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
+
+
+def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
+    if not models:
+        return None
+    phase_lower = phase.lower()
+    lookup = {k.lower(): val for k, val in models.items() if val}
+    if phase_lower in lookup:
+        return lookup[phase_lower]
+    if "default" in lookup:
+        return lookup["default"]
+    return None
+
+
+def resolve_model_for_phase(phase: str, root: Path) -> str | None:
+    """Load `[models]` from `.deviate/config.toml` and resolve *phase*.
+
+    Resolution order:
+        1. Phase-specific key (case-insensitive)
+        2. ``default`` key
+        3. ``None`` (no model flag)
+    """
+    config_path = root / ".deviate" / "config.toml"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+        models = data.get("models", {})
+        if not isinstance(models, dict):
+            return None
+        return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
+    except (FileNotFoundError, tomllib.TOMLDecodeError, KeyError, TypeError):
+        return None
 
 
 class PytestReportConfig(BaseModel):

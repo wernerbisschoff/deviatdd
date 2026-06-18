@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from deviate.cli._common import (
+    _build_slim_prompt,
     _extract_epic_num,
     _halt,
     _handle_missing_dot_dir,
@@ -21,7 +22,6 @@ from deviate.cli._common import (
 from deviate.core._shared import git_env as _git_env
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact, stage_and_commit
-from deviate.prompts.assembly import assemble_prompt
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.cli.feature import _derive_slug
 from deviate.core.epic import (
@@ -38,7 +38,7 @@ from deviate.core.validation import (
     validate_sections,
     validate_yaml_frontmatter,
 )
-from deviate.state.config import SessionState
+from deviate.state.config import SessionState, resolve_model_for_phase
 from deviate.state.ledger import IssueRecord, _read_ledger, append_issue_record
 
 
@@ -643,21 +643,13 @@ def shard_post(
 # ---------------------------------------------------------------------------
 
 
-def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
-    repo_root = Path.cwd()
-    constitution_path = repo_root / "specs" / "constitution.md"
-    return assemble_prompt(
-        template_name=phase,
-        context=contract,
-        constitution_path=constitution_path,
-    )
-
-
 def _invoke_agent_phase(phase: str, contract: dict[str, str]) -> None:
     prompt = _build_slim_prompt(phase, contract)
     backend = AgentBackend()
     try:
-        manifest = backend.invoke(prompt)
+        root = Path.cwd()
+        model = resolve_model_for_phase(phase, root)
+        manifest = backend.invoke(prompt, model=model)
     except AgentSubprocessError as e:
         _halt(phase.upper(), str(e))
     if manifest.status != "PASS":

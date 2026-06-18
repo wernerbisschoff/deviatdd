@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import typer
 
 from deviate.cli._common import (
+    _build_slim_prompt,
     _extract_epic_num,
     _extract_issue_num,
     _handle_missing_dot_dir,
@@ -30,8 +31,7 @@ from deviate.core.worktree import (
     create_worktree,
     remove_worktree,
 )
-from deviate.prompts.assembly import assemble_prompt
-from deviate.state.config import SessionState
+from deviate.state.config import SessionState, resolve_model_for_phase
 from deviate.state.ledger import (
     IssueRecord,
     TaskRecord,
@@ -1025,16 +1025,6 @@ def _pr_run(
 # ---------------------------------------------------------------------------
 
 
-def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
-    repo_root = Path.cwd()
-    constitution_path = repo_root / "specs" / "constitution.md"
-    return assemble_prompt(
-        template_name=phase,
-        context=contract,
-        constitution_path=constitution_path,
-    )
-
-
 def _invoke_agent_phase(
     phase: str,
     contract: dict[str, str],
@@ -1044,7 +1034,9 @@ def _invoke_agent_phase(
     prompt = _build_slim_prompt(phase, contract)
     backend = AgentBackend()
     try:
-        manifest = backend.invoke(prompt, cwd=cwd)
+        root = Path(cwd) if cwd else Path.cwd()
+        model = resolve_model_for_phase(phase, root)
+        manifest = backend.invoke(prompt, cwd=cwd, model=model)
     except AgentSubprocessError as e:
         console.print(f"[red]{phase.upper()}_FAILED[/] {e}")
         raise SystemExit(1) from e

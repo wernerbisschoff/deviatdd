@@ -14,6 +14,7 @@ from rich.console import Console
 
 from deviate.core._shared import git_env as _git_env
 from deviate.core.constitution import resolve_constitution, validate_constitution
+from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import TransitionViolationError
 
 console = Console()
@@ -142,3 +143,13 @@ def _run_pre_commit_hooks(worktree_path: Path | None = None) -> None:
         console.print("[green]PRE_COMMIT_HOOKS[/] hooks path set to .githooks/")
     except subprocess.CalledProcessError:
         console.print("[yellow]PRE_COMMIT_WARN[/] could not set hooks path")
+
+
+def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
+    repo_root = Path.cwd()
+    constitution_path = repo_root / "specs" / "constitution.md"
+    return assemble_prompt(
+        template_name=phase,
+        context=contract,
+        constitution_path=constitution_path,
+    )

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from deviate.core.agent import BACKEND_COMMANDS
+from deviate.core.agent import BACKEND_COMMANDS, AgentBackend
 from deviate.state.config import AgentConfig, DeviateConfig
 
 
@@ -377,3 +377,83 @@ class TestAgentBackendErrors:
         assert issubclass(MalformedHandoverManifestError, Exception)
         assert issubclass(AgentBinaryNotFoundError, Exception)
         assert issubclass(EmptyOutputError, Exception)
+
+
+class TestAgentModelRouting:
+    """AC-ADHOC-005-01 through AC-ADHOC-005-05: model parameter injection."""
+
+    def test_agent_command_with_model(self):
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            backend = AgentBackend()
+            backend.invoke("test prompt", model="opencode/deepseek-v4-flash")
+
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        assert "--model" in cmd, f"Expected --model in command, got {cmd}"
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "opencode/deepseek-v4-flash"
+
+    def test_agent_command_without_model(self):
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            backend = AgentBackend()
+            backend.invoke("test prompt")
+
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        assert "--model" not in cmd, f"Expected no --model in command, got {cmd}"
+
+    def test_agent_command_droid_backend(self):
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch(
+                "deviate.core.agent.BACKEND_COMMANDS",
+                {"droid": "droid exec"},
+            ),
+        ):
+            config = AgentConfig(backend="droid")
+            backend = AgentBackend(config=config)
+            backend.invoke("test prompt", model="deepseek-v4-pro")
+
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        assert "--model" in cmd, f"Expected --model in droid command, got {cmd}"
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "deepseek-v4-pro"
+
+    def test_agent_command_claude_backend(self):
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch(
+                "deviate.core.agent.BACKEND_COMMANDS",
+                {"claude": "claude -p"},
+            ),
+        ):
+            config = AgentConfig(backend="claude")
+            backend = AgentBackend(config=config)
+            backend.invoke("test prompt", model="opencode/deepseek-v4-flash")
+
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        assert "--model" not in cmd, (
+            f"Expected no --model for claude backend, got {cmd}"
+        )
