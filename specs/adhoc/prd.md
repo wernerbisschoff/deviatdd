@@ -66,3 +66,18 @@
 4. **AC-ADHOC-006-04**: Given a `/research` phase execution with `context` available, When the architecture subagents perform library-specific analysis, Then the skill prompt instructs using `context query <source> <topic>` as the primary documentation mechanism, with web fetch as last resort.
 5. **AC-ADHOC-006-05**: Given a `/plan` phase execution with `context` available, When the planning analyst performs localized codebase research, Then the skill prompt instructs using `context query` for understanding library APIs and framework conventions.
 6. **AC-ADHOC-006-06**: Given an `/explore` or `/adhoc` phase execution, When the subagent identifies the project's dependency ecosystem, Then the skill prompt instructs running `context add <source>` for detected frameworks to index their documentation.
+
+## FR-ADHOC-007: Graphite CLI Integration — Optional Branch & PR Management via `gt`
+
+- **Description**: Add an optional `graphite` boolean flag to `deviate init` that persists a `graphite = true` key in `.deviate/config.toml`. When enabled, the system uses Graphite's `gt` CLI for branch creation (replacing `git branch` with `gt create -am`) and PR submission (replacing `gh pr create` with `gt submit --stack`). Governance seeds (`CLAUDE.md`, `AGENTS.md`) include a conditional Graphite workflow section. When false (default), all existing `git` and `gh` behavior is preserved unchanged.
+- **Preconditions**: `.deviate/config.toml` exists (created by `deviate init`). `gt` CLI is an optional runtime dependency — system functions without it when `graphite = false`.
+- **Inputs/Outputs**: Input: `--graphite` CLI flag on `deviate init`. Output: Updated `DeviateConfig` with `graphite: bool` field; conditional Graphite workflow section in `CLAUDE.md`/`AGENTS.md`; conditional `gt create` in `feature.py:_create_feature_branch`; conditional `gt submit --stack` in `meso.py:_pr_run`; updated PR skill template referencing `gt` as alternative.
+
+### Acceptance Criteria
+1. **AC-ADHOC-007-01**: Given `deviate init --graphite` is run, When `.deviate/config.toml` is generated, Then it contains `graphite = true` as a top-level key.
+2. **AC-ADHOC-007-02**: Given `deviate init` is run without `--graphite`, When `.deviate/config.toml` is generated, Then it contains `graphite = false` (or the field is absent, defaulting to false).
+3. **AC-ADHOC-007-03**: Given `graphite = true` in config, When `deviate init` runs, Then `CLAUDE.md` and `AGENTS.md` contain a `## Graphite Stacked Changes Workflow` section with `gt create -am`, `gt submit --stack`, `gt sync`, and anti-pattern warnings.
+4. **AC-ADHOC-007-04**: Given `graphite = false` in config (or absent), When `deviate init` runs, Then `CLAUDE.md` and `AGENTS.md` do NOT contain the Graphite workflow section.
+5. **AC-ADHOC-007-05**: Given `graphite = true` in config, When `deviate pr run` executes, Then PR creation uses `gt submit --stack` instead of `gh pr create`, and the subprocess command is `["gt", "submit", "--stack"]`.
+6. **AC-ADHOC-007-06**: Given `graphite = true` in config, When `deviate feature create` runs, Then the branch is created via `gt create -am "<message>"` instead of `git branch <name>`.
+7. **AC-ADHOC-007-07**: Given `graphite = false` or absent in config, When any command executes, Then all existing `git` and `gh` behavior is preserved — no `gt` commands are invoked.
