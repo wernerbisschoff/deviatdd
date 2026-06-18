@@ -1,3 +1,4 @@
 {"id":"TSK-007-01","issue_id":"ISS-ADH-007","description":"Add `DeviateConfig.graphite` field and `resolve_graphite_config()` helper","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-18T12:27:24.969628Z"}
 {"id":"TSK-007-01","issue_id":"ISS-ADH-007","description":"Add `DeviateConfig.graphite` field and `resolve_graphite_config()` helper","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-18T12:28:39.045783Z"}
 {"id":"TSK-007-01","issue_id":"ISS-ADH-007","description":"Add `DeviateConfig.graphite` field and `resolve_graphite_config()` helper","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-18T12:36:08.874232Z"}
+{"id":"TSK-007-02","issue_id":"ISS-ADH-007","description":"Add `--graphite` flag to `deviate init` and thread through to config persistence","status":"RED","execution_mode":"TDD","created_at":"2026-06-18T12:51:37.371456Z"}

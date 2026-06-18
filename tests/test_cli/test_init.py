@@ -237,3 +237,112 @@ class TestInitCommand:
 
     def test_resolve_graphite_config_no_config(self, tmp_path: Path) -> None:
         assert resolve_graphite_config(tmp_path) is False
+
+
+class TestInitGraphiteFlag:
+    """RED phase tests for TSK-007-02: --graphite flag on deviate init."""
+
+    def test_init_with_graphite_flag(self, tmp_path: Path):
+        """AC-ADHOC-007-01: --graphite flag writes graphite = true in config.toml.
+
+        FAILS because the --graphite flag doesn't exist on the init command yet.
+        """
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            assert config_path.exists()
+            content = config_path.read_text()
+            assert "graphite = true" in content
+
+    def test_init_without_graphite_flag(self, tmp_path: Path):
+        """AC-ADHOC-007-02: Default init either omits graphite or sets false."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            assert config_path.exists()
+            content = config_path.read_text()
+            if "graphite" in content:
+                assert "graphite = false" in content
+
+    def test_init_graphite_governance_section(self, tmp_path: Path):
+        """AC-ADHOC-007-03: Graphite section appears in governance seeds when enabled.
+
+        FAILS because the --graphite flag doesn't exist on the init command yet,
+        and _apply_governance doesn't accept a graphite parameter.
+        """
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            for fname in ["CLAUDE.md", "AGENTS.md"]:
+                fpath = workdir / fname
+                assert fpath.exists()
+                content = fpath.read_text()
+                assert "## Graphite Stacked Changes Workflow" in content
+
+    def test_init_graphite_governance_absent_when_disabled(self, tmp_path: Path):
+        """AC-ADHOC-007-04: No Graphite section when graphite disabled."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            for fname in ["CLAUDE.md", "AGENTS.md"]:
+                fpath = workdir / fname
+                assert fpath.exists()
+                content = fpath.read_text()
+                assert "## Graphite Stacked Changes Workflow" not in content
+
+    def test_scaffold_dotfiles_with_graphite_true(self, tmp_path: Path):
+        """_scaffold_dotfiles(graphite=True) writes graphite = true.
+
+        FAILS because _scaffold_dotfiles doesn't accept a graphite kwarg yet.
+        """
+        from deviate.cli import _scaffold_dotfiles
+
+        _scaffold_dotfiles(tmp_path, "local", graphite=True)
+        config_path = tmp_path / ".deviate" / "config.toml"
+        assert config_path.exists()
+        content = config_path.read_text()
+        assert "graphite = true" in content
+
+    def test_scaffold_dotfiles_with_graphite_false(self, tmp_path: Path):
+        """_scaffold_dotfiles(graphite=False) omits graphite or sets false."""
+        from deviate.cli import _scaffold_dotfiles
+
+        _scaffold_dotfiles(tmp_path, "local", graphite=False)
+        config_path = tmp_path / ".deviate" / "config.toml"
+        assert config_path.exists()
+        content = config_path.read_text()
+        if "graphite" in content:
+            assert "graphite = false" in content
+
+    def test_apply_governance_with_graphite(self, tmp_path: Path):
+        """_apply_governance(graphite=True) emits Graphite section.
+
+        FAILS because _apply_governance doesn't accept a graphite kwarg yet.
+        """
+        from deviate.cli import _apply_governance
+
+        _apply_governance(tmp_path, graphite=True)
+        for fname in ["CLAUDE.md", "AGENTS.md"]:
+            fpath = tmp_path / fname
+            assert fpath.exists()
+            content = fpath.read_text()
+            assert "## Graphite Stacked Changes Workflow" in content
+            assert "gt create -am" in content
+            assert "gt submit --stack" in content
+
+    def test_apply_governance_without_graphite(self, tmp_path: Path):
+        """_apply_governance(graphite=False) omits Graphite section."""
+        from deviate.cli import _apply_governance
+
+        _apply_governance(tmp_path, graphite=False)
+        for fname in ["CLAUDE.md", "AGENTS.md"]:
+            fpath = tmp_path / fname
+            assert fpath.exists()
+            content = fpath.read_text()
+            assert "## Graphite Stacked Changes Workflow" not in content
