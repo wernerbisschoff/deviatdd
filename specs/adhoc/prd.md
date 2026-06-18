@@ -52,3 +52,17 @@
 5. **AC-ADHOC-005-05**: Given `.deviate/config.toml` has `[models]\nred = "opencode/deepseek-v4-flash"`, When the RED phase uses the `claude` backend, Then the command is `["claude", "-p"]` without `--model`.
 6. **AC-ADHOC-005-06**: Given the constitution documents the default model tiering, When `deviate init` generates `.deviate/config.toml`, Then the `[models]` section is absent.
 7. **AC-ADHOC-005-07**: Given a TDD cycle with different models configured per phase, When the cycle runs, Then each phase invocation uses the resolved model for that phase and the handover manifest is parsed consistently.
+
+## FR-ADHOC-006: Offline Context Documentation System — Integrate `context` CLI into DeviaTDD Framework
+
+- **Description**: Integrate the `context` offline documentation CLI into the DeviaTDD framework across all layers — detect the binary at init time, set a config boolean, inject governance mandates into CLAUDE.md/AGENTS.md, and thread `context add` / `context query` instructions through all phase skill prompts so that AI agents use local, version-pinned documentation as their primary reference source instead of web fetching.
+- **Preconditions**: `context` binary on `$PATH` (optional — system works without it). `.deviate/config.toml` exists (created by `deviate init`). Existing prompt templates under `src/deviate/prompts/`.
+- **Inputs/Outputs**: Input: `context` binary. Output: Updated `DeviateConfig` with `use_context` boolean; updated governance seeds (`claudemd_seed.md`, `agents_seed.md`) with context mandate section; updated `core.md` universal invariants with context reference; updated skill prompts for explore, adhoc, research, plan, and layer preambles with `context add` / `context query` instructions.
+
+### Acceptance Criteria
+1. **AC-ADHOC-006-01**: Given the `context` binary is present on `$PATH`, When `deviate init` runs, Then `.deviate/config.toml` contains `use_context = true`.
+2. **AC-ADHOC-006-02**: Given the `context` binary is NOT on `$PATH`, When `deviate init` runs, Then `.deviate/config.toml` contains `use_context = false` (or the field is absent, defaulting to false).
+3. **AC-ADHOC-006-03**: Given `context` is detected during init, When `deviate init` completes, Then `CLAUDE.md` and `AGENTS.md` both contain a `## Offline Context Documentation System` section with `context query`, `context list`, and `context add` instructions.
+4. **AC-ADHOC-006-04**: Given a `/research` phase execution with `context` available, When the architecture subagents perform library-specific analysis, Then the skill prompt instructs using `context query <source> <topic>` as the primary documentation mechanism, with web fetch as last resort.
+5. **AC-ADHOC-006-05**: Given a `/plan` phase execution with `context` available, When the planning analyst performs localized codebase research, Then the skill prompt instructs using `context query` for understanding library APIs and framework conventions.
+6. **AC-ADHOC-006-06**: Given an `/explore` or `/adhoc` phase execution, When the subagent identifies the project's dependency ecosystem, Then the skill prompt instructs running `context add <source>` for detected frameworks to index their documentation.

@@ -2,110 +2,91 @@
 
 ## Recommended Architecture
 
-**Lightweight Ghost-Dependency Wrapper (Option B).** The integration extends the existing `deviate pr` Meso-layer command in `src/deviate/cli/meso.py` with Graphite subcommand routing. A new `--graphite` flag on `deviate pr` or a `pr stack` sub-action triggers `gt` CLI invocations instead of the current `gh` CLI path. This follows the exact ghost-dependency pattern already established for `gh` — runtime detection, clear error on absence, no change to `pyproject.toml` or dependency manifests. The constitution establishes ghost dependencies as accepted pattern:
+**Inline `gt` calls with config toggle.** The integration adds a `graphite: bool = False` field to `DeviateConfig`. When `true`, three insertion points in the existing code path call `gt` CLI via `subprocess.run` — no new modules, no new Pydantic models, no new JSONL ledgers, no state machines.
 
-> "Ghost dependencies: gh (GitHub CLI) and aider are runtime ghost dependencies — accepted pattern." — `AGENTS.md`
+### Three insertion points
 
-No new phase is added to the three-layer architecture. PR creation already resides in the Meso layer — the existing architecture does not prescribe the tool used for PR creation, only the layer boundary. Adding `gt` as an alternative PR creation path within the same layer preserves all three layer boundaries, all phase gates, and all HITL gates unchanged. The integration surface is minimal: a ghost-dependency validation function (mirroring the `gh` check), a branch-naming convention resolver, and a `gt submit` invocation replacing the `gh pr create` call.
+1. **Micro layer — before task execution** (`micro.py`, inside `_dispatch_task` or the phase entry points it calls):
+   - If `graphite = true`: `gt create feat/{epic}/{task-slug} --onto {prior-task-branch}` (or `--onto main` for the first task in a stack)
+   - Branch naming follows the existing `feat/{epic}/{issue-slug}` convention, extended with a task-specific suffix.
 
-The constitution is clear:
+2. **Micro layer — after task COMPLETED** (`micro.py`, inside `_run_refactor_phase` and `_run_execute_phase`, after the COMPLETED ledger transition):
+   - If `graphite = true`: `gt submit --no-edit-title --no-edit-description` to push the branch and create/update its PR.
 
-> "Human-in-the-Loop (HITL): Three mandatory gates... No gate may be programmatically bypassed." — `specs/constitution.md` §[1_ARCHITECTURAL_PRINCIPLES]
+3. **Meso layer — `deviate pr run`** (`meso.py::_pr_run()`):
+   - If `graphite = true`: `gt submit --stack --no-edit-title --no-edit-description` instead of the current `gh pr create` path. This pushes all stacked PRs in one command.
 
-PR reviews — including stack reviews — use the existing `deviate-review` skill running on opencode's agent infrastructure (claude/opencode/droid). Graphite AI Review is NOT integrated: the system must be fully usable on free tier, and Graphite AI Review is a paid-tier feature. The `deviate-review` skill already handles "ledger integrity, cross-file consistency, and security surface" — the three axes necessary for Gate 3 review. Stack review is an extension of this same skill, not a separate integration.
+### Module surface
 
-**Module surface.** Modified: `src/deviate/cli/meso.py` (PR command gains `--graphite`/`--stack` flags, `_pr_run()` gains `gt` path), `src/deviate/cli/_common.py` (optional: `_check_gt_available()` ghost-check helper), `src/deviate/prompts/skills/deviate-pr/SKILL.md` (execution sequence adds Graphite conditional branch). New: `src/deviate/cli/graphite.py` (Graphite utility module: `gt_create()`, `gt_submit()`, `gt_sync()`, `gt_log()` wrappers), `src/deviate/state/pr_stack.py` (Pydantic models: `PRStackRecord`, `StackEntryRecord`, `PRReviewRecord` with append-only JSONL persistence). No changes to `SessionState`, `_VALID_PHASES`, the TDD cycle, the existing ledger protocol, or the review module.
+| File | Change | Rationale |
+| :--- | :--- | :--- |
+| `src/deviate/state/config.py` | **Add** `graphite: bool = False` to `DeviateConfig` | The toggle. Read from `.deviate/config.toml` at runtime. |
+| `src/deviate/cli/micro.py` | **Add** `gt create` before task dispatch, `gt submit` after task completion | Two calls. Guarded by `graphite` config check. |
+| `src/deviate/cli/meso.py` | **Replace** `gh pr create` with `gt submit --stack` in `_pr_run()` when `graphite = true` | The stack-level submission. |
+
+No changes to: `SessionState`, `_VALID_PHASES`, `micro.py::_phase_map`, the TDD cycle state machine, the ledger protocol, `deviate-pr/SKILL.md`, `deviate-review/SKILL.md`, or any test files (beyond new tests for the `gt` code paths).
 
 ## Options Matrix
 
-| Option | Complexity | Testability | Constitutional Alignment | Reversibility | Blast Radius | Verdict |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **A: Deep Integration** — New `STACK` phase in TDD cycle, inserted after REFACTOR/EXECUTE | High | Medium | **Tension** — Micro layer is "RED → GREEN → JUDGE → REFACTOR." Adding a STACK phase conflates Meso (PR lifecycle) with Micro (code sandbox). PR flow is Meso-layer per `meso.py:902`. | Hard | High — `micro.py`, `config.py`, 4+ test files | **REJECT** |
-| **B: Lightweight Wrapper** — Extend `pr` command with `--graphite` flag; wrap `gt` as ghost dependency | Low | High | **Aligned** — mirrors `gh` ghost-dependency pattern; stays in Meso layer; no phase changes; HITL gates intact | Easy | Low — `meso.py` PR path, new `graphite.py`, `deviate-pr/SKILL.md` | **ACCEPT** |
-| **C: GT MCP Integration** — Graphite MCP server for AI-agent-driven stack management | High | Low | **Tension** — MCP introduces second AI-agent protocol with no constitutional precedent; persistent MCP process violates "no persistent database runtime" | Medium | High — new MCP module, agent invocation changes | **REJECT** |
-| **D: Hybrid Post-Cycle Gate** — PR stack as post-tasks gate with optional Graphite AI review phase | Medium | Medium | **Tension** — AI review is a paid Graphite-tier feature; the system must be free-tier-first. Stack gate as meso-layer is aligned. | Medium | Medium — new meso gate | **REJECT** — Graphite AI Review not integrated; built-in `deviate-review` skill used for all PR reviews (free-tier compatible) |
-
-## Rejected Options
-
-- **Option A (Deep Integration as new TDD phase)**: The constitution's three-layer architecture assigns PR operations to the Meso layer (`meso.py` line 892: "PR — new pre/run subcommand behavior") and TDD sandbox operations to the Micro layer. Conflating these by adding a STACK phase to `_VALID_PHASES` in `config.py` and `_finish_tdd_cycle()` in `micro.py` would modify 4 state machines (main TDD loop, YELLOW skip-path, JUDGE skip-path, EXECUTE path) and all corresponding tests. The explore.md confirms: "PR flow: Split across two layers. CLI commands in meso.py::_pr_pre() (line 906) and _pr_run() (line 953)... No PR stack support." This affirms PR stack support belongs in Meso, not Micro.
-- **Option C (GT MCP Integration)**: The constitution specifies "Aider Python API (aider.coders.Coder) as LLM execution substrate" for Micro. The GT MCP introduces a second AI-agent execution protocol (MCP over stdio/HTTP) with no precedent in the codebase, no existing test fixtures, and no skill orchestration pattern. Tests for MCP-based operations would require a running MCP server — introducing network/process flakiness absent from the current `subprocess.CompletedProcess` mock pattern.
-- **Option D (Hybrid Post-Cycle Gate with Graphite AI Review)**: Graphite AI Review is a paid Graphite-tier feature. The system must be fully usable on free tier without any external paid service. All PR reviews use the existing `deviate-review` skill running on opencode's agent infrastructure (claude/opencode/droid), which is always available regardless of Graphite subscription status. Option D also introduces a new meso gate, which Option B achieves with lower complexity via the `--graphite` flag on the existing `pr` command.
+| Option | Complexity | Scope | Verdict |
+| :--- | :--- | :--- | :--- |
+| **A: Full state model** — PRStackRecord, StackEntryRecord, PRReviewRecord models + ledgers | High | ~400 lines of models + persistence + tests | **REJECT** — over-engineered for a boolean toggle |
+| **B: Inline `gt` calls** — config boolean, 3 insertion points, no new modules | Low | ~50 lines of code | **ACCEPT** |
+| **C: GT MCP integration** — Graphite MCP server for agent-driven stack management | High | New MCP module, persistent process | **REJECT** — no constitutional precedent, complex test setup |
 
 ## Design Trade-Offs
 
-| Decision | Trade-off | Why This Side |
+| Decision | Trade-Off | Why This Side |
 | :--- | :--- | :--- |
-| **Ghost dependency over declared dependency** | `gt` NOT in `pyproject.toml` — runtime-detected like `gh`. Users get "GT_MISSING" errors rather than `pip install` resolution. | Constitution establishes ghost dependencies as accepted pattern (`AGENTS.md`). Graphite stacks are optional — `gh pr create` remains the default. Forcing `gt` as a declared dependency would make it required for ALL PR operations. |
-| **`--graphite` flag over separate `stack` command** | Conditional branching inside `_pr_run()` vs. dedicated CLI surface. | The existing PR flow is a 3-step pipeline (`pr pre` → skill body → `pr run`). The pre-phase contract at `meso.py:940-949` already provides `branch_name`, `base_branch`, `pr_title`, `pr_body`, and `git_state` — everything `gt submit` needs. A separate command would duplicate `_pr_pre()`'s logic and the ledger update code (`meso.py:974-986`). |
-| **Branch naming convention mapping** | Graphite's `username/feature-description` format vs. DeviaTDD's `feat/ISS-XXX-NNN/task-id` format. | `gt create` resolves branches in its tracking system; `gt submit` pushes the current branch regardless of naming. The `explore.md` §Ecosystem Research confirms `gt create` creates "new branch tracking trunk." DeviaTDD can use its existing naming convention directly — `gt` does not enforce a format for branch names. |
-| **Skill modification vs. new skill** | Modifying `deviate-pr/SKILL.md` with Graphite conditional vs. new `deviate-graphite-stack/SKILL.md`. | `deviate-pr/SKILL.md` already has branching logic (existing PR vs. new PR). Adding a Graphite path is a third branch of the same shape. A new skill would duplicate pre-phase discovery, body generation, HITL confirmation, and ledger update steps. Conditional routing to `gt` vs `gh` is a tool selection within the same orchestration. |
-| **Per-task PR stacks vs. single-issue PR** | Stack of N task-level PRs vs. 1 PR per issue (current model). | Graphite's "stack atomicity" (each PR independently reviewable) aligns with task isolation. Task-level PRs increase review granularity — matching the "bottleneck thesis" from `explore.md`: "Previously, we were limited by how quickly we could write code, but now the bottleneck is how quickly we can review it." Implementation supports both paths: `--graphite` flag wraps single-issue PR; stacked task PRs follow as increment. |
+| **Inline `subprocess.run` over utility module** | Repeating `["gt", "create", ...]` vs. a `GraphiteClient` class | 3 call sites, each with different flags. A class adds abstraction for no reuse benefit. Contrarian viewpoint: if `gt` usage grows beyond 3 call sites, extraction is a trivial refactor. |
+| **Config boolean over feature flag** | `graphite: bool` vs. `pr_stack_mode: Literal["gh", "gt"]` | Boolean is simpler. If a third PR tool emerges, promote to an enum. Not anticipated. |
+| **Commit messages as PR titles** | `gt submit` uses commit messages for PR titles vs. custom `--title` flag (which doesn't exist in `gt`) | Existing commit messages (`feat(TSK-NNN-NN): GREEN phase - implementation`) make good PR titles. No need for a separate title-construction path. |
+| **No per-task PR body** | `gt submit --no-edit-description` leaves PR body empty vs. generating body from task context | If PR body is needed, the skill layer can append it to the commit message body during the GREEN/EXECUTE commit. Deferred — no current requirement. |
 
 ## Contrarian Viewpoints
 
-- **GT CLI fragility compounds ghost-dependency risk**: The `gh` CLI dependency is already fragile (not in `pyproject.toml`). Adding `gt` doubles absent-tool failures — a missing `gt` could break the entire PR workflow, including non-stack PRs. If Graphite pivots post-Cursor acquisition (Dec 2025, per `explore.md`), the `gt` CLI stagnates and DeviaTDD's PR workflow becomes hostage to an external tool. Mitigation: degrade gracefully to `gh` for single PR when `gt` absent.
-- **TDD micro-tasks are not atomic review units**: A single TDD task often touches <50 lines and may be incomprehensible without sibling tasks. Graphite best practices demand "each PR must be independently reviewable" (`explore.md` line 72) — a constraint TDD micro-tasks may violate. Mitigation: PR body auto-generates context from task descriptions and spec references.
-- **Graphite AI Review creates automation bias** (Moot — not integrated): AI review tools detect bugs, not architectural alignment or constitutional compliance. Since Graphite AI Review is not integrated (free-tier constraint), all reviews use the existing `deviate-review` skill on opencode agents. No external AI review introduces automation bias. The built-in review is already part of the trusted workflow.
-- **Stack-aware merge queue shifts bottleneck to CI**: A 5-PR stack serializes through 5 CI runs before the first PR merges — 10-30 minutes where the agent is idle but worktree is locked. During this window, any push to a dependent branch creates "conflicting changes that could be made that require the PR to be reworked" (`explore.md` line 78). Mitigation: submit PRs individually, not as `--stack` batch; detect conflicts before proceeding.
-- **Branch state divergence between git and Graphite**: If Graphite silently restacks branches during `gt sync`, `SessionState.active_branch` becomes stale. The TamperGuard (which resets to post-RED commit state) has no awareness of Graphite's branch metadata. Mitigation: never run `gt sync` during active TDD micro-cycle; save pre-`gt` commit SHA for recovery.
-- **Graphite as single point of failure**: If the `deviate pr` command retires the `gh` path entirely, DeviaTDD agents become dependent on an external SaaS platform. Graphite's acquisition by Cursor creates platform risk — if Cursor deprecates the standalone CLI, agents lose PR mechanism overnight. Mitigation: preserve `gh` path alongside `gt`; `gt` is additive, not replacement.
+- **`gt` ghost dependency fragility**: Same risk as existing `gh` ghost dependency. Mitigation: runtime detection, clear error on absence, graceful fallback to `gh` for single-PR (non-stack) workflows when `gt` is absent but `graphite = true`.
+- **TDD micro-tasks may not be independently reviewable**: A single TDD task is often <50 lines. Graphite best practices demand "each PR must be independently reviewable." If a task's diff is too small or context-dependent, the user can set `graphite = false` and use `gh pr create` for a single merge commit per issue instead. This is a user-driven choice, not an architectural constraint.
+- **Per-task `gt create` modifies worktree branch state**: The TDD cycle assumes it's running on a stable branch. `gt create` creates a new branch from the previous task branch — the agent must commit all work before the branch switch. Mitigation: `gt create` runs BEFORE the RED phase starts, on a clean worktree after the prior task's REFACTOR commit. The AGENTS.md restriction ("Agents running TDD cycles MUST NOT execute CLI commands that mutate git branch state") applies only to agents inside the TDD sandbox — the `gt create` call is made by the `deviate run` host process, not by the agent.
 
 ## Risk Register
 
-| Risk ID | Risk | Likelihood | Impact | Mitigation | Owner | Source Anchor |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| GPR-001 | `gt` CLI not installed or incompatible version | High | High | Runtime detection in `_pr_pre()`. If absent, surface clear error + install hint; fall back to `gh` for single PR. | Meso Layer | `meso.py:906` — mirrors existing `gh` guard pattern |
-| GPR-002 | Graphite service unavailable during `gt submit` | Medium | High | Retry with exponential backoff (3 attempts, 5s/15s/45s). Persist intent to session state for manual retry. Never block agent on network timeout. | Meso Layer | `specs/constitution.md:[1]` — "No gate may be programmatically bypassed" |
-| GPR-003 | Stack atomicity violated — TDD micro-task produces non-reviewable PR | High | Medium | PR body auto-generated from task description + spec.md context. Consider merging adjacent micro-tasks when diff < 100 lines. | Shard/Tasks | `explore.md:72` — "each PR must be independently reviewable" |
-| GPR-004 | Git/Graphite branch state divergence — `gt sync` overrides DeviaTDD branch commits | Medium | High | Never run `gt sync` during active micro-cycle. PR stack creation MUST be last operation after REFACTOR commit. Save pre-`gt` commit SHA in `RollbackSnapshot`. | Micro/Meso | `specs/constitution.md:[1]` — "Every task loop executes on a clean git branch" |
-| GPR-005 | Merge queue conflicts — dependent PRs require rework after base PR changes | Medium | High | Submit PRs individually (not `--stack` batch) so failures are isolated. Detect conflicts via `gt log` status check before next task. De-conflict by rebasing. | Meso Layer | `explore.md:78` — "until a PR is merged, there is a risk that conflicting changes could be made" |
-| GPR-006 | PR review bottleneck — 5-task issue generates 5 PRs needing 5 reviews | High | Low | Auto-generate comprehensive PR bodies. Allow batch review via `review` subcommand scanning entire stack diff in one pass. Encourage bottom-up review order. | Review/HITL | `explore.md:92` — "the bottleneck is how quickly we can review it" |
-| GPR-007 | Graphite AI Review introduces hallucinated findings or misses constitutional violations | Medium | High | AI review is advisory ONLY — never blocking. Output tagged `[AI_ADVISORY]`. Constitutional alignment audit runs independently after AI review. Human Gate 3 remains mandatory. | Review/HITL | `specs/constitution.md:[1]` — "No gate may be programmatically bypassed" |
-| GPR-008 | `gt` API/CLI breaking change due to Cursor acquisition or product pivot | Low | High | Abstract `gt` calls behind thin adapter interface (`src/deviate/infra/graphite.py`). Degrade gracefully to `gh` when adapter detects `gt` failure. | Infra/Meso | `explore.md:89` — "Graphite acquired by Cursor in Dec 2025" |
+| Risk ID | Risk | Likelihood | Impact | Mitigation |
+| :--- | :--- | :--- | :--- | :--- |
+| GPR-001 | `gt` CLI not installed when `graphite = true` | High | High | Runtime detection before `gt create`. If absent: fall back to `gh` for single-PR, emit clear install hint. |
+| GPR-002 | `gt submit` fails due to network/auth issues | Medium | High | Retry with backoff (3 attempts). Fail gracefully — task already committed locally, only PR creation failed. |
+| GPR-003 | `gt create` branch name conflicts (branch exists from prior failed run) | Low | Medium | Check branch existence via `git rev-parse --verify` before `gt create`. If exists, use a retry suffix (`-2`, `-3`). |
+| GPR-004 | `gt submit` opens web browser (interactive prompt) in agentic flow | High | Medium | Use `--no-edit-title --no-edit-description` to suppress prompts. Verify via `context query graphite.com@latest` that these flags suppress all interactivity. |
 
 ## Constitutional Alignment Audit
 
-| Constitutional Clause | Architectural Decision | Alignment | Notes |
-| :--- | :--- | :--- | :--- |
-| **Three-Layer Architecture** — "Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Each layer has strict phase gates — no layer may be skipped." | PR stack creation triggered at end of REFACTOR phase, as a post-micro meso-layer operation | **Tension** | PR creation already lives in `meso.py` (line 902-999). Adding PR stack as a new meso step after micro completes does not skip any existing phase, but expands meso scope beyond the constitutionally-listed "Plan → Tasks." PR exists de-facto today but is not enumerated. Mitigation: keep PR/stack in meso layer per existing precedent. Source: `specs/constitution.md:9`; `meso.py:906`. |
-| **Three-Layer Architecture** — phase gates | `gt sync` restacks branches between TDD micro-cycles | **Tension** | If `gt sync` runs as a "PRE" step gating entry to the next RED phase, it introduces a new implicit gate depending on an external service. Mitigation: `gt sync` must be advisory/optional, not gating. Source: `specs/constitution.md:9`. |
-| **Append-Only Ledger Protocol** — "No existing line is ever modified or overwritten" | Adding optional fields to `IssueRecord` or `TaskRecord` for stack tracking | **Tension** | New optional fields (with defaults) do NOT modify existing JSONL lines — old records parse fine. However, if `extra: "forbid"` remains (`ledger.py:36,78`) and a new REQUIRED field is added, old record parsing fails. Mitigation: all new fields must be Optional with defaults; OR use separate `pr_stacks.jsonl` ledger. Source: `specs/constitution.md:10`. |
-| **Append-Only Ledger Protocol** — "All state transitions in issues.jsonl and tasks.jsonl are append-only" | New record types in a new `pr_stacks.jsonl` ledger file | **Aligned** | Adding a NEW ledger file does not modify or overwrite any existing ledger. Mitigation: follow the same `_append_with_compound_key` pattern. Source: `specs/constitution.md:10`; `ledger.py:117-144`. |
-| **Git Isolation Principle** — "Every task loop executes on a clean git branch. Commits are automatic at each phase boundary." | `gt create` manages branch creation; `gt submit` pushes branches | **Tension** | If `gt` commands run DURING a micro-cycle (e.g., `gt down`/`gt up` for navigation), they mutate branch state while task is active. Mitigation: all `gt` branch-mutating operations MUST be confined to meso-layer, never called from micro-layer. Source: `specs/constitution.md:11`; AGENTS.md — "Agents running TDD cycles MUST NOT execute CLI commands that mutate git branch state." |
-| **Tamper Guard** — "write access only to files matching src/**/*.py" | `gt` CLI writes to `.git/.graphite_repo_config` | **Aligned** | `gt` operates at CLI/skill layer, outside Aider sandbox. Writes to `.git/` internals, not `tests/`, `specs/`, or config files. No sandbox violation. Source: `specs/constitution.md:12`. |
-| **HITL** — "Three mandatory gates... No gate may be programmatically bypassed" | `gt submit --stack` auto-creates PRs without human confirmation | **Tension** | Gate 3 is "Final Merge Audit after micro." PR CREATION is not a merge. However, current `deviate-pr/SKILL.md` step 3 includes explicit HITL confirmation. Mitigation: preserve HITL confirmation for PR submission; `gt submit` requires explicit `--yes` flag confirmed by human. Source: `specs/constitution.md:13`; `deviate-pr/SKILL.md:42-45`. |
-| **HITL** — "Final Merge Audit after micro" | Graphite AI Review as advisory supplement to HITL Gate 3 | **Resolved: Not Integrated.** Graphite AI Review is a paid Graphite-tier feature. The system must be free-tier-first. All PR reviews use the built-in `deviate-review` skill (opencode agent infrastructure). Human Gate 3 remains the sole merge authority. Source: `specs/constitution.md:13`. |
-| **Session Continuity** — "Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases" | PR stack creation occurs after REFACTOR/EXECUTE completes, as a separate meso-layer operation | **Aligned** | PR creation happens AFTER the micro-cycle session ends. The micro-layer session (RED → GREEN → JUDGE → REFACTOR) is complete. PR uses a DIFFERENT agent invocation, not switching models mid-task. Source: `specs/constitution.md:14`. |
-| **Model Tiering** — "V4 Flash for high-frequency; V4 Pro for compliance; Qwen 3.7+ for architecture" | PR stack review uses `deviate-review` skill on opencode agents | **Aligned** | No external model is introduced. Stack review uses the same opencode agent infrastructure (claude/opencode/droid) as all other DeviaTDD phases. The model tiering table does not need amendment. Source: `specs/constitution.md:15`. |
-| **Tech Stack Standards** — ghost dependencies accepted | `gt` CLI as new ghost dependency | **Aligned** | Both `gh` and `aider` are runtime-detected, not in `pyproject.toml`, and are accepted. Adding `gt` via the same pattern follows established precedent. Source: `AGENTS.md`; `meso.py:906`. |
-| **Testing Protocols** — "REFACTOR phase runs regression gate: tests must re-pass after polish" | PR stack creation triggers after REFACTOR regression gate passes | **Aligned** | PR creation is downstream of the regression gate. If REFACTOR regression fails, the micro cycle rolls back and PR creation never fires. Source: `specs/constitution.md:61-62`. |
-| **Definition of Done** — "No governance violations" | Graphite workflow preserves all DoD checklist items | **Aligned** | Graphite integration adds steps AFTER existing DoD gates pass. `gt submit` must not merge PRs without satisfying "Judge phase passed" and "E2E tests passing." If Graphite's merge queue runs CI independently, those checks must be additional to DeviaTDD's checks. Source: `specs/constitution.md:65-72`. |
+| Clause | Alignment | Notes |
+| :--- | :--- | :--- |
+| **Three-Layer Architecture** | **Aligned** | All changes stay within existing layers. Micro layer: task-level branch/create/submit. Meso layer: stack-level submit. No new phases. |
+| **Append-Only Ledger Protocol** | **Aligned** | No new ledgers. No existing ledger fields modified. |
+| **Git Isolation Principle** | **Tension — resolved** | `gt create` modifies branch state before RED phase. Mitigation: runs in the host `deviate run` process, not inside the agent sandbox. The host process owns git branch management; the agent operates only within the branch it's given. |
+| **HITL Gates** | **Aligned** | No gates bypassed. PR creation is post-verification (after tests pass, after JUDGE compliance). |
+| **Session Continuity** | **Aligned** | PR creation happens after the micro-cycle session ends. `gt submit` is a separate process call, not model switching mid-task. |
+| **Ghost Dependencies** | **Aligned** | `gt` follows the existing `gh`/`aider` runtime-detection pattern. |
+| **Testing Protocols** | **Aligned** | All `gt` calls mocked via `subprocess.run` mock — same pattern as existing `gh` test mocks. |
 
 ## Pending HITL Decisions
 
-<!-- HITL_DECISIONS -->
-<!-- Populate with decisions that explicitly reverse or deviate from the explore brief, reject tools requested in the explore phase, introduce novel architecture not anticipated during explore, or otherwise require human judgment before PRD proceeds. If empty (zero rows), PRD may proceed automatically. -->
-
-| Decision ID | Question | Context | Impact | Recommended Resolution | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `HITL-001` | Should meso-layer scope expand to explicitly include PR stack creation? | The constitution enumerates meso as "issue engineering: Plan → Tasks." PR operations already exist de-facto in `meso.py` but are not constitutionally listed. This design makes PR stack creation an explicit meso-layer operation. | If rejected, PR stack logic must live at the skill layer only (no CLI changes to meso.py). If accepted, the constitution should later be amended to list "PR/Stack" under meso. | **Accepted.** Meso layer expanded. PR stacks are issue-scoped: each issue gets its own stack, each completed task becomes a PR in that stack. An adhoc issue creates a fresh stack on its feature branch. For sharded issues, each issue tracks its own stack independently. Stacks persist across sessions via `.deviate/pr_stacks.jsonl` — whoever picks up work can `gt log` to resume. Early merging supported: the base issue's PR can merge while dependent task PRs restack automatically via `gt sync`. Constitution amendment to enumerate PR/Stack under meso layer is deferred — to be captured as a PRD requirement (not implemented speculatively). | `RESOLVED` |
-| `HITL-002` | Should Graphite AI Review be integrated as an advisory supplement to HITL Gate 3? | The `explore.md` requests "evaluate creating or updating a /deviate-pr-review phase that handles reviewing PR stacks." Graphite AI Review is a paid Graphite-tier feature. The system must be fully usable on free tier. | If rejected, no Graphite AI Review integration. Reviews use only the existing `deviate-review` skill with opencode agents (claude/opencode/droid). If accepted, Graphite AI Review would be a paid add-on that free-tier users cannot rely on. | **Rejected.** Graphite AI Review is not integrated. The system is free-tier-first. All PR reviews use the existing `deviate-review` skill running on opencode's agent infrastructure (claude/opencode/droid). Graphite AI Review could be documented as a future optional add-on for paid Graphite tiers, but is out of scope for this feature. | `RESOLVED` |
-| `HITL-003` | Should `gt` remain a ghost dependency (runtime-detected) or be promoted to `pyproject.toml`? | The `gh` CLI is already a ghost dependency. Adding `gt` follows the same pattern — but doubles the absent-tool failure surface. The explore.md notes `gt` is "Not in pyproject.toml. Must be detected/validated at runtime like gh." Furthermore, `gt` is an npm-based CLI, not a pip package — it cannot be declared in `pyproject.toml` at all. | If kept as ghost, it requires graceful fallback to `gh` when absent. It cannot be promoted to pyproject.toml regardless. | **Keep as ghost dependency.** `gt` is npm-based (`npm install -g @withgraphite/graphite-cli`), not a Python package. It follows the exact same pattern as `gh`: runtime detection in `_pr_pre()`, clear error message on absence, graceful degradation to `gh pr create` for single-PR workflow. Added to the project's documented ghost-dependency list (alongside `gh` and `aider`). | `RESOLVED` |
+| Decision ID | Question | Context | Status |
+| :--- | :--- | :--- | :--- |
+| `HITL-001` | Should each TDD task get its own PR in the stack? | PR stack granularity: per-task vs. per-issue. Per-task increases review granularity but may produce non-reviewable diffs. | **Accepted.** Per-task. User controls via `graphite` toggle — if per-task diffs are too small, disable graphite. |
+| `HITL-002` | Should `gt` be added to the project's documented ghost-dependency list? | `AGENTS.md` lists `gh` and `aider` as accepted ghost dependencies. `gt` should join them. | **Accepted.** Document `gt` alongside `gh` and `aider` in `AGENTS.md` and constitution ghost-dependency section. |
+| `HITL-003` | Should `context query graphite.com@latest` be mandatory for implementation? | `gt` CLI flags evolve. The explore.md established this as authoritative source. | **Accepted.** Mandatory. All `gt` flag references in code must be verified against `context query graphite.com@latest`. |
 
 ## Source Registry
 
 | ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note |
 | :--- | :--- | :--- | :--- |
-| SRC-01 | Constitution | `specs/constitution.md` | Architectural principles, testing protocols, DoD — all architectural decisions audited against these |
-| SRC-02 | Explore_MD | `specs/004-graphite-pr-stacks/explore.md` | Factual input: file registry, ecosystem research, architectural baselines |
-| SRC-03 | Codebase_File | `src/deviate/cli/meso.py` | Existing PR command; Graphite integration extends `_pr_pre()`/`_pr_run()` |
-| SRC-04 | Codebase_File | `src/deviate/cli/micro.py` | TDD cycle; must NOT be modified by Graphite integration |
-| SRC-05 | Codebase_File | `src/deviate/cli/review.py` | Existing review pre/post; extended for stack review advisory |
-| SRC-06 | Codebase_File | `src/deviate/state/ledger.py` | IssueRecord/TaskRecord pattern; replicated for PRStackRecord/StackEntryRecord |
-| SRC-07 | Codebase_File | `src/deviate/state/config.py` | SessionState model; must NOT have PR/stack phase added |
-| SRC-08 | Skill | `src/deviate/prompts/skills/deviate-pr/SKILL.md` | PR orchestration skill; gains Graphite conditional branch |
-| SRC-09 | Skill | `src/deviate/prompts/skills/deviate-review/SKILL.md` | Review skill; extended with AI advisory supplement path |
-| SRC-10 | Industry_Baseline | `explore.md` §Ecosystem Research (line 71-92) | Graphite best practices, GT MCP, merge queue mechanics |
+| SRC-01 | Codebase | `src/deviate/state/config.py` | `DeviateConfig` — add `graphite` field |
+| SRC-02 | Codebase | `src/deviate/cli/micro.py` | Task dispatch — `gt create`/`gt submit` insertion points |
+| SRC-03 | Codebase | `src/deviate/cli/meso.py` | `_pr_run()` — `gt submit --stack` branch |
+| SRC-04 | Documentation | `context query graphite.com@latest` | Authoritative `gt` CLI reference — verify all flags |
+| SRC-05 | Skill | `src/deviate/prompts/skills/deviate-pr/SKILL.md` | No changes — PR orchestration skill unchanged |
 
 ## Status Summary
 
@@ -113,8 +94,6 @@ PR reviews — including stack reviews — use the existing `deviate-review` ski
 | :--- | :--- |
 | STATUS | AWAITING_HITL_GATE_1 |
 | FEATURE_SLUG | 004-graphite-pr-stacks |
-| EPIC_ID | 004-graphite-pr-stacks |
-| GIT_BRANCH | main |
 | SPEC_TARGET_DESIGN | specs/004-graphite-pr-stacks/design.md |
 | SPEC_TARGET_DATAMODEL | specs/004-graphite-pr-stacks/data-model.md |
 | NEXT_ACTION | Human reviews design.md + data-model.md, resolves Pending HITL Decisions, then invokes the `prd` skill |
