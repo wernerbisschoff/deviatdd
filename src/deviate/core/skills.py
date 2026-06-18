@@ -88,7 +88,35 @@ def compose_skill_body(raw: str, core_dir: Path) -> str | None:
     return f"{frontmatter}\n\n{body}"
 
 
-def install_skill(name: str, target_dir: Path, skills_root: Path | None = None) -> bool:
+def _read_graphite_routing() -> str | None:
+    """Read the conditional `## Graphite Routing` block for deviate-pr."""
+    try:
+        path = Path(
+            importlib.resources.files("deviate.prompts").joinpath(
+                "skills/deviate-pr/graphite_routing.md"
+            )
+        )
+        return path.read_text(encoding="utf-8")
+    except (ModuleNotFoundError, FileNotFoundError, OSError):
+        return None
+
+
+def _graphite_enabled(workdir: Path) -> bool:
+    """Late-bound import to keep `core` free of `state` deps at module load."""
+    from deviate.state.config import resolve_graphite_config
+
+    try:
+        return resolve_graphite_config(workdir)
+    except Exception:
+        return False
+
+
+def install_skill(
+    name: str,
+    target_dir: Path,
+    skills_root: Path | None = None,
+    workdir: Path | None = None,
+) -> bool:
     skill_path = resolve_skill(name, skills_root)
     target_path = target_dir / name / "SKILL.md"
 
@@ -103,6 +131,11 @@ def install_skill(name: str, target_dir: Path, skills_root: Path | None = None) 
     composed = compose_skill_body(raw, core_dir)
     if composed is None:
         return False
+
+    if name == "deviate-pr" and workdir is not None and _graphite_enabled(workdir):
+        routing = _read_graphite_routing()
+        if routing:
+            composed = f"{composed}\n\n{routing.rstrip()}"
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
 

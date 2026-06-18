@@ -1,3 +1,4 @@
+import tomllib
 import warnings
 from contextlib import chdir
 from pathlib import Path
@@ -213,6 +214,146 @@ class TestInitCommand:
             assert agents_path.exists()
             agents_content = agents_path.read_text()
             assert "## Offline Context Documentation System" in agents_content
+
+    def test_init_context_flag_overrides_missing_binary(self, tmp_path: Path):
+        """--context forces use_context=true even when shutil.which returns None."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = None
+                result = runner.invoke(cli, ["init", "--context"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            content = config_path.read_text()
+            assert "use_context = true" in content
+
+    def test_init_context_flag_overrides_detected_binary(self, tmp_path: Path):
+        """--context stays true when binary is detected (no double-flip)."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = "/usr/local/bin/context"
+                result = runner.invoke(cli, ["init", "--context"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            content = config_path.read_text()
+            assert "use_context = true" in content
+
+    def test_init_graphite_key_at_toml_top_level(self, tmp_path: Path):
+        """--graphite persists `graphite` at TOML top-level, not nested under [models]."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed.get("graphite") is True, (
+                f"graphite missing at top-level; got keys: {list(parsed.keys())} / "
+                f"models={parsed.get('models')}"
+            )
+
+    def test_init_use_context_key_at_toml_top_level(self, tmp_path: Path):
+        """--context persists `use_context` at TOML top-level, not nested under [models]."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = None
+                result = runner.invoke(cli, ["init", "--context"])
+            assert result.exit_code == 0, result.output
+            config_path = workdir / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed.get("use_context") is True, (
+                f"use_context missing at top-level; got keys: {list(parsed.keys())} / "
+                f"models={parsed.get('models')}"
+            )
+
+    def test_init_graphite_and_context_combined(self, tmp_path: Path):
+        """--graphite --context together: both flags at top-level AND both governance sections."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which") as mock_which:
+                mock_which.return_value = None
+                result = runner.invoke(cli, ["init", "--graphite", "--context"])
+            assert result.exit_code == 0, result.output
+
+            config_path = workdir / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed.get("graphite") is True
+            assert parsed.get("use_context") is True
+
+            for fname in ["CLAUDE.md", "AGENTS.md"]:
+                content = (workdir / fname).read_text()
+                assert "## Graphite Stacked Changes Workflow" in content
+                assert "## Offline Context Documentation System" in content
+
+    def test_resolve_graphite_config_round_trip_after_init(self, tmp_path: Path):
+        """init --graphite produces a config that resolve_graphite_config() reads as True."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            assert resolve_graphite_config(workdir) is True
+
+    def test_init_graphite_updates_existing_config(self, tmp_path: Path):
+        """Re-running init --graphite on existing repo persists graphite = true."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            runner.invoke(cli, ["init"])
+            config_path = workdir / ".deviate" / "config.toml"
+            assert "graphite = false" in config_path.read_text()
+
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed.get("graphite") is True
+
+    def test_init_context_updates_existing_config(self, tmp_path: Path):
+        """Re-running init --context on existing repo persists use_context = true."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            with patch("shutil.which", return_value=None):
+                runner.invoke(cli, ["init"])
+            config_path = workdir / ".deviate" / "config.toml"
+            assert "use_context = false" in config_path.read_text()
+
+            with patch("shutil.which", return_value=None):
+                result = runner.invoke(cli, ["init", "--context"])
+            assert result.exit_code == 0, result.output
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed.get("use_context") is True
+
+    def test_init_graphite_preserves_other_config_keys(self, tmp_path: Path):
+        """init --graphite on existing config preserves user [models] section."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            dot_dir = workdir / ".deviate"
+            dot_dir.mkdir()
+            config_path = dot_dir / "config.toml"
+            config_path.write_text(
+                'profile = "custom"\n\n[models]\ndefault = "opencode/deepseek-v4-flash"\n',
+                encoding="utf-8",
+            )
+
+            result = runner.invoke(cli, ["init", "--graphite"])
+            assert result.exit_code == 0, result.output
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed.get("graphite") is True
+            assert parsed.get("profile") == "custom"
+            assert parsed["models"]["default"] == "opencode/deepseek-v4-flash"
+
+    def test_init_no_flags_preserves_existing_config(self, tmp_path: Path):
+        """init (no flags) on existing config does NOT touch the file."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            dot_dir = workdir / ".deviate"
+            dot_dir.mkdir()
+            config_path = dot_dir / "config.toml"
+            original = 'profile = "preserved"\n'
+            config_path.write_text(original, encoding="utf-8")
+
+            result = runner.invoke(cli, ["init"])
+            assert result.exit_code == 0, result.output
+            assert config_path.read_text() == original
 
     def test_resolve_graphite_config_true(self, tmp_path: Path) -> None:
         dot_dir = tmp_path / ".deviate"
