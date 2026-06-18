@@ -23,7 +23,12 @@ def _has_changes_to_stage(files: list[Path], repo: Path) -> bool:
     return False
 
 
-def stage_and_commit(message: str, files: list[Path], repo: Path | None = None) -> str:
+def stage_and_commit(
+    message: str,
+    files: list[Path],
+    repo: Path | None = None,
+    no_verify: bool = False,
+) -> str:
     repo = repo or Path.cwd()
 
     if not _has_changes_to_stage(files, repo):
@@ -37,6 +42,10 @@ def stage_and_commit(message: str, files: list[Path], repo: Path | None = None) 
         )
         return result.stdout.strip()
 
+    commit_cmd = ["git", "commit", "-m", message]
+    if no_verify:
+        commit_cmd.append("--no-verify")
+
     subprocess.run(
         ["git", "add", "--"] + [str(f) for f in files],
         cwd=repo,
@@ -44,7 +53,7 @@ def stage_and_commit(message: str, files: list[Path], repo: Path | None = None) 
         check=True,
     )
     subprocess.run(
-        ["git", "commit", "-m", message],
+        commit_cmd,
         cwd=repo,
         env=_git_env(),
         check=True,
@@ -73,6 +82,13 @@ def stage_files(files: list[Path], repo: Path | None = None) -> None:
     )
 
 
-def commit_artifact(path: Path, message: str, repo: Path | None = None) -> str:
+def commit_artifact(
+    path: Path,
+    message: str,
+    repo: Path | None = None,
+    no_verify: bool = False,
+) -> str:
     repo = repo or Path.cwd()
-    return stage_and_commit(message=message, files=[path], repo=repo)
+    return stage_and_commit(
+        message=message, files=[path], repo=repo, no_verify=no_verify
+    )
