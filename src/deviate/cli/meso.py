@@ -39,6 +39,7 @@ from deviate.state.ledger import (
     append_task_record,
     resolve_issue_record,
     select_next_unblocked_issue,
+    select_unblocked_candidates,
 )
 
 
@@ -1055,6 +1056,53 @@ def _meso_discover_and_sequence() -> str | None:
     return issue.issue_id
 
 
+def _discover_claimable_issue() -> str | None:
+    """Return the next BACKLOG issue whose branch does NOT exist on remote.
+
+    Loops through ``select_unblocked_candidates``, checking each candidate's
+    deterministic branch name against the remote.  Issues whose branch already
+    exists on remote are treated as claimed-elsewhere and skipped.
+
+    Returns the first claimable ``issue_id``, or ``None`` if none available.
+    """
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    repo_root = Path.cwd()
+    candidates = select_unblocked_candidates(ledger_path)
+    if not candidates:
+        return None
+
+    # Detect the remote once for all candidate checks
+    remote: str | None = None
+    try:
+        r = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        if r.returncode == 0:
+            remote = "origin"
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        if _is_issue_completed(candidate.issue_id, ledger_path):
+            continue
+        if remote:
+            epic_slug = _resolve_bucket_dir(candidate.source_file)
+            issue_slug = _source_stem(candidate.source_file)
+            branch = f"feat/{epic_slug}/{issue_slug}"
+            if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
+                console.print(
+                    f"[yellow]SKIP[/] {candidate.issue_id} — "
+                    f"branch already on remote (claimed elsewhere)"
+                )
+                continue
+        return candidate.issue_id
+    return None
+
+
 @with_json_quiet
 def _meso_run(
     issue_id: str | None = None,
@@ -1070,13 +1118,17 @@ def _meso_run(
 
     # ── Discover issue if not specified ──────────────────────────────
     if issue_id is None:
-        discovered = _meso_discover_and_sequence()
+        discovered = _discover_claimable_issue()
         if discovered is None:
-            console.print("[red]NO_UNBLOCKED_ISSUES[/] no unblocked BACKLOG issues")
+            console.print(
+                "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue "
+                "available to claim"
+            )
             raise SystemExit(1)
         issue_id = discovered
         console.print(f"[green]DISCOVERED[/] {issue_id}")
 
+    # ── Explicit --issue: validate, resolve record, and claim ───────
     # ── Check COMPLETED ──────────────────────────────────────────────
     if _is_issue_completed(issue_id, ledger_path):
         console.print(f"[red]ISSUE_COMPLETED[/] {issue_id} is already COMPLETED")
