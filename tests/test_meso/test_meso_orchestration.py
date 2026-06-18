@@ -10,7 +10,12 @@ import pytest
 
 from tests.conftest import _git_env
 
-from deviate.cli.meso import _build_slim_prompt, _meso_discover_and_sequence, _meso_run
+from deviate.cli.meso import (
+    _build_slim_prompt,
+    _discover_claimable_issue,
+    _meso_discover_and_sequence,
+    _meso_run,
+)
 from deviate.state.config import SessionState
 from deviate.state.ledger import IssueRecord, append_issue_transition
 
@@ -432,4 +437,70 @@ class TestMesoDiscoverAndSequence:
     def test_discover_returns_none_when_empty(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = _meso_discover_and_sequence()
+            assert result is None
+
+
+class TestDiscoverClaimableIssue:
+    def test_returns_next_unclaimed(self, tmp_git_repo: Path) -> None:
+        """Returns the first BACKLOG when no remote branch exists."""
+        _setup_minimal_workspace(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.meso.branch_exists_on_remote", return_value=False):
+                result = _discover_claimable_issue()
+            assert result == "ISS-001-001"
+
+    def test_skips_issues_with_remote_branch(self, tmp_git_repo: Path) -> None:
+        """Skips issues whose deterministic branch exists on remote."""
+        _setup_minimal_workspace(tmp_git_repo)
+
+        ledger = tmp_git_repo / "specs" / "issues.jsonl"
+        second = IssueRecord(
+            issue_id="ISS-001-002",
+            type="feature",
+            title="Second Unblocked",
+            status="BACKLOG",
+            source_file="specs/test-epic/issues/iss-002.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        append_issue_transition(second, ledger)
+
+        (tmp_git_repo / "specs" / "test-epic" / "issues" / "iss-002.md").write_text(
+            "# Test Issue\n\nFR-002: do another thing\n"
+        )
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "add second issue"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.meso.branch_exists_on_remote",
+                side_effect=lambda branch, **kw: branch == "feat/test-epic/iss-001",
+            ):
+                result = _discover_claimable_issue()
+            assert result == "ISS-001-002", (
+                f"Expected ISS-001-002 (skipping ISS-001-001 which has a remote "
+                f"branch), got {result}"
+            )
+
+    def test_returns_none_when_all_claimed_remotely(self, tmp_git_repo: Path) -> None:
+        """Returns None when every BACKLOG issue has a remote branch."""
+        _setup_minimal_workspace(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.meso.branch_exists_on_remote", return_value=True):
+                result = _discover_claimable_issue()
+            assert result is None
+
+    def test_returns_none_when_ledger_empty(self, tmp_path: Path) -> None:
+        """Returns None when no BACKLOG issues exist at all."""
+        with chdir(tmp_path):
+            result = _discover_claimable_issue()
             assert result is None

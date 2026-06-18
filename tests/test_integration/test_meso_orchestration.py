@@ -82,4 +82,4 @@ class TestMesoIntegration:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["meso", "run"])
             assert result.exit_code != 0
-            assert "NO_UNBLOCKED_ISSUES" in result.output
+            assert "NO_CLAIMABLE_ISSUES" in result.output
