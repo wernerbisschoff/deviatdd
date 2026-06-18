@@ -61,7 +61,7 @@ CRITICAL INSTRUCTION INVARIANTS:
          2. AC-ADHOC-NNN-02: Given [state], When [trigger], Then [assertion]
        ```
 
-5. **Issue File Generation**: Write the spec-enriched issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md`. The issue must contain `[USER_STORIES_LEDGER]`, `[ATDD_ACCEPTANCE_CRITERIA]`, `[EDGE_CASES_AND_BOUNDARIES]`, and `[PERFORMANCE_CONSTRAINTS]` sections in the same order as the shard canonical format (see `src/deviate/prompts/skills/deviate-shard/SKILL.md`). The slug is derived from the user's description (kebab-case, max 40 chars).
+5. **Issue File Generation**: Write the spec-enriched issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md`. The issue must contain `## User Stories Ledger`, `## ATDD Acceptance Criteria`, `## Edge Cases and Boundaries`, and `## Performance Constraints` sections in the same order as the shard canonical format (see `src/deviate/prompts/skills/deviate-shard/SKILL.md`). The slug is derived from the user's description (kebab-case, max 40 chars).
 
 6. **Ledger Registration**: Run the issues ledger registration to capture the issue ID.
 

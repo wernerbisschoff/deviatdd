@@ -6,7 +6,7 @@ coordinates_with: [ISS-ADH-005, ISS-001-005]
 issue_id: ISS-ADH-006
 ---
 
-## [SYSTEM_TOPOLOGY_MAPPING]
+## System Topology Mapping
 - **Epic Target Domain**: `specs/adhoc/`
 - **Local Issue File**: `issues/006-context-cli-integration.md`
 - **Primary Architectural Workstation**:
@@ -23,10 +23,10 @@ issue_id: ISS-ADH-006
   - `src/deviate/prompts/core/meso-skill.md` — Add context consultation requirement
   - `src/deviate/prompts/core/micro-skill.md` — Add context consultation guidance
 
-## [THE_PROBLEM_CONTRACT]
+## The Problem Contract
 The DeviaTDD framework depends on AI agents having accurate, up-to-date documentation for the libraries and frameworks they interact with during all phases. Currently, agents rely on either their training data (which may be stale) or web fetching (which is slow, unreliable, and adds network latency). The `context` CLI provides offline, deterministic, version-pinned documentation lookups for all declared dependencies. The framework must detect the `context` CLI at init time, configure a boolean in `.deviate/config.toml` to track its availability, inject context-mandate governance blocks into `CLAUDE.md` and `AGENTS.md`, and thread `context add` / `context query` instructions through every phase's skill prompt so that agents use the local documentation index as their primary documentation source — reducing latency, increasing accuracy, and enabling fully offline operation.
 
-## [SCOPE_BOUNDARIES]
+## Scope Boundaries
 ### Hard Inclusions
 - Add `use_context: bool = False` field to `DeviateConfig` in `src/deviate/state/config.py`
 - Detect `context` binary on `$PATH` during `deviate init` in `src/deviate/cli/__init__.py`; set `use_context = true` in config if found
@@ -50,13 +50,13 @@ The DeviaTDD framework depends on AI agents having accurate, up-to-date document
 - No changes to `.deviate/config.toml` serialization beyond adding the boolean field
 - No migration of existing `.deviate/config.toml` files — the `use_context` field is absent until next init run
 
-## [UPSTREAM_REQUIREMENT_TRACING]
+## Upstream Requirement Tracing
 - **Requirements Tokens**: `FR-ADHOC-006`
 - **Acceptance Criteria Tokens**: `AC-ADHOC-006-01`, `AC-ADHOC-006-02`, `AC-ADHOC-006-03`, `AC-ADHOC-006-04`, `AC-ADHOC-006-05`, `AC-ADHOC-006-06`
 - **Data Model Entities**: `DeviateConfig.use_context` (bool)
 - **Constitution Anchors**: [`TECH_STACK_STANDARDS — Tooling`] New section entry for `context` CLI
 
-## [USER_STORIES_LEDGER]
+## User Stories Ledger
 - **US-ADH-006-01**: As a DeviaTDD operator, I want `deviate init` to detect whether the `context` CLI is installed so that my project configuration accurately reflects its availability.
 - **US-ADH-006-02**: As a DeviaTDD operator, I want the generated CLAUDE.md and AGENTS.md governance blocks to mandate `context` usage when `context` is installed so that AI agents use local documentation by default.
 - **US-ADH-006-03**: As an architect running the `/research` phase, I want the skill to use `context query <source> <query>` for library-specific design decisions so that I get accurate, version-pinned documentation without web latency.
@@ -64,7 +64,7 @@ The DeviaTDD framework depends on AI agents having accurate, up-to-date document
 - **US-ADH-006-05**: As an explorer running the `/explore` or `/adhoc` phase, I want the skill to register relevant documentation sources via `context add <source>` during discovery so that downstream phases have up-to-date documentation indexed.
 - **US-ADH-006-06**: As a DeviaTDD operator, I want ALL phase prompts to include a universal context documentation mandate so that every agent phase consistently prefers local documentation over web fetching.
 
-## [ATDD_ACCEPTANCE_CRITERIA]
+## ATDD Acceptance Criteria
 **Scenario 006-01**: `deviate init` detects and configures `context` availability
 **Given** the `context` binary is present on `$PATH`
 **When** `deviate init` runs
@@ -96,7 +96,7 @@ The DeviaTDD framework depends on AI agents having accurate, up-to-date document
 **When** the subagent identifies the project's dependency ecosystem
 **Then** the skill prompt instructs running `context add <source>` for detected frameworks and libraries to index their documentation
 
-## [EDGE_CASES_AND_BOUNDARIES]
+## Edge Cases and Boundaries
 - **`context` binary not found**: `deviate init` sets `use_context = false` and skips the context mandate in governance seeds; agents use existing training-data / web-fetch behavior
 - **`context` binary found but broken**: Detection is a simple `which` check; if `context list` or `context query` fails during agent execution, the agent catches the subprocess error and falls back gracefully
 - **No documentation installed for a library**: `context list` returns empty; the explore skill's `context add <source>` step only runs for libraries that have known context documentation sources
@@ -104,13 +104,13 @@ The DeviaTDD framework depends on AI agents having accurate, up-to-date document
 - **Config round-trip**: `DeviateConfig(use_context=True).model_dump()` followed by `DeviateConfig(**data)` preserves the boolean
 - **Concurrent init runs**: `_write_if_missing` on config.toml prevents overwrite; if config.toml already exists, the `use_context` field stays at whatever value was set during first init — users manually edit to update
 
-## [PERFORMANCE_CONSTRAINTS]
+## Performance Constraints
 - L_max: < 5ms for `which context` check during init
 - L_max: < 10ms for boolean field load from TOML config
 - Zero performance impact when `context` is not installed — the false boolean adds no overhead to hot paths
 - `context query` latency depends on library size but is typically < 50ms local vs 500ms+ for web fetch
 
-## [MULTI_TIERED_VERIFICATION_TARGETS]
+## Multi-Tiered Verification Targets
 - **Unit Sandbox Targets**:
   - `tests/test_state/test_config.py::test_config_use_context_default` — `use_context` defaults to `False`
   - `tests/test_state/test_config.py::test_config_use_context_round_trip` — `use_context=true` survives serialize→deserialize
@@ -120,7 +120,7 @@ The DeviaTDD framework depends on AI agents having accurate, up-to-date document
 - **Integration Sandbox Targets**:
   - `tests/test_integration/test_init_export_cycle.py` — full init → export cycle with context detection
 
-## [DEMONSTRATION_PATH]
+## Demonstration Path
 ```bash
 # 1. Verify context is installed
 which context
