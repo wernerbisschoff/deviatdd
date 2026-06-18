@@ -144,7 +144,26 @@ Use the file path `<repo_root>/specs/constitution.md`. After writing, set the in
 </step>
 
 <step id="read_explore_md">
-Read `explore_md_path` from the contract in full. This is the authoritative empirical input. Capture the `## File Registry`, `## Discovery Audit Results`, `## Constitution Quotes`, `## Architectural Baselines`, and `## Ecosystem Research` sections verbatim and thread them into the subagent prompts.
+Read `explore_md_path` from the contract in full. This is the authoritative empirical input. Capture the `## File Registry`, `## Discovery Audit Results`, `## Constitution Quotes`, `## Architectural Baselines`, `## Ecosystem Research`, and `## Scope Sizing` sections verbatim and thread them into the subagent prompts.
+</step>
+
+<step id="scope_sizing_check">
+After reading `explore_md_path`, locate the `## Scope Sizing` section.
+
+If `Estimated Complexity` is `Low` or `Medium`, use the `question` tool to offer the human operator the choice between the full research pipeline and `/deviate-adhoc`:
+
+```
+This feature is classified as [Low/Medium] complexity
+([Files Likely Modified] files, [New Modules Required] new modules).
+You can proceed with the full research pipeline (design.md + data-model.md)
+or use /deviate-adhoc for a compressed single-pass issue.
+```
+
+Options presented to the human:
+- **Proceed with research** → continue to next step (full design.md + data-model.md).
+- **Use /deviate-adhoc instead** → do NOT write design.md or data-model.md. Instruct the human to run `/deviate-adhoc` with the same problem statement. Terminate.
+
+If `Estimated Complexity` is `High` or the `## Scope Sizing` section is missing: proceed directly — no prompt needed.
 </step>
 
 <step id="feature_bucket_assurance">
