@@ -299,7 +299,10 @@ def _invoke_agent(
     output_callback: Callable[[str], None] | None = None,
     model: str | None = None,
 ) -> tuple[HandoverManifest | None, str]:
-    c.print(f"  [dim]Invoking agent ({backend_name})...[/]")
+    model_str = f" --model {model}" if model else ""
+    c.print(
+        f"  [green]INVOKE_AGENT[/] running '{backend_name}{model_str}' for [{phase}] phase"
+    )
     _save_agent_log(phase, task_id, "prompt", prompt)
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
