@@ -1060,9 +1060,9 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     )
 
-    # Soft reset to RED boundary — keeps GREEN's files staged
+    # Hard reset to RED boundary — discards GREEN's unverified implementation
     subprocess.run(
-        ["git", "reset", "--soft", red_sha],
+        ["git", "reset", "--hard", red_sha],
         cwd=root,
         capture_output=True,
         env=_git_env(),
@@ -1120,7 +1120,9 @@ def _run_judge_phase(
         try:
             _execute_rollback(root, feedback)
         except Exception as e:
-            c.print(f"  [yellow]ROLLBACK_FAILED[/] {e} — proceeding with train feedback")
+            c.print(
+                f"  [yellow]ROLLBACK_FAILED[/] {e} — proceeding with train feedback"
+            )
 
         tasks_md = _resolve_tasks_md(root, task)
         if tasks_md is not None:
