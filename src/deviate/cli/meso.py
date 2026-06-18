@@ -931,17 +931,23 @@ def _pr_pre() -> None:
 
 
 def _run_gt_submit(repo_root: Path) -> None:
-    result = subprocess.run(
-        ["gt", "submit", "--stack"],
-        capture_output=True,
-        text=True,
-        cwd=repo_root,
-        env=_git_env(),
-    )
+    try:
+        result = subprocess.run(
+            ["gt", "submit", "--stack"],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+            env=_git_env(),
+        )
+    except FileNotFoundError:
+        console.print(
+            "[red]GT_SUBMIT_FAILED[/] Graphite CLI (gt) not found on PATH.\n"
+            "See https://graphite.dev/docs/cli for installation instructions."
+        )
+        raise typer.Exit(code=1)
     if result.returncode != 0:
         console.print(
             f"[red]GT_SUBMIT_FAILED[/] {result.stderr.strip()}\n"
-            "Graphite CLI (gt) not found or command failed. "
             "See https://graphite.dev/docs/cli for installation instructions."
         )
         raise typer.Exit(code=1)
@@ -1051,6 +1057,11 @@ def _pr_run(
     title = _pr_title(issue_id, record.title, record.type)
 
     if resolve_graphite_config(repo_root):
+        if merge or auto_merge:
+            console.print(
+                "[yellow]GRAPHITE_MERGE_FLAGS_IGNORED[/] "
+                "Graphite handles merge flow internally via `gt submit --stack`."
+            )
         _run_gt_submit(repo_root)
     else:
         _run_gh_pr_create(title, body_file, merge, auto_merge, cwd=repo_root)

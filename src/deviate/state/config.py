@@ -154,7 +154,8 @@ def resolve_graphite_config(root: Path) -> bool:
     data = _load_deviate_config_toml(root)
     if data is None:
         return False
-    return bool(data.get("graphite", False))
+    value = data.get("graphite", False)
+    return value if isinstance(value, bool) else False
 
 
 class PytestReportConfig(BaseModel):

@@ -243,10 +243,7 @@ class TestInitGraphiteFlag:
     """RED phase tests for TSK-007-02: --graphite flag on deviate init."""
 
     def test_init_with_graphite_flag(self, tmp_path: Path):
-        """AC-ADHOC-007-01: --graphite flag writes graphite = true in config.toml.
-
-        FAILS because the --graphite flag doesn't exist on the init command yet.
-        """
+        """AC-ADHOC-007-01: --graphite flag writes graphite = true in config.toml."""
         with chdir(tmp_path):
             workdir = tmp_path
             result = runner.invoke(cli, ["init", "--graphite"])
@@ -269,11 +266,7 @@ class TestInitGraphiteFlag:
                 assert "graphite = false" in content
 
     def test_init_graphite_governance_section(self, tmp_path: Path):
-        """AC-ADHOC-007-03: Graphite section appears in governance seeds when enabled.
-
-        FAILS because the --graphite flag doesn't exist on the init command yet,
-        and _apply_governance doesn't accept a graphite parameter.
-        """
+        """AC-ADHOC-007-03: Graphite section appears in governance seeds when enabled."""
         with chdir(tmp_path):
             workdir = tmp_path
             result = runner.invoke(cli, ["init", "--graphite"])
@@ -297,10 +290,7 @@ class TestInitGraphiteFlag:
                 assert "## Graphite Stacked Changes Workflow" not in content
 
     def test_scaffold_dotfiles_with_graphite_true(self, tmp_path: Path):
-        """_scaffold_dotfiles(graphite=True) writes graphite = true.
-
-        FAILS because _scaffold_dotfiles doesn't accept a graphite kwarg yet.
-        """
+        """_scaffold_dotfiles(graphite=True) writes graphite = true."""
         from deviate.cli import _scaffold_dotfiles
 
         _scaffold_dotfiles(tmp_path, "local", graphite=True)
@@ -321,10 +311,7 @@ class TestInitGraphiteFlag:
             assert "graphite = false" in content
 
     def test_apply_governance_with_graphite(self, tmp_path: Path):
-        """_apply_governance(graphite=True) emits Graphite section.
-
-        FAILS because _apply_governance doesn't accept a graphite kwarg yet.
-        """
+        """_apply_governance(graphite=True) emits Graphite section."""
         from deviate.cli import _apply_governance
 
         _apply_governance(tmp_path, graphite=True)

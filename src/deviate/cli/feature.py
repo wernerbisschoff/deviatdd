@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import typer
+from deviate.cli._common import console
 from deviate.core._shared import git_env
 from deviate.state.config import SessionState, resolve_graphite_config
 
@@ -27,15 +28,6 @@ def _create_feature_directory(slug: str, repo_path: Path) -> Path:
 def _create_feature_branch(slug: str, repo_path: Path) -> None:
     branch_name = f"feat/{slug}"
 
-    if resolve_graphite_config(repo_path):
-        subprocess.run(
-            ["gt", "create", "-am", branch_name],
-            cwd=repo_path,
-            env=git_env(),
-            check=True,
-        )
-        return
-
     result = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", branch_name],
         cwd=repo_path,
@@ -43,6 +35,31 @@ def _create_feature_branch(slug: str, repo_path: Path) -> None:
         capture_output=True,
     )
     if result.returncode == 0:
+        return
+
+    if resolve_graphite_config(repo_path):
+        try:
+            subprocess.run(
+                ["gt", "create", "-am", branch_name],
+                cwd=repo_path,
+                env=git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            console.print(
+                "[red]GRAPHITE_NOT_FOUND[/] Graphite CLI (gt) not found on PATH.\n"
+                "See https://graphite.dev/docs/cli for installation instructions."
+            )
+            raise typer.Exit(code=1)
+        except subprocess.CalledProcessError as e:
+            detail = e.stderr.strip() if e.stderr else "Graphite CLI (gt) failed."
+            console.print(
+                f"[red]GRAPHITE_FAILED[/] {detail} "
+                "See https://graphite.dev/docs/cli for installation instructions."
+            )
+            raise typer.Exit(code=1)
         return
 
     subprocess.run(

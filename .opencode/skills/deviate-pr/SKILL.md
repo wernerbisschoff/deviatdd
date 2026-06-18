@@ -70,8 +70,8 @@ CRITICAL INVARIANTS:
     deviate pr run --body-file <path> [--merge] [--auto-merge]
     ```
     Options:
-    - `--body-file <path>`: Path to the PR body file generated in step 2 (required when creating a new PR; NOT supported in graphite mode)
-    - `--merge`: Merge the PR after creation (requires merge permissions)
+    - `--body-file <path>`: Path to the PR body file generated in step 2 (auto-generated when omitted in non-graphite mode; NOT supported in graphite mode, where `gt submit --stack` derives the body from commit history)
+    - `--merge`: Merge the PR after creation (requires merge permissions; NOT supported in graphite mode)
     - `--auto-merge`: Enable auto-merge on GitHub (PR merges when checks pass; NOT supported in graphite mode)
     - Without merge flags: Only create the PR, do not merge
 
