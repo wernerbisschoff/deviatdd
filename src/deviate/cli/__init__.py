@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+import shutil
 import warnings
 from pathlib import Path
 
@@ -222,12 +223,14 @@ def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
     console.print(f"  [green]UPDATE[/] {target_path.name} block replaced")
 
 
-def _scaffold_dotfiles(workdir: Path, agent_export_mode: str) -> None:
+def _scaffold_dotfiles(
+    workdir: Path, agent_export_mode: str, use_context: bool = False
+) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
     _ensure_dir(dot_dir / "artifacts")
 
-    config = DeviateConfig(agent_export_mode=agent_export_mode)
+    config = DeviateConfig(agent_export_mode=agent_export_mode, use_context=use_context)
     config_path = dot_dir / "config.toml"
     _write_if_missing(config_path, _dict_to_toml(config.model_dump()))
 
@@ -333,7 +336,8 @@ def init(
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
-    _scaffold_dotfiles(workdir, agent_export_mode)
+    use_context = shutil.which("context") is not None
+    _scaffold_dotfiles(workdir, agent_export_mode, use_context=use_context)
 
     _apply_governance(workdir)
 

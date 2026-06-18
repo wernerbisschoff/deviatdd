@@ -102,6 +102,7 @@ class DeviateConfig(BaseModel):
     agent_export_mode: Literal["local", "global"] = "local"
     agent: AgentConfig = Field(default_factory=AgentConfig)
     models: dict[str, str] = Field(default_factory=dict)
+    use_context: bool = False
 
     model_config = {"extra": "forbid"}
 
