@@ -30,7 +30,11 @@ from deviate.core.worktree import (
     create_worktree,
     remove_worktree,
 )
-from deviate.state.config import SessionState, resolve_model_for_phase
+from deviate.state.config import (
+    SessionState,
+    resolve_graphite_config,
+    resolve_model_for_phase,
+)
 from deviate.state.ledger import (
     IssueRecord,
     TaskRecord,
@@ -1005,6 +1009,24 @@ def _pr_run(
         )
 
     title = _pr_title(issue_id, record.title, record.type)
+
+    if resolve_graphite_config(repo_root):
+        result = subprocess.run(
+            ["gt", "submit", "--stack"],
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        if result.returncode != 0:
+            console.print(
+                f"[red]GT_SUBMIT_FAILED[/] {result.stderr.strip()}\n"
+                "Is Graphite CLI installed? Install with: npm install -g @withgraphite/graphite-cli"
+            )
+            raise typer.Exit(code=1)
+        console.print(f"[green]GT_SUBMIT[/] {result.stdout.strip()}")
+        _save_session(session, session_path, "TASKS")
+        return
+
     cmd = ["gh", "pr", "create", "--title", title, "--body-file", str(body_file)]
     if merge:
         cmd.append("--merge")

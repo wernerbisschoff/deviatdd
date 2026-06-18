@@ -11,3 +11,4 @@
 {"id":"TSK-007-04","issue_id":"ISS-ADH-007","description":"Conditional `gt create -am` routing in `_create_feature_branch`","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-18T13:15:44.302384Z"}
 {"id":"TSK-007-04","issue_id":"ISS-ADH-007","description":"Conditional `gt create -am` routing in `_create_feature_branch`","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-18T13:16:23.661097Z"}
 {"id":"TSK-007-04","issue_id":"ISS-ADH-007","description":"Conditional `gt create -am` routing in `_create_feature_branch`","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-18T13:18:23.661097Z"}
+{"id":"TSK-007-05","issue_id":"ISS-ADH-007","description":"Conditional `gt submit --stack` routing in `_pr_run`","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-18T13:27:45.135315Z"}
