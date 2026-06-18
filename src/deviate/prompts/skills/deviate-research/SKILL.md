@@ -77,26 +77,22 @@ Instructions:
 <execution_sequence>
 
 <step id="pre_script">
-Run the pre-script to verify the prerequisite phase, refresh the environment, and emit a JSON contract:
+Run the pre-script to verify the prerequisite phase, allocate the numbered epic bucket, and emit a JSON contract:
 ```bash
-deviate research pre [<epic> | --feature <value>]
+deviate research pre "<explore-slug>"
 ```
 
-The pre-script accepts the target epic in any of these forms:
-- bare epic id (e.g. `001`)
-- NNN-slug (e.g. `001-foo`)
-- absolute directory path
-- specs-relative directory path (e.g. `specs/001-foo`)
-- a path to an `explore.md` file (its parent directory is used)
-- (omitted) → falls back to `$RESEARCH_FEATURE_DIR` and then the most recently modified `NNN-*` directory under `specs/`
+Pass the explore slug derived during the explore phase (e.g. `offline-context-docs`). The pre-script reads `specs/explore/<explore-slug>.md`, allocates a numbered epic bucket at `specs/NNN-<explore-slug>/`, and emits the contract with paths pointing to the new epic directory.
 
-The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, `is_greenfield` (boolean).
+The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir` (the new numbered epic dir), `specs_directory`, `explore_md_path` (still pointing to `specs/explore/<slug>.md`), `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, `is_greenfield` (boolean).
 
 If the pre-script exits non-zero or emits a `STATUS: …` failure token:
 - `STATUS: EXPLORE_NOT_FOUND` — surface verbatim; instruct the human to run `/deviate-explore` first.
 - Any other failure — surface verbatim; halt.
 
 If `is_greenfield=true` and `constitution_path` is empty: proceed normally — the project has no constitution yet. The orchestrator bootstraps one in step `constitution_bootstrap`.
+
+**Note**: The numbered epic bucket was pre-allocated by `deviate research pre`. If scope sizing routes to adhoc, the numbered dir stays as an untracked artifact (no commits were made) and can be cleaned up with `git clean -fd specs/NNN-*/`. The explore.md remains in `specs/explore/` for adhoc reuse.
 </step>
 
 <step id="target_resolution">
@@ -145,25 +141,6 @@ Use the file path `<repo_root>/specs/constitution.md`. After writing, set the in
 
 <step id="read_explore_md">
 Read `explore_md_path` from the contract in full. This is the authoritative empirical input. Capture the `## File Registry`, `## Discovery Audit Results`, `## Constitution Quotes`, `## Architectural Baselines`, `## Ecosystem Research`, and `## Scope Sizing` sections verbatim and thread them into the subagent prompts.
-</step>
-
-<step id="scope_sizing_check">
-After reading `explore_md_path`, locate the `## Scope Sizing` section.
-
-If `Estimated Complexity` is `Low` or `Medium`, use the `question` tool to offer the human operator the choice between the full research pipeline and `/deviate-adhoc`:
-
-```
-This feature is classified as [Low/Medium] complexity
-([Files Likely Modified] files, [New Modules Required] new modules).
-You can proceed with the full research pipeline (design.md + data-model.md)
-or use /deviate-adhoc for a compressed single-pass issue.
-```
-
-Options presented to the human:
-- **Proceed with research** → continue to next step (full design.md + data-model.md).
-- **Use /deviate-adhoc instead** → do NOT write design.md or data-model.md. Instruct the human to run `/deviate-adhoc` with the same problem statement. Terminate.
-
-If `Estimated Complexity` is `High` or the `## Scope Sizing` section is missing: proceed directly — no prompt needed.
 </step>
 
 <step id="feature_bucket_assurance">

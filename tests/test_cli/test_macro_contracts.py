@@ -167,9 +167,11 @@ class TestMacroContracts:
             self._setup_git_repo(tmp_path)
             self._setup_minimal_env(tmp_path, session_phase="EXPLORE")
 
-            feat_dir = tmp_path / "specs" / "test-feature"
-            feat_dir.mkdir(parents=True, exist_ok=True)
-            (feat_dir / "explore.md").write_text("# Explore\n\nDiscovered facts.\n")
+            explore_dir = tmp_path / "specs" / "explore"
+            explore_dir.mkdir(parents=True, exist_ok=True)
+            (explore_dir / "test-feature.md").write_text(
+                "# Explore\n\nDiscovered facts.\n"
+            )
 
             result = runner.invoke(cli, ["research", "pre", "test-feature"])
             assert result.exit_code == 0, result.output

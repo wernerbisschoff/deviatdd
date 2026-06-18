@@ -14,7 +14,7 @@ runner = CliRunner()
 
 
 class TestExplorePre:
-    def test_explore_pre_allocates_bucket(self, tmp_git_repo: Path) -> None:
+    def test_explore_pre_creates_explore_dir(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -32,8 +32,11 @@ class TestExplorePre:
             )
             assert result.exit_code == 0, result.output
 
-            bucket = spec_root / "001-test-slug"
-            assert bucket.is_dir(), f"Feature bucket {bucket} should exist"
+            explore_dir = spec_root / "explore"
+            assert explore_dir.is_dir(), f"Explore dir {explore_dir} should exist"
+            assert (explore_dir / "test-slug.md").parent.exists(), (
+                f"Explore file test-slug.md parent {explore_dir} should exist"
+            )
 
             ledger_path = spec_root / "issues.jsonl"
             assert not ledger_path.exists(), (
@@ -61,16 +64,16 @@ class TestExplorePre:
 class TestResearchPre:
     def test_research_pre_gates_on_explore_md(self, mock_workspace: Path) -> None:
         spec_root = mock_workspace / "specs"
-        bucket_dir = spec_root / "test-research"
-        bucket_dir.mkdir(parents=True)
+        explore_dir = spec_root / "explore"
+        explore_dir.mkdir(parents=True)
 
         dot_dir = mock_workspace / ".deviate"
         session = SessionState(current_phase="EXPLORE")
         session.save(dot_dir / "session.json")
 
-        assert not (bucket_dir / "explore.md").exists()
+        assert not (explore_dir / "no-such-slug.md").exists()
 
-        result = runner.invoke(cli, ["research", "pre", "test-research"])
+        result = runner.invoke(cli, ["research", "pre", "no-such-slug"])
         assert result.exit_code != 0
         assert "explore.md" in result.output or "HALTED" in result.output.upper()
 
@@ -78,9 +81,11 @@ class TestResearchPre:
         self, mock_workspace: Path
     ) -> None:
         spec_root = mock_workspace / "specs"
-        bucket_dir = spec_root / "test-research"
-        bucket_dir.mkdir(parents=True)
-        (bucket_dir / "explore.md").write_text("# Explore results\n", encoding="utf-8")
+        explore_dir = spec_root / "explore"
+        explore_dir.mkdir(parents=True)
+        (explore_dir / "test-research.md").write_text(
+            "# Explore results\n", encoding="utf-8"
+        )
         (spec_root / "constitution.md").write_text("# Constitution\n", encoding="utf-8")
 
         dot_dir = mock_workspace / ".deviate"

@@ -196,60 +196,62 @@ explore_app = typer.Typer(no_args_is_help=True, help="Explore phase commands")
 @with_json_quiet
 def explore_pre(
     problem: str = typer.Argument(..., help="Problem description"),
-    slug: str | None = typer.Option(None, "--slug", help="Feature bucket slug"),
+    slug: str | None = typer.Option(None, "--slug", help="Explore slug"),
 ) -> None:
-    """Allocate feature bucket and register scratch entry"""
+    """Allocate explore directory and register scratch entry"""
     _validate_constitution("EXPLORE")
 
     session, session_path = _load_and_transition("EXPLORE")
 
     specs_root = _resolve_specs_root()
     final_slug = slug or _derive_slug(problem)
-    bucket_path = specs_root / final_slug if final_slug else None
-    is_greenfield = not (bucket_path and bucket_path.exists())
+    explore_dir = specs_root / "explore"
+    explore_dir.mkdir(parents=True, exist_ok=True)
 
-    bucket = allocate_feature_bucket(final_slug)
-    console.print(f"[green]BUCKET_CREATED[/] {bucket}")
+    spec_target_rel = f"specs/explore/{final_slug}.md"
+    spec_target_abs = str((explore_dir / f"{final_slug}.md").resolve())
 
-    spec_target_rel = str(bucket / "explore.md")
-    spec_target_abs = str((bucket / "explore.md").resolve())
+    console.print(f"[green]EXPLORE_DIR_CREATED[/] {explore_dir}")
 
     _emit_contract(
         "EXPLORE",
         session,
         session_path,
         epic_id=final_slug or "",
-        is_greenfield=is_greenfield,
+        is_greenfield=False,
         feature_slug=final_slug,
-        feature_dir=str(bucket),
+        feature_dir=str(explore_dir),
         specs_directory=str(specs_root),
         spec_target=spec_target_rel,
         spec_target_abs=spec_target_abs,
         feature_bucket=final_slug,
-        explore_path=str(bucket / "explore.md"),
+        explore_path=spec_target_abs,
         problem=problem,
         slug=final_slug,
-        bucket_path=str(bucket),
+        bucket_path=str(explore_dir),
         issue_id="",
     )
 
 
 @explore_app.command("post")
 def explore_post(
-    epic: str | None = typer.Option(
-        None, "--epic", help="Epic slug (e.g. 003-prompt-optimization)"
-    ),
+    slug: str | None = typer.Option(None, "--slug", help="Explore slug"),
     force: bool = typer.Option(False, "--force", help="Bypass phase validation"),
 ) -> None:
     """Validate explore.md and commit"""
     session, session_path = _load_session_accept("EXPLORE", force=force)
 
     specs_root = _resolve_specs_root()
-    epic_slug = epic or discover_latest_epic(specs_root)
-    if not epic_slug:
-        _halt("EXPLORE", "no active feature bucket found")
+    explore_dir = specs_root / "explore"
 
-    explore_path = specs_root / epic_slug / "explore.md"
+    if slug:
+        explore_path = explore_dir / f"{slug}.md"
+    else:
+        explores = sorted(explore_dir.glob("*.md"))
+        if not explores:
+            _halt("EXPLORE", "no explore.md found in specs/explore/")
+        explore_path = explores[-1]
+
     if not explore_path.exists():
         _halt("EXPLORE", f"explore.md not found at {explore_path}")
 
@@ -263,9 +265,8 @@ def explore_post(
 
     _run_pre_commit_hooks()
 
-    epic_num = _extract_epic_num(explore_path.parent.name)
     commit_artifact(
-        explore_path, f"docs({epic_num}): create explore.md", repo=Path.cwd()
+        explore_path, f"docs(explore): scan {explore_path.stem}", repo=Path.cwd()
     )
     console.print(f"[green]COMMITTED[/] {explore_path}")
 
@@ -282,24 +283,30 @@ research_app = typer.Typer(no_args_is_help=True, help="Research phase commands")
 @research_app.command("pre")
 @with_json_quiet
 def research_pre(
-    epic: str = typer.Argument("", help="Epic slug"),
+    slug: str = typer.Argument(..., help="Explore slug (e.g. offline-context-docs)"),
 ) -> None:
-    """Gate on explore.md, validate constitution"""
+    """Gate on explore.md, allocate numbered epic bucket, validate constitution"""
     specs_root = _resolve_specs_root()
-    epic_slug = epic if epic else resolve_active_feature(specs_root)
-    if not epic_slug:
-        _halt("RESEARCH", "no active feature bucket found")
 
-    explore_path = specs_root / epic_slug / "explore.md"
+    # Resolve explore.md — try specs/explore/<slug>.md first, fall back to old format
+    explore_path = specs_root / "explore" / f"{slug}.md"
     if not explore_path.exists():
-        _halt("RESEARCH", "explore.md not found in feature bucket")
+        # Fallback: old format specs/<slug>/explore.md
+        alt = specs_root / slug / "explore.md"
+        if alt.exists():
+            explore_path = alt
+
+    if not explore_path.exists():
+        _halt("RESEARCH", f"explore.md not found at specs/explore/{slug}.md")
 
     _validate_constitution("RESEARCH")
 
     session, session_path = _load_and_transition("RESEARCH")
 
+    # Allocate numbered epic bucket for downstream phases
+    bucket = allocate_feature_bucket(slug)
+    epic_slug = bucket.name
     feature_dir = specs_root / epic_slug
-    is_greenfield = not feature_dir.exists()
 
     issues_ledger = str(specs_root / "issues.jsonl")
     explore_md_abs = str(explore_path.resolve())
@@ -307,11 +314,13 @@ def research_pre(
     design_target_abs = str((feature_dir / "design.md").resolve())
     data_model_target_abs = str((feature_dir / "data-model.md").resolve())
 
+    console.print(f"[green]EPIC_CREATED[/] {bucket}")
+
     _emit_contract(
         "RESEARCH",
         session,
         session_path,
-        is_greenfield=is_greenfield,
+        is_greenfield=False,
         epic_id=epic_slug,
         feature_slug=epic_slug,
         feature_dir=str(feature_dir),
