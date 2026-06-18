@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.resources
 import re
 import shutil
-import tomllib
 import warnings
 from pathlib import Path
 
@@ -11,6 +10,7 @@ import typer
 from rich.console import Console
 
 from deviate.state.config import DeviateConfig, SessionState
+from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app
 from deviate.cli.meso import meso_app, plan, pr, specify, tasks
 from deviate.cli.micro import (
@@ -323,18 +323,6 @@ def _ensure_gitignore(workdir: Path) -> None:
         gitignore.write_text(content, encoding="utf-8")
     else:
         gitignore.write_text("\n".join(entries) + "\n", encoding="utf-8")
-
-
-def resolve_graphite_config(root: Path) -> bool:
-    config_path = root / ".deviate" / "config.toml"
-    if not config_path.exists():
-        return False
-    try:
-        with open(config_path, "rb") as f:
-            data = tomllib.load(f)
-        return bool(data.get("graphite", False))
-    except (FileNotFoundError, tomllib.TOMLDecodeError, Exception):
-        return False
 
 
 @cli.command()
