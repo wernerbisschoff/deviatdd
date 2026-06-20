@@ -102,45 +102,101 @@
 
 ---
 
-## Phase 5: Spec Alignment and Regression Validation
-**Goal**: Sync authoritative spec documents (`specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`) with the new tree-sitter integration and verify full test suite passes with no regressions.
+## Phase 5: SHARD Phase Integration
+**Goal**: Inject a `## Codebase Structure` appendix into the SHARD contract using `extract_file_structure()` so the Qwen3.7-Plus agent produces issues with accurate `source_file` mappings and topology identification.
 
 ### Tasks
 
-- TSK-008-05: Update API/architecture specs and run full regression
+- TSK-008-05: Wire tree-sitter into `shard_pre()` and update `shard.md` prompt template
+  - **Type**: Feature_Batch
+  - **Mode**: TDD
+  - **Test Strategy**: Integration
+  - **Verification**: `pytest tests/test_macro/test_shard.py -v`
+  - **Estimated Time**: 75 minutes
+  - **Dependency**: TSK-008-01
+  - **Files**:
+    - `src/deviate/cli/macro.py`
+    - `src/deviate/prompts/auto/shard.md`
+    - `tests/test_macro/test_shard.py`
+  - **Rationale**: `src/deviate/cli/macro.py:544-588` (`shard_pre`) builds the contract dict at line ~576 and invokes the shard agent via `_cycle_phase()`. Per the issue's expanded scope, this is the integration surface for SHARD. `src/deviate/prompts/auto/shard.md` consumes the new `${codebase_structure_appendix}` placeholder. `tests/test_macro/test_shard.py` is a new test file for SHARD integration.
+  - **Details**:
+    - **Red**: Create `tests/test_macro/test_shard.py::TestCodebaseStructureInjection::test_appendix_in_contract`. Test creates a `tmp_git_repo`, writes a PRD file with referenced Python files, invokes `shard_pre()` (or mocks `_emit_contract` to capture the contract dict), and asserts that `contract["codebase_structure_appendix"]` is non-empty and contains the substring `## Codebase Structure`. Use `tmp_git_repo` fixture and `_git_env()` from `tests.conftest`.
+    - **Green**: In `src/deviate/cli/macro.py:shard_pre()`, after building the contract dict (line ~576) and before `_emit_contract()`, add a helper `_build_codebase_structure_appendix(prd_path, worktree_path) -> str` that: (1) reads `prd_path` text, (2) extracts file paths from PRD references or scans `src/` directory for Python files, (3) for each path that exists relative to `worktree_path`, calls `extract_file_structure(filepath)`, (4) formats as `## Codebase Structure\n\n### {path}\n\n{structure_md}`. Add `codebase_structure_appendix=appendix` to the `_emit_contract()` call. Update `src/deviate/prompts/auto/shard.md` to include `${codebase_structure_appendix}` placeholder in the `<execution_sequence>` section between `prd_reading` and `vertical_slicing` steps. Add instruction: "Before scanning files with git tools, read the `## Codebase Structure` appendix (pre-extracted tree-sitter analysis of source files). This provides function/class signatures without requiring you to read full file contents — use it to identify insertion points and accurate `source_file` mappings."
+    - **Refactor**: Extract a private `_scan_source_files(prd_text: str, worktree_path: Path) -> list[Path]` regex helper in `macro.py` that uses `r'`([^`]+\.py)` regex to extract Python file paths from PRD text, falling back to `src/` directory scan if no paths found; log a warning via `console.print("[yellow]CODEBASE_STRUCTURE_SKIP[/] ...")` for missing files per spec edge case.
+    - **Edge Cases**: PRD missing file references → scan `src/` directory for Python files; source file listed but not present in worktree → log warning and skip; multiple files → append all per-file sections; non-Python file paths → `extract_file_structure` raises `NotImplementedError` → log warning, skip.
+    - **Acceptance**: Test passes; contract dict has `codebase_structure_appendix` key; appendix contains all existing Python files; appendix is empty (not error) when no files exist; `shard_pre` does not break existing tests.
+
+---
+
+## Phase 6: ADHOC Flow Integration
+**Goal**: Extend `adhoc pre` command to scan source files and write `specs/adhoc/codebase_structure.md` artifact, then update the adhoc skill prompt to consume it for accurate topology mapping.
+
+### Tasks
+
+- TSK-008-06: Extend `adhoc pre` with file structure extraction and update skill prompt
+  - **Type**: Feature_Batch
+  - **Mode**: TDD
+  - **Test Strategy**: Integration
+  - **Verification**: `pytest tests/test_cli/test_adhoc.py -v`
+  - **Estimated Time**: 60 minutes
+  - **Dependency**: TSK-008-01
+  - **Files**:
+    - `src/deviate/cli/adhoc.py`
+    - `src/deviate/prompts/skills/deviate-adhoc/SKILL.md`
+    - `tests/test_cli/test_adhoc.py`
+  - **Rationale**: `src/deviate/cli/adhoc.py:45-84` (`adhoc pre`) currently emits a contract JSON to stdout but provides no codebase context. Per the issue's expanded scope, this is the integration surface for ADHOC. `src/deviate/prompts/skills/deviate-adhoc/SKILL.md` step 3 ("Lightweight Discovery Pass") instructs the agent to use grep/glob — update it to read the pre-extracted artifact first. `tests/test_cli/test_adhoc.py` extends the existing test file.
+  - **Details**:
+    - **Red**: Add `TestAdhocCodebaseStructure::test_artifact_created` to `tests/test_cli/test_adhoc.py`. Test creates a `tmp_git_repo` with Python source files in `src/`, invokes `adhoc pre` with a description, and asserts that `specs/adhoc/codebase_structure.md` is created and contains `## Codebase Structure` with file signatures. Use `tmp_git_repo` fixture and `_git_env()` from `tests.conftest`.
+    - **Green**: In `src/deviate/cli/adhoc.py:adhoc pre()`, after the complexity gate check (line ~55), add a helper `_build_codebase_structure_artifact(scan_dir: Path, output_path: Path) -> None` that: (1) scans `scan_dir` (default `src/`, configurable via `--scan-dir` option) for Python files, (2) for each file, calls `extract_file_structure(filepath)`, (3) formats as `## Codebase Structure\n\n### {path}\n\n{structure_md}`, (4) writes to `output_path` (default `specs/adhoc/codebase_structure.md`). Add `--scan-dir` option to the `adhoc pre` command signature. Emit the artifact path in the contract JSON: `codebase_structure_path=str(output_path)`. Update `src/deviate/prompts/skills/deviate-adhoc/SKILL.md` step 3 to add: "If `specs/adhoc/codebase_structure.md` exists (created by `adhoc pre`), read it first for pre-extracted file signatures — use it to identify target files and existing patterns before falling back to grep/glob. This avoids reading full file contents for structure discovery."
+    - **Refactor**: Extract a private `_scan_directory_for_python_files(scan_dir: Path) -> list[Path]` helper in `adhoc.py` that uses `scan_dir.rglob("*.py")` to find all Python files; log a warning via `console.print("[yellow]CODEBASE_STRUCTURE_SKIP[/] ...")` for missing scan directory; ensure the artifact is idempotent (overwrite if exists).
+    - **Edge Cases**: Scan directory does not exist → log warning, skip artifact creation; no Python files found → write empty artifact with header only; `extract_file_structure` raises `NotImplementedError` for non-Python files → log warning, skip; artifact write fails → log error, proceed without artifact (graceful degradation).
+    - **Acceptance**: Test passes; `specs/adhoc/codebase_structure.md` is created by `adhoc pre`; artifact contains all existing Python files in `src/`; contract JSON includes `codebase_structure_path` key; skill prompt references the artifact; existing `adhoc pre` tests do not break.
+
+---
+
+## Phase 7: Spec Alignment and Regression Validation
+**Goal**: Sync authoritative spec documents (`specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`) with the new tree-sitter integration across all five phases (JUDGE, PLAN, REFACTOR, SHARD, ADHOC) and verify full test suite passes with no regressions.
+
+### Tasks
+
+- TSK-008-07: Update API/architecture specs and run full regression
   - **Type**: Migration
   - **Mode**: IMMEDIATE
   - **Verification**: `mise run check`
-  - **Estimated Time**: 30 minutes
-  - **Dependency**: TSK-008-02, TSK-008-03, TSK-008-04
+  - **Estimated Time**: 45 minutes
+  - **Dependency**: TSK-008-02, TSK-008-03, TSK-008-04, TSK-008-05, TSK-008-06
   - **Files**:
     - `specs/DeviaTDD-api.md`
     - `specs/DeviaTDD-architecture.md`
-  - **Rationale**: `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are authoritative source-of-truth documents per the project's AGENTS.md spec-alignment mandate. They must reflect the new `deviate.core.treesitter` module, JUDGE/PLAN/REFACTOR integration points, and dependency on `tree-sitter>=0.24`. Migration-type task is appropriate since this is a documentation update with no behavior change. IMMEDIATE mode because doc edits are trivial (config/docs/constants per decision tree item 1) and the changes are mechanical reflections of already-verified code.
+  - **Rationale**: `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are authoritative source-of-truth documents per the project's AGENTS.md spec-alignment mandate. They must reflect the new `deviate.core.treesitter` module, JUDGE/PLAN/REFACTOR/SHARD/ADHOC integration points, and dependency on `tree-sitter>=0.24`. Migration-type task is appropriate since this is a documentation update with no behavior change. IMMEDIATE mode because doc edits are trivial (config/docs/constants per decision tree item 1) and the changes are mechanical reflections of already-verified code.
   - **Details**:
-    - **Implementation**: Append a new section `## Tree-sitter Integration (ISS-ADH-008)` to `specs/DeviaTDD-architecture.md` documenting: (1) `src/deviate/core/treesitter.py` public API, (2) JUDGE phase structured diff injection, (3) PLAN phase file structure appendix, (4) REFACTOR phase extended checks. Add a section to `specs/DeviaTDD-api.md` under `## Core Modules` listing `treesitter.get_parser`, `extract_changed_symbols`, `extract_file_structure`, `incremental_parse` signatures. Update the `[3_2_DATABASE]` or appropriate section in `architecture.md` if needed (no DB changes — skip if no relevant section).
+    - **Implementation**: Append a new section `## Tree-sitter Integration (ISS-ADH-008)` to `specs/DeviaTDD-architecture.md` documenting: (1) `src/deviate/core/treesitter.py` public API, (2) JUDGE phase structured diff injection, (3) PLAN phase file structure appendix, (4) REFACTOR phase extended checks, (5) SHARD phase codebase structure appendix, (6) ADHOC flow codebase structure artifact. Add a section to `specs/DeviaTDD-api.md` under `## Core Modules` listing `treesitter.get_parser`, `extract_changed_symbols`, `extract_file_structure`, `incremental_parse` signatures. Update the `[3_2_DATABASE]` or appropriate section in `architecture.md` if needed (no DB changes — skip if no relevant section).
     - **Refactor**: Verify both spec files reference `src/deviate/core/treesitter.py` by exact path; cross-link to the issue `ISS-ADH-008` in a "See also" footer; remove any stale references to stdlib `ast` as the sole AST implementation.
-    - **Acceptance**: Both spec files contain updated sections referencing the new module; no broken markdown links; `mise run check` passes (lint + full test suite per `[DEFINITION_OF_DONE]`).
+    - **Acceptance**: Both spec files contain updated sections referencing the new module and all five integration phases; no broken markdown links; `mise run check` passes (lint + full test suite per `[DEFINITION_OF_DONE]`).
 
 ---
 
 ## Implementation Strategy
 **Execution Order**:
-1. Phase 1 (TSK-008-01) → Phase 2 (TSK-008-02) + Phase 3 (TSK-008-03) + Phase 4 (TSK-008-04) → Phase 5 (TSK-008-05)
+1. Phase 1 (TSK-008-01) → Phase 2 (TSK-008-02) + Phase 3 (TSK-008-03) + Phase 4 (TSK-008-04) + Phase 5 (TSK-008-05) + Phase 6 (TSK-008-06) → Phase 7 (TSK-008-07)
 
 **Critical Dependency Chains**:
-- TSK-008-01 (foundation module) must precede TSK-008-02, TSK-008-03, TSK-008-04 (all import from `deviate.core.treesitter`)
-- TSK-008-02, TSK-008-03, TSK-008-04 must precede TSK-008-05 (spec docs reference the implemented modules)
+- TSK-008-01 (foundation module) must precede TSK-008-02, TSK-008-03, TSK-008-04, TSK-008-05, TSK-008-06 (all import from `deviate.core.treesitter`)
+- TSK-008-02, TSK-008-03, TSK-008-04, TSK-008-05, TSK-008-06 must precede TSK-008-07 (spec docs reference the implemented modules)
 
 **Risk Hotspots**:
 - Tree-sitter grammar availability — `tree-sitter-languages` may need version pin to ensure Python grammar loads correctly on Python 3.13
 - REFACTOR upgrade complexity — `_check_return_type_mismatch` runs on every REFACTOR cycle, so regression test coverage is critical
 - PLAN phase pre-scan cost — must run in <200ms total per AC perf budget; if multiple workstation files exist, sum must stay under budget
+- SHARD phase scan cost — scanning entire `src/` directory may exceed perf budget for large codebases; consider limiting to top-level declarations or caching results
+- ADHOC artifact staleness — `specs/adhoc/codebase_structure.md` may become stale if source files change between `adhoc pre` and skill execution; document this limitation in the skill prompt
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/micro.py` — touched by TSK-008-02 (JUDGE lines 1101-1159) and TSK-008-04 (REFACTOR lines 2507-2539). Different line ranges, no overlap.
+- `src/deviate/cli/macro.py` — touched by TSK-008-05 (SHARD lines 544-588). No overlap with existing work.
+- `src/deviate/cli/adhoc.py` — touched by TSK-008-06 (ADHOC lines 45-84). No overlap with existing work.
 - `pyproject.toml` — touched by TSK-008-01 only.
-- Test files `tests/test_micro/test_judge.py` and `tests/test_micro/test_refactor.py` — each task appends new test classes; sequential appends should not conflict.
+- Test files `tests/test_micro/test_judge.py`, `tests/test_micro/test_refactor.py`, `tests/test_macro/test_shard.py`, `tests/test_cli/test_adhoc.py` — each task appends new test classes; sequential appends should not conflict.
 
 ---
 
@@ -187,7 +243,7 @@ The following are EXPLICITLY excluded from this issue's scope and MUST NOT be to
 - GREEN phase — no tree-sitter integration
 - YELLOW phase — no tree-sitter integration
 - TASKS phase — no tree-sitter integration
-- MACRO layer (explore/research/prd/shard) — no tree-sitter integration
+- MACRO layer (explore/research/prd) — no tree-sitter integration (shard and adhoc are included)
 - TamperGuard — no tree-sitter integration
 - JUDGE agent decision logic — only add structured context; agent still makes the call
 - Type checking integration (mypy/pyre) — structural analysis only, no type system
