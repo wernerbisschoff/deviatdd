@@ -81,3 +81,16 @@
 5. **AC-ADHOC-007-05**: Given `graphite = true` in config, When `deviate pr run` executes, Then PR creation uses `gt submit --stack` instead of `gh pr create`, and the subprocess command is `["gt", "submit", "--stack"]`.
 6. **AC-ADHOC-007-06**: Given `graphite = true` in config, When `deviate feature create` runs, Then the branch is created via `gt create -am "<message>"` instead of `git branch <name>`.
 7. **AC-ADHOC-007-07**: Given `graphite = false` or absent in config, When any command executes, Then all existing `git` and `gh` behavior is preserved — no `gt` commands are invoked.
+
+## FR-ADHOC-008: AST/Structural Analysis Phase Prioritization — Token/Cost Effectiveness Ranking
+
+- **Description**: Produce a concrete, token-cost-aware priority ranking of all DeviaTDD phases for AST/tree-sitter integration, identifying which phases gain the most structural-analysis value per token spent and which should be explicitly excluded.
+- **Preconditions**: `specs/explore/ast-tree-sitter.md` exists with complete phase-by-phase integration potential table. `specs/constitution.md` is present with model tiering and cost constraints. Python 3.13 stdlib `ast` and `py-tree-sitter` costs are understood.
+- **Inputs/Outputs**: Input: explore.md (phase potential table, existing AST usage at `src/deviate/cli/micro.py:2469-2539`, model tiering from constitution). Output: a concrete prioritization document (`specs/adhoc/008-ast-phase-prioritization/analysis.md`) with HIGH-ROI/MEDIUM-ROI/LOW-ROI/SKIP rankings per phase, token-cost estimates, recommended structural checks, and explicit exclusion rationale.
+
+### Acceptance Criteria
+1. **AC-ADHOC-008-01**: Given the explore.md phase integration potential table, When the analysis document is generated, Then every phase (JUDGE, REFACTOR, GREEN, PLAN, TASKS, RED, MACRO, YELLOW, TamperGuard) receives an explicit HIGH-ROI, MEDIUM-ROI, LOW-ROI, or SKIP ranking with token-cost justification.
+2. **AC-ADHOC-008-02**: Given the constitution specifies V4 Flash for high-frequency phases and V4 Pro for compliance phases, When ranking phases, Then the model cost tier (Flash = cheap, Pro = expensive) is factored into the token/cost calculus — structural analysis that prevents costly Pro-phase rework scores higher than Flash-phase optimization.
+3. **AC-ADHOC-008-03**: Given each ranked phase, When the analysis document describes integration value, Then it identifies at least one concrete structural check (e.g., "diff signature validation", "dead code detection", "cyclomatic complexity threshold") with estimated token budget.
+4. **AC-ADHOC-008-04**: Given the LOW-ROI and SKIP rankings, When the document lists excluded phases, Then it provides explicit rationale for exclusion (e.g., "RED produces test stubs, not production code", "MACRO operates on Markdown, not Python") and a rule-of-thumb for future phase evaluation.
+5. **AC-ADHOC-008-05**: Given the analysis document is complete, When reviewed against explore.md, Then every claim is traceable to a verbatim snippet in explore.md (≤10 lines) or a constitution clause.
