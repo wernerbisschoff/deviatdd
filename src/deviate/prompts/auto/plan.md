@@ -23,6 +23,10 @@ The CLI orchestrator has run `deviate plan pre` and resolved the contract. Avail
 Read `{spec_path}` in full — extract user stories, Gherkin acceptance criteria, edge cases, performance constraints, and system topology mapping. Read constitution if available.
 </step>
 
+<step id="file_structure_notification">
+The orchestrator may inject a `## Target File Structure` appendix after the execution sequence. This appendix lists function/class signatures extracted via tree-sitter from the `Primary Architectural Workstations` files listed in the issue's `## System Topology Mapping` section. Use it to identify exact insertion points, understand module boundaries, and target the correct symbols without reading entire files. If the appendix is absent (no workstation files found or all are non-Python), scan files manually.
+</step>
+
 <step id="codebase_scan">
 Run `git log --oneline -20`, read `specs/issues.jsonl` for related issues, scan workstation files from system topology mapping, check prior `plan.md` in related issue directories.
 </step>
@@ -78,6 +82,9 @@ The CLI orchestrator runs `deviate plan post` after your response to validate pl
 
 ## Integration Points
 - **<integration point>**: <what connects here and the contract expected>
+
+## Target File Structure
+When this section is present (injected by the orchestrator), it lists function/class signatures extracted via tree-sitter from the target workstation files. Use it as a navigation aid to identify exact insertion points without reading entire files.
 
 ## Constitutional Alignment
 - **Architecture**: <how this aligns with the three-layer architecture>

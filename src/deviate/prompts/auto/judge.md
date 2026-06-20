@@ -41,6 +41,14 @@ After completion:
 
 <evaluation_criteria>
 
+### Structured Diff Summary (provided by orchestrator)
+
+The orchestrator may inject a `## Structured Diff Summary` section between the `<diff>` block and the evaluation criteria. This section lists only changed `FunctionDef`/`ClassDef` nodes with old/new signatures, extracted by tree-sitter. Use it to:
+
+- Focus evaluation on the exact symbols that changed, rather than parsing the entire raw diff.
+- Compare old vs. new signatures to detect interface drift, type annotation changes, or visibility changes.
+- When this section is absent (empty diff), evaluate the raw diff text directly.
+
 ### Categories of Violations
 
 1. **Protected Module Modification**: Changes to modules or interfaces marked as protected in `<spec_content>`. Includes core abstractions, public API contracts, and module boundary signatures.
@@ -68,6 +76,7 @@ After completion:
 1. Receive the `git diff` context and `spec.md` invariants appended by the orchestrator.
 2. Parse `spec.md` for protected module definitions, interface contracts, and architectural constraints.
 3. Load the `git diff` to identify all changed files, added lines, and removed lines.
+4. If a `## Structured Diff Summary` section is present (injected by the orchestrator via tree-sitter), use it to focus compliance analysis on the specific changed symbols and their signatures, reducing the token cost of parsing raw diff text.
 
 ### STEP_2: ANALYZE_DIFF
 
