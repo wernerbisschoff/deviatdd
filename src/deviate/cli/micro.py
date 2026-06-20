@@ -28,7 +28,11 @@ from deviate.core.agent import (
 )
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
-from deviate.core.treesitter import extract_changed_symbols
+from deviate.core.treesitter import (
+    _get_parser,
+    _node_text,
+    extract_changed_symbols,
+)
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import (
@@ -1099,6 +1103,24 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     return red_sha
 
 
+def _build_structured_diff_summary(symbols: list[dict]) -> str:
+    if not symbols:
+        return ""
+    lines = ["\n## Structured Diff Summary\n"]
+    for sym in symbols:
+        sym_type = sym.get("type", "symbol")
+        file_path = sym.get("file", "")
+        old_sig = sym.get("old_signature", "")
+        new_sig = sym.get("new_signature", "")
+        parts = [f"- **{sym_type}**: `{file_path}`"]
+        if old_sig:
+            parts.append(f"  - Old: `{old_sig}`")
+        if new_sig:
+            parts.append(f"  - New: `{new_sig}`")
+        lines.append("\n".join(parts))
+    return "\n\n".join(lines)
+
+
 def _run_judge_phase(
     task: dict,
     ledger_path: Path,
@@ -1127,20 +1149,9 @@ def _run_judge_phase(
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
     symbols = extract_changed_symbols(diff)
-    if symbols:
-        lines = ["\n## Structured Diff Summary\n"]
-        for sym in symbols:
-            sym_type = sym.get("type", "symbol")
-            file_path = sym.get("file", "")
-            old_sig = sym.get("old_signature", "")
-            new_sig = sym.get("new_signature", "")
-            parts = [f"- **{sym_type}**: `{file_path}`"]
-            if old_sig:
-                parts.append(f"  - Old: `{old_sig}`")
-            if new_sig:
-                parts.append(f"  - New: `{new_sig}`")
-            lines.append("\n".join(parts))
-        prompt += "\n\n".join(lines)
+    summary = _build_structured_diff_summary(symbols)
+    if summary:
+        prompt += summary
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root)
@@ -2483,6 +2494,13 @@ def refactor_pre(
     raise typer.Exit(code=0)
 
 
+def _ts_parse_source(source_bytes: bytes) -> Any | None:
+    try:
+        return _get_parser().parse(source_bytes)
+    except Exception:
+        return None
+
+
 _SCALAR_RETURN_TYPES: dict[str, set[str]] = {
     "str": {"string", "fstring"},
     "int": {"integer"},
@@ -2557,12 +2575,8 @@ def _walk_return_types(
 
 
 def _ts_check_return_type(filepath: str, source_bytes: bytes) -> list[str]:
-    from deviate.core.treesitter import _get_parser, _node_text
-
-    parser = _get_parser()
-    try:
-        tree = parser.parse(source_bytes)
-    except Exception:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
         return []
 
     root = tree.root_node
@@ -2592,12 +2606,8 @@ def _ts_check_return_type(filepath: str, source_bytes: bytes) -> list[str]:
 
 
 def _ts_check_dead_code(filepath: str, source_bytes: bytes) -> list[str]:
-    from deviate.core.treesitter import _get_parser, _node_text
-
-    parser = _get_parser()
-    try:
-        tree = parser.parse(source_bytes)
-    except Exception:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
         return []
 
     root = tree.root_node
@@ -2633,12 +2643,8 @@ def _ts_check_dead_code(filepath: str, source_bytes: bytes) -> list[str]:
 
 
 def _ts_check_cyclomatic_complexity(filepath: str, source_bytes: bytes) -> list[str]:
-    from deviate.core.treesitter import _get_parser, _node_text
-
-    parser = _get_parser()
-    try:
-        tree = parser.parse(source_bytes)
-    except Exception:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
         return []
 
     root = tree.root_node
@@ -2681,12 +2687,8 @@ def _ts_check_cyclomatic_complexity(filepath: str, source_bytes: bytes) -> list[
 
 
 def _ts_check_duplication(filepath: str, source_bytes: bytes) -> list[str]:
-    from deviate.core.treesitter import _get_parser, _node_text
-
-    parser = _get_parser()
-    try:
-        tree = parser.parse(source_bytes)
-    except Exception:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
         return []
 
     root = tree.root_node
