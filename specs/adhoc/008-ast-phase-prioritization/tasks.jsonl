@@ -1,2 +1,4 @@
 {"id":"TSK-008-01","issue_id":"ISS-ADH-008","description":"Core treesitter module with parser factory and structure extraction functions","status":"RED","execution_mode":"TDD","created_at":"2026-06-20T20:09:03.432380Z"}
 {"id":"TSK-008-01","issue_id":"ISS-ADH-008","description":"Core treesitter module with parser factory and structure extraction functions","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-20T20:15:07.861973Z"}
+{"id":"TSK-008-01","issue_id":"ISS-ADH-008","description":"Core treesitter module with parser factory and structure extraction functions","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-20T20:15:53.944583Z"}
+{"id":"TSK-008-01","issue_id":"ISS-ADH-008","description":"Core treesitter module with parser factory and structure extraction functions","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-20T20:18:35.920065Z"}

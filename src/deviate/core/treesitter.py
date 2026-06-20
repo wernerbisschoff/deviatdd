@@ -43,31 +43,38 @@ def _parse_diff_hunks(diff_text: str) -> list[dict[str, Any]]:
 
     hunks: list[dict[str, Any]] = []
     current_hunk: dict[str, Any] | None = None
+    current_file: str | None = None
 
     for line in diff_text.splitlines():
         if line.startswith("+++ b/"):
-            path = line[6:]
-            if current_hunk is not None:
-                current_hunk["file"] = path
-            else:
-                current_hunk = {"file": path, "old_lines": [], "new_lines": []}
-                hunks.append(current_hunk)
+            current_file = line[6:]
         elif line.startswith("@@"):
-            if current_hunk is not None and current_hunk.get("file"):
-                pass
-            current_hunk = {
-                "file": current_hunk["file"] if current_hunk else None,
-                "old_lines": [],
-                "new_lines": [],
-            }
-            hunks.append(current_hunk)
+            if current_hunk is not None:
+                hunks.append(current_hunk)
+            current_hunk = {"file": current_file, "old_lines": [], "new_lines": []}
         elif current_hunk is not None:
             if line.startswith("-") and not line.startswith("---"):
                 current_hunk["old_lines"].append(line[1:])
             elif line.startswith("+") and not line.startswith("+++"):
                 current_hunk["new_lines"].append(line[1:])
 
+    if current_hunk is not None:
+        hunks.append(current_hunk)
+
     return hunks
+
+
+def _build_symbol_map(lines: list[str]) -> dict[str, dict[str, str]]:
+    symbols: dict[str, dict[str, str]] = {}
+    for line in lines:
+        m = _FUNC_RE.match(line)
+        if m:
+            symbols[m.group(1)] = {"type": "function", "signature": line.strip()}
+            continue
+        m = _CLASS_RE.match(line)
+        if m:
+            symbols[m.group(1)] = {"type": "class", "signature": line.strip()}
+    return symbols
 
 
 def extract_changed_symbols(diff_text: str) -> list[dict[str, Any]]:
@@ -78,33 +85,8 @@ def extract_changed_symbols(diff_text: str) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
 
     for hunk in hunks:
-        old_symbols: dict[str, dict[str, str]] = {}
-        new_symbols: dict[str, dict[str, str]] = {}
-
-        for line in hunk["old_lines"]:
-            m = _FUNC_RE.match(line)
-            if m:
-                old_symbols[m.group(1)] = {
-                    "type": "function",
-                    "signature": line.strip(),
-                }
-                continue
-            m = _CLASS_RE.match(line)
-            if m:
-                old_symbols[m.group(1)] = {"type": "class", "signature": line.strip()}
-
-        for line in hunk["new_lines"]:
-            m = _FUNC_RE.match(line)
-            if m:
-                new_symbols[m.group(1)] = {
-                    "type": "function",
-                    "signature": line.strip(),
-                }
-                continue
-            m = _CLASS_RE.match(line)
-            if m:
-                new_symbols[m.group(1)] = {"type": "class", "signature": line.strip()}
-
+        old_symbols = _build_symbol_map(hunk["old_lines"])
+        new_symbols = _build_symbol_map(hunk["new_lines"])
         all_names = set(old_symbols) | set(new_symbols)
         file_path = hunk.get("file")
 
@@ -151,6 +133,15 @@ def _extract_function(fn_node: Node, source_bytes: bytes) -> tuple[str, dict[str
     }
 
 
+def _extract_methods(body: Node, source_bytes: bytes) -> dict[str, dict[str, Any]]:
+    methods: dict[str, dict[str, Any]] = {}
+    for item in body.children:
+        if item.type == "function_definition":
+            mname, minfo = _extract_function(item, source_bytes)
+            methods[mname] = minfo
+    return methods
+
+
 def extract_file_structure(source: str) -> dict[str, Any]:
     if not source.strip():
         return {"functions": {}, "classes": {}}
@@ -170,13 +161,8 @@ def extract_file_structure(source: str) -> dict[str, Any]:
             functions[name] = info
         elif child.type == "class_definition":
             class_name = _node_text(child.child_by_field_name("name"), source_bytes)
-            methods: dict[str, dict[str, Any]] = {}
             body = child.child_by_field_name("body")
-            if body is not None:
-                for item in body.children:
-                    if item.type == "function_definition":
-                        mname, minfo = _extract_function(item, source_bytes)
-                        methods[mname] = minfo
+            methods = _extract_methods(body, source_bytes) if body is not None else {}
             classes[class_name] = {"methods": methods}
         elif child.type in ("import_statement", "import_from_statement"):
             imports.append(_node_text(child, source_bytes))
