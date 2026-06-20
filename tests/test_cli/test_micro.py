@@ -1462,5 +1462,148 @@ class TestTddCycleIntegration:
         mock_resolve.assert_called_once_with("REFACTOR", cwd)
 
 
+class TestStructuredDiffInJudge:
+    """Tree-sitter structured diff summary injected into JUDGE prompt.
+
+    AC-ADHOC-008-01: Structured diff injected into JUDGE prompt
+    """
+
+    @patch("deviate.cli.micro.extract_changed_symbols")
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._save_agent_log")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_with_nonempty_diff_injects_structured_summary(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """AC-ADHOC-008-01: Non-empty diff -> extract_changed_symbols called, prompt has ## Structured Diff Summary."""
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+
+        sample_diff = """diff --git a/src/example.py b/src/example.py
+index abc..def 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1,5 +1,5 @@
+-def validate(x: int) -> bool:
++def validate(x: str) -> bool:
+     return True
+"""
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=sample_diff, stderr=""
+        )
+        mock_build.return_value = "test judge prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_extract.return_value = [
+            {
+                "type": "function",
+                "file": "src/example.py",
+                "old_signature": "def validate(x: int) -> bool",
+                "new_signature": "def validate(x: str) -> bool",
+            }
+        ]
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+
+        task = {
+            "id": "TSK-008-02",
+            "issue_id": "ISS-ADH-008",
+            "description": "test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_judge_phase(task, ledger_path, session, session_path, Console())
+
+        mock_extract.assert_called_once_with(sample_diff)
+
+        prompt_arg = mock_agent.call_args[0][0]
+        assert "## Structured Diff Summary" in prompt_arg, (
+            "JUDGE prompt should contain ## Structured Diff Summary when diff is non-empty"
+        )
+
+    @patch("deviate.cli.micro.extract_changed_symbols")
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._save_agent_log")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_with_empty_diff_skips_structured_summary(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """AC-ADHOC-008-01: Empty diff -> extract_changed_symbols called, prompt has NO ## Structured Diff Summary."""
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_build.return_value = "test judge prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_extract.return_value = []
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+
+        task = {
+            "id": "TSK-008-02",
+            "issue_id": "ISS-ADH-008",
+            "description": "test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_judge_phase(task, ledger_path, session, session_path, Console())
+
+        mock_extract.assert_called_once_with("")
+
+        prompt_arg = mock_agent.call_args[0][0]
+        assert "## Structured Diff Summary" not in prompt_arg, (
+            "JUDGE prompt should NOT contain ## Structured Diff Summary when diff is empty"
+        )
+
+
 def Console() -> MagicMock:  # noqa: N802
     return MagicMock()
