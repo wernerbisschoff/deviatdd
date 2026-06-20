@@ -40,6 +40,7 @@ CRITICAL INSTRUCTION INVARIANTS:
     - If not found: proceed to step 3 (Lightweight Discovery Pass) as normal.
 
 3. **Lightweight Discovery Pass**: Skip this step if an existing explore.md was consumed in step 2.5. Otherwise, explore the codebase to ground the issue:
+   - If `specs/adhoc/codebase_structure.md` exists (created by `adhoc pre`), read it first for pre-extracted file signatures — use it to identify target files and existing patterns before falling back to grep/glob. This avoids reading full file contents for structure discovery.
    - Use grep/glob to find files and modules relevant to the user's description
    - Identify existing patterns, hooks, utilities, or components that the task should extend or integrate with
    - Map target files (both existing files to modify and new files to create)
