@@ -562,3 +562,131 @@ Each HITL gate prevents wasted downstream compute. A design error caught at Gate
 ### 9.5 Task Isolation
 
 Failed RED/GREEN cycles are scoped to a single task. A failed task loses only that task's compute, not the entire feature's. Each task gets a fresh cache — there is no accumulated context debt from prior failures. Module boundary violations are caught by the JUDGE phase and trigger Train rollback without cascading into other task implementations.
+
+---
+
+## 10. Tree-Sitter AST Integration (ISS-ADH-008)
+
+### 10.1 Module: `src/deviate/core/treesitter.py`
+
+A new Python AST parsing module built on `tree-sitter` (v0.24+) with the `tree-sitter-python`
+bundled grammar. Provides deterministic, incremental structural analysis with no runtime
+grammar compilation. The module caches a singleton `Parser` instance at import time via
+`_get_parser()`.
+
+**Public API:**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `extract_changed_symbols()` | `(diff_text: str) -> list[dict]` | Parse `git diff` output; return changed `FunctionDef`/`ClassDef` nodes with `type`, `file`, `old_signature`, `new_signature`. Empty input → empty list. |
+| `extract_file_structure()` | `(source: str) -> dict` | Parse a source string; return `{functions, classes, imports}` with parameter lists, return type annotations, and method decompositions. Invalid input → empty structure (graceful degradation). |
+| `incremental_parse()` | `(source: str, old_tree) -> Tree` | Parse source bytes, optionally reusing an existing `Tree` — tree-sitter re-parses only changed byte ranges (TS incremental parsing). |
+
+**Performance budgets** (per AC-ADHOC-008): `extract_file_structure()` ≤200ms initial,
+≤20ms incremental; `extract_changed_symbols()` ≤100ms; all refactor checks ≤300ms initial,
+≤50ms incremental.
+
+### 10.2 JUDGE Phase Integration
+
+**File:** `src/deviate/cli/micro.py:1151-1154`
+
+After collecting `git diff RED..HEAD` output, `_run_judge_phase()` calls
+`extract_changed_symbols(diff)` and formats the result via `_build_structured_diff_summary()`
+into a `## Structured Diff Summary` markdown block. This block is injected between the
+base prompt (from `/judge.md` template) and the raw `<diff>` block.
+
+**Token savings:** The structured summary is ≤500 tokens (only changed FunctionDef/ClassDef
+signatures with file paths) vs. the raw diff which can be 3000+ tokens for files with
+unchanged boilerplate. Since JUDGE runs on V4 Pro ($0.435/M cache-miss input), this
+achieves ~15x token reduction on the diff portion.
+
+**Graceful degradation:** If `diff` is empty or contains no parseable Python symbols,
+the structured section is skipped and only the raw diff appears.
+
+### 10.3 PLAN Phase Integration
+
+**File:** `src/deviate/cli/meso.py:1081-1162`
+
+During `_invoke_agent_phase("plan", ...)`, the helper `_enrich_plan_prompt()` calls
+`_build_file_structure_appendix(contract)` which:
+
+1. Reads the issue spec file from `contract["spec_path"]`
+2. Scans for the `## System Topology Mapping` section and extracts file paths from
+   `Primary Architectural Workstations` bullet items (regex: `` `path/to/file.py` ``)
+3. For each existing `.py` file, calls `extract_file_structure()` and formats signatures
+4. Injects the result as `## Target File Structure` appendix into the agent prompt
+
+**Token savings:** Pre-scanned file structure (function signatures, class methods, imports)
+replaces the need for the V4 Pro agent to read entire target files to find insertion points.
+For a typical 200-line file with 5 functions, ~15 tokens of signatures replace ~200 tokens
+of full source.
+
+**Edge cases:** Missing `System Topology Mapping` → empty appendix; file listed but absent →
+skipped with warning; non-Python files → skipped silently.
+
+### 10.4 REFACTOR Phase Integration
+
+**File:** `src/deviate/cli/micro.py:2599-2700`
+
+The legacy `_check_return_type_mismatch()` (stdlib `ast.parse`) was replaced entirely with
+tree-sitter-based checks. The stdlib `ast` import was removed. New checks:
+
+| Check | Function | Detection | Issue Prefix |
+|---|---|---|---|
+| Return type mismatch | `_ts_check_return_type()` | Validates `str`/`int`/`float`/`bool`/`list`/`dict`/`tuple`/`set` annotated returns match actual `return` expression types via tree-sitter query | None |
+| Dead code | `_ts_check_dead_code()` | Flags private functions (prefixed `_`) with zero call-site references in the same file | `DEAD_CODE:` |
+| Cyclomatic complexity | `_ts_check_cyclomatic_complexity()` | Counts `if`/`elif`/`for`/`while`/`except`/`with`/boolean_operator nodes; warns at ≥10 | `COMPLEXITY:` |
+
+All checks use `incremental_parse()` when an `old_tree` is available (passed from the
+previous REFACTOR cycle), re-parsing only changed byte ranges for large files.
+
+### 10.5 SHARD Phase Integration
+
+**File:** `src/deviate/cli/macro.py:543-571`
+
+`_build_codebase_structure_appendix()` in `shard_pre()` scans the entire `src/` directory
+for Python files, calls `extract_file_structure()` on each, and formats the result as a
+`## Codebase Structure` appendix. This is injected into the shard contract under the
+`codebase_structure_appendix` key and consumed by the shard agent prompt template
+(`src/deviate/prompts/auto/shard.md` via `${codebase_structure_appendix}`).
+
+The appendix covers imports, top-level function signatures, and class hierarchy (class
+names with their method lists). Missing `src/` directory or empty scan yields an empty
+string (no appendix), preserving existing behavior.
+
+### 10.6 ADHOC Flow Integration
+
+**File:** `src/deviate/cli/adhoc.py:94-119`
+
+`_build_codebase_structure_artifact()` in `adhoc pre` (after complexity gate) scans the
+`--scan-dir` directory (default `src/`) for Python files, calls `extract_file_structure()`,
+and writes a persisted `specs/adhoc/codebase_structure.md` markdown artifact. The artifact
+path is emitted in the contract as `codebase_structure_path`.
+
+The `/deviate-adhoc` skill prompt (`src/deviate/prompts/skills/deviate-adhoc/SKILL.md`)
+step 3 was updated to read this artifact first for pre-extracted file signatures before
+falling back to grep/glob.
+
+**Staleness note:** The artifact is generated at `adhoc pre` time and may become stale if
+source files are modified between `adhoc pre` and agent execution. The skill prompt
+documents this limitation and instructs the agent to verify critical file positions.
+
+### 10.7 Dependencies & Grammar Loading
+
+- `tree-sitter>=0.24` — core parsing library (declared in `pyproject.toml`)
+- `tree-sitter-python` — pre-built Python grammar (bundled, no compilation step)
+- Grammar loaded at module import time: `Language(tree_sitter_python.language())`
+- Singleton parser cached in `_PARSER` module variable (thread-safe for CLI use)
+- If grammar cannot be loaded, `ImportError` with clear diagnostic message — no silent
+  fallback to stdlib `ast`
+
+### 10.8 Defensive Exclusions
+
+Per the Pareto analysis in `issues/008-ast-phase-prioritization.md`, the following phases
+do NOT invoke tree-sitter:
+- **RED** (V4 Flash: test stubs need no AST)
+- **GREEN** (V4 Flash: implementation writes, not analysis)
+- **YELLOW** (V4 Pro: fires rarely, low aggregate ROI)
+- **TASKS** (V4 Pro: text decomposition, no code to parse)
+- **MACRO** explore/research/prd (V4 Flash/Qwen: operate on markdown, not Python code)
+- **TamperGuard** (file hashing already catches unauthorized edits)
