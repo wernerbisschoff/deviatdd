@@ -6,3 +6,4 @@
 {"id":"TSK-008-02","issue_id":"ISS-ADH-008","description":"Wire tree-sitter into `_run_judge_phase()` and update `judge.md` prompt template","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-20T20:32:10.176876Z"}
 {"id":"TSK-008-02","issue_id":"ISS-ADH-008","description":"Wire tree-sitter into `_run_judge_phase()` and update `judge.md` prompt template","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-20T20:33:18.249061Z"}
 {"id":"TSK-008-02","issue_id":"ISS-ADH-008","description":"Wire tree-sitter into `_run_judge_phase()` and update `judge.md` prompt template","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-20T20:37:16.074749Z"}
+{"id":"TSK-008-03","issue_id":"ISS-ADH-008","description":"Wire tree-sitter into `_meso_run()` and update `plan.md` prompt template","status":"RED","execution_mode":"TDD","created_at":"2026-06-20T20:43:49.921871Z"}
