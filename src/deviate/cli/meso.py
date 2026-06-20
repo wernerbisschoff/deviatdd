@@ -25,6 +25,7 @@ from deviate.core.commit import commit_artifact
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
+from deviate.core.treesitter import extract_file_structure
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
@@ -1074,6 +1075,87 @@ def _pr_run(
 # ---------------------------------------------------------------------------
 
 
+_WORKSTATION_RE = re.compile(r"^\s*-\s+`([^:]+)(?::\d+(?:-\d+)?)?`")
+
+
+def _build_file_structure_appendix(contract: dict[str, str]) -> str:
+    """Scan workstation files from the issue spec and build a tree-sitter structure appendix."""
+    spec_path_str = contract.get("spec_path", "")
+    if not spec_path_str:
+        return ""
+    spec_path = Path(spec_path_str)
+    if not spec_path.exists():
+        return ""
+
+    spec_content = spec_path.read_text(encoding="utf-8")
+    workstation_files: list[str] = []
+    in_workstation_section = False
+    for line in spec_content.splitlines():
+        if "Primary Architectural Workstations" in line:
+            in_workstation_section = True
+            continue
+        if in_workstation_section:
+            m = _WORKSTATION_RE.match(line)
+            if m:
+                workstation_files.append(m.group(1))
+            elif line.strip().startswith("- ") and not line.strip().startswith("- `"):
+                in_workstation_section = False
+
+    if not workstation_files:
+        return ""
+
+    parts = ["## Target File Structure\n"]
+    parts.append(
+        "The following structure was extracted via tree-sitter from the "
+        "Primary Architectural Workstations files listed in the issue spec."
+    )
+    for rel_path in workstation_files:
+        full_path = Path(rel_path)
+        if not full_path.exists() or full_path.suffix != ".py":
+            continue
+        try:
+            content = full_path.read_text(encoding="utf-8")
+            structure = extract_file_structure(content)
+        except Exception:
+            continue
+
+        parts.append(f"\n### `{rel_path}`\n")
+        funcs = structure.get("functions", {})
+        classes = structure.get("classes", {})
+        imports = structure.get("imports", [])
+
+        if imports:
+            parts.append("**Imports:**")
+            for imp in imports:
+                parts.append(f"- `{imp}`")
+            parts.append("")
+
+        if funcs:
+            parts.append("**Functions:**")
+            for name, info in sorted(funcs.items()):
+                sig = f"def {name}({', '.join(info.get('params', []))})"
+                ret = info.get("return_type")
+                if ret:
+                    sig += f" -> {ret}"
+                parts.append(f"- `{sig}`")
+            parts.append("")
+
+        if classes:
+            parts.append("**Classes:**")
+            for name, info in sorted(classes.items()):
+                parts.append(f"- `class {name}`")
+                methods = info.get("methods", {})
+                for mname, minfo in sorted(methods.items()):
+                    msig = f"  - `def {mname}({', '.join(minfo.get('params', []))})"
+                    ret = minfo.get("return_type")
+                    if ret:
+                        msig += f" -> {ret}"
+                    msig += "`"
+                    parts.append(msig)
+
+    return "\n".join(parts)
+
+
 def _invoke_agent_phase(
     phase: str,
     contract: dict[str, str],
@@ -1081,6 +1163,12 @@ def _invoke_agent_phase(
 ) -> None:
     """Build a slim prompt, invoke the agent, and abort on failure."""
     prompt = _build_slim_prompt(phase, contract)
+
+    if phase == "plan":
+        appendix = _build_file_structure_appendix(contract)
+        if appendix:
+            prompt += f"\n\n{appendix}"
+
     backend = AgentBackend()
     try:
         root = Path(cwd) if cwd else Path.cwd()
