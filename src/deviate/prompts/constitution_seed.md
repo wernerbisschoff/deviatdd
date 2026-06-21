@@ -6,89 +6,47 @@ Version: 0.1.0
 
 ## 1. Architectural Principles
 
-- **Three-Layer Architecture**: Macro (feature scoping), Meso (issue engineering), Micro (TDD sandbox). Each layer has strict phase gates — no layer may be skipped.
-- **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing.
-- **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
-- **Tamper Guard & Micro-Sandboxing**: GREEN phase resets test directories to post-RED commit state before evaluation. Micro-layer LLM execution is strictly sandboxed: write access is granted **only** to files matching `src/**/*.py`. All `tests/`, `specs/`, and configuration files are strictly read-only during Micro-layer execution. Any mutation outside this allow-list triggers an immediate rollback.
-- **Human-in-the-Loop (HITL)**: Three mandatory gates (Design Approval, Contract Sign-Off, Final Merge Audit) prevent autonomous drift. No gate may be programmatically bypassed.
-- **Session Continuity**: Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases. Model switching mid-task is prohibited.
-- **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance (JUDGE, YELLOW); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`).
+> TBD — populated by `/research` from codebase analysis.
 
 ## 2. Tech Stack Standards
 
 ### Backend
-- Python 3.13
-- Target: CLI application (`deviate`)
-- Framework: Typer (CLI entry points) with Rich for terminal I/O
+> TBD (language, framework, target)
 
 ### Frontend
-- None (CLI-only application; no web or GUI frontend)
+> TBD (if applicable)
 
 ### Database
-- No persistent database runtime (all state tracked in JSONL ledgers and TOML config)
-- Session state: JSON files under `.deviate/`
-- Issue ledger: `specs/issues.jsonl` (append-only JSONL)
-- Task ledger: `specs/**/tasks.jsonl` (append-only JSONL)
-- Config: TOML via `.deviate/config.toml`
+> TBD (runtime, storage engines, schemas)
 
 ### Infrastructure
-- Micro-sandbox: Aider Python API (`aider.coders.Coder`) as LLM execution substrate
-- Version control: Git (all phase commits, lock branches for concurrency)
-- No containerization required (local execution on host)
+> TBD (containers, CI/CD, deployment)
 
 ### Tooling
-- Package manager: `uv`
-- Test runner: `pytest`
-- Linter: `ruff` (lint + format)
-- E2E testing: `bats` (Bash automated test system)
-- Task runner: `mise` (see `mise.toml` for all tasks)
-- Code quality gate: `mise run check`
+> TBD (package manager, test runner, linter, formatter, task runner)
 
-## 3. Testing Protocols
+## 3. TESTING_PROTOCOLS
 
 ### Framework
-- Test framework: pytest
-- Test root: `tests/`
-- Test extension: `.py`
-- Test command: `pytest tests/ -v`
-- Lint command: `ruff check .`
-- E2E command: `bats tests/e2e/`
+- TEST_COMMAND: `TBD`
+- LINT_COMMAND: `TBD`
+- TYPE_CHECK_COMMAND: `TBD`
 
 ### Coverage
-- Coverage target: >= 80%
-- RED phase tests must fail with `AssertionError` or `NotImplementedError` — syntax crashes are rejected
-- GREEN phase must pass all tests; Tamper Guard resets unauthorized test edits
-- REFACTOR phase runs regression gate: tests must re-pass after polish
+> TBD
 
 ## 4. Development Workflow
 
-### Branch Strategy
-- Feature branches follow: `feat/<epic-slug>/<issue-slug>`
-- Hotfix branches follow: `fix/<short-description>`
-- All commits must reference the task ID
-
-### Commit Convention
-- Format: `<type>(<scope>): <description>`
-- Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
-- Scope is the task ID (e.g., `T001`)
-- Body wraps at 72 characters
-
-### Review Process
-- All code must pass `mise run check` before merge
-- HITL Gate 3 (Final Merge Audit) is mandatory for all feature work
-- PR descriptions must reference the spec.md acceptance criteria
+> TBD — populated by `/research`.
 
 ## 5. Definition of Done
 
 - [ ] Code implemented (satisfies acceptance criteria from `spec.md`)
-- [ ] Tests passing (pytest with clean exit code 0)
-- [ ] Lint passing (ruff check with no violations)
-- [ ] Judge phase passed (git diff validated against `spec.md` invariants)
-- [ ] E2E tests passing (if applicable; bats for CLI integration)
-- [ ] Documentation updated (`spec.md` and `design.md` reflect final implementation)
-- [ ] No governance violations (constitution rules upheld, no HITL gates bypassed)
-- [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
+- [ ] Tests passing
+- [ ] Lint passing
+- [ ] Documentation updated
+- [ ] No governance violations
 
 ## 6. Version History
 
-- 0.1.0 — Initial constitution generation for DeviaTDD Python CLI
+- 0.1.0 — Initial constitution scaffolded by `deviate init`

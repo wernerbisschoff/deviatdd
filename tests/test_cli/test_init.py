@@ -385,6 +385,32 @@ class TestInitGraphiteFlag:
             content = fpath.read_text()
             assert "## Graphite Stacked Changes Workflow" not in content
 
+    def test_init_scaffolds_constitution_placeholder(self, tmp_path: Path):
+        """Init writes a placeholder specs/constitution.md when none exists."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            const_path = tmp_path / "specs" / "constitution.md"
+            assert const_path.exists()
+            content = const_path.read_text()
+            assert "# Project Constitution" in content
+            assert "TBD" in content
+            assert "## 3. TESTING_PROTOCOLS" in content
+
+    def test_init_scaffold_constitution_idempotent(self, tmp_path: Path):
+        """Re-running init preserves existing specs/constitution.md."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            const_path = tmp_path / "specs" / "constitution.md"
+            original = const_path.read_text()
+
+            result2 = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result2.exit_code == 0, result2.output
+            assert const_path.read_text() == original
+
     def test_init_graphite_governance_section_present(self, tmp_path: Path):
         """AC-ADHOC-007-03: Graphite section present via _apply_governance."""
         from deviate.cli import _apply_governance

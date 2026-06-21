@@ -427,6 +427,31 @@ def _apply_governance(workdir: Path, graphite: bool = False) -> None:
             _upsert_governance_block(agents_path, content)
 
 
+_CONSTITUTION_SEED_MODULE = "deviate.prompts"
+_CONSTITUTION_SEED_FILE = "constitution_seed.md"
+
+
+def _scaffold_constitution(workdir: Path) -> None:
+    """Write a placeholder specs/constitution.md if it doesn't exist.
+
+    The placeholder is populated by ``/research`` during the macro layer.
+    """
+    specs_dir = workdir / "specs"
+    const_path = specs_dir / "constitution.md"
+
+    if const_path.exists():
+        console.print("  [yellow]SKIP[/] specs/constitution.md already exists")
+        return
+
+    seed = _read_seed(_CONSTITUTION_SEED_MODULE, _CONSTITUTION_SEED_FILE)
+    if seed is None:
+        return
+
+    specs_dir.mkdir(parents=True, exist_ok=True)
+    const_path.write_text(seed, encoding="utf-8")
+    console.print(f"  [green]CREATE[/] {const_path.relative_to(workdir)}")
+
+
 def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
     if agent_name == "claude":
         return workdir / ".claude" / "skills"
@@ -527,6 +552,8 @@ def init(
     )
 
     _apply_governance(workdir, graphite=graphite)
+
+    _scaffold_constitution(workdir)
 
     if selected_agent and selected_agent in ("claude", "opencode", "factory"):
         active_agents = [selected_agent]

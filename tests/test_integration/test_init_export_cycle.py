@@ -35,10 +35,13 @@ class TestFullInitCycle:
             claude_path = workdir / "CLAUDE.md"
             agents_path = workdir / "AGENTS.md"
 
+            const_path = workdir / "specs" / "constitution.md"
+
             assert config_path.exists()
             assert session_path.exists()
             assert claude_path.exists()
             assert agents_path.exists()
+            assert const_path.exists()
 
             config_text = config_path.read_text()
             assert 'profile = "default"' in config_text
@@ -52,6 +55,10 @@ class TestFullInitCycle:
 
             agents_text = agents_path.read_text()
             assert "## DeviaTDD Orchestration Rules" in agents_text
+
+            const_text = const_path.read_text()
+            assert "# Project Constitution" in const_text
+            assert "## 3. TESTING_PROTOCOLS" in const_text
 
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
         with chdir(tmp_path):
