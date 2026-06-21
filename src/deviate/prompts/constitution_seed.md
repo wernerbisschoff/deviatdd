@@ -40,7 +40,6 @@ Version: 0.1.0
 > TBD — populated by `/research`.
 
 ## 5. Definition of Done
-
 - [ ] Code implemented (satisfies acceptance criteria from `spec.md`)
 - [ ] Tests passing
 - [ ] Lint passing
