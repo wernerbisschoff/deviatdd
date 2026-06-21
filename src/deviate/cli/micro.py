@@ -2501,6 +2501,21 @@ def _ts_parse_source(source_bytes: bytes) -> Any | None:
         return None
 
 
+def _ts_walk_functions(
+    source_bytes: bytes,
+    callback: Callable[[Any, bytes], list[str]],
+) -> list[str]:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
+        return []
+    root = tree.root_node
+    issues: list[str] = []
+    for child in root.children:
+        if child.type == "function_definition":
+            issues.extend(callback(child, source_bytes))
+    return issues
+
+
 _SCALAR_RETURN_TYPES: dict[str, set[str]] = {
     "str": {"string", "fstring"},
     "int": {"integer"},
@@ -2523,6 +2538,24 @@ def _get_return_value_node(return_stmt: Any) -> Any | None:
     return None
 
 
+def _check_scalar_return_type(fn_name: str, return_type: str, val: Any) -> str | None:
+    expected = _SCALAR_RETURN_TYPES[return_type]
+    if val.type in _LITERAL_TYPES:
+        if val.type not in expected:
+            return f"in {fn_name}: expected {return_type}, got {val.type} literal"
+    elif val.type == "none":
+        return f"in {fn_name}: expected {return_type}, got None"
+    return None
+
+
+_COLLECTION_RETURN_TYPES: dict[str, str] = {
+    "list": "list",
+    "dict": "dictionary",
+    "tuple": "tuple",
+    "set": "set",
+}
+
+
 def _walk_return_types(
     fn_name: str, return_type: str, body_node: Any, source_bytes: bytes
 ) -> list[str]:
@@ -2534,26 +2567,15 @@ def _walk_return_types(
                 continue
 
             if return_type in _SCALAR_RETURN_TYPES:
-                expected = _SCALAR_RETURN_TYPES[return_type]
-                if val.type in _LITERAL_TYPES:
-                    if val.type not in expected:
-                        local_issues.append(
-                            f"in {fn_name}: expected {return_type}, got {val.type} literal"
-                        )
-                elif val.type == "none":
+                issue = _check_scalar_return_type(fn_name, return_type, val)
+                if issue:
+                    local_issues.append(issue)
+            elif return_type in _COLLECTION_RETURN_TYPES:
+                expected_type = _COLLECTION_RETURN_TYPES[return_type]
+                if val.type != expected_type:
                     local_issues.append(
-                        f"in {fn_name}: expected {return_type}, got None"
+                        f"in {fn_name}: expected {return_type}, got {val.type}"
                     )
-
-            elif return_type == "list" and val.type != "list":
-                local_issues.append(f"in {fn_name}: expected list, got {val.type}")
-            elif return_type == "dict" and val.type != "dictionary":
-                local_issues.append(f"in {fn_name}: expected dict, got {val.type}")
-            elif return_type == "tuple" and val.type != "tuple":
-                local_issues.append(f"in {fn_name}: expected tuple, got {val.type}")
-            elif return_type == "set" and val.type != "set":
-                local_issues.append(f"in {fn_name}: expected set, got {val.type}")
-
         elif child.type in (
             "if_statement",
             "for_statement",
@@ -2575,34 +2597,23 @@ def _walk_return_types(
 
 
 def _ts_check_return_type(filepath: str, source_bytes: bytes) -> list[str]:
-    tree = _ts_parse_source(source_bytes)
-    if tree is None:
-        return []
-
-    root = tree.root_node
-    issues: list[str] = []
     known_types = {"str", "int", "float", "bool", "list", "dict", "tuple", "set"}
 
-    for child in root.children:
-        if child.type == "function_definition":
-            name_node = child.child_by_field_name("name")
-            ret_node = child.child_by_field_name("return_type")
-            if name_node is None or ret_node is None:
-                continue
+    def _check_fn(fn_node: Any, source_bytes: bytes) -> list[str]:
+        name_node = fn_node.child_by_field_name("name")
+        ret_node = fn_node.child_by_field_name("return_type")
+        if name_node is None or ret_node is None:
+            return []
+        fn_name = _node_text(name_node, source_bytes)
+        return_type = _node_text(ret_node, source_bytes)
+        if return_type not in known_types:
+            return []
+        body = fn_node.child_by_field_name("body")
+        if body is None:
+            return []
+        return _walk_return_types(fn_name, return_type, body, source_bytes)
 
-            fn_name = _node_text(name_node, source_bytes)
-            return_type = _node_text(ret_node, source_bytes)
-
-            if return_type not in known_types:
-                continue
-
-            body = child.child_by_field_name("body")
-            if body is None:
-                continue
-
-            issues.extend(_walk_return_types(fn_name, return_type, body, source_bytes))
-
-    return issues
+    return _ts_walk_functions(source_bytes, _check_fn)
 
 
 def _ts_check_dead_code(filepath: str, source_bytes: bytes) -> list[str]:
@@ -2642,82 +2653,82 @@ def _ts_check_dead_code(filepath: str, source_bytes: bytes) -> list[str]:
     return issues
 
 
+_COMPLEXITY_NODE_TYPES = frozenset(
+    {
+        "if_statement",
+        "elif_clause",
+        "for_statement",
+        "while_statement",
+        "except_clause",
+        "with_statement",
+    }
+)
+
+
+def _compute_cyclomatic_complexity(fn_node: Any) -> int:
+    complexity = 1
+    stack = [fn_node]
+    while stack:
+        node = stack.pop()
+        if node.type in _COMPLEXITY_NODE_TYPES:
+            complexity += 1
+        elif node.type == "boolean_operator":
+            complexity += 1
+        stack.extend(node.children)
+    return complexity
+
+
+_MAX_COMPLEXITY = 10
+
+
 def _ts_check_cyclomatic_complexity(filepath: str, source_bytes: bytes) -> list[str]:
-    tree = _ts_parse_source(source_bytes)
-    if tree is None:
+    def _check_fn(fn_node: Any, source_bytes: bytes) -> list[str]:
+        name_node = fn_node.child_by_field_name("name")
+        if name_node is None:
+            return []
+        fn_name = _node_text(name_node, source_bytes)
+        fn_line = fn_node.start_point[0] + 1
+        complexity = _compute_cyclomatic_complexity(fn_node)
+        if complexity >= _MAX_COMPLEXITY:
+            return [
+                f"cyclomatic complexity at line {fn_line}: '{fn_name}' has "
+                f"complexity {complexity} (threshold: {_MAX_COMPLEXITY})"
+            ]
         return []
 
-    root = tree.root_node
-    issues: list[str] = []
+    return _ts_walk_functions(source_bytes, _check_fn)
 
-    for child in root.children:
-        if child.type != "function_definition":
-            continue
-        name_node = child.child_by_field_name("name")
-        if name_node is None:
-            continue
-        fn_name = _node_text(name_node, source_bytes)
-        fn_line = child.start_point[0] + 1
 
-        complexity = 1
-        stack = [child]
-        while stack:
-            node = stack.pop()
-            if node.type in (
-                "if_statement",
-                "elif_clause",
-                "for_statement",
-                "while_statement",
-                "except_clause",
-                "with_statement",
-            ):
-                complexity += 1
-            elif node.type == "boolean_operator":
-                complexity += 1
-            stack.extend(node.children)
-
-        max_complexity = 10
-        if complexity >= max_complexity:
-            issues.append(
-                f"cyclomatic complexity at line {fn_line}: '{fn_name}' has "
-                f"complexity {complexity} (threshold: {max_complexity})"
-            )
-
-    return issues
+_MIN_DUPLICATE_LINES = 5
 
 
 def _ts_check_duplication(filepath: str, source_bytes: bytes) -> list[str]:
-    tree = _ts_parse_source(source_bytes)
-    if tree is None:
+    bodies: list[tuple[str, int, str]] = []
+
+    def _collect_fn(fn_node: Any, source_bytes: bytes) -> list[str]:
+        name_node = fn_node.child_by_field_name("name")
+        body = fn_node.child_by_field_name("body")
+        if name_node is None or body is None:
+            return []
+        fn_name = _node_text(name_node, source_bytes)
+        fn_line = fn_node.start_point[0] + 1
+        body_text = _node_text(body, source_bytes)
+        if len(body_text.splitlines()) >= _MIN_DUPLICATE_LINES:
+            bodies.append((fn_name, fn_line, body_text))
         return []
 
-    root = tree.root_node
+    _ts_walk_functions(source_bytes, _collect_fn)
+
     issues: list[str] = []
-
-    bodies: list[tuple[str, int, int, str]] = []
-    for child in root.children:
-        if child.type == "function_definition":
-            name_node = child.child_by_field_name("name")
-            body = child.child_by_field_name("body")
-            if name_node is None or body is None:
-                continue
-            fn_name = _node_text(name_node, source_bytes)
-            fn_line = child.start_point[0] + 1
-            body_text = _node_text(body, source_bytes)
-            body_lines = len(body_text.splitlines())
-            if body_lines >= 5:
-                bodies.append((fn_name, fn_line, body_lines, body_text))
-
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
-            n1, l1, _, t1 = bodies[i]
-            n2, l2, _, t2 = bodies[j]
+            n1, l1, t1 = bodies[i]
+            n2, l2, t2 = bodies[j]
             if t1 == t2:
                 issues.append(
                     f"duplicate code at line {l1}: '{n1}' body identical to '{n2}' "
                     f"at line {l2}"
                 )
-
     return issues
 
 
