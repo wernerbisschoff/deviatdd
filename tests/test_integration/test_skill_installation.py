@@ -105,7 +105,7 @@ class TestSkillInstallation:
     def test_init_graphite_emits_routing_section_in_pr_skill(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """`init --graphite` injects `## Graphite Routing` into installed deviate-pr SKILL.md."""
+        """`init --graphite` injects `<graphite_routing>` into installed deviate-pr SKILL.md."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
@@ -117,7 +117,7 @@ class TestSkillInstallation:
             skill_path = tmp_path / ".opencode" / "skills" / "deviate-pr" / "SKILL.md"
             assert skill_path.exists()
             content = skill_path.read_text(encoding="utf-8")
-            assert "## Graphite Routing" in content
+            assert "<graphite_routing>" in content
             assert "gt submit --stack" in content
 
     def test_init_without_graphite_omits_routing_section_in_pr_skill(
@@ -135,4 +135,4 @@ class TestSkillInstallation:
             skill_path = tmp_path / ".opencode" / "skills" / "deviate-pr" / "SKILL.md"
             assert skill_path.exists()
             content = skill_path.read_text(encoding="utf-8")
-            assert "## Graphite Routing" not in content
+            assert "<graphite_routing>" not in content
