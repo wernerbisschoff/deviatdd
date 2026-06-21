@@ -67,9 +67,6 @@ def _log_run(event: str, **kwargs: object) -> None:
         logger.log(event, **kwargs)
 
 
-
-
-
 def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
     if not ledger_path.exists():
         return False
@@ -967,24 +964,15 @@ def _run_green_phase(
         failure_output = test_result.stdout or ""
         if test_result.stderr:
             failure_output += "\n--- stderr ---\n" + test_result.stderr
-        subprocess.run(
-            ["git", "reset", "--hard", "HEAD"],
-            cwd=root,
-            capture_output=True,
-            env=_git_env(),
-        )
-        subprocess.run(
-            ["git", "clean", "-fd"],
-            cwd=root,
-            capture_output=True,
-            env=_git_env(),
+        c.print(
+            f"  [yellow]TEST_FAILURE[/] {tid} \u2014 keeping implementation for JUDGE assessment"
         )
         session.train_feedback = (
             "The test suite failed after GREEN implementation.\n\n"
             f"<test_output>\n{failure_output}\n</test_output>"
         )
         session.save(session_path)
-        raise PhaseFailedError(f"GREEN phase tests failed for {tid}")
+        return session
 
     _run_format_cmd(root)
 
@@ -1155,6 +1143,8 @@ def _run_judge_phase(
 
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
+    if session.train_feedback:
+        prompt += f"\n\n<test_feedback>\n{session.train_feedback}\n</test_feedback>\n"
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root)
@@ -1529,30 +1519,42 @@ def _run_tdd_cycle(
                     monitor=monitor,
                 )
 
+        green_tests_failed = bool(
+            session.train_feedback and session.current_phase == "GREEN"
+        )
+
         if session.train_feedback:
-            train_attempts += 1
-            if train_attempts >= max_train_attempts:
+            if session.current_phase == "RED":
+                train_attempts += 1
+                if train_attempts >= max_train_attempts:
+                    c.print(
+                        f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
+                        f"after {max_train_attempts} attempts"
+                    )
+                    raise PhaseFailedError(
+                        f"GREEN phase post-cleanup failed for {task.get('id', '?')} "
+                        f"after {max_train_attempts} train attempts"
+                    )
                 c.print(
-                    f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
-                    f"after {max_train_attempts} attempts"
+                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                    f" \u2014 GREEN phase post-cleanup failed, retrying with feedback[/]"
                 )
-                raise PhaseFailedError(
-                    f"GREEN phase post-cleanup failed for {task.get('id', '?')} "
-                    f"after {max_train_attempts} train attempts"
+                _log_run(
+                    "PHASE_DECISION",
+                    task_id=tid,
+                    phase="GREEN",
+                    decision="reroute_to_green",
+                    reason="post_cleanup_failed",
+                    attempt=train_attempts,
                 )
-            c.print(
-                f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                f" — GREEN phase post-cleanup failed, retrying with feedback[/]"
-            )
+                continue
             _log_run(
                 "PHASE_DECISION",
                 task_id=tid,
                 phase="GREEN",
-                decision="reroute_to_green",
-                reason="post_cleanup_failed",
-                attempt=train_attempts,
+                decision="tests_failed",
+                reroute="JUDGE",
             )
-            continue
 
         if no_judge:
             judge_passed = True
@@ -1565,7 +1567,7 @@ def _run_tdd_cycle(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
 
-        if session.train_feedback:
+        if session.train_feedback or green_tests_failed:
             train_attempts += 1
             if train_attempts >= max_train_attempts:
                 c.print(
@@ -1576,10 +1578,22 @@ def _run_tdd_cycle(
                     f"JUDGE phase rejected {task.get('id', '?')} "
                     f"after {max_train_attempts} train attempts"
                 )
-            c.print(
-                f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                f" — re-running GREEN with judge feedback[/]"
-            )
+            if session.train_feedback:
+                c.print(
+                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                    f" \u2014 re-running GREEN with judge feedback[/]"
+                )
+            else:
+                session.train_feedback = (
+                    "GREEN implementation tests failed. "
+                    "The implementation must be corrected to pass the test suite."
+                )
+                session = session.force_transition_to("GREEN")
+                session.save(session_path)
+                c.print(
+                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                    f" \u2014 tests still failing, re-running GREEN with test feedback[/]"
+                )
             _log_run(
                 "PHASE_DECISION",
                 task_id=tid,

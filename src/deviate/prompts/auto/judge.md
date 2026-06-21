@@ -58,6 +58,7 @@ After completion:
 | Governance Compliance | High | All mandatory gates, phase sequences, and review checkpoints preserved |
 | Behavioral Invariance | High | No unauthorized side effects, state mutations, or interface breakage |
 | Boundary Discipline | Medium | Changes respect module boundaries; no unauthorized cross-boundary access |
+| Test Correctness | High | If `<test_feedback>` is present, evaluate whether the implementation is responsible for the test failures and flag as COMPLIANCE_VIOLATION |
 
 </evaluation_criteria>
 
@@ -152,6 +153,7 @@ diff_summary:
 | All changes in protected modules | Flag as COMPLIANCE_VIOLATION with severity based on change impact |
 | Pre-existing violations (not from this task) | Flag only violations introduced by this task's diff |
 | `--no-judge` flag | Skipped by orchestrator |
+| `<test_feedback>` present with failures | Evaluate whether GREEN implementation caused the failures; if so, COMPLIANCE_VIOLATION with test-failure detail |
 
 </edge_case_handling>
 
