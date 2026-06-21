@@ -458,17 +458,25 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate review pre [--base <branch>] [--branch <branch>]`
 
 * **Source:** `src/deviate/cli/review.py`
-* **Description:** Gathers git state and governance context for a lightweight PR/merge
-  review at HITL Gate 3. Computes the unified diff between the merge-base of `--base`
-  (default: `main`) and `--branch` (default: `HEAD`), resolves the constitution path,
-  resolves the PRD path from the branch name, and checks for existing review reports.
-  Emits a JSON contract for consumption by the review skill (V4 Flash, single-pass).
-  No report file is persisted — findings are surfaced in chat for human judgment.
+* **Description:** Gathers git state, governance context, and AST structural diff for a
+  comprehensive multi-domain PR/merge review at HITL Gate 3. Computes the unified diff
+  between the merge-base of `--base` (default: `main`) and `--branch` (default: `HEAD`),
+  resolves constitution/PRD/spec/design/data-model paths from the branch name,
+  categorizes changed files by directory (core/tests/specs/config/prompts/other),
+  computes a **tree-sitter AST structural diff** (added/removed/modified function
+  signatures, cyclomatic complexity >=10 warnings, dead function candidates, import
+  changes) between the merge-base and current branch for all changed Python files,
+  and emits a full JSON contract (30+ fields) matching the tools-review format for
+  consumption by the review skill (V4 Flash, single-pass). Reports are persisted as
+  timestamped markdown files under `.deviate/review/reports/` via `deviate review post`.
 * **Input Parameters:**
   * `--base <branch>` (Base branch for merge-base computation; default: `main`)
   * `--branch <branch>` (Target branch for self-contained review; default: `HEAD`)
-* **Output Artifacts:** JSON contract with `diff`, `constitution_path`, `prd_path`,
-  `constitution_warning`, `prd_warning`, `base_branch`, `report_exists`, `timestamp`.
+* **Output Artifacts:** JSON contract (30+ fields) including `files.filtered`,
+  `files.categories`, `files.review_strategy`, `scope.merge_base`, `governance.*`,
+  `diff_path`, `branch_diff_path`, `stat_path`, `recent_commits_path`,
+  `ast_diff_path`, `ast_diff_summary`, `report_exists`, `timestamp`. Full contract
+  structure documented in `src/deviate/cli/review.py` contract emission block.
 
 ---
 

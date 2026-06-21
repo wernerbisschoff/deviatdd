@@ -57,11 +57,17 @@ Breaks a business goal down into standard development project containers.
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
-`/deviate-plan` phase for per-issue localized research. A lightweight PR/merge review is handled by the `/deviate-review` skill using
+`/deviate-plan` phase for per-issue localized research. A comprehensive PR/merge review is handled by the `/deviate-review` skill using
 `deviate review pre` (see `src/deviate/cli/review.py`) at HITL Gate 3. It
-runs a fast single-pass scan (V4 Flash) over ledger integrity, cross-task
-consistency, and security surface — surfacing findings in chat for human
-judgment rather than persisting report files.
+runs a multi-domain analysis (V4 Flash) over 7 domains: AST structural,
+security, pragmatism, idiomacy, clean code, constitution, and PRD alignment.
+The `pre` command computes a tree-sitter AST structural diff between the
+merge-base and current branch — compactly listing added/removed/modified
+function signatures, cyclomatic complexity warnings (CC>=10), dead function
+candidates, and import changes. This AST diff is written to a temp file and
+referenced in the JSON contract, giving the review agent the cheapest,
+highest-signal data first. Reports are persisted as timestamped markdown
+files under `.deviate/review/reports/` via `deviate review post`.
 
 * **Shard+Specify (merged):** The `/deviate-shard` skill now produces issue files with full
   spec-level detail: user stories (US-NNN), Gherkin acceptance criteria (Given/When/Then),
