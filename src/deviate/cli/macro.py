@@ -31,6 +31,7 @@ from deviate.core.epic import (
 )
 from deviate.core.prd import extract_prd_requirements
 from deviate.core.repo import find_repo_root
+from deviate.core.treesitter import extract_file_structure
 from deviate.core.validation import (
     ARTIFACT_VALIDATORS,
     extract_section_body,
@@ -539,6 +540,65 @@ def prd_post(
 shard_app = typer.Typer(no_args_is_help=True, help="Shard phase commands")
 
 
+def _build_codebase_structure_appendix() -> str:
+    src_root = Path("src")
+    if not src_root.is_dir():
+        return ""
+
+    sections: list[str] = []
+    for py_file in sorted(src_root.rglob("*.py")):
+        content = py_file.read_text(encoding="utf-8")
+        if not content.strip():
+            continue
+        try:
+            structure = extract_file_structure(content)
+        except Exception:
+            continue
+
+        lines: list[str] = [f"### {py_file}"]
+        if structure.get("imports"):
+            lines.append(f"- Imports: {', '.join(structure['imports'])}")
+        func_entries = _format_function_entries(structure.get("functions", {}))
+        if func_entries:
+            lines.append(f"- Functions: {', '.join(func_entries)}")
+        cls_entries = _format_class_entries(structure.get("classes", {}))
+        if cls_entries:
+            lines.append(f"- Classes: {', '.join(cls_entries)}")
+        sections.append("\n".join(lines))
+
+    if not sections:
+        return ""
+    return "## Codebase Structure\n\n" + "\n\n".join(sections)
+
+
+def _format_function_entries(
+    functions: dict[str, dict[str, list[str] | str | None]],
+) -> list[str]:
+    entries: list[str] = []
+    for fname, finfo in functions.items():
+        params = ", ".join(finfo.get("params", []))  # type: ignore[arg-type]
+        ret = finfo.get("return_type") or ""
+        sig = f"{fname}({params})"
+        if ret:
+            sig += f" -> {ret}"
+        entries.append(sig)
+    return entries
+
+
+def _format_class_entries(
+    classes: dict[str, dict[str, dict[str, list[str] | str | None]]],
+) -> list[str]:
+    entries: list[str] = []
+    for cname, cinfo in classes.items():
+        methods = cinfo.get("methods", {})
+        if methods:
+            mlist = ", ".join(methods.keys())
+            entries.append(f"{cname} (methods: {mlist})")
+        else:
+            entries.append(cname)
+    return entries
+
+
 @shard_app.command("pre")
 @with_json_quiet
 def shard_pre(
@@ -573,6 +633,8 @@ def shard_pre(
     artifacts_dir = Path(".deviate") / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
+    codebase_structure_appendix = _build_codebase_structure_appendix()
+
     _emit_contract(
         "SHARD",
         session,
@@ -585,6 +647,7 @@ def shard_pre(
         plan_target=str(artifacts_dir / "manifest_shard.json"),
         issue_id=session.active_issue_id or "",
         shard_count=shard_count,
+        codebase_structure_appendix=codebase_structure_appendix or "",
     )
 
 
