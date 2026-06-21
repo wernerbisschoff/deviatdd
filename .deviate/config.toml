@@ -1,5 +1,4 @@
 profile = "default"
-llm_backend = "opencode"
 timeout_seconds = 300
 agent_export_mode = "local"
 

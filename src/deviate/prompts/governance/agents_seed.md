@@ -57,15 +57,15 @@ Use `mise run <task>` for all execution:
 | `mise run clean` | Remove artifacts |
 | `mise run help` | List tasks |
 
-## Offline Context Documentation System
+## Offline Documentation System
 
-The `context` CLI (`~/.local/share/mise/installs/node/24.14.0/bin/context`) is a local-first documentation MCP server for AI agents. It provides offline-queryable API docs for all project dependencies. **Always prefer `context query <library> <topic>` over web fetching** — results are local, instant, and token-cheap.
+The `libref` CLI is a local-first documentation tool for AI agents. It provides offline-queryable API docs for all project dependencies. **Always prefer `libref query <library> <topic>` over web fetching** — results are local, instant, and token-cheap.
 
 ### Usage Rules
-- **Discovery first**: Run `context list` to see available documentation packages before querying a library.
-- **Primary lookup**: Use `context query <library@version> "<topic>"` as the first and primary documentation mechanism for all library/framework API questions.
-- **Registration**: When a dependency is not yet indexed, use `context add <source>` (git repo URL) to register its documentation.
-- **Fallback hierarchy**: `context query` → training data → web fetch (last resort). Web fetching is only acceptable when `context` has no documentation for the required library.
+- **Discovery first**: Run `libref list` to see available documentation packages before querying a library.
+- **Primary lookup**: Use `libref query <library@version> "<topic>"` as the first and primary documentation mechanism for all library/framework API questions.
+- **Registration**: When a dependency is not yet indexed, use `libref add <source>` (git repo URL) to register its documentation.
+- **Fallback hierarchy**: `libref query` → training data → web fetch (last resort). Web fetching is only acceptable when `libref` has no documentation for the required library.
 
 ### Quick-Start Workflow
 1. Run `deviate explore` to scan the codebase

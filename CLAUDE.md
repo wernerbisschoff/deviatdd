@@ -196,46 +196,21 @@ the `prompts/` directory. The `mise.toml` file defines all task execution via
 When a skill file references `<SKILL_DIR>/<script>.sh`, resolve `<SKILL_DIR>` to
 `src/deviate/prompts/skills/<name>/` and use `deviate <subcommand>` instead.
 
-## 📚 Context-Aware Documentation (MANDATORY)
+## 📚 Offline Documentation System (MANDATORY)
 
-The `context` CLI (`~/.local/share/mise/installs/node/24.14.0/bin/context`) is a local-first documentation
-MCP server for AI agents. It provides offline-queryable API docs for all project dependencies.
-**Always prefer `context query <lib> <topic>` over web fetching** — results are local, instant, and
+The `libref` CLI is a local-first documentation tool for AI agents. It provides offline-queryable API docs for all project dependencies.
+**Always prefer `libref query <lib> <topic>` over web fetching** — results are local, instant, and
 token-cheap.
 
-### Installed Packages
-
-| Package | Sections | Coverage |
-|---------|----------|----------|
-| `python@3.13` | 5,047 | stdlib + library reference |
-| `typer@0.12` | 302 | CLI framework |
-| `rich@13.8` | 170 | terminal formatting |
-| `pytest@9.0` | 952 | test framework |
-| `pydantic@2.13.4` | 508 | data validation |
-
-### Query Usage
+### Usage
 
 ```
-context query <library@version> "<topic>"
+libref query <library@version> "<topic>"
+libref add <git-repo-url> --name <lib> --path docs --tag <semver>
+libref list
 ```
 
-Examples:
-```
-context query python@3.13 "subprocess run"
-context query typer@0.12 "create command"
-context query rich@13.8 "console print"
-context query pytest@9.0 "fixture scope"
-context query pydantic@2.13.4 "BaseModel field types"
-```
-
-### Documentation Refresh
-
-When a dependency version changes, update its docs:
-```
-context add <git-repo-url> --name <lib> --path docs --tag <semver>
-```
-
-See `/Users/werner/Development/tools/context/` for the tool source.
+See `libref --help` for full usage.
 
 ## Prompt Edit Discipline
 

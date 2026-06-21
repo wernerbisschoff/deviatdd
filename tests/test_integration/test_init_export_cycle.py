@@ -72,7 +72,6 @@ class TestFullInitCycle:
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)
             assert data.get("profile") == "default"
-            assert data.get("llm_backend") == "droid"
             assert data.get("timeout_seconds") == 300
             assert data.get("agent_export_mode") == "local"
 

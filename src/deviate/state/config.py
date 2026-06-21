@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class AgentConfig(BaseModel):
+    # Agent backend: "opencode", "claude", or "droid"
     backend: Literal["opencode", "claude", "droid"] = "opencode"
+    # Agent invocation timeout in seconds (must be > 0)
     timeout: int = Field(default=600, gt=0)
 
     model_config = {"extra": "forbid"}
@@ -96,13 +98,19 @@ def normalize_task_id(ref: str) -> str:
 
 
 class DeviateConfig(BaseModel):
+    # Profile name — defines preset config groups (default, full, fast, secure)
     profile: str = "default"
-    llm_backend: str = "droid"
+    # CLI inactivity timeout in seconds (must be > 0)
     timeout_seconds: int = Field(default=300, gt=0)
+    # Agent export mode: "local" (project .claude/) or "global" (~/.claude/)
     agent_export_mode: Literal["local", "global"] = "local"
+    # Agent backend config (opencode, claude, or droid)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    # Per-phase model overrides, e.g. default = "opencode/deepseek-v4-flash"
     models: dict[str, str] = Field(default_factory=dict)
-    use_context: bool = False
+    # Enable the libref CLI for offline documentation lookups
+    use_libref: bool = False
+    # Enable Graphite CLI integration for stacked changes
     graphite: bool = Field(default=False)
 
     model_config = {"extra": "forbid"}

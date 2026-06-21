@@ -42,7 +42,7 @@ Instructions:
 - For each viable option, evaluate across: complexity, testability, alignment with constitution (if greenfield, evaluate against the newly bootstrapped constraints), alignment with existing patterns, reversibility, blast radius.
 - If only one option satisfies all constraints, apply the Single Option Dominance Rule and emit it alone in the matrix with a `## Rejected Options` block enumerating the alternatives considered and the exact reason for rejection.
 - Every claim in the matrix and trade-offs MUST reference back to a source path or a verbatim quote.
-- **Token Efficiency**: Rely primarily on `explore.md`. Use `context query <library> <topic>` for library-specific design decisions — it provides offline, version-pinned documentation without network overhead. Use web search tools ONLY as a last resort to resolve a critical, blocking ambiguity. Do not re-discover facts already in `explore.md`.
+- **Token Efficiency**: Rely primarily on `explore.md`. Use `libref query <library> <topic>` for library-specific design decisions — it provides offline, version-pinned documentation without network overhead. Use web search tools ONLY as a last resort to resolve a critical, blocking ambiguity. Do not re-discover facts already in `explore.md`.
 </subagent_alpha_prompt>
 
 <subagent_beta_prompt>

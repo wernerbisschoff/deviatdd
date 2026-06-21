@@ -75,6 +75,20 @@ def main(
     """DeviaTDD CLI — agent orchestration framework"""
 
 
+# TOML comment annotations for DeviateConfig fields — emitted as `#` lines
+# before their corresponding key in .deviate/config.toml.  These are the
+# primary documentation surface for end users editing config by hand.
+_CONFIG_TOML_COMMENTS: dict[str, str] = {
+    "profile": 'Preset config group: "default", "full", "fast", or "secure"',
+    "timeout_seconds": "CLI inactivity timeout in seconds (must be > 0)",
+    "agent_export_mode": 'Agent export mode: "local" (project) or "global" (~/.claude/)',
+    "agent": "Agent backend configuration",
+    "models": "Per-phase model overrides; key = phase name, value = model ID",
+    "use_libref": "Enable the libref CLI for offline documentation lookups",
+    "graphite": "Enable Graphite CLI integration for stacked changes",
+}
+
+
 def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
@@ -99,7 +113,7 @@ def _serialize_value(key: str, value: object) -> str:
     return f'{key} = "{escaped}"'
 
 
-def _dict_to_toml(data: dict) -> str:
+def _dict_to_toml(data: dict, comments: dict[str, str] | None = None) -> str:
     lines: list[str] = []
     # Emit all scalar top-level keys FIRST, then all tables. TOML has no
     # "back to root" syntax — once a [table] header is written, any subsequent
@@ -116,16 +130,17 @@ def _dict_to_toml(data: dict) -> str:
             scalars.append((key, value))
 
     for key, value in scalars:
+        if comments and key in comments:
+            lines.append(f"# {comments[key]}")
         line = _serialize_value(key, value)
         if line:
             lines.append(line)
 
     for key, value in tables:
         if not value:
-            # Skip empty tables — emitting `[key]` would still consume the
-            # section header even with no entries, and any later bare keys
-            # would nest under it.
             continue
+        if comments and key in comments:
+            lines.append(f"\n# {comments[key]}")
         lines.append(f"\n[{key}]")
         for k, v in value.items():
             line = _serialize_value(k, v)
@@ -286,8 +301,8 @@ def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
     console.print(f"  [green]UPDATE[/] {target_path.name} block replaced")
 
 
-def _detect_context() -> bool:
-    return shutil.which("context") is not None
+def _detect_libref() -> bool:
+    return shutil.which("libref") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +343,7 @@ def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
     """Surgically upsert ``[agent]\nbackend = "<value>"`` in *config_path*.
 
     Preserves every other key/table in the file (similar in spirit to
-    :func:`_merge_flag_keys` for the boolean ``graphite`` / ``use_context``
+    :func:`_merge_flag_keys` for the boolean ``graphite`` / ``use_libref``
     keys, but for the nested ``[agent]`` table).
 
     Returns ``True`` when the file was modified, ``False`` when the
@@ -404,16 +419,16 @@ def _validate_agent_choice(value: str | None) -> str | None:
     return value
 
 
-def _merge_flag_keys(config_path: Path, *, graphite: bool, use_context: bool) -> None:
-    """Surgically update ``graphite`` and ``use_context`` keys in an existing TOML.
+def _merge_flag_keys(config_path: Path, *, graphite: bool, use_libref: bool) -> None:
+    """Surgically update ``graphite`` and ``use_libref`` keys in an existing TOML.
 
     Preserves every other key/table (e.g. user-customised ``[models]``).
-    Used when ``init --graphite`` or ``init --context`` is re-run on a workspace
+    Used when ``init --graphite`` or ``init --libref`` is re-run on a workspace
     whose ``.deviate/config.toml`` already exists — the idempotency guard in
     ``_write_if_missing`` would otherwise silently drop the new flag values.
     """
     content = config_path.read_text(encoding="utf-8")
-    for key, value in (("graphite", graphite), ("use_context", use_context)):
+    for key, value in (("graphite", graphite), ("use_libref", use_libref)):
         new_line = f"{key} = {'true' if value else 'false'}"
         pattern = re.compile(rf"^{re.escape(key)}\s*=\s*.*$", re.MULTILINE)
         if pattern.search(content):
@@ -434,7 +449,7 @@ def _merge_flag_keys(config_path: Path, *, graphite: bool, use_context: bool) ->
 def _scaffold_dotfiles(
     workdir: Path,
     agent_export_mode: str,
-    use_context: bool = False,
+    use_libref: bool = False,
     graphite: bool = False,
     force_update_flags: bool = False,
     agent_backend: str | None = None,
@@ -448,13 +463,13 @@ def _scaffold_dotfiles(
         console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     elif config_path.exists():
         # Existing config: only touch the keys the caller asked us to touch.
-        # `use_context` and `graphite` are only ever upserted when the
+        # `use_libref` and `graphite` are only ever upserted when the
         # corresponding flag was passed (force_update_flags).  `agent_backend`
         # is always upserted when provided so `--agent factory` can overwrite
         # a previously persisted backend.
         changed = False
         if force_update_flags:
-            _merge_flag_keys(config_path, graphite=graphite, use_context=use_context)
+            _merge_flag_keys(config_path, graphite=graphite, use_libref=use_libref)
             changed = True
         if agent_backend is not None:
             changed = (
@@ -467,7 +482,7 @@ def _scaffold_dotfiles(
     else:
         config = DeviateConfig(
             agent_export_mode=agent_export_mode,
-            use_context=use_context,
+            use_libref=use_libref,
             graphite=graphite,
         )
         if agent_backend is not None:
@@ -476,7 +491,10 @@ def _scaffold_dotfiles(
                     "agent": config.agent.model_copy(update={"backend": agent_backend})
                 }
             )
-        _write_if_missing(config_path, _dict_to_toml(config.model_dump()))
+        _write_if_missing(
+            config_path,
+            _dict_to_toml(config.model_dump(), comments=_CONFIG_TOML_COMMENTS),
+        )
 
     session = SessionState()
     session_path = dot_dir / "session.json"
@@ -579,10 +597,10 @@ def init(
     graphite: bool = typer.Option(
         False, "--graphite", help="Enable Graphite CLI integration for stacked changes"
     ),
-    context: bool = typer.Option(
+    libref: bool = typer.Option(
         False,
-        "--context",
-        help="Force-enable offline context CLI integration (overrides PATH detection)",
+        "--libref",
+        help="Force-enable offline libref CLI integration (overrides PATH detection)",
     ),
     agent: str | None = typer.Option(
         None,
@@ -613,13 +631,13 @@ def init(
 
     backend = _resolve_agent_to_backend(selected_agent)
 
-    use_context = True if context else _detect_context()
+    use_libref_val = True if libref else _detect_libref()
     _scaffold_dotfiles(
         workdir,
         agent_export_mode,
-        use_context=use_context,
+        use_libref=use_libref_val,
         graphite=graphite,
-        force_update_flags=graphite or context,
+        force_update_flags=graphite or libref,
         agent_backend=backend,
     )
 
@@ -641,6 +659,27 @@ def init(
         _install_skills_to_agents(workdir, active_agents)
 
     _ensure_gitignore(workdir)
+
+    if selected_agent == "opencode":
+        _ensure_opencode_index_gitignored(workdir)
+
+
+def _ensure_opencode_index_gitignored(workdir: Path) -> None:
+    """Add ``.opencode/index/`` to the project root ``.gitignore``.
+
+    The opencode agent index is a local cache that must never be committed.
+    """
+    gitignore_path = workdir / ".gitignore"
+    entry = ".opencode/index/"
+    if gitignore_path.exists():
+        content = gitignore_path.read_text(encoding="utf-8")
+        if entry not in content:
+            content = content.rstrip("\n") + f"\n{entry}\n"
+            gitignore_path.write_text(content, encoding="utf-8")
+            console.print(f"  [green]UPDATE[/] .gitignore added {entry}")
+    else:
+        gitignore_path.write_text(f"{entry}\n", encoding="utf-8")
+        console.print(f"  [green]CREATE[/] .gitignore with {entry}")
 
 
 cli.add_typer(explore_app, name="explore")

@@ -175,18 +175,18 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             assert session_path.exists()
 
-    def test_init_detects_context(self, tmp_path: Path):
+    def test_init_detects_libref(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
-                mock_which.return_value = "/usr/local/bin/context"
+                mock_which.return_value = "/usr/local/bin/libref"
                 result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = true" in content
+            assert "use_libref = true" in content
 
-    def test_init_missing_context(self, tmp_path: Path):
+    def test_init_missing_libref(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
@@ -195,56 +195,52 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = false" in content
+            assert "use_libref = false" in content
 
-    def test_init_context_governance_block(self, tmp_path: Path):
+    def test_init_libref_governance_block(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
-                mock_which.return_value = "/usr/local/bin/context"
+                mock_which.return_value = "/usr/local/bin/libref"
                 result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             claude_path = workdir / "CLAUDE.md"
             assert claude_path.exists()
             claude_content = claude_path.read_text()
-            assert "## Offline Context Documentation System" in claude_content
-            assert "context query" in claude_content
-            assert "context list" in claude_content
-            assert "context add" in claude_content
+            assert "## Offline Documentation System" in claude_content
+            assert "libref query" in claude_content
+            assert "libref list" in claude_content
+            assert "libref add" in claude_content
 
             agents_path = workdir / "AGENTS.md"
             assert agents_path.exists()
             agents_content = agents_path.read_text()
-            assert "## Offline Context Documentation System" in agents_content
+            assert "## Offline Documentation System" in agents_content
 
-    def test_init_context_flag_overrides_missing_binary(self, tmp_path: Path):
-        """--context forces use_context=true even when shutil.which returns None."""
+    def test_init_libref_flag_overrides_missing_binary(self, tmp_path: Path):
+        """--libref forces use_libref=true even when shutil.which returns None."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = true" in content
+            assert "use_libref = true" in content
 
-    def test_init_context_flag_overrides_detected_binary(self, tmp_path: Path):
-        """--context stays true when binary is detected (no double-flip)."""
+    def test_init_libref_flag_overrides_detected_binary(self, tmp_path: Path):
+        """--libref stays true when binary is detected (no double-flip)."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
-                mock_which.return_value = "/usr/local/bin/context"
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                mock_which.return_value = "/usr/local/bin/libref"
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = true" in content
+            assert "use_libref = true" in content
 
     def test_init_graphite_key_at_toml_top_level(self, tmp_path: Path):
         """--graphite persists `graphite` at TOML top-level, not nested under [models]."""
@@ -259,43 +255,41 @@ class TestInitCommand:
                 f"models={parsed.get('models')}"
             )
 
-    def test_init_use_context_key_at_toml_top_level(self, tmp_path: Path):
-        """--context persists `use_context` at TOML top-level, not nested under [models]."""
+    def test_init_use_libref_key_at_toml_top_level(self, tmp_path: Path):
+        """--libref persists `use_libref` at TOML top-level, not nested under [models]."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("use_context") is True, (
-                f"use_context missing at top-level; got keys: {list(parsed.keys())} / "
+            assert parsed.get("use_libref") is True, (
+                f"use_libref missing at top-level; got keys: {list(parsed.keys())} / "
                 f"models={parsed.get('models')}"
             )
 
-    def test_init_graphite_and_context_combined(self, tmp_path: Path):
-        """--graphite --context together: both flags at top-level AND both governance sections."""
+    def test_init_graphite_and_libref_combined(self, tmp_path: Path):
+        """--graphite --libref together: both flags at top-level AND both governance sections."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
                 result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--graphite", "--context"]
+                    cli, ["init", "--agent", "opencode", "--graphite", "--libref"]
                 )
             assert result.exit_code == 0, result.output
 
             config_path = workdir / ".deviate" / "config.toml"
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("graphite") is True
-            assert parsed.get("use_context") is True
+            assert parsed.get("use_libref") is True
 
             for fname in ["CLAUDE.md", "AGENTS.md"]:
                 content = (workdir / fname).read_text()
                 assert "## Graphite Stacked Changes Workflow" in content
-                assert "## Offline Context Documentation System" in content
+                assert "## Offline Documentation System" in content
 
     def test_resolve_graphite_config_round_trip_after_init(self, tmp_path: Path):
         """init --graphite produces a config that resolve_graphite_config() reads as True."""
@@ -318,22 +312,20 @@ class TestInitCommand:
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("graphite") is True
 
-    def test_init_context_updates_existing_config(self, tmp_path: Path):
-        """Re-running init --context on existing repo persists use_context = true."""
+    def test_init_libref_updates_existing_config(self, tmp_path: Path):
+        """Re-running init --libref on existing repo persists use_libref = true."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which", return_value=None):
                 runner.invoke(cli, ["init", "--agent", "opencode"])
             config_path = workdir / ".deviate" / "config.toml"
-            assert "use_context = false" in config_path.read_text()
+            assert "use_libref = false" in config_path.read_text()
 
             with patch("shutil.which", return_value=None):
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("use_context") is True
+            assert parsed.get("use_libref") is True
 
     def test_init_graphite_preserves_other_config_keys(self, tmp_path: Path):
         """init --graphite on existing config preserves user [models] section."""
