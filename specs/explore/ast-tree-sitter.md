@@ -5,17 +5,21 @@
 [Statement]: Investigate how AST parsing — specifically Tree-sitter — can be integrated into the DeviaTDD system to enhance structural code analysis, spec compliance verification, and codebase understanding across macro, meso, and micro layers.
 
 [Scope]:
-- Existing AST usage in the DeviaTDD codebase (stdlib `ast` module)
+- Existing AST usage in the DeviaTDD codebase (stdlib `ast` module — Python-only)
+- Tree-sitter as a language-agnostic AST/CST engine: unified parser factory supporting 100+ grammars via `tree-sitter-languages`
+- Language coverage for JUDGE/PLAN/REFACTOR targets: Python, JavaScript, TypeScript, Rust, Golang, C++, Elixir, C#, Markdown, Bash, JSON, TOML, YAML, HTML, CSS, SQL, Dockerfile, Terraform, Kotlin, Swift (20-language set)
 - The three-layer architecture (macro/meso/micro) and phase-by-phase integration potential
 - Tree-sitter vs stdlib `ast` vs complementary tools (Semgrep, ast-grep, LibCST)
-- Concrete insertion points in JUDGE, REFACTOR, PLAN, and GREEN phases
-- Ecosystem tooling research for structural pattern matching in Python codebases
+- Concrete insertion points in JUDGE, REFACTOR, PLAN
+- Per-language query patterns (S-expression) for: function/class signature extraction, dead-code detection, duplication detection, cyclomatic complexity estimation
+- Ecosystem tooling research for structural pattern matching
 
 [Exclusions]:
 - No architectural decisions or trade-off evaluations (deferred to `deviate-research`)
 - No implementation code or integration work
-- No analysis of non-Python languages (DeviaTDD is Python-only)
 - No risk analysis or failure-mode speculation
+- No custom grammar compilation — all grammars sourced pre-built from `tree-sitter-languages`
+- No type-system analysis (structural AST only, not semantic type checking)
 
 ## Discovery Audit Results
 
@@ -120,7 +124,7 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
 
 This is a lightweight return-type mismatch checker for builtin types (`str`, `int`, `float`, `bool`, `list`, `dict`, `tuple`, `set`). It walks `FunctionDef` nodes and checks `Return` statements against return annotations. Invoked from `refactor_post()` — on mismatch detection, `git restore .` is called and pipeline halts.
 
-**Key limitation**: Uses stdlib `ast` which discards comments, whitespace, and formatting. Single-shot parsing (no incremental). Python-only.
+**Key limitation**: Uses stdlib `ast` which discards comments, whitespace, and formatting. Single-shot parsing (no incremental). Python-only — no support for JS, TS, Rust, Go, C++, Elixir, C#, or any non-Python language.
 
 ## Ecosystem Research
 
@@ -150,6 +154,49 @@ This is a lightweight return-type mismatch checker for builtin types (`str`, `in
 | **Astroid** | Python only | Pylint engine | stdlib `_ast` rebuild | Static type inference + scope resolution |
 | **Tree-sitter** (Python) | 100+ grammars | Generic AST, pattern matching | C library | Incremental parsing, `Query`/`QueryCursor` |
 | **Python stdlib `ast`** | Python only | Compilation, basic analysis | CPython parser | Zero deps, `NodeTransformer`/`NodeVisitor` |
+
+## Language Support Matrix (tree-sitter-languages)
+
+The `tree-sitter-languages` Python package bundles pre-compiled grammars for 100+ languages.
+The 20-language support set for DeviaTDD JUDGE/PLAN/REFACTOR phases:
+
+| Language | Grammar ID | File Extensions | Query Pattern Coverage |
+| :--- | :--- | :--- | :--- |
+| **Python** | `python` | `.py` | function_definition, class_definition, call, import_statement |
+| **JavaScript** | `javascript` | `.js`, `.mjs`, `.cjs` | function_declaration, class_declaration, arrow_function, export_statement |
+| **TypeScript** | `typescript` | `.ts`, `.mts`, `.cts` | function_declaration, class_declaration, interface_declaration, type_alias |
+| **TSX** | `tsx` | `.tsx` | (TS nodes + jsx_element) |
+| **Rust** | `rust` | `.rs` | function_item, struct_item, impl_item, trait_item, enum_item |
+| **Go** | `go` | `.go` | function_declaration, method_declaration, type_spec |
+| **C++** | `cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.h` | function_definition, class_specifier, template_declaration |
+| **Elixir** | `elixir` | `.ex`, `.exs` | def, defmodule, defstruct, defprotocol, defimpl |
+| **C#** | `c_sharp` | `.cs` | method_declaration, class_declaration, interface_declaration |
+| **Markdown** | `markdown` | `.md`, `.mdx` | section, fenced_code_block, list_item, link, emphasis |
+| **Bash** | `bash` | `.sh`, `.bash`, `.zsh` | function_definition, command, variable_assignment, if_statement, for_statement |
+| **JSON** | `json` | `.json` | object, array, pair, string, number |
+| **TOML** | `toml` | `.toml` | table, key_value, dotted_key, array_of_tables |
+| **YAML** | `yaml` | `.yaml`, `.yml` | document, block_mapping, block_sequence, flow_node |
+| **HTML** | `html` | `.html`, `.htm` | element, attribute, doctype, comment, script_element, style_element |
+| **CSS** | `css` | `.css`, `.scss`, `.less` | rule_set, declaration, selector, property_name, property_value |
+| **SQL** | `sql` | `.sql` | statement, create_table, select, insert, update, delete, function_definition |
+| **Dockerfile** | `dockerfile` | `Dockerfile`, `.dockerfile` | from, run, cmd, entrypoint, env, expose, volume, workdir, copy, add |
+| **Terraform** | `hcl` | `.tf`, `.tfvars` | block, attribute, resource, variable, output, provider, module, locals |
+| **Kotlin** | `kotlin` | `.kt`, `.kts` | function_declaration, class_declaration, interface_declaration, property_declaration |
+| **Swift** | `swift` | `.swift` | function_declaration, class_declaration, struct_declaration, protocol_declaration, enum_declaration |
+
+**Detection strategy**: File extension → grammar ID via static mapping dictionary.
+**Fallback**: Unknown extension → log warning and skip file (graceful degradation, no crash).
+
+### Extensibility: Adding a New Language
+
+Adding a language requires exactly 2 steps — no changes to any analysis function:
+
+1. **1-line EXTENSION_MAP entry** in `treesitter.py`: `".nim" → "nim"`
+2. **1 `.scm` query file** in `queries/`: `nim.scm` with node patterns for function/class/extraction
+
+The core functions (`extract_changed_symbols`, `extract_file_structure`, `extract_dead_code`, `detect_duplicate_blocks`, `estimate_cyclomatic_complexity`) are language-agnostic — they dispatch to `get_parser()` which reads the extension map, then apply the per-language query file. New languages require zero changes to any analysis logic.
+
+Future enhancements could include a `register_language(ext: str, grammar_id: str, query_path: str)` API for plugin-driven registration without modifying the source map.
 
 ## File Registry
 
@@ -189,27 +236,27 @@ This is a lightweight return-type mismatch checker for builtin types (`str`, `in
 
 | Metric | Value |
 | :--- | :--- |
-| Estimated Complexity | Medium |
-| Files Likely Modified | 4-7 key files: `src/deviate/prompts/auto/judge.md`, `src/deviate/prompts/auto/green.md`, `src/deviate/cli/micro.py`, `src/deviate/core/validation.py`, `src/deviate/prompts/core/core.md`, `pyproject.toml` (new dep), `src/deviate/state/config.py` (optional) |
-| New Modules Required | Potentially 1 new module: `src/deviate/core/treesitter.py` or `src/deviate/core/structural/` |
+| Estimated Complexity | Medium-High (language-agnostic architecture adds per-language query files) |
+| Files Likely Modified | `src/deviate/core/treesitter.py` (new, with `queries/` subdirectory for per-language S-expression patterns), `src/deviate/cli/micro.py` (JUDGE + REFACTOR integration), `src/deviate/cli/meso.py` (PLAN integration), `src/deviate/prompts/auto/judge.md`, `src/deviate/prompts/auto/plan.md`, `pyproject.toml` (2 new deps: `tree-sitter`, `tree-sitter-languages`) |
+| New Modules Required | `src/deviate/core/treesitter.py` + `src/deviate/core/treesitter/queries/` directory with per-language `.scm` query files |
 | New Persistence / Data Models | No |
-| New External Integrations | No (tree-sitter is a Python package, not an external service) |
-| Upstream / Cross-Cutting Concerns | Template assembly pipeline must be updated if adding AST-based checks to JUDGE phase prompt; TamperGuard interaction needs review if AST-based test-file analysis is added |
-| Rationale | Tree-sitter integration is contained within the existing CLI architecture — no new infrastructure, databases, or services. It augments existing validation/analysis paths (JUDGE, REFACTOR, PLAN) rather than creating new phase types. The main work is prompt template updates + a new Python module + dependency addition. |
+| New External Integrations | No (tree-sitter is a Python package; `tree-sitter-languages` bundles pre-compiled grammars — no network or service dependency) |
+| Upstream / Cross-Cutting Concerns | Template assembly pipeline must be updated for JUDGE/PLAN prompt structure injection; per-language query files must be maintained alongside grammar version updates in `tree-sitter-languages` |
+| Rationale | Tree-sitter's architecture is inherently language-agnostic — the same `Parser.set_language()`, `parser.parse()`, and `Query()` API works for any grammar. Adding language support = adding a grammar ID + query `.scm` file. The module abstracts per-language details behind a unified API. |
 
 ### Phase-by-Phase Integration Potential
 
 | Phase | Layer | Integration Potential | Rationale |
 | :--- | :--- | :--- | :--- |
-| **JUDGE** | Micro | **High** — Replace YAML/heading-regex spec validation with structural AST comparison: parse the `git diff` output, extract function/class signatures, compare against spec-declared signatures | Tree-sitter `Query` system with named captures can match code patterns against spec requirements structurally |
-| **REFACTOR** | Micro | **High** — Replace the basic `_check_return_type_mismatch` with full structural analysis: detect dead code, duplicated patterns, cyclomatic complexity, naming conventions | Tree-sitter's CST preserves formatting for round-trip-safe analysis diffs |
-| **GREEN** | Micro | **Medium** — Augment prompts with structural constraints: agent prompt could include tree-sitter-extracted spec signatures to guide implementation | Prompt injection via `_build_auto_prompt` — more context-rich spec sections |
-| **PLAN** | Meso | **Medium** — Structural codebase analysis for planning: count function/module complexity, detect violation patterns before implementation begins | Pre-scan current codebase state with tree-sitter queries to inform plan |
-| **TASKS** | Meso | **Low-Medium** — Validate that task decomposition covers all structural elements from spec | Primarily a planning aid, less integration value than JUDGE/REFACTOR |
-| **RED** | Micro | **Low** — RED phase writes tests, not production code; structural analysis of tests is less valuable | Tests are already verified by pytest failure |
-| **MACRO** (explore/research/prd/shard) | Macro | **Low** — Macro layer produces spec documents, not code; tree-sitter cannot analyze markdown | No code to parse |
-| **TamperGuard** | Micro | **Medium** — Structural analysis of GREEN-phase test modifications: detect unauthorized scope changes via diff structure | Currently file-hash based; AST diff would detect semantic tampering |
-| **YELLOW** | Micro | **Medium** — If TamperGuard detects test tampering, YELLOW evaluates the amendment; tree-sitter could provide structural diff evidence | Amendment analysis with structural context |
+| **JUDGE** | Micro | **High** — Parse `git diff` across ANY supported language, extract changed function/class signatures, produce structured 15x token-reduced summary for Pro-tier agent | Tree-sitter `Query` system uses language-agnostic S-expression patterns; same code path works for Python, JS, Rust, etc. |
+| **REFACTOR** | Micro | **High** — Replace Python-only `_check_return_type_mismatch` with language-agnostic structural analysis: dead-code detection, duplicated patterns, cyclomatic complexity across all 8 supported languages | Tree-sitter's CST preserves formatting for round-trip-safe analysis diffs; detection heuristics work per-language via query files |
+| **GREEN** | Micro | **Low** — Multi-language support doesn't change the GREEN phase value proposition; agent prompts are language-constrained by the task's spec | Prompt injection via `_build_auto_prompt` — if GREEN is excluded from AST, it remains excluded regardless of language count |
+| **PLAN** | Meso | **High** — Pre-scan target workstation files in ANY supported language, inject file structure appendix for Pro-tier agent. 50x token reduction prevents cascade failure across 3-5 tasks | Same `extract_file_structure()` function works across all languages via grammar dispatch |
+| **TASKS** | Meso | **Low** — Text decomposition, AST adds no value regardless of language support | Excluded |
+| **RED** | Micro | **Low** — RED writes tests; AST of `assert` adds nothing pytest doesn't already verify | Excluded |
+| **MACRO** (explore/research/prd/shard) | Macro | **Low** — Macro produces spec documents, not code | Excluded |
+| **TamperGuard** | Micro | **Medium** — Structural analysis of GREEN-phase test modifications across languages | Excluded from this issue (future work) |
+| **YELLOW** | Micro | **Medium** — Structural diff evidence for amendment analysis across languages | Excluded from this issue (future work) |
 
 ## Status Summary
 

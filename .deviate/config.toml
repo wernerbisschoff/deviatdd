@@ -3,7 +3,7 @@ llm_backend = "opencode"
 timeout_seconds = 300
 agent_export_mode = "local"
 
-graphite = true
+graphite = false
 use_context = true
 [agent]
 backend = "opencode"
