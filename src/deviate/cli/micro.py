@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import importlib.resources
 import json
 import os
@@ -11,6 +10,7 @@ import warnings
 from datetime import datetime, timezone
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import typer
 import yaml
@@ -28,6 +28,11 @@ from deviate.core.agent import (
 )
 from deviate.core.profile import resolve_profile
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
+from deviate.core.treesitter import (
+    _get_parser,
+    _node_text,
+    extract_changed_symbols,
+)
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import (
@@ -1098,6 +1103,24 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     return red_sha
 
 
+def _build_structured_diff_summary(symbols: list[dict]) -> str:
+    if not symbols:
+        return ""
+    lines = ["\n## Structured Diff Summary\n"]
+    for sym in symbols:
+        sym_type = sym.get("type", "symbol")
+        file_path = sym.get("file", "")
+        old_sig = sym.get("old_signature", "")
+        new_sig = sym.get("new_signature", "")
+        parts = [f"- **{sym_type}**: `{file_path}`"]
+        if old_sig:
+            parts.append(f"  - Old: `{old_sig}`")
+        if new_sig:
+            parts.append(f"  - New: `{new_sig}`")
+        lines.append("\n".join(parts))
+    return "\n\n".join(lines)
+
+
 def _run_judge_phase(
     task: dict,
     ledger_path: Path,
@@ -1124,6 +1147,11 @@ def _run_judge_phase(
 
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
+
+    symbols = extract_changed_symbols(diff)
+    summary = _build_structured_diff_summary(symbols)
+    if summary:
+        prompt += summary
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root)
@@ -2466,40 +2494,229 @@ def refactor_pre(
     raise typer.Exit(code=0)
 
 
-def _classify_expression_returns(value: ast.expr, expected: str) -> list[str]:
-    """Walk return expressions and flag obvious constant/literal mismatches.
+def _ts_parse_source(source_bytes: bytes) -> Any | None:
+    try:
+        return _get_parser().parse(source_bytes)
+    except Exception:
+        return None
 
-    Only flags literal constants and collection literals whose type doesn't
-    match the annotation.  Complex expressions (calls, attributes, names)
-    are assumed correct — the checker cannot statically resolve them.
+
+_SCALAR_RETURN_TYPES: dict[str, set[str]] = {
+    "str": {"string", "fstring"},
+    "int": {"integer"},
+    "float": {"float"},
+    "bool": {"true", "false"},
+}
+
+_LITERAL_TYPES = {"integer", "float", "string", "true", "false", "fstring"}
+
+
+def _get_return_value_node(return_stmt: Any) -> Any | None:
+    """Get the value child of a return_statement node.
+
+    tree-sitter return_statement has children: 'return' keyword, then optional expression.
+    The expression is not a named field, so we find the first non-keyword child.
     """
+    for child in return_stmt.children:
+        if child.type != "return":
+            return child
+    return None
+
+
+def _walk_return_types(
+    fn_name: str, return_type: str, body_node: Any, source_bytes: bytes
+) -> list[str]:
+    local_issues: list[str] = []
+    for child in body_node.children:
+        if child.type == "return_statement":
+            val = _get_return_value_node(child)
+            if val is None:
+                continue
+
+            if return_type in _SCALAR_RETURN_TYPES:
+                expected = _SCALAR_RETURN_TYPES[return_type]
+                if val.type in _LITERAL_TYPES:
+                    if val.type not in expected:
+                        local_issues.append(
+                            f"in {fn_name}: expected {return_type}, got {val.type} literal"
+                        )
+                elif val.type == "none":
+                    local_issues.append(
+                        f"in {fn_name}: expected {return_type}, got None"
+                    )
+
+            elif return_type == "list" and val.type != "list":
+                local_issues.append(f"in {fn_name}: expected list, got {val.type}")
+            elif return_type == "dict" and val.type != "dictionary":
+                local_issues.append(f"in {fn_name}: expected dict, got {val.type}")
+            elif return_type == "tuple" and val.type != "tuple":
+                local_issues.append(f"in {fn_name}: expected tuple, got {val.type}")
+            elif return_type == "set" and val.type != "set":
+                local_issues.append(f"in {fn_name}: expected set, got {val.type}")
+
+        elif child.type in (
+            "if_statement",
+            "for_statement",
+            "while_statement",
+            "with_statement",
+        ):
+            body = child.child_by_field_name("body")
+            if body:
+                local_issues.extend(
+                    _walk_return_types(fn_name, return_type, body, source_bytes)
+                )
+            alt = child.child_by_field_name("alternative")
+            if alt:
+                local_issues.extend(
+                    _walk_return_types(fn_name, return_type, alt, source_bytes)
+                )
+
+    return local_issues
+
+
+def _ts_check_return_type(filepath: str, source_bytes: bytes) -> list[str]:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
+        return []
+
+    root = tree.root_node
+    issues: list[str] = []
+    known_types = {"str", "int", "float", "bool", "list", "dict", "tuple", "set"}
+
+    for child in root.children:
+        if child.type == "function_definition":
+            name_node = child.child_by_field_name("name")
+            ret_node = child.child_by_field_name("return_type")
+            if name_node is None or ret_node is None:
+                continue
+
+            fn_name = _node_text(name_node, source_bytes)
+            return_type = _node_text(ret_node, source_bytes)
+
+            if return_type not in known_types:
+                continue
+
+            body = child.child_by_field_name("body")
+            if body is None:
+                continue
+
+            issues.extend(_walk_return_types(fn_name, return_type, body, source_bytes))
+
+    return issues
+
+
+def _ts_check_dead_code(filepath: str, source_bytes: bytes) -> list[str]:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
+        return []
+
+    root = tree.root_node
     issues: list[str] = []
 
-    scalar_types = {"str": str, "int": int, "float": (int, float), "bool": bool}
-    collection_nodes = {
-        "list": ast.List,
-        "dict": ast.Dict,
-        "tuple": ast.Tuple,
-        "set": ast.Set,
-    }
+    function_defs: dict[str, int] = {}
+    function_calls: set[str] = set()
 
-    if isinstance(value, ast.Constant):
-        if expected in scalar_types:
-            if not isinstance(value.value, scalar_types[expected]):
+    for child in root.children:
+        if child.type == "function_definition":
+            name_node = child.child_by_field_name("name")
+            if name_node is not None:
+                fn_name = _node_text(name_node, source_bytes)
+                function_defs[fn_name] = child.start_point[0] + 1
+
+    def _collect_calls(node: Any) -> None:
+        if node.type == "call":
+            func = node.child_by_field_name("function")
+            if func and func.type == "identifier":
+                function_calls.add(_node_text(func, source_bytes))
+        for c in node.children:
+            _collect_calls(c)
+
+    _collect_calls(root)
+
+    for fn_name, line in function_defs.items():
+        if fn_name not in function_calls and fn_name.startswith("_"):
+            issues.append(
+                f"dead code at line {line}: private function '{fn_name}' has no call sites"
+            )
+
+    return issues
+
+
+def _ts_check_cyclomatic_complexity(filepath: str, source_bytes: bytes) -> list[str]:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
+        return []
+
+    root = tree.root_node
+    issues: list[str] = []
+
+    for child in root.children:
+        if child.type != "function_definition":
+            continue
+        name_node = child.child_by_field_name("name")
+        if name_node is None:
+            continue
+        fn_name = _node_text(name_node, source_bytes)
+        fn_line = child.start_point[0] + 1
+
+        complexity = 1
+        stack = [child]
+        while stack:
+            node = stack.pop()
+            if node.type in (
+                "if_statement",
+                "elif_clause",
+                "for_statement",
+                "while_statement",
+                "except_clause",
+                "with_statement",
+            ):
+                complexity += 1
+            elif node.type == "boolean_operator":
+                complexity += 1
+            stack.extend(node.children)
+
+        max_complexity = 10
+        if complexity >= max_complexity:
+            issues.append(
+                f"cyclomatic complexity at line {fn_line}: '{fn_name}' has "
+                f"complexity {complexity} (threshold: {max_complexity})"
+            )
+
+    return issues
+
+
+def _ts_check_duplication(filepath: str, source_bytes: bytes) -> list[str]:
+    tree = _ts_parse_source(source_bytes)
+    if tree is None:
+        return []
+
+    root = tree.root_node
+    issues: list[str] = []
+
+    bodies: list[tuple[str, int, int, str]] = []
+    for child in root.children:
+        if child.type == "function_definition":
+            name_node = child.child_by_field_name("name")
+            body = child.child_by_field_name("body")
+            if name_node is None or body is None:
+                continue
+            fn_name = _node_text(name_node, source_bytes)
+            fn_line = child.start_point[0] + 1
+            body_text = _node_text(body, source_bytes)
+            body_lines = len(body_text.splitlines())
+            if body_lines >= 5:
+                bodies.append((fn_name, fn_line, body_lines, body_text))
+
+    for i in range(len(bodies)):
+        for j in range(i + 1, len(bodies)):
+            n1, l1, _, t1 = bodies[i]
+            n2, l2, _, t2 = bodies[j]
+            if t1 == t2:
                 issues.append(
-                    f"expected {expected}, got literal {type(value.value).__name__}"
+                    f"duplicate code at line {l1}: '{n1}' body identical to '{n2}' "
+                    f"at line {l2}"
                 )
-        elif expected in collection_nodes:
-            issues.append(f"expected {expected}, got literal constant")
-
-    elif isinstance(value, ast.JoinedStr):
-        if expected != "str":
-            issues.append(f"expected {expected}, got f-string (str)")
-
-    else:
-        for type_name, node_class in collection_nodes.items():
-            if isinstance(value, node_class) and expected != type_name:
-                issues.append(f"expected {expected}, got {type_name} literal")
 
     return issues
 
@@ -2508,34 +2725,15 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
     issues: list[str] = []
     try:
         with open(filepath, encoding="utf-8") as f:
-            tree = ast.parse(f.read(), filename=filepath)
-    except SyntaxError:
+            source = f.read()
+        source_bytes = source.encode()
+    except OSError:
         return issues
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef) or node.returns is None:
-            continue
-
-        return_annotation: str | None = None
-        if isinstance(node.returns, ast.Name):
-            return_annotation = node.returns.id
-        elif isinstance(node.returns, ast.Constant) and isinstance(
-            node.returns.value, str
-        ):
-            return_annotation = node.returns.value
-
-        if return_annotation is None:
-            continue
-
-        # Only validate known builtin types
-        known = {"str", "int", "float", "bool", "list", "dict", "tuple", "set"}
-        if return_annotation not in known:
-            continue
-
-        for child in ast.walk(node):
-            if not isinstance(child, ast.Return) or child.value is None:
-                continue
-            issues.extend(_classify_expression_returns(child.value, return_annotation))
+    issues.extend(_ts_check_return_type(filepath, source_bytes))
+    issues.extend(_ts_check_dead_code(filepath, source_bytes))
+    issues.extend(_ts_check_cyclomatic_complexity(filepath, source_bytes))
+    issues.extend(_ts_check_duplication(filepath, source_bytes))
     return issues
 
 

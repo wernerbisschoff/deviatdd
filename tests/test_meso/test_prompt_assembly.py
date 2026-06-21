@@ -18,6 +18,20 @@ class TestLoadTemplate:
             load_template("nonexistent")
 
 
+class TestJudgeTemplate:
+    """judge.md prompt template references ## Structured Diff Summary.
+
+    AC-ADHOC-008-01: Structured diff injected into JUDGE prompt
+    """
+
+    def test_judge_md_references_structured_diff(self) -> None:
+        """judge.md must reference ## Structured Diff Summary section."""
+        template = load_template("judge")
+        assert "## Structured Diff Summary" in template, (
+            "judge.md template should reference ## Structured Diff Summary"
+        )
+
+
 class TestInjectConstitution:
     def test_inject_constitution_appends_content(self, tmp_path: Path):
         prompt = "## <context>\n<user_input>\n</user_input>"
