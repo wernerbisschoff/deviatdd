@@ -1156,10 +1156,8 @@ def _build_file_structure_appendix(contract: dict[str, str]) -> str:
     return "\n".join(parts)
 
 
-def _enrich_plan_prompt(contract: dict[str, str]) -> str:
-    appendix = _build_file_structure_appendix(contract)
-    contract["file_structure_appendix"] = appendix
-    return appendix
+def _build_plan_appendix(contract: dict[str, str]) -> str:
+    return _build_file_structure_appendix(contract)
 
 
 def _invoke_agent_phase(
@@ -1168,7 +1166,9 @@ def _invoke_agent_phase(
     cwd: str | None = None,
 ) -> None:
     """Build a slim prompt, invoke the agent, and abort on failure."""
-    plan_appendix = _enrich_plan_prompt(contract) if phase == "plan" else ""
+    plan_appendix = _build_plan_appendix(contract) if phase == "plan" else ""
+    if phase == "plan":
+        contract["file_structure_appendix"] = plan_appendix
 
     prompt = _build_slim_prompt(phase, contract)
 
