@@ -930,10 +930,10 @@ def _pr_pre() -> None:
     print(json.dumps(contract, indent=2))
 
 
-def _run_gt_submit(repo_root: Path) -> None:
+def _run_gt_submit(repo_root: Path, title: str, body_file: Path) -> None:
     try:
         result = subprocess.run(
-            ["gt", "submit", "--stack"],
+            ["gt", "submit", "--stack", "--no-edit"],
             capture_output=True,
             text=True,
             cwd=repo_root,
@@ -952,6 +952,43 @@ def _run_gt_submit(repo_root: Path) -> None:
         )
         raise typer.Exit(code=1)
     console.print(f"[green]GT_SUBMIT[/] {result.stdout.strip()}")
+    _update_gt_prs(result.stdout, title, body_file, repo_root)
+
+
+def _update_gt_prs(output: str, title: str, body_file: Path, repo_root: Path) -> None:
+    for line in output.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r"^\S+:\s+(https://\S+)\s+\((\w+)\)$", line)
+        if not match:
+            continue
+        pr_url = match.group(1)
+        pr_num_match = re.search(r"/(\d+)$", pr_url)
+        if not pr_num_match:
+            continue
+        pr_number = pr_num_match.group(1)
+        try:
+            subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "edit",
+                    pr_number,
+                    "--title",
+                    title,
+                    "--body-file",
+                    str(body_file),
+                ],
+                capture_output=True,
+                text=True,
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+            )
+            console.print(f"[green]PR_UPDATED[/] #{pr_number}")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[yellow]PR_EDIT_WARN[/] #{pr_number}: {e.stderr.strip()}")
 
 
 def _run_gh_pr_create(
@@ -1062,7 +1099,7 @@ def _pr_run(
                 "[yellow]GRAPHITE_MERGE_FLAGS_IGNORED[/] "
                 "Graphite handles merge flow internally via `gt submit --stack`."
             )
-        _run_gt_submit(repo_root)
+        _run_gt_submit(repo_root, title, body_file)
     else:
         _run_gh_pr_create(title, body_file, merge, auto_merge, cwd=repo_root)
 

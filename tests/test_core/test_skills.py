@@ -53,7 +53,7 @@ class TestInstallSkillGraphiteRouting:
         installed = target / "deviate-pr" / "SKILL.md"
         assert installed.exists()
         content = installed.read_text(encoding="utf-8")
-        assert "## Graphite Routing" in content
+        assert "<graphite_routing>" in content
         assert "gt submit --stack" in content
 
     def test_install_deviate_pr_omits_graphite_when_unset(self, tmp_path: Path):
@@ -67,7 +67,7 @@ class TestInstallSkillGraphiteRouting:
         installed = target / "deviate-pr" / "SKILL.md"
         assert installed.exists()
         content = installed.read_text(encoding="utf-8")
-        assert "## Graphite Routing" not in content
+        assert "<graphite_routing>" not in content
 
     def test_install_deviate_pr_omits_graphite_when_false(self, tmp_path: Path):
         """graphite = false in config → no routing section emitted."""
@@ -78,7 +78,7 @@ class TestInstallSkillGraphiteRouting:
 
         install_skill("deviate-pr", target, workdir=workdir)
         content = (target / "deviate-pr" / "SKILL.md").read_text(encoding="utf-8")
-        assert "## Graphite Routing" not in content
+        assert "<graphite_routing>" not in content
 
     def test_install_deviate_pr_graphite_idempotent_on_repeat(self, tmp_path: Path):
         """Second install with same config → no duplicate section, file unchanged."""
@@ -93,7 +93,7 @@ class TestInstallSkillGraphiteRouting:
         assert install_skill("deviate-pr", target, workdir=workdir) is False
         second = (target / "deviate-pr" / "SKILL.md").read_text(encoding="utf-8")
         assert first == second
-        assert second.count("## Graphite Routing") == 1
+        assert second.count("<graphite_routing>") == 1
 
     def test_install_deviate_pr_removes_graphite_when_disabled_after_enable(
         self, tmp_path: Path
@@ -105,14 +105,14 @@ class TestInstallSkillGraphiteRouting:
         target = tmp_path / "agent" / "skills"
 
         install_skill("deviate-pr", target, workdir=workdir)
-        assert "## Graphite Routing" in (target / "deviate-pr" / "SKILL.md").read_text(
+        assert "<graphite_routing>" in (target / "deviate-pr" / "SKILL.md").read_text(
             encoding="utf-8"
         )
 
         self._seed_graphite_config(workdir, False)
         assert install_skill("deviate-pr", target, workdir=workdir) is True
         content = (target / "deviate-pr" / "SKILL.md").read_text(encoding="utf-8")
-        assert "## Graphite Routing" not in content
+        assert "<graphite_routing>" not in content
 
     def test_install_deviate_pr_without_workdir_skips_graphite_check(
         self, tmp_path: Path
@@ -121,7 +121,7 @@ class TestInstallSkillGraphiteRouting:
         target = tmp_path / "agent" / "skills"
         install_skill("deviate-pr", target)
         content = (target / "deviate-pr" / "SKILL.md").read_text(encoding="utf-8")
-        assert "## Graphite Routing" not in content
+        assert "<graphite_routing>" not in content
 
     def test_install_other_skills_unaffected_by_graphite(self, tmp_path: Path):
         """graphite = true must not inject the section into non-deviate-pr skills."""
@@ -132,4 +132,4 @@ class TestInstallSkillGraphiteRouting:
 
         install_skill("deviate-red", target, workdir=workdir)
         content = (target / "deviate-red" / "SKILL.md").read_text(encoding="utf-8")
-        assert "## Graphite Routing" not in content
+        assert "<graphite_routing>" not in content
