@@ -576,7 +576,8 @@ def _format_function_entries(
 ) -> list[str]:
     entries: list[str] = []
     for fname, finfo in functions.items():
-        params = ", ".join(finfo.get("params", []))  # type: ignore[arg-type]
+        param_list = finfo.get("params", [])
+        params = ", ".join(p for p in param_list if isinstance(p, str))
         ret = finfo.get("return_type") or ""
         sig = f"{fname}({params})"
         if ret:

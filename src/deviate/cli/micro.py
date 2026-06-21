@@ -1147,12 +1147,13 @@ def _run_judge_phase(
     ).stdout
 
     prompt = _build_auto_prompt("judge", task, root)
-    prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
     symbols = extract_changed_symbols(diff)
     summary = _build_structured_diff_summary(symbols)
     if summary:
         prompt += summary
+
+    prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root)
