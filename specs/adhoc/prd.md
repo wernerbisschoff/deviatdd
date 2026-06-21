@@ -81,3 +81,16 @@
 5. **AC-ADHOC-007-05**: Given `graphite = true` in config, When `deviate pr run` executes, Then PR creation uses `gt submit --stack` instead of `gh pr create`, and the subprocess command is `["gt", "submit", "--stack"]`.
 6. **AC-ADHOC-007-06**: Given `graphite = true` in config, When `deviate feature create` runs, Then the branch is created via `gt create -am "<message>"` instead of `git branch <name>`.
 7. **AC-ADHOC-007-07**: Given `graphite = false` or absent in config, When any command executes, Then all existing `git` and `gh` behavior is preserved — no `gt` commands are invoked.
+
+## FR-ADHOC-008: AST/Structural Analysis Integration — JUDGE + PLAN + REFACTOR (Pareto High-ROI)
+
+- **Description**: Integrate tree-sitter-based AST parsing into the three highest-ROI DeviaTDD phases: JUDGE (structured diff summary replacing raw diff text, ~15x token reduction on Pro tier), PLAN (pre-scan target workstation files, inject file structure appendix, ~50x token reduction on Pro tier), and REFACTOR (upgrade from stdlib `ast` to tree-sitter incremental parse with dead-code/duplication/complexity checks). All other phases are explicitly excluded per token/cost analysis.
+- **Preconditions**: `specs/explore/ast-tree-sitter.md` exists with phase-by-phase integration potential table. `specs/constitution.md` defines V4 Pro for JUDGE/PLAN and V4 Flash for REFACTOR. Python 3.13. `tree-sitter>=0.24` is addable as a dependency.
+- **Inputs/Outputs**: Input: `git diff` output (JUDGE), issue file with workstation paths (PLAN), modified source files (REFACTOR). Output: structured change summary in judge prompt, file structure appendix in plan prompt, extended REFACTOR checks (dead code, duplication, complexity). New module: `src/deviate/core/treesitter.py`.
+
+### Acceptance Criteria
+1. **AC-ADHOC-008-01**: Given a GREEN-phase diff with changed functions, When JUDGE runs `git diff`, Then the judge prompt contains a `## Structured Diff Summary` section listing only changed `FunctionDef`/`ClassDef` nodes with old/new signatures, and raw diff follows below.
+2. **AC-ADHOC-008-02**: Given a PLAN phase invoked with target workstation files, When the plan prompt is assembled, Then it contains a `## Target File Structure` appendix with function/class signatures and import blocks extracted via tree-sitter.
+3. **AC-ADHOC-008-03**: Given a modified file in REFACTOR, When `_check_return_type_mismatch()` runs, Then it uses tree-sitter incremental parse (re-parsing only changed ranges), detects dead code (unused functions), duplicated code blocks (similar AST subtrees ≥ 5 lines), and cyclomatic complexity ≥ 10.
+4. **AC-ADHOC-008-04**: Given AST targets only JUDGE, PLAN, REFACTOR, When RED, GREEN, YELLOW, TASKS, or MACRO execute, Then no tree-sitter code is invoked — excluded phases are unchanged.
+5. **AC-ADHOC-008-05**: Given `tree-sitter>=0.24` in `pyproject.toml`, When `from deviate.core.treesitter import ...` executes, Then the module is importable and grammar loads without error.
