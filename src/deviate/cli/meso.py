@@ -172,6 +172,70 @@ def _parse_workstation_paths(spec_content: str) -> list[str]:
     return paths
 
 
+def _extract_workstation_file_structures(
+    spec_path: str, repo_root: Path
+) -> tuple[dict[str, dict], list[str]]:
+    """Extract file structure data for workstation paths in the spec's topology mapping.
+
+    Reads the spec content at *spec_path*, parses workstation file paths from
+    the ``System Topology Mapping`` section, and calls ``extract_file_structure()``
+    on each existing file.
+
+    Returns ``(structures, workstation_paths)`` where:
+    - ``structures`` is a dict keyed by relative workstation path (only existing files)
+    - ``workstation_paths`` is the full list of paths parsed from the spec
+    """
+    structures: dict[str, dict] = {}
+    try:
+        spec_content = Path(spec_path).read_text(encoding="utf-8")
+    except OSError:
+        return structures, []
+    workstation_paths = _parse_workstation_paths(spec_content)
+    for wpath in workstation_paths:
+        full_path = repo_root / wpath
+        if full_path.is_file():
+            fs = extract_file_structure(str(full_path))
+            if fs.language:
+                structures[wpath] = {
+                    "language": fs.language,
+                    "symbols": fs.symbols,
+                    "imports": fs.imports,
+                }
+    return structures, workstation_paths
+
+
+def _format_file_structure_markdown(structures: dict[str, dict]) -> str:
+    """Format extracted file structures as structured markdown.
+
+    Each entry is rendered as::
+
+        ### `path` (Language: <lang>)
+        - **Symbols**:
+          - kind `name`
+        - **Imports**:
+          - `import_path`
+    """
+    lines: list[str] = []
+    for wpath, info in structures.items():
+        lang = info.get("language", "?")
+        lines.append(f"### `{wpath}` (Language: {lang})")
+        symbols = info.get("symbols", [])
+        if symbols:
+            lines.append("- **Symbols**:")
+            for s in symbols:
+                kind = s.get("kind", "?")
+                name = s.get("name", "?")
+                lines.append(f"  - {kind} `{name}`")
+        imports = info.get("imports", [])
+        if imports:
+            lines.append("- **Imports**:")
+            for imp in imports:
+                lines.append(f"  - `{imp}`")
+        if not symbols and not imports:
+            lines.append("  *(no symbols or imports extracted)*")
+    return "\n".join(lines)
+
+
 def _resolve_constitution_commands(
     repo_root: Path,
 ) -> tuple[str, str, str]:
@@ -686,18 +750,9 @@ def _plan_pre(
     workstation_paths: list[str] = []
     if spec_path:
         try:
-            spec_content = Path(spec_path).read_text(encoding="utf-8")
-            workstation_paths = _parse_workstation_paths(spec_content)
-            for wpath in workstation_paths:
-                full_path = repo_root / wpath
-                if full_path.is_file():
-                    fs = extract_file_structure(str(full_path))
-                    if fs.language:
-                        file_structure[wpath] = {
-                            "language": fs.language,
-                            "symbols": fs.symbols,
-                            "imports": fs.imports,
-                        }
+            file_structure, workstation_paths = _extract_workstation_file_structures(
+                spec_path, repo_root
+            )
         except Exception as exc:
             logger.warning("Failed to extract file structure: %s", exc)
 
@@ -1342,30 +1397,15 @@ def _meso_run(
 
     # ── Inject file structure appendix into plan contract ────────────
     file_structure_str = ""
-    spec_content = _read_spec_content(spec_path)
-    if spec_content:
-        workstation_paths = _parse_workstation_paths(spec_content)
-        lines: list[str] = []
-        for wpath in workstation_paths:
-            full_path = worktree_path / wpath
-            if full_path.is_file():
-                fs = extract_file_structure(str(full_path))
-                if fs.language:
-                    lines.append(f"### `{wpath}` (Language: {fs.language})")
-                    if fs.symbols:
-                        lines.append("- **Symbols**:")
-                        for s in fs.symbols:
-                            kind = s.get("kind", "?")
-                            name = s.get("name", "?")
-                            lines.append(f"  - {kind} `{name}`")
-                    if fs.imports:
-                        lines.append("- **Imports**:")
-                        for imp in fs.imports:
-                            lines.append(f"  - `{imp}`")
-                    if not fs.symbols and not fs.imports:
-                        lines.append("  *(no symbols or imports extracted)*")
-        if lines:
-            file_structure_str = "\n".join(lines)
+    if spec_path:
+        try:
+            structures, _ = _extract_workstation_file_structures(
+                spec_path, worktree_path
+            )
+            if structures:
+                file_structure_str = _format_file_structure_markdown(structures)
+        except Exception as exc:
+            logger.warning("Failed to extract file structure: %s", exc)
     if file_structure_str:
         contract["file_structure"] = file_structure_str
 
