@@ -667,7 +667,7 @@ class TestGracefulDegradation:
             get_parser,
         )
 
-        with patch("deviate.core.treesitter._tree_sitter_available", False):
+        with patch("deviate.core.treesitter.parser._tree_sitter_available", False):
             assert get_parser("test.py") is None
             assert extract_changed_symbols("", "test.py") == []
             struct = extract_file_structure("nonexistent.py")
