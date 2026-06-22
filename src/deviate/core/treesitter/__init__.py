@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import pathlib
@@ -83,6 +84,15 @@ _LANGUAGE_ATTRS: dict[str, str] = {
     "tsx": "language_tsx",
 }
 
+_CAP_KIND: dict[str, str] = {
+    "function": "function",
+    "method": "function",
+    "class": "class",
+    "struct": "class",
+    "interface": "interface",
+    "entry": "entry",
+}
+
 _tree_sitter_available = True
 _parser_cache: dict[str, Any] = {}
 _query_cache: dict[str, Any] = {}
@@ -157,7 +167,7 @@ def _load_language(grammar_id: str) -> Any | None:
     if pkg_name is None:
         return None
     try:
-        pkg = __import__(pkg_name, fromlist=["language"])
+        pkg = importlib.import_module(pkg_name)
         lang_attr = _LANGUAGE_ATTRS.get(grammar_id, "language")
         cap_fn = getattr(pkg, lang_attr, None) or pkg.language
         capsule = cap_fn()
@@ -210,15 +220,6 @@ def _extract_symbols_from_parsed(
         return symbols, imports
     if QueryCursor is None:
         return symbols, imports
-
-    _CAP_KIND: dict[str, str] = {
-        "function": "function",
-        "method": "function",
-        "class": "class",
-        "struct": "class",
-        "interface": "interface",
-        "entry": "entry",
-    }
 
     cursor = QueryCursor(query)
     captures = cursor.captures(tree.root_node)
@@ -314,9 +315,7 @@ def _reconstruct_sources_from_diff(
         if len(line) > 0:
             prefix = line[0]
             content = line[1:] if len(line) > 1 else ""
-            content_bytes = (
-                content.encode("utf-8") if isinstance(content, str) else content
-            )
+            content_bytes = content.encode("utf-8")
             if prefix == " ":
                 old_lines.append(content_bytes)
                 new_lines.append(content_bytes)
@@ -368,9 +367,16 @@ def extract_changed_symbols(diff_text: str, filepath: str) -> list[SymbolChange]
     try:
         old_tree = parser.parse(old_src) if old_src is not None else None
         new_tree = parser.parse(new_src) if new_src is not None else None
+        src = new_src or old_src
 
         old_names = _extract_fn_names(old_tree, query) if old_tree else set()
         new_names = _extract_fn_names(new_tree, query) if new_tree else set()
+
+        kind_map: dict[str, str] = {}
+        if src:
+            kind_tree = new_tree or old_tree
+            if kind_tree:
+                kind_map = _build_kind_map(kind_tree, query)
 
         all_names = old_names | new_names
 
@@ -381,11 +387,7 @@ def extract_changed_symbols(diff_text: str, filepath: str) -> list[SymbolChange]
                 ch = "added"
             else:
                 ch = "modified"
-            kind = (
-                _detect_kind(name, query, parser, new_src or old_src, lang_id)
-                if (new_src or old_src)
-                else "function"
-            )
+            kind = kind_map.get(name, "function")
             changes.append(
                 SymbolChange(language=lang_id, kind=kind, name=name, change=ch)
             )
@@ -395,27 +397,19 @@ def extract_changed_symbols(diff_text: str, filepath: str) -> list[SymbolChange]
     return changes
 
 
-def _detect_kind(name: str, query: Any, parser: Any, src: bytes, lang_id: str) -> str:
+def _build_kind_map(tree: Any, query: Any) -> dict[str, str]:
+    kind_map: dict[str, str] = {}
     if QueryCursor is None:
-        return "function"
-    try:
-        tree = parser.parse(src)
-        cursor = QueryCursor(query)
-        captures = cursor.captures(tree.root_node)
-        for cap_name, nodes in captures.items():
+        return kind_map
+    cursor = QueryCursor(query)
+    captures = cursor.captures(tree.root_node)
+    for cap_name, nodes in captures.items():
+        mapped = _CAP_KIND.get(cap_name)
+        if mapped:
             for node in nodes:
-                if node.text.decode("utf-8", errors="replace") == name:
-                    if cap_name in ("class", "struct"):
-                        return "class"
-                    if cap_name == "interface":
-                        return "interface"
-                    if cap_name in ("function", "method"):
-                        return "function"
-                    if cap_name == "entry":
-                        return "entry"
-        return "function"
-    except Exception:
-        return "function"
+                name = node.text.decode("utf-8", errors="replace")
+                kind_map[name] = mapped
+    return kind_map
 
 
 def extract_dead_code(filepath: str) -> list[str]:
@@ -481,8 +475,10 @@ def detect_duplicate_blocks(filepath: str, min_lines: int = 5) -> list[Duplicate
         tree = parser.parse(src)
 
         blocks: list[tuple[int, int, int, str]] = []
+        stack = [tree.root_node]
 
-        def collect_blocks(node: Any, depth: int = 0) -> None:
+        while stack:
+            node = stack.pop()
             line_count = node.end_point.row - node.start_point.row
             if node.child_count > 1 and line_count >= min_lines:
                 children_types = tuple(c.type for c in node.children)
@@ -496,9 +492,7 @@ def detect_duplicate_blocks(filepath: str, min_lines: int = 5) -> list[Duplicate
                         )
                     )
             for child in node.children:
-                collect_blocks(child, depth + 1)
-
-        collect_blocks(tree.root_node)
+                stack.append(child)
 
         duplicates: list[DuplicateBlock] = []
         seen: dict[str, int] = {}
