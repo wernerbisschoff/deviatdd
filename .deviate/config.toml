@@ -4,6 +4,7 @@ agent_export_mode = "local"
 
 graphite = false
 use_context = true
+use_libref = true
 [agent]
 backend = "opencode"
 

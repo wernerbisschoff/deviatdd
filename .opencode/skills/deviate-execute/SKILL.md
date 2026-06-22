@@ -26,7 +26,7 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
 ## KV Cache Preservation
 
@@ -59,7 +59,7 @@ Each task is a Logical Unit (30-90 min) that undergoes ONE complete R-G-R cycle:
 
 6. **Handover Manifest YAML**: After post-script success, emit a handover manifest as a YAML code block. ALL string values MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted. Output NOTHING outside the YAML block — no explanations, no commentary.
 
-7. **Context Consultation Guidance**: When implementing, use `context query <library> <topic>` to look up library APIs and framework conventions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `context` is unavailable, fall back to training data or web fetch.
+7. **Offline Documentation Guidance**: When implementing, use `libref query <library> <topic>` to look up library APIs and framework conventions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `libref` is unavailable, fall back to training data or web fetch.
 
 
 <system_instructions>

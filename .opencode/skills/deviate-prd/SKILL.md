@@ -27,7 +27,7 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
 ## KV Cache Preservation
 
@@ -54,7 +54,7 @@ This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, arc
 
 7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
 
-8. **Context Consultation Requirement**: All macro-layer phases MUST use `context query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+8. **Offline Documentation Requirement**: All macro-layer phases MUST use `libref query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
 
 ## <context>
 <user_input>
