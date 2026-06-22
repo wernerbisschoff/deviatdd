@@ -4,3 +4,4 @@
 {"id":"TSK-008-02","issue_id":"ISS-ADH-008","description":"Implement all 6 language-agnostic analysis functions","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-22T09:07:36.933060Z"}
 {"id":"TSK-008-02","issue_id":"ISS-ADH-008","description":"Implement all 6 language-agnostic analysis functions","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-22T09:08:15.545749Z"}
 {"id":"TSK-008-02","issue_id":"ISS-ADH-008","description":"Implement all 6 language-agnostic analysis functions","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-22T09:11:37.223379Z"}
+{"id":"TSK-008-03","issue_id":"ISS-ADH-008","description":"Inject structured diff summary into JUDGE prompt and update judge.md template","status":"RED","execution_mode":"TDD","created_at":"2026-06-22T09:17:35.454099Z"}
