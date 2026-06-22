@@ -2665,11 +2665,14 @@ def _check_python_return_types(filepath: str) -> list[str]:
     def _get_return_type_name(func_node: object) -> str | None:
         for child in func_node.children:
             if child.type == "type":
-                for tc in child.children:
-                    if tc.type == "identifier":
-                        return tc.text.decode("utf-8", errors="replace")
-                    if tc.type == "string":
-                        return tc.text.decode("utf-8", errors="replace").strip("'\"")
+                nodes = [child]
+                while nodes:
+                    curr = nodes.pop(0)
+                    if curr.type == "identifier":
+                        return curr.text.decode("utf-8", errors="replace")
+                    if curr.type == "string":
+                        return curr.text.decode("utf-8", errors="replace").strip("'\"")
+                    nodes.extend(curr.children)
                 break
         return None
 
@@ -2718,6 +2721,8 @@ def _check_python_return_types(filepath: str) -> list[str]:
                 bn = bs.pop()
                 if bn.type == "return_statement":
                     issues.extend(_check_return_value(bn, ret_type))
+                elif bn.type in ("function_definition", "class_definition"):
+                    continue
                 for child in bn.children:
                     bs.append(child)
 

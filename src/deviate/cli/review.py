@@ -287,9 +287,10 @@ def _is_import_line(line: str) -> bool:
             "use ",
             "extern crate",
             "require(",
-            "const ",
         )
     ):
+        return True
+    if lower.startswith("const ") and ("require(" in lower or "import(" in lower):
         return True
     if lower.startswith("#") and "include" in lower:
         return True

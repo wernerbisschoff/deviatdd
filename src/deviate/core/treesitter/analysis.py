@@ -398,21 +398,20 @@ def detect_duplicate_blocks(filepath: str, min_lines: int = 5) -> list[Duplicate
                 stack.append(child)
 
         duplicates: list[DuplicateBlock] = []
-        seen: dict[str, int] = {}
+        seen: dict[str, tuple[int, str]] = {}
 
         for row_start, row_end, lines, sig in blocks:
-            if sig in seen and abs(lines - seen[sig]) <= 1:
+            loc = f"{os.path.basename(filepath)}:{row_start}-{row_end}"
+            if sig in seen and abs(lines - seen[sig][0]) <= 1:
                 duplicates.append(
                     DuplicateBlock(
                         lines=lines,
-                        locations=[
-                            f"{os.path.basename(filepath)}:{row_start}-{row_end}"
-                        ],
+                        locations=[seen[sig][1], loc],
                         similarity=0.85,
                     )
                 )
             else:
-                seen[sig] = lines
+                seen[sig] = (lines, loc)
 
         return duplicates
     except Exception:
