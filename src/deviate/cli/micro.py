@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import importlib.resources
 import json
 import os
@@ -2622,44 +2621,6 @@ def refactor_pre(
     raise typer.Exit(code=0)
 
 
-def _classify_expression_returns(value: ast.expr, expected: str) -> list[str]:
-    """Walk return expressions and flag obvious constant/literal mismatches.
-
-    Only flags literal constants and collection literals whose type doesn't
-    match the annotation.  Complex expressions (calls, attributes, names)
-    are assumed correct — the checker cannot statically resolve them.
-    """
-    issues: list[str] = []
-
-    scalar_types = {"str": str, "int": int, "float": (int, float), "bool": bool}
-    collection_nodes = {
-        "list": ast.List,
-        "dict": ast.Dict,
-        "tuple": ast.Tuple,
-        "set": ast.Set,
-    }
-
-    if isinstance(value, ast.Constant):
-        if expected in scalar_types:
-            if not isinstance(value.value, scalar_types[expected]):
-                issues.append(
-                    f"expected {expected}, got literal {type(value.value).__name__}"
-                )
-        elif expected in collection_nodes:
-            issues.append(f"expected {expected}, got literal constant")
-
-    elif isinstance(value, ast.JoinedStr):
-        if expected != "str":
-            issues.append(f"expected {expected}, got f-string (str)")
-
-    else:
-        for type_name, node_class in collection_nodes.items():
-            if isinstance(value, node_class) and expected != type_name:
-                issues.append(f"expected {expected}, got {type_name} literal")
-
-    return issues
-
-
 def _check_python_return_types(filepath: str) -> list[str]:
     """Check Python return type annotations against literal return values using tree-sitter."""
     issues: list[str] = []
@@ -2766,31 +2727,13 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
     dead = extract_dead_code(filepath)
     dupes = detect_duplicate_blocks(filepath, min_lines=5)
 
-    # Structural checks for all supported languages
-    # Only report dead code when the file has call sites (avoids flagging
-    # module-level functions imported by other files as dead)
-    if dead:
-        tree = incremental_parse(filepath, None)
-        has_calls = False
-        if tree is not None:
-            qstack = [tree.root_node]
-            while qstack:
-                qn = qstack.pop()
-                if qn.type in ("call", "call_expression", "call_expression"):
-                    has_calls = True
-                    break
-                for child in qn.children:
-                    qstack.append(child)
-        if has_calls:
-            for name in dead:
-                issues.append(f"Dead code: '{name}' is defined but never used")
-
     for block in dupes:
         locs = ", ".join(block.locations)
         issues.append(f"Duplicate block ({block.lines} lines) at {locs}")
 
     tree = incremental_parse(filepath, None)
     if tree is not None:
+        has_calls = False
         func_types = {
             "function_definition",
             "function_declaration",
@@ -2801,6 +2744,8 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
         fstack = [tree.root_node]
         while fstack:
             node = fstack.pop()
+            if not has_calls and node.type in ("call", "call_expression"):
+                has_calls = True
             if node.type in func_types:
                 name = "unknown"
                 for child in node.children:
@@ -2814,6 +2759,10 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
                     )
             for child in node.children:
                 fstack.append(child)
+
+        if has_calls and dead:
+            for name in dead:
+                issues.append(f"Dead code: '{name}' is defined but never used")
 
     return issues
 
