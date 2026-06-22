@@ -26,7 +26,8 @@ When you run `deviate review pre`, the emitted JSON contract includes:
 | Field | Type | Description |
 |-------|------|-------------|
 | `diff` | string | Raw unified git diff (merge-base vs HEAD) |
-| `structured_diff` | list[dict] | Per-file symbol-level change metadata |
+| `structured_diff` | list[dict] | Per-file symbol-level change metadata (ALL changed files) |
+| `structured_diff_markdown` | string | Compact markdown table rendering of structured_diff for LLM prompts |
 | `constitution_path` | str/null | Path to `specs/constitution.md` |
 | `prd_path` | str/null | Path to PRD file (epic first, adhoc fallback) |
 | `base_branch` | string | Base branch for merge-base computation |
@@ -40,13 +41,19 @@ Each entry in `structured_diff` has:
     {"kind": "function", "name": "greet", "change": "modified"},
     {"kind": "function", "name": "add_func", "change": "added"},
     {"kind": "class", "name": "OldClass", "change": "removed"}
-  ]
+  ],
+  "net_lines_changed": "+5/-3",
+  "lines_added": 5,
+  "lines_removed": 3,
+  "chunks_changed": 2
 }
 ```
 
+Non-source files appear in `structured_diff` with empty `symbols` and `language: "unknown"`.
+
 Change types: `added`, `removed`, `modified`, `renamed`.
 
-Use the structured diff to identify per-language concerns (signature shifts, dead code, complexity spikes, renames) that raw text diffs may hide.
+Use the structured diff to identify per-language concerns (signature shifts, dead code, complexity spikes, renames) that raw text diffs may hide. The `structured_diff_markdown` field provides a pre-rendered compact table for direct inclusion in LLM prompts.
 
 ## Scan Focus — Six Domains
 
@@ -97,7 +104,7 @@ Evaluate ALL six domains in a single pass:
 
 ## Domain-Specific Structured Diff Analysis
 
-For each `structured_diff` entry, evaluate specific patterns by language:
+For each `structured_diff` entry (and corresponding section in `structured_diff_markdown`), evaluate specific patterns by language:
 
 **Python**: `added`/`modified` functions without type annotations, `removed` functions with no replacement callers
 **TypeScript**: `modified` interfaces adding required fields (breaking change), `removed` exports without deprecation
@@ -117,11 +124,11 @@ Run from the workspace root:
 deviate review pre
 ```
 
-Parse the JSON contract: `diff`, `structured_diff`, `constitution_path`, `prd_path`, `base_branch`.
+Parse the JSON contract: `diff`, `structured_diff`, `structured_diff_markdown`, `constitution_path`, `prd_path`, `base_branch`.
 
 If `diff` is empty, emit `SKIP: no changes since {base_branch}` and exit.
 
-If `structured_diff` is non-empty, evaluate it for per-language symbol-level issues (dead code, renames, signature shifts, complexity spikes) alongside the raw text `diff`.
+If `structured_diff_markdown` is non-empty, evaluate it for per-language symbol-level issues (dead code, renames, signature shifts, complexity spikes) alongside the raw text `diff`. Non-source files appear in `structured_diff` with empty symbols — note their presence in the review.
 
 Read `constitution_path` for governance invariants and `prd_path` for PRD context.
 
@@ -188,7 +195,7 @@ If all six domains are CLEAN:
 | Condition | Action |
 |-----------|--------|
 | Empty diff (no changes vs base_branch) | Output `SKIP: no changes since {base_branch}` and exit |
-| `structured_diff` is empty or absent | Proceed with raw text diff only — note "no structured diff available" |
+| `structured_diff` is empty or `structured_diff_markdown` absent | Proceed with raw text diff only — note "no structured diff available" |
 | constitution_path is null | Note "no constitution to check" — evaluate remaining 5 domains |
 | prd_path is null | Note "no PRD for traceability context" — skip PRD Alignment domain |
 | External repo (no specs/) | Restrict to Security, Clean Code, Pragmatism, Idiomacy — note limited scope |
