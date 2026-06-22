@@ -12,3 +12,4 @@
 {"id":"TSK-008-04","issue_id":"ISS-ADH-008","description":"Inject file structure appendix into PLAN contract and update plan.md template","status":"GREEN","execution_mode":"TDD","created_at":"2026-06-22T09:40:25.985556Z"}
 {"id":"TSK-008-04","issue_id":"ISS-ADH-008","description":"Inject file structure appendix into PLAN contract and update plan.md template","status":"JUDGE","execution_mode":"TDD","created_at":"2026-06-22T09:41:10.252335Z"}
 {"id":"TSK-008-04","issue_id":"ISS-ADH-008","description":"Inject file structure appendix into PLAN contract and update plan.md template","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-22T09:46:33.379551Z"}
+{"id":"TSK-008-05","issue_id":"ISS-ADH-008","description":"Replace `ast` with tree-sitter in `_check_return_type_mismatch` and add extended checks","status":"RED","execution_mode":"TDD","created_at":"2026-06-22T09:49:18.407328Z"}
