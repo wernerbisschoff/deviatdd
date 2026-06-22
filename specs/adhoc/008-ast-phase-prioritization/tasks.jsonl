@@ -1,1 +1,2 @@
 {"id":"TSK-008-01","issue_id":"ISS-ADH-008","description":"Create parser factory, EXTENSION_MAP, and all 21 query files","status":"RED","execution_mode":"TDD","created_at":"2026-06-21T09:18:37.340298Z"}
+{"id":"TSK-008-01","issue_id":"ISS-ADH-008","description":"Create parser factory, EXTENSION_MAP, and all 21 query files","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-06-21T09:18:37.340298Z"}

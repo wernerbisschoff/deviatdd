@@ -9,7 +9,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_QUERIES_DIR: str = str(pathlib.Path(__file__).parent / "queries")
+_QUERIES_DIR: pathlib.Path = pathlib.Path(__file__).parent / "queries"
 
 EXTENSION_MAP: dict[str, str] = {
     ".py": "python",
@@ -78,7 +78,6 @@ _GRAMMAR_PACKAGES: dict[str, str] = {
     "swift": "tree_sitter_swift",
 }
 
-_TSX_ATTR = "language_tsx"
 _LANGUAGE_ATTRS: dict[str, str] = {
     "typescript": "language_typescript",
     "tsx": "language_tsx",
@@ -183,8 +182,7 @@ def _load_queries(grammar_id: str) -> Any | None:
         return None
     if grammar_id in _query_cache:
         return _query_cache[grammar_id]
-    qdir = pathlib.Path(_QUERIES_DIR)
-    qfile = qdir / f"{grammar_id}.scm"
+    qfile = _QUERIES_DIR / f"{grammar_id}.scm"
     if not qfile.exists():
         _query_cache[grammar_id] = None
         return None
@@ -213,22 +211,25 @@ def _extract_symbols_from_parsed(
     if QueryCursor is None:
         return symbols, imports
 
+    _CAP_KIND: dict[str, str] = {
+        "function": "function",
+        "method": "function",
+        "class": "class",
+        "struct": "class",
+        "interface": "interface",
+        "entry": "entry",
+    }
+
     cursor = QueryCursor(query)
     captures = cursor.captures(tree.root_node)
 
     for cap_name, nodes in captures.items():
         for node in nodes:
             text = node.text.decode("utf-8", errors="replace")
-            if cap_name in ("function", "method"):
-                symbols.append({"kind": "function", "name": text})
-            elif cap_name in ("class", "struct"):
-                symbols.append({"kind": "class", "name": text})
-            elif cap_name in ("interface",):
-                symbols.append({"kind": "interface", "name": text})
-            elif cap_name in ("import",):
+            if cap_name == "import":
                 imports.append(text)
-            elif cap_name in ("entry",):
-                symbols.append({"kind": "entry", "name": text})
+            elif cap_name in _CAP_KIND:
+                symbols.append({"kind": _CAP_KIND[cap_name], "name": text})
 
     return symbols, imports
 
@@ -290,11 +291,7 @@ def _reconstruct_sources_from_diff(
             parts = line.split()
             b_path = parts[-1] if len(parts) >= 4 else ""
             b_path = b_path.lstrip("b/")
-            in_target = (
-                b_path == target_filepath
-                or b_path.lstrip("a/") == target_filepath
-                or b_path == target_filepath
-            )
+            in_target = b_path == target_filepath
             if in_target:
                 old_lines = []
                 new_lines = []
@@ -333,6 +330,19 @@ def _reconstruct_sources_from_diff(
     return old_src, new_src
 
 
+def _extract_fn_names(tree: Any, query: Any) -> set[str]:
+    names: set[str] = set()
+    if QueryCursor is None:
+        return names
+    cursor = QueryCursor(query)
+    captures = cursor.captures(tree.root_node)
+    for cap_name, nodes in captures.items():
+        if cap_name in ("function", "method", "class", "struct", "interface"):
+            for node in nodes:
+                names.add(node.text.decode("utf-8", errors="replace"))
+    return names
+
+
 def extract_changed_symbols(diff_text: str, filepath: str) -> list[SymbolChange]:
     if not _tree_sitter_available or Parser is None:
         return []
@@ -353,24 +363,14 @@ def extract_changed_symbols(diff_text: str, filepath: str) -> list[SymbolChange]
     if query is None or QueryCursor is None:
         return []
 
-    def _extract_fn_names(tree: Any) -> set[str]:
-        names: set[str] = set()
-        cursor = QueryCursor(query)
-        captures = cursor.captures(tree.root_node)
-        for cap_name, nodes in captures.items():
-            if cap_name in ("function", "method", "class", "struct", "interface"):
-                for node in nodes:
-                    names.add(node.text.decode("utf-8", errors="replace"))
-        return names
-
     changes: list[SymbolChange] = []
 
     try:
         old_tree = parser.parse(old_src) if old_src is not None else None
         new_tree = parser.parse(new_src) if new_src is not None else None
 
-        old_names = _extract_fn_names(old_tree) if old_tree else set()
-        new_names = _extract_fn_names(new_tree) if new_tree else set()
+        old_names = _extract_fn_names(old_tree, query) if old_tree else set()
+        new_names = _extract_fn_names(new_tree, query) if new_tree else set()
 
         all_names = old_names | new_names
 
@@ -501,25 +501,21 @@ def detect_duplicate_blocks(filepath: str, min_lines: int = 5) -> list[Duplicate
         collect_blocks(tree.root_node)
 
         duplicates: list[DuplicateBlock] = []
-        seen: list[tuple[int, str]] = []
+        seen: dict[str, int] = {}
 
         for row_start, row_end, lines, sig in blocks:
-            match_found = False
-            for prev_lines, prev_sig in seen:
-                if sig == prev_sig and abs(lines - prev_lines) <= 1:
-                    duplicates.append(
-                        DuplicateBlock(
-                            lines=lines,
-                            locations=[
-                                f"{os.path.basename(filepath)}:{row_start}-{row_end}"
-                            ],
-                            similarity=0.85,
-                        )
+            if sig in seen and abs(lines - seen[sig]) <= 1:
+                duplicates.append(
+                    DuplicateBlock(
+                        lines=lines,
+                        locations=[
+                            f"{os.path.basename(filepath)}:{row_start}-{row_end}"
+                        ],
+                        similarity=0.85,
                     )
-                    match_found = True
-                    break
-            if not match_found:
-                seen.append((lines, sig))
+                )
+            else:
+                seen[sig] = lines
 
         return duplicates
     except Exception:
@@ -527,7 +523,7 @@ def detect_duplicate_blocks(filepath: str, min_lines: int = 5) -> list[Duplicate
         return []
 
 
-def estimate_cyclomatic_complexity(filepath: str, func_node: Any | None) -> int | None:
+def estimate_cyclomatic_complexity(filepath: str, func_node: Any | None) -> int:
     if not _tree_sitter_available or QueryCursor is None:
         return 1
 
