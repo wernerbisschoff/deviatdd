@@ -1,10 +1,10 @@
 # Project Constitution
 
-[CONSTITUTION_VERSION]: 0.2.0
+Version: 0.2.0
 
 ---
 
-## [1_ARCHITECTURAL_PRINCIPLES]
+## 1. Architectural Principles
 
 - **Three-Layer Architecture**: Macro (feature scoping: Explore → Research → PRD → Shard+Specify), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Each layer has strict phase gates — no layer may be skipped.
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing.
@@ -15,29 +15,29 @@
 - **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, YELLOW, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`). This tiering is enforced via `.deviate/config.toml` `[models]` section — the `default` key sets the fallback model, and per-phase keys override it.
 - **Config-Driven Model Routing**: Phase→model assignments are declared in `.deviate/config.toml` under `[models]`. The `default` key sets the model for all phases without an explicit entry. Any other key (e.g., `judge`, `plan`, `red`) is treated as a phase name. Resolution order: phase-specific key → `default` key → no model flag (backend-native default). Both `opencode` and `droid` backends support `--model`; `claude` backend ignores model config silently.
 
-## [2_TECH_STACK_STANDARDS]
+## 2. Tech Stack Standards
 
-### [2_1_BACKEND]
+### Backend
 - Python 3.13
 - Target: CLI application (`deviate`)
 - Framework: Typer (CLI entry points) with Rich for terminal I/O
 
-### [2_2_FRONTEND]
+### Frontend
 - None (CLI-only application; no web or GUI frontend)
 
-### [2_3_DATABASE]
+### Database
 - No persistent database runtime (all state tracked in JSONL ledgers and TOML config)
 - Session state: JSON files under `.deviate/`
 - Issue ledger: `specs/issues.jsonl` (append-only JSONL)
 - Task ledger: `specs/**/tasks.jsonl` (append-only JSONL)
 - Config: TOML via `.deviate/config.toml`; `[models]` section for per-phase model assignment
 
-### [2_4_INFRASTRUCTURE]
+### Infrastructure
 - Micro-sandbox: Aider Python API (`aider.coders.Coder`) as LLM execution substrate
 - Version control: Git (all phase commits, lock branches for concurrency)
 - No containerization required (local execution on host)
 
-### [2_5_TOOLING]
+### Tooling
 - Package manager: `uv`
 - Test runner: `pytest`
 - Linter: `ruff` (lint + format)
@@ -45,24 +45,42 @@
 - Task runner: `mise` (see `mise.toml` for all tasks)
 - Code quality gate: `mise run check`
 
-## [3_TESTING_PROTOCOLS]
+## 3. Testing Protocols
 
-### [3_1_FRAMEWORK]
-- `TEST_FRAMEWORK`: pytest
-- `TEST_ROOT`: tests
-- `TEST_EXT`: .py
-- `TEST_COMMAND`: pytest tests/ -v
-- `LINT_COMMAND`: ruff check .
-- `TYPE_CHECK_COMMAND`: (none — mypy is not yet configured)
-- `E2E_COMMAND`: bats tests/e2e/
+### Framework
+- Test framework: pytest
+- Test root: `tests/`
+- Test extension: `.py`
+- Test command: `pytest tests/ -v`
+- Lint command: `ruff check .`
+- E2E command: `bats tests/e2e/`
 
-### [3_2_COVERAGE]
-- Coverage target: >= 80% (configurable via `.deviate/config.toml`)
+### Coverage
+- Coverage target: >= 80%
 - RED phase tests must fail with `AssertionError` or `NotImplementedError` — syntax crashes are rejected
 - GREEN phase must pass all tests; Tamper Guard resets unauthorized test edits
 - REFACTOR phase runs regression gate: tests must re-pass after polish
 
-## [4_DEFINITION_OF_DONE]
+## 4. Development Workflow
+
+### Branch Strategy
+- Feature branches follow: `feat/<epic-slug>/<issue-slug>`
+- Hotfix branches follow: `fix/<short-description>`
+- All commits must reference the task ID
+
+### Commit Convention
+- Format: `<type>(<scope>): <description>`
+- Types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
+- Scope is the task ID (e.g., `T001`)
+- Body wraps at 72 characters
+
+### Review Process
+- All code must pass `mise run check` before merge
+- HITL Gate 3 (Final Merge Audit) is mandatory for all feature work
+- PR descriptions must reference the spec.md acceptance criteria
+
+## 5. Definition of Done
+
 - [ ] Code implemented (satisfies acceptance criteria from `spec.md`)
 - [ ] Tests passing (pytest with clean exit code 0)
 - [ ] Lint passing (ruff check with no violations)
@@ -72,18 +90,7 @@
 - [ ] No governance violations (constitution rules upheld, no HITL gates bypassed)
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
-## [5_VERSION_HISTORY]
+## 6. Version History
+
 - 0.2.0 — Added `[models]` config section for per-phase model routing; documented resolution order and backend support matrix
 - 0.1.0 — Initial constitution generation for DeviaTDD Python CLI
-
-## [SEMANTIC_ANCHORS]
-- `CONSTITUTION_VERSION`
-- `ARCHITECTURAL_PRINCIPLES`
-- `TECH_STACK_STANDARDS`
-- `TESTING_PROTOCOLS`
-- `DEFINITION_OF_DONE`
-- `VERSION_HISTORY`
-- File paths: `specs/constitution.md`, `specs/issues.jsonl`, `.deviate/config.toml`
-- Framework names: pytest, ruff, uv, rich, typer, bats, aider
-- Model config: `DeviateConfig.models`, `resolve_phase_model()`, `resolve_model_for_phase()` in `src/deviate/state/config.py`
-- `[models]` section in `.deviate/config.toml`

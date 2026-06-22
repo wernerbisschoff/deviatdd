@@ -1,5 +1,4 @@
 import tomllib
-import warnings
 from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
@@ -7,91 +6,10 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
-from deviate.cli import _resolve_placeholder, cli
+from deviate.cli import cli
 from deviate.cli.__init__ import resolve_graphite_config
 
 runner = CliRunner()
-
-
-class TestResolvePlaceholder:
-    """RED phase tests for TSK-001-04: Extended Placeholder Resolution (2→6 Variables)."""
-
-    def test_resolve_placeholder_complete(self, tmp_path: Path):
-        """AC-010-01: Complete pyproject.toml resolves all 6 placeholders."""
-        pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text("""[project]
-name = "my-project"
-dependencies = [
-    "fastapi>=0.100.0",
-    "pydantic>=2.0.0",
-]
-
-[tool.uv]
-dev-dependencies = ["pytest>=7.0"]
-
-[tool.pytest.ini_options]
-minversion = "7.0"
-testpaths = ["tests"]
-""")
-        result = _resolve_placeholder(repo_root=tmp_path)
-        assert result["PROJECT_NAME"] == "my-project"
-        assert result["REPO_ROOT"] == str(tmp_path.resolve())
-        assert result["TARGET_BACKEND_FRAMEWORK"] == "fastapi"
-        assert result["TARGET_PACKAGE_MANAGER"] == "uv"
-        assert result["TARGET_TEST_RUNNER"] == "pytest"
-        assert result["TARGET_COVERAGE_MINIMUM"] == "80"
-
-    def test_resolve_placeholder_missing_pyproject(self, tmp_path: Path):
-        """AC-010-02: No pyproject.toml — all non-REPO_ROOT vars UNKNOWN."""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = _resolve_placeholder(repo_root=tmp_path)
-
-        assert result["PROJECT_NAME"] == "UNKNOWN"
-        assert result["REPO_ROOT"] == str(tmp_path.resolve())
-        assert result["TARGET_BACKEND_FRAMEWORK"] == "UNKNOWN"
-        assert result["TARGET_PACKAGE_MANAGER"] == "UNKNOWN"
-        assert result["TARGET_TEST_RUNNER"] == "UNKNOWN"
-        assert result["TARGET_COVERAGE_MINIMUM"] == "80"
-
-        unresolvable = [
-            "PROJECT_NAME",
-            "TARGET_BACKEND_FRAMEWORK",
-            "TARGET_PACKAGE_MANAGER",
-            "TARGET_TEST_RUNNER",
-        ]
-        warning_texts = [str(x.message) for x in w]
-        for var in unresolvable:
-            assert any(var in msg for msg in warning_texts), (
-                f"Missing warning for {var}"
-            )
-
-    def test_resolve_placeholder_partial(self, tmp_path: Path):
-        """Partial pyproject.toml with only [project] name — best-effort resolution."""
-        pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text("""[project]
-name = "partial-project"
-""")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = _resolve_placeholder(repo_root=tmp_path)
-
-        assert result["PROJECT_NAME"] == "partial-project"
-        assert result["REPO_ROOT"] == str(tmp_path.resolve())
-        assert result["TARGET_BACKEND_FRAMEWORK"] == "UNKNOWN"
-        assert result["TARGET_PACKAGE_MANAGER"] == "UNKNOWN"
-        assert result["TARGET_TEST_RUNNER"] == "UNKNOWN"
-        assert result["TARGET_COVERAGE_MINIMUM"] == "80"
-
-        warning_texts = [str(x.message) for x in w]
-        for var in [
-            "TARGET_BACKEND_FRAMEWORK",
-            "TARGET_PACKAGE_MANAGER",
-            "TARGET_TEST_RUNNER",
-        ]:
-            assert any(var in msg for msg in warning_texts), (
-                f"Missing warning for {var}"
-            )
 
 
 class TestInitCommand:
@@ -102,19 +20,6 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             assert (workdir / ".deviate" / "config.toml").exists()
             assert (workdir / ".deviate" / "session.json").exists()
-
-    def test_init_creates_constitution(self, tmp_path: Path):
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(
-                cli, ["init", "--agent", "opencode", "--generate-constitution"]
-            )
-            assert result.exit_code == 0, result.output
-            constitution_path = workdir / "specs" / "constitution.md"
-            assert constitution_path.exists()
-            content = constitution_path.read_text()
-            assert "${PROJECT_NAME}" not in content
-            assert "${REPO_ROOT}" not in content
 
     def test_init_appends_governance_to_nonexistent_file(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -148,6 +53,56 @@ class TestInitCommand:
             assert "## DeviaTDD Orchestration Rules" in content
             assert "## Other Section" in content
 
+    def test_init_replaces_multi_section_governance_block(self, tmp_path: Path):
+        """Seed has multiple sections; each is replaced independently without duplication."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            claude_path = workdir / "CLAUDE.md"
+            existing_content = (
+                "# My Project\n\n"
+                "## DeviaTDD Orchestration Rules\n"
+                "Old orchestration content\n\n"
+                "## Offline Documentation System\n"
+                "Old docs content\n\n"
+                "## Other Section\n"
+                "Preserved content\n"
+            )
+            claude_path.write_text(existing_content)
+
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            content = claude_path.read_text()
+            assert "Old orchestration content" not in content
+            assert "Old docs content" not in content
+            assert "Preserved content" in content
+            assert "## Other Section" in content
+            assert content.count("## DeviaTDD Orchestration Rules") == 1
+            assert content.count("## Offline Documentation System") == 1
+
+    def test_init_normalized_heading_replaces_annotated_heading(self, tmp_path: Path):
+        """Existing heading has emoji/parenthetical that seed lacks; normalized match finds it."""
+        with chdir(tmp_path):
+            workdir = tmp_path
+            claude_path = workdir / "CLAUDE.md"
+            existing_content = (
+                "# Project\n\n"
+                "## \U0001f4da Offline Documentation System (MANDATORY)\n"
+                "Old docs content\n\n"
+                "## Other Section\n"
+                "Preserved\n"
+            )
+            claude_path.write_text(existing_content)
+
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            content = claude_path.read_text()
+            assert "Old docs content" not in content
+            assert "Preserved" in content
+            assert "## Other Section" in content
+            assert content.count("## Offline Documentation System") == 1
+
     def test_init_skip_existing_dotfiles(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
@@ -175,18 +130,18 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             assert session_path.exists()
 
-    def test_init_detects_context(self, tmp_path: Path):
+    def test_init_detects_libref(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
-                mock_which.return_value = "/usr/local/bin/context"
+                mock_which.return_value = "/usr/local/bin/libref"
                 result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = true" in content
+            assert "use_libref = true" in content
 
-    def test_init_missing_context(self, tmp_path: Path):
+    def test_init_missing_libref(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
@@ -195,56 +150,52 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = false" in content
+            assert "use_libref = false" in content
 
-    def test_init_context_governance_block(self, tmp_path: Path):
+    def test_init_libref_governance_block(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
-                mock_which.return_value = "/usr/local/bin/context"
+                mock_which.return_value = "/usr/local/bin/libref"
                 result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             claude_path = workdir / "CLAUDE.md"
             assert claude_path.exists()
             claude_content = claude_path.read_text()
-            assert "## Offline Context Documentation System" in claude_content
-            assert "context query" in claude_content
-            assert "context list" in claude_content
-            assert "context add" in claude_content
+            assert "## Offline Documentation System" in claude_content
+            assert "libref query" in claude_content
+            assert "libref list" in claude_content
+            assert "libref add" in claude_content
 
             agents_path = workdir / "AGENTS.md"
             assert agents_path.exists()
             agents_content = agents_path.read_text()
-            assert "## Offline Context Documentation System" in agents_content
+            assert "## Offline Documentation System" in agents_content
 
-    def test_init_context_flag_overrides_missing_binary(self, tmp_path: Path):
-        """--context forces use_context=true even when shutil.which returns None."""
+    def test_init_libref_flag_overrides_missing_binary(self, tmp_path: Path):
+        """--libref forces use_libref=true even when shutil.which returns None."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = true" in content
+            assert "use_libref = true" in content
 
-    def test_init_context_flag_overrides_detected_binary(self, tmp_path: Path):
-        """--context stays true when binary is detected (no double-flip)."""
+    def test_init_libref_flag_overrides_detected_binary(self, tmp_path: Path):
+        """--libref stays true when binary is detected (no double-flip)."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
-                mock_which.return_value = "/usr/local/bin/context"
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                mock_which.return_value = "/usr/local/bin/libref"
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_context = true" in content
+            assert "use_libref = true" in content
 
     def test_init_graphite_key_at_toml_top_level(self, tmp_path: Path):
         """--graphite persists `graphite` at TOML top-level, not nested under [models]."""
@@ -259,43 +210,41 @@ class TestInitCommand:
                 f"models={parsed.get('models')}"
             )
 
-    def test_init_use_context_key_at_toml_top_level(self, tmp_path: Path):
-        """--context persists `use_context` at TOML top-level, not nested under [models]."""
+    def test_init_use_libref_key_at_toml_top_level(self, tmp_path: Path):
+        """--libref persists `use_libref` at TOML top-level, not nested under [models]."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("use_context") is True, (
-                f"use_context missing at top-level; got keys: {list(parsed.keys())} / "
+            assert parsed.get("use_libref") is True, (
+                f"use_libref missing at top-level; got keys: {list(parsed.keys())} / "
                 f"models={parsed.get('models')}"
             )
 
-    def test_init_graphite_and_context_combined(self, tmp_path: Path):
-        """--graphite --context together: both flags at top-level AND both governance sections."""
+    def test_init_graphite_and_libref_combined(self, tmp_path: Path):
+        """--graphite --libref together: both flags at top-level AND both governance sections."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = None
                 result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--graphite", "--context"]
+                    cli, ["init", "--agent", "opencode", "--graphite", "--libref"]
                 )
             assert result.exit_code == 0, result.output
 
             config_path = workdir / ".deviate" / "config.toml"
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("graphite") is True
-            assert parsed.get("use_context") is True
+            assert parsed.get("use_libref") is True
 
             for fname in ["CLAUDE.md", "AGENTS.md"]:
                 content = (workdir / fname).read_text()
                 assert "## Graphite Stacked Changes Workflow" in content
-                assert "## Offline Context Documentation System" in content
+                assert "## Offline Documentation System" in content
 
     def test_resolve_graphite_config_round_trip_after_init(self, tmp_path: Path):
         """init --graphite produces a config that resolve_graphite_config() reads as True."""
@@ -318,22 +267,20 @@ class TestInitCommand:
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("graphite") is True
 
-    def test_init_context_updates_existing_config(self, tmp_path: Path):
-        """Re-running init --context on existing repo persists use_context = true."""
+    def test_init_libref_updates_existing_config(self, tmp_path: Path):
+        """Re-running init --libref on existing repo persists use_libref = true."""
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which", return_value=None):
                 runner.invoke(cli, ["init", "--agent", "opencode"])
             config_path = workdir / ".deviate" / "config.toml"
-            assert "use_context = false" in config_path.read_text()
+            assert "use_libref = false" in config_path.read_text()
 
             with patch("shutil.which", return_value=None):
-                result = runner.invoke(
-                    cli, ["init", "--agent", "opencode", "--context"]
-                )
+                result = runner.invoke(cli, ["init", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
             parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("use_context") is True
+            assert parsed.get("use_libref") is True
 
     def test_init_graphite_preserves_other_config_keys(self, tmp_path: Path):
         """init --graphite on existing config preserves user [models] section."""
@@ -487,6 +434,32 @@ class TestInitGraphiteFlag:
             assert fpath.exists()
             content = fpath.read_text()
             assert "## Graphite Stacked Changes Workflow" not in content
+
+    def test_init_scaffolds_constitution_placeholder(self, tmp_path: Path):
+        """Init writes a placeholder specs/constitution.md when none exists."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            const_path = tmp_path / "specs" / "constitution.md"
+            assert const_path.exists()
+            content = const_path.read_text()
+            assert "# Project Constitution" in content
+            assert "TBD" in content
+            assert "## 3. TESTING_PROTOCOLS" in content
+
+    def test_init_scaffold_constitution_idempotent(self, tmp_path: Path):
+        """Re-running init preserves existing specs/constitution.md."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            const_path = tmp_path / "specs" / "constitution.md"
+            original = const_path.read_text()
+
+            result2 = runner.invoke(cli, ["init", "--agent", "opencode"])
+            assert result2.exit_code == 0, result2.output
+            assert const_path.read_text() == original
 
     def test_init_graphite_governance_section_present(self, tmp_path: Path):
         """AC-ADHOC-007-03: Graphite section present via _apply_governance."""
@@ -666,3 +639,11 @@ class TestInitAgentFlag:
         assert AGENT_TO_BACKEND["droid"] == "droid"
         assert AGENT_TO_BACKEND["claude"] == "claude"
         assert AGENT_TO_BACKEND["opencode"] == "opencode"
+
+
+def test_version():
+    from importlib.metadata import version
+
+    result = runner.invoke(cli, ["--version"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"deviate {version('deviate')}"

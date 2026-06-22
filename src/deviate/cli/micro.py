@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import importlib.resources
 import json
 import os
@@ -8,7 +7,6 @@ import re
 import subprocess
 import sys
 import warnings
-from datetime import datetime, timezone
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -27,7 +25,16 @@ from deviate.core.agent import (
     MalformedHandoverManifestError,
 )
 from deviate.core.profile import resolve_profile
+from deviate.core.run_logger import RunLogger, get_run_logger, set_run_logger
 from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
+from deviate.core.treesitter import (
+    detect_duplicate_blocks,
+    estimate_cyclomatic_complexity,
+    extract_changed_symbols,
+    extract_dead_code,
+    get_language_id,
+    incremental_parse,
+)
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import (
@@ -62,15 +69,10 @@ def _log(msg: str) -> None:
         console.print(f"[dim]{msg}[/]")
 
 
-def _save_agent_log(phase: str, task_id: str, label: str, content: str) -> None:
-    log_dir = Path.cwd() / ".deviate"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "prompts.log"
-    timestamp = datetime.now(timezone.utc).isoformat()
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(f"=== {timestamp} | {phase} | {task_id} | {label} ===\n")
-        f.write(content)
-        f.write("\n\n")
+def _log_run(event: str, **kwargs: object) -> None:
+    logger = get_run_logger()
+    if logger is not None:
+        logger.log(event, **kwargs)
 
 
 def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
@@ -304,7 +306,14 @@ def _invoke_agent(
     c.print(
         f"  [green]INVOKE_AGENT[/] running '{backend_name}{model_str}' for [{phase}] phase"
     )
-    _save_agent_log(phase, task_id, "prompt", prompt)
+    _log_run(
+        "INVOKE_AGENT",
+        task_id=task_id,
+        phase=phase,
+        backend=backend_name,
+        model=model or "(default)",
+        prompt=prompt,
+    )
     try:
         backend = AgentBackend(config=AgentConfig(backend=backend_name))
         output_handler = _make_output_handler(c, verbose=_verbose)
@@ -320,22 +329,44 @@ def _invoke_agent(
             prompt, output_callback=collecting_handler, model=model
         )
         c.print("")
-        _save_agent_log(phase, task_id, "manifest", manifest.model_dump_json())
+        status = getattr(manifest, "status", "?")
+        verdict = getattr(manifest, "verdict", "")
+        manifest_json = manifest.model_dump_json()
+        _log_run(
+            "AGENT_RESULT",
+            task_id=task_id,
+            phase=phase,
+            status=status,
+            verdict=verdict,
+            manifest=manifest_json,
+        )
         if raw_lines:
-            _save_agent_log(phase, task_id, "raw_output", "\n".join(raw_lines))
+            _log_run(
+                "AGENT_RAW_OUTPUT",
+                task_id=task_id,
+                phase=phase,
+                raw_output="\n".join(raw_lines),
+            )
         return manifest, ""
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
         )
+        _log_run(
+            "AGENT_NOT_AVAILABLE", task_id=task_id, phase=phase, backend=backend_name
+        )
         return None, ""
     except AgentTimeoutError as exc:
         partial_output = exc.partial_stdout or ""
-        if exc.partial_stderr:
-            _save_agent_log(phase, task_id, "timeout_stderr", exc.partial_stderr)
-        if partial_output:
-            _save_agent_log(phase, task_id, "timeout_stdout", partial_output)
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
+        _log_run(
+            "AGENT_TIMEOUT",
+            task_id=task_id,
+            phase=phase,
+            error=str(exc),
+            partial_stderr=exc.partial_stderr,
+            partial_stdout=partial_output,
+        )
         return None, partial_output
     except (
         AgentSubprocessError,
@@ -343,6 +374,7 @@ def _invoke_agent(
         EmptyOutputError,
     ) as exc:
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
+        _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
         return None, ""
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
@@ -808,6 +840,7 @@ def _run_red_phase(
     if _phase_already_done(ledger_path, task.get("id", ""), "RED"):
         c.print(f"  [dim]RED already done for {tid}, skipping[/]")
         return session
+    _log_run("PHASE_START", task_id=tid, phase="RED")
     c.print(f"  [bold blue]RED →[/] {tid}")
 
     backend = agent or "opencode"
@@ -888,6 +921,7 @@ def _run_green_phase(
             f"  [dim]GREEN already done for {tid}"
             f" but train_feedback present — re-running[/]"
         )
+    _log_run("PHASE_START", task_id=tid, phase="GREEN")
     c.print(f"  [bold green]GREEN →[/] {tid}")
 
     backend = agent or "opencode"
@@ -938,24 +972,15 @@ def _run_green_phase(
         failure_output = test_result.stdout or ""
         if test_result.stderr:
             failure_output += "\n--- stderr ---\n" + test_result.stderr
-        subprocess.run(
-            ["git", "reset", "--hard", "HEAD"],
-            cwd=root,
-            capture_output=True,
-            env=_git_env(),
-        )
-        subprocess.run(
-            ["git", "clean", "-fd"],
-            cwd=root,
-            capture_output=True,
-            env=_git_env(),
+        c.print(
+            f"  [yellow]TEST_FAILURE[/] {tid} \u2014 keeping implementation for JUDGE assessment"
         )
         session.train_feedback = (
             "The test suite failed after GREEN implementation.\n\n"
             f"<test_output>\n{failure_output}\n</test_output>"
         )
         session.save(session_path)
-        raise PhaseFailedError(f"GREEN phase tests failed for {tid}")
+        return session
 
     _run_format_cmd(root)
 
@@ -1099,6 +1124,53 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     return red_sha
 
 
+def _parse_diff_filepaths(diff_text: str) -> list[str]:
+    paths: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 4:
+                b_path = parts[-1].lstrip("b/")
+                paths.append(b_path)
+    return paths
+
+
+def _build_structured_diff_section(diff_text: str) -> str:
+    rows: list[str] = []
+    if diff_text.strip():
+        for fp in _parse_diff_filepaths(diff_text):
+            for sc in extract_changed_symbols(diff_text, fp):
+                lines = (
+                    f"{sc.start_line}-{sc.end_line}"
+                    if sc.start_line or sc.end_line
+                    else "-"
+                )
+                old_lines = (
+                    f"{sc.old_start_line}-{sc.old_end_line}"
+                    if sc.old_start_line or sc.old_end_line
+                    else "-"
+                )
+                sig = sc.new_signature or sc.old_signature or "-"
+                sz = (
+                    f"{sc.old_line_count}→{sc.new_line_count}"
+                    if sc.old_line_count or sc.new_line_count
+                    else "-"
+                )
+                rows.append(
+                    f"| {sc.language} | {sc.kind} | {sc.name} | {sc.change} "
+                    f"| {lines} | {old_lines} | {sz} | `{sig[:60]}` |"
+                )
+    if not rows:
+        return ""
+    table = (
+        "## Structured Diff Summary\n\n"
+        "| Language | Kind | Name | Change | Lines (new) | Lines (old) | Body Δ | Signature |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- |\n"
+    )
+    table += "\n".join(rows)
+    return "\n\n" + table
+
+
 def _run_judge_phase(
     task: dict,
     ledger_path: Path,
@@ -1109,6 +1181,7 @@ def _run_judge_phase(
     monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
+    _log_run("PHASE_START", task_id=tid, phase="JUDGE")
     c.print(f"  [bold magenta]JUDGE →[/] {tid}")
 
     backend = agent or "opencode"
@@ -1124,7 +1197,12 @@ def _run_judge_phase(
     ).stdout
 
     prompt = _build_auto_prompt("judge", task, root)
+
+    prompt += _build_structured_diff_section(diff)
+
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
+    if session.train_feedback:
+        prompt += f"\n\n<test_feedback>\n{session.train_feedback}\n</test_feedback>\n"
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root)
@@ -1144,6 +1222,11 @@ def _run_judge_phase(
     verdict = getattr(manifest, "verdict", "")
     if verdict.upper() == "COMPLIANCE_VIOLATION":
         c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
+        _log_run(
+            "JUDGE_REJECTED",
+            task_id=tid,
+            rationale=(manifest.rationale or "")[:500],
+        )
 
         feedback = manifest.rationale or ""
         if hasattr(manifest, "train_feedback") and manifest.train_feedback:
@@ -1178,12 +1261,20 @@ def _run_judge_phase(
                 env=_git_env(),
             )
 
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="rejected",
+            reroute="GREEN",
+        )
         session = session.force_transition_to("GREEN")
         session.train_feedback = feedback
         session.yellow_triggered = False
         session.save(session_path)
         return session
 
+    _log_run("PHASE_DECISION", task_id=tid, phase="JUDGE", decision="passed")
     session = session.force_transition_to("JUDGE")
     session.train_feedback = ""
     session.save(session_path)
@@ -1203,7 +1294,11 @@ def _run_refactor_phase(
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "COMPLETED"):
         c.print(f"  [dim]Already completed for {tid}, skipping[/]")
+        _log_run(
+            "PHASE_SKIP", task_id=tid, phase="REFACTOR", reason="already_completed"
+        )
         return session
+    _log_run("PHASE_START", task_id=tid, phase="REFACTOR")
     c.print(f"  [bold green]REFACTOR →[/] {tid}")
 
     backend = agent or "opencode"
@@ -1262,6 +1357,7 @@ def _run_yellow_phase(
     monitor: OrchestrationMonitor | None = None,
 ) -> tuple[SessionState, str]:
     tid = task.get("id", "?")
+    _log_run("PHASE_START", task_id=tid, phase="YELLOW")
     c.print(f"  [bold magenta]YELLOW →[/] {tid}")
 
     backend = agent or "opencode"
@@ -1285,6 +1381,13 @@ def _run_yellow_phase(
     verdict = getattr(manifest, "verdict", "")
     if verdict.upper() == "REJECTED":
         c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="YELLOW",
+            decision="rejected",
+            reroute="GREEN",
+        )
         subprocess.run(
             ["git", "restore", "."],
             cwd=Path.cwd(),
@@ -1295,6 +1398,7 @@ def _run_yellow_phase(
         _append_status_transition(task, "YELLOW_REJECTED", ledger_path)
         return session, _YELLOW_DECISION_REJECTED
 
+    _log_run("PHASE_DECISION", task_id=tid, phase="YELLOW", decision="approved")
     session = session.force_transition_to("YELLOW")
     session.yellow_triggered = False
     session.save(session_path)
@@ -1322,6 +1426,9 @@ def _finish_tdd_cycle(
 ) -> SessionState:
     tid = task.get("id", "?")
     if not no_refactor:
+        _log_run(
+            "PHASE_DECISION", task_id=tid, phase="CYCLE", decision="proceed_to_refactor"
+        )
         _maybe_push_event(
             monitor,
             "phase_change",
@@ -1470,22 +1577,42 @@ def _run_tdd_cycle(
                     monitor=monitor,
                 )
 
+        green_tests_failed = bool(
+            session.train_feedback and session.current_phase == "GREEN"
+        )
+
         if session.train_feedback:
-            train_attempts += 1
-            if train_attempts >= max_train_attempts:
+            if session.current_phase == "RED":
+                train_attempts += 1
+                if train_attempts >= max_train_attempts:
+                    c.print(
+                        f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
+                        f"after {max_train_attempts} attempts"
+                    )
+                    raise PhaseFailedError(
+                        f"GREEN phase post-cleanup failed for {task.get('id', '?')} "
+                        f"after {max_train_attempts} train attempts"
+                    )
                 c.print(
-                    f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
-                    f"after {max_train_attempts} attempts"
+                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                    f" \u2014 GREEN phase post-cleanup failed, retrying with feedback[/]"
                 )
-                raise PhaseFailedError(
-                    f"GREEN phase post-cleanup failed for {task.get('id', '?')} "
-                    f"after {max_train_attempts} train attempts"
+                _log_run(
+                    "PHASE_DECISION",
+                    task_id=tid,
+                    phase="GREEN",
+                    decision="reroute_to_green",
+                    reason="post_cleanup_failed",
+                    attempt=train_attempts,
                 )
-            c.print(
-                f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                f" — GREEN phase post-cleanup failed, retrying with feedback[/]"
+                continue
+            _log_run(
+                "PHASE_DECISION",
+                task_id=tid,
+                phase="GREEN",
+                decision="tests_failed",
+                reroute="JUDGE",
             )
-            continue
 
         if no_judge:
             judge_passed = True
@@ -1498,7 +1625,7 @@ def _run_tdd_cycle(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
 
-        if session.train_feedback:
+        if session.train_feedback or green_tests_failed:
             train_attempts += 1
             if train_attempts >= max_train_attempts:
                 c.print(
@@ -1509,10 +1636,30 @@ def _run_tdd_cycle(
                     f"JUDGE phase rejected {task.get('id', '?')} "
                     f"after {max_train_attempts} train attempts"
                 )
-            c.print(
-                f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                f" — re-running GREEN with judge feedback[/]"
+            if session.train_feedback:
+                c.print(
+                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                    f" \u2014 re-running GREEN with judge feedback[/]"
+                )
+            else:
+                session.train_feedback = (
+                    "GREEN implementation tests failed. "
+                    "The implementation must be corrected to pass the test suite."
+                )
+                session = session.force_transition_to("GREEN")
+                session.save(session_path)
+                c.print(
+                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
+                    f" \u2014 tests still failing, re-running GREEN with test feedback[/]"
+                )
+            _log_run(
+                "PHASE_DECISION",
+                task_id=tid,
+                phase="JUDGE",
+                decision="reroute_to_green",
+                attempt=train_attempts,
             )
+            continue
         else:
             judge_passed = True
 
@@ -1536,6 +1683,7 @@ def _run_execute_phase(
     monitor: OrchestrationMonitor | None = None,
 ) -> None:
     tid = task.get("id", "?")
+    _log_run("PHASE_START", task_id=tid, phase="EXECUTE")
     c.print(f"  [bold green]EXECUTE \u2192[/] {tid}")
 
     backend = agent or "opencode"
@@ -1791,6 +1939,10 @@ def _execute_task_with_retry(
     agent: str | None = None,
 ) -> bool:
     tid = task.get("id", "?")
+    mode = task.get("execution_mode", "TDD")
+    _log_run(
+        "TASK_DISPATCH", task_id=tid, mode=mode, description=task.get("description", "")
+    )
     monitor.push_event(
         "task_started", task_id=tid, description=task.get("description", "")
     )
@@ -1806,6 +1958,7 @@ def _execute_task_with_retry(
                 batch_mode=True,
                 monitor=monitor,
             )
+            _log_run("TASK_COMPLETE", task_id=tid, attempt=attempt + 1)
             monitor.push_event(
                 "task_completed",
                 task_id=tid,
@@ -1816,10 +1969,12 @@ def _execute_task_with_retry(
         except Exception as exc:
             if attempt == 1:
                 c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
+                _log_run("TASK_FAILED", task_id=tid, error=str(exc))
                 monitor.push_event("task_failed", task_id=tid, error_reason=str(exc))
                 _append_status_transition(task, "FAILED", ledger_file)
                 return False
             c.print(f"  [yellow]RETRY[/] {tid} (attempt {attempt + 2})")
+            _log_run("TASK_RETRY", task_id=tid, attempt=attempt + 2)
 
 
 def _run_all(
@@ -1846,6 +2001,14 @@ def _run_all(
             msg += f" for issue {issue_id}"
         c.print(f"[yellow]{msg}[/]")
         raise typer.Exit(code=0)
+
+    _log_run(
+        "RUN_ALL_START",
+        issue_id=issue_id or "(none)",
+        pending_count=len(pending),
+        skip_judge=no_judge,
+        skip_refactor=no_refactor,
+    )
 
     monitor = OrchestrationMonitor(c, json_mode=json_mode, total_tasks=len(pending))
 
@@ -1902,6 +2065,12 @@ def _run_all(
         "interrupted"
         if monitor.interrupted
         else ("halted" if any_failed else "completed")
+    )
+    _log_run(
+        "RUN_ALL_END",
+        total=total,
+        failed=monitor.failed_count,
+        status=pipeline_status,
     )
     monitor.push_event(
         "pipeline_complete",
@@ -1960,7 +2129,15 @@ def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
         ["git", "diff", "--cached", "--quiet"], cwd=root, env=_git_env()
     )
     unstaged = subprocess.run(["git", "diff", "--quiet"], cwd=root, env=_git_env())
-    if staged.returncode != 0 or unstaged.returncode != 0:
+    untracked = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    has_untracked = bool(untracked.stdout.strip())
+    if staged.returncode != 0 or unstaged.returncode != 0 or has_untracked:
         subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
         cmd = ["git", "commit", "-m", message]
         if no_verify:
@@ -1987,16 +2164,13 @@ def _verify_clean_worktree(root: Path, phase: str, tid: str) -> None:
     )
     if status.stdout.strip():
         files = status.stdout.strip().splitlines()
-        log_dir = root / ".deviate"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "prompts.log"
-        timestamp = datetime.now(timezone.utc).isoformat()
-        with log_path.open("a", encoding="utf-8") as f:
-            f.write(f"=== {timestamp} | {phase} | {tid} | POST_CMD_FAILURE ===\n")
-            f.write(f"{len(files)} uncommitted file(s):\n")
-            for line in files:
-                f.write(f"  {line}\n")
-            f.write("\n")
+        _log_run(
+            "POST_CMD_FAILURE",
+            phase=phase,
+            task_id=tid,
+            uncommitted_count=len(files),
+            files="\n".join(files),
+        )
         raise PhaseFailedError(
             f"{phase} phase agent for {tid} did not commit all files \u2014 "
             f"{len(files)} uncommitted file(s) remain after post-command"
@@ -2489,76 +2663,154 @@ def refactor_pre(
     raise typer.Exit(code=0)
 
 
-def _classify_expression_returns(value: ast.expr, expected: str) -> list[str]:
-    """Walk return expressions and flag obvious constant/literal mismatches.
-
-    Only flags literal constants and collection literals whose type doesn't
-    match the annotation.  Complex expressions (calls, attributes, names)
-    are assumed correct — the checker cannot statically resolve them.
-    """
+def _check_python_return_types(filepath: str) -> list[str]:
+    """Check Python return type annotations against literal return values using tree-sitter."""
     issues: list[str] = []
 
-    scalar_types = {"str": str, "int": int, "float": (int, float), "bool": bool}
-    collection_nodes = {
-        "list": ast.List,
-        "dict": ast.Dict,
-        "tuple": ast.Tuple,
-        "set": ast.Set,
+    tree = incremental_parse(filepath, None)
+    if tree is None:
+        return issues
+
+    scalar_types = {
+        "str": "string",
+        "int": "integer",
+        "float": "float",
+        "bool": "boolean",
     }
+    collection_types = {
+        "list": "list",
+        "dict": "dictionary",
+        "tuple": "tuple",
+        "set": "set",
+    }
+    all_known = set(scalar_types) | set(collection_types)
 
-    if isinstance(value, ast.Constant):
-        if expected in scalar_types:
-            if not isinstance(value.value, scalar_types[expected]):
-                issues.append(
-                    f"expected {expected}, got literal {type(value.value).__name__}"
-                )
-        elif expected in collection_nodes:
-            issues.append(f"expected {expected}, got literal constant")
+    def _get_return_type_name(func_node: object) -> str | None:
+        for child in func_node.children:
+            if child.type == "type":
+                nodes = [child]
+                while nodes:
+                    curr = nodes.pop(0)
+                    if curr.type == "identifier":
+                        return curr.text.decode("utf-8", errors="replace")
+                    if curr.type == "string":
+                        return curr.text.decode("utf-8", errors="replace").strip("'\"")
+                    nodes.extend(curr.children)
+                break
+        return None
 
-    elif isinstance(value, ast.JoinedStr):
-        if expected != "str":
-            issues.append(f"expected {expected}, got f-string (str)")
+    def _check_return_value(return_node: object, expected: str) -> list[str]:
+        result: list[str] = []
+        for rc in return_node.children:
+            if rc.type in ("return", ","):
+                continue
+            if rc.type in scalar_types.values():
+                if expected in scalar_types and rc.type != scalar_types[expected]:
+                    result.append(f"expected {expected}, got literal {rc.type}")
+            elif rc.type in collection_types.values():
+                for cname, ctype in collection_types.items():
+                    if rc.type == ctype and expected != cname:
+                        result.append(f"expected {expected}, got {cname} literal")
+                        break
+            elif rc.type in ("true", "false"):
+                if expected != "bool":
+                    result.append(f"expected {expected}, got literal bool")
+            break
+        return result
 
-    else:
-        for type_name, node_class in collection_nodes.items():
-            if isinstance(value, node_class) and expected != type_name:
-                issues.append(f"expected {expected}, got {type_name} literal")
+    stack = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        if node.type != "function_definition":
+            for child in node.children:
+                stack.append(child)
+            continue
+
+        ret_type = _get_return_type_name(node)
+        if ret_type is None or ret_type not in all_known:
+            for child in node.children:
+                stack.append(child)
+            continue
+
+        # Walk the function body for return statements
+        body = None
+        for child in node.children:
+            if child.type == "block":
+                body = child
+                break
+        if body is not None:
+            bs = [body]
+            while bs:
+                bn = bs.pop()
+                if bn.type == "return_statement":
+                    issues.extend(_check_return_value(bn, ret_type))
+                elif bn.type in ("function_definition", "class_definition"):
+                    continue
+                for child in bn.children:
+                    bs.append(child)
+
+        for child in node.children:
+            stack.append(child)
 
     return issues
 
 
 def _check_return_type_mismatch(filepath: str) -> list[str]:
+    """Check return type mismatches and structural issues using tree-sitter.
+
+    For Python files, checks return type annotations against literal return values.
+    For all supported languages, detects dead code, duplicate blocks, and high cyclomatic complexity.
+    """
     issues: list[str] = []
-    try:
-        with open(filepath, encoding="utf-8") as f:
-            tree = ast.parse(f.read(), filename=filepath)
-    except SyntaxError:
+
+    lang_id = get_language_id(filepath)
+    if lang_id is None:
         return issues
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef) or node.returns is None:
-            continue
+    # Python-specific: return type annotation check
+    if lang_id == "python":
+        issues.extend(_check_python_return_types(filepath))
 
-        return_annotation: str | None = None
-        if isinstance(node.returns, ast.Name):
-            return_annotation = node.returns.id
-        elif isinstance(node.returns, ast.Constant) and isinstance(
-            node.returns.value, str
-        ):
-            return_annotation = node.returns.value
+    dead = extract_dead_code(filepath)
+    dupes = detect_duplicate_blocks(filepath, min_lines=5)
 
-        if return_annotation is None:
-            continue
+    for block in dupes:
+        locs = ", ".join(block.locations)
+        issues.append(f"Duplicate block ({block.lines} lines) at {locs}")
 
-        # Only validate known builtin types
-        known = {"str", "int", "float", "bool", "list", "dict", "tuple", "set"}
-        if return_annotation not in known:
-            continue
+    tree = incremental_parse(filepath, None)
+    if tree is not None:
+        has_calls = False
+        func_types = {
+            "function_definition",
+            "function_declaration",
+            "function_item",
+            "method_definition",
+            "method_declaration",
+        }
+        fstack = [tree.root_node]
+        while fstack:
+            node = fstack.pop()
+            if not has_calls and node.type in ("call", "call_expression"):
+                has_calls = True
+            if node.type in func_types:
+                name = "unknown"
+                for child in node.children:
+                    if child.type in ("identifier", "property_identifier", "name"):
+                        name = child.text.decode("utf-8", errors="replace")
+                        break
+                complexity = estimate_cyclomatic_complexity(filepath, node)
+                if complexity >= 10:
+                    issues.append(
+                        f"Complexity warning: '{name}' has cyclomatic complexity {complexity} (threshold: 10)"
+                    )
+            for child in node.children:
+                fstack.append(child)
 
-        for child in ast.walk(node):
-            if not isinstance(child, ast.Return) or child.value is None:
-                continue
-            issues.extend(_classify_expression_returns(child.value, return_annotation))
+        if has_calls and dead:
+            for name in dead:
+                issues.append(f"Dead code: '{name}' is defined but never used")
+
     return issues
 
 
@@ -2885,22 +3137,33 @@ def run_command(
 
     skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
 
-    if all_tasks:
-        _run_all(
+    run_logger = RunLogger(root)
+    _log_run(
+        "RUN_START",
+        command=f"deviate run {task_id or ''} {'--all' if all_tasks else ''}".strip(),
+    )
+    set_run_logger(run_logger)
+
+    try:
+        if all_tasks:
+            _run_all(
+                root,
+                console,
+                no_judge=skip_judge,
+                no_refactor=skip_refactor,
+                agent=agent,
+                json_mode=json_mode,
+            )
+            raise typer.Exit(code=0)
+
+        _run_single(
+            task_id,
             root,
             console,
             no_judge=skip_judge,
             no_refactor=skip_refactor,
             agent=agent,
-            json_mode=json_mode,
         )
-        raise typer.Exit(code=0)
-
-    _run_single(
-        task_id,
-        root,
-        console,
-        no_judge=skip_judge,
-        no_refactor=skip_refactor,
-        agent=agent,
-    )
+    finally:
+        run_logger.close()
+        set_run_logger(None)
