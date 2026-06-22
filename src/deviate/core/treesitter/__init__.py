@@ -412,7 +412,7 @@ def _extract_fn_metadata(tree: Any, query: Any) -> dict[str, dict]:
     cursor = QueryCursor(query)
     captures = cursor.captures(tree.root_node)
     for cap_name, nodes in captures.items():
-        if cap_name not in ("function", "method", "class", "struct", "interface"):
+        if cap_name not in _CAP_KIND:
             continue
         for node in nodes:
             text = node.text.decode("utf-8", errors="replace")

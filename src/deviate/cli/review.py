@@ -309,7 +309,7 @@ def _compute_structured_diff(repo: Path, base: str, target: str) -> list[dict]:
         return []
 
     try:
-        from deviate.core.treesitter import extract_changed_symbols
+        from deviate.core.treesitter import extract_changed_symbols, get_language_id
     except ImportError:
         logger.warning("tree-sitter not available — skipping structured diff")
         return []
@@ -320,10 +320,12 @@ def _compute_structured_diff(repo: Path, base: str, target: str) -> list[dict]:
     for filepath in filepaths:
         try:
             symbols = extract_changed_symbols(diff_text, filepath)
-            if symbols:
-                structured.append(
-                    _build_file_entry(filepath, symbols[0].language, symbols, diff_text)
-                )
+            language = (
+                symbols[0].language
+                if symbols
+                else get_language_id(filepath) or "unknown"
+            )
+            structured.append(_build_file_entry(filepath, language, symbols, diff_text))
         except (LookupError, TypeError, ValueError):
             logger.warning("Failed to compute structured diff for: %s", filepath)
 
