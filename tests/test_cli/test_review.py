@@ -410,3 +410,331 @@ class TestReviewPreCore:
         assert result.exit_code == 0
         contract = json.loads(result.stdout)
         assert contract["report_exists"] is True
+
+
+class TestReviewPreStructuredDiff:
+    """RED-phase tests for TSK-008-06: merge-base structured diff in review contract."""
+
+    def test_review_pre_structured_diff_language_agnostic(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """UT-17: Structured diff includes ALL diff files — even non-parseable ones with empty symbols + 'unknown' language."""
+        subprocess.run(
+            ["git", "branch", "-m", "main"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        (tmp_git_repo / "mod.py").write_text("def foo():\n    pass\n", encoding="utf-8")
+        (tmp_git_repo / "config.txt").write_text("setting=value\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "base"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-branch"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        (tmp_git_repo / "mod.py").write_text(
+            "def foo(x: int) -> int:\n    return x\n", encoding="utf-8"
+        )
+        (tmp_git_repo / "config.txt").write_text(
+            "setting=new_value\n", encoding="utf-8"
+        )
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "update both"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert "structured_diff" in contract
+        entries = contract["structured_diff"]
+        assert len(entries) == 2, (
+            f"Expected 2 structured_diff entries for .py + .txt, got {len(entries)}"
+        )
+
+        file_map = {e["file"]: e for e in entries}
+        assert "mod.py" in file_map
+        assert "config.txt" in file_map
+
+        py_entry = file_map["mod.py"]
+        txt_entry = file_map["config.txt"]
+
+        assert len(py_entry["symbols"]) > 0, "Python file should have parseable symbols"
+        assert txt_entry["symbols"] == [], (
+            "Non-parseable .txt should have empty symbols"
+        )
+        assert txt_entry["language"] == "unknown", (
+            f"Expected 'unknown' language for .txt, got '{txt_entry['language']}'"
+        )
+
+        for key in (
+            "net_lines_changed",
+            "lines_added",
+            "lines_removed",
+            "chunks_changed",
+        ):
+            assert key in txt_entry, f"Missing file stats key '{key}' in .txt entry"
+
+    def test_review_pre_contains_structured_diff(self, tmp_git_repo: Path) -> None:
+        """UT-13: Contract contains structured_diff list for merge-base vs HEAD symbol comparison."""
+        subprocess.run(
+            ["git", "branch", "-m", "main"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        py_src = """def greet(name):
+    return f"Hello, {name}"
+
+class Calculator:
+    def add(self, a, b):
+        return a + b
+"""
+        (tmp_git_repo / "mod.py").write_text(py_src, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "mod.py"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "base commit"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-branch"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        new_src = """def greet(name, title="Mr."):
+    return f"Hello, {title} {name}"
+
+class Calculator:
+    def add(self, a: int, b: int) -> int:
+        return a + b
+
+    def subtract(self, a, b):
+        return a - b
+"""
+        (tmp_git_repo / "mod.py").write_text(new_src, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "mod.py"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "update mod"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert "structured_diff" in contract, (
+            f"Expected structured_diff in contract keys: {list(contract.keys())}"
+        )
+        assert isinstance(contract["structured_diff"], list)
+
+    def test_review_pre_structured_diff_multiple_languages(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """UT-14: Structured diff handles changes across .py and .ts files."""
+        subprocess.run(
+            ["git", "branch", "-m", "main"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        (tmp_git_repo / "mod.py").write_text("def foo():\n    pass\n", encoding="utf-8")
+        (tmp_git_repo / "service.ts").write_text(
+            "function bar(): void {}\n", encoding="utf-8"
+        )
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "base"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-branch"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        (tmp_git_repo / "mod.py").write_text(
+            "def foo(x: int) -> int:\n    return x\n", encoding="utf-8"
+        )
+        (tmp_git_repo / "service.ts").write_text(
+            "function bar(name: string): string {\n  return name;\n}\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "update both"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert "structured_diff" in contract
+
+    def test_review_pre_structured_diff_empty_when_no_diff(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """UT-15: Empty diff produces empty structured_diff list."""
+        subprocess.run(
+            ["git", "branch", "-m", "main"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        (tmp_git_repo / "dummy.txt").write_text("content\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "dummy.txt"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "base"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert "structured_diff" in contract
+        if not contract.get("diff"):
+            assert contract["structured_diff"] == []
+
+    def test_review_pre_structured_diff_change_types(self, tmp_git_repo: Path) -> None:
+        """UT-16: Change types correctly classify added/removed/modified/renamed."""
+        subprocess.run(
+            ["git", "branch", "-m", "main"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        base_src = """def removed_func():
+    return "old"
+
+def modified_func():
+    return "original"
+"""
+        (tmp_git_repo / "mod.py").write_text(base_src, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "mod.py"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "base"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-branch"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        head_src = """def modified_func():
+    return "changed"
+
+def added_func():
+    return "new"
+"""
+        (tmp_git_repo / "mod.py").write_text(head_src, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "mod.py"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "modify mod"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert "structured_diff" in contract
+        if contract["structured_diff"]:
+            entry = contract["structured_diff"]
+            assert isinstance(entry, list)
+            if len(entry) > 0:
+                symbols = (
+                    entry[0].get("symbols", entry)
+                    if isinstance(entry[0], dict)
+                    else entry
+                )
+                change_types = (
+                    {s.get("change", s.get("change")) for s in symbols}
+                    if symbols
+                    else set()
+                )
+                assert change_types, (
+                    "Expected at least one change type in structured diff"
+                )

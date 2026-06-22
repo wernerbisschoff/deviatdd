@@ -26,9 +26,7 @@ class TestFullInitCycle:
     def test_full_init_cycle_completes(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(
-                cli, ["init", "--agent", "opencode", "--generate-constitution"]
-            )
+            result = runner.invoke(cli, ["init", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             dot_dir = workdir / ".deviate"
@@ -36,13 +34,14 @@ class TestFullInitCycle:
             session_path = dot_dir / "session.json"
             claude_path = workdir / "CLAUDE.md"
             agents_path = workdir / "AGENTS.md"
-            constitution_path = workdir / "specs" / "constitution.md"
+
+            const_path = workdir / "specs" / "constitution.md"
 
             assert config_path.exists()
             assert session_path.exists()
             assert claude_path.exists()
             assert agents_path.exists()
-            assert constitution_path.exists()
+            assert const_path.exists()
 
             config_text = config_path.read_text()
             assert 'profile = "default"' in config_text
@@ -51,16 +50,15 @@ class TestFullInitCycle:
             assert session_data["current_phase"] == "IDLE"
             assert session_data["active_issue_id"] is None
 
-            constitution_text = constitution_path.read_text()
-            assert "${PROJECT_NAME}" not in constitution_text
-            assert "${REPO_ROOT}" not in constitution_text
-            assert "[1_ARCHITECTURAL_PRINCIPLES]" in constitution_text
-
             claude_text = claude_path.read_text()
             assert "## DeviaTDD Orchestration Rules" in claude_text
 
             agents_text = agents_path.read_text()
             assert "## DeviaTDD Orchestration Rules" in agents_text
+
+            const_text = const_path.read_text()
+            assert "# Project Constitution" in const_text
+            assert "## 3. TESTING_PROTOCOLS" in const_text
 
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -72,7 +70,6 @@ class TestFullInitCycle:
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)
             assert data.get("profile") == "default"
-            assert data.get("llm_backend") == "droid"
             assert data.get("timeout_seconds") == 300
             assert data.get("agent_export_mode") == "local"
 

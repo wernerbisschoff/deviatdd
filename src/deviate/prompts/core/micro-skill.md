@@ -24,4 +24,4 @@ Each task is a Logical Unit (30-90 min) that undergoes ONE complete R-G-R cycle:
 
 6. **Handover Manifest YAML**: After post-script success, emit a handover manifest as a YAML code block. ALL string values MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted. Output NOTHING outside the YAML block — no explanations, no commentary.
 
-7. **Context Consultation Guidance**: When implementing, use `context query <library> <topic>` to look up library APIs and framework conventions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `context` is unavailable, fall back to training data or web fetch.
+7. **Offline Documentation Guidance**: When implementing, use `libref query <library> <topic>` to look up library APIs and framework conventions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `libref` is unavailable, fall back to training data or web fetch.

@@ -18,7 +18,7 @@ This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, arc
 
 7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
 
-8. **Context Consultation Requirement**: All macro-layer phases MUST use `context query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+8. **Offline Documentation Requirement**: All macro-layer phases MUST use `libref query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
 
 ## <context>
 <user_input>

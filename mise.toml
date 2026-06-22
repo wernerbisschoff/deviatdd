@@ -53,6 +53,10 @@ description = "Remove artifacts"
 run = "uv run deviate"
 description = "Run the deviate CLI (pass args directly, e.g. `mise run dev init`)"
 
+[tasks.install-tool]
+run = "uv tool install --editable ."
+description = "Install package as editable tool via uv"
+
 [tasks.help]
 run = "mise tasks"
 description = "List tasks"

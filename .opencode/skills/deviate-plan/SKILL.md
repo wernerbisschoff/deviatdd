@@ -28,7 +28,7 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
 ## KV Cache Preservation
 
@@ -55,7 +55,7 @@ This phase operates inside the **DeviaTDD MESO LAYER** — localized research, p
 
 7. **Deterministic Discovery**: Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
 
-8. **Context Consultation Requirement**: Use `context query <library> <topic>` for understanding library APIs and framework conventions detected in the codebase. The `context` CLI provides offline, deterministic documentation lookups without network overhead. Prefer it over training data or web fetching.
+8. **Offline Documentation Requirement**: Use `libref query <library> <topic>` for understanding library APIs and framework conventions detected in the codebase. The `libref` CLI provides offline, deterministic documentation lookups without network overhead. Prefer it over training data or web fetching.
 
 <step id="handover_emission">
 After the post script completes, emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
@@ -109,7 +109,7 @@ CRITICAL INSTRUCTION INVARIANTS:
    d) If a `tasks.md` or prior `plan.md` exists in related issue directories, read it for prior implementation patterns
    e) If research artifacts (`design.md`, `data-model.md`) exist in the epic workspace, read them for architectural context
    f) Scan `specs/constitution.md` for applicable architectural invariants
-   g) Use `context query <library> <topic>` to understand library APIs and framework conventions detected in the codebase — provides offline, version-pinned documentation without network overhead
+   g) Use `libref query <library> <topic>` to understand library APIs and framework conventions detected in the codebase — provides offline, version-pinned documentation without network overhead
 
 4. **Prior Implementation Analysis**:
    a) Identify related issues in the issue ledger that share FR tokens or user story concerns
