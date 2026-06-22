@@ -58,6 +58,7 @@ After completion:
 | Governance Compliance | High | All mandatory gates, phase sequences, and review checkpoints preserved |
 | Behavioral Invariance | High | No unauthorized side effects, state mutations, or interface breakage |
 | Boundary Discipline | Medium | Changes respect module boundaries; no unauthorized cross-boundary access |
+| Test Correctness | High | If `<test_feedback>` is present, evaluate whether the implementation is responsible for the test failures and flag as COMPLIANCE_VIOLATION |
 
 </evaluation_criteria>
 
@@ -66,8 +67,9 @@ After completion:
 ### STEP_1: INGEST_CONTEXT
 
 1. Receive the `git diff` context and `spec.md` invariants appended by the orchestrator.
-2. Parse `spec.md` for protected module definitions, interface contracts, and architectural constraints.
-3. Load the `git diff` to identify all changed files, added lines, and removed lines.
+2. The optional `## Structured Diff Summary` section provides a concise, language-agnostic view of changed symbols (functions, classes, interfaces, structs). Cross-reference it with the raw `<diff>` for complete context.
+3. Parse `spec.md` for protected module definitions, interface contracts, and architectural constraints.
+4. Load the `git diff` to identify all changed files, added lines, and removed lines.
 
 ### STEP_2: ANALYZE_DIFF
 
@@ -152,6 +154,7 @@ diff_summary:
 | All changes in protected modules | Flag as COMPLIANCE_VIOLATION with severity based on change impact |
 | Pre-existing violations (not from this task) | Flag only violations introduced by this task's diff |
 | `--no-judge` flag | Skipped by orchestrator |
+| `<test_feedback>` present with failures | Evaluate whether GREEN implementation caused the failures; if so, COMPLIANCE_VIOLATION with test-failure detail |
 
 </edge_case_handling>
 

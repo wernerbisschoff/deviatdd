@@ -44,7 +44,7 @@ CRITICAL INSTRUCTION INVARIANTS:
    - Identify existing patterns, hooks, utilities, or components that the task should extend or integrate with
    - Map target files (both existing files to modify and new files to create)
    - Determine scope boundaries: what is in-scope vs defensively excluded
-   - Register relevant documentation sources via `context add <source>` for detected frameworks and libraries (e.g., `context add <git-repo-url> --name <lib> --path docs --tag <semver>`). Use `context list` to check what is already available.
+   - Register relevant documentation sources via `libref add <source>` for detected frameworks and libraries (e.g., `libref add <git-repo-url> --name <lib> --path docs --tag <semver>`). Use `libref list` to check what is already available.
    - Output findings in a `## Discovery Audit` block
 
 4. **Shared PRD Lifecycle**:

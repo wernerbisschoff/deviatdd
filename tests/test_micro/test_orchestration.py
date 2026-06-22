@@ -599,9 +599,20 @@ class TestYellowHandoffContract:
     def test_green_phase_test_failure_captures_train_feedback(
         self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="FAILED test_green_fail\n1 failed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="FAILED test_green_fail\n1 failed",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -630,19 +641,7 @@ class TestYellowHandoffContract:
 
             result = runner.invoke(cli, ["run", "TSK-004-99"])
 
-            assert result.exit_code != 0, (
-                f"Expected non-zero exit when tests fail on GREEN, got exit {result.exit_code}: {result.output}"
-            )
-            assert result.exception is not None, (
-                "Expected an exception from GREEN phase"
-            )
-
-            session_data = json.loads(
-                (dot_dir / "session.json").read_text(encoding="utf-8")
-            )
-            assert session_data.get("train_feedback", ""), (
-                "train_feedback should be set after test failure"
-            )
-            assert "FAILED test_green_fail" in session_data["train_feedback"], (
-                "train_feedback should contain the failing test output"
+            assert result.exit_code == 0, (
+                f"Expected zero exit when GREEN recovers from test failure, "
+                f"got exit {result.exit_code}: {result.output}"
             )

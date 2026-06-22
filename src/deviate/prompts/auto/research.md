@@ -6,7 +6,10 @@ You are a **SYSTEMS_ARCHITECT** operating inside the **DeviaTDD MACRO LAYER / PH
 
 This phase is followed by **HITL Gate 1** — the human reviews `design.md` and `data-model.md` before `/prd` is permitted.
 
-Your job is to ingest a JSON contract emitted by `deviate research pre`, dispatch three independent reasoning subagent forks, and write **exactly two** files: `<design_target>` and `<data_model_target>`.
+Your job is to ingest a JSON contract emitted by `deviate research pre`, dispatch three independent reasoning subagent forks, and write the following files:
+1. `<constitution_path>` — populated with real analysis (see `populate_constitution` step)
+2. `<design_target>` — architectural design
+3. `<data_model_target>` — data model
 
 ### Phase-Specific Invariants
 
@@ -28,8 +31,17 @@ Your job is to ingest a JSON contract emitted by `deviate research pre`, dispatc
 The CLI orchestrator has run `deviate research pre` and resolved the contract. Available context: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT run `deviate research pre` — the orchestrator handles it.
 </step>
 
-<step id="constitution_bootstrap">
-If `is_greenfield=true` and no constitution exists, bootstrap `<repo_root>/specs/constitution.md` from exploration findings (file registry, ecosystem research, architectural baselines) using the standard constitution format. This is the only exception to the two-file mandate.
+<step id="populate_constitution">
+Read `<constitution_path>` — it contains a placeholder constitution scaffolded by `deviate init` with TBD markers in each section.
+Populate every TBD section with real analysis from explore findings:
+
+- **Architectural Principles** from codebase patterns and conventions observed during exploration.
+- **Tech Stack Standards** from dependency manifests, CI config, and ecosystem research.
+- **Testing Protocols** from discovered test configuration (framework, commands, coverage, lint).
+- **Development Workflow** from observed commit patterns, branch strategy, CI pipeline.
+- **Definition of Done** from project conventions and tooling.
+
+Write the populated constitution to `<constitution_path>`.
 </step>
 
 <step id="read_explore_md">
@@ -92,7 +104,7 @@ The CLI orchestrator runs `deviate research post` after your response to validat
 | Condition | Action |
 | :--- | :--- |
 | Pre-script returns EXPLORE_NOT_FOUND | Halt; instruct human to run /explore first. |
-| is_greenfield=true (no constitution) | Bootstrap constitution from explore findings. |
+| is_greenfield=true (placeholder constitution) | Populate the placeholder with real analysis (see `populate_constitution` step). |
 | Gamma surfaces CONSTITUTIONAL_VIOLATION | Write to design_target, skip data_model_target, skip post-script, halt. |
 | Options matrix has zero viable options | Halt with NO_VIABLE_OPTIONS. |
 | HITL Gate 1 emitted but no human approval | Wait. Do not auto-advance. |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -10,6 +11,45 @@ import typer
 
 from deviate.cli._common import console
 from deviate.core._shared import git_env as _git_env
+
+logger = logging.getLogger(__name__)
+
+_SOURCE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".py",
+        ".scm",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".mts",
+        ".cts",
+        ".tsx",
+        ".rs",
+        ".go",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".h",
+        ".ex",
+        ".exs",
+        ".cs",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".kt",
+        ".kts",
+        ".swift",
+    }
+)
+
+
+def _is_source_file(filepath: str) -> bool:
+    """Check if a filepath corresponds to source code with a meaningful AST."""
+    stem, _, ext = filepath.rpartition(".")
+    return ("." + ext) in _SOURCE_EXTENSIONS if ext else False
+
 
 review_app = typer.Typer(no_args_is_help=True)
 
@@ -29,7 +69,9 @@ def pre(
     target = branch or "HEAD"
     branch_name = branch or _get_current_branch(repo)
 
-    diff = _compute_diff(repo, base=base, target_branch=target)
+    diff = _compute_diff(repo, base, target)
+    entries = _compute_structured_diff(repo, base, target)
+    structured_diff_markdown = _format_structured_diff_markdown(entries)
     constitution_path = _resolve_constitution_path(repo)
     prd_path, prd_warning = _resolve_prd(branch_name, repo)
     report_exists = _check_existing_reports(repo)
@@ -37,6 +79,8 @@ def pre(
     contract = {
         "status": "READY",
         "diff": diff,
+        "structured_diff": entries,
+        "structured_diff_markdown": structured_diff_markdown,
         "constitution_path": constitution_path,
         "constitution_warning": constitution_path is None,
         "prd_path": prd_path,
@@ -141,6 +185,235 @@ def _check_existing_reports(repo: Path) -> bool:
     if not reports_dir.is_dir():
         return False
     return any(reports_dir.iterdir())
+
+
+def _parse_diff_filepaths(diff_text: str) -> list[str]:
+    paths: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 4:
+                b_path = parts[-1].lstrip("b/")
+                paths.append(b_path)
+    return paths
+
+
+def _compute_file_stats(diff_text: str, target_filepath: str) -> dict:
+    """Compute file-level stats: net_lines_changed, chunks_changed, chunks."""
+    added = 0
+    removed = 0
+    chunks = 0
+    in_target = False
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            parts = line.split()
+            b_path = parts[-1].lstrip("b/") if len(parts) >= 4 else ""
+            in_target = b_path == target_filepath
+            continue
+        if not in_target:
+            continue
+        if line.startswith("@@"):
+            chunks += 1
+            continue
+        if (
+            line.startswith("--- ")
+            or line.startswith("+++ ")
+            or line.startswith("index ")
+        ):
+            continue
+        if line.startswith("new file"):
+            continue
+        if line.startswith("deleted file"):
+            continue
+        if line.startswith("+"):
+            added += 1
+        elif line.startswith("-"):
+            removed += 1
+    net_str = f"+{added}/-{removed}"
+    return {
+        "net_lines_changed": net_str,
+        "lines_added": added,
+        "lines_removed": removed,
+        "chunks_changed": chunks,
+    }
+
+
+def _parse_diff_imports(
+    diff_text: str, target_filepath: str, extract_imports_fn
+) -> dict:
+    """Parse added/removed import lines from diff for target filepath."""
+    added: list[str] = []
+    removed: list[str] = []
+    in_target = False
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            parts = line.split()
+            b_path = parts[-1].lstrip("b/") if len(parts) >= 4 else ""
+            in_target = b_path == target_filepath
+            continue
+        if not in_target:
+            continue
+        if (
+            line.startswith("--- ")
+            or line.startswith("+++ ")
+            or line.startswith("index ")
+        ):
+            continue
+        if line.startswith("@@"):
+            continue
+        content = line[1:] if len(line) > 1 else ""
+        stripped = content.strip()
+        if not stripped:
+            continue
+        if line.startswith("+"):
+            if extract_imports_fn(stripped):
+                added.append(stripped)
+        elif line.startswith("-"):
+            if extract_imports_fn(stripped):
+                removed.append(stripped)
+    return {"imports_added": added, "imports_removed": removed}
+
+
+def _is_import_line(line: str) -> bool:
+    """Heuristic check if a line looks like an import/include/using directive."""
+    lower = line.lower().strip()
+    if lower.startswith(
+        (
+            "import ",
+            "from ",
+            "using ",
+            "include ",
+            "#include",
+            "use ",
+            "extern crate",
+            "require(",
+        )
+    ):
+        return True
+    if lower.startswith("const ") and ("require(" in lower or "import(" in lower):
+        return True
+    if lower.startswith("#") and "include" in lower:
+        return True
+    return False
+
+
+def _build_file_entry(
+    filepath: str, language: str, symbols_raw, diff_text: str
+) -> dict:
+    """Build a file entry dict for the structured diff contract."""
+    stats = _compute_file_stats(diff_text, filepath)
+    entry: dict = {
+        "file": filepath,
+        "language": language,
+        "net_lines_changed": stats["net_lines_changed"],
+        "lines_added": stats["lines_added"],
+        "lines_removed": stats["lines_removed"],
+        "chunks_changed": stats["chunks_changed"],
+    }
+    symbols_list: list[dict] = []
+    for sc in symbols_raw:
+        sym: dict[str, str | int] = {
+            "k": sc.kind,
+            "n": sc.name,
+            "c": sc.change,
+        }
+        if sc.start_line or sc.end_line:
+            sym["L"] = f"{sc.start_line}-{sc.end_line}"
+        if sc.old_start_line or sc.old_end_line:
+            sym["LO"] = f"{sc.old_start_line}-{sc.old_end_line}"
+        if sc.old_signature:
+            sym["SO"] = sc.old_signature[:80]
+        if sc.new_signature:
+            sym["SN"] = sc.new_signature[:80]
+        if sc.old_line_count or sc.new_line_count:
+            sym["S"] = f"{sc.old_line_count}→{sc.new_line_count}"
+        symbols_list.append(sym)
+    entry["symbols"] = symbols_list
+    imports = _parse_diff_imports(diff_text, filepath, _is_import_line)
+    if imports["imports_added"] or imports["imports_removed"]:
+        entry["+I"] = imports["imports_added"]
+        entry["-I"] = imports["imports_removed"]
+    return entry
+
+
+def _format_structured_diff_markdown(entries: list[dict]) -> str:
+    """Render structured diff as a compact markdown table — token-efficient for LLM."""
+    sections: list[str] = []
+    for ent in entries:
+        fp = ent["file"]
+        lang = ent["language"]
+        net = ent["net_lines_changed"]
+        lines = [f"### {fp} ({lang}, {net})"]
+        syms = ent.get("symbols", [])
+        if syms:
+            lines.append("| k | n | c | L | LO | S | SO | SN |")
+            lines.append("|---|---|---|---|---|---|---|---|")
+            for s in syms:
+                lines.append(
+                    f"| {s.get('k', '-')} "
+                    f"| {s.get('n', '-')} "
+                    f"| {s.get('c', '-')} "
+                    f"| {s.get('L', '-')} "
+                    f"| {s.get('LO', '-')} "
+                    f"| {s.get('S', '-')} "
+                    f"| {s.get('SO', '-')[:40]} "
+                    f"| {s.get('SN', '-')[:40]} |"
+                )
+        added = ent.get("+I", [])
+        removed = ent.get("-I", [])
+        if added or removed:
+            lines.append("")
+            if added:
+                for imp in added:
+                    lines.append(f"+ `{imp}`")
+            if removed:
+                for imp in removed:
+                    lines.append(f"- `{imp}`")
+        sections.append("\n".join(lines))
+    return "\n\n".join(sections) if sections else "(no source changes)"
+
+
+def _compute_structured_diff(repo: Path, base: str, target: str) -> list[dict]:
+    """Compute structured AST diff entries for ALL changed files.
+
+    Source files get full symbol-level AST diff breakdown.
+    Non-source files get empty symbols and ``unknown`` language.
+    Returns empty list when no diff or tree-sitter unavailable.
+    """
+    merge_base = _compute_merge_base(base, target, repo)
+    if not merge_base:
+        return []
+
+    diff_text = _gather_diff(merge_base, target, repo)
+    if not diff_text.strip():
+        return []
+
+    try:
+        from deviate.core.treesitter import extract_changed_symbols, get_language_id
+    except ImportError:
+        logger.warning("tree-sitter not available — skipping structured diff")
+        return []
+
+    filepaths = _parse_diff_filepaths(diff_text)
+    entries: list[dict] = []
+
+    for filepath in filepaths:
+        try:
+            if _is_source_file(filepath):
+                symbols = extract_changed_symbols(diff_text, filepath)
+                language = (
+                    symbols[0].language
+                    if symbols
+                    else get_language_id(filepath) or "unknown"
+                )
+            else:
+                symbols = []
+                language = "unknown"
+            entries.append(_build_file_entry(filepath, language, symbols, diff_text))
+        except (LookupError, TypeError, ValueError):
+            logger.warning("Failed to compute structured diff for: %s", filepath)
+
+    return entries
 
 
 @review_app.command()

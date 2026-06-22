@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -35,6 +36,7 @@ from deviate.state.config import (
     resolve_graphite_config,
     resolve_model_for_phase,
 )
+from deviate.core.treesitter import extract_file_structure
 from deviate.state.ledger import (
     IssueRecord,
     TaskRecord,
@@ -45,6 +47,7 @@ from deviate.state.ledger import (
     select_unblocked_candidates,
 )
 
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -121,6 +124,116 @@ def _find_issue_file(issue_id: str) -> Path | None:
     if issue_path.exists():
         return issue_path
     return None
+
+
+def _read_spec_content(spec_path: str) -> str | None:
+    try:
+        pp = Path(spec_path)
+        if pp.is_file():
+            return pp.read_text(encoding="utf-8")
+    except OSError:
+        pass
+    return None
+
+
+def _parse_workstation_paths(spec_content: str) -> list[str]:
+    """Extract workstation file paths from an issue spec's System Topology Mapping section.
+
+    Looks for ``## System Topology Mapping`` → ``- **Primary Architectural Workstations**:``
+    and extracts backtick-quoted paths from the subsequent bullet list.
+    """
+    paths: list[str] = []
+    in_topology = False
+    in_workstations = False
+
+    for line in spec_content.splitlines():
+        if (
+            line.startswith("## ")
+            and in_topology
+            and "System Topology Mapping" not in line
+        ):
+            break
+        if "## System Topology Mapping" in line:
+            in_topology = True
+            continue
+        if not in_topology:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- **Primary Architectural Workstations**"):
+            in_workstations = True
+            continue
+        if in_workstations:
+            if stripped.startswith("- ") and "`" in stripped:
+                m = re.search(r"`([^`]+)`", stripped)
+                if m:
+                    paths.append(m.group(1))
+            elif not stripped.startswith("- ") and not stripped.startswith("  "):
+                in_workstations = False
+    return paths
+
+
+def _extract_workstation_file_structures(
+    spec_path: str, repo_root: Path
+) -> tuple[dict[str, dict], list[str]]:
+    """Extract file structure data for workstation paths in the spec's topology mapping.
+
+    Reads the spec content at *spec_path*, parses workstation file paths from
+    the ``System Topology Mapping`` section, and calls ``extract_file_structure()``
+    on each existing file.
+
+    Returns ``(structures, workstation_paths)`` where:
+    - ``structures`` is a dict keyed by relative workstation path (only existing files)
+    - ``workstation_paths`` is the full list of paths parsed from the spec
+    """
+    structures: dict[str, dict] = {}
+    try:
+        spec_content = Path(spec_path).read_text(encoding="utf-8")
+    except OSError:
+        return structures, []
+    workstation_paths = _parse_workstation_paths(spec_content)
+    for wpath in workstation_paths:
+        full_path = repo_root / wpath
+        if full_path.is_file():
+            fs = extract_file_structure(str(full_path))
+            if fs.language:
+                structures[wpath] = {
+                    "language": fs.language,
+                    "symbols": fs.symbols,
+                    "imports": fs.imports,
+                }
+    return structures, workstation_paths
+
+
+def _format_file_structure_markdown(structures: dict[str, dict]) -> str:
+    """Format extracted file structures as structured markdown.
+
+    Each entry is rendered as::
+
+        ### `path` (Language: <lang>)
+        - **Symbols**:
+          - kind `name`
+        - **Imports**:
+          - `import_path`
+    """
+    lines: list[str] = []
+    for wpath, info in structures.items():
+        lang = info.get("language", "?")
+        lines.append(f"### `{wpath}` (Language: {lang})")
+        symbols = info.get("symbols", [])
+        if symbols:
+            lines.append("- **Symbols**:")
+            for s in symbols:
+                kind = s.get("kind", "?")
+                name = s.get("name", "?")
+                lines.append(f"  - {kind} `{name}`")
+        imports = info.get("imports", [])
+        if imports:
+            lines.append("- **Imports**:")
+            for imp in imports:
+                lines.append(f"  - `{imp}`")
+        if not symbols and not imports:
+            lines.append("  *(no symbols or imports extracted)*")
+    return "\n".join(lines)
 
 
 def _resolve_constitution_commands(
@@ -632,11 +745,22 @@ def _plan_pre(
         constitution_lint_command,
     ) = _resolve_constitution_commands(repo_root)
 
+    # ── File structure extraction from spec workstation mapping ──────
+    file_structure: dict[str, dict] = {}
+    workstation_paths: list[str] = []
+    if spec_path:
+        try:
+            file_structure, workstation_paths = _extract_workstation_file_structures(
+                spec_path, repo_root
+            )
+        except Exception as exc:
+            logger.warning("Failed to extract file structure: %s", exc)
+
     if dry_run:
         console.print("[yellow]DRY_RUN[/] skipping side effects")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    contract = {
+    contract: dict[str, object] = {
         "issue_id": resolved_issue_id,
         "spec_path": spec_path,
         "plan_target": plan_target,
@@ -651,6 +775,8 @@ def _plan_pre(
         "force": force,
         "dry_run": dry_run,
     }
+    if workstation_paths:
+        contract["file_structure"] = file_structure
     print(json.dumps(contract, indent=2))
 
 
@@ -1295,7 +1421,7 @@ def _meso_run(
     tasks_dir = worktree_path / "specs" / epic_slug / issue_slug
     plan_dir.mkdir(parents=True, exist_ok=True)
     tasks_dir.mkdir(parents=True, exist_ok=True)
-    contract: dict[str, str] = {
+    contract: dict[str, object] = {
         "issue_id": issue_id,
         "issue_title": issue_title,
         "epic_slug": epic_slug,
@@ -1305,6 +1431,20 @@ def _meso_run(
         "plan_path": str(plan_dir / "plan.md"),
         "tasks_target": str(tasks_dir / "tasks.md"),
     }
+
+    # ── Inject file structure appendix into plan contract ────────────
+    file_structure_str = ""
+    if spec_path:
+        try:
+            structures, _ = _extract_workstation_file_structures(
+                spec_path, worktree_path
+            )
+            if structures:
+                file_structure_str = _format_file_structure_markdown(structures)
+        except Exception as exc:
+            logger.warning("Failed to extract file structure: %s", exc)
+    if file_structure_str:
+        contract["file_structure"] = file_structure_str
 
     ctx = chdir(worktree_path)
     with ctx:

@@ -17,7 +17,6 @@ class TestDeviateConfig:
     def test_default_values(self):
         config = DeviateConfig()
         assert config.profile == "default"
-        assert config.llm_backend == "droid"
         assert config.timeout_seconds == 300
         assert config.agent_export_mode == "local"
 
@@ -38,7 +37,6 @@ class TestDeviateConfig:
     def test_json_round_trip(self):
         config = DeviateConfig(
             profile="test",
-            llm_backend="claude",
             timeout_seconds=60,
             agent_export_mode="global",
         )
@@ -71,15 +69,15 @@ class TestDeviateConfig:
         models = {"default": "fast/model", "judge": "premium/model"}
         assert resolve_phase_model("judge", models) == "premium/model"
 
-    def test_use_context_default(self):
+    def test_use_libref_default(self):
         config = DeviateConfig()
-        assert config.use_context is False
+        assert config.use_libref is False
 
-    def test_use_context_round_trip(self):
-        config = DeviateConfig(use_context=True)
+    def test_use_libref_round_trip(self):
+        config = DeviateConfig(use_libref=True)
         data = json.loads(config.model_dump_json())
         restored = DeviateConfig.model_validate(data)
-        assert restored.use_context is True
+        assert restored.use_libref is True
 
     def test_config_graphite_field_default(self):
         config = DeviateConfig()

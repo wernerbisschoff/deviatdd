@@ -1,24 +1,65 @@
 from __future__ import annotations
 
+import importlib.resources
 import json
 from pathlib import Path
 from typing import NoReturn
 
 import typer
+from rich.console import Console
 
+from deviate.core.commit import commit_artifact
 from deviate.core.constitution import (
     extract_commands,
     validate_constitution,
     validate_sections,
 )
-from deviate.core.commit import commit_artifact
 
 constitution_app = typer.Typer(no_args_is_help=True)
+console = Console()
 
 
 def _fail_with(reason: str) -> NoReturn:
     print(json.dumps({"status": "FAILURE", "reason": reason}))
     raise typer.Exit(code=1)
+
+
+def _read_seed(filename: str) -> str | None:
+    try:
+        seed = importlib.resources.files("deviate.prompts").joinpath(filename)
+        return seed.read_text(encoding="utf-8")
+    except (ModuleNotFoundError, FileNotFoundError):
+        console.print(f"  [red]ERROR[/] {filename} not found in package")
+        return None
+
+
+@constitution_app.command()
+def generate(
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite existing constitution.md"
+    ),
+) -> None:
+    """Scaffold a placeholder specs/constitution.md.
+
+    The placeholder is populated by ``/research`` during the macro layer.
+    """
+    specs_dir = Path.cwd() / "specs"
+    const_path = specs_dir / "constitution.md"
+
+    if const_path.exists() and not force:
+        console.print(
+            "  [yellow]SKIP[/] specs/constitution.md already exists."
+            " Use --force to overwrite."
+        )
+        return
+
+    seed = _read_seed("constitution_seed.md")
+    if seed is None:
+        raise typer.Exit(code=1)
+
+    specs_dir.mkdir(parents=True, exist_ok=True)
+    const_path.write_text(seed, encoding="utf-8")
+    console.print(f"  [green]CREATE[/] {const_path.relative_to(Path.cwd())}")
 
 
 @constitution_app.command()
