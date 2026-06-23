@@ -88,6 +88,8 @@ class TestAgentCommandModel:
         cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "claude"
         assert cmd[1] == "-p"
+        assert cmd[2] == "--permission-mode"
+        assert cmd[3] == "auto"
         assert "--model" not in cmd
 
     @patch("deviate.core.agent.subprocess.Popen")
