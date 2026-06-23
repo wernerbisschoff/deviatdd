@@ -248,7 +248,9 @@ class TestParity:
         )
 
         with chdir(tmp_path):
-            python_result = runner.invoke(cli, ["research", "pre", "001-research-test"])
+            python_result = runner.invoke(
+                cli, ["research", "pre", "--slug", "001-research-test"]
+            )
         if python_result.exit_code != 0:
             pytest.skip(f"python research pre unavailable:\n{python_result.output}")
         python_contract = _parse_json_contract(python_result.output)

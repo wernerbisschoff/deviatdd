@@ -73,7 +73,7 @@ class TestResearchPre:
 
         assert not (explore_dir / "no-such-slug.md").exists()
 
-        result = runner.invoke(cli, ["research", "pre", "no-such-slug"])
+        result = runner.invoke(cli, ["research", "pre", "--slug", "no-such-slug"])
         assert result.exit_code != 0
         assert "explore.md" in result.output or "HALTED" in result.output.upper()
 
@@ -92,7 +92,7 @@ class TestResearchPre:
         session = SessionState(current_phase="EXPLORE")
         session.save(dot_dir / "session.json")
 
-        result = runner.invoke(cli, ["research", "pre", "test-research"])
+        result = runner.invoke(cli, ["research", "pre", "--slug", "test-research"])
         assert result.exit_code == 0, result.output
         loaded = SessionState.load(dot_dir / "session.json")
         assert loaded.current_phase == "RESEARCH"

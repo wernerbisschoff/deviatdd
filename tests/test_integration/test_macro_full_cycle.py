@@ -31,7 +31,7 @@ class TestMacroFullCycle:
         assert result_explore.exit_code == 0, result_explore.output
 
         result_research = runner.invoke(
-            cli, ["research", "pre", "001-deviate-cli-python"]
+            cli, ["research", "pre", "--slug", "001-deviate-cli-python"]
         )
         assert result_research.exit_code == 0, result_research.output
 
@@ -80,7 +80,7 @@ class TestMacroFullCycle:
             cli,
             ["explore", "pre", "Test", "--slug", "001-deviate-cli-python"],
         )
-        runner.invoke(cli, ["research", "pre", "001-deviate-cli-python"])
+        runner.invoke(cli, ["research", "pre", "--slug", "001-deviate-cli-python"])
         runner.invoke(cli, ["prd", "pre"])
         runner.invoke(cli, ["shard", "pre"])
 
@@ -129,7 +129,7 @@ class TestMacroFullCycle:
         assert result_explore.exit_code == 0, result_explore.output
 
         result_research = runner.invoke(
-            cli, ["research", "pre", "001-deviate-cli-python"]
+            cli, ["research", "pre", "--slug", "001-deviate-cli-python"]
         )
         assert result_research.exit_code == 0, result_research.output
 

@@ -14,7 +14,13 @@ def _discover_all(specs_root: Path | None = None) -> list[str]:
     return sorted(
         d.name
         for d in root.iterdir()
-        if d.is_dir() and not d.name.startswith(".") and (d / "explore.md").exists()
+        if d.is_dir()
+        and not d.name.startswith(".")
+        and (
+            (d / "explore.md").exists()  # Old format: specs/<slug>/explore.md
+            or _extract_prefix_num(d.name)
+            > 0  # New format: specs/NNN-slug/ (numbered bucket)
+        )
     )
 
 

@@ -173,7 +173,7 @@ class TestMacroContracts:
                 "# Explore\n\nDiscovered facts.\n"
             )
 
-            result = runner.invoke(cli, ["research", "pre", "test-feature"])
+            result = runner.invoke(cli, ["research", "pre", "--slug", "test-feature"])
             assert result.exit_code == 0, result.output
 
             contract = self._extract_contract(result.output)
