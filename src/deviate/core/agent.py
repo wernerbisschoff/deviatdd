@@ -59,7 +59,7 @@ class EmptyOutputError(Exception):
 
 BACKEND_COMMANDS: dict[str, str] = {
     "opencode": "opencode run",
-    "claude": "claude -p",
+    "claude": "claude -p --permission-mode auto",
     "droid": "droid exec",
     "stub": "stub",
 }
