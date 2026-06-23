@@ -27,7 +27,9 @@ class TestResearchCommand:
             (explore_dir / "deviate-cli-python.md").write_text("# Explore results\n")
             (Path("specs") / "constitution.md").write_text("# Constitution\n")
 
-            result = runner.invoke(cli, ["research", "pre", "deviate-cli-python"])
+            result = runner.invoke(
+                cli, ["research", "pre", "--slug", "deviate-cli-python"]
+            )
             assert result.exit_code == 0, result.output
 
             loaded = SessionState.load(dot_dir / "session.json")
@@ -45,7 +47,9 @@ class TestResearchCommand:
             session = SessionState(current_phase="PRD")
             session.save(dot_dir / "session.json")
 
-            result = runner.invoke(cli, ["research", "pre", "001-deviate-cli-python"])
+            result = runner.invoke(
+                cli, ["research", "pre", "--slug", "001-deviate-cli-python"]
+            )
             assert result.exit_code != 0
             assert "RESEARCH_HALTED" in result.output
 
@@ -56,7 +60,7 @@ class TestResearchCommand:
             session = SessionState(current_phase="EXPLORE")
             session.save(dot_dir / "session.json")
 
-            result = runner.invoke(cli, ["research", "pre", "missing-slug"])
+            result = runner.invoke(cli, ["research", "pre", "--slug", "missing-slug"])
             assert result.exit_code != 0
             assert "RESEARCH_HALTED" in result.output
             assert "explore.md" in result.output

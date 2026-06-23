@@ -283,28 +283,47 @@ research_app = typer.Typer(no_args_is_help=True, help="Research phase commands")
 @research_app.command("pre")
 @with_json_quiet
 def research_pre(
-    slug: str = typer.Argument(..., help="Explore slug (e.g. offline-context-docs)"),
+    slug: str | None = typer.Option(
+        None,
+        "--slug",
+        help="Explore slug (e.g. offline-context-docs). Auto-discovers latest from specs/explore/ if omitted.",
+    ),
 ) -> None:
     """Gate on explore.md, allocate numbered epic bucket, validate constitution"""
     specs_root = _resolve_specs_root()
 
+    # Discover slug if not provided — scan specs/explore/ for latest
+    resolved_slug = slug
+    if not resolved_slug:
+        explore_dir = specs_root / "explore"
+        if explore_dir.exists():
+            md_files = sorted(explore_dir.glob("*.md"))
+            if md_files:
+                resolved_slug = md_files[-1].stem
+
+    if not resolved_slug:
+        _halt(
+            "RESEARCH",
+            "no explore slug provided and no explore.md found in specs/explore/",
+        )
+
     # Resolve explore.md — try specs/explore/<slug>.md first, fall back to old format
-    explore_path = specs_root / "explore" / f"{slug}.md"
+    explore_path = specs_root / "explore" / f"{resolved_slug}.md"
     if not explore_path.exists():
         # Fallback: old format specs/<slug>/explore.md
-        alt = specs_root / slug / "explore.md"
+        alt = specs_root / resolved_slug / "explore.md"
         if alt.exists():
             explore_path = alt
 
     if not explore_path.exists():
-        _halt("RESEARCH", f"explore.md not found at specs/explore/{slug}.md")
+        _halt("RESEARCH", f"explore.md not found at specs/explore/{resolved_slug}.md")
 
     _validate_constitution("RESEARCH")
 
     session, session_path = _load_and_transition("RESEARCH")
 
     # Allocate numbered epic bucket for downstream phases
-    bucket = allocate_feature_bucket(slug)
+    bucket = allocate_feature_bucket(resolved_slug)
     epic_slug = bucket.name
     feature_dir = specs_root / epic_slug
 
@@ -642,6 +661,22 @@ def shard_post(
 
     _run_pre_commit_hooks()
 
+    artifacts: list[Path] = [ledger_path]
+    if epic_slug:
+        issues_dir = _resolve_specs_root() / epic_slug / "issues"
+        if issues_dir.exists():
+            artifacts.extend(sorted(issues_dir.glob("*-*.md")))
+    if (Path.cwd() / ".git").exists():
+        epic_num = _extract_epic_num(epic_slug)
+        sha = stage_and_commit(
+            message=f"docs({epic_num}): shard issue files and ledger",
+            files=artifacts,
+            repo=Path.cwd(),
+        )
+        console.print(f"[green]COMMITTED[/] shard artifacts at {sha[:8]}")
+    else:
+        console.print("[yellow]COMMIT_SKIP[/] not a git repository")
+
     session = session.transition_to("IDLE")
     session.save(session_path)
     console.print("[green]SHARD_POST[/] session reset to IDLE")
@@ -698,7 +733,7 @@ def _cycle_phase(
     if phase == "explore":
         _explore_pre(problem=f"Automated explore for {resolved}", slug=resolved)
     elif phase == "research":
-        _research_pre(epic=resolved)
+        _research_pre(slug=resolved)
     elif phase == "prd":
         _prd_pre()
     elif phase == "shard":
@@ -796,8 +831,8 @@ def _explore_post(force: bool = False) -> None:
     explore_post(epic=None, force=force)
 
 
-def _research_pre(epic: str = "") -> None:
-    research_pre(epic=epic)
+def _research_pre(slug: str | None = None) -> None:
+    research_pre(slug=slug)
 
 
 def _research_post(force: bool = False) -> None:
