@@ -70,6 +70,55 @@ class TestExecutePre:
             assert "task_id" in data
             assert "completion_criteria" in data
 
+    def test_execute_pre_saves_task_context_to_session(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-001-004",
+                description="EXECUTE test task",
+                status="PENDING",
+                execution_mode="DIRECT",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["execute", "pre", "--task", "TSK-004-01"])
+
+            assert result.exit_code == 0
+            session_data = json.loads((dot_dir / "session.json").read_text())
+            assert session_data["active_issue_id"] == "ISS-001-004"
+            assert session_data["current_phase"] == "EXECUTE"
+
+    def test_execute_pre_overrides_wrong_active_issue_id(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(
+                current_phase="EXECUTE", active_issue_id="ISS-999-999"
+            )
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-001-004",
+                description="EXECUTE test task",
+                status="PENDING",
+                execution_mode="DIRECT",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["execute", "pre", "--task", "TSK-004-01"])
+
+            assert result.exit_code == 0
+            session_data = json.loads((dot_dir / "session.json").read_text())
+            assert session_data["active_issue_id"] == "ISS-001-004"
+
 
 class TestExecutePost:
     def test_execute_post_commits_result(self, tmp_git_repo: Path):
@@ -161,3 +210,86 @@ class TestExecutePost:
             assert log.returncode == 0
             assert "feat(TSK-004-02): add custom feature" in log.stdout
             assert "Why this matters" in log.stdout
+
+    def test_execute_post_updates_ledger_with_completed(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="EXECUTE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-03",
+                issue_id="ISS-001-004",
+                description="EXECUTE ledger test",
+                status="PENDING",
+                execution_mode="DIRECT",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            src_file = Path("src") / "deviate" / "impl.py"
+            src_file.parent.mkdir(parents=True)
+            src_file.write_text("# executed implementation\n")
+
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+
+            result = runner.invoke(
+                cli,
+                ["execute", "post", "TSK-004-03"],
+            )
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+
+            ledger_lines = ledger_path.read_text().strip().splitlines()
+            assert len(ledger_lines) == 2
+            completed_record = json.loads(ledger_lines[1])
+            assert completed_record["status"] == "COMPLETED"
+            assert completed_record["id"] == "TSK-004-03"
+
+    def test_execute_pre_then_post_uses_session_context(self, tmp_git_repo: Path):
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE", active_issue_id="ISS-999-999")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-04",
+                issue_id="ISS-001-004",
+                description="EXECUTE session context test",
+                status="PENDING",
+                execution_mode="DIRECT",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            pre_result = runner.invoke(cli, ["execute", "pre", "--task", "TSK-004-04"])
+            assert pre_result.exit_code == 0
+
+            session_data = json.loads((dot_dir / "session.json").read_text())
+            assert session_data["active_issue_id"] == "ISS-001-004"
+
+            src_file = Path("src") / "deviate" / "impl.py"
+            src_file.parent.mkdir(parents=True)
+            src_file.write_text("# executed implementation\n")
+
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+
+            post_result = runner.invoke(cli, ["execute", "post"])
+
+            assert post_result.exit_code == 0, (
+                f"Expected exit 0, got {post_result.exit_code}: {post_result.output}"
+            )
+
+            ledger_lines = ledger_path.read_text().strip().splitlines()
+            assert len(ledger_lines) == 2
+            completed_record = json.loads(ledger_lines[1])
+            assert completed_record["status"] == "COMPLETED"
+            assert completed_record["id"] == "TSK-004-04"
