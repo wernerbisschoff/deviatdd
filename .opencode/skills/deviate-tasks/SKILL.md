@@ -12,9 +12,9 @@ aliases:
   - /tasks
 ---
 
-## DeviaTDD Universal Invariants
+## Universal Invariants
 
-The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
 
@@ -37,7 +37,7 @@ Static role definitions, behavioral constraints, and formatting parameters sit a
 
 ## Meso Layer Execution Model
 
-This phase operates inside the **DeviaTDD MESO LAYER** — localized research, planning, and task decomposition per issue.
+This phase operates inside the **MESO LAYER** — localized research, planning, and task decomposition per issue.
 
 ### Shared Meso Disciplines
 
@@ -60,12 +60,6 @@ This phase operates inside the **DeviaTDD MESO LAYER** — localized research, p
 <step id="handover_emission">
 After the post script completes, emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
 </step>
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
 
 
 <system_instructions>
