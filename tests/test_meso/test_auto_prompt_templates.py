@@ -23,11 +23,11 @@ SLIM_TEMPLATES = [
 
 # Maps template names (without .md) to expected context marker
 _CONTEXT_MAP = {
-    "explore": "## <context>",
-    "research": "## <context>",
-    "prd": "## <context>",
-    "shard": "## <context>",
-    "specify": "## <context>",
+    "explore": "<context>",
+    "research": "<context>",
+    "prd": "<context>",
+    "shard": "<context>",
+    "specify": "<context>",
     "plan": "<context>",
     "tasks": "<context>",
 }
@@ -49,8 +49,8 @@ class TestSlimPromptTemplatesExist:
     def test_each_template_has_frontmatter_or_role_header(self):
         for name in SLIM_TEMPLATES:
             content = _read_template(name)
-            assert content.startswith("---") or "## " in content[:80], (
-                f"{name}: expected frontmatter or markdown header"
+            assert content.startswith("---") or "<" in content[:80], (
+                f"{name}: expected frontmatter or XML header"
             )
 
 
@@ -77,20 +77,20 @@ class TestPromptComposition:
         3. ``auto/{template}.md`` — phase-specific instructions
     """
 
-    _CORE_MARKER = "## Universal Invariants"
+    _CORE_MARKER = "<universal_invariants>"
     _LAYER_MARKERS = {
-        "explore": "## Macro Layer Execution Model",
-        "research": "## Macro Layer Execution Model",
-        "prd": "## Macro Layer Execution Model",
-        "shard": "## Macro Layer Execution Model",
-        "specify": "## Macro Layer Execution Model",
-        "plan": "## Meso Layer Execution Model",
-        "tasks": "## Meso Layer Execution Model",
-        "red": "## Micro Layer Execution Model",
-        "green": "## Micro Layer Execution Model",
-        "refactor": "## Micro Layer Execution Model",
-        "yellow": "## Micro Layer Execution Model",
-        "judge": "## Micro Layer Execution Model",
+        "explore": "<macro_layer_model>",
+        "research": "<macro_layer_model>",
+        "prd": "<macro_layer_model>",
+        "shard": "<macro_layer_model>",
+        "specify": "<macro_layer_model>",
+        "plan": "<meso_layer_model>",
+        "tasks": "<meso_layer_model>",
+        "red": "<micro_layer_model>",
+        "green": "<micro_layer_model>",
+        "refactor": "<micro_layer_model>",
+        "yellow": "<micro_layer_model>",
+        "judge": "<micro_layer_model>",
     }
 
     @staticmethod
@@ -124,16 +124,14 @@ class TestPromptComposition:
             composed = load_template(self._no_ext(name))
             layer_pos = composed.index(self._LAYER_MARKERS[self._no_ext(name)])
             tail = composed[layer_pos:]
-            assert (
-                "## <context>" in tail
-                or "<context>" in tail
-                or "## Role Definition" in tail
-            ), f"{name}: expected phase-specific content after layer preamble"
+            assert "<context>" in tail or "## Role Definition" in tail, (
+                f"{name}: expected phase-specific content after layer preamble"
+            )
 
     def test_composition_has_double_newline_separators(self):
         for name in SLIM_TEMPLATES:
             composed = load_template(self._no_ext(name))
-            assert "\n\n## " in composed, (
+            assert "\n\n<" in composed, (
                 f"{name}: expected double-newline separators between tiers"
             )
 
@@ -156,24 +154,24 @@ class TestPromptComposition:
 class TestSlimPromptConstraints:
     def test_no_placeholders_in_explore(self):
         content = _read_template("explore.md")
-        assert "${" not in content or "## <context>" in content
+        assert "${" not in content or "<context>" in content
 
     def test_no_placeholders_in_research(self):
         content = _read_template("research.md")
-        assert "${" not in content or "## <context>" in content
+        assert "${" not in content or "<context>" in content
 
     def test_no_placeholders_in_prd(self):
         content = _read_template("prd.md")
-        assert "${" not in content or "## <context>" in content
+        assert "${" not in content or "<context>" in content
 
     def test_no_placeholders_in_shard(self):
         content = _read_template("shard.md")
-        assert "${" not in content or "## <context>" in content
+        assert "${" not in content or "<context>" in content
 
     def test_no_placeholders_in_specify(self):
         content = _read_template("specify.md")
-        assert "${" not in content or "## <context>" in content
+        assert "${" not in content or "<context>" in content
 
     def test_no_placeholders_in_tasks(self):
         content = _read_template("tasks.md")
-        assert "${" not in content or "## <context>" in content
+        assert "${" not in content or "<context>" in content
