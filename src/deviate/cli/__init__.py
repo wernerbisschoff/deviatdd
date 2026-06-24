@@ -28,6 +28,7 @@ from deviate.cli.adhoc import adhoc_app
 from deviate.cli.constitution import constitution_app
 from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
+from deviate.cli.init import init_app
 from deviate.cli.review import review_app
 from deviate.core.skills import detect_agents, discover_skills, install_skill
 from deviate.ui.render import is_interactive
@@ -551,8 +552,8 @@ def _ensure_gitignore(workdir: Path) -> None:
         gitignore.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
 
-@cli.command()
-def init(
+@cli.command(name="setup")
+def setup(
     agent_export_mode: str = typer.Option(
         "local", "--agent-export-mode", help="Export mode for agent commands"
     ),
@@ -586,7 +587,7 @@ def init(
             if selected_agent is None:
                 console.print(
                     "[red]NO_AGENT_SELECTED[/] No agent platform chosen."
-                    " Re-run `deviate init --agent <name>` with one of:"
+                    " Re-run `deviate setup --agent <name>` with one of:"
                     f" {', '.join(AGENT_CHOICES)}."
                 )
                 raise typer.Exit(code=1)
@@ -664,6 +665,7 @@ cli.add_typer(e2e_app, name="e2e")
 cli.add_typer(hotfix_app, name="hotfix")
 cli.add_typer(adhoc_app, name="adhoc")
 cli.add_typer(constitution_app, name="constitution")
+cli.add_typer(init_app, name="init")
 cli.add_typer(feature_app, name="feature")
 cli.add_typer(inspect_app, name="inspect")
 cli.add_typer(review_app, name="review")
