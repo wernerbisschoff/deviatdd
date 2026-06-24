@@ -35,6 +35,7 @@ from deviate.core.validation import (
     ARTIFACT_VALIDATORS,
     extract_section_body,
     validate_artifact,
+    validate_gherkin_syntax,
     validate_sections,
     validate_yaml_frontmatter,
 )
@@ -528,6 +529,10 @@ def prd_post(
         console.print(
             f"[yellow]PRD_WARNING[/] missing required sections: {', '.join(missing_sections)}"
         )
+
+    gherkin_errors = validate_gherkin_syntax(prd_content)
+    if gherkin_errors:
+        _halt("PRD", f"invalid Gherkin syntax: {'; '.join(gherkin_errors)}")
 
     reqs = extract_prd_requirements(prd_path)
     manifest_reqs = manifest_data.get("prd_requirements", [])
