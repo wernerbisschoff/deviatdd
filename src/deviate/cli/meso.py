@@ -32,7 +32,9 @@ from deviate.core.worktree import (
     remove_worktree,
 )
 from deviate.state.config import (
+    AgentConfig,
     SessionState,
+    _load_deviate_config_toml,
     resolve_graphite_config,
     resolve_model_for_phase,
 )
@@ -1311,10 +1313,19 @@ def _invoke_agent_phase(
 ) -> None:
     """Build a slim prompt, invoke the agent, and abort on failure."""
     prompt = _build_slim_prompt(phase, contract)
-    backend = AgentBackend()
     try:
         root = Path(cwd) if cwd else Path.cwd()
         model = resolve_model_for_phase(phase, root)
+        data = _load_deviate_config_toml(root)
+        agent_cfg = AgentConfig()
+        if data:
+            agent_data = data.get("agent", {})
+            if isinstance(agent_data, dict):
+                agent_cfg = AgentConfig(
+                    backend=agent_data.get("backend", "opencode"),
+                    timeout=agent_data.get("timeout", 600),
+                )
+        backend = AgentBackend(config=agent_cfg)
         backend_name = backend.config.backend
         model_str = f" --model {model}" if model else ""
         console.print(
