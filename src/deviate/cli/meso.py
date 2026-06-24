@@ -318,6 +318,24 @@ def _setup_mise(worktree_path: Path | None = None) -> None:
         console.print(f"[yellow]MISE_WARN[/] setup step failed — {e}")
 
 
+_AGENT_DIRS = (".claude", ".opencode", ".factory")
+
+
+def _sync_agent_dirs_to_worktree(repo_root: Path, worktree_path: Path) -> None:
+    """Copy agent skill directories from repo root to worktree.
+
+    This ensures worktrees have the same skills (.claude/, .opencode/,
+    .factory/) as the main repository so deviate commands work inside
+    the worktree without re-running ``deviate setup``.
+    """
+    for agent_dir in _AGENT_DIRS:
+        src = repo_root / agent_dir
+        dst = worktree_path / agent_dir
+        if src.exists():
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            console.print(f"[green]SYNC[/] {agent_dir}/ → worktree")
+
+
 # ---------------------------------------------------------------------------
 # Specify — legacy positional-argument API
 # ---------------------------------------------------------------------------
@@ -498,6 +516,9 @@ def _try_claim_issue(
 
         # ── Mise setup ─────────────────────────────────────────────────
         _setup_mise(Path(worktree_path))
+
+        # ── Sync agent skill directories to worktree ──────────────────
+        _sync_agent_dirs_to_worktree(repo_root, Path(worktree_path))
 
         # ── Claim issue (write directly to worktree ledger) ────────────
         wt_ledger_path = Path(worktree_path) / "specs" / "issues.jsonl"
