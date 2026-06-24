@@ -72,7 +72,7 @@ class TaskRecord(BaseModel):
         "COMPLETED",
         "FAILED",
     ] = "PENDING"
-    execution_mode: Literal["TDD", "DIRECT", "E2E", "IMMEDIATE"] = "TDD"
+    execution_mode: Literal["TDD", "DIRECT", "EXECUTE", "E2E", "IMMEDIATE"] = "TDD"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = {"extra": "forbid"}
@@ -289,7 +289,7 @@ def append_rollback_snapshot(snapshot: RollbackSnapshot, deviate_dir: Path) -> b
 class AdhocRecord(BaseModel):
     issue_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
-    execution_mode: Literal["DIRECT", "TDD"] = "DIRECT"
+    execution_mode: Literal["TDD", "DIRECT", "EXECUTE", "E2E", "IMMEDIATE"] = "DIRECT"
     status: Literal["PENDING", "COMPLETED"] = "PENDING"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
