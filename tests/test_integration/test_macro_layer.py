@@ -131,6 +131,39 @@ class TestPrdPost:
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "PRD"
 
+    def test_prd_post_halts_on_invalid_gherkin(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="PRD")
+            session.save(dot_dir / "session.json")
+
+            spec_root = Path("specs")
+            bucket_dir = spec_root / "test-prd"
+            bucket_dir.mkdir(parents=True)
+            prd_content = (
+                "# PRD\n"
+                "**AC-1-01: AC missing the When clause**\n"
+                "\n"
+                "- **Given**: A precondition\n"
+                "- **Then**: An outcome\n"
+            )
+            (bucket_dir / "prd.md").write_text(prd_content, encoding="utf-8")
+            (spec_root / "constitution.md").write_text(
+                "# Constitution\n", encoding="utf-8"
+            )
+
+            manifest = bucket_dir / "manifest.json"
+            manifest.write_text(
+                json.dumps({"epic_slug": "test-prd", "prd_requirements": []}),
+                encoding="utf-8",
+            )
+
+            result = runner.invoke(cli, ["prd", "post", str(manifest)])
+            assert result.exit_code != 0, result.output
+            assert "PRD_HALTED" in result.output
+            assert "When" in result.output
+
     def test_prd_post_rejects_invalid_manifest(self, mock_workspace: Path) -> None:
         spec_root = mock_workspace / "specs"
         bucket_dir = spec_root / "test-prd"
