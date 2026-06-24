@@ -61,7 +61,11 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 5. **Issue File Generation**: Write the issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md` using the exact output schema defined below. The slug is derived from the user's description (kebab-case, max 40 chars).
 
-6. **Ledger Registration**: Run the issues ledger registration to capture the issue ID.
+6. **Ledger Registration**: Append exactly ONE newline-delimited JSON record to `specs/issues.jsonl`. The record MUST use this exact `IssueRecord` schema — no extra fields, no alternate names:
+```json
+{"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"ISO8601","created_at":"ISO8601"}
+```
+Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
 7. **Commit**: Stage and commit all changes:
    ```
@@ -130,10 +134,9 @@ issue_id: ISS-NNN
 ````
 
 ## [LEDGER_REGISTRATION]
-```
-Ledger registration: adhoc issue created
-→ ISSUE_ID: ISS-NNN
-→ STATUS: BACKLOG
+Appended to `specs/issues.jsonl`:
+```json
+{"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"...","created_at":"..."}
 ```
 </output_format_schemas>
 
