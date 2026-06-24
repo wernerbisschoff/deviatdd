@@ -130,10 +130,10 @@ Instructions:
 <step id="pre_script">
 Run the pre-script to verify the prerequisite phase, allocate the numbered epic bucket, and emit a JSON contract:
 ```bash
-deviate research pre "<explore-slug>"
+deviate research pre --slug "<explore-slug>"
 ```
 
-Pass the explore slug derived during the explore phase (e.g. `offline-context-docs`). The pre-script reads `specs/explore/<explore-slug>.md`, allocates a numbered epic bucket at `specs/NNN-<explore-slug>/`, and emits the contract with paths pointing to the new epic directory.
+Pass the explore slug derived during the explore phase (e.g. `offline-context-docs`). If you do not know the explore slug, omit `--slug` and the command will auto-discover the latest explore.md from `specs/explore/`. The pre-script reads `specs/explore/<explore-slug>.md`, allocates a numbered epic bucket at `specs/NNN-<explore-slug>/`, and emits the contract with paths pointing to the new epic directory.
 
 The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir` (the new numbered epic dir), `specs_directory`, `explore_md_path` (still pointing to `specs/explore/<slug>.md`), `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, `is_greenfield` (boolean).
 
