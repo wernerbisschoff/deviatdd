@@ -1,4 +1,5 @@
 from contextlib import chdir
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -70,3 +71,26 @@ class TestPrdCommand:
             result = runner.invoke(cli, ["prd", "pre"])
             assert result.exit_code != 0
             assert "PRD_HALTED" in result.output
+
+    def test_prd_pre_json_emits_contract(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="RESEARCH")
+            session.save(dot_dir / "session.json")
+
+            spec_dir = Path("specs") / "001-deviate-cli-python"
+            spec_dir.mkdir(parents=True)
+            (spec_dir / "explore.md").write_text("# Explore\n")
+            (spec_dir / "design.md").write_text("# Design\n")
+            (spec_dir / "data-model.md").write_text("# Data Model\n")
+
+            result = runner.invoke(cli, ["prd", "pre", "--json"])
+            assert result.exit_code == 0, result.output
+
+            contract = json.loads(result.output.strip())
+            assert contract["phase"] == "PRD"
+            assert contract["epic_slug"] == "001-deviate-cli-python"
+            assert contract["design_path"].endswith("design.md")
+            assert contract["data_model_path"].endswith("data-model.md")
+            assert contract["plan_target"].endswith("manifest_prd.json")
