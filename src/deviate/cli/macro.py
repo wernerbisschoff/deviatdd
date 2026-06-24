@@ -155,7 +155,7 @@ def _emit_contract(
     session_path: Path,
     dry_run: bool = False,
     **extra: str | int | bool | None,
-) -> None:
+) -> dict[str, object]:
     repo_ctx = _resolve_repo_context()
     const_cmds = _resolve_constitution_commands()
     contract = {
@@ -170,6 +170,7 @@ def _emit_contract(
     print(json.dumps(contract, indent=2))
     if not dry_run:
         _save_session(session, session_path, phase)
+    return contract
 
 
 def _compute_next_issue_id(ledger_path: Path) -> str:
@@ -490,7 +491,7 @@ def prd_pre(
     artifacts_dir = Path(".deviate") / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    _emit_contract(
+    return _emit_contract(
         "PRD",
         session,
         session_path,
