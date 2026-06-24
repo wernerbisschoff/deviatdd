@@ -1,10 +1,10 @@
 ## Macro Layer Execution Model
 
-This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
+This phase operates inside the **MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
 
 ### Shared Macro Disciplines
 
-1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket at `specs/{NNN}-{FEATURE_SLUG}/`. The bucket is created by the pre-script — do NOT re-derive paths from the problem statement.
+1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket. For **research**, **PRD**, and **shard**, the bucket is `specs/{NNN}-{FEATURE_SLUG}/` (a numbered epic directory). For **explore**, the bucket is `specs/explore/` (a staging directory, NOT a numbered epic). The explore bucket is created by `deviate explore pre`; numbered epic buckets are created by `deviate research pre` via `allocate_feature_bucket()` — do NOT re-derive paths from the problem statement.
 
 2. **Constitutional Validation Gate**: Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
 
@@ -19,8 +19,3 @@ This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, arc
 7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
 
 8. **Offline Documentation Requirement**: All macro-layer phases MUST use `libref query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
-
-## <context>
-<user_input>
-$ARGUMENTS
-</user_input>

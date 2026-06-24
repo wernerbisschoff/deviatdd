@@ -10,6 +10,52 @@ aliases:
   - spec:init
 ---
 
+## Universal Invariants
+
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
+
+1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
+
+2. **Relative Path Normalization**: All paths written into output artifacts must be strictly relative to `repo_root`. Absolute machine-specific paths are forbidden.
+
+3. **Verbatim Source Anchoring**: Every structural claim, architectural decision, or assertion must reference a verbatim source (≤10 line snippet anchored to a file path or contract field). Rows without source anchors are subject to post-script rejection.
+
+4. **Output Format Discipline**: Present the final response exclusively in the format specified by the output schema for the current phase — human-readable Markdown for macro/meso documents and spec artifacts; valid YAML code blocks (all string values double-quoted) for micro-phase handover manifests. Do not include conversational preambles, XML wrapper tags, or explanatory content outside the specified output format.
+
+5. **Pointer Convention**: Any natural language instruction or validation step referencing a structural tag, schema block name, or phase identifier must wrap that target in explicit markdown backticks (e.g., `tasks.md`, `spec.md`, `/research`).
+
+6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
+
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
+
+## KV Cache Preservation
+
+Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
+
+
+## Macro Layer Execution Model
+
+This phase operates inside the **MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
+
+### Shared Macro Disciplines
+
+1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket. For **research**, **PRD**, and **shard**, the bucket is `specs/{NNN}-{FEATURE_SLUG}/` (a numbered epic directory). For **explore**, the bucket is `specs/explore/` (a staging directory, NOT a numbered epic). The explore bucket is created by `deviate explore pre`; numbered epic buckets are created by `deviate research pre` via `allocate_feature_bucket()` — do NOT re-derive paths from the problem statement.
+
+2. **Constitutional Validation Gate**: Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+
+3. **Output File Mandate**: Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+
+4. **Pre/Post Script Lifecycle**: Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+
+5. **HITL Gate Handoff**: After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+
+6. **Subagent Delegation**: For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+
+7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+
+8. **Offline Documentation Requirement**: All macro-layer phases MUST use `libref query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+
+
 ## DeviaTDD Universal Invariants
 
 The following rules apply across ALL DeviaTDD phases:

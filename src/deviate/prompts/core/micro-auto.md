@@ -4,7 +4,7 @@ NOTE: This differs from ``micro-skill.md`` — the ``-auto`` variants reference 
 while ``-skill`` variants reference the pre/post scripts directly, because skill prompts are invoked
 by the agent directly (agent runs pre/post) while auto prompts are orchestrated by the CLI.
 
-This phase operates inside the **DeviaTDD MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
+This phase operates inside the **MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
 
 ### The R-G-R Cycle
 
@@ -29,3 +29,9 @@ Each task is a Logical Unit (30-90 min) that undergoes ONE complete R-G-R cycle:
 **STDOUT OUTPUT MANDATE**: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write artifact files to their target paths only (not to stdout). The caller parses your stdout as raw YAML.
 
 6. **YAML Quoting Rule**: ALL string values in the handover manifest YAML MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
+
+## <context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

@@ -77,7 +77,7 @@ class TestPromptComposition:
         3. ``auto/{template}.md`` — phase-specific instructions
     """
 
-    _CORE_MARKER = "## DeviaTDD Universal Invariants"
+    _CORE_MARKER = "## Universal Invariants"
     _LAYER_MARKERS = {
         "explore": "## Macro Layer Execution Model",
         "research": "## Macro Layer Execution Model",

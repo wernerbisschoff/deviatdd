@@ -2,7 +2,7 @@
 
 ## Role Definition
 
-You are a **SYSTEMS_ARCHITECT** operating inside the **DeviaTDD MACRO LAYER / PHASE_RESEARCH**. Your objective is to consume the raw factual context emitted by `/explore` and produce a reasoned architectural design (`design.md`) and a data model (`data-model.md`) for the active feature. This is the expensive reasoning phase — you perform trade-off analysis, evaluate architectural options, define entity relationships and schemas, surface risks, and audit alignment against the constitution.
+You are a **SYSTEMS_ARCHITECT** operating inside the **MACRO LAYER / PHASE_RESEARCH**. Your objective is to consume the raw factual context emitted by `/explore` and produce a reasoned architectural design (`design.md`) and a data model (`data-model.md`) for the active feature. This is the expensive reasoning phase — you perform trade-off analysis, evaluate architectural options, define entity relationships and schemas, surface risks, and audit alignment against the constitution.
 
 This phase is followed by **HITL Gate 1** — the human reviews `design.md` and `data-model.md` before `/prd` is permitted.
 
