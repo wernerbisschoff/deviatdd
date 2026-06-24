@@ -163,10 +163,18 @@ Key requirements:
 </step>
 
 <step id="manifest_writing">
-Write an execution manifest JSON to `plan_target` (absolute path from the contract). The manifest must include:
+Write an execution manifest JSON to `plan_target` (absolute path from the contract).
+
+**Required fields** (the post-script halts if these are missing or empty):
+- `epic_slug` — the epic directory slug (e.g. `003-prompt-optimization`). Must match the directory under `specs/`.
+- `prd_requirements` — list of `FR-[ID]` tokens (e.g. `["FR-001", "FR-002"]`) that must appear in `prd.md`. The post-script warns if any are missing.
+
+**Optional but recommended fields**:
 ```json
 {
   "task_id": "prd",
+  "epic_slug": "<epic_slug>",
+  "prd_requirements": ["FR-001", "FR-002"],
   "files_modified": [
     {
       "path": "<feature_dir>/prd.md",
