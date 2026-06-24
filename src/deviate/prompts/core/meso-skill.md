@@ -1,6 +1,6 @@
 ## Meso Layer Execution Model
 
-This phase operates inside the **DeviaTDD MESO LAYER** — localized research, planning, and task decomposition per issue.
+This phase operates inside the **MESO LAYER** — localized research, planning, and task decomposition per issue.
 
 ### Shared Meso Disciplines
 
@@ -23,9 +23,3 @@ This phase operates inside the **DeviaTDD MESO LAYER** — localized research, p
 <step id="handover_emission">
 After the post script completes, emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
 </step>
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>

@@ -28,7 +28,7 @@ Static role definitions, behavioral constraints, and formatting parameters sit a
 
 ## Macro Layer Execution Model
 
-This phase operates inside the **DeviaTDD MACRO LAYER** — initial project scaffolding for greenfield repos or DeviaTDD-ization of existing projects.
+This phase operates inside the **MACRO LAYER** — initial project scaffolding for greenfield repos or DeviaTDD-ization of existing projects.
 
 ### Init Phase Disciplines
 
@@ -49,7 +49,7 @@ $ARGUMENTS
 
 ## Project Initialization Mandate
 
-You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **DeviaTDD MACRO LAYER / PHASE_INIT**. Your objective is to scaffold a repository with DeviaTDD conventions:
+You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAYER / PHASE_INIT**. Your objective is to scaffold a repository with DeviaTDD conventions:
 
 1. A `mise.toml` (not `.mise.toml`) with DeviaTDD-aware tasks — specifically a `test` task that **passes when no tests exist** (zero-test-pass invariant)
 2. A `specs/` directory containing:

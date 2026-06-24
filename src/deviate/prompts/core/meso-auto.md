@@ -4,7 +4,7 @@ NOTE: This differs from ``meso-skill.md`` — the ``-auto`` variants reference t
 while ``-skill`` variants reference the pre/post scripts directly, because skill prompts are invoked
 by the agent directly (agent runs pre/post) while auto prompts are orchestrated by the CLI.
 
-This phase operates inside the **DeviaTDD MESO LAYER** — localized research, planning, and task decomposition per issue.
+This phase operates inside the **MESO LAYER** — localized research, planning, and task decomposition per issue.
 
 ### Shared Meso Disciplines
 
@@ -24,7 +24,7 @@ This phase operates inside the **DeviaTDD MESO LAYER** — localized research, p
 
 **STDOUT OUTPUT MANDATE**: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write artifact files to their target paths only (not to stdout). The caller parses your stdout as raw YAML.
 
-<context>
+## <context>
 <user_input>
 $ARGUMENTS
 </user_input>

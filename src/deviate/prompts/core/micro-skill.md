@@ -1,6 +1,6 @@
 ## Micro Layer Execution Model — TDD Sandbox
 
-This phase operates inside the **DeviaTDD MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
+This phase operates inside the **MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
 
 ### The R-G-R Cycle
 
