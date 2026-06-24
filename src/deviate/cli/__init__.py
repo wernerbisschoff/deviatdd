@@ -623,17 +623,18 @@ def setup(
 
     _ensure_gitignore(workdir)
 
-    if selected_agent == "opencode":
-        _ensure_opencode_index_gitignored(workdir)
+    if selected_agent:
+        _ensure_agent_gitignored(workdir, selected_agent)
 
 
-def _ensure_opencode_index_gitignored(workdir: Path) -> None:
-    """Add ``.opencode/index/`` to the project root ``.gitignore``.
+def _ensure_agent_gitignored(workdir: Path, agent: str) -> None:
+    """Add ``<agent>/skills/deviate-*`` to the project root ``.gitignore``.
 
-    The opencode agent index is a local cache that must never be committed.
+    Only the deviate-* skills installed into an agent's skills directory are
+    gitignored — never the entire .opencode, .claude, or .factory directory.
     """
     gitignore_path = workdir / ".gitignore"
-    entry = ".opencode/index/"
+    entry = f".{agent}/skills/deviate-*/"
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
         if entry not in content:
