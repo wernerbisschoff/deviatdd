@@ -67,7 +67,7 @@ class TestMesoIntegration:
         _setup_meso_workspace(tmp_git_repo)
 
         with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["meso", "run", "--dry-run"])
+            result = runner.invoke(cli, ["meso", "run", "--dry-run", "--verbose"])
             assert result.exit_code == 0, result.output
             assert "DRY_RUN" in result.output
 
@@ -80,6 +80,6 @@ class TestMesoIntegration:
         )
 
         with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["meso", "run"])
+            result = runner.invoke(cli, ["meso", "run", "--verbose"])
             assert result.exit_code != 0
             assert "NO_CLAIMABLE_ISSUES" in result.output
