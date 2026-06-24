@@ -10,7 +10,7 @@ aliases:
   - spec.triage
 ---
 
-## Universal Invariants
+<universal_invariants>
 
 The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
@@ -28,9 +28,13 @@ The following rules apply across ALL phases — macro layer (explore, research, 
 
 7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
-## KV Cache Preservation
+</universal_invariants>
+
+<kv_cache_preservation>
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
+
+</kv_cache_preservation>
 
 
 <system_instructions>
