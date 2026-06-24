@@ -72,7 +72,7 @@ def extract_section_body(content: str, header: str) -> str | None:
 
 def validate_gherkin_syntax(content: str) -> list[str]:
     errors: list[str] = []
-    scenario_pattern = re.compile(r"\*\*Scenario \d+:.*?\*\*")
+    scenario_pattern = re.compile(r"\*\*(?P<label>(?:Scenario \d+|AC-\d+-\d+)):.*?\*\*")
     scenarios = list(scenario_pattern.finditer(content))
     if not scenarios:
         return errors
@@ -80,12 +80,13 @@ def validate_gherkin_syntax(content: str) -> list[str]:
         start = match.end()
         end = scenarios[i + 1].start() if i + 1 < len(scenarios) else len(content)
         body = content[start:end]
+        label = match.group("label")
         if "**Given**" not in body:
-            errors.append(f"Scenario {i + 1}: missing 'Given'")
+            errors.append(f"{label}: missing 'Given'")
         if "**When**" not in body:
-            errors.append(f"Scenario {i + 1}: missing 'When'")
+            errors.append(f"{label}: missing 'When'")
         if "**Then**" not in body:
-            errors.append(f"Scenario {i + 1}: missing 'Then'")
+            errors.append(f"{label}: missing 'Then'")
     return errors
 
 

@@ -79,6 +79,45 @@ class TestValidateGherkinSyntax:
         errors = validate_gherkin_syntax(content)
         assert errors == []
 
+    def test_validate_gherkin_syntax_ac_block_valid(self):
+        content = (
+            "**AC-1-01: First acceptance criterion**\n"
+            "\n"
+            "- **Given**: A precondition\n"
+            "- **When**: An action occurs\n"
+            "- **Then**: An outcome is expected\n"
+        )
+        errors = validate_gherkin_syntax(content)
+        assert errors == []
+
+    def test_validate_gherkin_syntax_ac_block_missing_given(self):
+        content = (
+            "**AC-2-03: AC missing given**\n"
+            "\n"
+            "- **When**: An action occurs\n"
+            "- **Then**: An outcome is expected\n"
+        )
+        errors = validate_gherkin_syntax(content)
+        assert any("Given" in e for e in errors)
+        assert any("AC-2-03" in e for e in errors)
+
+    def test_validate_gherkin_syntax_mixed_scenario_and_ac(self):
+        content = (
+            "**Scenario 1: First**\n"
+            "\n"
+            "- **Given**: Pre\n"
+            "- **When**: Act\n"
+            "- **Then**: Assert\n"
+            "\n"
+            "**AC-3-02: AC follows scenario**\n"
+            "\n"
+            "- **Given**: Pre2\n"
+            "- **When**: Act2\n"
+            "- **Then**: Assert2\n"
+        )
+        errors = validate_gherkin_syntax(content)
+        assert errors == []
+
 
 class TestValidateSections:
     def test_validate_explore_sections_detects_missing(self):
