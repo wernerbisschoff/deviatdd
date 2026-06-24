@@ -1042,6 +1042,51 @@ def _pr_pre() -> None:
         branch_name, issue_id, record.title, record.type
     )
 
+    # Gather metadata for PR body generation
+    commit_titles = ""
+    changed_files = ""
+    diff_summary = ""
+    try:
+        log_result = subprocess.run(
+            ["git", "log", f"{base_branch}..HEAD", "--oneline"],
+            cwd=repo_root,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        commit_titles = "|".join(
+            line.split(" ", 1)[1] if " " in line else line
+            for line in log_result.stdout.strip().splitlines()
+            if line.strip()
+        )
+    except Exception:
+        pass
+
+    try:
+        stat_result = subprocess.run(
+            ["git", "diff", f"{base_branch}...HEAD", "--stat"],
+            cwd=repo_root,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        diff_summary = stat_result.stdout.strip()
+        files_result = subprocess.run(
+            ["git", "diff", f"{base_branch}...HEAD", "--name-only"],
+            cwd=repo_root,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        changed_files = ",".join(
+            f for f in files_result.stdout.strip().splitlines() if f.strip()
+        )
+    except Exception:
+        pass
+
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     contract = {
         "branch_name": branch_name,
@@ -1049,6 +1094,10 @@ def _pr_pre() -> None:
         "pr_title": pr_title,
         "pr_body": pr_body,
         "git_state": git_state,
+        "issue_title": record.title,
+        "commit_titles": commit_titles,
+        "changed_files": changed_files,
+        "diff_summary": diff_summary,
         "timestamp": timestamp,
         "status": "READY",
         "phase": "pr_pre",
@@ -1086,10 +1135,10 @@ def _update_gt_prs(output: str, title: str, body_file: Path, repo_root: Path) ->
         line = line.strip()
         if not line:
             continue
-        match = re.match(r"^\S+:\s+(https://\S+)\s+\((\w+)\)$", line)
-        if not match:
+        pr_url_match = re.search(r"(https://github\.com/\S+/pull/\d+)", line)
+        if not pr_url_match:
             continue
-        pr_url = match.group(1)
+        pr_url = pr_url_match.group(1)
         pr_num_match = re.search(r"/(\d+)$", pr_url)
         if not pr_num_match:
             continue
@@ -1159,7 +1208,9 @@ def _pr_run(
         raise typer.Exit(code=1)
 
     repo_root = Path.cwd()
+    title = _pr_title(issue_id, record.title, record.type)
 
+    # 1. Record COMPLETED in the ledger before PR creation
     completed = record.model_copy(
         update={
             "status": "COMPLETED",
@@ -1174,34 +1225,46 @@ def _pr_run(
             f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
         )
 
-    try:
-        subprocess.run(
-            ["git", "add", str(ledger_path)],
-            cwd=repo_root,
-            env=_git_env(),
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "commit",
-                "--no-verify",
-                "-m",
-                f"chore({issue_id}): mark COMPLETED in ledger",
-            ],
-            cwd=repo_root,
-            env=_git_env(),
-            check=True,
-            capture_output=True,
-        )
-        console.print("[green]LEDGER_COMMITTED[/]")
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.strip() if e.stderr else ""
-        if "nothing to commit" in stderr:
-            console.print("[yellow]LEDGER_UNCHANGED[/] no ledger changes to commit")
-        else:
-            console.print(f"[yellow]COMMIT_LEDGER_WARN[/] {stderr}")
+    # 2. Stage the ledger and PR body file, then commit together
+    staged = False
+    for path in (str(ledger_path), str(body_file)):
+        try:
+            subprocess.run(
+                ["git", "add", path],
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            staged = True
+        except subprocess.CalledProcessError:
+            pass
+    if staged:
+        try:
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "--no-verify",
+                    "-m",
+                    f"chore({issue_id}): mark COMPLETED in ledger",
+                ],
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            console.print("[green]LEDGER_COMMITTED[/]")
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            if "nothing to commit" in stderr:
+                console.print("[yellow]LEDGER_UNCHANGED[/] no ledger changes to commit")
+            else:
+                console.print(f"[yellow]COMMIT_LEDGER_WARN[/] {stderr}")
+    else:
+        console.print("[yellow]LEDGER_UNCHANGED[/] no files staged for commit")
 
     try:
         subprocess.run(
@@ -1210,15 +1273,19 @@ def _pr_run(
             env=_git_env(),
             check=True,
             capture_output=True,
+            text=True,
         )
         console.print("[green]BRANCH_PUSHED[/]")
     except subprocess.CalledProcessError as e:
-        console.print(
-            f"[yellow]PUSH_WARN[/] {e.stderr.strip() if e.stderr else 'push failed'}"
-        )
+        stderr = (e.stderr or "").strip()
+        if "does not exist" in stderr or "not found" in stderr:
+            console.print(
+                "[yellow]BRANCH_DELETED[/] remote branch gone after merge (expected)"
+            )
+        else:
+            console.print(f"[yellow]PUSH_WARN[/] {stderr}")
 
-    title = _pr_title(issue_id, record.title, record.type)
-
+    # 3. Create (and optionally merge) the PR
     if resolve_graphite_config(repo_root):
         if merge or auto_merge:
             console.print(
