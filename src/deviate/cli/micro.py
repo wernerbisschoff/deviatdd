@@ -2920,6 +2920,15 @@ def execute_pre(
     root = Path.cwd()
     task_data, _ = _resolve_task_context(task, root)
 
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    session = session.force_transition_to("EXECUTE")
+    session.active_issue_id = task_data.get("issue_id")
+    session.save(session_path)
+
     contract = {
         "task_id": task_data.get("id", ""),
         "completion_criteria": "Direct execution task \u2014 bypasses RED/GREEN/REFACTOR",
