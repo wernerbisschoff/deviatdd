@@ -53,7 +53,7 @@ def _init_deviate(path: Path) -> None:
     )
     with chdir(path):
         runner.invoke(
-            cli, ["init", "--agent-export-mode", "local", "--agent", "opencode"]
+            cli, ["setup", "--agent-export-mode", "local", "--agent", "opencode"]
         )
 
 
