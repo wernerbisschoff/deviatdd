@@ -1554,9 +1554,12 @@ def meso_run_command(
         help="Emit prompts and contracts without side effects",
     ),
     force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
+    quiet: bool = typer.Option(
+        True, "--quiet/--verbose", help="Suppress non-essential output (default: quiet)"
+    ),
 ) -> None:
     """Run the meso automated pipeline (setup → plan → tasks)"""
-    _meso_run(issue_id=issue, dry_run=dry_run, force=force)
+    _meso_run(issue_id=issue, dry_run=dry_run, force=force, quiet=quiet)
 
 
 # ---------------------------------------------------------------------------

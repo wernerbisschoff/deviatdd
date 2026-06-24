@@ -56,6 +56,7 @@ from deviate.state.ledger import (
 
 console = Console()
 _verbose: bool = False
+_quiet: bool = True
 
 _YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)
 _YAML_FENCE_CLOSE_RE = re.compile(r"^```+\s*$")
@@ -3079,13 +3080,18 @@ def run_command(
         False, "--dry-run", help="Print resolved task and exit"
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
+    quiet: bool = typer.Option(
+        True, "--quiet/--verbose", help="Suppress non-essential output (default: quiet)"
+    ),
 ) -> None:
     """Run dispatcher: route task by execution_mode to TDD cycle or execute phase.
 
     When called without arguments, picks the next PENDING task for the active issue.
     """
     global _verbose
+    global _quiet
     _verbose = verbose
+    _quiet = quiet
 
     root = _resolve_workspace_root()
     session_path = root / ".deviate" / "session.json"
