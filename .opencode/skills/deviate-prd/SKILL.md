@@ -170,10 +170,12 @@ ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note
 <execution_sequence>
 
 <step id="pre_script">
-Run the pre-script to discover the epic slug, validate upstream artifacts, and emit a JSON contract:
+Run the pre-script to validate upstream artifacts and emit a JSON contract. List `specs/` to discover the latest numbered epic directory (e.g. `001-feature-name`), then call the pre-script with the explicit epic slug:
 ```bash
-deviate prd pre
+deviate prd pre --epic "<epic-slug>"
 ```
+
+If you cannot determine the epic slug, omit `--epic` and the command will auto-discover the latest numbered epic bucket.
 
 The contract on stdout contains: `repo_root`, `git_branch`, `timestamp`, `epic_slug`, `feature_dir` (relative path to the feature bucket), `prd_path` (absolute path to prd.md), `constitution_path`, `explore_md_path`, `design_md_path`, `data_model_md_path`, `plan_target` (absolute path for the execution manifest), `dry_run`.
 
