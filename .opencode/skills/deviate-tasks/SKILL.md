@@ -323,6 +323,12 @@ def find_repo_root() -> Path:  # BAD — untestable
 <case condition="Pre-script emits STATUS: NOT_IN_WORKTREE or STATUS: SPEC_NOT_FOUND">
 <action>Stop. The /deviate-shard phase must produce a valid spec-enriched issue file (or a spec.md must exist as fallback) before tasks can run. Surface the status to the human operator.</action>
 </case>
+<case condition="Task count exceeds 10 tasks for a single issue">
+<action>Halt with OUT_OF_BOUNDS_TASK_COUNT_ABOVE_MAX. Directive: split the issue's scope into a new sibling issue via `/deviate-adhoc` for the overflow; OR extract tangential work as a separate issue. The current issue should be narrowed until the task count is within bounds.</action>
+</case>
+<case condition="Task count below target band (1-3 tasks)">
+<action>Log `[WARNING] task count below target band`. Note: a single-task issue is valid for trivial config-only or boilerplate work where no end-to-end verification is required. The agent MAY still append a terminal `type: "e2e"` task for issues modifying user-facing behavior, but it is no longer mandatory.</action>
+</case>
 <case condition="Issue file contains embedded ## User Stories Ledger and ## ATDD Acceptance Criteria sections">
 <action>Read spec from the issue file directly — this is the primary path. Do NOT look for a separate spec.md. Per spec AC-ADHOC-003-07, embedded sections take precedence over spec.md when both exist.</action>
 </case>
