@@ -4,6 +4,7 @@ labels: [enhancement, adhoc, vertical-slice, product-layer]
 blocked_by: []
 coordinates_with: []
 issue_id: ISS-ADH-010
+flow_refs: [FLOW-01, FLOW-02, FLOW-03]
 ---
 
 ## System Topology Mapping
