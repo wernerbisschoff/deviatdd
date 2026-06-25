@@ -14,36 +14,51 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 
 ### 1. Bootstrap & Governance
 
-#### `deviate init`
+#### `deviate init` and `deviate setup`
 
-* **Source:** `src/deviate/cli/__init__.py`
+* **Sources:** `src/deviate/cli/init.py` (Typer sub-group) and `src/deviate/cli/__init__.py`
+  (flat `deviate setup` command, defined at `cli/__init__.py:555-627`). Both entry points
+  are equivalent in behavior — `deviate setup` is the legacy flat alias and `deviate init`
+  is the Typer sub-group registered via `cli.add_typer(init_app, name="init")` at
+  `cli/__init__.py:669`.
 * **Description:** Initializes a standard project-level DeviaTDD compliance framework. Builds
-  `.deviate/` dot directory, establishes a default tracking layer, injects project-wide
-  rules inside `specs/constitution.md`, and installs DeviaTDD prompt skills into detected
-  agent runtime directories (`.claude/skills/`, `.opencode/skills/`, `.factory/skills/`).
+  the `.deviate/` directory (containing `config.toml`, `session.json`, `.gitignore`, and an
+  empty `artifacts/` workspace), detects the project type (`python`, `node`, `rust`, `go`,
+  `elixir_phoenix`, or `unknown`) and writes a `specs/constitution.md` populated with
+  project-specific test/lint/format/setup/dev commands, applies the `## DeviaTDD
+  Orchestration Rules` and `## Libref Usage` governance blocks to `CLAUDE.md` and
+  `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt skills (currently
+  21) into the selected agent's skills directory (`.claude/skills/`,
+  `.opencode/skills/`, `.factory/skills/`). The agent backend (`opencode`, `claude`,
+  `droid`, `factory`) is persisted to `[agent].backend` in `config.toml`.
+  **Agent-to-skills-directory mapping:** `--agent claude` → `.claude/skills/`; `--agent opencode` → `.opencode/skills/`; `--agent factory` and `--agent droid` both → `.factory/skills/` (the Factory Droid IDE owns that directory; `droid` is the underlying backend binary both user-facing names dispatch to, so there is no `.droid/skills/`). The corresponding `.gitignore` entry follows the same mapping.
+* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory]` to override
+  auto-detect. If omitted, the persisted value is reused; if no persisted value exists and
+  the session is interactive, a Rich `Prompt.ask` menu is shown. In non-interactive mode
+  the command halts with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
 * **Execution Modes:**
-  * **Offline Mode (Default):** Scans root project files using regex to resolve `${VARIABLE}`
-    placeholders in constitution boilerplate. Completes in L_max <= 50ms. All 6 variables
-    are resolved via `_resolve_placeholder()` (`src/deviate/cli/__init__.py`): `PROJECT_NAME`,
-    `REPO_ROOT`, `TARGET_BACKEND_FRAMEWORK`, `TARGET_PACKAGE_MANAGER`, `TARGET_TEST_RUNNER`,
-    `TARGET_COVERAGE_MINIMUM`. Unresolvable vars fall back to `"UNKNOWN"` with stderr warning.
-  * **Onboard Prompt Mode (Aspirational):** `deviate init --generate-constitution` flag is
-    declared but the LLM runner invocation is not yet wired. When implemented, it will invoke
-    an authorized LLM runner via the configured agent backend to analyze project state and
-    generate a tailored constitution.
-* **Tokenized Placeholder Resolution:**
-  | Variable | Source File | Detection Pattern |
-  | --- | --- | --- |
-  | `${PROJECT_NAME}` | `pyproject.toml`, `package.json` | Project name extraction |
-  | `${REPO_ROOT}` | Filesystem | Absolute path of git root |
-  | `${TARGET_BACKEND_FRAMEWORK}` | `pyproject.toml`, `package.json`, `mix.exs` | Framework name regex |
-  | `${TARGET_PACKAGE_MANAGER}` | `pyproject.toml`, `package.json`, `Cargo.toml` | Package manager detection |
-  | `${TARGET_TEST_RUNNER}` | `pyproject.toml`, `package.json` | Test framework detection |
-  | `${TARGET_COVERAGE_MINIMUM}` | Default: `80%` | Configurable via profile |
+  * **Offline Mode (Default):** `_scaffold_constitution()` writes
+    `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`. The
+    seed contains `TBD` placeholders rather than runtime-resolved `${VARIABLE}` tokens;
+    `TBD` fields are populated later by `/deviate-research` (which writes `design.md` and
+    `data-model.md`) and by the LLM-driven `constitution` command. The offline path
+    completes in well under 50ms.
+  * **Onboard Prompt Mode (Aspirational):** `deviate constitution generate` is the
+    dedicated command for LLM-driven constitution tailoring. The legacy
+    `--generate-constitution` flag on init is not wired in the current implementation.
+    When invoked, `deviate constitution generate` resolves the agent backend from
+    `.deviate/config.toml` (or the `LLMBACKEND` environment variable, defaulting to
+    `droid`) and dispatches the constitution-generation prompt.
+* **Tokenized Placeholder Resolution:** Constitution placeholders in the current
+  implementation are static `TBD` tokens, not runtime-resolved variables. The
+  `${VARIABLE}` resolver described in earlier revisions of this spec has been removed.
 * **Input Parameters:**
   * `--agent-export-mode [local|global]` (Defaults to `local`)
-  * `--generate-constitution` (Flag: declared, LLM runner not yet wired)
-  * `--agent [claude|opencode|droid]` (Override auto-detect)
+  * `--agent [claude|opencode|droid|factory]` (Override auto-detect)
+  * `--graphite` (Enable Graphite CLI integration; merges `graphite = true` into
+    existing `config.toml` and installs the Graphite governance block)
+  * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
+    `config.toml`)
 * **Output Artifacts:**
   * `.deviate/config.toml` — Persisted configuration profile
   * `.deviate/session.json` — Current session state snapshot
@@ -60,7 +75,29 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 * **Constitution Governance:** The `/deviate-constitution` skill (prompt skill, not a CLI
   command) handles governance artifact generation — initialize or update `specs/constitution.md`
   as an authoritative document defining architectural standards, tech stack constraints,
-  testing mandates, and completion criteria.
+  testing mandates, and completion criteria. The companion CLI command is `deviate
+  constitution` (see below).
+
+#### `deviate constitution`
+
+* **Source:** `src/deviate/cli/constitution.py`
+* **Description:** Three sub-commands for managing `specs/constitution.md`:
+  * **`deviate constitution generate` (`--force`):** Writes
+    `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`.
+    Idempotent: skips if the file already exists unless `--force` is passed. Replaces
+    the aspirational `deviate init --generate-constitution` flag — the LLM-driven
+    constitution tailoring is dispatched through `deviate constitution generate` once
+    the LLM runner is wired.
+  * **`deviate constitution pre`:** Validates that `specs/constitution.md` exists,
+    passes `validate_constitution()`, and contains the required `## TESTING_PROTOCOLS`
+    section. Emits a JSON `{"status": "FAILURE", "reason": ...}` envelope on any
+    failure. No side effects on success — outputs a contract that the agent consumes.
+  * **`deviate constitution post <manifest>`:** Reads a manifest JSON containing a
+    `sections` array and an optional `constitution_path` (default
+    `specs/constitution.md`), validates that each named section is present via
+    `validate_sections()`, then commits the constitution file via `commit_artifact()`
+    with the message `Update constitution`. Emits `{"status": "SUCCESS"}` on success.
+* **Common Flags:** None (each sub-command exposes its own options).
 
 #### `/deviate-shard` (Macro Layer)
 
@@ -79,18 +116,6 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 All macro-layer commands follow the `pre`/`post` subcommand pattern (except `init`).
 Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--quiet`
 (suppress diagnostic output).
-
-#### `deviate feature create <title-or-issue-id>`
-
-* **Source:** `src/deviate/cli/macro.py`
-* **Description:** Creates a new feature workspace. Consumes a raw title string, derives a
-  URL-friendly kebab-case slug, creates the git branch or worktree, scaffolds the feature
-  subdirectory under `specs/{FEATURE_SLUG}/`, and sets it as the active workspace in
-  `.deviate/session.json`. Returns the slug and directory path.
-* **Input Parameters:**
-  * `<title-or-issue-id>` (Positional: freeform description or ticket ID)
-  * `--slug <slug>` (Optional: explicit slug override)
-* **Common Flags:** `--json`, `--quiet`
 
 #### `deviate explore pre <problem> [--slug]`
 
@@ -180,7 +205,7 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 
 #### `deviate adhoc post <manifest>`
 
-* **Source:** `src/deviate/cli/macro.py`
+* **Source:** `src/deviate/cli/adhoc.py`
 * **Description:** Validates the issue markdown, appends a condensed FR entry to
   `specs/adhoc/prd.md`, registers the issue in `specs/issues.jsonl` with an `ADH-{NNN}`
   identifier, runs pre-commit hooks, and commits.
@@ -220,17 +245,35 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Direct positional-argument interface. Validates the issue exists, creates
   the spec directory, forces session to SPECIFY with `active_issue_id` set.
 
-#### `deviate plan pre [--issue <id>] [--dry-run]` (Planned — CLI not yet created)
+#### `deviate plan pre [--issue <id>] [--dry-run]`
 
-* **Source:** `src/deviate/cli/meso.py` (planned)
-* **Description:** NEW per-issue localized research phase. Loads the spec-enriched issue file (scanning `## [USER_STORIES_LEDGER]` and `## [ATDD_ACCEPTANCE_CRITERIA]` sections), scans current codebase state via git log and issue ledger, analyzes what prior issues have implemented, and identifies integration points, dependencies, and potential conflicts. Emits a JSON contract for the agent to produce `plan.md` with implementation strategy, file mappings, and risk assessment.
-* **Session:** Transitions to PLAN with `active_issue_id` set.
+* **Source:** `src/deviate/cli/meso.py` (`_plan_pre`)
+* **Description:** Per-issue localized research phase. Two operating modes:
+  * **Outside a linked worktree (auto-claim):** When `_is_linked_worktree()` returns
+    `False`, the command auto-discovers the next claimable unblocked BACKLOG issue (or
+    uses the provided `--issue`), calls `_specify_pre` to create the worktree and claim
+    the issue, force-transitions the session to `PLAN`, and copies `.deviate/` into the
+    new worktree. Exits 0 once the worktree is ready.
+  * **Inside a linked worktree (contract mode):** Loads the session (accepts `SPECIFY` or
+    `PLAN` phases), resolves the spec-enriched issue file by reading
+    `record.source_file` from the ledger, parses workstation file paths from the issue's
+    `## System Topology Mapping` section, and calls `extract_file_structure()` on each
+    existing workstation file (via `deviate/core/treesitter.py`). Emits a JSON contract
+    containing `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`,
+    constitution paths, and the optional `file_structure` appendix.
+* **Input Parameters:** `--issue <id>` (override auto-discovered), `--force`,
+  `--dry-run` (emits the contract with `dry_run: true` but does not skip side effects)
+* **Session:** Force-transitions to `PLAN` with `active_issue_id` set.
 * **Common Flags:** `--json`, `--quiet`
 
-#### `deviate plan post [--force]` (Planned — CLI not yet created)
+#### `deviate plan post [--force] [--issue-id]`
 
-* **Source:** `src/deviate/cli/meso.py` (planned)
-* **Description:** Validates `plan.md` exists and is non-empty, runs pre-commit hooks, commits `docs({scope}): add plan.md`, and transitions session to TASKS.
+* **Source:** `src/deviate/cli/meso.py` (`_plan_post`)
+* **Description:** Resolves the active issue from the session (or `--issue-id` override),
+  reads `specs/{epic}/{issue}/plan.md`, validates that the file exists and is non-empty
+  (unless `--force`), commits via `commit_artifact()` with the message
+  `docs({epic}-{issue}): create plan.md`, and `transition_to("TASKS")`. Skips the commit
+  silently when there are no changes to stage.
 
 #### `deviate tasks pre [--force] [--dry-run]`
 
@@ -373,47 +416,101 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 #### `deviate run <task-id>`
 
-* **Source:** `src/deviate/cli/micro.py`
+* **Source:** `src/deviate/cli/micro.py` (`_run_single`, `_dispatch_task`)
 * **Description:** Triggers the automated execution cycle for a single task node. Routes by
   `execution_mode` (TDD or non-TDD). TDD mode runs the RED -> GREEN -> [TamperGuard gate
-  → YELLOW?] → JUDGE → REFACTOR cycle. YELLOW is a conditional branch (not a fixed phase
-  in `_PHASE_MAP`) triggered only when TamperGuard detects unauthorized test edits during
-  the GREEN phase. Non-TDD (DIRECT, E2E) runs `_run_execute_phase` which immediately marks
-  COMPLETED.
+  → YELLOW?] → JUDGE -> REFACTOR cycle. YELLOW is a conditional branch (not a fixed phase
+  in `_PHASE_MAP`) triggered only when the GREEN phase sets `session.yellow_triggered = True`
+  (TamperGuard detected unauthorized test edits) or when `_run_tdd_cycle` is invoked with
+  `start_phase = "YELLOW"`. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`, which
+  commits the work, then optionally runs a JUDGE pass against `spec.md` and rolls back
+  on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
+* **Train Retry (TDD only):** `_run_tdd_cycle` wraps the GREEN→JUDGE pair in a `while not
+  judge_passed` loop with up to `max_train_attempts = 3`. On test failure or
+  `COMPLIANCE_VIOLATION`, the previous attempt's output is injected as `<train_feedback>`
+  into the next GREEN prompt, the implementation is rolled back to the RED boundary
+  (`_execute_rollback` → `git reset --hard <red_sha>`), and the cycle retries from GREEN.
+  After 3 attempts the task is marked `FAILED` and the pipeline halts.
+* **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE`, `YELLOW`, or
+  `REFACTOR` when invoked, the cycle resumes from that phase via the `start_phase`
+  parameter. IDLE / RED trigger a fresh cycle from RED.
 * **Input Parameters:**
-  * `<task-id>` (Positional: TSK-NNN-NN format)
+  * `<task-id>` (Positional: `TSK-NNN-NN` format; omit to auto-select the first PENDING
+    task for the active issue)
   * `--profile [full|fast|secure]` (Defaults to `full`):
     * `full` — RED + GREEN + JUDGE + REFACTOR (complete cycle)
     * `fast` — RED + GREEN only (skip JUDGE + REFACTOR)
     * `secure` — RED + GREEN + JUDGE (skip REFACTOR)
     * Boolean flags `--no-judge` / `--no-refactor` retained as composable overrides
-  * `--agent` (Override agent backend)
+  * `--agent` (Override agent backend; falls back to `[agent].backend` in
+    `.deviate/config.toml`)
+  * `--dry-run` (Print the resolved task and exit without dispatching)
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate run --all`
 
-* **Source:** `src/deviate/cli/micro.py`
-* **Description:** Finds all PENDING tasks and dispatches them sequentially. Each task gets
-  up to 2 retry attempts before being marked FAILED. Halts on first failure. Displays a
-  live-updating Rich dashboard with task markers (`[X]` completed, `[/]` in-progress,
-  `[ ]` pending) and a 5-line rolling agent output buffer. Non-TTY mode emits JSONL events
-  instead of dashboard.
-* **Accepts:** `--profile`, `--agent`, `--json`, `--quiet`
+* **Source:** `src/deviate/cli/micro.py` (`_run_all`)
+* **Description:** **Issue-scoped** task sweep. Resolves the active issue from
+  `session.active_issue_id` (falling back to branch-derived detection via the
+  `feat/{epic}/{issue}` regex against `specs/issues.jsonl`), then dispatches **every
+  PENDING task for that issue** sequentially. Each task gets up to **2 retry attempts**
+  (`_execute_task_with_retry`, `for attempt in range(2)`) before being marked `FAILED` in
+  the issue-scoped `tasks.jsonl`. The pipeline **halts on the first failure**
+  (`any_failed = True; break`) and exits with code `1`. If no `active_issue_id` is set
+  and the branch cannot resolve an issue, no tasks are dispatched.
+* **Train Retry Loop (per task):** Inside each task's TDD cycle, `_run_tdd_cycle` allows
+  up to **3 train attempts** (`max_train_attempts = 3`) when GREEN tests fail or JUDGE
+  returns `COMPLIANCE_VIOLATION`. Each train attempt injects `<train_feedback>` from
+  the previous attempt's failure output back into the GREEN prompt and re-runs GREEN.
+  Exhaustion raises `PhaseFailedError`.
+* **Graphite Integration:** If `.deviate/config.toml` contains `graphite = true`, after
+  each successful task the runner invokes `gt create -m "feat({TSK}): {description}"`
+  to spin up a stacked branch for the next task.
+* **Dashboard / Output:** Constructs an `OrchestrationMonitor` with `total_tasks` set to
+  the pending count. The monitor emits live Rich dashboard events (task markers, phase
+  transitions) in TTY mode and JSONL events (`task_started`, `phase_change`,
+  `task_completed`, `task_failed`, `pipeline_halted`, `pipeline_complete`) when
+  `--json` is passed. Agent output is forwarded to the monitor via a streaming callback.
+* **Accepts:** `--profile [full|fast|secure]`, `--agent <name>`, `--json`, `--quiet`,
+  `--dry-run` (prints all resolved pending tasks and exits without dispatching).
 
 #### `deviate meso run` (Automated Meso Pipeline)
 
-* **Source:** `src/deviate/cli/meso.py`
-* **Description:** Automates the specify→tasks pipeline. Discovers next unblocked BACKLOG
-  issue (or targets `--issue ISS-NNN`), runs each phase's pre-flight checks, builds slim
-  prompt templates from `src/deviate/prompts/auto/`, invokes the agent via `AgentBackend`,
-  validates outputs, commits artifacts, and advances session state through SPECIFY → TASKS → IDLE.
+* **Source:** `src/deviate/cli/meso.py` (`_meso_run`, `meso_run_command`)
+* **Description:** Automates the per-issue meso pipeline: SPECIFY (claim) → PLAN → TASKS → IDLE.
+  When invoked without `--issue`, calls `_discover_claimable_issue()` to find the next
+  unblocked BACKLOG issue whose branch is **not** already on the remote (claimed-elsewhere
+  skip). When invoked with `--issue`, validates the issue, resets it to BACKLOG if it is in
+  any later state, and fails if `blocked_by` dependencies are not COMPLETED (unless `--force`).
+* **Pipeline Steps (in order):**
+  1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run)`, which creates a
+     linked worktree at `.worktrees/feat/{epic}/{issue}/`, runs `mise trust && mise install
+     && mise run setup`, copies `.claude/`, `.opencode/`, `.factory/` agent skill directories
+     into the worktree, claims the issue via `claim_issue()`, commits the claim to the
+     worktree's `specs/issues.jsonl`, and pushes the branch to origin.
+  2. **Plan:** `chdir`s into the worktree, calls `_plan_pre()` (emits a `plan_pre` JSON
+     contract), invokes the agent with the slim `plan` prompt and the per-phase model from
+     `.deviate/config.toml` via `resolve_model_for_phase("plan", root)`, then calls
+     `_plan_post()` to validate that `plan.md` is non-empty, commit it as
+     `docs({epic}-{issue}): create plan.md`, and `transition_to("TASKS")`.
+  3. **Tasks:** Calls `_tasks_pre()` (emits a `tasks_pre` JSON contract), invokes the agent
+     with the slim `tasks` prompt (with the plan content appended to the contract), then
+     calls `_tasks_post()` to validate `tasks.md`, commit it as
+     `docs({epic}-{issue}): create tasks.md`, and `transition_to("IDLE")`.
+* **Side Effects:** `.deviate/session.json` is copied from the parent repo into the worktree
+  after claim so downstream phase functions find the session. The session is force-transitioned
+  to `PLAN` (then `TASKS`, then `IDLE`) — the Meso pipeline uses `force_transition_to()`,
+  bypassing `_MACRO_TRANSITION_MAP` validation.
 * **Input Parameters:**
-  * `--issue <id>` (Target specific issue; default: next unblocked BACKLOG)
-  * `--dry-run` (Emit contracts + prompts without invoking agent or committing)
-  * `--force` (Bypass pre-flight guards)
-* **Error Recovery:** Upstream artifact missing at any phase boundary halts with
-  `UPSTREAM_MISSING`. Agent non-zero exit aborts pipeline. Completed phases skipped
-  idempotently on re-run.
+  * `--issue <id>` (Target a specific issue; default: next claimable unblocked BACKLOG)
+  * `--dry-run` (Emit only the `tasks` slim prompt; no claim, no worktree, no agent call,
+    no commits, no session transitions)
+  * `--force` (Bypass `blocked_by` dependency check)
+  * `--quiet/--verbose` (Default: `--quiet`)
+* **Error Recovery:** Agent non-zero exit (`AgentSubprocessError`) or `manifest.status != "PASS"`
+  aborts with `<PHASE>_FAILED`. Re-running the pipeline re-processes plan.md and tasks.md
+  (no phase-skip logic); commits are skipped when there are no changes. The
+  `UPSTREAM_MISSING` token is **not** emitted by the current implementation.
 
 #### `deviate macro run` (Automated Macro Pipeline)
 
@@ -434,21 +531,30 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ### 6. Inspection & Diagnostics
 
-#### `deviate tasks list [--type tdd|direct|e2e] [--status <status>]` (Aspirational — CLI not yet created)
+#### `deviate tasks list [--status <status>]`
 
-* **Source:** `src/deviate/cli/inspect.py` (planned)
-* **Description:** Reads the issue-scoped `tasks.jsonl` ledger and derives current task states
-  by parsing the append-only ledger sequentially. Outputs a tabular summary of current,
-  completed, pending, or failed tasks. Supports `--type` and `--status` filtering.
-* **Common Flags:** `--json` (outputs raw parsed ledger data), `--quiet`
+* **Source:** `src/deviate/cli/inspect.py` (`tasks_list_command`)
+* **Description:** Reads the root-level `tasks.jsonl` ledger and derives current task
+  states by parsing the append-only ledger sequentially via `filter_tasks()` and
+  `LedgerFilter` (`deviate/state/ledger.py`). Outputs a Rich `Table` summary of tasks
+  (ID, Issue ID, Description, Status, Mode) filtered by `--status`. The `--json` flag
+  emits a JSON array; `--quiet` suppresses output.
+* **Common Flags:** `--json`, `--quiet`
+* **Note:** This command reads from `tasks.jsonl` at the project root, not from
+  issue-scoped ledgers. The issue-scoped task ledger query surface is intentionally
+  minimal — task work is normally dispatched via `deviate run` and `deviate run --all`.
 
-#### `deviate issues list [--type feature|adhoc] [--status <status>]` (Aspirational — CLI not yet created)
+#### `deviate issues list [--type <type>] [--status <status>]`
 
-* **Source:** `src/deviate/cli/inspect.py` (planned)
+* **Source:** `src/deviate/cli/inspect.py` (`issues_list_command`)
 * **Description:** Reads and parses `specs/issues.jsonl` to derive real-time issue states.
-  State is computed by scanning the ledger bottom-up: the latest entry for an `issue_id`
-  defines its current status. Renders a tabular summary filtered by `type`, `feature_slug`,
-  or `status`.
+  State is computed by deduplicating records (latest entry per `issue_id` wins) via
+  `_deduplicate_issues()`. For each `SPECIFIED` issue, also calls
+  `_check_orphan_claim()` to query the remote for the deterministic branch
+  `feat/{epic}/{issue}` — if the branch does not exist remotely, the issue is flagged
+  `ORPHAN_CLAIM` in the output table (indicating the claim was lost or never pushed).
+  Renders a Rich `Table` (ID, Type, Title, Status, Orphan) with optional filtering by
+  `--type` and `--status`. The `--json` flag emits the parsed record array.
 * **Common Flags:** `--json`, `--quiet`
 
 ---
@@ -573,7 +679,7 @@ src/deviate/
 │   │   ├── red.md, green.md, yellow.md, judge.md, refactor.md
 │   │   └── plan.md (planned)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── skills/               # 19 DeviaTDD skill directories (18 + deviate-plan planned)
+│   └── skills/               # 21 DeviaTDD skill directories: deviate-{adhoc, constitution, e2e, execute, explore, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, research, review, shard, tasks, triage, yellow}
 └── state/
     ├── __init__.py
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
@@ -671,15 +777,17 @@ and are installed to `.{agent}/skills/` per workspace.
 | `id` | `str` | Unique ID (`TSK-NNN-NN` format, validated via regex) |
 | `issue_id` | `str` | Parent issue ID |
 | `description` | `str` | Task description |
-| `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED` |
+| `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED`, `YELLOW_APPROVED`, `YELLOW_REJECTED` |
 | `execution_mode` | Literal | `TDD`, `DIRECT`, `E2E` |
 | `created_at` | `datetime` | When the task was created |
 
 > **Note:** `JUDGE` is a first-class status in `TaskRecord.status`. `YELLOW` is a
 > conditional branch phase that does not map to a `TaskRecord.status` literal — it exists
 > only as a session phase and is gated by the TamperGuard in the TDD cycle body. The
-> `_SKILL_NAMES` dict maps `"YELLOW"` to `"deviate-yellow"` and `"JUDGE"` to
-> `"deviate-judge"` for agent skill resolution.
+> YELLOW verdict is recorded in the ledger as `YELLOW_APPROVED` (amendments accepted,
+> cycle proceeds to JUDGE) or `YELLOW_REJECTED` (amendments reverted via `git restore .`,
+> cycle loops back to GREEN). The `_SKILL_NAMES` dict maps `"YELLOW"` to
+> `"deviate-yellow"` and `"JUDGE"` to `"deviate-judge"` for agent skill resolution.
 
 #### Append-Only Ledger Protocol
 
