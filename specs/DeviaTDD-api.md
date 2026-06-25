@@ -66,10 +66,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 
 * **Objective:** Decomposes the PRD into standalone, testable issue files.
 * **Granularity Guidelines:**
-  * **Target:** Average of 5 issues per feature shard
+  * **Target:** 4-8 issues per feature shard
   * **Each issue must be a vertical slice:** Delivers a complete, testable behavior end-to-end
   * **Independence:** Each issue should be independently implementable and testable
-  * **Scope bounds:** No issue should require <3 tasks or >10 tasks
+  * **Scope bounds:** No issue should require <1 task or >10 tasks
   * **Testability:** Each issue must have clear acceptance criteria
 
 ---

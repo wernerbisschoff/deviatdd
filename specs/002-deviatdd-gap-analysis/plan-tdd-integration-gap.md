@@ -153,11 +153,11 @@ if agent or os.getenv("DEVIATE_TEST_AGENT"):
 
 ### 4. Leveraging the Existing E2E Task Entry
 
-**Principle:** You do not need a new acceptance entry point. The architecture already mandates that an e2e task is automatically appended to the bottom of every issue's task ledger.
+**Principle:** You do not need a new acceptance entry point. The architecture allows the agent to append a terminal `type: "e2e"` task to issues modifying user-facing behavior (recommended but no longer mandatory per `specs/DeviaTDD-architecture.md`).
 
 **How it works:**
 1. Individual integration tasks are completed via outer-boundary TDD
-2. The terminal e2e task executes at the **Issue Gate** boundary
+2. When present, the terminal e2e task executes at the **Issue Gate** boundary
 3. This system-level evaluation orchestrates the real runtime environment
 4. Verifies via exit codes that the fully wired components operate successfully end-to-end
 
@@ -358,6 +358,6 @@ This plan addresses the TDD integration gap by:
 1. Enforcing system-edge mock boundaries in task decomposition
 2. Providing a stub backend for deterministic testing
 3. Refactoring existing tests to verify integration logic
-4. Leveraging existing E2E task for end-to-end validation
+4. Leveraging the optional E2E task for end-to-end validation when present
 
 The solution preserves the strict TDD state machine while ensuring that critical wiring code is properly driven by failing tests and verified through the full execution pipeline.
