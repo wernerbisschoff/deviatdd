@@ -244,9 +244,22 @@ class TestShardPost:
         manifest.write_text(json.dumps({"issues": []}), encoding="utf-8")
 
         result = runner.invoke(cli, ["shard", "post", str(manifest)])
-        assert result.exit_code == 0, result.output
+        assert result.exit_code != 0, result.output
+        assert "SHARD_HALTED" in result.output
+        assert "issues" in result.output
 
-        loaded = SessionState.load(dot_dir / "session.json")
-        assert loaded.current_phase == "IDLE", (
-            f"expected IDLE, got {loaded.current_phase}"
-        )
+    def test_shard_post_halts_on_missing_issues_field(self, mock_workspace: Path) -> None:
+        spec_root = mock_workspace / "specs"
+        bucket_dir = spec_root / "test-shard"
+        bucket_dir.mkdir(parents=True)
+
+        dot_dir = mock_workspace / ".deviate"
+        session = SessionState(current_phase="SHARD")
+        session.save(dot_dir / "session.json")
+
+        manifest = bucket_dir / "manifest.json"
+        manifest.write_text(json.dumps({"epic_slug": "test-shard"}), encoding="utf-8")
+
+        result = runner.invoke(cli, ["shard", "post", str(manifest)])
+        assert result.exit_code != 0, result.output
+        assert "SHARD_HALTED" in result.output

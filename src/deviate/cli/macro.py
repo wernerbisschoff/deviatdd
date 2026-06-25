@@ -627,6 +627,13 @@ def shard_post(
     manifest_data = _load_manifest(manifest, "SHARD")
 
     issues = manifest_data.get("issues", [])
+    if not issues:
+        _halt(
+            "SHARD",
+            "manifest missing 'issues' array — shard must declare at least one "
+            "IssueRecord-shaped object (issue_id, type, title, source_file, "
+            "blocked_by, coordinates_with)",
+        )
     ledger_path = _resolve_specs_root() / "issues.jsonl"
 
     epic_slug = epic or manifest_data.get("epic_slug", "")
