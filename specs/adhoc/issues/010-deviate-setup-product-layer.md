@@ -25,9 +25,7 @@ flow_refs: [FLOW-01, FLOW-02, FLOW-03]
   - `specs/adhoc/prd.md` §`FR-ADHOC-010` — Appended functional requirement with AC-ADHOC-010-01 through AC-ADHOC-010-10
 
 ## The Problem Contract
-The Product layer's three canonical flows (`FLOW-01 Flows`, `FLOW-02 Architecture`, `FLOW-03 Release`) are fully specified as seed artifacts at `specs/_product/flows/flows-product.md` and a release acceptance criterion at `specs/_product/release-next.md:26` mandates that `deviate setup` must create `/deviate-flows`, `/deviate-architecture`, and `/deviate-release` as discoverable agent skills. Today, the skill-installation path (`_install_skills_to_agents` → `discover_skills()` → `install_skill()` at `src/deviate/cli/__init__.py:518-531`) auto-installs whatever lives under `src/deviate/prompts/skills/` — so adding three new directories with `SKILL.md` files using the canonical frontmatter format established at `src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11` is the minimal, agent-centric delivery path. The full Typer sub-app wiring (FLOW-01 → flow_app, FLOW-02 → architecture_app, FLOW-03 → release_app) and constitution v0.3.0 update are explicitly out of scope per `specs/_product/release-next.md` ("Minimal cli implementation. Keep it agent-centric") and deferred to a follow-up issue per `specs/explore/product-layer.md:154-159`.
-
-**Forward-looking goal (deferred to a follow-up issue)**: Once the Product-layer convention is established, `deviate shard` and `deviate adhoc` should populate a `flow_refs` field in the frontmatter of every issue file they emit, mirroring the convention introduced in this issue (`flow_refs: [FLOW-01, FLOW-02, FLOW-03]` at `specs/adhoc/issues/010-deviate-setup-product-layer.md:9`). This enables downstream tooling (release planning, cross-epic traceability, flow-coverage audits) to query the issues ledger by flow ID without parsing the issue body. The follow-up issue will need to: (a) extend `IssueRecord` in `src/deviate/state/ledger.py` with an optional `flow_refs: list[str] = []` field, (b) update the `deviate-shard` skill at `src/deviate/prompts/skills/deviate-shard/SKILL.md` to instruct the agent to emit `flow_refs:` in each shard's frontmatter based on which Product-layer flows the FRs map to, (c) update the `deviate-adhoc` skill (and `src/deviate/cli/adhoc.py` if adhoc ever generates issue files directly) to accept a `--flow-ref FLOW-01,FLOW-02` flag and propagate it to the issue frontmatter, and (d) extend `validate_yaml_frontmatter` in `src/deviate/cli/macro.py:41` to recognize `flow_refs` as a known frontmatter key. This issue establishes the convention but does not implement the propagation path.
+The Product layer's three canonical flows (`FLOW-01 Flows`, `FLOW-02 Architecture`, `FLOW-03 Release`) are fully specified as seed artifacts at `specs/_product/flows/flows-product.md` and a release acceptance criterion at `specs/_product/release-next.md:26` mandates that `deviate setup` must create `/deviate-flows`, `/deviate-architecture`, and `/deviate-release` as discoverable agent skills. Today, the skill-installation path (`_install_skills_to_agents` → `discover_skills()` → `install_skill()` at `src/deviate/cli/__init__.py:518-531`) auto-installs whatever lives under `src/deviate/prompts/skills/` — so adding three new directories with `SKILL.md` files using the canonical frontmatter format established at `src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11` is the minimal, agent-centric delivery path. To make the Product layer actually steer downstream work, this issue also upgrades the existing `deviate-shard` and `deviate-adhoc` skill prompts (`src/deviate/prompts/skills/deviate-shard/SKILL.md` and `src/deviate/prompts/skills/deviate-adhoc/SKILL.md`) so they consume the new `_product` specs (`specs/_product/flows/`, `specs/_product/architecture.md`, `specs/_product/release-next.md`) as authoritative context and emit `flow_refs: [FLOW-XX, ...]` in the frontmatter of every issue file they generate — propagating the convention introduced on line 9 of this file into every shard and adhoc emission. The full Typer sub-app wiring (FLOW-01 → flow_app, FLOW-02 → architecture_app, FLOW-03 → release_app) and constitution v0.3.0 update remain explicitly out of scope per `specs/_product/release-next.md` ("Minimal cli implementation. Keep it agent-centric") and deferred to a follow-up issue per `specs/explore/product-layer.md:154-159`.
 
 ## Scope Boundaries
 ### Hard Inclusions
@@ -37,6 +35,18 @@ The Product layer's three canonical flows (`FLOW-01 Flows`, `FLOW-02 Architectur
 - Resolve the naming inconsistency flagged at `specs/explore/product-layer.md:68` (singular `/deviate-flow` vs plural `/deviate-flows`). The canonical form is plural: `deviate-flows` (matches both `specs/_product/flows/flows-product.md:10,16` and the AC at `specs/_product/release-next.md:26`). Skill directory name: `src/deviate/prompts/skills/deviate-flows/`.
 - Extend `tests/cli/test_init.py` with at least one new test (`test_init_creates_product_layer_skills`) that asserts all three SKILL.md files exist under `src/deviate/prompts/skills/`, parse correctly via the existing frontmatter schema, and contain the required fields.
 - Verify end-to-end that `deviate setup --agent claude` against a temp workdir produces `.claude/skills/deviate-flows/SKILL.md`, `.claude/skills/deviate-architecture/SKILL.md`, `.claude/skills/deviate-release/SKILL.md` with byte-equal content to the source templates.
+- Upgrade `src/deviate/prompts/skills/deviate-shard/SKILL.md` (the existing macro-layer sharding skill) so the agent:
+  (a) reads `specs/_product/flows/` (especially `specs/_product/flows/flows-product.md` and any domain-specific `flows-<domain>.md`) as authoritative context for which Product-layer flows each FR maps to;
+  (b) reads `specs/_product/release-next.md` to bias shard ordering toward release-prioritized work;
+  (c) reads `specs/_product/architecture.md` and `specs/_product/domain-model.md` (when present) to surface architecture- and domain-model-aware sharding constraints;
+  (d) emits `flow_refs: [FLOW-XX, ...]` in the YAML frontmatter of each shard issue file it produces, populated by the FR→flow mapping derived from `_product/flows/`. Empty list (`flow_refs: []`) is acceptable for enabling/infrastructure slices that touch zero Product-layer flows (per the Vertical Slice Mandate at `src/deviate/prompts/skills/deviate-shard/SKILL.md:23`).
+- Upgrade `src/deviate/prompts/skills/deviate-adhoc/SKILL.md` (the existing unified-adhoc-issue-compiler skill) so the agent:
+  (a) reads `specs/_product/flows/` and `specs/_product/release-next.md` to understand which Product-layer flows the user's natural-language task touches (or to surface a clarifying question when no flows match);
+  (b) accepts an explicit `--flow-ref FLOW-01,FLOW-02` CLI flag (propagated through the underlying Typer command in `src/deviate/cli/adhoc.py` — see Hard Inclusion below) to override the agent's inferred flow mapping;
+  (c) emits `flow_refs: [FLOW-XX, ...]` in the YAML frontmatter of every adhoc issue file it generates at `specs/adhoc/issues/{NNN}-{slug}.md`, populated from either the explicit flag or the agent's inferred mapping.
+- Extend `src/deviate/cli/adhoc.py` (currently at lines 1-111) so the `pre` command accepts a `--flow-ref` Typer option (`str | None = typer.Option(None, "--flow-ref", help="Comma-separated FLOW-XX IDs (e.g. FLOW-01,FLOW-02)")`), parses it into a `list[str]`, and threads it through to the issue-file emission step so the `flow_refs:` frontmatter is populated. The existing `adhoc-{YYYYMMDDHHMMSS}` issue_id scheme is preserved — only the new optional field is added. The `AdhocRecord` Pydantic model in `src/deviate/state/ledger.py` (referenced at `src/deviate/cli/adhoc.py:11`) gains a new optional `flow_refs: list[str] = []` field; the existing `model_dump_json()` call at `src/deviate/cli/adhoc.py:74` automatically serializes it.
+- Extend the `IssueRecord` Pydantic model in `src/deviate/state/ledger.py` with an optional `flow_refs: list[str] = Field(default_factory=list)` field so the issues ledger can carry flow traceability for shards as well. The existing `_compute_next_issue_id` and `append_issue_record` paths at `src/deviate/cli/macro.py:177-204` and `src/deviate/cli/macro.py:682-700` must thread `flow_refs` from the parsed issue-data dict (`issue_data.get("flow_refs", [])`) into the `IssueRecord` constructor. Round-trip serialization (TOML parse → model_validate → JSONL write) must preserve the field.
+- Extend `validate_yaml_frontmatter` at `src/deviate/cli/macro.py:41` to recognize `flow_refs` as a known frontmatter key (currently the validator only checks `issue_id`, `title`, etc. — adding `flow_refs` to the recognized-keys list prevents the `[yellow]SHARD_WARNING[/] invalid YAML frontmatter` warning at `src/deviate/cli/macro.py:659-661` from firing on issues that legitimately use the field).
 
 ### Defensive Exclusions
 - Do NOT register any new Typer sub-app (no `flow_app`, `architecture_app`, or `release_app` added to `src/deviate/cli/__init__.py`). The release-next.md constraint "Minimal cli implementation. Keep it agent-centric" (`specs/_product/release-next.md:7`) explicitly mandates this — agents invoke skills directly via `/deviate-flows` etc.
@@ -49,12 +59,11 @@ The Product layer's three canonical flows (`FLOW-01 Flows`, `FLOW-02 Architectur
 - Do NOT add Graphite integration, libref config changes, or `[models]` config changes for these new skills. Default model routing applies (`opencode/deepseek-v4-flash` per `.deviate/config.toml`).
 - Do NOT add CLI tests for `_install_skills_to_agents` end-to-end — extend `tests/cli/test_init.py` only with targeted frontmatter assertions on the source SKILL.md files (the existing init flow is already covered).
 - Do NOT add tests that invoke `_run_pytest` from inside `runner.invoke(...)` without mocking `deviate.cli.micro._run_pytest` — per AGENTS.md mandate.
-- Do NOT update `deviate shard` or `deviate adhoc` to emit `flow_refs` in the frontmatter of issues they create. The `flow_refs` field is established as a convention by this issue's own frontmatter (line 9); propagation across all issue-emitting paths is a forward-looking goal tracked in §`The Problem Contract` and deferred to a follow-up issue that touches `src/deviate/cli/macro.py:41` (`validate_yaml_frontmatter`), `src/deviate/cli/adhoc.py`, `src/deviate/prompts/skills/deviate-shard/SKILL.md`, and the `IssueRecord` schema in `src/deviate/state/ledger.py`.
 
 ## Upstream Requirement Tracing
 - **Requirements Tokens**: `FR-ADHOC-010`
-- **Acceptance Criteria Tokens**: `AC-ADHOC-010-01` through `AC-ADHOC-010-10`
-- **Data Model Entities**: None new (no Pydantic models added; existing `DeviateConfig` and `SessionState` are untouched)
+- **Acceptance Criteria Tokens**: `AC-ADHOC-010-01` through `AC-ADHOC-010-16`
+- **Data Model Entities**: One new optional field on `AdhocRecord` (`flow_refs: list[str] = []`); one new optional field on `IssueRecord` (`flow_refs: list[str] = Field(default_factory=list)`)
 - **Spec Source Anchors**:
   - `specs/_product/release-next.md:26` — AC mandate
   - `specs/_product/flows/flows-product.md:1-94` — FLOW-01/02/03 definitions
@@ -69,6 +78,9 @@ The Product layer's three canonical flows (`FLOW-01 Flows`, `FLOW-02 Architectur
 - **US-010-02**: As a Product Architect defining cross-epic architecture, I want `/deviate-architecture` available as an agent skill so that I can use it from my existing agent workflow (claude/opencode/factory) to maintain `specs/_product/architecture.md` and `specs/_product/domain-model.md` without learning a new CLI invocation pattern. *(Ref: FR-ADHOC-010)*
 - **US-010-03**: As a Release Manager planning the next coherent product release, I want `/deviate-release` available as an agent skill so that I can pass a release-goal description and have the agent update `specs/_product/release-next.md` as a guiding compass for downstream `/explore` invocations. *(Ref: FR-ADHOC-010)*
 - **US-010-04**: As a DeviaTDD maintainer extending the framework, I want the three new Product-layer skills to flow through the existing `_install_skills_to_agents` path without any CLI changes so that the "minimal cli implementation, agent-centric" constraint (`specs/_product/release-next.md:7`) is upheld and the change surface stays minimal. *(Ref: FR-ADHOC-010)*
+- **US-010-05**: As a Product Architect consuming Product-layer flow definitions, I want `deviate shard` to read `specs/_product/flows/` and emit `flow_refs:` in each shard's frontmatter so that the resulting issues ledger is queryable by flow ID without parsing the issue body. *(Ref: FR-ADHOC-010)*
+- **US-010-06**: As a developer invoking `/deviate-adhoc` with a natural-language task that touches one or more Product-layer flows, I want the agent to surface those flows in the resulting issue's `flow_refs:` frontmatter (with an explicit `--flow-ref` override available) so that flow traceability is preserved from ad-hoc work into the issues ledger. *(Ref: FR-ADHOC-010)*
+- **US-010-07**: As a DeviaTDD operator running flow-coverage audits over `specs/issues.jsonl`, I want the `IssueRecord` schema to carry an optional `flow_refs: list[str]` field so that the ledger round-trip (TOML parse → model_validate → JSONL write) preserves flow traceability without bespoke parsing. *(Ref: FR-ADHOC-010)*
 
 ## ATDD Acceptance Criteria
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
@@ -122,6 +134,50 @@ The Product layer's three canonical flows (`FLOW-01 Flows`, `FLOW-02 Architectur
 **Given** the constitution bump is deferred to a follow-up issue
 **When** `head -5 specs/constitution.md` is read post-implementation
 **Then** the version line still reads `Version: 0.2.0`; no §`Architectural Principles` modification has occurred.
+
+**Scenario 010-11**: `deviate-shard` skill reads `_product` specs and emits `flow_refs` in shard frontmatter
+**Given** `specs/_product/flows/flows-product.md` defines `FLOW-01` (Flows), `FLOW-02` (Architecture), `FLOW-03` (Release)
+**And** `specs/_product/release-next.md` lists `Product Layer` as a planned epic with `[FLOW-01, FLOW-02, FLOW-03]` refs
+**And** the upstream PRD maps FR-NNN-01 and FR-NNN-02 to FLOW-01 and FR-NNN-03 to FLOW-02
+**When** `deviate shard` runs against the PRD and produces shard files
+**Then** the upgraded `src/deviate/prompts/skills/deviate-shard/SKILL.md` instructs the agent to read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context
+**And** each generated shard's frontmatter carries `flow_refs:` populated by the FR→flow mapping (e.g., the shard containing FR-NNN-01/02 emits `flow_refs: [FLOW-01]`; the shard containing FR-NNN-03 emits `flow_refs: [FLOW-02]`; an enabling-slice shard with zero flow-touching FRs emits `flow_refs: []`).
+
+**Scenario 010-12**: `deviate-adhoc` skill reads `_product` specs and emits `flow_refs` in adhoc issue frontmatter
+**Given** `specs/_product/flows/flows-product.md` defines the canonical FLOW-01/02/03 IDs
+**And** the user invokes `/deviate-adhoc "Add a CLI flag to /deviate-flows for filtering by domain"` — a natural-language task that clearly touches FLOW-01
+**When** the upgraded `deviate-adhoc` skill runs
+**Then** the prompt instructs the agent to read `specs/_product/flows/` and `specs/_product/release-next.md` to infer which flows the task touches
+**And** the generated issue file at `specs/adhoc/issues/{NNN}-cli-flag-flows-filter.md` carries `flow_refs: [FLOW-01]` in its YAML frontmatter
+**And** when the user passes `--flow-ref FLOW-01,FLOW-03` explicitly, the emitted `flow_refs:` matches the explicit flag value verbatim, overriding the agent's inferred mapping.
+
+**Scenario 010-13**: `AdhocRecord` and `IssueRecord` schemas accept optional `flow_refs` field
+**Given** the existing `AdhocRecord` Pydantic model in `src/deviate/state/ledger.py`
+**And** the existing `IssueRecord` Pydantic model in `src/deviate/state/ledger.py`
+**When** `AdhocRecord(issue_id="adhoc-...", description="...", execution_mode="TDD", flow_refs=["FLOW-01", "FLOW-02"])` is constructed
+**And** `IssueRecord(issue_id="ISS-NNN", type="shard", title="...", status="BACKLOG", source_file="...", blocked_by=[], coordinates_with=[], timestamp="...", created_at="...", flow_refs=["FLOW-01"])` is constructed
+**Then** Pydantic validation succeeds for both
+**And** `model_dump_json()` includes the `flow_refs` field
+**And** round-trip via `model_validate(json.loads(model_dump_json()))` preserves the field unchanged.
+
+**Scenario 010-14**: `deviate adhoc pre --flow-ref` CLI option propagates to issue frontmatter
+**Given** the upgraded `src/deviate/cli/adhoc.py` `pre` command
+**When** the user runs `deviate adhoc pre "Add a CLI flag for flow filtering" --flow-ref FLOW-01,FLOW-02`
+**Then** the `AdhocRecord` written to `specs/adhoc.jsonl` carries `"flow_refs": ["FLOW-01", "FLOW-02"]`
+**And** parsing the comma-separated string into a list normalizes whitespace and rejects malformed IDs (e.g., `"FLOW-1"` or `"flow-01"` raise a clear validation error before the ledger write).
+
+**Scenario 010-15**: `validate_yaml_frontmatter` recognizes `flow_refs` as a known key
+**Given** an issue file with frontmatter `issue_id: ISS-NNN\ntitle: "..."\nlabels: [...]\nflow_refs: [FLOW-01]`
+**When** the shard post-script at `src/deviate/cli/macro.py:659-661` runs `validate_yaml_frontmatter(shard_content)`
+**Then** no `[yellow]SHARD_WARNING[/] invalid YAML frontmatter` is emitted
+**And** the issue is registered in `specs/issues.jsonl` with the `flow_refs` field preserved in the JSONL record.
+
+**Scenario 010-16**: `IssueRecord.flow_refs` round-trips through `append_issue_record`
+**Given** a shard's parsed `issue_data` dict at `src/deviate/cli/macro.py:682` contains `"flow_refs": ["FLOW-01", "FLOW-02"]`
+**When** `append_issue_record(ledger_path, issue_data)` is called
+**Then** `IssueRecord(...)` is constructed with `flow_refs=issue_data.get("flow_refs", [])` threaded through
+**And** the appended JSONL line includes `"flow_refs": ["FLOW-01", "FLOW-02"]`
+**And** reading the ledger back and parsing with `IssueRecord.model_validate_json(line)` yields the same `flow_refs` list.
 
 ## Edge Cases and Boundaries
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
