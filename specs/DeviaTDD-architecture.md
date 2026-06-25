@@ -72,13 +72,19 @@ judgment rather than persisting report files.
   scope correctness. Moved from after `/deviate-specify` to after `/deviate-shard` to
   match the new workflow. Catches spec errors at the shard boundary before per-issue
   planning and task decomposition proceed.
-* **Plan (`deviate plan pre` / `deviate plan post`** — **planned, CLI not yet created):** NEW
-  per-issue localized research phase. Performs fresh codebase scanning (what exists now,
-  not at epic-explore time), analyzes what prior issues implemented (git log, completed
-  issues), identifies integration points, dependencies, and potential conflicts. Produces
-  a `plan.md` in the issue workspace with implementation strategy, file mappings, and
-  risk assessment. Addresses the problem that epic-level explore/research artifacts become
-  stale by the time later issues are worked on.
+* **Plan (`deviate plan pre` / `deviate plan post`):** Per-issue localized research phase
+  that performs fresh codebase scanning (what exists now, not at epic-explore time),
+  analyzes what prior issues implemented (via the `specs/issues.jsonl` ledger), and
+  parses workstation file paths from the issue's `## System Topology Mapping` section
+  (calling `extract_file_structure()` from `deviate/core/treesitter.py` on each
+  existing workstation file). The `pre` subcommand is dual-mode: outside a linked
+  worktree it auto-discovers the next claimable unblocked BACKLOG issue, creates the
+  worktree, claims the issue, force-transitions the session to `PLAN`, and syncs
+  `.deviate/` into the new worktree; inside a linked worktree it emits a `plan_pre`
+  JSON contract for the agent. The `post` subcommand validates `plan.md` is non-empty
+  and commits it as `docs({epic}-{issue}): create plan.md`, then transitions the
+  session to `TASKS`. Addresses the problem that epic-level explore/research artifacts
+  become stale by the time later issues are worked on.
 * **Tasks (`deviate tasks pre` / `deviate tasks post`):** Decomposes the spec-enriched issue
   (plus `plan.md` when available) into a trackable execution blueprint with implementation
   hints, stored in `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.md`. The `pre` subcommand
@@ -241,31 +247,34 @@ The execution state transitions follow a strict sequence enforced by `SessionSta
          │                                              ┌──────────┐
          │                                              │ SHARD+   │  ← merged with Specify
          │                                              │ SPECIFY  │
-         │                                              └──────────┘
-         │                                                    │
-         │                                              shard post
-         │                                          (HITL Gate 2)
-         │                                                    ▼
-         │                                              ┌──────────┐
-         │                                              │   PLAN   │  ← NEW per-issue phase
-         │                                              └──────────┘
-         │                                                    │
-         │                                              plan post
-         │                                                    ▼
-         │   ┌────────────┐   tasks post (loops back)   ┌──────────┐
-         ├── │   TASKS    │ <────────────────────────── │  (PLAN)  │
-         │   └────────────┘                              └──────────┘
-         │         │
-         │         │  pr pre/run
-         │         ▼
-         │   ┌──────────┐
-         └── │ IDLE     │
-             └──────────┘
+          │                                              └──────────┘
+          │                                                    │
+          │                                              shard post
+          │                                          (HITL Gate 2)
+          │                                                    ▼
+          │                                              ┌──────────┐
+          │                                              │   PLAN   │  ← per-issue phase
+          │                                              └──────────┘
+          │                                                    │
+          │                                              plan post
+          │                                                    ▼
+          │   ┌────────────┐  tasks post                    ┌──────────┐
+          │   │   TASKS    │ ──────────────────────────> │  (TASKS) │
+          │   └────────────┘                               └──────────┘
+          │         │
+          │         │  pr pre/run
+          │         ▼
+          │   ┌──────────┐
+          └── │ IDLE     │
+              └──────────┘
 
-NOTE: SPECIFY is deprecated as standalone phase. The merged SHARD+SPECIFY
-phase produces spec-enriched issue files directly during shard. PLAN is a new
-phase (CLI not yet created). The legacy SPECIFY → TASKS transition still
-exists for backward compatibility but routes through the new merged path.
+NOTE: SPECIFY is deprecated as a standalone phase. The merged SHARD+SPECIFY
+phase produces spec-enriched issue files directly during shard. PLAN is a
+newly added per-issue phase (CLI registered as `deviate plan`, implemented in
+`src/deviate/cli/meso.py:_plan_pre` / `_plan_post`). The `deviate meso run`
+pipeline executes SPECIFY (claim + worktree) → PLAN → TASKS → IDLE in a
+single invocation. The legacy SPECIFY → TASKS transition still exists for
+backward compatibility but routes through the new merged path.
 ```
 
 **Micro layer TDD cycle** (per task, dispatched by `deviate run <task-id>`):
@@ -331,8 +340,8 @@ Agents are bound into specialized operational scopes by context restrictions. Op
 ### 5.1 Meso Layer Phase Prompts
 * **`/deviate-specify` (Deprecated):** Merged into `/deviate-shard`. Shard now produces spec-enriched issue files directly. The legacy skill remains for backward compatibility with a redirect notice.
 * **[HITL Gate 2]:** Human reviews all sharded issue files (with embedded spec content) for completeness, edge cases, scope correctness. Moved from after `/deviate-specify` to after `/deviate-shard`.
-* **`/deviate-plan` Context (planned — CLI not yet created):** Spec-enriched issue file + Current Codebase State + Completed Issues History.
-    * *System Directives:* Perform fresh localized research for this specific issue. Read the spec-enriched issue, scan current codebase state (what exists now, not at epic-explore time), analyze what prior issues implemented via git log. Identify integration points, dependencies, potential conflicts. Produce `plan.md` with implementation strategy, file mappings, and risk assessment. Contextualize the issue for downstream task decomposition.
+* **`/deviate-plan` Context (via `deviate plan pre`):** Spec-enriched issue file + Current Codebase State + workstation file structures extracted via `deviate/core/treesitter.py` from the `## System Topology Mapping` section of the issue.
+    * *System Directives:* Perform fresh localized research for this specific issue. Read the spec-enriched issue, scan current codebase state (what exists now, not at epic-explore time), analyze what prior issues implemented via the `specs/issues.jsonl` ledger. Identify integration points, dependencies, potential conflicts. Produce `plan.md` with implementation strategy, file mappings, and risk assessment. Contextualize the issue for downstream task decomposition. The plan pre contract includes an optional `file_structure` appendix keyed by workstation path, pre-extracted symbols/imports per file.
 * **`/deviate-tasks` Context (via `deviate tasks pre`):** Spec-enriched issue file + `plan.md` (if available) + Codebase Layout Map + constitution command output.
     * *System Directives:* Decompose the spec-enriched issue directly into discrete task entries written to `tasks.md` (the human-authored decomposition document). The CLI subsequently registers these as rows in `tasks.jsonl` (the append-only event ledger). Each task must include implementation hints (file locations, mock boundaries, fixture requirements) alongside the decomposition. Every entry must be assigned a unique tracking identifier (`TSK-{ISSUE_ID}-{NN}`) and must map cleanly to an acceptance criterion in the issue file. Encode DAG dependencies via `blocked_by` arrays in each task entry. Assign each task an execution type: `tdd` (standard TDD loop), `direct` (boilerplate/config, no RED phase), or `e2e` (end-to-end integration). **An agent MAY append a terminal `type: "e2e"` task** for issues modifying user-facing behavior, but it is no longer mandatory. Target 4-8 tasks per issue; enforce 1-10 bounds. When `plan.md` is available, consume its implementation strategy and risk assessment as input to task granularity decisions.
 
@@ -365,7 +374,7 @@ delegated to the calling environment.
 | `/deviate-prd` | Qwen 3.7+ | Single invocation | One-shot |
 | `/deviate-shard` | Qwen 3.7+ | Single invocation | One-shot |
 | `/deviate-adhoc` | V4 Flash | Single invocation | One-shot |
-| `/deviate-plan` (new) | V4 Pro | Single invocation (issue-scoped) | One-shot |
+| `/deviate-plan` | V4 Pro | Single invocation (issue-scoped) | One-shot |
 | `/deviate-tasks` | V4 Pro | Single invocation (issue-scoped) | 90%+ cache hit after turn 1 when paired with `/deviate-plan` |
 | EXECUTE / E2E / HOTFIX | V4 Flash | Single invocation | One-shot |
 
@@ -502,7 +511,7 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 4. **Deterministic Test Failure Check:** For a `RED` phase to be valid (`deviate red post`), `_classify_pytest_outcome()` must return `ASSERTION_FAILURE`. Return codes of `PASS` or `SYNTAX_ERROR` (SyntaxError, IndentationError, TabError, ImportError, ModuleNotFoundError) are rejected. Current implementation uses string-based parsing of `pytest -v` output; `pytest --json-report` migration is specified but not yet implemented.
 
-5. **Memory Preservation via Train Gates:** The `deviate yellow post --rejected` path restores changes via `git restore .` without losing session state. The JUDGE phase implements Train rollback on compliance violations: `git revert --no-edit <green_sha>` with precise SHA tracking (never `git reset --hard` to avoid destroying unrelated amendments), then injects `<judge_feedback>` context into the session for the agent's next GREEN attempt. A `RollbackSnapshot` is persisted to the task ledger. The `deviate refactor post` regression check runs `git restore .` on type mismatch or test regression.
+5. **Memory Preservation via Train Gates:** The `deviate yellow post --rejected` path restores changes via `git restore .` without losing session state. The JUDGE phase implements Train rollback on compliance violations: `_execute_rollback()` runs `git reset --hard <red_sha>` (the RED boundary SHA stored in `session.red_commit_sha`) and persists a `RollbackSnapshot` to the task ledger via `append_rollback_snapshot()`. The agent's next GREEN attempt receives the previous failure output as `<train_feedback>` injected into the prompt. The `_run_tdd_cycle()` loop allows up to **`max_train_attempts = 3`** retries (re-rolling back to RED and re-running GREEN with refreshed feedback) before marking the task `FAILED` and halting the pipeline. Note: `_execute_rollback` uses `git reset --hard` against the red boundary, not `git revert --no-edit` — the red boundary is the precise commit SHA stored in `session.red_commit_sha` (set by `_run_red_phase` at the end of the RED phase), which avoids destroying YELLOW-phase amendments that were committed between RED and JUDGE. The `deviate refactor post` regression check runs `git restore .` on type mismatch or test regression.
 
 6. **The Elastic Governance Rule:** The `deviate run` command supports `--profile [full|fast|secure]` to control which phases execute. `full` runs the complete RED → GREEN → [YELLOW?] → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as composable overrides that take precedence over profile defaults. Execution profiles and agent backends are configured via `DeviateConfig.agent.backend`.
 
@@ -511,6 +520,28 @@ The orchestrator must maintain and enforce these structural constraints across a
 8. **The Session Continuity Principle:** Session state is persisted to `.deviate/session.json` after each CLI command. The `SessionState` class tracks `current_phase`, `active_issue_id`, and `last_command`. Macro and meso phases transition through `transition_to()` with validation from `_MACRO_TRANSITION_MAP`. Micro phases use `force_transition_to()`. The `_run_single()` function checks `session.current_phase` and supports resume from YELLOW/JUDGE/REFACTOR via optional `start_phase` parameter. Model continuity and KV cache management are delegated to the calling environment.
 
 9. **The Model Tiering Constraint:** Model selection is defined as a recommended strategy in `specs/constitution.md` seeds and prompt skills. The `deviate` CLI does **not** enforce model selection programmatically. The `--agent` flag and `DeviateConfig.agent.backend` field configure agent backends (`opencode`, `claude`, `droid`), but the specific model used within each backend is chosen by the calling environment. The `_SKILL_NAMES` dict in `micro.py` maps `YELLOW → "deviate-yellow"` and `JUDGE → "deviate-judge"` for skill-based agent guidance (both previously missing).
+
+10. **The Issue-Scoped Task Sweep:** `deviate run --all` is **issue-scoped**, not global. The
+    active issue is resolved from `session.active_issue_id`, falling back to a
+    branch-derived lookup via the `feat/{epic}/{issue}` regex against
+    `specs/issues.jsonl`. If neither resolves, no tasks are dispatched. Once the issue is
+    resolved, only the PENDING tasks for that issue (`_find_all_pending_tasks(root,
+    issue_id=...)`) are swept. Tasks are dispatched sequentially; each task gets up to
+    **2 retry attempts** (`_execute_task_with_retry`, `for attempt in range(2)`) before
+    being marked `FAILED`. The pipeline **halts on the first failure** (`any_failed = True;
+    break`) and exits with code `1`. When `.deviate/config.toml` contains `graphite = true`,
+    the runner invokes `gt create -m "feat({TSK}): {description}"` between tasks to spin
+    up a stacked branch for the next pending task.
+
+11. **The Pipeline Output Discipline:** `_run_all` constructs an `OrchestrationMonitor`
+    (`src/deviate/ui/monitor.py`) with `total_tasks` set to the pending count. In TTY mode
+    the monitor renders a live Rich dashboard (task markers `[X]` completed, `[/]`
+    in-progress, `[ ]` pending, phase transitions). When `--json` is passed, the monitor
+    emits JSONL events (`task_started`, `phase_change`, `task_completed`, `task_failed`,
+    `pipeline_halted`, `pipeline_complete`) to stdout instead. The `OrchestrationMonitor`
+    owns a streaming agent-output callback that forwards each line emitted by the agent
+    backend to the dashboard in real time. KeyboardInterrupt triggers
+    `monitor.signal_keyboard_interrupt()` and exits with code `130`.
 
 ---
 
@@ -530,8 +561,6 @@ DeviaTDD's phase structure is also a cost-optimization architecture. Three mecha
 | JUDGE | V4 Pro | $0.003625 | ~5/task | Premium, sparse |
 | YELLOW | V4 Pro | $0.003625 | Conditional | Premium, rare |
 | `/deviate-research`, `/deviate-prd`, `/deviate-shard` | Qwen 3.7+ | varies | Once/feature | Premium, infrequent |
-| `/deviate-adhoc` | V4 Flash | $0.0028 | As needed | Cheap |
-| EXECUTE / E2E / HOTFIX | V4 Flash | $0.0028 | As needed | Cheap |
 | `/deviate-adhoc` | V4 Flash | $0.0028 | As needed | Cheap |
 | EXECUTE / E2E / HOTFIX | V4 Flash | $0.0028 | As needed | Cheap |
 
