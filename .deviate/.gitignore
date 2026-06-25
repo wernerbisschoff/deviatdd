@@ -3,3 +3,4 @@ artifacts/
 prompts.log
 reports/
 rollback.jsonl
+logs/

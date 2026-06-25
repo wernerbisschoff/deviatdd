@@ -4,12 +4,17 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 import tomllib
+import yaml
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.skills import _resolve_skills_root
 
 runner = CliRunner()
+
+_PRODUCT_LAYER_SKILLS = ("deviate-flows", "deviate-architecture", "deviate-release")
 
 
 @contextmanager
@@ -20,6 +25,51 @@ def chdir(path: Path):
         yield
     finally:
         os.chdir(cwd)
+
+
+def _assert_product_layer_skill_installed(
+    installed: Path, source: Path, skill_name: str
+) -> None:
+    """Verify an installed Product-layer skill preserves its source content.
+
+    The installation path (``compose_skill_body`` at ``src/deviate/core/skills.py:57``)
+    prepends ``core.md`` invariants between the source frontmatter and the source
+    body, so the installed file is NOT byte-equal to the source. The contract is:
+        1. Source frontmatter is preserved verbatim (byte-equal).
+        2. Source body text is preserved as a substring (compose only inserts
+           content BETWEEN frontmatter and body — never mutates either).
+        3. Frontmatter parses to a dict with the expected fields.
+    """
+    assert installed.exists(), f"Installed skill missing: {installed}"
+    assert source.exists(), f"Source skill template missing: {source}"
+
+    src_text = source.read_text(encoding="utf-8")
+    dst_text = installed.read_text(encoding="utf-8")
+
+    src_fm = src_text.split("---", 2)[1]
+    dst_fm = dst_text.split("---", 2)[1]
+    assert src_fm == dst_fm, (
+        f"{skill_name}: source frontmatter not byte-equal in installed file. "
+        f"Source fm: {src_fm!r}\nInstalled fm: {dst_fm!r}"
+    )
+
+    src_body = src_text.split("---", 2)[2]
+    assert src_body.strip() in dst_text, (
+        f"{skill_name}: source body content missing from installed file. "
+        f"Source body[:120]: {src_body[:120]!r}"
+    )
+
+    fm = yaml.safe_load(src_fm)
+    assert fm["name"] == skill_name, (
+        f"{skill_name}: frontmatter name mismatch (got {fm.get('name')!r})"
+    )
+    assert fm["category"] == "deviatdd-product-layer", (
+        f"{skill_name}: category must be 'deviatdd-product-layer' "
+        f"(got {fm.get('category')!r})"
+    )
+    assert fm["version"] == "1.0.0", (
+        f"{skill_name}: version must be '1.0.0' (got {fm.get('version')!r})"
+    )
 
 
 class TestFullInitCycle:
@@ -167,3 +217,94 @@ class TestFullInitCycle:
             assert agents_path.exists()
             agents_content = agents_path.read_text()
             assert "## DeviaTDD Orchestration Rules" in agents_content
+
+
+class TestProductLayerSkillExportCycle:
+    """TSK-010-06: full-cycle integration verification for Product-layer skills.
+
+    Verifies that ``deviate setup --agent {claude,opencode}`` installs the three
+    new Product-layer skills (``deviate-flows``, ``deviate-architecture``,
+    ``deviate-release``) into the agent-specific skills directory with source
+    frontmatter and body content preserved (per ``specs/_product/release-next.md:26``
+    acceptance criterion).
+    """
+
+    def test_init_export_cycle_installs_product_layer_skills_claude(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-ADHOC-010-03: ``deviate setup --agent claude`` installs the three
+        Product-layer skills into ``.claude/skills/`` with source content preserved.
+        """
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
+
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert result.exit_code == 0, result.output
+
+            skills_root = _resolve_skills_root()
+            for skill_name in _PRODUCT_LAYER_SKILLS:
+                installed = workdir / ".claude" / "skills" / skill_name / "SKILL.md"
+                source = skills_root / skill_name / "SKILL.md"
+                _assert_product_layer_skill_installed(installed, source, skill_name)
+
+    def test_init_export_cycle_installs_product_layer_skills_opencode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-ADHOC-010-05: ``deviate setup --agent opencode`` installs the three
+        Product-layer skills into ``.opencode/skills/`` with source content preserved.
+        """
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".opencode").mkdir(parents=True, exist_ok=True)
+
+        with chdir(tmp_path):
+            workdir = tmp_path
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+            skills_root = _resolve_skills_root()
+            for skill_name in _PRODUCT_LAYER_SKILLS:
+                installed = workdir / ".opencode" / "skills" / skill_name / "SKILL.md"
+                source = skills_root / skill_name / "SKILL.md"
+                _assert_product_layer_skill_installed(installed, source, skill_name)
+
+    def test_init_export_cycle_product_layer_skills_idempotent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-ADHOC-010-04: re-running ``deviate setup --agent claude`` against a
+        workdir where the three Product-layer skill files are already installed
+        emits a ``[yellow]SKIP[/]`` log line for each present skill and produces
+        no errors (per existing ``_install_skills_to_agents`` skip logic at
+        ``src/deviate/cli/__init__.py:518-531``).
+        """
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
+
+        with chdir(tmp_path):
+            first = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert first.exit_code == 0, first.output
+
+            for skill_name in _PRODUCT_LAYER_SKILLS:
+                installed = tmp_path / ".claude" / "skills" / skill_name / "SKILL.md"
+                assert installed.exists(), (
+                    f"first setup did not install {skill_name}: {installed}"
+                )
+
+            second = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert second.exit_code == 0, second.output
+
+            for skill_name in _PRODUCT_LAYER_SKILLS:
+                assert f"SKIP {skill_name}" in second.output, (
+                    f"second setup did not emit SKIP log for {skill_name}; "
+                    f"got: {second.output!r}"
+                )

@@ -4,12 +4,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.cli.__init__ import resolve_graphite_config
+from deviate.core.skills import _resolve_skills_root
 
 runner = CliRunner()
+
+_PRODUCT_LAYER_SKILLS = ("deviate-flows", "deviate-architecture", "deviate-release")
 
 
 class TestInitCommand:
@@ -346,6 +350,127 @@ class TestInitCommand:
 
     def test_resolve_graphite_config_no_config(self, tmp_path: Path) -> None:
         assert resolve_graphite_config(tmp_path) is False
+
+    def test_init_creates_product_layer_skills(self) -> None:
+        """TSK-010-01: three Product-layer SKILL.md templates exist with canonical
+        YAML frontmatter (``name``, ``category: deviatdd-product-layer``,
+        ``version: 1.0.0``, ``aliases`` containing slash-command forms).
+
+        Source: ``specs/_product/release-next.md:26`` (acceptance criterion) and
+        ``src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11``
+        (canonical frontmatter schema reference).
+        """
+        skills_root = _resolve_skills_root()
+
+        for skill_name in _PRODUCT_LAYER_SKILLS:
+            skill_path = skills_root / skill_name / "SKILL.md"
+            assert skill_path.exists(), (
+                f"Product-layer skill template missing: {skill_path}"
+            )
+
+            content = skill_path.read_text(encoding="utf-8")
+            assert content.lstrip().startswith("---"), (
+                f"{skill_name}: SKILL.md missing YAML frontmatter delimiter"
+            )
+
+            fm = yaml.safe_load(content.split("---", 2)[1])
+            assert isinstance(fm, dict), (
+                f"{skill_name}: frontmatter did not parse to a dict"
+            )
+
+            assert fm.get("name") == skill_name, (
+                f"{skill_name}: frontmatter name mismatch (got {fm.get('name')!r})"
+            )
+            assert fm.get("category") == "deviatdd-product-layer", (
+                f"{skill_name}: category must be 'deviatdd-product-layer' "
+                f"(got {fm.get('category')!r})"
+            )
+            assert fm.get("version") == "1.0.0", (
+                f"{skill_name}: version must be '1.0.0' (got {fm.get('version')!r})"
+            )
+
+            aliases = fm.get("aliases")
+            assert isinstance(aliases, list) and aliases, (
+                f"{skill_name}: aliases must be a non-empty flat YAML list"
+            )
+            assert f"/{skill_name}" in aliases, (
+                f"{skill_name}: aliases must include slash-command /{skill_name} "
+                f"(got {aliases!r})"
+            )
+            assert f"spec:{skill_name.split('-', 1)[1]}" in aliases, (
+                f"{skill_name}: aliases must include spec:<skill> form "
+                f"(got {aliases!r})"
+            )
+
+            description = fm.get("description")
+            assert isinstance(description, str) and "\n" not in description, (
+                f"{skill_name}: description must be a single-line string"
+            )
+
+    def test_init_product_layer_skills_idempotent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TSK-010-01: re-running ``deviate setup --agent claude`` against a workdir
+        where the three Product-layer skill files are already installed produces
+        SKIP log lines (no errors, no duplicate writes).
+
+        Source: ``src/deviate/cli/__init__.py:518-531`` (``_install_skills_to_agents``)
+        existing skip-on-equal-content logic.
+        """
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
+
+        with chdir(tmp_path):
+            first = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert first.exit_code == 0, first.output
+
+            for skill_name in _PRODUCT_LAYER_SKILLS:
+                installed = tmp_path / ".claude" / "skills" / skill_name / "SKILL.md"
+                assert installed.exists(), (
+                    f"first setup did not install {skill_name}: {installed}"
+                )
+
+            second = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert second.exit_code == 0, second.output
+
+            for skill_name in _PRODUCT_LAYER_SKILLS:
+                assert "SKIP" in second.output, (
+                    f"second setup did not emit SKIP log for {skill_name}; "
+                    f"got: {second.output!r}"
+                )
+
+    def test_init_discover_skills_enumerates_product_layer(self) -> None:
+        """TSK-010-06: ``discover_skills()`` enumerates >= 23 skill names and
+        includes the three new Product-layer skills (``deviate-flows``,
+        ``deviate-architecture``, ``deviate-release``) exactly once each.
+
+        Source: AC-ADHOC-010-02 (``discover_skills()`` must return 23 names after
+        the three Product-layer skills are added; >= 23 chosen for forward
+        compatibility per ``specs/adhoc/010-deviate-setup-product-layer/tasks.md``
+        §`Risk Hotspots`).
+        """
+        from deviate.core.skills import discover_skills
+
+        skills = discover_skills()
+
+        assert len(skills) >= 23, (
+            f"discover_skills() returned {len(skills)} skill names; "
+            f"expected >= 23. Got: {sorted(skills)}"
+        )
+
+        for skill_name in _PRODUCT_LAYER_SKILLS:
+            assert skill_name in skills, (
+                f"Product-layer skill '{skill_name}' missing from "
+                f"discover_skills() output. Got: {sorted(skills)}"
+            )
+            assert skills.count(skill_name) == 1, (
+                f"Product-layer skill '{skill_name}' appears "
+                f"{skills.count(skill_name)} times in discover_skills() output; "
+                f"expected exactly 1. Got: {sorted(skills)}"
+            )
 
 
 class TestInitGraphiteFlag:
