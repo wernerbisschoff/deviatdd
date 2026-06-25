@@ -37,6 +37,7 @@ from deviate.core.validation import (
     validate_artifact,
     validate_gherkin_syntax,
     validate_sections,
+    validate_source_file,
     validate_yaml_frontmatter,
 )
 from deviate.state.config import SessionState, resolve_model_for_phase
@@ -661,12 +662,28 @@ def shard_post(
                     )
 
     for issue_data in issues:
+        source_file = issue_data.get("source_file", "")
+        inferred_epic = ""
+        if source_file:
+            parts = source_file.split("/")
+            if len(parts) >= 2 and parts[0] == "specs":
+                inferred_epic = parts[1]
+        validation_epic = epic_slug or inferred_epic
+        if not validate_source_file(source_file, validation_epic):
+            issue_id = issue_data.get("issue_id", "<missing>")
+            _halt(
+                "SHARD",
+                f"issue {issue_id!r} source_file {source_file!r} does not match "
+                f"required pattern specs/{validation_epic or '<epic>'}/issues/<file>.md "
+                "— downstream 'deviate meso run' relies on this shape to "
+                "derive epic bucket and issue slug",
+            )
         record = IssueRecord(
             issue_id=issue_data.get("issue_id", str(uuid.uuid4())),
             type=issue_data.get("type", "feature"),
             title=issue_data.get("title", ""),
             status="BACKLOG",
-            source_file=issue_data.get("source_file", ""),
+            source_file=source_file,
             blocked_by=issue_data.get("blocked_by", []),
             coordinates_with=issue_data.get("coordinates_with", []),
             timestamp=datetime.now(timezone.utc),
