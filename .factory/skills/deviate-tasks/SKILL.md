@@ -12,9 +12,9 @@ aliases:
   - /tasks
 ---
 
-## DeviaTDD Universal Invariants
+<universal_invariants>
 
-The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
 
@@ -28,44 +28,70 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
-## KV Cache Preservation
+</universal_invariants>
+
+<kv_cache_preservation>
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
 
+</kv_cache_preservation>
 
-## Meso Layer Execution Model
 
-This phase operates inside the **DeviaTDD MESO LAYER** — localized research, planning, and task decomposition per issue.
+<meso_layer_model>
 
-### Shared Meso Disciplines
+This phase operates inside the **MESO LAYER** — localized research, planning, and task decomposition per issue.
 
-1. **Worktree Execution**: This phase runs inside a dedicated git worktree for a single issue. The pre-script resolves the worktree path and branch. All file operations are relative to the worktree root.
+<shared_disciplines>
 
-2. **Issue/Spec Loading**: Read the spec-enriched issue file at `spec_path`. The issue file contains user stories, Gherkin acceptance criteria, edge cases, performance constraints, and a system topology mapping section.
+<item>
+<title>Worktree Execution</title>
+This phase runs inside a dedicated git worktree for a single issue. The pre-script resolves the worktree path and branch. All file operations are relative to the worktree root.
+</item>
 
-3. **Ledger State**: Issue state lives in `specs/issues.jsonl`. Task state lives in `tasks.jsonl`. Do NOT store task state in markdown files. `tasks.md` is a human-readable reference only.
+<item>
+<title>Issue/Spec Loading</title>
+Read the spec-enriched issue file at `spec_path`. The issue file contains user stories, Gherkin acceptance criteria, edge cases, performance constraints, and a system topology mapping section.
+</item>
 
-4. **Post-Script Validation**: The post-script validates required sections, updates the ledger, commits, and advances the session state. If validation fails, fix the output and re-run.
+<item>
+<title>Ledger State</title>
+Issue state lives in `specs/issues.jsonl`. Task state lives in `tasks.jsonl`. Do NOT store task state in markdown files. `tasks.md` is a human-readable reference only.
+</item>
 
-5. **Branch Discipline**: All work happens on the dedicated issue branch. Do NOT switch branches or modify the main branch. Do NOT run `git checkout -b` or branch-switching commands — the worktree is pre-configured.
+<item>
+<title>Post-Script Validation</title>
+The post-script validates required sections, updates the ledger, commits, and advances the session state. If validation fails, fix the output and re-run.
+</item>
 
-6. **Zero Speculative Scope**: Analyze only files directly mapped in the system topology mapping. Do not expand scope beyond the issue's declared workstation files.
+<item>
+<title>Branch Discipline</title>
+All work happens on the dedicated issue branch. Do NOT switch branches or modify the main branch. Do NOT run `git checkout -b` or branch-switching commands — the worktree is pre-configured.
+</item>
 
-7. **Deterministic Discovery**: Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
+<item>
+<title>Zero Speculative Scope</title>
+Analyze only files directly mapped in the system topology mapping. Do not expand scope beyond the issue's declared workstation files.
+</item>
 
-8. **Context Consultation Requirement**: Use `context query <library> <topic>` for understanding library APIs and framework conventions detected in the codebase. The `context` CLI provides offline, deterministic documentation lookups without network overhead. Prefer it over training data or web fetching.
+<item>
+<title>Deterministic Discovery</title>
+Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
+</item>
+
+<item>
+<title>Offline Documentation Requirement</title>
+Use `libref query <library> <topic>` for understanding library APIs and framework conventions detected in the codebase. The `libref` CLI provides offline, deterministic documentation lookups without network overhead. Prefer it over training data or web fetching.
+</item>
+
+</shared_disciplines>
+
+</meso_layer_model>
 
 <step id="handover_emission">
 After the post script completes, emit the YAML block from the `<handover_manifest>` section as your ONLY stdout output. Do NOT include any explanatory text, markdown formatting, or file contents before or after it.
 </step>
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
 
 
 <system_instructions>
