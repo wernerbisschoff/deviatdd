@@ -93,7 +93,7 @@ class TestMacroFullCycle:
                             "issue_id": "ISS-001-001",
                             "type": "feature",
                             "title": "Test",
-                            "source_file": "test.md",
+                            "source_file": "specs/001-deviate-cli-python/issues/001-test.md",
                         }
                     ]
                 }

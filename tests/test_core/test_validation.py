@@ -4,6 +4,7 @@ from deviate.core.validation import (
     extract_section_body,
     validate_gherkin_syntax,
     validate_sections,
+    validate_source_file,
     validate_task_id,
     validate_yaml_frontmatter,
 )
@@ -221,3 +222,107 @@ class TestValidateTaskId:
         assert validate_task_id("TSK-007-1") is False
         assert validate_task_id("TSK-07-01") is False
         assert validate_task_id("") is False
+
+
+class TestValidateSourceFile:
+    def test_accepts_matching_issue_file(self):
+        assert (
+            validate_source_file(
+                "specs/001-deviate-cli-python/issues/008-meso-macro.md",
+                "001-deviate-cli-python",
+            )
+            is True
+        )
+
+    def test_accepts_kebab_slug_under_issues_dir(self):
+        assert (
+            validate_source_file(
+                "specs/002-deviatdd-gap-analysis/issues/005-micro-layer-integrity.md",
+                "002-deviatdd-gap-analysis",
+            )
+            is True
+        )
+
+    def test_rejects_prd_reference(self):
+        assert (
+            validate_source_file(
+                "specs/001-deviate-cli-python/prd.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_design_reference(self):
+        assert (
+            validate_source_file(
+                "specs/001-deviate-cli-python/design.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_data_model_reference(self):
+        assert (
+            validate_source_file(
+                "specs/001-deviate-cli-python/data-model.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_explore_reference(self):
+        assert (
+            validate_source_file(
+                "specs/explore/some-slug.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_empty_source_file(self):
+        assert validate_source_file("", "001-deviate-cli-python") is False
+
+    def test_rejects_absolute_path(self):
+        assert (
+            validate_source_file(
+                "/specs/001-deviate-cli-python/issues/001-foo.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_wrong_epic_slug(self):
+        assert (
+            validate_source_file(
+                "specs/002-other-epic/issues/001-foo.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_non_md_extension(self):
+        assert (
+            validate_source_file(
+                "specs/001-deviate-cli-python/issues/001-foo.txt",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_missing_issues_dir_segment(self):
+        assert (
+            validate_source_file(
+                "specs/001-deviate-cli-python/001-foo.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )
+
+    def test_rejects_relative_path_without_specs_prefix(self):
+        assert (
+            validate_source_file(
+                "001-deviate-cli-python/issues/001-foo.md",
+                "001-deviate-cli-python",
+            )
+            is False
+        )

@@ -119,3 +119,35 @@ def validate_task_id(task_id: str) -> bool:
     if not task_id:
         return False
     return bool(re.match(r"^TSK-\d{3}-\d{2}$", task_id))
+
+
+def validate_source_file(source_file: str, epic_slug: str) -> bool:
+    """Validate a shard manifest's ``source_file`` against the issue registry pattern.
+
+    The downstream ``deviate meso run`` command parses ``source_file`` via
+    ``PurePosixPath(source_file).parent.parent.name`` to derive the epic bucket
+    slug and ``PurePosixPath(source_file).stem`` to derive the issue slug used
+    for branch naming. Both rely on the strict shape
+    ``specs/<epic_slug>/issues/<file>.md``. Any deviation (e.g. a PRD or
+    design reference) silently produces wrong branch names and downstream
+    worktree failures.
+
+    Returns ``True`` only when *source_file* matches the expected pattern for
+    *epic_slug*; ``False`` otherwise.
+    """
+    if not source_file or not epic_slug:
+        return False
+    if source_file.startswith("/"):
+        return False
+    parts = source_file.split("/")
+    if len(parts) != 4:
+        return False
+    if parts[0] != "specs":
+        return False
+    if parts[1] != epic_slug:
+        return False
+    if parts[2] != "issues":
+        return False
+    if not parts[3].endswith(".md"):
+        return False
+    return True
