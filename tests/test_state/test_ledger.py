@@ -319,6 +319,70 @@ class TestResolveIssueRecord:
         assert result is None
 
 
+class TestIssueRecordFlowRefs:
+    def test_flow_refs_round_trip_on_issue_record(self):
+        record = IssueRecord(
+            issue_id="ISS-FLOW-001",
+            type="feature",
+            title="Round Trip With Flows",
+            status="BACKLOG",
+            source_file="specs/test-shard/issues/001-flow.md",
+            timestamp=datetime.now(timezone.utc),
+            flow_refs=["FLOW-01", "FLOW-02"],
+        )
+        dumped = record.model_dump_json()
+        parsed = json.loads(dumped)
+        assert parsed["flow_refs"] == ["FLOW-01", "FLOW-02"]
+        restored = IssueRecord.model_validate(parsed)
+        assert restored.flow_refs == ["FLOW-01", "FLOW-02"]
+        assert restored == record
+
+    def test_issue_record_flow_refs_defaults_to_empty(self):
+        record = IssueRecord(
+            issue_id="ISS-FLOW-002",
+            type="feature",
+            title="Default Empty Flow Refs",
+            status="BACKLOG",
+            source_file="specs/test-shard/issues/002-default.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        assert record.flow_refs == []
+        assert isinstance(record.flow_refs, list)
+
+    def test_issue_record_flow_refs_rejects_non_list(self):
+        with pytest.raises(ValidationError):
+            IssueRecord(
+                issue_id="ISS-FLOW-003",
+                type="feature",
+                title="Non-list Flow Refs",
+                status="BACKLOG",
+                source_file="specs/test-shard/issues/003-bad.md",
+                timestamp=datetime.now(timezone.utc),
+                flow_refs="FLOW-01",
+            )
+
+    def test_flow_refs_round_trips_through_append_issue_record(self, tmp_path: Path):
+        ledger_path = tmp_path / "issues.jsonl"
+        record = IssueRecord(
+            issue_id="ISS-FLOW-004",
+            type="feature",
+            title="Flow Refs Round Trip via Ledger",
+            status="BACKLOG",
+            source_file="specs/test-shard/issues/004-ledger.md",
+            timestamp=datetime.now(timezone.utc),
+            flow_refs=["FLOW-01", "FLOW-02"],
+        )
+        appended = append_issue_record(record, ledger_path)
+        assert appended is True
+        lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        parsed_line = json.loads(lines[0])
+        assert parsed_line["flow_refs"] == ["FLOW-01", "FLOW-02"]
+        restored = IssueRecord.model_validate_json(lines[0])
+        assert restored.flow_refs == ["FLOW-01", "FLOW-02"]
+        assert restored.issue_id == "ISS-FLOW-004"
+
+
 class TestRollbackSnapshot:
     def test_rollback_snapshot_tracks_red_boundary(self):
         snapshot = RollbackSnapshot(
@@ -418,4 +482,43 @@ class TestAdhocRecord:
         )
         data = json.loads(record.model_dump_json())
         restored = AdhocRecord.model_validate(data)
+        assert restored == record
+
+    def test_adhoc_record_flow_refs_optional(self):
+        record = AdhocRecord(
+            issue_id="adhoc-flow-001",
+            description="Adhoc task touching two flows",
+            flow_refs=["FLOW-01", "FLOW-02"],
+        )
+        assert record.flow_refs == ["FLOW-01", "FLOW-02"]
+
+    def test_adhoc_record_flow_refs_defaults_to_empty(self):
+        record = AdhocRecord(
+            issue_id="adhoc-flow-002",
+            description="Adhoc task with no flow refs",
+        )
+        assert record.flow_refs == []
+        assert isinstance(record.flow_refs, list)
+
+    def test_adhoc_record_flow_refs_rejects_non_list(self):
+        with pytest.raises(ValidationError):
+            AdhocRecord(
+                issue_id="adhoc-flow-003",
+                description="Non-list flow refs",
+                flow_refs="FLOW-01",
+            )
+
+    def test_adhoc_record_flow_refs_roundtrip(self):
+        import json
+
+        record = AdhocRecord(
+            issue_id="adhoc-flow-004",
+            description="Flow refs round trip",
+            flow_refs=["FLOW-01", "FLOW-03"],
+        )
+        dumped = record.model_dump_json()
+        parsed = json.loads(dumped)
+        assert parsed["flow_refs"] == ["FLOW-01", "FLOW-03"]
+        restored = AdhocRecord.model_validate(parsed)
+        assert restored.flow_refs == ["FLOW-01", "FLOW-03"]
         assert restored == record

@@ -541,6 +541,7 @@ def _ensure_gitignore(workdir: Path) -> None:
         "prompts.log",
         "reports/",
         "rollback.jsonl",
+        "logs/",
     ]
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")

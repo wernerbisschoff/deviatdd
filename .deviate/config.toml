@@ -7,8 +7,3 @@ use_context = true
 use_libref = true
 [agent]
 backend = "opencode"
-
-[models]
-default = "opencode-go/deepseek-v4-flash"
-plan = "opencode-go/deepseek-v4-pro"
-tasks = "opencode-go/deepseek-v4-pro"
