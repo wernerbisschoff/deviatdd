@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from deviate.core.skills import discover_skills, install_skill
+from deviate.core.skills import discover_skills, install_skill, resolve_skill
 
 
 class TestDiscoverSkills:
@@ -133,3 +133,45 @@ class TestInstallSkillGraphiteRouting:
         install_skill("deviate-red", target, workdir=workdir)
         content = (target / "deviate-red" / "SKILL.md").read_text(encoding="utf-8")
         assert "<graphite_routing>" not in content
+
+
+class TestShardSkillIssueIdFormat:
+    """deviate-shard SKILL.md must use the flat ``ISS-<NNN>`` format.
+
+    The ``next_issue_id`` returned by ``deviate shard pre`` is the flat global
+    counter (``ISS-001``, ``ISS-002``, ...). The skill must instruct the LLM
+    to consume ``next_issue_id`` directly and increment per shard — it must
+    NEVER concatenate the epic identifier, which would produce duplicate
+    ``ISS-<epic>-<NNN>`` IDs across epics.
+    """
+
+    @staticmethod
+    def _skill_text() -> str:
+        return resolve_skill("deviate-shard").read_text(encoding="utf-8")
+
+    def test_instruction_uses_flat_format_not_epic_prefixed(self):
+        """Issue ID assignment rule must show flat ``ISS-<NNN>`` examples."""
+        text = self._skill_text()
+        assert "ISS-001-004" not in text
+        assert "ISS-001-005" not in text
+
+    def test_blocked_by_and_coordinates_with_examples_use_flat_format(self):
+        """blocked_by / coordinates_with examples must reference flat IDs."""
+        text = self._skill_text()
+        assert 'blocked_by: ["ISS-001-004"]' not in text
+
+    def test_manifest_schema_uses_flat_format(self):
+        """Manifest schema must declare ``ISS-<NNN>``, not ``ISS-<epic>-<NNN>``."""
+        text = self._skill_text()
+        assert "ISS-<epic>-<NNN>" not in text
+
+    def test_manifest_example_uses_flat_format(self):
+        """Manifest example must show flat IDs (e.g. ``ISS-003``, not ``ISS-003-001``)."""
+        text = self._skill_text()
+        assert "ISS-003-001" not in text
+        assert "ISS-003-002" not in text
+
+    def test_instruction_references_flat_counter_format(self):
+        """The rule must explicitly show the flat counter pattern."""
+        text = self._skill_text()
+        assert "ISS-003" in text or "ISS-004" in text

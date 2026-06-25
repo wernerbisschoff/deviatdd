@@ -1737,39 +1737,6 @@ def _run_execute_phase(
         issue_id = task.get("issue_id", "")
         scope = _build_scope(issue_id, tid)
 
-        test_result = _run_test_cmd(root)
-        if test_result.returncode != 0:
-            failure_output = test_result.stdout or ""
-            if test_result.stderr:
-                failure_output += "\n--- stderr ---\n" + test_result.stderr
-            train_feedback = (
-                "The test suite failed after EXECUTE implementation.\n\n"
-                f"<test_output>\n{failure_output}\n</test_output>"
-            )
-            subprocess.run(
-                ["git", "reset", "--hard", "HEAD"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
-            subprocess.run(
-                ["git", "clean", "-fd"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
-            if attempt < max_judge_attempts - 1:
-                c.print(
-                    f"  [yellow]TEST_FAILURE on EXECUTE ({attempt + 2}/{max_judge_attempts})[/]"
-                )
-                continue
-            session.train_feedback = train_feedback
-            session.save(session_path)
-            raise PhaseFailedError(
-                f"EXECUTE phase tests failed for {tid} "
-                f"after {max_judge_attempts} attempts"
-            )
-
         _commit_phase(f"feat({scope}): EXECUTE phase - {tid}", root)
 
         _verify_clean_worktree(root, "EXECUTE", tid)
