@@ -134,31 +134,41 @@ Zero-FR enabling slices are valid — the coverage check only ensures no FR is o
 </step>
 
 <step id="manifest_writing">
-Write the execution manifest JSON to `plan_target` (absolute path from the contract). The manifest must include:
+Write the execution manifest JSON to `plan_target` (absolute path from the contract).
+
+**Required fields** (the post-script halts if `issues` is missing or empty):
+- `issues` — non-empty array of IssueRecord-shaped objects. Each entry:
+  ```json
+  {
+    "issue_id": "ISS-<epic>-<NNN>",
+    "type": "feature",
+    "title": "<short title>",
+    "source_file": "<issues_dir>/<NNN>-<slug>.md",
+    "blocked_by": ["ISS-<epic>-<NNN>", ...],
+    "coordinates_with": ["ISS-<epic>-<NNN>", ...]
+  }
+  ```
+
+**Optional fields** (recorded for audit, not validated by post-script):
+- `epic_slug` — overrides session-resolved epic when passed to post
+- `task_id`, `commit_subject`, `commit_body`, `validation`, `reasoning` — kept for trace/log only
+
+**Important**: The `files_modified` schema shown in older macro-layer templates does NOT apply to `shard_post`. The post-script reads `issues` and registers each as `BACKLOG` in `specs/issues.jsonl`. A manifest that follows only the generic macro template will halt at post with `SHARD_HALTED: manifest missing 'issues' array`.
 ```json
 {
   "task_id": "shard",
-  "files_modified": [
+  "issues": [
     {
-      "path": "<issues_dir>/000-<slug>.md",
-      "action": "created",
-      "purpose": "Vertical slice issue for <title>"
+      "issue_id": "ISS-003-001",
+      "type": "feature",
+      "title": "Vertical slice 1",
+      "source_file": "specs/003-foo/issues/001-slice.md",
+      "blocked_by": [],
+      "coordinates_with": ["ISS-003-002"]
     }
   ],
-  "commit_subject": "docs(<epic_id>): shard vertical slices",
-  "commit_body": "Generated <N> vertical shards from PRD with DAG dependency topology",
-  "validation": {
-    "lint": "SKIP",
-    "typecheck": "SKIP",
-    "tests": "SKIP",
-    "summary": "Shard generation complete — <N> issues created"
-  },
-  "reasoning": {
-    "approach": "FR clustering into vertical slices with DAG topology",
-    "key_decisions": [
-      {"decision": "slice grouping strategy", "rationale": "vertical slices per user-testable feature"}
-    ]
-  }
+  "commit_subject": "docs(003): shard vertical slices",
+  "commit_body": "Generated <N> vertical shards from PRD with DAG dependency topology"
 }
 ```
 </step>
