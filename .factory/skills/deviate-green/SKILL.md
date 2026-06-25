@@ -11,9 +11,9 @@ aliases:
   - /tdd.green
 ---
 
-## DeviaTDD Universal Invariants
+<universal_invariants>
 
-The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
 
@@ -27,40 +27,79 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
-## KV Cache Preservation
+</universal_invariants>
+
+<kv_cache_preservation>
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
 
+</kv_cache_preservation>
 
-## Micro Layer Execution Model — TDD Sandbox
 
-This phase operates inside the **DeviaTDD MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
+<micro_layer_model>
 
-### The R-G-R Cycle
+This phase operates inside the **MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
+
+<rgr_cycle>
 
 Each task is a Logical Unit (30-90 min) that undergoes ONE complete R-G-R cycle:
 
-1. **RED**: Write a failing test — verified to fail due to missing implementation, not syntax errors.
-2. **GREEN**: Write the minimum production code to pass the test.
-3. **REFACTOR**: Behavior-preserving structural cleanup without modifying tests.
+<item>
+**RED**: Write a failing test — verified to fail due to missing implementation, not syntax errors.
+</item>
 
-### Shared Micro Disciplines
+<item>
+**GREEN**: Write the minimum production code to pass the test.
+</item>
 
-1. **Test-First Discipline**: No production code is written before a failing test exists. Tests are the executable specification — the RED phase verifies the test fails before GREEN begins.
+<item>
+**REFACTOR**: Behavior-preserving structural cleanup without modifying tests.
+</item>
 
-2. **Sociable Tests Over Solitary**: Prefer sociable (integration) tests that exercise real component orchestration. Restrict mocking exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (system epoch timers, cryptographic entropy paths).
+</rgr_cycle>
 
-3. **Verification-is-Done**: A task is ONLY finished when its `Verification` command passes and the post-script commits successfully. Verification is deterministic and scoped — run the specific test file, not the entire suite.
+<shared_disciplines>
 
-4. **Git Isolation**: Any test that invokes git operations MUST operate on an isolated temporary directory initialized as a fresh git repo. Tests MUST NOT run git commands within the real project repository. Use `create_temp_dir` → `git init` → copy fixtures → run test in that context.
+<item>
+<title>Test-First Discipline</title>
+No production code is written before a failing test exists. Tests are the executable specification — the RED phase verifies the test fails before GREEN begins.
+</item>
 
-5. **Post-Script Protocol**: Every micro phase ends with `deviate <phase> post`. This is MANDATORY — do NOT use `git add` / `git commit` directly. The post-script stages files, runs pre-commit hooks (lint, format-check, tests), updates the task ledger, and commits. Allocate a timeout of at least 180s (3 minutes) for post-script execution.
+<item>
+<title>Sociable Tests Over Solitary</title>
+Prefer sociable (integration) tests that exercise real component orchestration. Restrict mocking exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (system epoch timers, cryptographic entropy paths).
+</item>
 
-6. **Handover Manifest YAML**: After post-script success, emit a handover manifest as a YAML code block. ALL string values MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted. Output NOTHING outside the YAML block — no explanations, no commentary.
+<item>
+<title>Verification-is-Done</title>
+A task is ONLY finished when its `Verification` command passes and the post-script commits successfully. Verification is deterministic and scoped — run the specific test file, not the entire suite.
+</item>
 
-7. **Context Consultation Guidance**: When implementing, use `context query <library> <topic>` to look up library APIs and framework conventions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `context` is unavailable, fall back to training data or web fetch.
+<item>
+<title>Git Isolation</title>
+Any test that invokes git operations MUST operate on an isolated temporary directory initialized as a fresh git repo. Tests MUST NOT run git commands within the real project repository. Use `create_temp_dir` → `git init` → copy fixtures → run test in that context.
+</item>
+
+<item>
+<title>Post-Script Protocol</title>
+Every micro phase ends with `deviate <phase> post`. This is MANDATORY — do NOT use `git add` / `git commit` directly. The post-script stages files, runs pre-commit hooks (lint, format-check, tests), updates the task ledger, and commits. Allocate a timeout of at least 180s (3 minutes) for post-script execution.
+</item>
+
+<item>
+<title>Handover Manifest YAML</title>
+After post-script success, emit a handover manifest as a YAML code block. ALL string values MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted. Output NOTHING outside the YAML block — no explanations, no commentary.
+</item>
+
+<item>
+<title>Offline Documentation Guidance</title>
+When implementing, use `libref query <library> <topic>` to look up library APIs and framework conventions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `libref` is unavailable, fall back to training data or web fetch.
+</item>
+
+</shared_disciplines>
+
+</micro_layer_model>
 
 
 <system_instructions>

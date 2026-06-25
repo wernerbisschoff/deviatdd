@@ -11,9 +11,9 @@ aliases:
   - spec.full.prd
 ---
 
-## DeviaTDD Universal Invariants
+<universal_invariants>
 
-The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
 
@@ -27,39 +27,66 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
-## KV Cache Preservation
+</universal_invariants>
+
+<kv_cache_preservation>
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
 
+</kv_cache_preservation>
 
-## Macro Layer Execution Model
 
-This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
+<macro_layer_model>
 
-### Shared Macro Disciplines
+This phase operates inside the **MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
 
-1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket at `specs/{NNN}-{FEATURE_SLUG}/`. The bucket is created by the pre-script — do NOT re-derive paths from the problem statement.
+<shared_disciplines>
 
-2. **Constitutional Validation Gate**: Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+<item>
+<title>Feature Bucket Allocation</title>
+Each macro phase operates within a pre-allocated feature bucket. For **research**, **PRD**, and **shard**, the bucket is `specs/{NNN}-{FEATURE_SLUG}/` (a numbered epic directory). For **explore**, the bucket is `specs/explore/` (a staging directory, NOT a numbered epic). The explore bucket is created by `deviate explore pre`; numbered epic buckets are created by `deviate research pre` via `allocate_feature_bucket()` — do NOT re-derive paths from the problem statement.
+</item>
 
-3. **Output File Mandate**: Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+<item>
+<title>Constitutional Validation Gate</title>
+Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+</item>
 
-4. **Pre/Post Script Lifecycle**: Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+<item>
+<title>Output File Mandate</title>
+Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+</item>
 
-5. **HITL Gate Handoff**: After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+<item>
+<title>Pre/Post Script Lifecycle</title>
+Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+</item>
 
-6. **Subagent Delegation**: For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+<item>
+<title>HITL Gate Handoff</title>
+After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+</item>
 
-7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+<item>
+<title>Subagent Delegation</title>
+For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+</item>
 
-8. **Context Consultation Requirement**: All macro-layer phases MUST use `context query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+<item>
+<title>Zero Implementation Code</title>
+Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+</item>
 
-## <context>
-<user_input>
-$ARGUMENTS
-</user_input>
+<item>
+<title>Offline Documentation Requirement</title>
+All macro-layer phases MUST use `libref query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+</item>
+
+</shared_disciplines>
+
+</macro_layer_model>
 
 
 <system_instructions>
@@ -73,7 +100,7 @@ CRITICAL INSTRUCTION INVARIANTS:
     - Pass 1 (Topological Layout): Map out the relationship matrices between the incoming data inputs and systemic entities.
     - Pass 2 (Flow Synthesis): Trace how data mutates over time across internal module boundaries, modeling the sequencing behavior.
     - Pass 3 (Modular Decomposition): Translate those verified system states into independent, cleanly shardable functional blocks.
-4. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax to allow a downstream `/shard` orchestration tool to slice the markdown cleanly into atomic issue cards (registered in specs/issues.jsonl) without structural loss.
+4. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax so the downstream `/shard` tool can cluster FRs into complete vertical slices (each issue may carry zero, one, or many FRs) and register them in `specs/issues.jsonl` without structural loss.
 5. **Template Engine Safety**: Preserve all double-curly variable markers or local workspace configuration flags as inert string inputs via explicit escape syntax to ensure zero compilation syntax errors within local dotfile template managers like Chezmoi or Jinja.
 
 </system_instructions>
@@ -132,7 +159,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 # Issue Sharding Strategy
 ## Shard Mechanics
-[Explicit rules mapping requirements structures directly down to localized issue entities. Shards MUST cluster an FR module boundary with all related AC sub-nodes to preserve data and context encapsulation]
+[Explicit rules mapping requirements structures directly down to localized issue entities. Each shard is a vertical slice that may carry zero, one, or many FRs. Coverage is mandatory — every FR must appear in at least one shard, and an FR's ACs must co-locate with that FR (no AC orphans). Enabling shards (tooling, infrastructure, refactors) may carry zero FRs. Never shard horizontally across layers; every shard must remain a complete, independently verifiable vertical slice.]
 ## Dependency Topology Graph
 ```
 [Visual ASCII or markdown text representation of the Requirements Directed Acyclic Graph (DAG)]
@@ -170,10 +197,12 @@ ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note
 <execution_sequence>
 
 <step id="pre_script">
-Run the pre-script to discover the epic slug, validate upstream artifacts, and emit a JSON contract:
+Run the pre-script to validate upstream artifacts and emit a JSON contract. List `specs/` to discover the latest numbered epic directory (e.g. `001-feature-name`), then call the pre-script with the explicit epic slug:
 ```bash
-deviate prd pre
+deviate prd pre --epic "<epic-slug>"
 ```
+
+If you cannot determine the epic slug, omit `--epic` and the command will auto-discover the latest numbered epic bucket.
 
 The contract on stdout contains: `repo_root`, `git_branch`, `timestamp`, `epic_slug`, `feature_dir` (relative path to the feature bucket), `prd_path` (absolute path to prd.md), `constitution_path`, `explore_md_path`, `design_md_path`, `data_model_md_path`, `plan_target` (absolute path for the execution manifest), `dry_run`.
 
@@ -212,10 +241,18 @@ Key requirements:
 </step>
 
 <step id="manifest_writing">
-Write an execution manifest JSON to `plan_target` (absolute path from the contract). The manifest must include:
+Write an execution manifest JSON to `plan_target` (absolute path from the contract).
+
+**Required fields** (the post-script halts if these are missing or empty):
+- `epic_slug` — the epic directory slug (e.g. `003-prompt-optimization`). Must match the directory under `specs/`.
+- `prd_requirements` — list of `FR-[ID]` tokens (e.g. `["FR-001", "FR-002"]`) that must appear in `prd.md`. The post-script warns if any are missing.
+
+**Optional but recommended fields**:
 ```json
 {
   "task_id": "prd",
+  "epic_slug": "<epic_slug>",
+  "prd_requirements": ["FR-001", "FR-002"],
   "files_modified": [
     {
       "path": "<feature_dir>/prd.md",

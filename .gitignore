@@ -18,3 +18,4 @@ node_modules/
 .deviate/artifacts/
 .deviate/review/
 .opencode/skills/deviate-*/
+.factory/skills/deviate-*/
