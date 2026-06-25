@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,9 +13,17 @@ from deviate.state.ledger import AdhocRecord
 
 adhoc_app = typer.Typer(no_args_is_help=True)
 
+_FLOW_REF_PATTERN = re.compile(r"^FLOW-\d{2,}$")
+_FLOW_REF_FORMAT_HINT = "expected format: FLOW-XX with at least two digits"
+
 
 def _adhoc_ledger_path() -> Path:
     return Path.cwd() / "specs" / "adhoc.jsonl"
+
+
+def _exit_with_error(message: str, code: int = 1) -> None:
+    console.print(f"[red]{message}[/]")
+    raise typer.Exit(code=code)
 
 
 def _read_adhoc_ledger(path: Path) -> dict[str, dict]:
@@ -42,6 +51,19 @@ def _emit_contract(status: str, **fields: object) -> None:
     print(json.dumps(contract, indent=2))
 
 
+def _parse_flow_refs(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    tokens = [token.strip() for token in raw.split(",") if token.strip()]
+    for token in tokens:
+        if not _FLOW_REF_PATTERN.match(token):
+            _exit_with_error(
+                f"INVALID_FLOW_REF {token!r} is not a valid flow ID "
+                f"({_FLOW_REF_FORMAT_HINT})"
+            )
+    return tokens
+
+
 @adhoc_app.command()
 def pre(
     description: str = typer.Argument(..., help="Task description to classify"),
@@ -50,22 +72,28 @@ def pre(
         "--skip-gates",
         help="Skip complexity gate rejection for HIGH complexity tasks",
     ),
+    flow_ref: str | None = typer.Option(
+        None,
+        "--flow-ref",
+        help="Comma-separated FLOW-XX IDs (e.g. FLOW-01,FLOW-02)",
+    ),
 ) -> None:
     """Classify an ad-hoc task description and record it for execution."""
+    flow_refs = _parse_flow_refs(flow_ref)
     result: ClassificationResult = ComplexityGate.classify(description)
 
     if result.level == "HIGH" and not skip_gates:
-        console.print(
-            "[red]COMPLEXITY_GATE_REJECTION[/] HIGH complexity tasks require "
+        _exit_with_error(
+            "COMPLEXITY_GATE_REJECTION HIGH complexity tasks require "
             "--skip-gates to proceed"
         )
-        raise typer.Exit(code=1)
 
     record = AdhocRecord(
         issue_id=f"adhoc-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         description=description,
         execution_mode=result.execution_mode,
         status="PENDING",
+        flow_refs=flow_refs,
     )
 
     ledger_path = _adhoc_ledger_path()
@@ -81,6 +109,7 @@ def pre(
         execution_mode=result.execution_mode,
         description=description,
         issue_id=record.issue_id,
+        flow_refs=flow_refs,
     )
 
 
@@ -95,10 +124,7 @@ def post(
     found = records.get(issue_id)
 
     if found is None:
-        console.print(
-            f"[red]MANIFEST_NOT_FOUND[/] No record found with issue_id={issue_id}"
-        )
-        raise typer.Exit(code=1)
+        _exit_with_error(f"MANIFEST_NOT_FOUND No record found with issue_id={issue_id}")
 
     completed = found.copy()
     completed["status"] = "COMPLETED"

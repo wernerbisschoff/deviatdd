@@ -31,6 +31,7 @@ CRITICAL INSTRUCTION INVARIANTS:
    - Pass 4 (Verification Mapping Pass): Pair every tracked acceptance criterion token (`AC-{NNN}-{ID}-{NN}`) within the slice with an executable, copy-pasteable terminal verification command block (`## Demonstration Path`).
 7. **Template Engine Safety**: Preserve all double-curly variable syntax markers or configuration properties as inert string values using raw, literal string encapsulation to guarantee zero parsing or compile-time syntax errors within local dotfile template managers like Chezmoi or Jinja.
 8. **Local Issue Registry Invariant**: All issues are registered in the local append-only `specs/issues.jsonl` ledger. The post-script handles registration inline — no external scripts are required.
+9. **Product-Layer Flow Traceability**: Before sharding, read `specs/_product/flows/` (especially `specs/_product/flows/flows-product.md` and any domain-specific `flows-<domain>.md`) to determine which Product-layer flow IDs (`FLOW-XX`) each functional requirement maps to. Also read `specs/_product/release-next.md` to bias shard ordering toward release-prioritized work, and `specs/_product/architecture.md` and `specs/_product/domain-model.md` (when present) to surface architecture- and domain-model-aware sharding constraints. In the `## Internal ICoT Ledger` block, add a Pass 2.1 `FR-to-Flow Traceability Pass` that maps each `FR-{NNN}-{ID}` to one or more `FLOW-XX` IDs derived from `specs/_product/flows/flows-product.md` and domain-specific flow files. For every generated shard issue, emit `flow_refs: [FLOW-XX, ...]` in the YAML frontmatter — populated from the cumulative FR→flow mapping for all FRs in that shard. Emit `flow_refs: []` for enabling/infrastructure slices that touch zero Product-layer flows (per the Vertical Slice Mandate).
 
 </system_instructions>
 
@@ -40,6 +41,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 ```text
 Pass 1 (Topological Layout): [Trace tracking tokens to repo path workstations; group FRs into clusters (zero or more per slice); verify cumulative coverage across all slices]
 Pass 2 (Boundary Demarcation): [Isolate inclusion vs exclusion constraints for each feature slice]
+Pass 2.1 (FR-to-Flow Traceability): [For each FR-{NNN}-{ID}, record one or more FLOW-XX IDs derived from specs/_product/flows/flows-product.md (and domain-specific flows-<domain>.md when present); record flow_refs: [] for enabling slices that touch zero Product-layer flows]
 Pass 3 (Horizontal Slice Audit): [Verify each slice cuts through multiple layers (database, API, logic, UI) with complete end-to-end behavior; flag HORIZONTAL_SLICE_DETECTED and re-cluster]
 Pass 4 (Verification Mapping): [Verify that each AC maps to an explicit end-to-end bash execution path validation block]
 ```
@@ -108,7 +110,7 @@ For each vertical slice:
 
 <step id="issue_generation">
 For each vertical slice, generate a shard issue markdown file. Each file must include:
-- YAML frontmatter with `title`, `labels`, `source_file`, `blocked_by`, `coordinates_with`, `issue_id`
+- YAML frontmatter with `title`, `labels`, `source_file`, `blocked_by`, `coordinates_with`, `issue_id`, `flow_refs`
 - `## System Topology Mapping` — epic domain, local file path, workstation paths
 - `## The Problem Contract` — narrative of the user/system journey
 - `## Scope Boundaries` — Hard Inclusions and Defensive Exclusions
@@ -145,7 +147,8 @@ Write the execution manifest JSON to `plan_target` (absolute path from the contr
     "title": "<short title>",
     "source_file": "<issues_dir>/<NNN>-<slug>.md",
     "blocked_by": ["ISS-<NNN>", ...],
-    "coordinates_with": ["ISS-<NNN>", ...]
+    "coordinates_with": ["ISS-<NNN>", ...],
+    "flow_refs": ["FLOW-XX", ...]
   }
   ```
 
@@ -164,7 +167,8 @@ Write the execution manifest JSON to `plan_target` (absolute path from the contr
       "title": "Vertical slice 1",
       "source_file": "specs/003-foo/issues/001-slice.md",
       "blocked_by": [],
-      "coordinates_with": ["ISS-004"]
+      "coordinates_with": ["ISS-004"],
+      "flow_refs": ["FLOW-01"]
     }
   ],
   "commit_subject": "docs(003): shard vertical slices",
@@ -203,6 +207,7 @@ If the post-script exits with `status: FAILURE`, surface the `reason` to the use
 | Circular dependency detected in DAG | Halt with TOPOLOGY_LOOP_FAULT |
 | Post-script returns MANIFEST_NOT_FOUND | LLM forgot to write manifest — write it, then re-run post |
 | `--dry-run` mode | Write preview manifest, post-script emits preview without mutations |
+| `specs/_product/` directory missing | Emit `flow_refs: []` for all shards and note gap in manifest; do not halt |
 
 </edge_case_handling>
 

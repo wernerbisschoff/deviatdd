@@ -32,6 +32,7 @@ class IssueRecord(BaseModel):
     coordinates_with: list[str] = []
     timestamp: datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    flow_refs: list[str] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
@@ -292,6 +293,7 @@ class AdhocRecord(BaseModel):
     execution_mode: Literal["TDD", "DIRECT", "EXECUTE", "E2E", "IMMEDIATE"] = "DIRECT"
     status: Literal["PENDING", "COMPLETED"] = "PENDING"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    flow_refs: list[str] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 

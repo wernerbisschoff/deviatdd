@@ -687,6 +687,7 @@ def shard_post(
             blocked_by=issue_data.get("blocked_by", []),
             coordinates_with=issue_data.get("coordinates_with", []),
             timestamp=datetime.now(timezone.utc),
+            flow_refs=issue_data.get("flow_refs", []),
         )
         appended = append_issue_record(record, ledger_path)
         if appended:

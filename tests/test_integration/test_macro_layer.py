@@ -310,3 +310,59 @@ class TestShardPost:
                     assert rec.get("issue_id") != "ISS-001-009", (
                         "ledger must not contain ISS-001-009 when source_file is invalid"
                     )
+
+    def test_shard_post_threads_flow_refs(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="SHARD")
+            session.save(dot_dir / "session.json")
+
+            spec_root = Path("specs")
+            bucket_dir = spec_root / "test-shard-flows"
+            bucket_dir.mkdir(parents=True)
+
+            issues_data = [
+                {
+                    "issue_id": "ISS-FLOW-A",
+                    "type": "feature",
+                    "title": "Flow-bearing shard",
+                    "status": "DRAFT",
+                    "source_file": "specs/test-shard-flows/issues/issue-a.md",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "flow_refs": ["FLOW-01", "FLOW-02"],
+                },
+                {
+                    "issue_id": "ISS-FLOW-B",
+                    "type": "feature",
+                    "title": "Flow-bearing shard 2",
+                    "status": "DRAFT",
+                    "source_file": "specs/test-shard-flows/issues/issue-b.md",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "flow_refs": ["FLOW-03"],
+                },
+            ]
+            manifest = bucket_dir / "manifest.json"
+            manifest.write_text(json.dumps({"issues": issues_data}), encoding="utf-8")
+
+            result = runner.invoke(cli, ["shard", "post", str(manifest)])
+            assert result.exit_code == 0, result.output
+
+            ledger_path = spec_root / "issues.jsonl"
+            assert ledger_path.exists(), "ledger should exist after shard post"
+            lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
+            parsed = [json.loads(line) for line in lines if line.strip()]
+            by_id = {rec["issue_id"]: rec for rec in parsed}
+
+            assert "ISS-FLOW-A" in by_id, (
+                "ledger must contain ISS-FLOW-A after shard post"
+            )
+            assert "ISS-FLOW-B" in by_id, (
+                "ledger must contain ISS-FLOW-B after shard post"
+            )
+            assert by_id["ISS-FLOW-A"]["flow_refs"] == ["FLOW-01", "FLOW-02"], (
+                "ISS-FLOW-A must carry flow_refs=[FLOW-01, FLOW-02]"
+            )
+            assert by_id["ISS-FLOW-B"]["flow_refs"] == ["FLOW-03"], (
+                "ISS-FLOW-B must carry flow_refs=[FLOW-03]"
+            )
