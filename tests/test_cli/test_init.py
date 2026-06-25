@@ -582,16 +582,36 @@ class TestInitAgentFlag:
     def test_init_agent_droid_routes_skills_to_detected_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """`--agent droid` does not own a skills dir; pre-existing dirs still receive skills."""
+        """`--agent droid` shares the Factory Droid IDE skills directory.
+
+        Both ``droid`` and ``factory`` dispatch to the same backend binary and
+        install skills into ``.factory/skills/deviate-*/`` — there is no
+        ``.droid/skills/`` directory.
+        """
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
         )
-        (tmp_path / ".claude").mkdir()
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
             assert result.exit_code == 0, result.output
-            assert (tmp_path / ".claude" / "skills").exists()
+            assert (tmp_path / ".factory" / "skills").exists()
+            assert not (tmp_path / ".droid").exists()
+
+    def test_init_agent_droid_writes_factory_gitignore_entry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """`--agent droid` writes ``.factory/skills/deviate-*/`` (not ``.droid/...``)."""
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "droid"])
+            assert result.exit_code == 0, result.output
+            gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+            assert ".factory/skills/deviate-*/" in gitignore
+            assert ".droid/skills/deviate-*/" not in gitignore
 
     def test_init_no_agent_no_config_non_interactive_errors(self, tmp_path: Path):
         """Without `--agent`, no config, and no TTY → init exits with a clear error."""

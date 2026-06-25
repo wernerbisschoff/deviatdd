@@ -12,9 +12,9 @@ aliases:
   - /shard
 ---
 
-## DeviaTDD Universal Invariants
+<universal_invariants>
 
-The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
 
@@ -28,39 +28,66 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
-## KV Cache Preservation
+</universal_invariants>
+
+<kv_cache_preservation>
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
 
+</kv_cache_preservation>
 
-## Macro Layer Execution Model
 
-This phase operates inside the **DeviaTDD MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
+<macro_layer_model>
 
-### Shared Macro Disciplines
+This phase operates inside the **MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
 
-1. **Feature Bucket Allocation**: Each macro phase operates within a pre-allocated feature bucket at `specs/{NNN}-{FEATURE_SLUG}/`. The bucket is created by the pre-script — do NOT re-derive paths from the problem statement.
+<shared_disciplines>
 
-2. **Constitutional Validation Gate**: Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+<item>
+<title>Feature Bucket Allocation</title>
+Each macro phase operates within a pre-allocated feature bucket. For **research**, **PRD**, and **shard**, the bucket is `specs/{NNN}-{FEATURE_SLUG}/` (a numbered epic directory). For **explore**, the bucket is `specs/explore/` (a staging directory, NOT a numbered epic). The explore bucket is created by `deviate explore pre`; numbered epic buckets are created by `deviate research pre` via `allocate_feature_bucket()` — do NOT re-derive paths from the problem statement.
+</item>
 
-3. **Output File Mandate**: Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+<item>
+<title>Constitutional Validation Gate</title>
+Prior to any synthesis, read and verify the constitution from `constitution_path`. Every decision, requirement, and output must comply with the constitution's core rules (tech stack, architectural principles, testing protocols, definition of done).
+</item>
 
-4. **Pre/Post Script Lifecycle**: Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+<item>
+<title>Output File Mandate</title>
+Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+</item>
 
-5. **HITL Gate Handoff**: After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+<item>
+<title>Pre/Post Script Lifecycle</title>
+Every macro phase begins with `deviate <phase> pre` (allocates bucket, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes — the contract carries `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. Do NOT re-derive paths from the problem statement. Every macro phase ends with `deviate <phase> post` (validates artifacts, commits, returns status).
+</item>
 
-6. **Subagent Delegation**: For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+<item>
+<title>HITL Gate Handoff</title>
+After the post-script completes successfully, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
+</item>
 
-7. **Zero Implementation Code**: Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+<item>
+<title>Subagent Delegation</title>
+For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+</item>
 
-8. **Context Consultation Requirement**: All macro-layer phases MUST use `context query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `context` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+<item>
+<title>Zero Implementation Code</title>
+Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
+</item>
 
-## <context>
-<user_input>
-$ARGUMENTS
-</user_input>
+<item>
+<title>Offline Documentation Requirement</title>
+All macro-layer phases MUST use `libref query <library> <topic>` when evaluating library APIs, framework conventions, or dependency-specific decisions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. Web fetch is a last-resort fallback.
+</item>
+
+</shared_disciplines>
+
+</macro_layer_model>
 
 
 <system_instructions>
@@ -74,7 +101,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **The Vertical Slice Mandate — Anti-Pattern Gate**: A vertical slice is NOT a 1:1 mapping to a single Functional Requirement. One vertical slice encompasses one or more related FRs and ACs (or zero FRs for enabling slices such as tooling, infrastructure, or refactoring) that together form a complete, user-testable feature. You are strictly forbidden from generating layered shards (e.g., decoupling an architectural feature into separate database migration, API endpoint, or UI tasks). Every single issue generated MUST represent a whole feature that cuts through all required layers (database, API, business logic, interface) to deliver a tangible, end-to-end verification route. **Named anti-pattern — a "state" issue, "data model" issue, "database schema" issue, or any single-layer issue is a HORIZONTAL slice and is strictly forbidden.** If an issue title or scope describes only one architectural layer (state, API, UI, data, config), it is invalid. Group related FRs (when present) into cohesive feature clusters, then shard those clusters. Never shard requirements along horizontal component lines. **Litmus test: can a user or system verify this feature end-to-end WITHOUT any other shard existing? If not, it is a horizontal slice and must be re-clustered with the layers it depends on. Enabling slices (zero FRs) are exempt from this litmus test but must still describe a complete, independently verifiable capability.**
 3. **Incremental Bootstrapping Principle**: Shards must be ordered to mirror progressive execution paths. Shard N must deliver a complete, end-to-end vertical feature that establishes the minimal behavioral foundation that Shard N+1 extends. **The "foundation" is a working feature, not a layer.** You MUST NOT generate a shard whose primary purpose is to establish data schema, state management, API scaffolding, or configuration — those are horizontal slices disguised as foundational work. Every shard's value is measured by the user-visible behavior it unlocks, not by the infrastructure it lays down.
 4. **Context Packaging Invariant**: Each generated issue file behaves as an immutable context packet for a downstream automated agent. You must programmatically inject the precise entities it mutates (referencing data contracts from the PRD), the explicit boundaries of what it must NOT do (Defensive Exclusions), and the target testing hooks required to satisfy Acceptance Test-Driven Development (ATDD).
-5. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-001-004`, `ISS-001-005`, ...). Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-001-004"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
+5. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-003`, `ISS-004`, ...). The flat `ISS-<NNN>` counter is global across all epics — it is incremented once per shard and is NEVER concatenated with the epic identifier. Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-003"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
 6. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute four sequential mental loops inside an internal engineering ledger block (`## Internal ICoT Ledger`):
     - Pass 1 (Topological Layout): Group related FR-{NNN}-{ID} tokens into cohesive feature clusters. Each cluster becomes one vertical slice. A slice may contain zero or more FRs (enabling/infrastructure/tooling slices may have zero). Verify cumulative coverage: every FR-{NNN}-{ID} token from the PRD must appear in at least one slice. Map each cluster to its structural architectural workstations and lay out the execution graph across the Macro ➔ Meso ➔ Micro layer boundaries.
    - Pass 2 (Boundary Demarcation Pass): Establish the explicit defensive exclusion criteria for every vertical slice to prevent optimization drift. Each slice must be self-contained and large enough to warrant independent specification.
@@ -185,31 +212,41 @@ Zero-FR enabling slices are valid — the coverage check only ensures no FR is o
 </step>
 
 <step id="manifest_writing">
-Write the execution manifest JSON to `plan_target` (absolute path from the contract). The manifest must include:
+Write the execution manifest JSON to `plan_target` (absolute path from the contract).
+
+**Required fields** (the post-script halts if `issues` is missing or empty):
+- `issues` — non-empty array of IssueRecord-shaped objects. Each entry:
+  ```json
+  {
+    "issue_id": "ISS-<NNN>",
+    "type": "feature",
+    "title": "<short title>",
+    "source_file": "<issues_dir>/<NNN>-<slug>.md",
+    "blocked_by": ["ISS-<NNN>", ...],
+    "coordinates_with": ["ISS-<NNN>", ...]
+  }
+  ```
+
+**Optional fields** (recorded for audit, not validated by post-script):
+- `epic_slug` — overrides session-resolved epic when passed to post
+- `task_id`, `commit_subject`, `commit_body`, `validation`, `reasoning` — kept for trace/log only
+
+**Important**: The `files_modified` schema shown in older macro-layer templates does NOT apply to `shard_post`. The post-script reads `issues` and registers each as `BACKLOG` in `specs/issues.jsonl`. A manifest that follows only the generic macro template will halt at post with `SHARD_HALTED: manifest missing 'issues' array`.
 ```json
 {
   "task_id": "shard",
-  "files_modified": [
+  "issues": [
     {
-      "path": "<issues_dir>/000-<slug>.md",
-      "action": "created",
-      "purpose": "Vertical slice issue for <title>"
+      "issue_id": "ISS-003",
+      "type": "feature",
+      "title": "Vertical slice 1",
+      "source_file": "specs/003-foo/issues/001-slice.md",
+      "blocked_by": [],
+      "coordinates_with": ["ISS-004"]
     }
   ],
-  "commit_subject": "docs(<epic_id>): shard vertical slices",
-  "commit_body": "Generated <N> vertical shards from PRD with DAG dependency topology",
-  "validation": {
-    "lint": "SKIP",
-    "typecheck": "SKIP",
-    "tests": "SKIP",
-    "summary": "Shard generation complete — <N> issues created"
-  },
-  "reasoning": {
-    "approach": "FR clustering into vertical slices with DAG topology",
-    "key_decisions": [
-      {"decision": "slice grouping strategy", "rationale": "vertical slices per user-testable feature"}
-    ]
-  }
+  "commit_subject": "docs(003): shard vertical slices",
+  "commit_body": "Generated <N> vertical shards from PRD with DAG dependency topology"
 }
 ```
 </step>

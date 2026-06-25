@@ -608,13 +608,12 @@ def setup(
 
     _scaffold_constitution(workdir)
 
-    if selected_agent and selected_agent in ("claude", "opencode", "factory"):
-        active_agents = [selected_agent]
-    elif selected_agent:
-        # droid backend has no own skills directory; fall back to auto-detect
-        # so any pre-existing .claude/.opencode/.factory dirs still get
-        # skills installed.
-        active_agents = detect_agents(workdir)
+    # ``droid`` and ``factory`` share the Factory Droid IDE skills directory
+    # (``.factory/skills/``); ``droid`` is the underlying backend binary that
+    # both user-facing names dispatch to.
+    if selected_agent and selected_agent in ("claude", "opencode", "factory", "droid"):
+        skills_agent = "factory" if selected_agent == "droid" else selected_agent
+        active_agents = [skills_agent]
     else:
         active_agents = detect_agents(workdir)
 
@@ -624,7 +623,8 @@ def setup(
     _ensure_gitignore(workdir)
 
     if selected_agent:
-        _ensure_agent_gitignored(workdir, selected_agent)
+        gitignore_agent = "factory" if selected_agent == "droid" else selected_agent
+        _ensure_agent_gitignored(workdir, gitignore_agent)
 
 
 def _ensure_agent_gitignored(workdir: Path, agent: str) -> None:
@@ -632,6 +632,10 @@ def _ensure_agent_gitignored(workdir: Path, agent: str) -> None:
 
     Only the deviate-* skills installed into an agent's skills directory are
     gitignored — never the entire .opencode, .claude, or .factory directory.
+
+    The caller is responsible for normalising ``droid`` → ``factory`` before
+    invocation so this helper never writes a ``.droid/skills/deviate-*/``
+    entry (the droid CLI does not own a skills directory).
     """
     gitignore_path = workdir / ".gitignore"
     entry = f".{agent}/skills/deviate-*/"

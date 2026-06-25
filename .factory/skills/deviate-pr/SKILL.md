@@ -9,9 +9,9 @@ aliases:
   - tools:pr
 ---
 
-## DeviaTDD Universal Invariants
+<universal_invariants>
 
-The following rules apply across ALL DeviaTDD phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge):
+The following rules apply across ALL phases — macro layer (explore, research, prd, shard), meso layer (plan, tasks), and micro layer (red, green, refactor, yellow, judge), whether implemented via DeviaTDD or another TDD workflow:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. Do not ask questions, request confirmation, or prompt for decisions. This phase must be one-shot and deterministic. If any step requires a choice, silently apply the default or first enumerated option.
 
@@ -25,11 +25,15 @@ The following rules apply across ALL DeviaTDD phases — macro layer (explore, r
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Context Documentation Mandate**: All agents MUST use `context query <library> <topic>` as the primary documentation lookup mechanism. Run `context list` first to discover available documentation packages. When documentation for a library is missing, use `context add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `context` is unavailable.
+7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
-## KV Cache Preservation
+</universal_invariants>
+
+<kv_cache_preservation>
 
 Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (task IDs, file paths, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block. This separation secures optimal KV cache reuse across invocations.
+
+</kv_cache_preservation>
 
 
 <system_instructions>
@@ -165,24 +169,3 @@ Omit empty sections. No decorative headers or horizontal rules.
 $ARGUMENTS
 </user_input>
 </context>
-
-## Graphite Routing
-
-When Graphite is enabled (`.deviate/config.toml` has `graphite = true`), this skill routes PR operations through the Graphite CLI (`gt`) instead of the GitHub CLI (`gh`).
-
-### PR Submission
-
-- Use `gt submit --stack` to submit the entire stacked branch for review.
-- Do NOT invoke `gh pr create` — Graphite owns PR creation from stacked branches.
-- The `--merge` and `--auto-merge` flags are incompatible with `gt submit --stack` and will be ignored at runtime; surface a warning to the stakeholder if they were requested.
-
-### Branch Context
-
-- The PR body and title generation (steps 1-3 of the execution sequence) still produce a `pr_descriptions/<branch>.md` file for `gt submit --stack` to consume as the stack description.
-- Squash-merge commits still read as conventional commit subjects because `gt submit` preserves commit metadata.
-
-### Anti-Patterns
-
-- Do NOT call `git checkout -b` to create the issue branch — `gt create -am` was already used by the meso layer.
-- Do NOT mix `gh` and `gt` commands in the same PR lifecycle — pick one based on the config flag.
-- Do NOT skip the Graphite routing even if the user requests `gh pr create` manually — defer to the runtime config.
