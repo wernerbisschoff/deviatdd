@@ -248,7 +248,9 @@ class TestShardPost:
         assert "SHARD_HALTED" in result.output
         assert "issues" in result.output
 
-    def test_shard_post_halts_on_missing_issues_field(self, mock_workspace: Path) -> None:
+    def test_shard_post_halts_on_missing_issues_field(
+        self, mock_workspace: Path
+    ) -> None:
         spec_root = mock_workspace / "specs"
         bucket_dir = spec_root / "test-shard"
         bucket_dir.mkdir(parents=True)
