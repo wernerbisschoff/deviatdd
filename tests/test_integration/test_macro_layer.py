@@ -265,3 +265,48 @@ class TestShardPost:
         result = runner.invoke(cli, ["shard", "post", str(manifest)])
         assert result.exit_code != 0, result.output
         assert "SHARD_HALTED" in result.output
+
+    def test_shard_post_halts_on_prd_source_file(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="SHARD")
+            session.save(dot_dir / "session.json")
+
+            spec_root = Path("specs")
+            bucket_dir = spec_root / "001-deviate-cli-python"
+            bucket_dir.mkdir(parents=True)
+
+            issues_data = [
+                {
+                    "issue_id": "ISS-001-009",
+                    "type": "feature",
+                    "title": "Sharded from PRD by mistake",
+                    "source_file": "specs/001-deviate-cli-python/prd.md",
+                }
+            ]
+            manifest = bucket_dir / "manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "epic_slug": "001-deviate-cli-python",
+                        "issues": issues_data,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = runner.invoke(cli, ["shard", "post", str(manifest)])
+            assert result.exit_code != 0, result.output
+            assert "SHARD_HALTED" in result.output
+            assert "source_file" in result.output
+
+            ledger_path = spec_root / "issues.jsonl"
+            if ledger_path.exists():
+                for line in ledger_path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    rec = json.loads(line)
+                    assert rec.get("issue_id") != "ISS-001-009", (
+                        "ledger must not contain ISS-001-009 when source_file is invalid"
+                    )
