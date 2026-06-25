@@ -28,19 +28,11 @@ def stage_and_commit(
     files: list[Path],
     repo: Path | None = None,
     no_verify: bool = False,
-) -> str:
+) -> str | None:
     repo = repo or Path.cwd()
 
     if not _has_changes_to_stage(files, repo):
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=repo,
-            env=_git_env(),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
+        return None
 
     commit_cmd = ["git", "commit", "-m", message]
     if no_verify:
@@ -87,7 +79,7 @@ def commit_artifact(
     message: str,
     repo: Path | None = None,
     no_verify: bool = False,
-) -> str:
+) -> str | None:
     repo = repo or Path.cwd()
     return stage_and_commit(
         message=message, files=[path], repo=repo, no_verify=no_verify
