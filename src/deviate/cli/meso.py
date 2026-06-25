@@ -837,7 +837,10 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
             repo=Path.cwd(),
             no_verify=True,
         )
-        console.print(f"[green]COMMITTED[/] plan.md at {sha[:8]}")
+        if sha is None:
+            console.print("[yellow]COMMIT_SKIP[/] plan.md — no changes to stage")
+        else:
+            console.print(f"[green]COMMITTED[/] plan.md at {sha[:8]}")
     except Exception as e:
         console.print(f"[red]COMMIT_FAILED[/] {e}")
         raise typer.Exit(code=1)
@@ -1019,7 +1022,10 @@ def _tasks_post(
             repo=Path.cwd(),
             no_verify=True,
         )
-        console.print(f"[green]COMMITTED[/] tasks.md at {sha[:8]}")
+        if sha is None:
+            console.print("[yellow]COMMIT_SKIP[/] tasks.md — no changes to stage")
+        else:
+            console.print(f"[green]COMMITTED[/] tasks.md at {sha[:8]}")
     except Exception as e:
         console.print(f"[red]COMMIT_FAILED[/] {e}")
         raise typer.Exit(code=1)

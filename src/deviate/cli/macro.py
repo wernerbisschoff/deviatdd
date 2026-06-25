@@ -267,10 +267,13 @@ def explore_post(
 
     _run_pre_commit_hooks()
 
-    commit_artifact(
+    sha = commit_artifact(
         explore_path, f"docs(explore): scan {explore_path.stem}", repo=Path.cwd()
     )
-    console.print(f"[green]COMMITTED[/] {explore_path}")
+    if sha is None:
+        console.print(f"[yellow]COMMIT_SKIP[/] {explore_path} — no changes to stage")
+    else:
+        console.print(f"[green]COMMITTED[/] {explore_path}")
 
     _save_session(session, session_path, "EXPLORE")
 
@@ -405,7 +408,10 @@ def research_post(
     epic_num = _extract_epic_num(epic_slug)
     message = f"docs({epic_num}): add research artifacts (design.md, data-model.md)"
     sha = stage_and_commit(message=message, files=artifacts, repo=Path.cwd())
-    console.print(f"[green]COMMITTED[/] research artifacts at {sha[:8]}")
+    if sha is None:
+        console.print("[yellow]COMMIT_SKIP[/] research artifacts — no changes to stage")
+    else:
+        console.print(f"[green]COMMITTED[/] research artifacts at {sha[:8]}")
 
     _save_session(session, session_path, "RESEARCH")
 
@@ -550,7 +556,10 @@ def prd_post(
         sha = commit_artifact(
             prd_path, f"docs({epic_num}): create prd.md", repo=Path.cwd()
         )
-        console.print(f"[green]COMMITTED[/] prd.md at {sha[:8]}")
+        if sha is None:
+            console.print("[yellow]COMMIT_SKIP[/] prd.md — no changes to stage")
+        else:
+            console.print(f"[green]COMMITTED[/] prd.md at {sha[:8]}")
     except Exception as e:
         _halt("PRD", f"commit failed - {e}")
 
@@ -686,7 +695,12 @@ def shard_post(
             files=artifacts,
             repo=Path.cwd(),
         )
-        console.print(f"[green]COMMITTED[/] shard artifacts at {sha[:8]}")
+        if sha is None:
+            console.print(
+                "[yellow]COMMIT_SKIP[/] shard artifacts — no changes to stage"
+            )
+        else:
+            console.print(f"[green]COMMITTED[/] shard artifacts at {sha[:8]}")
     else:
         console.print("[yellow]COMMIT_SKIP[/] not a git repository")
 
