@@ -23,7 +23,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **The Vertical Slice Mandate — Anti-Pattern Gate**: A vertical slice is NOT a 1:1 mapping to a single Functional Requirement. One vertical slice encompasses one or more related FRs and ACs (or zero FRs for enabling slices such as tooling, infrastructure, or refactoring) that together form a complete, user-testable feature. You are strictly forbidden from generating layered shards (e.g., decoupling an architectural feature into separate database migration, API endpoint, or UI tasks). Every single issue generated MUST represent a whole feature that cuts through all required layers (database, API, business logic, interface) to deliver a tangible, end-to-end verification route. **Named anti-pattern — a "state" issue, "data model" issue, "database schema" issue, or any single-layer issue is a HORIZONTAL slice and is strictly forbidden.** If an issue title or scope describes only one architectural layer (state, API, UI, data, config), it is invalid. Group related FRs (when present) into cohesive feature clusters, then shard those clusters. Never shard requirements along horizontal component lines. **Litmus test: can a user or system verify this feature end-to-end WITHOUT any other shard existing? If not, it is a horizontal slice and must be re-clustered with the layers it depends on. Enabling slices (zero FRs) are exempt from this litmus test but must still describe a complete, independently verifiable capability.**
 3. **Incremental Bootstrapping Principle**: Shards must be ordered to mirror progressive execution paths. Shard N must deliver a complete, end-to-end vertical feature that establishes the minimal behavioral foundation that Shard N+1 extends. **The "foundation" is a working feature, not a layer.** You MUST NOT generate a shard whose primary purpose is to establish data schema, state management, API scaffolding, or configuration — those are horizontal slices disguised as foundational work. Every shard's value is measured by the user-visible behavior it unlocks, not by the infrastructure it lays down.
 4. **Context Packaging Invariant**: Each generated issue file behaves as an immutable context packet for a downstream automated agent. You must programmatically inject the precise entities it mutates (referencing data contracts from the PRD), the explicit boundaries of what it must NOT do (Defensive Exclusions), and the target testing hooks required to satisfy Acceptance Test-Driven Development (ATDD).
-5. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-001-004`, `ISS-001-005`, ...). Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-001-004"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
+5. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-003`, `ISS-004`, ...). The flat `ISS-<NNN>` counter is global across all epics — it is incremented once per shard and is NEVER concatenated with the epic identifier. Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-003"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
 6. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute four sequential mental loops inside an internal engineering ledger block (`## Internal ICoT Ledger`):
     - Pass 1 (Topological Layout): Group related FR-{NNN}-{ID} tokens into cohesive feature clusters. Each cluster becomes one vertical slice. A slice may contain zero or more FRs (enabling/infrastructure/tooling slices may have zero). Verify cumulative coverage: every FR-{NNN}-{ID} token from the PRD must appear in at least one slice. Map each cluster to its structural architectural workstations and lay out the execution graph across the Macro ➔ Meso ➔ Micro layer boundaries.
    - Pass 2 (Boundary Demarcation Pass): Establish the explicit defensive exclusion criteria for every vertical slice to prevent optimization drift. Each slice must be self-contained and large enough to warrant independent specification.
@@ -140,12 +140,12 @@ Write the execution manifest JSON to `plan_target` (absolute path from the contr
 - `issues` — non-empty array of IssueRecord-shaped objects. Each entry:
   ```json
   {
-    "issue_id": "ISS-<epic>-<NNN>",
+    "issue_id": "ISS-<NNN>",
     "type": "feature",
     "title": "<short title>",
     "source_file": "<issues_dir>/<NNN>-<slug>.md",
-    "blocked_by": ["ISS-<epic>-<NNN>", ...],
-    "coordinates_with": ["ISS-<epic>-<NNN>", ...]
+    "blocked_by": ["ISS-<NNN>", ...],
+    "coordinates_with": ["ISS-<NNN>", ...]
   }
   ```
 
@@ -159,12 +159,12 @@ Write the execution manifest JSON to `plan_target` (absolute path from the contr
   "task_id": "shard",
   "issues": [
     {
-      "issue_id": "ISS-003-001",
+      "issue_id": "ISS-003",
       "type": "feature",
       "title": "Vertical slice 1",
       "source_file": "specs/003-foo/issues/001-slice.md",
       "blocked_by": [],
-      "coordinates_with": ["ISS-003-002"]
+      "coordinates_with": ["ISS-004"]
     }
   ],
   "commit_subject": "docs(003): shard vertical slices",

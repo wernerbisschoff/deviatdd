@@ -418,9 +418,14 @@ class TestSessionResume:
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     @patch("deviate.cli.micro._run_test_cmd")
-    def test_execute_phase_test_failure_retries_with_feedback(
+    def test_execute_phase_trusts_agent_no_test_retry(
         self, mock_run_test, mock_agent, tmp_git_repo: Path
     ):
+        """EXECUTE phase trusts the agent's manifest and skips a post-run test gate.
+
+        Tests may fail after EXECUTE — JUDGE is the authoritative verification phase.
+        The runner must not invoke _run_test_cmd after EXECUTE implementation.
+        """
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="FAILED test_exec_fail\n1 failed", stderr=""
         )
@@ -433,7 +438,7 @@ class TestSessionResume:
             task = _make_task_record(
                 task_id="TSK-004-98",
                 issue_id="ISS-001-004",
-                description="Execute failure capture",
+                description="Execute trusts agent",
                 status="PENDING",
                 execution_mode="DIRECT",
             )
@@ -453,9 +458,14 @@ class TestSessionResume:
 
             result = runner.invoke(cli, ["run", "TSK-004-98"])
 
-            assert result.exit_code != 0, (
-                f"Expected non-zero exit when tests fail on EXECUTE, got {result.exit_code}: {result.output}"
+            assert result.exit_code == 0, (
+                f"Expected zero exit when EXECUTE trusts the agent, "
+                f"got {result.exit_code}: {result.output}"
             )
-            assert "TEST_FAILURE" in result.output, (
-                f"Expected TEST_FAILURE message in output: {result.output}"
+            assert "COMPLETED" in result.output, (
+                f"Expected task to reach COMPLETED: {result.output}"
             )
+            assert "TEST_FAILURE" not in result.output, (
+                f"EXECUTE must not surface test-failure retries: {result.output}"
+            )
+            mock_run_test.assert_not_called()
