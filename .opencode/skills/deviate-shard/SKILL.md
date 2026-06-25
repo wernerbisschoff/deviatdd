@@ -263,12 +263,14 @@ If the post-script exits with `status: FAILURE`, surface the `reason` to the use
 <edge_case_handling>
 
 | Condition | Action |
-|---|---|---|
+|---|---|
 | Pre-script returns `NO_EPIC` | Surface error; no feature workspace found in specs/ |
 | Pre-script returns `NO_PRD` | Surface error; user must run /deviate-prd first |
 | PRD has no FR-{NNN}-{ID} or AC-{NNN}-{ID}-{NN} tokens | Halt with MALFORMED_PRD_CONTRACT |
 | Cumulative FR coverage fails — one or more FRs unmapped | Halt with INCOMPLETE_FR_COVERAGE; list missing FRs |
 | Circular dependency detected in DAG | Halt with TOPOLOGY_LOOP_FAULT |
+| Shard count exceeds 10 issues | Halt with OUT_OF_BOUNDS_SHARD_COUNT_ABOVE_MAX. Directive: split the PRD into a new epic via a fresh `/deviate-explore` cycle for the overflow; OR extract the overflow as a single tangential issue via `/deviate-adhoc` if low-complexity. |
+| Shard count below target band (1-3 issues) | Log `[WARNING] shard count below target band`. Note: a single-issue shard is valid because the option to have used `/deviate-adhoc` has passed by the time shard runs. |
 | Post-script returns MANIFEST_NOT_FOUND | LLM forgot to write manifest — write it, then re-run post |
 | `--dry-run` mode | Write preview manifest, post-script emits preview without mutations |
 

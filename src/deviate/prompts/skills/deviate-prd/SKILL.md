@@ -22,7 +22,7 @@ CRITICAL INSTRUCTION INVARIANTS:
     - Pass 1 (Topological Layout): Map out the relationship matrices between the incoming data inputs and systemic entities.
     - Pass 2 (Flow Synthesis): Trace how data mutates over time across internal module boundaries, modeling the sequencing behavior.
     - Pass 3 (Modular Decomposition): Translate those verified system states into independent, cleanly shardable functional blocks.
-4. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax to allow a downstream `/shard` orchestration tool to slice the markdown cleanly into atomic issue cards (registered in specs/issues.jsonl) without structural loss.
+4. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax so the downstream `/shard` tool can cluster FRs into complete vertical slices (each issue may carry zero, one, or many FRs) and register them in `specs/issues.jsonl` without structural loss.
 5. **Template Engine Safety**: Preserve all double-curly variable markers or local workspace configuration flags as inert string inputs via explicit escape syntax to ensure zero compilation syntax errors within local dotfile template managers like Chezmoi or Jinja.
 
 </system_instructions>
@@ -81,7 +81,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 # Issue Sharding Strategy
 ## Shard Mechanics
-[Explicit rules mapping requirements structures directly down to localized issue entities. Shards MUST cluster an FR module boundary with all related AC sub-nodes to preserve data and context encapsulation]
+[Explicit rules mapping requirements structures directly down to localized issue entities. Each shard is a vertical slice that may carry zero, one, or many FRs. Coverage is mandatory — every FR must appear in at least one shard, and an FR's ACs must co-locate with that FR (no AC orphans). Enabling shards (tooling, infrastructure, refactors) may carry zero FRs. Never shard horizontally across layers; every shard must remain a complete, independently verifiable vertical slice.]
 ## Dependency Topology Graph
 ```
 [Visual ASCII or markdown text representation of the Requirements Directed Acyclic Graph (DAG)]
