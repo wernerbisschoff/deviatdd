@@ -5,4 +5,4 @@ set -e
 GIT_DIR_SAVED="${GIT_DIR:-}"
 unset GIT_DIR
 mise run check
-[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED"
+if [ -n "$GIT_DIR_SAVED" ]; then export GIT_DIR="$GIT_DIR_SAVED"; fi
