@@ -158,6 +158,34 @@ diff_summary:
 
 </edge_case_handling>
 
+<failure_contract>
+
+When ``verdict: COMPLIANCE_VIOLATION`` is emitted, the manifest MUST
+carry actionable feedback. The orchestrator reads these fields, in
+this precedence:
+
+1. ``train_feedback`` (optional, free-form multi-line guidance)
+2. ``violations: [...]`` (structured list, used to build feedback)
+3. ``summary`` (one-sentence outcome; legacy fallback)
+4. ``rationale`` (legacy fallback; the manual skill uses this)
+
+**Hard contract:** emitting ``COMPLIANCE_VIOLATION`` with all four
+fields empty is a manifest error — the orchestrator aborts the run
+with ``JUDGE_AGENT_NO_FEEDBACK`` and the operator must intervene. To
+avoid that path, every ``COMPLIANCE_VIOLATION`` emission MUST populate
+at least:
+
+- ``summary`` with a one-sentence description of WHY the diff is
+  non-compliant, AND
+- ``violations`` with at least one entry carrying
+  ``{category, file, detail, severity, recommendation}``.
+
+The ``recommendation`` field is what the next GREEN attempt will read
+— it must be concrete enough to act on (specific files, specific
+changes, not "re-verify spec compliance").
+
+</failure_contract>
+
 <constraints>
 - Evaluate only the `git diff` scope — do not analyze pre-existing code.
 - Violations must be specific and actionable.
