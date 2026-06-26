@@ -1062,21 +1062,30 @@ def _resolve_tasks_md(root: Path, task: dict) -> Path | None:
     return _find_tasks_md_for_issue(root, issue_id)
 
 
-def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> None:
+def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int | None:
+    """Append judge feedback under the matching task line in tasks.md.
+
+    Returns the number of feedback lines inserted, or ``None`` if no
+    matching task line was found (so callers can surface a "no tasks.md
+    update" log line and skip the bookkeeping commit).
+    """
     content = tasks_md.read_text(encoding="utf-8")
     lines = content.splitlines()
     new_lines: list[str] = []
     inserted = False
+    feedback_lines = feedback.strip().splitlines() or [""]
     for line in lines:
         new_lines.append(line)
         if not inserted and task_id in line and line.strip().startswith("-"):
             indent = "  "
-            for fb_line in feedback.strip().splitlines():
+            for fb_line in feedback_lines:
                 new_lines.append(f"{indent}- **Judge Feedback**: {fb_line}")
                 indent = "    "
             inserted = True
     if inserted:
         tasks_md.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        return len(feedback_lines)
+    return None
 
 
 def _resolve_red_boundary_sha(root: Path) -> str:
@@ -1246,48 +1255,94 @@ def _run_judge_phase(
         )
     verdict = getattr(manifest, "verdict", "")
     if verdict.upper() == "COMPLIANCE_VIOLATION":
-        c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {manifest.rationale or ''}")
-        _log_run(
-            "JUDGE_REJECTED",
-            task_id=tid,
-            rationale=(manifest.rationale or "")[:500],
-        )
-
-        feedback = manifest.rationale or ""
-        if hasattr(manifest, "train_feedback") and manifest.train_feedback:
-            feedback = manifest.train_feedback
-        if not feedback:
+        # Resolve feedback BEFORE the user-facing print so the operator sees
+        # the same content GREEN will receive. Source precedence:
+        train_feedback_fb = getattr(manifest, "train_feedback", None) or ""
+        rationale_fb = manifest.rationale or ""
+        if train_feedback_fb:
+            feedback = train_feedback_fb
+            feedback_source = "train_feedback"
+        elif rationale_fb:
+            feedback = rationale_fb
+            feedback_source = "rationale"
+        else:
             feedback = (
                 "JUDGE rejected without rationale \u2014 re-verify spec compliance"
             )
+            feedback_source = "fallback"
+        feedback_preview = feedback.replace("\n", " ")[:200]
+
+        c.print(
+            f"  [red]JUDGE_REJECTED[/] {tid} (source={feedback_source}): "
+            f"{feedback_preview}"
+        )
+        _log_run(
+            "JUDGE_REJECTED",
+            task_id=tid,
+            feedback_source=feedback_source,
+            feedback=feedback,
+        )
 
         session.save(session_path)
         try:
             _execute_rollback(root, feedback)
         except Exception as e:
             c.print(
-                f"  [yellow]ROLLBACK_FAILED[/] {e} — proceeding with train feedback"
+                f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with train feedback"
             )
 
         tasks_md = _resolve_tasks_md(root, task)
         if tasks_md is not None:
-            _append_judge_feedback(tasks_md, tid, feedback)
-            subprocess.run(
-                ["git", "add", "-A"],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "-m",
-                    f"docs({tid}): add judge feedback for GREEN retry",
-                ],
-                cwd=root,
-                capture_output=True,
-                env=_git_env(),
+            added_lines = _append_judge_feedback(tasks_md, tid, feedback)
+            if added_lines is None:
+                c.print(
+                    f"  [yellow]TASKS_MD_NO_MATCH[/] {tid}: "
+                    f"no task line in {tasks_md} matches this id \u2014 "
+                    f"feedback NOT persisted to tasks.md"
+                )
+                _log_run(
+                    "TASKS_MD_NO_MATCH",
+                    task_id=tid,
+                    tasks_md=str(tasks_md),
+                    feedback=feedback,
+                )
+            else:
+                plural = "s" if added_lines != 1 else ""
+                c.print(
+                    f"  [cyan]TASKS_MD_FEEDBACK[/] {tid} \u2192 {tasks_md}: "
+                    f"{added_lines} feedback line{plural} appended"
+                )
+                c.print(f"    [dim]line: - **Judge Feedback**: {feedback_preview}[/]")
+                _log_run(
+                    "TASKS_MD_FEEDBACK",
+                    task_id=tid,
+                    tasks_md=str(tasks_md),
+                    lines_added=added_lines,
+                    feedback=feedback,
+                )
+                subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=root,
+                    capture_output=True,
+                    env=_git_env(),
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"docs({tid}): add judge feedback for GREEN retry",
+                    ],
+                    cwd=root,
+                    capture_output=True,
+                    env=_git_env(),
+                )
+        else:
+            c.print(f"  [dim]TASKS_MD_SKIP[/] {tid}: no tasks.md resolved for issue")
+            _log_run(
+                "TASKS_MD_SKIP",
+                task_id=tid,
+                reason="no_tasks_md_resolved",
             )
 
         _log_run(
@@ -1809,12 +1864,31 @@ def _run_execute_phase(
 
         verdict = getattr(judge_manifest, "verdict", "")
         if verdict.upper() == "COMPLIANCE_VIOLATION":
-            feedback = judge_manifest.rationale or ""
-            tf = getattr(judge_manifest, "train_feedback", None)
+            tf = getattr(judge_manifest, "train_feedback", None) or ""
+            rationale_fb = judge_manifest.rationale or ""
             if tf:
                 feedback = tf
+                feedback_source = "train_feedback"
+            elif rationale_fb:
+                feedback = rationale_fb
+                feedback_source = "rationale"
+            else:
+                feedback = (
+                    "JUDGE rejected without rationale \u2014 re-verify spec compliance"
+                )
+                feedback_source = "fallback"
+            feedback_preview = feedback.replace("\n", " ")[:200]
 
-            c.print(f"  [red]JUDGE_REJECTED[/] {tid}: {feedback[:200]}")
+            c.print(
+                f"  [red]JUDGE_REJECTED[/] {tid} (source={feedback_source}): "
+                f"{feedback_preview}"
+            )
+            _log_run(
+                "JUDGE_REJECTED",
+                task_id=tid,
+                feedback_source=feedback_source,
+                feedback=feedback,
+            )
 
             try:
                 _execute_rollback(root, feedback)
