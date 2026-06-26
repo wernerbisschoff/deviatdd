@@ -1205,6 +1205,45 @@ def _build_structured_diff_section(diff_text: str) -> str:
     return "\n\n" + table
 
 
+def _format_violations_as_feedback(
+    violations: list[dict[str, object]],
+) -> str:
+    """Render a structured ``violations`` list as readable feedback text.
+
+    Both judge schemas are supported:
+    - Auto template: category / file / detail / severity / recommendation
+    - Manual skill: file / detail / severity / requirement
+
+    Returns an empty string when the list is empty so the caller can chain
+    it as another fallback in the feedback-resolution cascade.
+    """
+    if not violations:
+        return ""
+    lines: list[str] = []
+    for i, v in enumerate(violations, start=1):
+        category = v.get("category", "")
+        file = v.get("file", "")
+        detail = v.get("detail", "")
+        severity = v.get("severity", "")
+        requirement = v.get("requirement", "")
+        recommendation = v.get("recommendation", "")
+        parts: list[str] = []
+        if category:
+            parts.append(f"[{category}]")
+        if severity:
+            parts.append(f"({severity})")
+        if file:
+            parts.append(f"file: {file}")
+        if requirement:
+            parts.append(f"req: {requirement}")
+        head = " ".join(parts) if parts else f"violation {i}"
+        body = detail or ""
+        if recommendation:
+            body = (body + " " if body else "") + f"Recommendation: {recommendation}"
+        lines.append(f"- {head}: {body}".rstrip())
+    return "\n".join(lines)
+
+
 def _run_judge_phase(
     task: dict,
     ledger_path: Path,
@@ -1257,19 +1296,56 @@ def _run_judge_phase(
     if verdict.upper() == "COMPLIANCE_VIOLATION":
         # Resolve feedback BEFORE the user-facing print so the operator sees
         # the same content GREEN will receive. Source precedence:
+        #   train_feedback > violations (built) > rationale > summary > fallback
+        # The "summary" branch bridges the schema gap between the auto prompt
+        # (uses summary:) and the manual skill (uses rationale:). The
+        # "violations" branch extracts actionable text from the structured
+        # list both schemas populate on failure.
         train_feedback_fb = getattr(manifest, "train_feedback", None) or ""
         rationale_fb = manifest.rationale or ""
+        summary_fb = (
+            getattr(manifest, "summary", None)
+            or (manifest.model_extra or {}).get("summary", "")
+            or ""
+        )
+        violations_fb = _format_violations_as_feedback(
+            (
+                getattr(manifest, "violations", None)
+                or (manifest.model_extra or {}).get("violations", [])
+                or []
+            )
+        )
         if train_feedback_fb:
             feedback = train_feedback_fb
             feedback_source = "train_feedback"
+        elif violations_fb:
+            feedback = violations_fb
+            feedback_source = "violations"
         elif rationale_fb:
             feedback = rationale_fb
             feedback_source = "rationale"
+        elif summary_fb:
+            feedback = summary_fb
+            feedback_source = "summary"
         else:
-            feedback = (
-                "JUDGE rejected without rationale \u2014 re-verify spec compliance"
+            # No actionable feedback at all — agent failed its contract.
+            # Loud-abort so the operator can intervene instead of looping
+            # GREEN against a generic message until TRAIN_EXHAUSTED.
+            c.print(
+                f"  [red]JUDGE_AGENT_NO_FEEDBACK[/] {tid}: judge returned "
+                f"COMPLIANCE_VIOLATION but populated no rationale, "
+                f"train_feedback, summary, or violations"
             )
-            feedback_source = "fallback"
+            _log_run(
+                "JUDGE_AGENT_NO_FEEDBACK",
+                task_id=tid,
+                verdict=verdict,
+                manifest=manifest.model_dump_json(),
+            )
+            raise PhaseFailedError(
+                f"JUDGE_AGENT_NO_FEEDBACK for {tid}: judge returned "
+                f"COMPLIANCE_VIOLATION with no actionable feedback"
+            )
         feedback_preview = feedback.replace("\n", " ")[:200]
 
         c.print(
@@ -1866,17 +1942,46 @@ def _run_execute_phase(
         if verdict.upper() == "COMPLIANCE_VIOLATION":
             tf = getattr(judge_manifest, "train_feedback", None) or ""
             rationale_fb = judge_manifest.rationale or ""
+            summary_fb = (
+                getattr(judge_manifest, "summary", None)
+                or (judge_manifest.model_extra or {}).get("summary", "")
+                or ""
+            )
+            violations_fb = _format_violations_as_feedback(
+                (
+                    getattr(judge_manifest, "violations", None)
+                    or (judge_manifest.model_extra or {}).get("violations", [])
+                    or []
+                )
+            )
             if tf:
                 feedback = tf
                 feedback_source = "train_feedback"
+            elif violations_fb:
+                feedback = violations_fb
+                feedback_source = "violations"
             elif rationale_fb:
                 feedback = rationale_fb
                 feedback_source = "rationale"
+            elif summary_fb:
+                feedback = summary_fb
+                feedback_source = "summary"
             else:
-                feedback = (
-                    "JUDGE rejected without rationale \u2014 re-verify spec compliance"
+                c.print(
+                    f"  [red]JUDGE_AGENT_NO_FEEDBACK[/] {tid}: judge returned "
+                    f"COMPLIANCE_VIOLATION but populated no rationale, "
+                    f"train_feedback, summary, or violations"
                 )
-                feedback_source = "fallback"
+                _log_run(
+                    "JUDGE_AGENT_NO_FEEDBACK",
+                    task_id=tid,
+                    verdict=verdict,
+                    manifest=judge_manifest.model_dump_json(),
+                )
+                raise PhaseFailedError(
+                    f"JUDGE_AGENT_NO_FEEDBACK for {tid}: judge returned "
+                    f"COMPLIANCE_VIOLATION with no actionable feedback"
+                )
             feedback_preview = feedback.replace("\n", " ")[:200]
 
             c.print(
