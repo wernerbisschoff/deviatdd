@@ -1,0 +1,55 @@
+{
+  "evaluation_id": "2026-06-26T000000Z",
+  "input_valid": true,
+  "target_archetype": "Multi_Step_Logic",
+  "target_path": "src/deviate/prompts/skills/deviate-flows/SKILL.md",
+  "scores": {
+    "domain_construct_definition": 8,
+    "predicate_atomicity": 10,
+    "affirmative_constraints": 10,
+    "causal_sequence": 10,
+    "output_contract": 9,
+    "lexical_specificity": 8,
+    "few_shot_icl": 4,
+    "snr_maximization": 8,
+    "edge_case_enumeration": 9,
+    "contextual_bounding": 9
+  },
+  "raw_scores": {
+    "domain_construct_definition": 8,
+    "predicate_atomicity": 9,
+    "affirmative_constraints": 9,
+    "causal_sequence": 8,
+    "output_contract": 9,
+    "lexical_specificity": 8,
+    "few_shot_icl": 4,
+    "snr_maximization": 8,
+    "edge_case_enumeration": 9,
+    "contextual_bounding": 9
+  },
+  "archetype_weights_applied": {
+    "causal_sequence": 2.0,
+    "predicate_atomicity": 1.5,
+    "affirmative_constraints": 1.5
+  },
+  "verification_passed": true,
+  "verification_notes": [
+    "Weighted causal_sequence (16.0), predicate_atomicity (13.5), and affirmative_constraints (13.5) capped at 10 per rubric bounds.",
+    "few_shot_icl adjusted from raw 5 to 4 to satisfy semantic rule: identified weakness 'no positive canonical example' must reflect in score ≤ 4.",
+    "KV-cache prefix estimated ~700 tokens; under 1024 threshold — no static-prefix bonus applied.",
+    "Top-3 lowest scores are few_shot_icl=4, then three-way tie at 8 (domain_construct, lexical_specificity, snr). Patches target few_shot_icl primarily; tied scores addressed via bounding-tag patch."
+  ],
+  "identified_weaknesses": [
+    "Few-shot ICL: edge-case table provides negative-path mappings but no positive canonical example of a complete FLOW-NN block, FLOW-01 schema-conformant file, or index row.",
+    "Lexical specificity: opening sentence 'This engine operates exclusively as an isolated, context-bounded...' carries mild narrative framing; could be tightened to declarative scope statement.",
+    "Contextual bounding: no explicit <inputs> block separates runtime user dialogue from static instructions, weakening prefix-cache reuse across invocations.",
+    "Causal sequence: workflow steps are named but lack explicit per-step precondition→action→verification loops; cross-step data flow is implied, not declared."
+  ],
+  "programmatic_patches": {
+    "inject_domain_construct": "Replace lines 15-16:\n\nOLD:\nThis engine operates exclusively as an isolated, context-bounded Product-layer\nflow authoring assistant for the DeviaTDD framework. Your objective is to\ncollaborate with the user to identify core customer flows, write them into the\nProduct-layer seed artifacts under `specs/_product/flows/`, and keep the\ncanonical flow index (`specs/_product/flows/index.md`) consistent with the\non-disk flow files.\n\nNEW:\nSCOPE: DeviaTDD Product-layer FLOW-01 (Flows) authoring.\nWRITES: `specs/_product/flows/flows-<domain>.md` files and `specs/_product/flows/index.md`.\nDOES NOT WRITE: `specs/_product/architecture.md`, `specs/_product/domain-model.md`, `specs/_product/release-next.md`.\nSEED: `specs/_product/flows/flows-product.md` is read-only; extend, never regenerate.\nGOAL: Produce FLOW-NN flow blocks that conform to the FLOW-01 section schema and remain traceable via `flow_refs:` frontmatter.",
+    "inject_few_shot_icl": "Insert after </edge_case_handling>:\n\n<canonical_example>\n## FLOW-04 Provision Developer Environment\n\n| Field | Value |\n|---|---|\n| Actor | Developer |\n| Domain | Onboarding |\n| Status | Active |\n| Source | specs/_product/flows/flows-onboarding.md |\n\n**Problem / job to be done**: As a Developer, I need a reproducible local environment so I can run the test suite without manual setup.\n**Trigger**: `deviate onboard` slash command.\n**Preconditions**: Repository cloned; `.deviate/` directory present.\n**Happy path**: 1. Run `deviate onboard`. 2. Skill provisions mise tasks. 3. Skill installs git hooks. 4. Skill reports green status.\n**Alternate / error paths**: If mise binary missing → abort with diagnostic link; offer manual fallback.\n**Success State**: `mise run check` exits 0 within 30s.\n**Metrics / Signals**: setup_time_seconds ≤ 30; references FLOW-01, FLOW-02.\n\n## index.md row appended by this flow\n\n| Flow ID | Name | Actor | Domain | Status | Source |\n|---|---|---|---|---|---|\n| FLOW-04 | Provision Developer Environment | Developer | Onboarding | Active | specs/_product/flows/flows-onboarding.md |\n</canonical_example>",
+    "inject_output_contract": "",
+    "inject_bounding_tags": "Insert immediately after the YAML frontmatter (line 11):\n\n<inputs>\n  <input name=\"user_input\" required=\"true\">Free-text user request describing actor, domain, job-to-be-done, or trigger.</input>\n  <input name=\"existing_seed_path\" required=\"false\">Absolute or repo-relative path to `specs/_product/flows/flows-product.md` if already populated.</input>\n  <input name=\"existing_index_path\" required=\"false\">Absolute or repo-relative path to `specs/_product/flows/index.md`.</input>\n</inputs>\n\n<outputs>\n  <output name=\"flow_file_path\" type=\"string\">Path to the newly authored `flows-<domain>.md`.</output>\n  <output name=\"index_rows_added\" type=\"integer\">Count of rows appended to index.md.</output>\n  <output name=\"flow_id\" type=\"string\">Assigned FLOW-NN identifier matching `^FLOW-\\d{2,}$`.</output>\n</outputs>",
+    "inject_cache_breakpoint": "Insert as the final block before </edge_case_handling> closing tag, after all static instructions:\n\n<runtime_payload>\n  <!-- Dynamic content injected per invocation lives below this line. -->\n  <!-- Static prefix above is shared across all calls; KV-cache breakpoint here. -->\n  <user_turn />\n</runtime_payload>\n\nAlso restructure line ordering: move <edge_case_handling> BEFORE <workflow> so the static rule block precedes the workflow narrative, maximizing prefix-cache hit rate."
+  }
+}

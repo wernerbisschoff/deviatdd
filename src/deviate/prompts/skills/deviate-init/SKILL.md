@@ -40,11 +40,6 @@ This phase operates inside the **MACRO LAYER** — initial project scaffolding f
 
 4. **No Implementation Code**: Init phase MUST NOT write, modify, or generate any implementation code. Only scaffolding artifacts are created.
 
-## <context>
-<user_input>
-$ARGUMENTS
-</user_input>
-
 <system_instructions>
 
 ## Project Initialization Mandate
