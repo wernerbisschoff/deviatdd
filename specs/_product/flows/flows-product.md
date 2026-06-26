@@ -18,6 +18,7 @@
 3. The agent outputs a flows.md or flows-<domain>.md in the specs/_product/ dir
 4. The agent creates/updates the specs/flows/index.md 
 4. The flows are used and referenced by id during lower layers to ensure no context is lost in smaller layers
+5. The agent asks the user whether to commit the new flow file(s) and any index updates; on confirmation, the agent creates a single git commit for the change.
 
 ### Alternate / error paths
 TBD
@@ -25,6 +26,7 @@ TBD
 ### Success State
 - A new flows.md or flows-<domain>.md in the specs/_product/ dir of the repo
 - The new flows are added to the specs/flows/index.md
+- On user confirmation, a single git commit containing the new flow file(s) and any index updates
 
 ### Metrics / Signals
 - Flows get referenced by ID throughout the DeviaTDD workflow, in the Macro, Meso, and Micro layers
