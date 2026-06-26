@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import threading
@@ -13,6 +14,8 @@ from pydantic import BaseModel, ValidationError
 from deviate.state.config import AgentConfig
 
 OutputCallback = Callable[[str], None]
+
+BackendName = Literal["opencode", "claude", "droid", "pi", "stub"]
 
 
 class HandoverManifest(BaseModel):
@@ -61,7 +64,22 @@ BACKEND_COMMANDS: dict[str, str] = {
     "opencode": "opencode run",
     "claude": "claude -p --permission-mode auto",
     "droid": "droid exec",
+    "pi": "pi -p",
     "stub": "stub",
+}
+
+PI_RPC_COMMAND: list[str] = ["pi", "--mode", "rpc", "--no-session"]
+
+
+# Per-backend model-flag dispatch. ``None`` means the backend does not
+# accept ``--model`` on the CLI (model routing happens via other channels —
+# Pi routes via ``~/.pi/agent/settings.json``; claude ignores model config).
+# ``["--model"]`` means the backend accepts the ``--model <id>`` flag.
+MODEL_FLAGS: dict[str, list[str] | None] = {
+    "pi": None,
+    "claude": None,
+    "opencode": ["--model"],
+    "droid": ["--model"],
 }
 
 
@@ -271,25 +289,83 @@ class AgentBackend:
             )
         return stdout, stderr
 
+    def _invoke_rpc_blocking(
+        self,
+        proc: subprocess.Popen[bytes],
+        cmd: list[str],
+        prompt: str,
+        timeout_secs: int,
+        backend_name: str,
+    ) -> tuple[str, str]:
+        payload = (json.dumps({"type": "prompt", "content": prompt}) + "\n").encode(
+            "utf-8"
+        )
+        try:
+            stdout_bytes, stderr_bytes = proc.communicate(
+                input=payload, timeout=timeout_secs
+            )
+        except subprocess.TimeoutExpired as e:
+            proc.kill()
+            proc.wait()
+            partial_out = e.output.decode("utf-8") if e.output else ""
+            partial_err = e.stderr.decode("utf-8") if e.stderr else ""
+            raise AgentTimeoutError(
+                f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
+                partial_stdout=partial_out,
+                partial_stderr=partial_err,
+            )
+        stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
+        stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+        if proc.returncode != 0:
+            raise AgentSubprocessError(
+                message=stderr or f"Agent exited with code {proc.returncode}",
+                exit_code=proc.returncode,
+            )
+        manifest_text = ""
+        for raw_line in stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") != "agent_end":
+                continue
+            message = event.get("message")
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content", "")
+            if isinstance(content, str):
+                manifest_text = content
+                break
+        return manifest_text, stderr
+
     def invoke(
         self,
         prompt: str,
-        backend: Literal["opencode", "claude", "droid"] | None = None,
+        backend: BackendName | None = None,
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
         cwd: str | None = None,
         model: str | None = None,
     ) -> HandoverManifest:
-        backend_name: Literal["opencode", "claude", "droid"] = (
-            backend or self.config.backend
-        )
-        backend_cmd = BACKEND_COMMANDS.get(backend_name)
-        if backend_cmd is None:
-            raise AgentBinaryNotFoundError(f"Unknown backend: {backend_name}")
+        backend_name: BackendName = backend or self.config.backend
+        use_rpc = backend_name == "pi" and self.config.pi_rpc
 
-        cmd = backend_cmd.split()
-        if model is not None and backend_name != "claude":
-            cmd.extend(["--model", model])
+        if use_rpc:
+            cmd = list(PI_RPC_COMMAND)
+        else:
+            backend_cmd = BACKEND_COMMANDS.get(backend_name)
+            if backend_cmd is None:
+                raise AgentBinaryNotFoundError(f"Unknown backend: {backend_name}")
+
+            cmd = backend_cmd.split()
+            model_flag = MODEL_FLAGS.get(backend_name, ["--model"])
+            if model is not None and model_flag is not None:
+                cmd.extend([model_flag[0], model])
         effective_timeout = timeout or self.config.timeout
 
         popen_kwargs: dict[str, Any] = dict(
@@ -308,32 +384,49 @@ class AgentBackend:
             )
 
         try:
-            if output_callback is not None:
-                stdout, stderr = self._invoke_streaming(
-                    proc, cmd, prompt, effective_timeout, backend_name, output_callback
-                )
-            else:
-                stdout, stderr = self._invoke_blocking(
-                    proc, cmd, prompt, effective_timeout, backend_name
-                )
+            stdout, stderr = self._dispatch_invocation(
+                proc,
+                cmd,
+                prompt,
+                effective_timeout,
+                backend_name,
+                output_callback,
+                use_rpc,
+            )
         except AgentTimeoutError:
             time.sleep(30)
             retry_proc = subprocess.Popen(cmd, **popen_kwargs)
-            if output_callback is not None:
-                stdout, stderr = self._invoke_streaming(
-                    retry_proc,
-                    cmd,
-                    prompt,
-                    effective_timeout,
-                    backend_name,
-                    output_callback,
-                )
-            else:
-                stdout, stderr = self._invoke_blocking(
-                    retry_proc, cmd, prompt, effective_timeout, backend_name
-                )
+            stdout, stderr = self._dispatch_invocation(
+                retry_proc,
+                cmd,
+                prompt,
+                effective_timeout,
+                backend_name,
+                output_callback,
+                use_rpc,
+            )
 
         return self.parse_output(stdout, backend_name)
+
+    def _dispatch_invocation(
+        self,
+        proc: subprocess.Popen[bytes],
+        cmd: list[str],
+        prompt: str,
+        timeout_secs: int,
+        backend_name: str,
+        output_callback: OutputCallback | None,
+        use_rpc: bool,
+    ) -> tuple[str, str]:
+        if use_rpc:
+            return self._invoke_rpc_blocking(
+                proc, cmd, prompt, timeout_secs, backend_name
+            )
+        if output_callback is not None:
+            return self._invoke_streaming(
+                proc, cmd, prompt, timeout_secs, backend_name, output_callback
+            )
+        return self._invoke_blocking(proc, cmd, prompt, timeout_secs, backend_name)
 
 
 class StubAgentBackend(AgentBackend):
@@ -344,7 +437,7 @@ class StubAgentBackend(AgentBackend):
     def invoke(
         self,
         prompt: str,
-        backend: Literal["opencode", "claude", "droid", "stub"] | None = None,
+        backend: BackendName | None = None,
         timeout: int | None = None,
         output_callback: OutputCallback | None = None,
         cwd: str | None = None,
@@ -354,3 +447,13 @@ class StubAgentBackend(AgentBackend):
         if output_callback is not None:
             output_callback(prompt)
         return HandoverManifest(phase="RED", status="success")
+
+
+class StubPiBackend(StubAgentBackend):
+    """Pi-shaped stub backend for downstream test isolation.
+
+    Marker subclass of :class:`StubAgentBackend` — shares the inherited
+    ``invoke()``, ``_invoked`` flag, callable surface, and
+    :class:`HandoverManifest` contract. Provides Pi-specific identity for
+    downstream fixtures that need to distinguish Pi-stub from generic stub.
+    """

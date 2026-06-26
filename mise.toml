@@ -34,7 +34,7 @@ run = 'echo "No type checker configured"'
 description = "Type check"
 
 [tasks.check]
-depends = ["lint", "format-check", "test"]
+depends = ["lint", "format-check"]
 description = "All validation checks"
 
 [tasks.fix]

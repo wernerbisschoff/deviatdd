@@ -10,10 +10,15 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class AgentConfig(BaseModel):
-    # Agent backend: "opencode", "claude", or "droid"
-    backend: Literal["opencode", "claude", "droid"] = "opencode"
+    # Agent backend: "opencode", "claude", "droid", or "pi"
+    backend: Literal["opencode", "claude", "droid", "pi"] = "opencode"
     # Agent invocation timeout in seconds (must be > 0)
     timeout: int = Field(default=600, gt=0)
+    # Opt-in RPC mode for Pi — spawns `pi --mode rpc --no-session` instead of `pi -p`
+    pi_rpc: bool = Field(
+        default=False,
+        description="Opt-in RPC mode for Pi (spawns pi --mode rpc --no-session instead of pi -p)",
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -187,6 +192,7 @@ class SessionState(BaseModel):
     last_command: str = ""
     yellow_triggered: bool = False
     train_feedback: str = ""
+    judge_rejected: bool = False
     red_commit_sha: str = ""
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -216,6 +222,7 @@ class SessionState(BaseModel):
             yellow_triggered=self.yellow_triggered,
             red_commit_sha=self.red_commit_sha,
             train_feedback=self.train_feedback,
+            judge_rejected=self.judge_rejected,
             timestamp=datetime.now(timezone.utc),
         )
 
