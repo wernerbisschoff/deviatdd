@@ -501,43 +501,41 @@ class TestMicroOrchestration:
 
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_micro_judge_rejection_with_empty_feedback_reroutes_to_green(
+    def test_micro_judge_rejection_with_empty_feedback_aborts(
         self, mock_agent, mock_verify, tmp_git_repo: Path
     ):
-        """JUDGE_REJECTED with empty rationale/train_feedback must still reroute to GREEN.
+        """JUDGE_REJECTED with no feedback at all must abort, not silently reroute.
 
-        Regression: when the judge returned ``COMPLIANCE_VIOLATION`` with empty
-        rationale AND empty train_feedback, the reroute condition
-        ``if session.train_feedback or green_tests_failed`` evaluated False
-        (empty string is falsy), so the loop exited and REFACTOR ran on a
-        rejected implementation. The fix is to key the reroute on
-        ``session.judge_rejected`` (always set on COMPLIANCE_VIOLATION),
-        independent of feedback text content.
+        Contract tightened: when the judge returns COMPLIANCE_VIOLATION with
+        empty rationale AND empty train_feedback AND no summary AND no
+        violations, the run aborts with ``JUDGE_AGENT_NO_FEEDBACK``. The
+        older contract fell back to a generic ``re-verify spec compliance``
+        message and reran GREEN — which looped until TRAIN_EXHAUSTED with
+        no actionable signal. Loud abort gives the operator a chance to
+        fix the agent, the SKILL.md, or the spec before the next attempt.
         """
         call_log: list[str] = []
 
-        def _judge_reject_with_empty_feedback(*args, **kwargs):
+        def _judge_emit_with_no_feedback(*args, **kwargs):
             phase = kwargs.get("phase", "")
             call_log.append(phase)
             tid = kwargs.get("task_id", "TSK-004-12")
             if phase == "JUDGE":
-                judge_count = sum(1 for p in call_log if p == "JUDGE")
-                if judge_count == 1:
-                    return HandoverManifest(
-                        phase="JUDGE",
-                        status="SUCCESS",
-                        verdict="COMPLIANCE_VIOLATION",
-                        task_id=tid,
-                        rationale=None,
-                        train_feedback=None,
-                    ), ""
+                return HandoverManifest(
+                    phase="JUDGE",
+                    status="SUCCESS",
+                    verdict="COMPLIANCE_VIOLATION",
+                    task_id=tid,
+                    rationale=None,
+                    train_feedback=None,
+                ), ""
             return HandoverManifest(
                 phase=phase,
                 status="SUCCESS",
                 task_id=tid,
             ), ""
 
-        mock_agent.side_effect = _judge_reject_with_empty_feedback
+        mock_agent.side_effect = _judge_emit_with_no_feedback
 
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -548,7 +546,7 @@ class TestMicroOrchestration:
             task = _make_task_record(
                 task_id="TSK-004-12",
                 issue_id="ISS-001-004",
-                description="Judge reject with empty feedback must reroute",
+                description="Judge reject with no feedback aborts",
                 status="PENDING",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
@@ -570,17 +568,14 @@ class TestMicroOrchestration:
 
             result = runner.invoke(cli, ["run", "TSK-004-12"])
 
-            assert "JUDGE_REJECTED" in result.output, (
-                f"Expected JUDGE_REJECTED: {result.output}"
+            assert "JUDGE_AGENT_NO_FEEDBACK" in result.output, (
+                f"Expected JUDGE_AGENT_NO_FEEDBACK: {result.output}"
             )
-            assert "TRAIN" in result.output, (
-                f"Expected TRAIN retry despite empty feedback: {result.output}"
+            assert "JUDGE_REJECTED" not in result.output, (
+                f"Did not expect JUDGE_REJECTED with empty feedback: {result.output}"
             )
-            assert "GREEN →" in result.output.split("TRAIN")[-1], (
-                "GREEN must re-run on empty-feedback rejection"
-            )
-            assert result.exit_code == 0, (
-                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit on empty-feedback rejection, got {result.exit_code}"
             )
 
 
