@@ -15,6 +15,20 @@ runner = CliRunner()
 
 _PRODUCT_LAYER_SKILLS = ("deviate-flows", "deviate-architecture", "deviate-release")
 
+# TSK-011-05: seven Tome Subsystem skill names (C1..C7) per
+# ``specs/_product/architecture.md:25-33`` and
+# ``specs/adhoc/issues/011-tome-subsystem-v1.md`` flow_refs [FLOW-04..FLOW-10].
+# Mirrors the ``_PRODUCT_LAYER_SKILLS`` pattern above.
+_TOME_LAYER_SKILLS = (
+    "tome-classify",
+    "tome-write-tutorial",
+    "tome-write-how-to",
+    "tome-write-reference",
+    "tome-write-explanation",
+    "tome-verify-docs",
+    "tome-setup",
+)
+
 
 class TestInitCommand:
     def test_init_creates_dotfile_structure(self, tmp_path: Path):
@@ -465,6 +479,180 @@ class TestInitCommand:
             )
             assert skills.count(skill_name) == 1, (
                 f"Product-layer skill '{skill_name}' appears "
+                f"{skills.count(skill_name)} times in discover_skills() output; "
+                f"expected exactly 1. Got: {sorted(skills)}"
+            )
+
+    # ----------------------------------------------------------------
+    # TSK-011-05: Tome Subsystem layer (ISS-ADH-011, FR-ADHOC-011)
+    # ----------------------------------------------------------------
+
+    def test_init_creates_tome_skills(self) -> None:
+        """TSK-011-05: seven Tome Subsystem SKILL.md templates exist with
+        canonical YAML frontmatter (``name``, ``category: deviatdd-tome-layer``,
+        ``version: 1.0.0``, ``aliases`` containing slash-command forms).
+
+        Mirrors ``test_init_creates_product_layer_skills`` for the Tome layer.
+
+        Source: AC-ADHOC-011-01 (``specs/adhoc/011-tome-subsystem-v1.md``)
+        and ``src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11``
+        (canonical frontmatter schema reference).
+        """
+        assert len(_TOME_LAYER_SKILLS) == 7, (
+            f"_TOME_LAYER_SKILLS must declare all 7 Tome skills "
+            f"(got {len(_TOME_LAYER_SKILLS)}: {_TOME_LAYER_SKILLS!r})"
+        )
+
+        expected = {
+            "tome-classify",
+            "tome-write-tutorial",
+            "tome-write-how-to",
+            "tome-write-reference",
+            "tome-write-explanation",
+            "tome-verify-docs",
+            "tome-setup",
+        }
+        assert set(_TOME_LAYER_SKILLS) == expected, (
+            f"_TOME_LAYER_SKILLS mismatch. expected={expected!r} "
+            f"got={set(_TOME_LAYER_SKILLS)!r}"
+        )
+
+        skills_root = _resolve_skills_root()
+
+        for skill_name in _TOME_LAYER_SKILLS:
+            skill_path = skills_root / skill_name / "SKILL.md"
+            assert skill_path.exists(), f"Tome skill template missing: {skill_path}"
+
+            content = skill_path.read_text(encoding="utf-8")
+            assert content.lstrip().startswith("---"), (
+                f"{skill_name}: SKILL.md missing YAML frontmatter delimiter"
+            )
+
+            fm = yaml.safe_load(content.split("---", 2)[1])
+            assert isinstance(fm, dict), (
+                f"{skill_name}: frontmatter did not parse to a dict"
+            )
+
+            assert fm.get("name") == skill_name, (
+                f"{skill_name}: frontmatter name mismatch (got {fm.get('name')!r})"
+            )
+            assert fm.get("category") == "deviatdd-tome-layer", (
+                f"{skill_name}: category must be 'deviatdd-tome-layer' "
+                f"(got {fm.get('category')!r})"
+            )
+            assert fm.get("version") == "1.0.0", (
+                f"{skill_name}: version must be '1.0.0' (got {fm.get('version')!r})"
+            )
+
+            aliases = fm.get("aliases")
+            assert isinstance(aliases, list) and aliases, (
+                f"{skill_name}: aliases must be a non-empty flat YAML list"
+            )
+            assert f"/{skill_name}" in aliases, (
+                f"{skill_name}: aliases must include slash-command "
+                f"/{skill_name} (got {aliases!r})"
+            )
+            suffix = skill_name.split("-", 1)[1]
+            assert f"spec:{suffix}" in aliases, (
+                f"{skill_name}: aliases must include spec:<suffix> form "
+                f"(got {aliases!r})"
+            )
+
+            description = fm.get("description")
+            assert isinstance(description, str) and "\n" not in description, (
+                f"{skill_name}: description must be a single-line string"
+            )
+
+    def test_init_tome_skills_idempotent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TSK-011-05: re-running ``deviate setup --agent claude`` against a
+        workdir where the seven Tome skill files are already installed
+        produces SKIP log lines (no errors, no duplicate writes).
+
+        Mirrors ``test_init_product_layer_skills_idempotent`` for the Tome
+        layer. Source: ``src/deviate/cli/__init__.py:518-531``
+        (``_install_skills_to_agents`` existing skip-on-equal-content logic).
+        """
+        assert len(_TOME_LAYER_SKILLS) == 7, (
+            f"_TOME_LAYER_SKILLS must declare all 7 Tome skills "
+            f"(got {len(_TOME_LAYER_SKILLS)})"
+        )
+
+        monkeypatch.setattr(
+            "deviate.cli._get_agent_skill_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+        )
+        (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
+
+        with chdir(tmp_path):
+            first = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert first.exit_code == 0, first.output
+
+            for skill_name in _TOME_LAYER_SKILLS:
+                installed = tmp_path / ".claude" / "skills" / skill_name / "SKILL.md"
+                assert installed.exists(), (
+                    f"first setup did not install {skill_name}: {installed}"
+                )
+
+            second = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert second.exit_code == 0, second.output
+
+            for skill_name in _TOME_LAYER_SKILLS:
+                assert "SKIP" in second.output, (
+                    f"second setup did not emit SKIP log for {skill_name}; "
+                    f"got: {second.output!r}"
+                )
+
+    def test_init_discover_skills_enumerates_tome(self) -> None:
+        """TSK-011-06: ``discover_skills()`` enumerates >= 30 skill names
+        and the seven Tome skills each appear exactly once.
+
+        Forward-compatible count assertion per the FR-ADHOC-010 ``>= 23``
+        pattern at line 456 (see Risk Hotspots in
+        ``specs/adhoc/011-tome-subsystem-v1/tasks.md``). Current count is
+        24 base + 7 Tome = 31. Spec AC-ADHOC-011-08 mandates the seven
+        Tome names appear exactly once each.
+
+        Source: ``specs/_product/architecture.md:25-33`` (7 components C1-C7
+        mapped to seven skill directories) and
+        ``specs/adhoc/011-tome-subsystem-v1.md`` §`ATDD Acceptance Criteria`
+        Scenario 011-08.
+
+        Note on execution context: ``discover_skills()`` calls
+        ``_resolve_skills_root()`` (see ``src/deviate/core/skills.py:8-18``)
+        which uses ``importlib.resources.files("deviate.prompts")`` to locate
+        the skills directory. When this test is run from a worktree via
+        ``uv run pytest ...`` (no ``--project`` flag), the resolver returns
+        the worktree's source tree (31 skills → passes). When run via
+        ``uv run --project <parent-repo> pytest ...``, the resolver may
+        fall back to the parent repo's installed package (24 skills →
+        fails). Always run ``mise run test`` from the worktree root, or
+        invoke ``uv run pytest`` without ``--project``, to exercise this
+        assertion against the worktree's source tree.
+        """
+        from deviate.core.skills import discover_skills
+
+        assert len(_TOME_LAYER_SKILLS) == 7, (
+            f"_TOME_LAYER_SKILLS must declare all 7 Tome skills "
+            f"(got {len(_TOME_LAYER_SKILLS)})"
+        )
+
+        skills = discover_skills()
+
+        assert len(skills) >= 30, (
+            f"discover_skills() returned {len(skills)} skill names; "
+            f"expected >= 30 (24 base + 7 Tome per AC-ADHOC-011-08). "
+            f"Got: {sorted(skills)}"
+        )
+
+        for skill_name in _TOME_LAYER_SKILLS:
+            assert skill_name in skills, (
+                f"Tome skill '{skill_name}' missing from "
+                f"discover_skills() output. Got: {sorted(skills)}"
+            )
+            assert skills.count(skill_name) == 1, (
+                f"Tome skill '{skill_name}' appears "
                 f"{skills.count(skill_name)} times in discover_skills() output; "
                 f"expected exactly 1. Got: {sorted(skills)}"
             )
