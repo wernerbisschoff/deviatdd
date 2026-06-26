@@ -294,6 +294,25 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
     return handler
 
 
+_PI_TOKEN_FIELD_RE = re.compile(r"^tokens\.(\w+):\s*(\d+)\s*$", re.MULTILINE)
+
+
+def _extract_pi_session_stats(stdout: str) -> dict[str, int] | None:
+    """Parse Pi agent token usage from stdout into a dict with camelCase keys.
+
+    Recognises lines matching ``tokens.<field>: <integer>`` and returns a
+    dict keyed by the field name with the ``tokens.`` prefix stripped
+    (e.g. ``tokens.cacheRead`` → ``cacheRead``). Returns ``None`` when no
+    token fields are present so the caller can distinguish "absent" from
+    "present with zero values".
+    """
+    stats: dict[str, int] = {
+        match.group(1): int(match.group(2))
+        for match in _PI_TOKEN_FIELD_RE.finditer(stdout)
+    }
+    return stats or None
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -333,14 +352,18 @@ def _invoke_agent(
         status = getattr(manifest, "status", "?")
         verdict = getattr(manifest, "verdict", "")
         manifest_json = manifest.model_dump_json()
-        _log_run(
-            "AGENT_RESULT",
-            task_id=task_id,
-            phase=phase,
-            status=status,
-            verdict=verdict,
-            manifest=manifest_json,
-        )
+        agent_result_kwargs: dict[str, object] = {
+            "task_id": task_id,
+            "phase": phase,
+            "status": status,
+            "verdict": verdict,
+            "manifest": manifest_json,
+        }
+        if backend_name == "pi":
+            agent_result_kwargs["pi_session_stats"] = _extract_pi_session_stats(
+                "\n".join(raw_lines)
+            )
+        _log_run("AGENT_RESULT", **agent_result_kwargs)
         if raw_lines:
             _log_run(
                 "AGENT_RAW_OUTPUT",
@@ -963,6 +986,7 @@ def _run_green_phase(
         c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
         session.yellow_triggered = True
     session.train_feedback = ""
+    session.judge_rejected = False
     session.save(session_path)
 
     issue_id = task.get("issue_id", "")
@@ -1232,6 +1256,10 @@ def _run_judge_phase(
         feedback = manifest.rationale or ""
         if hasattr(manifest, "train_feedback") and manifest.train_feedback:
             feedback = manifest.train_feedback
+        if not feedback:
+            feedback = (
+                "JUDGE rejected without rationale \u2014 re-verify spec compliance"
+            )
 
         session.save(session_path)
         try:
@@ -1271,6 +1299,7 @@ def _run_judge_phase(
         )
         session = session.force_transition_to("GREEN")
         session.train_feedback = feedback
+        session.judge_rejected = True
         session.yellow_triggered = False
         session.save(session_path)
         return session
@@ -1278,6 +1307,7 @@ def _run_judge_phase(
     _log_run("PHASE_DECISION", task_id=tid, phase="JUDGE", decision="passed")
     session = session.force_transition_to("JUDGE")
     session.train_feedback = ""
+    session.judge_rejected = False
     session.save(session_path)
     _append_status_transition(task, "JUDGE", ledger_path)
     return session
@@ -1446,6 +1476,7 @@ def _finish_tdd_cycle(
         session = session.force_transition_to("IDLE")
         session.yellow_triggered = False
         session.train_feedback = ""
+        session.judge_rejected = False
         session.save(session_path)
     return session
 
@@ -1626,7 +1657,7 @@ def _run_tdd_cycle(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
 
-        if session.train_feedback or green_tests_failed:
+        if session.judge_rejected or session.train_feedback or green_tests_failed:
             train_attempts += 1
             if train_attempts >= max_train_attempts:
                 c.print(
@@ -1653,6 +1684,8 @@ def _run_tdd_cycle(
                     f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
                     f" \u2014 tests still failing, re-running GREEN with test feedback[/]"
                 )
+            session.judge_rejected = False
+            session.save(session_path)
             _log_run(
                 "PHASE_DECISION",
                 task_id=tid,

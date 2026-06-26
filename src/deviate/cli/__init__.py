@@ -41,16 +41,18 @@ _GOVERNANCE_MODULE = "deviate.prompts.governance"
 # User-facing agent platform choices (selectable via --agent and the
 # interactive init prompt). Order is intentional: factory/droid (Droid
 # ecosystem) come first, then the third-party CLIs.
-AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode")
+AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode", "pi")
 
 # Map a user-facing agent name to the underlying backend that meso/micro
 # layers invoke. ``factory`` is the Factory Droid IDE — the meso/micro
-# commands still drive the ``droid`` binary under the hood.
+# commands still drive the ``droid`` binary under the hood. ``pi`` is
+# the @earendil-works/pi-coding-agent CLI binary.
 AGENT_TO_BACKEND: dict[str, str] = {
     "factory": "droid",
     "droid": "droid",
     "claude": "claude",
     "opencode": "opencode",
+    "pi": "pi",
 }
 
 
@@ -512,6 +514,8 @@ def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
         return workdir / ".opencode" / "skills"
     if agent_name == "factory":
         return workdir / ".factory" / "skills"
+    if agent_name == "pi":
+        return workdir / ".pi" / "skills"
     return None
 
 
@@ -611,8 +615,17 @@ def setup(
 
     # ``droid`` and ``factory`` share the Factory Droid IDE skills directory
     # (``.factory/skills/``); ``droid`` is the underlying backend binary that
-    # both user-facing names dispatch to.
-    if selected_agent and selected_agent in ("claude", "opencode", "factory", "droid"):
+    # both user-facing names dispatch to. ``pi`` is treated as a regular
+    # project-local agent (``.pi/skills/``) — same convention as ``.claude/``,
+    # ``.opencode/``, ``.factory/``. No global ``~/.pi/agent/`` writes, no
+    # ``settings.json`` generation — the operator's Pi config is out of scope.
+    if selected_agent and selected_agent in (
+        "claude",
+        "opencode",
+        "factory",
+        "droid",
+        "pi",
+    ):
         skills_agent = "factory" if selected_agent == "droid" else selected_agent
         active_agents = [skills_agent]
     else:

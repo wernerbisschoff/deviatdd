@@ -499,6 +499,90 @@ class TestMicroOrchestration:
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_judge_rejection_with_empty_feedback_reroutes_to_green(
+        self, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
+        """JUDGE_REJECTED with empty rationale/train_feedback must still reroute to GREEN.
+
+        Regression: when the judge returned ``COMPLIANCE_VIOLATION`` with empty
+        rationale AND empty train_feedback, the reroute condition
+        ``if session.train_feedback or green_tests_failed`` evaluated False
+        (empty string is falsy), so the loop exited and REFACTOR ran on a
+        rejected implementation. The fix is to key the reroute on
+        ``session.judge_rejected`` (always set on COMPLIANCE_VIOLATION),
+        independent of feedback text content.
+        """
+        call_log: list[str] = []
+
+        def _judge_reject_with_empty_feedback(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            call_log.append(phase)
+            tid = kwargs.get("task_id", "TSK-004-12")
+            if phase == "JUDGE":
+                judge_count = sum(1 for p in call_log if p == "JUDGE")
+                if judge_count == 1:
+                    return HandoverManifest(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_VIOLATION",
+                        task_id=tid,
+                        rationale=None,
+                        train_feedback=None,
+                    ), ""
+            return HandoverManifest(
+                phase=phase,
+                status="SUCCESS",
+                task_id=tid,
+            ), ""
+
+        mock_agent.side_effect = _judge_reject_with_empty_feedback
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-12",
+                issue_id="ISS-001-004",
+                description="Judge reject with empty feedback must reroute",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            Path("README.md").write_text("# test\n")
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: setup"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["run", "TSK-004-12"])
+
+            assert "JUDGE_REJECTED" in result.output, (
+                f"Expected JUDGE_REJECTED: {result.output}"
+            )
+            assert "TRAIN" in result.output, (
+                f"Expected TRAIN retry despite empty feedback: {result.output}"
+            )
+            assert "GREEN →" in result.output.split("TRAIN")[-1], (
+                "GREEN must re-run on empty-feedback rejection"
+            )
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+
 
 class TestYellowHandoffContract:
     @patch("deviate.cli.micro._verify_clean_worktree")

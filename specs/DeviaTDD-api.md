@@ -30,9 +30,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt skills (currently
   21) into the selected agent's skills directory (`.claude/skills/`,
   `.opencode/skills/`, `.factory/skills/`). The agent backend (`opencode`, `claude`,
-  `droid`, `factory`) is persisted to `[agent].backend` in `config.toml`.
-  **Agent-to-skills-directory mapping:** `--agent claude` → `.claude/skills/`; `--agent opencode` → `.opencode/skills/`; `--agent factory` and `--agent droid` both → `.factory/skills/` (the Factory Droid IDE owns that directory; `droid` is the underlying backend binary both user-facing names dispatch to, so there is no `.droid/skills/`). The corresponding `.gitignore` entry follows the same mapping.
-* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory]` to override
+  `droid`, `factory`, `pi`) is persisted to `[agent].backend` in `config.toml`.
+  **Agent-to-skills-directory mapping:** `--agent claude` → `.claude/skills/`; `--agent opencode` → `.opencode/skills/`; `--agent factory` and `--agent droid` both → `.factory/skills/` (the Factory Droid IDE owns that directory; `droid` is the underlying backend binary both user-facing names dispatch to, so there is no `.droid/skills/`); `--agent pi` → `.pi/skills/` (Pi implements the [Agent Skills specification](https://agentskills.io/specification) natively and discovers skills from `~/.pi/agent/skills/`, `.pi/skills/`, and `.agents/skills/` on startup; DeviaTDD file-copies the project skill vault `src/deviate/prompts/skills/<name>` into `<workdir>/.pi/skills/<name>`, so the project vault remains the single source of truth. DeviaTDD does **not** write to `~/.pi/agent/` and does **not** generate a `settings.json` — model/provider selection is the operator's responsibility via Pi's own configuration mechanism). The corresponding `.gitignore` entry follows the same mapping.
+* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi]` to override
   auto-detect. If omitted, the persisted value is reused; if no persisted value exists and
   the session is interactive, a Rich `Prompt.ask` menu is shown. In non-interactive mode
   the command halts with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
@@ -54,7 +54,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `${VARIABLE}` resolver described in earlier revisions of this spec has been removed.
 * **Input Parameters:**
   * `--agent-export-mode [local|global]` (Defaults to `local`)
-  * `--agent [claude|opencode|droid|factory]` (Override auto-detect)
+  * `--agent [claude|opencode|droid|factory|pi]` (Override auto-detect)
   * `--graphite` (Enable Graphite CLI integration; merges `graphite = true` into
     existing `config.toml` and installs the Graphite governance block)
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
@@ -823,8 +823,16 @@ The architecture defines a model routing strategy in `specs/constitution.md` see
 | `/deviate-adhoc` | V4 Flash | Single invocation | One-shot |
 | EXECUTE / E2E / HOTFIX | V4 Flash | Single invocation | One-shot |
 
-The `AgentBackend` class (`src/deviate/core/agent.py`) supports `opencode`, `claude`, and
-`droid` backends with configurable timeout. Output is parsed as YAML `HandoverManifest`.
+The `AgentBackend` class (`src/deviate/core/agent.py`) supports `opencode`, `claude`,
+`droid`, and `pi` backends with configurable timeout. Output is parsed as YAML
+`HandoverManifest`. Pi uses print mode (`pi -p`) by default; model selection routes
+through `~/.pi/agent/settings.json` rather than the `--model` CLI flag (which Pi print
+mode rejects), so per-phase `[models]` config applies at subprocess-spawn time. RPC
+mode (`pi --mode rpc --no-session`) is opt-in via `agent.pi_rpc = true` in
+`.deviate/config.toml` and streams JSONL events so `pi.session_stats`
+(`tokens.input`/`output`/`cacheRead`/`cacheWrite`) can be appended to the
+`AGENT_RESULT` event in `.deviate/prompts.log` for cost observability. See
+DeviaTDD-architecture.md §10 for the full Pi customization contract.
 
 ### 5. DeepSeek V4 Pricing Reference (June 2026)
 

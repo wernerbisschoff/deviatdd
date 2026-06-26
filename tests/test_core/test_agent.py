@@ -457,3 +457,446 @@ class TestAgentModelRouting:
         assert "--model" not in cmd, (
             f"Expected no --model for claude backend, got {cmd}"
         )
+
+
+class TestPiBackendRegistration:
+    """TSK-009-01: Register Pi backend in config model, command registry,
+    model-flag dispatch, error handling, and test fixtures.
+
+    Covers AC-009-08 (AgentConfig Literal accepts Pi), AC-009-07
+    (BACKEND_COMMANDS includes Pi), AC-009-01 (Pi backend dispatches
+    correctly), AC-009-09 (YAML extraction is backend-agnostic), and the
+    `StubPiBackend` fixture contract.
+    """
+
+    def test_agent_config_literal_accepts_pi(self):
+        """AC-009-08: ``AgentConfig(backend='pi')`` validates without error."""
+        config = AgentConfig(backend="pi")
+        assert config.backend == "pi"
+        assert config.model_dump()["backend"] == "pi"
+
+    def test_agent_config_pi_round_trip_via_toml(self, tmp_path):
+        """AC-009-08: ``backend='pi'`` survives model_dump → model_validate."""
+        import tomllib
+
+        config = AgentConfig(backend="pi")
+        dumped = config.model_dump()
+        toml_str = (
+            f'[agent]\nbackend = "{dumped["backend"]}"\ntimeout = {dumped["timeout"]}\n'
+        )
+        (tmp_path / "config.toml").write_text(toml_str, encoding="utf-8")
+        parsed = tomllib.loads((tmp_path / "config.toml").read_text())
+        reloaded = AgentConfig(**parsed["agent"])
+        assert reloaded.backend == "pi"
+
+    def test_agent_config_literal_rejects_unknown(self):
+        """AC-009-08: ``AgentConfig(backend='unknown')`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="unknown")
+
+    def test_pi_rpc_field_defaults_to_false(self):
+        """Opt-in RPC mode must default off (print mode is the default)."""
+        config = AgentConfig(backend="pi")
+        assert getattr(config, "pi_rpc", False) is False
+
+    def test_pi_rpc_field_opt_in(self):
+        """Setting ``pi_rpc=True`` persists on the model."""
+        config = AgentConfig(backend="pi", pi_rpc=True)
+        assert config.pi_rpc is True
+
+    def test_backend_commands_includes_pi(self):
+        """AC-009-07: ``BACKEND_COMMANDS['pi'] == 'pi -p'``."""
+        assert "pi" in BACKEND_COMMANDS
+        assert BACKEND_COMMANDS["pi"] == "pi -p"
+
+    def test_pi_backend_subprocess_contract(self):
+        """AC-009-01: Pi backend spawns ``['pi', '-p']`` with prompt via stdin."""
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            config = AgentConfig(backend="pi")
+            backend = AgentBackend(config=config)
+            backend.invoke("test prompt")
+
+        args, kwargs = mock_popen.call_args
+        cmd = args[0]
+        assert cmd[0] == "pi", f"Expected first argv 'pi', got {cmd[0]!r}"
+        assert cmd[1] == "-p", f"Expected second argv '-p', got {cmd[1]!r}"
+        assert kwargs.get("stdin") is not None, "Expected stdin=PIPE for prompt"
+
+    def test_pi_backend_model_flag_not_injected(self):
+        """AC-009-02 / US-009-02: Pi print mode rejects ``--model`` — skip injection."""
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            config = AgentConfig(backend="pi")
+            backend = AgentBackend(config=config)
+            backend.invoke("test prompt", model="anthropic/claude-sonnet-4-5")
+
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        assert "--model" not in cmd, (
+            f"Pi print mode must NOT receive --model flag (got {cmd})"
+        )
+
+    def test_pi_backend_missing_binary(self):
+        """Edge case: ``pi`` not on PATH → ``AgentBinaryNotFoundError``."""
+        with patch("subprocess.Popen", side_effect=FileNotFoundError):
+            config = AgentConfig(backend="pi")
+            backend = AgentBackend(config=config)
+            with pytest.raises(Exception) as exc_info:
+                backend.invoke("test prompt")
+
+        from deviate.core.agent import AgentBinaryNotFoundError
+
+        assert isinstance(exc_info.value, AgentBinaryNotFoundError)
+        assert "pi" in str(exc_info.value).lower()
+
+    def test_pi_backend_yaml_extraction_fenced(self):
+        """AC-009-09: Pi-shaped stdout (fenced YAML) parses via existing pipeline."""
+        pi_output = (
+            "Some preamble\n"
+            "```yaml\n"
+            "phase: RED\n"
+            "status: TEST_WRITTEN_FAILING\n"
+            "task_id: TSK-009-01\n"
+            "```\n"
+        )
+        manifest = AgentBackend.parse_output(pi_output, "pi")
+        assert manifest.phase == "RED"
+        assert manifest.status == "TEST_WRITTEN_FAILING"
+        assert manifest.task_id == "TSK-009-01"
+
+    def test_pi_backend_yaml_extraction_handover_marker(self):
+        """AC-009-09: Pi-shaped stdout with ``<handover_manifest>`` tag parses."""
+        pi_output = (
+            "<handover_manifest>\n```yaml\n"
+            "phase: GREEN\n"
+            "status: IMPLEMENTED\n"
+            "task_id: TSK-009-01\n"
+            "```\n"
+        )
+        manifest = AgentBackend.parse_output(pi_output, "pi")
+        assert manifest.phase == "GREEN"
+        assert manifest.status == "IMPLEMENTED"
+        assert manifest.task_id == "TSK-009-01"
+
+    def test_pi_backend_parse_output_empty_raises(self):
+        """Empty Pi stdout surfaces ``EmptyOutputError`` (backend-agnostic guard)."""
+        from deviate.core.agent import EmptyOutputError
+
+        with pytest.raises(EmptyOutputError):
+            AgentBackend.parse_output("", "pi")
+
+
+class TestStubPiBackend:
+    """TSK-009-01: ``StubPiBackend`` mirrors ``StubAgentBackend`` for downstream
+    Pi-specific test isolation.
+    """
+
+    def test_stub_pi_backend_registered_in_commands(self):
+        """The Pi stub must be reachable via ``BACKEND_COMMANDS['stub']`` (or
+        a dedicated ``pi_stub`` key) — verify it is importable and exposes
+        a canonical command prefix."""
+        from deviate.core.agent import StubPiBackend
+
+        assert StubPiBackend is not None
+        assert "stub" in BACKEND_COMMANDS
+
+    def test_stub_pi_backend_yields_canonical_manifest(self):
+        """``StubPiBackend().invoke(...)`` returns a valid ``HandoverManifest``."""
+        from deviate.core.agent import HandoverManifest, StubPiBackend
+
+        backend = StubPiBackend()
+        manifest = backend.invoke("test prompt")
+
+        assert isinstance(manifest, HandoverManifest)
+        assert manifest.phase == "RED"
+        assert manifest.status == "success"
+
+    def test_stub_pi_backend_no_subprocess(self):
+        """``StubPiBackend`` must not spawn a real subprocess."""
+        from deviate.core.agent import StubPiBackend
+
+        with patch("subprocess.Popen") as mock_popen:
+            backend = StubPiBackend()
+            backend.invoke("test prompt")
+
+        mock_popen.assert_not_called()
+
+    def test_stub_pi_backend_fires_output_callback(self):
+        """``StubPiBackend`` invokes the output_callback when provided."""
+        from deviate.core.agent import StubPiBackend
+
+        callback_calls: list[str] = []
+
+        def callback(text: str) -> None:
+            callback_calls.append(text)
+
+        backend = StubPiBackend()
+        backend.invoke("test prompt", output_callback=callback)
+
+        assert len(callback_calls) == 1
+        assert "test prompt" in callback_calls[0]
+
+    def test_stub_pi_backend_inherits_from_stub_agent_backend(self):
+        """``StubPiBackend`` must subclass ``StubAgentBackend`` to share test
+        plumbing (communal ``_invoked`` flag, callable surface)."""
+        from deviate.core.agent import StubAgentBackend, StubPiBackend
+
+        assert issubclass(StubPiBackend, StubAgentBackend)
+
+
+class TestModelFlagsRegistry:
+    """TSK-009-01: per-backend model-flag dispatch via ``MODEL_FLAGS`` map.
+
+    The dispatch table maps backend names to the flag prefix used for
+    model injection. ``pi`` is mapped to ``None`` (print mode rejects
+    ``--model``); ``opencode`` and ``droid`` use ``['--model']``; ``claude``
+    ignores model config (existing behavior).
+    """
+
+    def test_model_flags_map_contains_pi(self):
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert "pi" in MODEL_FLAGS
+
+    def test_model_flags_pi_is_none(self):
+        """Pi print mode must NOT receive ``--model`` — entry is ``None``."""
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert MODEL_FLAGS["pi"] is None
+
+    def test_model_flags_opencode_uses_model_flag(self):
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert MODEL_FLAGS["opencode"] == ["--model"]
+
+    def test_model_flags_droid_uses_model_flag(self):
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert MODEL_FLAGS["droid"] == ["--model"]
+
+    def test_pi_model_flag_lookup_returns_none(self):
+        """``AgentBackend.invoke()`` consults ``MODEL_FLAGS[backend]`` —
+        when the entry is ``None``, ``--model`` is skipped entirely."""
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert MODEL_FLAGS.get("pi") is None
+
+
+class TestPiSessionStatsLogging:
+    """TSK-009-04: Extract ``pi.session_stats`` from Pi agent output and
+    enrich ``prompts.log`` AGENT_RESULT entries with token statistics.
+
+    Covers AC-ADHOC-009-04 (Token stats captured in prompts.log), US-009-03
+    (cache-hit ratio observability), and the ``_extract_pi_session_stats``
+    helper contract. Tests fail in RED phase because:
+
+    1. ``_extract_pi_session_stats`` does not exist in
+       ``deviate.cli.micro`` — tests that import it raise ``ImportError``.
+    2. ``_invoke_agent`` does not pass ``pi_session_stats`` kwarg to
+       ``_log_run("AGENT_RESULT", ...)`` — the kwarg lookup fails.
+    """
+
+    def test_extract_pi_session_stats_returns_all_four_fields(self):
+        """Helper extracts ``tokens.{input,output,cacheRead,cacheWrite}``
+        into a dict with camelCase keys and integer values.
+
+        Spec: AC-ADHOC-009-04 — all four fields populated, no nulls.
+        """
+        from deviate.cli.micro import _extract_pi_session_stats
+
+        stdout = (
+            "phase: RED\n"
+            "status: TEST_WRITTEN_FAILING\n"
+            "tokens.input: 1234\n"
+            "tokens.output: 567\n"
+            "tokens.cacheRead: 890\n"
+            "tokens.cacheWrite: 45\n"
+        )
+
+        stats = _extract_pi_session_stats(stdout)
+
+        assert stats is not None, "Expected stats dict, got None"
+        assert stats == {
+            "input": 1234,
+            "output": 567,
+            "cacheRead": 890,
+            "cacheWrite": 45,
+        }
+
+    def test_extract_pi_session_stats_returns_none_when_absent(self):
+        """Helper returns ``None`` when no token stats appear in stdout.
+
+        Spec edge case: token stats absent from Pi output → helper returns
+        ``None`` (caller logs a warning, does not fail).
+        """
+        from deviate.cli.micro import _extract_pi_session_stats
+
+        stdout = "phase: RED\nstatus: TEST_WRITTEN_FAILING\ntask_id: TSK-009-04\n"
+
+        assert _extract_pi_session_stats(stdout) is None
+
+    def test_extract_pi_session_stats_partial_fields(self):
+        """Helper returns only the fields present in stdout when stats
+        are partial (e.g., only input/output, no cache fields).
+
+        Spec edge case: partial stats — return only present fields.
+        """
+        from deviate.cli.micro import _extract_pi_session_stats
+
+        stdout = "tokens.input: 100\ntokens.output: 50\n"
+
+        stats = _extract_pi_session_stats(stdout)
+
+        assert stats == {"input": 100, "output": 50}
+
+    def test_pi_session_stats_logged(self):
+        """AC-ADHOC-009-04: AGENT_RESULT event contains ``pi_session_stats``
+        kwarg with all four token fields when Pi backend emits stats.
+
+        Exercises the full ``_invoke_agent(backend_name='pi')`` logging path:
+        mock ``AgentBackend.invoke`` to push Pi-shaped stdout through the
+        ``output_callback`` (which captures ``raw_lines`` internally), then
+        verify ``_log_run('AGENT_RESULT', ...)`` receives ``pi_session_stats``.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.cli.micro import _invoke_agent
+
+        manifest = HandoverManifest(phase="RED", status="TEST_WRITTEN_FAILING")
+        pi_stdout_lines = [
+            "phase: RED",
+            "status: TEST_WRITTEN_FAILING",
+            "tokens.input: 1234",
+            "tokens.output: 567",
+            "tokens.cacheRead: 890",
+            "tokens.cacheWrite: 45",
+        ]
+
+        def fake_invoke(self, prompt, **kwargs):
+            callback = kwargs.get("output_callback")
+            if callback is not None:
+                for line in pi_stdout_lines:
+                    callback(line)
+            return manifest
+
+        with (
+            patch("deviate.cli.micro._log_run") as mock_log_run,
+            patch.object(AgentBackend, "invoke", new=fake_invoke),
+        ):
+            from rich.console import Console
+
+            _invoke_agent(
+                prompt="test prompt",
+                c=Console(),
+                backend_name="pi",
+                task_id="TSK-009-04",
+                phase="RED",
+            )
+
+        agent_result_calls = [
+            call
+            for call in mock_log_run.call_args_list
+            if call.args and call.args[0] == "AGENT_RESULT"
+        ]
+        assert agent_result_calls, (
+            "_log_run was not invoked with the 'AGENT_RESULT' event"
+        )
+
+        pi_stats_kwarg = agent_result_calls[0].kwargs.get("pi_session_stats")
+        assert pi_stats_kwarg is not None, (
+            "Expected 'pi_session_stats' kwarg on _log_run('AGENT_RESULT', ...),"
+            f" got kwargs: {agent_result_calls[0].kwargs}"
+        )
+        assert pi_stats_kwarg["input"] == 1234
+        assert pi_stats_kwarg["output"] == 567
+        assert pi_stats_kwarg["cacheRead"] == 890
+        assert pi_stats_kwarg["cacheWrite"] == 45
+
+    def test_pi_session_stats_absent_logs_none(self):
+        """When Pi stdout contains no token stats, the AGENT_RESULT event
+        must carry ``pi_session_stats=None`` (not raise, not omit the kwarg).
+
+        Spec edge case: absent stats — log warning but do not fail.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.cli.micro import _invoke_agent
+
+        manifest = HandoverManifest(phase="RED", status="TEST_WRITTEN_FAILING")
+        pi_stdout_lines = [
+            "phase: RED",
+            "status: TEST_WRITTEN_FAILING",
+        ]
+
+        def fake_invoke(self, prompt, **kwargs):
+            callback = kwargs.get("output_callback")
+            if callback is not None:
+                for line in pi_stdout_lines:
+                    callback(line)
+            return manifest
+
+        with (
+            patch("deviate.cli.micro._log_run") as mock_log_run,
+            patch.object(AgentBackend, "invoke", new=fake_invoke),
+        ):
+            from rich.console import Console
+
+            _invoke_agent(
+                prompt="test prompt",
+                c=Console(),
+                backend_name="pi",
+                task_id="TSK-009-04",
+                phase="RED",
+            )
+
+        agent_result_calls = [
+            call
+            for call in mock_log_run.call_args_list
+            if call.args and call.args[0] == "AGENT_RESULT"
+        ]
+        assert agent_result_calls
+        assert "pi_session_stats" in agent_result_calls[0].kwargs
+        assert agent_result_calls[0].kwargs["pi_session_stats"] is None
+
+    def test_non_pi_backend_skips_session_stats_extraction(self):
+        """When backend is NOT 'pi', the AGENT_RESULT event must NOT include
+        ``pi_session_stats`` (extraction is Pi-specific).
+
+        Spec: defensive exclusion — non-Pi backends never include the block.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.cli.micro import _invoke_agent
+
+        manifest = HandoverManifest(phase="RED", status="TEST_WRITTEN_FAILING")
+
+        def fake_invoke(self, prompt, **kwargs):
+            return manifest
+
+        with (
+            patch("deviate.cli.micro._log_run") as mock_log_run,
+            patch.object(AgentBackend, "invoke", new=fake_invoke),
+        ):
+            from rich.console import Console
+
+            _invoke_agent(
+                prompt="test prompt",
+                c=Console(),
+                backend_name="opencode",
+                task_id="TSK-009-04",
+                phase="RED",
+            )
+
+        agent_result_calls = [
+            call
+            for call in mock_log_run.call_args_list
+            if call.args and call.args[0] == "AGENT_RESULT"
+        ]
+        assert agent_result_calls
+        assert "pi_session_stats" not in agent_result_calls[0].kwargs
