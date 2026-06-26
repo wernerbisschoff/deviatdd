@@ -56,13 +56,18 @@ The CLI orchestrator handles all pre/post lifecycle — it injects context, stag
 ALL string values in the handover manifest YAML MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
 </item>
 
+<item>
+<title>Flow-Anchored Implementation</title>
+Micro phases are where Product-layer context is at the highest risk of being lost. Every micro phase MUST (a) read the active task's `**Flow References**` field from `tasks.md` before writing any code, (b) restate the user-visible flow(s) the task serves in the handover manifest under `flow_refs`, and (c) verify the test or implementation exercises behavior derivable from those flows — not implementation details detached from user intent. **judge** MUST add a `flow_alignment` rubric dimension alongside Spec Compliance: does the diff preserve or extend the flows named in the task's `**Flow References**`? A change that silently abandons or breaks a named flow MUST fail JUDGE with severity HIGH and a `train_feedback` block instructing the next GREEN attempt to re-anchor to the flow. **red** MUST write tests that describe user-visible behavior derivable from the parent flow's Trigger and Happy Path, not internal function signatures. **green** MUST implement the minimum production code to satisfy those flow-anchored tests, restricting scope to workstation files explicitly tied to the named flow. **refactor**, **yellow**, and **execute** inherit the same flow context and MUST NOT extend scope beyond what the named flow requires. If `tasks.md` carries `**Flow References**: []`, treat the task as enabling/infrastructure (no flow anchor required) but still surface the empty list in the handover manifest.
+</item>
+
 </shared_disciplines>
+
+</micro_layer_model>
 
 <mandate>
 STDOUT OUTPUT MANDATE: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write artifact files to their target paths only (not to stdout). The caller parses your stdout as raw YAML.
 </mandate>
-
-</micro_layer_model>
 
 <context>
 <user_input>

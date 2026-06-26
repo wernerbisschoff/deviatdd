@@ -57,6 +57,11 @@ After post-script success, emit a handover manifest as a YAML code block. ALL st
 When implementing, use `libref query <library> <topic>` to look up library APIs and framework conventions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `libref` is unavailable, fall back to training data or web fetch.
 </item>
 
+<item>
+<title>Flow-Anchored Implementation</title>
+Micro phases are where Product-layer context is at the highest risk of being lost. Every micro phase MUST (a) read the active task's `**Flow References**` field from `tasks.md` before writing any code, (b) restate the user-visible flow(s) the task serves in the handover manifest under `flow_refs`, and (c) verify the test or implementation exercises behavior derivable from those flows — not implementation details detached from user intent. **judge** MUST add a `flow_alignment` rubric dimension alongside Spec Compliance: does the diff preserve or extend the flows named in the task's `**Flow References**`? A change that silently abandons or breaks a named flow MUST fail JUDGE with severity HIGH and a `train_feedback` block instructing the next GREEN attempt to re-anchor to the flow. **red** MUST write tests that describe user-visible behavior derivable from the parent flow's Trigger and Happy Path, not internal function signatures. **green** MUST implement the minimum production code to satisfy those flow-anchored tests, restricting scope to workstation files explicitly tied to the named flow. **refactor**, **yellow**, and **execute** inherit the same flow context and MUST NOT extend scope beyond what the named flow requires. If `tasks.md` carries `**Flow References**: []`, treat the task as enabling/infrastructure (no flow anchor required) but still surface the empty list in the handover manifest.
+</item>
+
 </shared_disciplines>
 
 </micro_layer_model>

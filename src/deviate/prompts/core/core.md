@@ -16,6 +16,8 @@ The following rules apply across ALL phases — macro layer (explore, research, 
 
 7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
 
+8. **Product-Layer Flow Traceability**: The Product layer under `specs/_product/` holds cross-epic context that prevents context loss as work moves down the layers. `flows/index.md` and any domain-specific `flows-<domain>.md` define user-visible `FLOW-XX` IDs; `release-next.md` defines the in-flight release goal; `architecture.md` and `domain-model.md` define cross-epic integration contracts. Every phase MUST (a) read the relevant Product-layer artifacts at the start of execution, (b) propagate `flow_refs` from the parent artifact (issue frontmatter → `plan.md` → `tasks.md` → tests → implementation → PR), and (c) verify the artifact it emits preserves or extends the named flows. Macro phases read `release-next.md` as the guiding compass and use the canonical flow index for FR-to-Flow mapping; meso phases copy `flow_refs` from the issue into `plan.md` under `## Product Layer Anchors` and from `plan.md` into each task's `**Flow References**` field; micro phases restate the user-visible flow before writing code and assert implementation serves it; HITL gates (review, PR) surface flow coverage as a first-class review dimension. If `specs/_product/` is absent, emit `flow_refs: []` and continue — do NOT halt.
+
 </universal_invariants>
 
 <kv_cache_preservation>

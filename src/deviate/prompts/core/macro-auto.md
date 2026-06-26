@@ -43,6 +43,11 @@ For non-trivial features (>20 source files or mixed-language manifests), spawn 2
 Macro phases MUST NOT write, modify, or generate any implementation code (source files, tests, configs, scripts, migrations). Only specification/design/PRD documents are written.
 </item>
 
+<item>
+<title>Product-Layer Context Inheritance</title>
+Macro phases are the Product-layer intake valve. **explore** MUST read `specs/_product/release-next.md` if it exists and surface its `## Goal` + `## Included Epics` in the explore output's `## Problem Definition` section as the "Release Compass". **research** MUST read `specs/_product/architecture.md` and `specs/_product/domain-model.md` if they exist; classify the epic as `Local`, `Context-Bridging`, or `Context-Creating` per the architecture's own classification rule, and surface the classification in `design.md` under `## Cross-Epic Architecture Alignment`. **prd** MUST pre-tag every `FR-NNN-NN` token with one or more `FLOW-XX` IDs derived from `specs/_product/flows/index.md` and any domain-specific `flows-<domain>.md`; the PRD is the canonical source for shard's Pass 2.1 FR-to-Flow mapping. **shard** MUST emit `flow_refs: [FLOW-XX, ...]` in every issue's YAML frontmatter (already enforced; verify). If `specs/_product/` is absent, emit empty flow lists and continue.
+</item>
+
 </shared_disciplines>
 
 </macro_layer_model>

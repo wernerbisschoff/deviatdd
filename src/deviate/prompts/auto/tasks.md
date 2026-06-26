@@ -22,6 +22,8 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 
 2. **Workstation Mandate**: Group files that share a logical capability into the same task. Maximize signal-to-noise.
 
+3. **Flow Reference Propagation Rule**: Read `## Product Layer Anchors` from `{plan_content}` (or fall back to the issue's `flow_refs` field if plan.md lacks it). Copy `**Flow References**` verbatim onto every emitted task as `**Flow References**: [FLOW-XX, ...]`. If `flow_refs` is empty, emit `**Flow References**: []` (enabling/infrastructure tasks) and continue — do NOT halt. This is the structural fix that prevents Product-layer context from being lost between meso and micro layers. Every downstream micro phase (red, green, refactor, yellow, judge) reads this field to anchor implementation to user-visible flows.
+
 **STDOUT OUTPUT MANDATE**: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section below. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write file content to `<tasks_target>` only (not to stdout). The caller parses your stdout as raw YAML.
 
 </system_instructions>
@@ -31,6 +33,7 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 2. **30-90 Minute Rule**: If a task takes < 30 min, merge it. If > 90 min, split it while maintaining verticality.
 3. **Traceability Audit**: Verify no task touches files in spec.md's Defensive Exclusions. Incorporate design.md Risk Register if available.
 4. **File Rationale Assignment**: Every task must explain WHY each file is touched, tied to specific story identifiers and ACs.
+5. **Flow Rationale Assignment**: For tasks with non-empty `**Flow References**`, the **Rationale** field MUST cite which user-visible flow step the task serves (e.g., "serves FLOW-05 Step 3 — emit per-doc frontmatter"). Tasks with `**Flow References**: []` are enabling/infrastructure and exempt from this requirement.
 </traceability_mandates>
 
 <execution_sequence>
@@ -40,7 +43,7 @@ The CLI orchestrator has run `deviate tasks pre` and resolved the contract. Avai
 </step>
 
 <step id="context_loading">
-Read `{spec_path}` in full for user stories, acceptance criteria, and project structure. Read the plan below for the implementation strategy, workstation mapping, and risk assessment. If `design_path` or `data_model_path` are present, read those too.
+Read `{spec_path}` in full for user stories, acceptance criteria, and project structure. Read the plan below for the implementation strategy, workstation mapping, and risk assessment. Extract `## Product Layer Anchors → **Flow References**` from the plan content for per-task propagation. If `design_path` or `data_model_path` are present, read those too.
 </step>
 
 <plan_content>
@@ -58,6 +61,7 @@ For each workstation cluster:
 3. **Assign Verification**: Deterministic CLI command per slice.
 4. **Validate Structure**: No "testing-only" tasks — tests are the Red phase of every TDD task.
 5. **File Rationale**: Explain WHY each file is touched.
+6. **Flow References**: Copy `**Flow References**: [FLOW-XX, ...]` from the plan's `## Product Layer Anchors` onto the task. If the plan lacks Product-Layer Anchors, fall back to the issue's `flow_refs` from `{spec_path}` frontmatter. If both are empty/absent, emit `**Flow References**: []`.
 </step>
 
 <step id="write_tasks">
@@ -87,11 +91,12 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - **Test Strategy**: `Sociable_Unit | Integration | Solitary_Unit` (required if Mode is TDD)
 - **Verification**: A **Deterministic CLI Command** (e.g., `pytest tests/unit/test_s3.py`)
 - **Estimated Time**: `30-90 minutes` or `60 minutes`
+- **Flow References**: `[FLOW-XX, FLOW-YY, ...]` — copied verbatim from plan.md `## Product Layer Anchors`. Use `[]` for enabling/infrastructure tasks when Product layer is absent or empty.
 - **Files**: List of paths (multi-line, indented, minimum 2 files)
-- **Rationale**: Required — explain WHY each file is touched, tie to specific story identifiers and acceptance criteria
+- **Rationale**: Required — explain WHY each file is touched, tie to specific story identifiers and acceptance criteria. For tasks with non-empty Flow References, also cite which user-visible flow step the task serves.
 - **Details**: 4-8 detailed bullet points:
-  - **Red**: Specific test file, test cases, and assertions (TDD only)
-  - **Green**: Exact functions/methods to implement, signatures, and logic (TDD only)
+  - **Red**: Specific test file, test cases, and assertions (TDD only). For tasks with Flow References, the test MUST exercise behavior derivable from the parent flow's Trigger and Happy Path, not internal function signatures.
+  - **Green**: Exact functions/methods to implement, signatures, and logic (TDD only). Restrict scope to workstation files explicitly tied to the named flow.
   - **Implementation**: Exact implementation steps (IMMEDIATE only)
   - **Refactor**: Code quality improvements, pattern alignment
   - **Edge Cases**: Error handling, boundary conditions
@@ -113,13 +118,14 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
   - **Test Strategy**: Sociable_Unit
   - **Verification**: `pytest tests/unit/example_test.py`
   - **Estimated Time**: 60 minutes
+  - **Flow References**: `[FLOW-XX, FLOW-YY]`
   - **Files**:
     - `path/to/file1.py`
     - `path/to/file2.py`
-  - **Rationale**: <Why these files? Tie to specific story US_### and AC>
+  - **Rationale**: <Why these files? Tie to specific story US_### and AC; if Flow References is non-empty, cite the flow step this task serves>
   - **Details**:
-    - **Red**: Write failing test `<test_name>()` asserting <expected>
-    - **Green**: Implement `<function>()` with <logic>
+    - **Red**: Write failing test `<test_name>()` asserting <expected behavior derivable from parent flow's Trigger + Happy Path>
+    - **Green**: Implement `<function>()` with <logic, scoped to workstation files tied to the named flow>
     - **Refactor**: <code quality improvement>
     - **Edge Cases**: Handle <error> by <action>
     - **Acceptance**: <concrete done criteria>
@@ -138,6 +144,11 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 
 **Merge Conflict Boundaries**:
 - Files touched by multiple phases: <list_files>
+
+**Product-Layer Anchors** (mirrored from plan.md):
+- **Flow References**: `<copy from plan.md ## Product Layer Anchors **Flow References**>`
+- **Source**: `<plan.md path>`
+- Downstream micro phases inherit this list per-task. Tasks with `**Flow References**: []` are enabling/infrastructure and exempt from flow-anchored test requirements.
 
 ---
 
@@ -160,6 +171,7 @@ Every git-interacting function in core modules MUST accept an optional `repo_pat
 phase: TASKS
 status: PASS
 issue_id: {issue_id}
+flow_refs: []  # MUST mirror tasks.md per-task **Flow References** aggregation (union of all task flow_refs)
 rationale: "tasks.md written, validated, and committed"
 next_phase: "IDLE"
 ```
@@ -173,4 +185,6 @@ next_phase: "IDLE"
 | Circular dependencies between tasks | Detect and reject; require human resolution. |
 | Post-script rejects output | Fix violations and re-run. |
 | No test command available | Infer from repo conventions (pytest, npm test). Document inference. |
+| plan.md lacks `## Product Layer Anchors` section | Fall back to issue frontmatter `flow_refs` from `{spec_path}`. If absent, emit `**Flow References**: []` per task and continue. |
+| `specs/_product/` absent | Emit `**Flow References**: []` per task. Do NOT halt — enabling/infrastructure tasks do not require flow anchors. |
 </edge_case_handling>
