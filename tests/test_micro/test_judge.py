@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 import subprocess
 from contextlib import chdir
 from pathlib import Path
@@ -692,3 +693,329 @@ class TestJudgeFeedbackLogging:
         updated = tasks_md.read_text(encoding="utf-8")
         assert "**Judge Feedback**" in updated
         assert "Incomplete" in updated
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_rejected_uses_summary_when_rationale_empty(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """JUDGE_REJECTED falls back to summary when rationale is empty.
+
+        Regression: the auto judge template uses summary: (not
+        rationale:), so the agent populates summary and the code's
+        rationale lookup returned an empty string. Bridge the schema
+        gap so auto-mode judge rejections surface their text.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-011-05",
+            rationale="",
+            train_feedback="",
+        )
+        # Inject the auto-mode summary field via extra-allow
+        manifest.__pydantic_extra__["summary"] = (
+            "Protected module modified: src/deviate/cli/micro.py"
+        )
+        mock_agent.return_value = (manifest, "")
+
+        task = {
+            "id": "TSK-011-05",
+            "issue_id": "ISS-ADH-011",
+            "description": "summary fallback test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        output = buf.getvalue()
+        assert "JUDGE_REJECTED" in output, output
+        assert "Protected module modified" in output, (
+            f"Expected summary text in JUDGE_REJECTED output, got: {output!r}"
+        )
+        assert "source=summary" in output, (
+            f"Expected source=summary label, got: {output!r}"
+        )
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_rejected_builds_feedback_from_violations(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """JUDGE_REJECTED builds multi-line feedback from the violations list.
+
+        Regression: when the agent returns violations: [...] with no
+        rationale/train_feedback/summary, GREEN should still get
+        actionable content extracted from the structured list.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-011-05",
+            rationale="",
+            train_feedback="",
+        )
+        # Inject the structured violations list — both schemas the
+        # templates produce (category/file/detail vs file/requirement)
+        # are supported.
+        manifest.__pydantic_extra__["violations"] = [
+            {
+                "category": "Protected Module Modification",
+                "file": "src/deviate/cli/micro.py",
+                "detail": "Core orchestrator was modified; this is a",
+                "severity": "CRITICAL",
+                "requirement": "FR-001",
+                "recommendation": "Revert and re-implement in helper module.",
+            },
+        ]
+        mock_agent.return_value = (manifest, "")
+
+        task = {
+            "id": "TSK-011-05",
+            "issue_id": "ISS-ADH-011",
+            "description": "violations fallback test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        output = buf.getvalue()
+        assert "JUDGE_REJECTED" in output
+        assert "Protected Module Modification" in output, (
+            f"Expected violations-derived text in output, got: {output!r}"
+        )
+        assert "source=violations" in output, (
+            f"Expected source=violations label, got: {output!r}"
+        )
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_rejected_aborts_when_feedback_completely_empty(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """JUDGE_AGENT_NO_FEEDBACK aborts the run when no feedback source is populated.
+
+        Regression: previously the code fell back to a generic message
+        and reran GREEN with no actionable information, looping until
+        TRAIN_EXHAUSTED. Now the run aborts loudly with a clear event
+        the operator can act on.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from deviate.cli.micro import PhaseFailedError
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-011-05",
+            rationale="",
+            train_feedback="",
+        )
+        # No summary, no violations — the worst case
+        mock_agent.return_value = (manifest, "")
+
+        task = {
+            "id": "TSK-011-05",
+            "issue_id": "ISS-ADH-011",
+            "description": "no feedback at all",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        with pytest.raises(PhaseFailedError) as exc_info:
+            _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        assert "JUDGE_AGENT_NO_FEEDBACK" in str(exc_info.value), (
+            f"Expected PhaseFailedError to mention JUDGE_AGENT_NO_FEEDBACK, got: {exc_info.value}"
+        )
+
+        output = buf.getvalue()
+        assert "JUDGE_AGENT_NO_FEEDBACK" in output, (
+            f"Expected JUDGE_AGENT_NO_FEEDBACK console event, got: {output!r}"
+        )
+
+        events = [c.args[0] for c in mock_log.call_args_list]
+        assert "JUDGE_AGENT_NO_FEEDBACK" in events, (
+            f"Expected JUDGE_AGENT_NO_FEEDBACK in structured log, got: {events}"
+        )
+
+    def test_format_violations_as_feedback_handles_both_schemas(
+        self, tmp_path: Path
+    ) -> None:
+        """_format_violations_as_feedback accepts both judge schemas.
+
+        The auto template uses category/file/detail/severity/recommendation;
+        the manual skill uses file/detail/severity/requirement. The
+        formatter must produce a readable bullet list for either shape.
+        """
+        from deviate.cli.micro import _format_violations_as_feedback
+
+        auto_schema = [
+            {
+                "category": "Protected Module Modification",
+                "file": "src/deviate/cli/micro.py",
+                "detail": "Core orchestrator was modified",
+                "severity": "CRITICAL",
+                "recommendation": "Revert and re-implement in helper.",
+            }
+        ]
+        feedback_auto = _format_violations_as_feedback(auto_schema)
+        assert "Protected Module Modification" in feedback_auto
+        assert "src/deviate/cli/micro.py" in feedback_auto
+        assert "Core orchestrator was modified" in feedback_auto
+        assert "CRITICAL" in feedback_auto
+        assert "Revert and re-implement" in feedback_auto
+
+        manual_schema = [
+            {
+                "file": "src/auth/jwt.py",
+                "detail": "encode() returns hardcoded token",
+                "severity": "HIGH",
+                "requirement": "FR-01",
+            }
+        ]
+        feedback_manual = _format_violations_as_feedback(manual_schema)
+        assert "src/auth/jwt.py" in feedback_manual
+        assert "encode() returns hardcoded token" in feedback_manual
+        assert "HIGH" in feedback_manual
+        assert "FR-01" in feedback_manual
+
+        # Empty list returns empty string
+        assert _format_violations_as_feedback([]) == ""
