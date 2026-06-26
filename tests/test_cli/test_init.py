@@ -836,7 +836,7 @@ class TestInitAgentFlag:
     def test_init_agent_choice_constant_exposes_supported_set(self):
         from deviate.cli import AGENT_CHOICES
 
-        assert set(AGENT_CHOICES) == {"factory", "droid", "claude", "opencode"}
+        assert set(AGENT_CHOICES) == {"factory", "droid", "claude", "opencode", "pi"}
 
     def test_init_agent_to_backend_mapping(self):
         from deviate.cli import AGENT_TO_BACKEND
@@ -845,6 +845,201 @@ class TestInitAgentFlag:
         assert AGENT_TO_BACKEND["droid"] == "droid"
         assert AGENT_TO_BACKEND["claude"] == "claude"
         assert AGENT_TO_BACKEND["opencode"] == "opencode"
+
+
+class TestInitPiBackend:
+    """Tests for TSK-009-02: Pi is a project-local agent.
+
+    Validates that ``deviate setup --agent pi``:
+        1. Exposes 'pi' in the AGENT_CHOICES / AGENT_TO_BACKEND constants.
+        2. File-copies each DeviaTDD skill into
+           ``<workdir>/.pi/skills/<skill-name>/SKILL.md`` (same path convention
+           as ``.claude/``, ``.opencode/``, ``.factory/``).
+        3. Does NOT write to ``~/.pi/agent/`` (operator's global Pi config is
+           out of scope).
+        4. Does NOT generate a ``settings.json`` (model/provider selection is
+           the operator's responsibility).
+        5. Is idempotent — re-running does not duplicate skill files and does
+           not corrupt the project state.
+    """
+
+    def test_agent_choices_includes_pi(self):
+        """AC-ADHOC-009-04: ``AGENT_CHOICES`` exposes 'pi' to users."""
+        from deviate.cli import AGENT_CHOICES
+
+        assert "pi" in AGENT_CHOICES
+
+    def test_agent_to_backend_maps_pi(self):
+        """AC-ADHOC-009-04: ``AGENT_TO_BACKEND['pi'] == 'pi'``."""
+        from deviate.cli import AGENT_TO_BACKEND
+
+        assert AGENT_TO_BACKEND["pi"] == "pi"
+
+    def test_resolve_agent_to_backend_pi_passthrough(self):
+        """``_resolve_agent_to_backend('pi')`` returns 'pi' (identity mapping)."""
+        from deviate.cli import _resolve_agent_to_backend
+
+        assert _resolve_agent_to_backend("pi") == "pi"
+
+    def test_init_agent_pi_persists_pi_backend(self, tmp_path: Path):
+        """``--agent pi`` persists ``backend = 'pi'`` in ``.deviate/config.toml``."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code == 0, result.output
+            config_path = tmp_path / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed["agent"]["backend"] == "pi"
+
+    def test_init_creates_pi_skill_files(self, tmp_path: Path):
+        """AC-ADHOC-009-02: ``--agent pi`` file-copies each DeviaTDD skill.
+
+        Each skill is written to ``<workdir>/.pi/skills/<skill-name>/SKILL.md``
+        — the same path convention used for ``.claude/``, ``.opencode/``,
+        ``.factory/``. Pi discovers skills from ``.pi/skills/`` natively per
+        the Agent Skills spec.
+        """
+        from deviate.core.skills import discover_skills
+
+        skills = discover_skills()
+        assert skills, "No skills discovered — test invariant violated"
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code == 0, result.output
+
+            pi_skills_dir = tmp_path / ".pi" / "skills"
+            assert pi_skills_dir.is_dir(), (
+                f"Pi skills directory not created: {pi_skills_dir}"
+            )
+
+            for skill_name in skills:
+                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                assert skill_file.is_file(), (
+                    f"Skill file missing for '{skill_name}' at {skill_file}"
+                )
+                content = skill_file.read_text(encoding="utf-8")
+                assert content.strip(), (
+                    f"Skill file is empty for '{skill_name}' at {skill_file}"
+                )
+                # Each skill file should declare its name in YAML frontmatter.
+                assert f"name: {skill_name}" in content, (
+                    f"Skill file for '{skill_name}' does not declare its name"
+                )
+
+    def test_init_does_not_write_to_user_home_pi_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """DeviaTDD must NOT touch ``~/.pi/`` — operator's global Pi config.
+
+        The user's ``~/.pi/agent/`` directory is operator-managed. DeviaTDD
+        manages only project-local ``<workdir>/.pi/skills/`` and must leave
+        the user's home directory untouched.
+        """
+        from deviate.core.skills import discover_skills
+
+        # Point the user's HOME at a separate directory so the test can
+        # assert that the home ``.pi/`` stays empty while the project
+        # workdir (also tmp_path) gets its ``.pi/skills/`` written normally.
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code == 0, result.output
+
+            home_pi = fake_home / ".pi"
+            assert not home_pi.exists(), (
+                f"DeviaTDD wrote into the user's home directory at {home_pi} "
+                f"— operator's global Pi config is out of scope"
+            )
+
+            home_pi_agent = fake_home / ".pi" / "agent"
+            assert not home_pi_agent.exists(), (
+                f"DeviaTDD wrote to the user's ~/.pi/agent/ at {home_pi_agent}"
+            )
+
+            # Project-local skill files were still written (sanity check).
+            project_pi = tmp_path / ".pi" / "skills"
+            assert project_pi.is_dir(), (
+                f"Project-local .pi/skills was not created: {project_pi}"
+            )
+
+            skills = discover_skills()
+            assert skills, "No skills discovered — test invariant violated"
+
+    def test_init_does_not_generate_settings_json(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """DeviaTDD must NOT generate a ``settings.json`` for Pi.
+
+        Model/provider selection is the operator's responsibility and is
+        configured via Pi's own configuration mechanism, not DeviaTDD.
+        """
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code == 0, result.output
+
+            project_settings = tmp_path / ".pi" / "settings.json"
+            assert not project_settings.exists(), (
+                f"DeviaTDD generated an unexpected settings.json at {project_settings}"
+            )
+
+            home_settings = tmp_path / ".pi" / "agent" / "settings.json"
+            assert not home_settings.exists(), (
+                f"DeviaTDD wrote a settings.json into the user's home at "
+                f"{home_settings}"
+            )
+
+    def test_init_idempotent_pi_setup(self, tmp_path: Path):
+        """Re-running setup does not duplicate skill files or corrupt state.
+
+        The existing ``install_skill`` contract compares file content before
+        writing, so re-running setup with identical source skills is a no-op
+        at the file level. The ``.pi/skills/`` directory layout is preserved.
+        """
+        from deviate.core.skills import discover_skills
+
+        skills = discover_skills()
+        assert skills, "No skills discovered — test invariant violated"
+
+        with chdir(tmp_path):
+            r1 = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert r1.exit_code == 0, r1.output
+
+            pi_skills_dir = tmp_path / ".pi" / "skills"
+            first_run_skill_files = sorted(
+                str(p.relative_to(pi_skills_dir))
+                for p in pi_skills_dir.rglob("SKILL.md")
+            )
+            assert len(first_run_skill_files) == len(skills), (
+                f"Expected {len(skills)} skill files, found "
+                f"{len(first_run_skill_files)}: {first_run_skill_files!r}"
+            )
+
+            r2 = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert r2.exit_code == 0, r2.output
+
+            second_run_skill_files = sorted(
+                str(p.relative_to(pi_skills_dir))
+                for p in pi_skills_dir.rglob("SKILL.md")
+            )
+            assert second_run_skill_files == first_run_skill_files, (
+                f"Idempotent re-run changed skill file layout: "
+                f"{first_run_skill_files!r} -> {second_run_skill_files!r}"
+            )
+
+            for skill_name in skills:
+                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                assert skill_file.is_file(), (
+                    f"Skill file removed on re-run: {skill_file}"
+                )
+                # Files are real, not symlinks (project-local file copy).
+                assert not skill_file.is_symlink(), (
+                    f"Skill file unexpectedly a symlink: {skill_file}"
+                )
 
 
 def test_version():

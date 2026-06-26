@@ -19,3 +19,4 @@ node_modules/
 .deviate/review/
 .opencode/skills/deviate-*/
 .factory/skills/deviate-*/
+.pi/skills/deviate-*/
