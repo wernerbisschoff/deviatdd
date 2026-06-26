@@ -1,25 +1,27 @@
-## FLOW-04 Tome Classify Commit
+## FLOW-04 Tome Classify
 
 - Actor: Developer
 - Domain: Documentation
 - Status: Draft
 
 ### Problem / job to be done
-- Decide which Diátaxis doc types (tutorial, how-to, reference, explanation) a merged commit requires so only the necessary writer prompts run and the docs site does not bloat with redundant cross-type regeneration.
+- Decide which Diátaxis doc types (tutorial, how-to, reference, explanation) a commit (or a branch-level diff) requires so only the necessary writer prompts run and the docs site does not bloat with redundant cross-type regeneration.
 
 ### Trigger
-- Developer runs `/tome-classify-commit` on demand, supplying a commit SHA or merged diff.
+- Developer runs `/tome-classify` on demand.
+- Default mode: HEAD~1 (the previous commit).
+- Alternative modes: `/tome-classify <sha>`, `/tome-classify --merge-base` (diff from main merge base to HEAD), `/tome-classify --working-tree` (uncommitted/staged changes).
 
 ### Preconditions
-- A commit SHA, merged diff, or working-tree diff is supplied
+- One of: HEAD~1 (default), an explicit `<sha>`, the merge-base diff of the current branch, or a working-tree diff is in scope
 - Optional: relevant `specs/` artifacts (issues, tasks, flows) are reachable for semantic context
 - Optional: existing docs tree at `apps/docs/src/content/docs/` is readable
 - The classifier may emit `no-change` when no public docs need updating
 - `apps/docs/` is not required to exist; absence triggers the `setup-required` action
 
 ### Happy path (primary steps)
-1. Developer runs `/tome-classify-commit <sha>` after a merge
-2. Classifier ingests the commit message, changed files, changed tests, and merged diff
+1. Developer runs `/tome-classify` after a commit (default = HEAD~1) or with a flag for `--merge-base` / `--working-tree`
+2. Classifier ingests the commit message(s), changed files, changed tests, and the diff (single-commit, branch-level, or working-tree)
 3. Classifier optionally reads `specs/` flow, issue, and task artifacts as semantic anchors
 4. Classifier optionally scans `apps/docs/src/content/docs/` to identify target candidates
 5. Classifier emits a change summary, a capability table (capability, evidence, audience, doc_type, action, target_file, confidence), and a list of docs that must not be touched
@@ -30,15 +32,17 @@
 - Classifier is uncertain on doc type or target file → action reads `human-review`; writer prompts are blocked until human confirms
 - No `apps/docs/` directory present → action reads `setup-required` and points at `FLOW-10`; classifier halts without proposing targets
 - Required target file collides with an existing page in the wrong quadrant → action reads `human-review` with the collision flagged
+- Classifier runs against merge-base diff → emits a branch-level classification covering all commits since divergence from main; the capability table is scoped to the cumulative change set, not a single commit
 
 ### Success State
 - A classification report naming the required Diátaxis types, target files, action per file, and confidence
 - The report is the entry ticket for `FLOW-05` through `FLOW-08` and gates `FLOW-09`
 
 ### Metrics / Signals
-- Share of commits classified as `no-change` rises over time as documentation coverage matures
+- Share of classifier runs classified as `no-change` rises over time as documentation coverage matures
 - Confidence distribution skews high (>0.8) for reference and how-to classifications
 - Human-review escalations feed back into classifier heuristics
+- Default mode (HEAD~1) is the most-used path; merge-base mode is typically pre-PR
 - Cross-reference: `FLOW-10` is invoked when the classifier emits `setup-required`
 - Cross-reference: `FLOW-09` runs only when at least one of `FLOW-05` through `FLOW-08` produced a file
 
