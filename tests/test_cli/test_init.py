@@ -967,7 +967,7 @@ class TestInitAgentFlag:
     def test_init_agent_droid_writes_factory_gitignore_entry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """`--agent droid` writes ``.factory/skills/deviate-*/`` (not ``.droid/...``)."""
+        """`--agent droid` writes ``.factory/.gitignore`` (not ``.droid/...``)."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_skill_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
@@ -975,9 +975,58 @@ class TestInitAgentFlag:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
             assert result.exit_code == 0, result.output
-            gitignore = (tmp_path / ".gitignore").read_text(encoding="utf-8")
-            assert ".factory/skills/deviate-*/" in gitignore
-            assert ".droid/skills/deviate-*/" not in gitignore
+            assert (tmp_path / ".factory" / ".gitignore").exists()
+            assert not (tmp_path / ".droid" / ".gitignore").exists()
+            gi = (tmp_path / ".factory" / ".gitignore").read_text(encoding="utf-8")
+            assert "skills/deviate-*/" in gi
+            assert "skills/tome-*/" in gi
+            # Root .gitignore should NOT be polluted with per-agent entries.
+            root_gi = tmp_path / ".gitignore"
+            assert (
+                not root_gi.exists()
+                or ".factory/skills/deviate-*/" not in root_gi.read_text()
+            )
+
+    def test_init_agent_writes_per_agent_gitignore(self, tmp_path: Path):
+        """``deviate setup --agent <agent>`` writes ``.<agent>/.gitignore``
+        with both ``skills/deviate-*/`` and ``skills/tome-*/`` entries.
+
+        Keeps the project root ``.gitignore`` clean — agent config concerns
+        stay inside the agent's own directory.
+        """
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            gi = (tmp_path / ".opencode" / ".gitignore").read_text(encoding="utf-8")
+            assert "skills/deviate-*/" in gi
+            assert "skills/tome-*/" in gi
+
+    def test_init_agent_gitignore_preserves_user_content(self, tmp_path: Path):
+        """User-authored content in ``.<agent>/.gitignore`` is preserved when
+        DeviaTDD writes its entries. DeviaTDD's two skill-family lines are
+        appended, never replacing or duplicating prior content.
+        """
+        (tmp_path / ".opencode").mkdir()
+        (tmp_path / ".opencode" / ".gitignore").write_text(
+            "# user content\ncustom-thing/\n", encoding="utf-8"
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            gi = (tmp_path / ".opencode" / ".gitignore").read_text(encoding="utf-8")
+            assert "# user content" in gi
+            assert "custom-thing/" in gi
+            assert "skills/deviate-*/" in gi
+            assert "skills/tome-*/" in gi
+
+    def test_init_agent_gitignore_idempotent_across_runs(self, tmp_path: Path):
+        """Re-running ``deviate setup`` does not duplicate the gitignore entries."""
+        with chdir(tmp_path):
+            runner.invoke(cli, ["setup", "--agent", "opencode"])
+            runner.invoke(cli, ["setup", "--agent", "opencode"])
+            gi = (tmp_path / ".opencode" / ".gitignore").read_text(encoding="utf-8")
+            assert gi.count("skills/deviate-*/") == 1
+            assert gi.count("skills/tome-*/") == 1
 
     def test_init_no_agent_no_config_non_interactive_errors(self, tmp_path: Path):
         """Without `--agent`, no config, and no TTY → init exits with a clear error."""
