@@ -44,6 +44,11 @@ Use only local, deterministic operations — `git log`, file reads, grep, glob. 
 Use `libref query <library> <topic>` for understanding library APIs and framework conventions detected in the codebase. The `libref` CLI provides offline, deterministic documentation lookups without network overhead. Prefer it over training data or web fetching.
 </item>
 
+<item>
+<title>Flow Reference Propagation</title>
+Meso phases are the Product-layer propagation channel. The `flow_refs` field on the parent issue's YAML frontmatter is the authoritative source — once shard emits it, every subsequent artifact MUST carry it forward verbatim. **plan** MUST extract `flow_refs` from the issue at `spec_path` and emit a `## Product Layer Anchors` section in `plan.md` containing `**Flow References**`, `**Source**` (the issue file path), `**Release Context**` (one-line summary from `specs/_product/release-next.md` Goal if present, else `N/A`), and `**Architecture Components Touched**` (Component IDs from `specs/_product/architecture.md` §3 that this issue modifies). **tasks** MUST read `flow_refs` from `plan.md`'s `## Product Layer Anchors` and copy them onto every emitted task as `**Flow References**: [FLOW-XX, ...]` so downstream micro phases inherit flow context per-task. If `specs/_product/` is absent, emit `**Flow References**: []` and continue — do NOT halt. This is the structural fix that prevents context loss between macro and micro layers.
+</item>
+
 </shared_disciplines>
 
 </meso_layer_model>
