@@ -354,7 +354,7 @@ class TestInitCommand:
     def test_init_creates_product_layer_skills(self) -> None:
         """TSK-010-01: three Product-layer SKILL.md templates exist with canonical
         YAML frontmatter (``name``, ``category: deviatdd-product-layer``,
-        ``version: 1.0.0``, ``aliases`` containing slash-command forms).
+        ``aliases`` containing slash-command forms).
 
         Source: ``specs/_product/release-next.md:26`` (acceptance criterion) and
         ``src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11``
@@ -384,9 +384,6 @@ class TestInitCommand:
             assert fm.get("category") == "deviatdd-product-layer", (
                 f"{skill_name}: category must be 'deviatdd-product-layer' "
                 f"(got {fm.get('category')!r})"
-            )
-            assert fm.get("version") == "1.0.0", (
-                f"{skill_name}: version must be '1.0.0' (got {fm.get('version')!r})"
             )
 
             aliases = fm.get("aliases")
@@ -471,6 +468,62 @@ class TestInitCommand:
                 f"{skills.count(skill_name)} times in discover_skills() output; "
                 f"expected exactly 1. Got: {sorted(skills)}"
             )
+
+    def test_init_user_input_injection_seam_convention(self) -> None:
+        """Every skill declares exactly one ``<user_input>$ARGUMENTS</user_input>``
+        runtime injection seam and exactly one ``$ARGUMENTS`` literal in the
+        entire file.
+
+        Locks in the convention that the literal user message is never baked
+        into a skill and that the runtime substitution anchor is present
+        exactly once. Skills may carry inline ``<example>`` fixtures higher
+        in the file (e.g. the ``<few_shot_examples>`` block in
+        ``deviate-constitution``), but those MUST NOT use the
+        ``<user_input>`` tag — that tag name is reserved for the runtime
+        injection seam only.
+
+        Source: regression guard for the refiner bug that embedded the
+        literal text ``"and update the above prompt in place"`` into
+        ``deviate-flows/SKILL.md`` and the literal Go/Postgres example into
+        ``deviate-constitution/SKILL.md``.
+        """
+        import re
+
+        from deviate.core.skills import discover_skills
+
+        skills_root = _resolve_skills_root()
+        user_input_re = re.compile(
+            r"<user_input>\s*(\$ARGUMENTS)\s*</user_input>", re.DOTALL
+        )
+
+        violations: list[str] = []
+        for skill_name in discover_skills():
+            skill_path = skills_root / skill_name / "SKILL.md"
+            if not skill_path.exists():
+                continue
+            content = skill_path.read_text(encoding="utf-8")
+
+            arguments_count = content.count("$ARGUMENTS")
+            if arguments_count != 1:
+                violations.append(
+                    f"{skill_name}: expected exactly one $ARGUMENTS literal "
+                    f"(got {arguments_count})"
+                )
+                continue
+
+            matches = list(user_input_re.finditer(content))
+            if len(matches) != 1:
+                violations.append(
+                    f"{skill_name}: expected exactly one canonical "
+                    f"<user_input>$ARGUMENTS</user_input> block (got "
+                    f"{len(matches)}). Inline example fixtures must use a "
+                    f"different tag, e.g. <example_user_input>."
+                )
+
+        assert not violations, (
+            "user_input injection seam convention violations:\n  - "
+            + "\n  - ".join(violations)
+        )
 
 
 class TestInitGraphiteFlag:

@@ -17,7 +17,7 @@ This engine operates strictly as an isolated, context-bounded structural configu
 CRITICAL INSTRUCTION INVARIANTS:
 1. **Input Resolution Rule**: Run `deviate constitution pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `timestamp`, `constitution_path` (absolute path to `specs/constitution.md`), `test_command`, `lint_command`, `plan_target` (absolute path where you must write the execution manifest), and `dry_run`. The pre-script has already gathered git state and discovered the constitution — do NOT re-derive paths.
 2. **Output Format Constraint**: Present the final response exclusively using human-readable Standard Markdown formatting as defined in the target template. Do not encapsulate or wrap output data artifacts within structural XML syntax nodes.
-3. **Zero-Tolerance Semantic Shift**: Preserve all user variable definitions, macro expressions (e.g., Jinja, Chezmoi wrappers), configuration paths, and environment shell variables ($ARGUMENTS) byte-for-byte.
+3. **Zero-Tolerance Semantic Shift**: Preserve all user variable definitions, macro expressions (e.g., Jinja, Chezmoi wrappers), configuration paths, and environment shell variables (in `$NAME` form) byte-for-byte.
 4. **Source Precedence Hierarchy**: Apply a deterministic sequence where higher-precedence sources completely override lower values:
    * Level 1: Active context resolved from the user input.
    * Level 2: Existing parsed properties from `specs/constitution.md`.
@@ -41,7 +41,7 @@ Consult exclusively the following evidence files when deriving environment stand
 
 <few_shot_examples>
 <example>
-<user_input>Use Go, Gorilla Mux, and Postgres. Enforce 80% coverage.</user_input>
+<example_user_input>Use Go, Gorilla Mux, and Postgres. Enforce 80% coverage.</example_user_input>
 <output_payload>
 # Project Constitution
 
