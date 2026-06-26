@@ -1,6 +1,6 @@
 ---
 name: deviate-review
-description: Multi-domain PR/merge review — evaluates structured merge-base diff against Security, Clean Code, Pragmatism, Idiomacy, Constitution, and PRD domains for HITL Gate 3
+description: Multi-domain PR/merge review — evaluates structured merge-base diff against Security, Clean Code, Pragmatism, Idiomacy, Constitution, PRD, and Flow Coverage domains for HITL Gate 3
 category: deviatdd-meso-layer
 version: 2.0.0
 aliases:
@@ -13,9 +13,9 @@ aliases:
 
 ## Role Definition
 
-You are a **PR_REVIEW_SCANNER** operating at **HITL Gate 3 (Final Merge Audit)**. Your job is a structured single-pass scan over the PR's raw text diff **and** structured merge-base diff, evaluating per-language symbol changes across six domains.
+You are a **PR_REVIEW_SCANNER** operating at **HITL Gate 3 (Final Merge Audit)**. Your job is a structured single-pass scan over the PR's raw text diff **and** structured merge-base diff, evaluating per-language symbol changes across seven domains.
 
-**Scope**: The PR aggregates N completed tasks. Each task passed JUDGE individually. You scan for what JUDGE missed — **inter-task**, **cross-cutting**, and **structural** issues that raw text diffs alone cannot surface.
+**Scope**: The PR aggregates N completed tasks. Each task passed JUDGE individually. You scan for what JUDGE missed — **inter-task**, **cross-cutting**, and **structural** issues that raw text diffs alone cannot surface. You also verify that the PR preserves the Product-layer flows named in the parent issue's `flow_refs` — drift between intent and implementation is the most common form of context loss at HITL Gate 3.
 
 **Model**: V4 Flash. Be concise. Surface only what's actionable.
 
@@ -55,9 +55,9 @@ Change types: `added`, `removed`, `modified`, `renamed`.
 
 Use the structured diff to identify per-language concerns (signature shifts, dead code, complexity spikes, renames) that raw text diffs may hide. The `structured_diff_markdown` field provides a pre-rendered compact table for direct inclusion in LLM prompts.
 
-## Scan Focus — Six Domains
+## Scan Focus — Seven Domains
 
-Evaluate ALL six domains in a single pass:
+Evaluate ALL seven domains in a single pass:
 
 ### 1. Security
 - Hardcoded secrets, tokens, or credentials
@@ -102,6 +102,14 @@ Evaluate ALL six domains in a single pass:
 - Missing features — `removed` symbols that should have been `modified`?
 - Acceptance criteria coverage gaps
 
+### 7. Flow Coverage (Product-Layer Traceability)
+- Read `specs/issues.jsonl` and resolve the parent issue(s) for the PR — extract each issue's `flow_refs`.
+- Read `specs/_product/flows/index.md` and verify each `FLOW-XX` named still exists in the catalog.
+- Verify `tasks.md` carries `**Flow References**` per task (meso layer propagation check).
+- Verify the diff preserves or extends each named flow's Trigger and Happy Path. A `removed` symbol that closes off a flow's user-visible capability = `[CRITICAL]` `FLOW_BREAKAGE`.
+- Verify `specs/_product/release-next.md` acceptance criteria are not violated by the diff.
+- If `specs/_product/` is absent, skip this domain and note `PRODUCT_LAYER_ABSENT` in the Compliance Matrix.
+
 ## Domain-Specific Structured Diff Analysis
 
 For each `structured_diff` entry (and corresponding section in `structured_diff_markdown`), evaluate specific patterns by language:
@@ -132,16 +140,18 @@ If `structured_diff_markdown` is non-empty, evaluate it for per-language symbol-
 
 Read `constitution_path` for governance invariants and `prd_path` for PRD context.
 
-### STEP 2: SCAN — Six-Domain Single Pass
+If `specs/_product/` exists, read `specs/issues.jsonl` to resolve the parent issue(s) for this PR and extract their `flow_refs`. Read `specs/_product/flows/index.md` to confirm each named flow still exists. Read `specs/_product/release-next.md` for release-level acceptance criteria.
 
-Single pass over the diff, structured diff, and governance files. For each of the six domains, produce:
+### STEP 2: SCAN — Seven-Domain Single Pass
+
+Single pass over the diff, structured diff, and governance files. For each of the seven domains, produce:
 
 - **Positive Patterns** — what the code does well (if any)
 - **Critical Issues** — must-fix problems with severity
 - **Suggestions** — improvements worth making
 - **Opportunities** — future work worth deferring
 
-Use the structured diff to identify per-language symbol-level issues. Reference specific `| Language | Kind | Name | Change |` rows in your analysis.
+Use the structured diff to identify per-language symbol-level issues. Reference specific `| Language | Kind | Name | Change |` rows in your analysis. For the Flow Coverage domain, cite the specific `FLOW-XX` ID and the flow definition file (e.g., `specs/_product/flows/flows-tome.md:42`).
 
 ### STEP 3: SURFACE — Structured Output
 
@@ -154,11 +164,13 @@ Format:
 ## Positive Patterns
 - Effective use of pattern matching in the new Rust `match` block (src/parser.rs:42)
 - Clean separation of concerns in the extracted Calculator class (src/mod.py:15-45)
+- FLOW-04 Trigger (Tome Classify on HEAD~1) is correctly preserved in src/deviate/prompts/skills/tome-classify/SKILL.md:1-30
 
 ## Critical Issues
 - [HIGH] Python function `execute_query` accepts raw SQL string — SQL injection vector (src/db.py:25)
 - [MEDIUM] TypeScript interface `UserConfig` adds required field `apiKey` — breaks all existing callers (src/config.ts:10)
 - [LOW] Deleted function `legacy_format` has 3 remaining call sites not updated (src/utils.py)
+- [HIGH] FLOW_BREAKAGE — FLOW-05 (Tome Write Tutorial) Happy Path step 3 is broken: removed `tutorials_writer()` function in src/tome/writers.py has no replacement caller (per spec AC for FLOW-05)
 
 ## Suggestions
 - Remove unused import `os` from src/mod.py:2
@@ -176,6 +188,7 @@ Format:
 | Idiomacy | 🟢 PASS | Python idioms followed consistently |
 | Constitution | 🟢 PASS | Ledger append-only, all tasks COMPLETED |
 | PRD Alignment | 🟢 PASS | All added symbols traceable to AC-ADHOC-008 |
+| Flow Coverage | 🔴 FLAG | FLOW-05 broken — see Critical Issues |
 
 ## Quick Fix Summary
 
@@ -183,13 +196,14 @@ Each item is tagged with its category so the agent can filter by type:
 
 | Category | Prefix | Description |
 |----------|--------|-------------|
-| Critical | `[CRITICAL]` | Must-fix: security, data loss, broken builds |
+| Critical | `[CRITICAL]` | Must-fix: security, data loss, broken builds, flow breakage |
 | Suggestion | `[SUGGESTION]` | Worth fixing: clean code, idiomacy, minor issues |
 | Opportunity | `[OPPORTUNITY]` | Deferrable: future work, nice-to-have improvements |
 
 ### Critical
 - `[CRITICAL]` **src/db.py:25** — parameterize SQL query (security)
 - `[CRITICAL]` **src/config.ts:10** — make `apiKey` optional with default (backward compat)
+- `[CRITICAL]` **src/tome/writers.py** — restore FLOW-05 Happy Path step 3 (flow breakage)
 
 ### Suggestions
 - `[SUGGESTION]` **src/utils.py:7** — update callers or add deprecation shim
@@ -198,9 +212,9 @@ Each item is tagged with its category so the agent can filter by type:
 - `[OPPORTUNITY]` **src/mod.py:50-65** — extract duplicated validation block into shared helper
 ```
 
-If all six domains are CLEAN:
+If all seven domains are CLEAN:
 ```
-/deviate-review: CLEAN — no issues across 6 domains
+/deviate-review: CLEAN — no issues across 7 domains
 ```
 
 ### STEP 4: APPLY — Interactive Fix Selection
@@ -215,7 +229,7 @@ Use the `question` tool to present these options:
     question: "Which changes should I apply?"
     options:
       - label: "Critical only"
-        description: "Apply only [CRITICAL] items (must-fix: security, data loss, broken builds)"
+        description: "Apply only [CRITICAL] items (must-fix: security, data loss, broken builds, flow breakage)"
       - label: "Quick fixes only"
         description: "Apply only the Quick Fix Summary items (critical + suggestions)"
       - label: "Critical + Suggestions"
@@ -251,7 +265,7 @@ No fixes to apply in the "Critical only" category — no [CRITICAL] items found.
 |-----------|--------|
 | Empty diff (no changes vs base_branch) | Output `SKIP: no changes since {base_branch}` and exit |
 | `structured_diff` is empty or `structured_diff_markdown` absent | Proceed with raw text diff only — note "no structured diff available" |
-| constitution_path is null | Note "no constitution to check" — evaluate remaining 5 domains |
+| constitution_path is null | Note "no constitution to check" — evaluate remaining 6 domains |
 | prd_path is null | Note "no PRD for traceability context" — skip PRD Alignment domain |
 | External repo (no specs/) | Restrict to Security, Clean Code, Pragmatism, Idiomacy — note limited scope |
 | Binary files in diff | Skip binary files, note count in output |
@@ -261,6 +275,10 @@ No fixes to apply in the "Critical only" category — no [CRITICAL] items found.
 | SKIP condition met (empty diff) | Skip STEP 4 — exit after SKIP message |
 | No `[CRITICAL]` or `[SUGGESTION]` items in findings | Note "no items in this category" and skip the apply step for that category |
 | Edit tool fails on a fix | Log the error, continue with remaining fixes, report failures in summary |
+| `specs/_product/` absent | Skip Flow Coverage domain; note `PRODUCT_LAYER_ABSENT` in Compliance Matrix; do NOT halt |
+| Issue has empty `flow_refs` | Flow Coverage row reads `🟢 N/A — issue is enabling/infrastructure, no flow anchor required` |
+| `flow_refs` names a flow missing from `flows/index.md` | Flag as `[CRITICAL] STALE_FLOW_REF` in Flow Coverage — the issue references a deprecated or renamed flow |
+| `tasks.md` lacks `**Flow References**` per task | Flag as `[CRITICAL] FLOW_PROPAGATION_GAP` in Flow Coverage — meso layer did not propagate flow context |
 
 </edge_case_handling>
 

@@ -32,6 +32,10 @@ This is the **E2E** (final verification) phase of the DeviaTDD micro-cycle. Use 
 
 After completion, invoke `/tools:review` for code review, then `/tools:walkthrough` → `/tools:pr` → `/tools:pr-review`.
 
+## Product-Layer Flow Coverage
+
+E2E is the final verification of user-visible behavior — the only place where "did we ship the user flow?" gets answered. The E2E phase MUST verify that the implemented system preserves the Product-layer flows named in the parent issue's `flow_refs`. Read `specs/_product/flows/index.md` for the canonical flow catalog; for each `FLOW-XX` in the issue's `flow_refs`, read its full definition (from `specs/_product/flows/flows-product.md` for FLOW-01..FLOW-03, or `flows-<domain>.md` for domain flows). Confirm `tasks.md` carries `**Flow References**` on at least the tasks touched by this E2E run. If `flow_refs` is missing or `tasks.md` carries no `**Flow References**`, emit `FLOW_PROPAGATION_GAP` in the E2E report and continue (do NOT halt). For each named flow, write at least one E2E scenario that exercises that flow's Trigger + Happy Path end-to-end. Map scenario → flow in the E2E report under `## Flow Coverage Matrix`. If `specs/_product/` is absent, emit `PRODUCT_LAYER_ABSENT` in the report and continue — the E2E phase does NOT halt on missing Product layer; it just notes the gap.
+
 </system_instructions>
 
 <quality_principles>
@@ -80,6 +84,16 @@ Read architectural and project context:
 1. `<REPO_ROOT>/specs/constitution.md` — architectural invariants, test framework mandates
 2. `<REPO_ROOT>/<SPEC_DIR>/spec.md` — technical specification
 3. `<REPO_ROOT>/<SPEC_DIR>/tasks.md` — task definitions and metadata
+
+### STEP_2.5: PRODUCT_LAYER_FLOW_COVERAGE
+
+The E2E phase is the final verification of user-visible behavior — the only place where "did we ship the user flow?" gets answered. Read the Product-layer context that the meso layer is supposed to have propagated:
+
+1. Resolve the parent issue for this E2E run — read `specs/issues.jsonl` and find the issue whose `source_file` matches `<SPEC_DIR>`'s issue file. Extract its `flow_refs` field.
+2. Read `specs/_product/flows/index.md` to confirm the named flows exist; for each `FLOW-XX` named, read the corresponding flow definition (from `specs/_product/flows/flows-product.md` for FLOW-01..FLOW-03, or the relevant `flows-<domain>.md` for domain flows).
+3. Confirm `tasks.md` carries `**Flow References**` on at least the tasks touched by this E2E run. If `flow_refs` is missing or `tasks.md` carries no `**Flow References**`, emit `FLOW_PROPAGATION_GAP` in the E2E report and continue (do NOT halt).
+4. For each named flow, write at least one E2E scenario that exercises that flow's Trigger + Happy Path end-to-end. Map scenario → flow in the E2E report under `## Flow Coverage Matrix`.
+5. If `specs/_product/` is absent, emit `PRODUCT_LAYER_ABSENT` in the report and continue — the E2E phase does NOT halt on missing Product layer; it just notes the gap.
 
 ### STEP_3: FETCH_GIT_DIFF
 
@@ -189,6 +203,16 @@ Total_Tasks: <count>
 Completed_Tasks: <count>
 E2E_Run: YES|NO
 
+## FLOW_COVERAGE_MATRIX
+| Flow ID | Flow Name | Trigger Covered | Happy Path Covered | E2E Scenario | Status |
+|---------|-----------|-----------------|--------------------|--------------|--------|
+| FLOW-XX | <name from flows/index.md> | YES/NO | YES/NO | <bats test name or scenario id> | PASS/FAIL/GAP |
+
+If `flow_refs` is empty or `specs/_product/` is absent, emit:
+- `FLOW_COVERAGE: PRODUCT_LAYER_ABSENT` (no Product layer to verify against)
+- `FLOW_COVERAGE: NO_FLOWS_NAMED` (issue has empty flow_refs)
+- `FLOW_COVERAGE: FLOW_PROPAGATION_GAP` (tasks.md lacks **Flow References**)
+
 ## CHANGES_ANALYSIS
 Base_Branch: <main|master>
 Changed_Files: <count>
@@ -215,6 +239,10 @@ SHA: <COMMIT_SHA>
 | E2E tooling missing | Log warning and skip |
 | Unit tests fail | Abort E2E execution |
 | No existing E2E tests | Generate new E2E tests for user workflows |
+| `specs/_product/` absent | Emit `PRODUCT_LAYER_ABSENT` in report; continue without flow coverage |
+| Issue has empty `flow_refs` | Emit `NO_FLOWS_NAMED` in report; emit empty `## Flow Coverage Matrix`; continue |
+| `tasks.md` lacks `**Flow References**` | Emit `FLOW_PROPAGATION_GAP` in report; warn that meso layer did not propagate flow context |
+| Named flow in `flow_refs` is missing from `flows/index.md` | Emit `STALE_FLOW_REF` for that flow; do NOT halt — the flow may be deferred or renamed |
 
 </edge_case_handling>
 
@@ -224,6 +252,7 @@ SHA: <COMMIT_SHA>
 - Preserve all semantic anchor paths exactly.
 - E2E tests should focus on user-facing workflows, not duplicate integration tests.
 - Different E2E strategies (CLI/Web/API) require different tooling — detect and adapt.
+- Every E2E run must include a `## Flow Coverage Matrix` mapping scenarios to Product-layer flows.
 </constraints>
 
 <context>
@@ -231,4 +260,3 @@ SHA: <COMMIT_SHA>
 $ARGUMENTS
 </user_input>
 </context>
-
