@@ -33,12 +33,6 @@ For comprehensive feature work, use `deviate-tasks` instead. This skill is exclu
 
 </system_instructions>
 
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
-
 <few_shot_icl>
 <example>
 <input>Bug: division by zero in calc_total() at line 47 when cart is empty</input>

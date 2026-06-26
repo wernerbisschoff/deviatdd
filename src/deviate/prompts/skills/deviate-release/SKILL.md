@@ -115,3 +115,9 @@ release file as the guiding compass. Do NOT trigger exploration automatically.
 | Included Work item has no flow refs | Default `Flow Refs: none` for enabling/infrastructure slices |
 
 </edge_case_handling>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

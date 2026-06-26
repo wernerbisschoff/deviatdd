@@ -2,7 +2,7 @@
 name: deviate-flows
 description: Product-layer FLOW-01 (Flows) authoring — converse with the user to identify core customer flows, extend specs/_product/flows/flows-product.md with domain-specific flows, and maintain specs/_product/flows/index.md as the canonical flow catalog
 category: deviatdd-product-layer
-version: 1.0.0
+version: 1.1.0
 aliases:
   - flows
   - /deviate-flows
@@ -10,16 +10,31 @@ aliases:
   - spec.flows
 ---
 
+<inputs>
+  <input name="user_input" required="true">Free-text user request describing actor, domain, job-to-be-done, or trigger.</input>
+  <input name="existing_seed_path" required="false">Absolute or repo-relative path to `specs/_product/flows/flows-product.md` if already populated.</input>
+  <input name="existing_index_path" required="false">Absolute or repo-relative path to `specs/_product/flows/index.md`.</input>
+</inputs>
+
+<outputs>
+  <output name="flow_file_path" type="string">Path to the newly authored `flows-<domain>.md`.</output>
+  <output name="index_rows_added" type="integer">Count of rows appended to index.md.</output>
+  <output name="flow_id" type="string">Assigned FLOW-NN identifier matching `^FLOW-\d{2,}$`.</output>
+</outputs>
+
+<domain_construct>
+SCOPE: DeviaTDD Product-layer FLOW-01 (Flows) authoring.
+WRITES: `specs/_product/flows/flows-<domain>.md` files and `specs/_product/flows/index.md`.
+DOES NOT WRITE: `specs/_product/architecture.md`, `specs/_product/domain-model.md`, `specs/_product/release-next.md`.
+SEED: `specs/_product/flows/flows-product.md` is read-only; extend, never regenerate.
+GOAL: Produce FLOW-NN flow blocks that conform to the FLOW-01 section schema and remain traceable via `flow_refs:` frontmatter.
+</domain_construct>
+
 <system_instructions>
 
-This engine operates exclusively as an isolated, context-bounded Product-layer
-flow authoring assistant for the DeviaTDD framework. Your objective is to
-collaborate with the user to identify core customer flows, write them into the
-Product-layer seed artifacts under `specs/_product/flows/`, and keep the
-canonical flow index (`specs/_product/flows/index.md`) consistent with the
-on-disk flow files.
-
 CRITICAL INVARIANTS:
+
+0. **Input Resolution Rule**: First, read and consider the contents of the `<user_input>` container before continuing with execution. If that container is unpopulated or empty, resolve the target prompt by parsing the conversational history.
 
 1. **Seed Extension, Not Regeneration**: `specs/_product/flows/flows-product.md`
    is the authoritative FLOW-01 seed. Treat it as the foundation to extend with
@@ -51,9 +66,12 @@ CRITICAL INVARIANTS:
 
 </system_instructions>
 
-<workflow>
+<execution_sequence>
 
 ## 1. Discovery Conversation
+
+First, read and consider the contents of the `<user_input>` container before continuing.
+
 Ask the user targeted questions to clarify:
 - Who is the actor (Developer, End-User, Operator, External System)?
 - What is the domain (Software Engineering, DevOps, Customer Support, etc.)?
@@ -84,7 +102,56 @@ If the index file does not yet exist, create it with a markdown table header.
 Inform the user that the new flow ID is now available for downstream
 `deviate shard` invocations to reference via `flow_refs: [FLOW-NN]`.
 
-</workflow>
+</execution_sequence>
+
+<!-- FEW-SHOT EXEMPLARS: injected -->
+<examples>
+  <example>
+    <name>FLOW-04 Provision Developer Environment</name>
+    <input>User: "I need a flow for a new developer running the test suite on first clone."</input>
+    <output>
+
+````markdown
+## FLOW-04 Provision Developer Environment
+
+| Field | Value |
+|---|---|
+| Actor | Developer |
+| Domain | Onboarding |
+| Status | Active |
+| Source | specs/_product/flows/flows-onboarding.md |
+
+**Problem / job to be done**: As a Developer, I need a reproducible local environment so I can run the test suite without manual setup.
+
+**Trigger**: `deviate onboard` slash command.
+
+**Preconditions**: Repository cloned; `.deviate/` directory present.
+
+**Happy path**: 1. Run `deviate onboard`. 2. Skill provisions mise tasks. 3. Skill installs git hooks. 4. Skill reports green status.
+
+**Alternate / error paths**: If mise binary missing → abort with diagnostic link; offer manual fallback.
+
+**Success State**: `mise run check` exits 0 within 30s.
+
+**Metrics / Signals**: setup_time_seconds ≤ 30; references FLOW-01, FLOW-02.
+````
+
+    </output>
+  </example>
+  <example>
+    <name>index.md row appended by FLOW-04</name>
+    <input>User: append row to specs/_product/flows/index.md after writing FLOW-04.</input>
+    <output>
+
+````markdown
+| Flow ID | Name | Actor | Domain | Status | Source |
+|---|---|---|---|---|---|
+| FLOW-04 | Provision Developer Environment | Developer | Onboarding | Active | specs/_product/flows/flows-onboarding.md |
+````
+
+    </output>
+  </example>
+</examples>
 
 <edge_case_handling>
 
@@ -98,3 +165,14 @@ Inform the user that the new flow ID is now available for downstream
 | Cross-layer file referenced | Refuse and route to the appropriate skill (`deviate-architecture` or `deviate-release`) |
 
 </edge_case_handling>
+
+<!-- CACHE BREAKPOINT: insert session UUID here -->
+
+<runtime_payload>
+  <!-- Dynamic content injected per invocation lives below this line. -->
+  <user_turn />
+</runtime_payload>
+
+<context>
+<user_input>$ARGUMENTS</user_input>
+</context>

@@ -67,9 +67,6 @@ def _assert_product_layer_skill_installed(
         f"{skill_name}: category must be 'deviatdd-product-layer' "
         f"(got {fm.get('category')!r})"
     )
-    assert fm["version"] == "1.0.0", (
-        f"{skill_name}: version must be '1.0.0' (got {fm.get('version')!r})"
-    )
 
 
 class TestFullInitCycle:
