@@ -642,26 +642,42 @@ def setup(
 
 
 def _ensure_agent_gitignored(workdir: Path, agent: str) -> None:
-    """Add ``<agent>/skills/deviate-*`` to the project root ``.gitignore``.
+    """Write a per-agent ``.gitignore`` that excludes DeviaTDD-installed skills.
 
-    Only the deviate-* skills installed into an agent's skills directory are
-    gitignored — never the entire .opencode, .claude, or .factory directory.
+    Two skill families are installed into ``.<agent>/skills/`` and must not
+    be committed:
+
+    - ``deviate-*`` — the core DeviaTDD skill library
+    - ``tome-*``    — the Tome Subsystem (ISS-ADH-011)
+
+    The gitignore lives inside the agent's own directory (e.g.
+    ``.factory/.gitignore``) so the project root ``.gitignore`` stays clean.
+    Patterns are scoped to the ``skills/`` subtree so any user-authored
+    content in ``.<agent>/`` (e.g. settings, themes, custom commands) is
+    not affected.
 
     The caller is responsible for normalising ``droid`` → ``factory`` before
-    invocation so this helper never writes a ``.droid/skills/deviate-*/``
-    entry (the droid CLI does not own a skills directory).
+    invocation so this helper never writes a ``.droid/.gitignore`` (the
+    droid CLI does not own a directory).
     """
-    gitignore_path = workdir / ".gitignore"
-    entry = f".{agent}/skills/deviate-*/"
+    agent_dir = workdir / f".{agent}"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    gitignore_path = agent_dir / ".gitignore"
+    entries = ("skills/deviate-*/", "skills/tome-*/")
+    body = "\n".join(entries) + "\n"
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
-        if entry not in content:
-            content = content.rstrip("\n") + f"\n{entry}\n"
-            gitignore_path.write_text(content, encoding="utf-8")
-            console.print(f"  [green]UPDATE[/] .gitignore added {entry}")
+        if all(entry in content for entry in entries):
+            return
+        merged_lines = [line for line in content.splitlines() if line.strip()]
+        for entry in entries:
+            if entry not in merged_lines:
+                merged_lines.append(entry)
+        gitignore_path.write_text("\n".join(merged_lines) + "\n", encoding="utf-8")
+        console.print(f"  [green]UPDATE[/] .{agent}/.gitignore with {entries}")
     else:
-        gitignore_path.write_text(f"{entry}\n", encoding="utf-8")
-        console.print(f"  [green]CREATE[/] .gitignore with {entry}")
+        gitignore_path.write_text(body, encoding="utf-8")
+        console.print(f"  [green]CREATE[/] .{agent}/.gitignore with {entries}")
 
 
 cli.add_typer(explore_app, name="explore")
