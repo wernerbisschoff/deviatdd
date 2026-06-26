@@ -54,3 +54,4 @@
 {"issue_id":"ISS-ADH-010","status":"COMPLETED","timestamp":"2026-06-25T19:48:09Z"}
 {"issue_id":"ISS-ADH-011","type":"adhoc","title":"Tome Subsystem v1 — Seven Prompt-Only Diátaxis Curation Skills","status":"BACKLOG","source_file":"specs/adhoc/issues/011-tome-subsystem-v1.md","blocked_by":[],"coordinates_with":[],"timestamp":"2026-06-26T10:32:23Z","created_at":"2026-06-26T10:32:23Z","flow_refs":["FLOW-04","FLOW-05","FLOW-06","FLOW-07","FLOW-08","FLOW-09","FLOW-10"]}
 {"issue_id":"ISS-ADH-009","status":"COMPLETED","timestamp":"2026-06-26T10:58:21Z"}
+{"issue_id":"ISS-ADH-009","type":"adhoc","title":"Pi Agent Backend Integration — First-Class Backend for Micro/Meso Layers","status":"SPECIFIED","source_file":"specs/adhoc/issues/009-pi-agent-backend-integration.md","blocked_by":[],"coordinates_with":[],"timestamp":"2026-06-25T17:22:27.859584Z","created_at":"2026-06-24T07:44:35.265840Z"}
