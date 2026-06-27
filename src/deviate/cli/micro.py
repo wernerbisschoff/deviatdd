@@ -1259,9 +1259,20 @@ def _run_judge_phase(
     backend = agent or "opencode"
     root = Path.cwd()
 
-    red_sha = session.red_commit_sha or "HEAD~1"
+    # Span the RED→GREEN diff: use RED's parent as the baseline so the
+    # judge sees both the failing tests (committed in RED) and the
+    # implementation (committed in GREEN).  Without the parent anchor,
+    # `git diff red_sha..HEAD` would collapse to GREEN only — the tests
+    # already exist in `red_sha` and disappear from the diff — and the
+    # judge would (correctly, given its input) flag the missing tests.
+    # The fallback (no RED in this session) keeps the prior single-commit
+    # behavior so the diff still matches the GREEN/EXECUTE-only commit.
+    if session.red_commit_sha:
+        diff_base = f"{session.red_commit_sha}^"
+    else:
+        diff_base = "HEAD~1"
     diff = subprocess.run(
-        ["git", "diff", f"{red_sha}..HEAD"],
+        ["git", "diff", f"{diff_base}..HEAD"],
         cwd=root,
         capture_output=True,
         text=True,

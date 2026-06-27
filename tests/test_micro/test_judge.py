@@ -415,6 +415,156 @@ class TestJudgeStructuredDiff:
             "Expected NO structured diff section when extract_changed_symbols returns empty"
         )
 
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_diff_spans_red_parent_to_include_tests(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """JUDGE must diff against RED's parent so failing tests are visible.
+
+        Regression for TSK-012-02: ``git diff red_sha..HEAD`` collapsed to the
+        GREEN commit only (tests already live in ``red_sha``, so they're
+        absent from ``..HEAD``). The judge then flagged "SHIP THE 5 TESTS" as
+        missing. The diff base must be ``red_sha^`` whenever RED is recorded.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+
+        task = {
+            "id": "TSK-012-02",
+            "issue_id": "ISS-ADH-012",
+            "description": "Diff scope regression",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_judge_phase(task, ledger_path, session, session_path, Console())
+
+        diff_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if call.args and call.args[0][:2] == ["git", "diff"]
+        ]
+        assert diff_calls, "Expected at least one `git diff` invocation"
+        diff_args = diff_calls[0].args[0]
+        assert diff_args[2] == "deadbeef1234567890abcdef1234567890abcdef^..HEAD", (
+            "JUDGE must diff against RED's parent so RED tests are visible; "
+            f"got diff base {diff_args[2]!r}"
+        )
+
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_diff_fallback_when_no_red_commit(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """When no RED commit is recorded, fallback to HEAD~1..HEAD.
+
+        Mirrors the pre-fix fallback so isolated JUDGE runs (e.g.
+        ``deviate run --start-phase JUDGE``) still get a meaningful diff
+        against the immediate parent — not HEAD~2.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+
+        task = {
+            "id": "TSK-012-02",
+            "issue_id": "ISS-ADH-012",
+            "description": "Diff fallback regression",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()  # red_commit_sha empty
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_judge_phase(task, ledger_path, session, session_path, Console())
+
+        diff_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if call.args and call.args[0][:2] == ["git", "diff"]
+        ]
+        assert diff_calls
+        diff_args = diff_calls[0].args[0]
+        assert diff_args[2] == "HEAD~1..HEAD", (
+            "Without red_commit_sha, fallback must be HEAD~1..HEAD; "
+            f"got {diff_args[2]!r}"
+        )
+
 
 class TestJudgeFeedbackLogging:
     """Surface WHY judge rejected and WHAT changed in tasks.md.
