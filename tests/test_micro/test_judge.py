@@ -1169,3 +1169,261 @@ class TestJudgeFeedbackLogging:
 
         # Empty list returns empty string
         assert _format_violations_as_feedback([]) == ""
+
+
+class TestJudgeRefactorNoteOnPass:
+    """COMPLIANCE_PASS surfaces `REFACTOR NOTE:` observations as informational logs.
+
+    Regression: prior to this change, `train_feedback` on COMPLIANCE_PASS was
+    silently dropped (the orchestrator reset session.train_feedback to empty
+    and never surfaced the LLM's structural observations). The new auto/judge
+    prompt allows the LLM to emit informational `REFACTOR NOTE:` entries on a
+    passing verdict, and the orchestrator must surface them via a structured
+    `JUDGE_REFACTOR_NOTE` event so REFACTOR (or the operator) can pick them
+    up. A passing verdict with no notes must not emit the event.
+    """
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_pass_logs_refactor_note(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_PASS",
+            task_id="TSK-013-01",
+            rationale="",
+            train_feedback=(
+                "REFACTOR NOTE: src/deviate/cli/content.py is 240 lines; "
+                "consider extracting renderers into a separate module."
+            ),
+        )
+        mock_agent.return_value = (manifest, "")
+
+        task = {
+            "id": "TSK-013-01",
+            "issue_id": "ISS-ADH-013",
+            "description": "Surface refactor notes on pass",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        output = buf.getvalue()
+        assert "JUDGE_REFACTOR_NOTE" in output, (
+            f"Expected JUDGE_REFACTOR_NOTE console event on passing verdict, "
+            f"got: {output!r}"
+        )
+        assert "src/deviate/cli/content.py is 240 lines" in output, (
+            f"Expected refactor note text in console output, got: {output!r}"
+        )
+
+        events = [c.args[0] for c in mock_log.call_args_list]
+        assert "JUDGE_REFACTOR_NOTE" in events, (
+            f"Expected JUDGE_REFACTOR_NOTE in structured log, got: {events}"
+        )
+        note_call = next(
+            c for c in mock_log.call_args_list if c.args[0] == "JUDGE_REFACTOR_NOTE"
+        )
+        assert "REFACTOR NOTE" in note_call.kwargs.get("note", "")
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_pass_no_note_does_not_log_refactor_event(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_extract: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """A passing verdict without train_feedback stays silent.
+
+        Regression: must NOT emit `JUDGE_REFACTOR_NOTE` when the LLM did
+        not surface a refactor observation. Otherwise the run log fills
+        with empty events on every clean task.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_extract.return_value = []
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_PASS",
+            task_id="TSK-013-02",
+            rationale="",
+            train_feedback="",
+        )
+        mock_agent.return_value = (manifest, "")
+
+        task = {
+            "id": "TSK-013-02",
+            "issue_id": "ISS-ADH-013",
+            "description": "Clean pass — no refactor note",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        output = buf.getvalue()
+        assert "JUDGE_REFACTOR_NOTE" not in output, (
+            f"Expected NO JUDGE_REFACTOR_NOTE on clean pass, got: {output!r}"
+        )
+        events = [c.args[0] for c in mock_log.call_args_list]
+        assert "JUDGE_REFACTOR_NOTE" not in events, (
+            f"Expected no JUDGE_REFACTOR_NOTE log event on clean pass, got: {events}"
+        )
+
+    def test_judge_prompt_marks_refactor_opinions_as_non_blocking(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The auto/judge prompt instructs the LLM not to block on refactor concerns.
+
+        Regression: prior to this change, the JUDGE prompt invited the LLM
+        to flag refactor opportunities as blocking violations, producing
+        false rejections like "split src/deviate/cli/content.py into 4
+        modules". The corrected prompt must explicitly tell the LLM to
+        treat refactor opinions as REFACTOR's domain.
+        """
+        from deviate.cli.micro import _build_auto_prompt
+
+        # Minimal spec stub so _resolve_spec_md has something to read.
+        spec_dir = tmp_path / "specs" / "adhoc" / "issues"
+        spec_dir.mkdir(parents=True)
+        spec_file = spec_dir / "013-judge-prompt.md"
+        spec_file.write_text("# Stub Spec\n", encoding="utf-8")
+        issues_jsonl = tmp_path / "specs" / "issues.jsonl"
+        issues_jsonl.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-013",
+                    "source_file": "specs/adhoc/issues/013-judge-prompt.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        task = {
+            "id": "TSK-013-03",
+            "issue_id": "ISS-ADH-013",
+            "description": "Verify prompt mandate",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+
+        prompt = _build_auto_prompt("judge", task, tmp_path)
+
+        # Explicit mandate: refactoring is REFACTOR's domain
+        assert "REFACTOR owns structural improvements" in prompt, (
+            "Auto judge prompt must declare REFACTOR owns refactoring"
+        )
+        assert "Refactoring opportunities are NEVER blocking" in prompt, (
+            "Auto judge prompt must forbid blocking refactor opinions"
+        )
+        assert "COMPLIANCE_PASS" in prompt, (
+            "Auto judge prompt must declare the verdict vocabulary"
+        )
+
+        # Categories of Violations: Structural Drift and Protected Module
+        # Modification were refactor-flavored and have been dropped.
+        assert "Structural Drift" not in prompt, (
+            "Auto judge prompt must drop 'Structural Drift' as a category"
+        )
+
+        # New dimensions aligned with correctness
+        assert "Spec Compliance" in prompt, (
+            "Auto judge prompt must include Spec Compliance dimension"
+        )
+        assert "Test Integrity" in prompt, (
+            "Auto judge prompt must include Test Integrity dimension"
+        )
+        assert "Security & Governance" in prompt, (
+            "Auto judge prompt must include Security & Governance dimension"
+        )
