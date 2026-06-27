@@ -134,6 +134,13 @@ def _load_deviate_config_toml(root: Path) -> dict | None:
 
 
 def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
+    """Resolve the model ID for *phase* from a `[models]` dict.
+
+    Resolution order (case-insensitive):
+        1. Phase-specific key (e.g. ``judge``, ``plan``, ``red``)
+        2. ``default`` key
+        3. ``None`` — backend falls back to its native default
+    """
     if not models:
         return None
     phase_lower = phase.lower()
@@ -148,10 +155,9 @@ def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
 def resolve_model_for_phase(phase: str, root: Path) -> str | None:
     """Load `[models]` from `.deviate/config.toml` and resolve *phase*.
 
-    Resolution order:
-        1. Phase-specific key (case-insensitive)
-        2. ``default`` key
-        3. ``None`` (no model flag)
+    Backed by :func:`resolve_phase_model`. ``opencode`` and ``droid``
+    backends accept ``--model <id>``; the ``claude`` backend ignores the
+    resolved value silently.
     """
     data = _load_deviate_config_toml(root)
     if data is None:

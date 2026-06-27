@@ -1,306 +1,98 @@
 <!-- MANAGED_BY: tools:init -->
 
-## ⚙️ Project Execution Contract (MANDATORY)
+## ⚙️ Project Execution Contract
 
-- **Repository Type**: single-language (Python)
+- **Repository**: single-language (Python)
 - **Execution Mode**: TDD (Red-Green-Refactor via deviate cycle)
-- **Performance Constraints**: L_max <= 500ms for init, L_max <= 200ms per agent export
+- **Performance**: L_max ≤ 500ms init, ≤ 200ms per agent export, full test suite < 18s
+- **Authority**: `git` commits · `specs/constitution.md` · `specs/DeviaTDD-api.md` + `DeviaTDD-architecture.md`
 
-## 🧠 State & Authority Model (MANDATORY)
+## ⚡ Fast-Lane Execution
 
-- Primary State Tracker: `git` commits
-- Project Constitution: `specs/constitution.md`
-- Core Strategy Ledger: `specs/001-deviate-cli-bootstrapping/000-project-bootstrap/plan.md`
-
-## ⚡ Fast-Lane Execution Contract
-
-- Use `mise run <task>` for all task execution
-- Deterministic tooling via `.mise.toml`
-- Git hooks under `.githooks/`
-
-## 🛠️ Mise Tasks as Execution API
+Use `mise run <task>`. All task definitions live in `.mise.toml`; git hooks in `.githooks/`.
 
 | Task | Purpose |
 |------|---------|
-| `mise run test` | Run unit tests |
-| `mise run test-e2e` | Run E2E tests via bats |
-| `mise run lint` | Lint Python |
-| `mise run lint-fix` | Apply lint fixes |
-| `mise run format` | Format Python |
-| `mise run format-check` | Check formatting |
-| `mise run check-types` | Type check |
-| `mise run fix` | Format + lint fix |
-| `mise run check` | All validation checks |
-| `mise run setup` | Install deps + hooks |
-| `mise run clean` | Remove artifacts |
-| `mise run help` | List tasks |
+| `mise run test` / `test-e2e` | Unit / E2E tests |
+| `mise run lint` / `lint-fix` / `format` / `format-check` | Style |
+| `mise run check-types` / `check` / `fix` | Validation bundles |
+| `mise run setup` / `clean` / `help` | Lifecycle |
 
-## 🔐 Git Commit Authority (MANDATORY)
+## 🔐 Commit Authority
 
-- Commit after each verified successful verification loop
-- Never use `--no-verify`
-- Preserve all semantic anchors
+Commit after each verified loop. Never `--no-verify`. Preserve all semantic anchors.
 
-## 🧪 Git Isolation (MANDATORY — Tests AND Production Code)
+## 🧪 Git Isolation (pointer — see source)
 
-All git operations — in both tests and production code — MUST target the
-correct repository and MUST NOT mutate the worktree's branch state.
+Tests: `tests/conftest.py` (`_git_env`, `tmp_git_repo`). Every test git call: `cwd=<tmp_git_repo>` + `env=_git_env()`.
+Production: `src/deviate/core/_shared.py::git_env` is the canonical helper. Branch creation lives in `src/deviate/cli/feature.py::_create_feature_branch`; micro-layer agents must never run branch-mutating git commands.
 
-### Test Git Isolation
+## ⚡ Test Performance (pointer — see source)
 
-- Use the `tmp_git_repo` fixture (created by T002 in `tests/conftest.py`)
-- Every `git` subprocess call MUST include BOTH `cwd=<tmp_git_repo>` and
-  `env=_git_env()` — `cwd` targets the temp repo, `env=_git_env()` strips
-  `GIT_*` env vars that could leak from the parent process
-- Import `_git_env` from `tests.conftest` (not redefined locally)
-- Never use `Path.cwd()`, `os.getcwd()`, or the real repo root in tests
-- Verify test isolation: `git config user.name` inside the fixture should
-  show `Test Runner`, never the real user's name
+`src/deviate/cli/micro.py::_run_pytest` invokes pytest as a subprocess (~5s). Tests calling CLI commands that hit this function MUST mock `deviate.cli.micro._run_pytest` with a `subprocess.CompletedProcess` fixture to keep the full suite under 18s.
 
-### Production Code Git Isolation
+## 📐 Spec Alignment
 
-- CLI commands that run `git checkout -b` (or any branch-switching command)
-  MUST save the current branch and restore it after the operation
-- Always use `_git_env()` (strips `GIT_*` env vars) for all `git` subprocess
-  calls — prevents inheriting parent repo's git configuration
-- Prefer creating branch refs (`git branch`) over checking out branches
-  (`git checkout -b`) in non-interactive commands
-- If a command must switch branches, use the pattern:
-  1. Save `git rev-parse --abbrev-ref HEAD` before
-  2. Execute the branch switch
-  3. Restore original branch afterwards
+`specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are authoritative. CLI commands, phase workflows, model routing, file structure, and HITL gates MUST be reflected in both in the same commit as the implementation change.
 
-Agents running TDD cycles MUST NOT execute CLI commands that mutate git
-branch state (e.g., `feature create`, `git checkout -b`). These operations
-will switch the worktree off its intended branch and break the TDD cycle.
+## 🛠 DeviaTDD Phase Architecture
 
-See `spec.md` §`TEST_ISOLATION_CONSTRAINTS` and `tasks.md` §`Universal
-Test Constraints` for full rules.
+### Three-Layer Model
 
-## ⚡ Test Performance (MANDATORY)
+| Layer | Phases | Output Artifact |
+|-------|--------|-----------------|
+| **Macro** | explore → research → prd → shard | spec-enriched issue files |
+| **Meso** | (HITL Gate 2) → plan → tasks → review | `plan.md`, `tasks.md` |
+| **Micro** | red → green → yellow? → judge → refactor | passing test + ledger entry |
 
-Never call `_run_pytest()` (in `src/deviate/cli/micro.py`) in tests.
-Tests that invoke CLI commands which internally call `_run_pytest` (red post,
-green post, refactor post) MUST mock `deviate.cli.micro._run_pytest` with an
-appropriate `subprocess.CompletedProcess` return value.
+### HITL Gates (no programmatic bypass)
 
-Performance target: full suite < 18s. If adding a test via `runner.invoke(cli,
-["red", "post"])` and it calls `_run_pytest`, the test will trigger ALL pytest
-tests as a subprocess (~5s per invocation). Always mock it.
-
-Example:
-```python
-@patch("deviate.cli.micro._run_pytest")
-def test_something(self, mock_pytest, tmp_git_repo):
-    mock_pytest.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="1 passed", stderr=""
-    )
-```
-
-For refactor_post tests that call `_run_pytest` twice, use `side_effect`:
-```python
-mock_pytest.side_effect = [
-    subprocess.CompletedProcess(args=[], returncode=0, stdout="1 passed", stderr=""),
-    subprocess.CompletedProcess(args=[], returncode=0, stdout="1 passed", stderr=""),
-]
-```
-
-## Spec Alignment (MANDATORY)
-
-- `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are the authoritative
-  source-of-truth documents for the DeviaTDD architecture. Any change to CLI commands,
-  phase workflows, model routing, model configuration, file structure, or HITL gates MUST be reflected in
-  both documents.
-- When adding, removing, or renaming a CLI command, skill, or phase, update both spec
-  files in the same commit.
-- When the ADHOC-003 restructured workflow changes (Shard+Specify merged, Plan phase,
-  Gate 2 repositioned), keep these docs in sync with the actual implementation.
-
-## DeviaTDD Phase Architecture
-
-### Macro Layer — Feature Scoping
-- `/explore` → **DeepSeek V4 Flash**: Fast scan of codebase structure, dependencies, and patterns. Outputs `explore.md` (what exists, not what to do).
-- `/research` → **Qwen3.7-Plus [Thinking Mode]**: Consumes `explore.md`, performs architectural analysis. Outputs `design.md` (trade-offs, decisions) and `data-model.md` (schemas, relationships).
-- `/prd` → **Qwen3.7-Plus [Thinking Mode]**: Translates `design.md` into immutable user requirements and acceptance criteria in `prd.md`.
-- `/shard` → **Qwen3.7-Plus [Thinking Mode]**: Breaks PRD into spec-enriched issue files with Gherkin AC, user stories, and edge cases (merged with Specify). Target ~5 issues (3-10 bounds).
-
-### Meso Layer — Issue Engineering
-- **[HITL Gate 2]**: Human reviews spec-enriched shard issues before planning proceeds.
-- `/plan` → **DeepSeek V4 Pro** (planned): Per-issue localized research — scans current codebase, analyzes prior issue implementations, produces `plan.md` with implementation strategy.
-- `/tasks` → **DeepSeek V4 Pro**: Decomposes spec-enriched issue + `plan.md` into ~5 TDD-cycle tasks with implementation hints (3-10 bounds). Appends terminal `type: "e2e"` task.
-- `/review` → **DeepSeek V4 Flash**: Lightweight PR/merge scan at HITL Gate 3 — checks ledger integrity, cross-task consistency, and security surface. Chat-based output, no report file.
-- `/specify` → **Deprecated** (merged into shard). Legacy skill redirects to new workflow.
-
-### Micro Layer — TDD Sandbox
-- **RED** → **DeepSeek V4 Flash**: Write failing test; verified to fail due to missing implementation.
-- **GREEN** → **DeepSeek V4 Flash**: Write production code to pass test; TamperGuard reverts unauthorized test edits. If tampering detected, session transitions to YELLOW.
-- **YELLOW** → **DeepSeek V4 Pro** (conditional, TamperGuard-triggered): Propose amendment for isolated judge approval/rejection. NOT in `_PHASE_MAP` — conditional branch between GREEN and JUDGE.
-- **JUDGE** → **DeepSeek V4 Pro**: Isolated compliance gate evaluates `git diff` against `spec.md` and security rubrics (secrets, injection, path traversal, auth gaps). On violation: `git revert` (never `git reset --hard`), persist `RollbackSnapshot`, inject `<judge_feedback>`, route back to GREEN.
-- **REFACTOR** → **DeepSeek V4 Flash**: Polish implementation; regression gate re-runs tests, rolls back on failure.
-
-### Fast-Path
-- `/adhoc` → **Qwen3.7-Plus [Thinking Mode]**: Compresses Explore + Research + PRD + Shard for low/medium complexity tasks via `ComplexityGate`. Produces spec-enriched issues directly.
-
-### HITL Gates
-- **Gate 1**: After `/research`, before `/prd` — human approves design and data model.
-- **Gate 2**: After `/shard`, before `/plan` — human reviews spec-enriched issue files.
-- **Gate 3**: After all tasks complete — human approves merge.
-
-### Model Routing Rationale
-- **Explorers (low-cost ingestion)**: `/explore`, RED/GREEN/REFACTOR → V4 Flash for high-volume reading and code generation.
-- **Architects (premium strategic logic)**: `/research`, `/prd`, `/shard`, `/adhoc` → Qwen3.7-Plus [Thinking Mode] for abstract reasoning and constraint satisfaction.
-- **Translators (cached engineering)**: `/plan` + `/tasks` → V4 Pro in single continuous thread per issue for 90%+ prefix cache discount.
-- **Compliance gates**: YELLOW, JUDGE → V4 Pro for isolated compliance + security verification (injection, secrets, path traversal).
-
-### Per-Phase Model Configuration
-
-Model-to-phase assignments are declared in `.deviate/config.toml` under the `[models]`
-section rather than hardcoded:
-
-```toml
-[models]
-default = "opencode/deepseek-v4-flash"
-plan = "opencode/deepseek-v4-pro"
-judge = "opencode/deepseek-v4-pro"
-```
-
-**Resolution order** (case-insensitive):
-1. Phase-specific key (e.g., `judge`, `plan`, `red`)
-2. `default` key (fallback for all phases)
-3. No model flag — backend uses its native default
-
-**Backend support**: `opencode` and `droid` both accept `--model <id>`. The `claude`
-backend has no model flag — model config is silently ignored when `claude` is active.
-
-**Where it applies**: Every agent invocation across micro (`_run_red_phase`,
-`_run_green_phase`, `_run_judge_phase`, `_run_refactor_phase`, `_run_execute_phase`,
-`_run_yellow_phase`), meso (`_invoke_agent_phase` in `meso.py`), and macro
-(`_invoke_agent_phase` in `macro.py`) layers calls `resolve_model_for_phase()`
-from `src/deviate/state/config.py`.
-
-**Data model**: `DeviateConfig.models: dict[str, str]` (free-form dict, reserved
-`default` key). Serialized under `[models]` in `.deviate/config.toml`. The
-`resolve_phase_model()` function performs the case-insensitive lookup; the
-`AgentBackend.invoke()` method injects `--model <id>` when a model is resolved.
-
-## Python-Only Architecture
-
-All deviate operations are Python-based. Skills live as package resources under
-`src/deviate/prompts/skills/<name>/SKILL.md` and are invoked via the `deviate`
-CLI (`deviate <subcommand>`) instead of shell scripts. No `.sh` files exist in
-the `prompts/` directory. The `mise.toml` file defines all task execution via
-`uv run` — no shell script tasks.
-
-## Skill Resolution
-
-When a skill file references `<SKILL_DIR>/<script>.sh`, resolve `<SKILL_DIR>` to
-`src/deviate/prompts/skills/<name>/` and use `deviate <subcommand>` instead.
-
-## Offline Documentation System
-
-The `libref` CLI is a local-first documentation tool for AI agents. It provides offline-queryable API docs for all project dependencies. **Always prefer `libref query <library> <topic>` over web fetching** — results are local, instant, and token-cheap.
-
-### Usage Rules
-- **Discovery first**: Run `libref list` to see available documentation packages before querying a library.
-- **Primary lookup**: Use `libref query <library@version> "<topic>"` as the first and primary documentation mechanism for all library/framework API questions.
-- **Registration**: When a dependency is not yet indexed, use `libref add <source>` (git repo URL) to register its documentation.
-- **Fallback hierarchy**: `libref query` → training data → web fetch (last resort). Web fetching is only acceptable when `libref` has no documentation for the required library.
-
-### Quick-Start Workflow
-1. Run `deviate explore` to scan the codebase
-2. Run `deviate research` for architectural analysis
-3. Run `deviate prd` to compile requirements
-4. Run `deviate shard` to decompose into issues
-5. Run `deviate specify` to write functional contracts
-6. Run `deviate tasks` to decompose into TDD cycles
-7. Execute each task via RED → GREEN → REFACTOR
-8. Run `deviate e2e` for end-to-end verification
-## Prompt Edit Discipline
-
-All skill and prompt template edits MUST target `src/deviate/prompts/`.
-The `~/.config/opencode/skills/` directory is a read-only install mirror;
-edits there are overwritten on reinstall. Always edit the source tree and commit
-through the deviate system.
-
-## Technical Execution Context
-Tasks=Environment Preflight Passed: YES, AST Inventory Synchronized: YES, Data Model Artifact Created: YES, Traceability Validation Confirmed: YES, Total Execution Phases: 8, Primary Technical Milestone: Scaffold the deviate CLI package with package-backed prompt initialization, local/global configurable agent exports, automated CLAUDE.md/AGENTS.md workspace governance patching, constitution boilerplate bootstrap, optional LLM-driven constitution generation, offline context synchronization, and TOML serialization hooks., Execution Mode: TDD (Red-Green-Refactor via deviate cycle), Performance Constraints: L_max <= 500ms for init, L_max <= 200ms per agent export, Core Strategy Ledger: `specs/001-deviate-cli-bootstrapping/000-project-bootstrap/plan.md`, Data Model Definitions: `specs/001-deviate-cli-bootstrapping/000-project-bootstrap/data-model.md`, Diagnostic Explorer Record: `specs/001-deviate-cli-bootstrapping/000-project-bootstrap/research.md`, Specification Source: `specs/001-deviate-cli-bootstrapping/000-project-bootstrap/spec.md`, Project Constitution: `specs/constitution.md`, **Goal**: Create the `src/deviate/` Python package structure with all `__init__.py` stubs, model components, and the static `src/deviate/prompts/` resource vault directory., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/`, **Impacted File Nodes**:, `src/deviate/__init__.py` — Package initialization marker, `src/deviate/prompts/explore.md` — Base template for /explore directive, `src/deviate/prompts/prd.md` — Base template for /prd directive, `src/deviate/prompts/specify.md` — Base template for /specify directive, `src/deviate/prompts/plan.md` — Base template for /plan directive, `src/deviate/main.py` — Runtime bootstrap entry point exposing the Typer app, `src/deviate/cli/__init__.py` — CLI command tree root (Typer instance), `src/deviate/state/__init__.py` — State module initializer, `src/deviate/state/session.py` — Session state entity with Pydantic validation, `src/deviate/state/config.py` — Configuration entity with Pydantic validation, **Verification Command**: `pytest tests/test_cli/test_init.py::test_init_scaffolds_src_package -v`, **Goal**: Implement resource streaming layer to read seed prompts directly from the installation package path rather than relying on dynamic string literals or external path parameters., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/cli/__init__.py`, **Impacted File Nodes**:, `src/deviate/cli/__init__.py` — Integrate `importlib.resources.files("deviate.prompts")` layer., **Verification Command**: `pytest tests/test_cli/test_init.py::test_resource_vault_binding -v`, **Goal**: Implement `deviate init` command that creates `.deviate/` directory structure with config.toml, session.json, and prompts.log., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/cli/__init__.py`, **Impacted File Nodes**:, `src/deviate/cli/__init__.py` — Add `init` subcommand with directory scaffolding logic, `src/deviate/state/session.py` — Session state creation for initial state, `src/deviate/state/config.py` — Config entity for default profile (with `to_toml_string`), **Verification Command**: `pytest tests/test_cli/test_init.py::test_init_creates_dotfile_structure -v`, **Goal**: Implement template mapping execution loops tracking `ExportMode`. `local` routes to `{repo_root}/.claude/commands/`, whereas `global` maps directly out to `$HOME/.claude/commands/`., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/cli/__init__.py`, **Impacted File Nodes**:, `src/deviate/cli/__init__.py` — Agent variant flag and export routing logic, `.claude/commands/` — Claude agent command directory target (local workspace), `.factory/commands/` — Droid agent command directory target (local workspace), **Verification Command**: `pytest tests/test_cli/test_init.py::test_init_handles_agent_export_mappings -v`, **Performance Gate**: L_max <= 200ms per agent platform export, **Goal**: Implement idempotent append/write mechanics within `deviate init` targeting project-level agent guidelines., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/cli/__init__.py`, **Impacted File Nodes**:, `src/deviate/cli/__init__.py` — Add filesystem write/append tracking logic for project root documentation indicators, `src/deviate/prompts/governance/claudemd_seed.md` — Authoritative text block for agent behavior, **Idempotency Guarantee**: If a section matching `## DeviaTDD Orchestration Rules` already exists in `CLAUDE.md`, skip write, **Verification Command**: `pytest tests/test_cli/test_init.py::test_init_manages_agent_instruction_ledgers -v`, **Goal**: Drop a tokenized `specs/constitution.md` from `src/deviate/prompts/constitution_seed.md` during `deviate init`. Offline mode resolves `${VARIABLE}` placeholders via regex-based project file scanning (L_max <= 50ms). Optional `--generate-constitution` flag invokes LLM runner for deeper analysis., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/cli/__init__.py`, **Impacted File Nodes**:, `src/deviate/cli/__init__.py` — Add `--generate-constitution` flag and LLM runner invocation logic, `src/deviate/prompts/constitution_seed.md` — Tokenized boilerplate constitution template with `${VARIABLE}` placeholders, `src/deviate/state/config.py` — `ConstitutionConfig` model with `LLMBackend` enum and `timeout_seconds`, **Tokenized Placeholder Mapping**:, **Idempotency Guarantee**: If `specs/constitution.md` already exists, skip write, **LLM Backend Selection**: Read from `.deviate/config.toml` or environment variable; defaults to `droid`, **Performance Gate**: Offline resolution completes in L_max <= 50ms, **Verification Commands**:, `pytest tests/test_cli/test_init.py::test_init_provisions_constitution_boilerplate -v`, `pytest tests/test_cli/test_init.py::test_init_generate_constitution_flag -v`, **Goal**: Implement offline deterministic context resolution with zero network overhead., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/cli/__init__.py` and `src/deviate/state/context.py`, **Impacted File Nodes**:, `src/deviate/cli/__init__.py` — Add `context` subcommand, `src/deviate/state/context.py` — `ConstitutionContext` model with `resolve_paths()` method, **Execution Steps** (all local, zero network):, **Verification Command**: `pytest tests/test_cli/test_context.py -v`, **Goal**: Implement Pydantic-based type-safe validation for `DeviaTDDSessionState` and `DeviateConfig` entities; verify IO cycles., **Execution Mode**: TDD, **Primary Workstation**: `src/deviate/state/session.py` and `src/deviate/state/config.py`, **Impacted File Nodes**:, `src/deviate/state/session.py` — Session state with field validators, `src/deviate/state/config.py` — Config state with field validators, **Verification Commands**:, `pytest tests/test_state/test_session.py::test_session_state_schema_validation -v`, `pytest tests/test_state/test_session.py::test_session_io_cycles -v`, `pytest tests/test_state/test_config.py::test_config_schema_validation -v`, **Goal**: Verify full init + agent export cycle completes within performance constraints., **Execution Mode**: Integration, **Primary Workstation**: `tests/test_integration/test_init_export_cycle.py`, **Verification Command**: `pytest tests/test_integration/test_init_export_cycle.py -v`, **Performance Gate**: L_max <= 500ms for init command, **Target Boundary Alignment**: Verified. Out-of-scope criteria (human-facing spec directories, branch management, REPL engines, test generation during init) are blocked via strict code boundaries in PHASE_001 through PHASE_005., **Sandbox Routing Match**: 100% correlation across unit and integration testing checkpoints., **Named File Entity Coverage**: All named file entities from spec.md are covered:, `config.toml` → PHASE_003, `session.json` → PHASE_003, `prompts.log` → PHASE_003, `prompts/` → PHASE_003, `CLAUDE.md` → PHASE_005, `specs/constitution.md` → PHASE_006, `AGENTS.md` → PHASE_007, `src/deviate/__init__.py` → PHASE_001, `src/deviate/main.py` → PHASE_001, `src/deviate/cli/__init__.py` → PHASE_001, PHASE_002, PHASE_003, PHASE_004, PHASE_005, PHASE_006, PHASE_007, `src/deviate/state/session.py` → PHASE_001, PHASE_008
-
-
-
-## Graphite Stacked Changes Workflow
-
-When Graphite integration is enabled (`.deviate/config.toml` contains `graphite = true`):
-
-### Branch Creation
-- Use `gt create -am "<message>"` to create a branch with an automatic commit
-- If the working tree is clean, use `gt create -m "<message>"` instead
-
-### PR Submission
-- Use `gt submit --stack` to submit the entire stack for review
-
-### Syncing
-- Use `gt sync` to sync your stack with the remote
-
-### Anti-Patterns
-- Do NOT use `git checkout -b` alongside `gt` — it bypasses Graphite's stack tracking
-- Do NOT use `gh pr create` when Graphite is enabled — use `gt submit --stack`
-- Do NOT run `gt` commands outside a Graphite-tracked repository
-
-## DeviaTDD Orchestration Rules
-
-### Three-Layer Architecture
-- **Macro Layer** — Feature scoping: `/explore` → `/research` → `/prd` → `/shard`. Each phase has a deterministic output artifact. HITL Gate 1 (Design Approval) gates transition to Meso.
-- **Meso Layer** — Issue engineering: `/specify` → `/tasks`. Converts issue contracts into functional specs and granular tasks. HITL Gate 2 (Contract Sign-Off) gates transition to Micro.
-- **Micro Layer** — TDD sandbox: RED → GREEN → YELLOW → JUDGE → REFACTOR. Each task executes as an isolated vertical slice across a complete R-G-R cycle.
-
-### Append-Only Ledger Protocol
-- All state transitions in `specs/issues.jsonl` and `specs/**/tasks.jsonl` are append-only.
-- No existing line is ever modified or overwritten.
-- Canonical state is derived by sequential ledger parsing.
-
-### Git Isolation Principle
-- Every task loop executes on a clean git branch or worktree.
-- Commits are automatic at each phase boundary.
-- NEVER delete a branch — whether by merging, closing, or any other means — unless the user has explicitly requested branch deletion.
-
-### Tamper Guard & Micro-Sandboxing
-- GREEN phase resets test directories to post-RED commit state before evaluation.
-- Micro-layer LLM execution is strictly sandboxed: write access is granted **only** to files matching `src/**/*.py`.
-- All `tests/`, `specs/`, and configuration files are strictly read-only during Micro-layer execution.
-- Any mutation outside this allow-list triggers an immediate rollback.
-
-### Human-in-the-Loop (HITL) Gates
-- **Gate 1** (Design Approval): After `/research`, before `/prd` — human approves design and data model.
-- **Gate 2** (Contract Sign-Off): After `/specify`, before `/tasks` — human approves functional contract.
-- **Gate 3** (Final Merge Audit): After all tasks complete — human approves merge.
-- No gate may be programmatically bypassed.
+- **Gate 1**: after `/research`, before `/prd` — design + data-model approval
+- **Gate 2**: after `/shard`, before `/plan` — spec-enriched issue sign-off
+- **Gate 3**: after all tasks — final merge audit
 
 ### Model Tiering
-| Model | Phases |
-|-------|--------|
-| DeepSeek V4 Flash | `/explore`, RED, GREEN, REFACTOR |
-| DeepSeek V4 Pro | JUDGE, YELLOW, `/specify`, `/tasks` |
-| Qwen 3.7+ [Thinking] | `/research`, `/prd`, `/shard`, `/adhoc` |
+
+| Tier | Phases |
+|------|--------|
+| V4 Flash (low-cost) | explore, red, green, refactor |
+| V4 Pro (cached/compliance) | plan, tasks, yellow, judge |
+| Qwen 3.7+ [Thinking] | research, prd, shard, adhoc |
+
+Per-phase overrides: `.deviate/config.toml` → `[models]` → `default` + phase keys. Resolution: `src/deviate/state/config.py::resolve_phase_model`.
+
+### Append-Only Ledger Protocol
+
+`specs/issues.jsonl` and `specs/**/tasks.jsonl` are append-only. Canonical state is derived by sequential parsing.
+
+### Git Isolation Principle
+
+Every task loop runs on a clean branch/worktree. Commits happen at phase boundaries. **Never delete a branch unless the user explicitly requests it.**
+
+### Tamper Guard & Micro-Sandboxing
+
+GREEN resets `tests/` to post-RED state before evaluation. Micro-layer agents write **only** to `src/**/*.py`; mutations elsewhere trigger an immediate rollback.
 
 ### Session Continuity
-- Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases.
-- Model switching mid-task is prohibited.
-- JUDGE phase runs in an isolated V4 Pro session for compliance verification.
 
-### Task Execution Reference
-Use `mise run <task>` for all execution:
+Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR (no model switches). JUDGE runs in an isolated V4 Pro session.
 
-| Task | Purpose |
-|------|---------|
-| `mise run test` | Run unit tests |
-| `mise run test-e2e` | Run E2E tests via bats |
-| `mise run lint` | Lint Python |
-| `mise run lint-fix` | Apply lint fixes |
-| `mise run format` | Format Python |
-| `mise run format-check` | Check formatting |
-| `mise run check-types` | Type check |
-| `mise run fix` | Format + lint fix |
-| `mise run check` | All validation checks |
-| `mise run setup` | Install deps + hooks |
-| `mise run clean` | Remove artifacts |
-| `mise run help` | List tasks |
+## 🐍 Python-Only Architecture
+
+Skills are package resources under `src/deviate/prompts/skills/<name>/SKILL.md`, invoked via `deviate <subcommand>`. No `.sh` files in `prompts/`. Layer routing: `src/deviate/prompts/assembly.py::_LAYER_MAP`. All task execution runs through `uv run` (`.mise.toml`).
+
+## 📚 Offline Documentation (libref)
+
+Prefer `libref query <lib> "<topic>"` over web fetching. Workflow: `libref list` → `libref query` → `libref add <git-url>` (register a missing source) → web fetch (last resort).
+
+## 🔧 Quick-Start Workflow
+
+`deviate explore` → `research` → `prd` → `shard` → (Gate 2) → `plan` → `tasks` → run each task via RED → GREEN → REFACTOR → `deviate e2e`.
+
+## 📝 Prompt Edit Discipline
+
+Edit skill/prompt templates in `src/deviate/prompts/` only. `~/.config/opencode/skills/` is a read-only install mirror.
+
+## 🌳 Graphite (when `graphite = true` in `.deviate/config.toml`)
+
+`gt create -am "msg"` (or `-m` if tree clean) → `gt submit --stack` → `gt sync`. Never mix `git checkout -b` with `gt`, never `gh pr create` when Graphite is on.

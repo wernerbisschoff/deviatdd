@@ -8,11 +8,17 @@ import pytest
 
 
 def _git_env() -> dict[str, str]:
+    """Strip GIT_*/GH_* env vars so tests never inherit the parent repo's config.
+
+    Every test that invokes `git` must pass `cwd=<tmp_git_repo>` AND `env=_git_env()`
+    so the subprocess targets the temp repo without leaking parent config.
+    """
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 @pytest.fixture
 def tmp_git_repo(tmp_path: Path) -> Path:
+    """Provide an isolated git repo for tests (git config user.name is Test Runner)."""
     subprocess.run(["git", "init"], cwd=tmp_path, env=_git_env(), check=True)
     subprocess.run(
         ["git", "config", "user.email", "runner@test.local"],

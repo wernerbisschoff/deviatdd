@@ -2289,6 +2289,14 @@ def _run_pytest(
     root: Path,
     report_config: PytestReportConfig | None = None,
 ) -> subprocess.CompletedProcess:
+    """Invoke pytest as a subprocess against the project test files.
+
+    Tests that exercise CLI commands which internally call this function
+    (e.g. red/green/refactor `_post` commands) MUST mock
+    `deviate.cli.micro._run_pytest` with a `subprocess.CompletedProcess`
+    fixture. Otherwise each test invocation triggers the entire pytest
+    suite (~5s), blowing the <18s full-suite performance target.
+    """
     test_files = _find_test_files(root)
     test_file_list = [str(f) for f in test_files]
     cmd = [sys.executable, "-m", "pytest", *test_file_list, "-v"]
