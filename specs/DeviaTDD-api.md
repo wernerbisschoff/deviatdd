@@ -65,7 +65,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `.deviate/.gitignore` — Excludes session.json from version control
   * `specs/constitution.md` — Resolved boilerplate constitution
   * Agent skill directories — DeviaTDD prompt skills installed per-agent
-* **Governance File Provisioning:** Writes `## DeviaTDD Orchestration Rules` block to both
+* **Governance File Provisioning:** Writes `## 🛠 DeviaTDD Phase Architecture` block to both
   `CLAUDE.md` and `AGENTS.md`. Idempotent: replaces existing block if present, appends if
   file exists without the block, creates if absent.
 * **Common Flags:** `deviate init` currently does not accept `--json`/`--quiet`. The
