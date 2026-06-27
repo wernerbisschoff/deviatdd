@@ -41,11 +41,17 @@ class TaskStatus:
 
 class OrchestrationMonitor:
     def __init__(
-        self, console: Any, *, json_mode: bool = False, total_tasks: int = 0
+        self,
+        console: Any,
+        *,
+        json_mode: bool = False,
+        total_tasks: int = 0,
+        verbose: bool = False,
     ) -> None:
         self._console = console
         self._json_mode = json_mode
         self._total_tasks = total_tasks
+        self._verbose = verbose
         self._tasks: dict[str, TaskStatus] = {}
         self._interrupted = False
         self._exited = False
@@ -78,6 +84,12 @@ class OrchestrationMonitor:
 
     def push_event(self, event_type: str, **data: Any) -> None:
         self._validate_event(event_type)
+        if event_type == "agent_output" and not self._verbose:
+            if self._agent_output_buffer is not None:
+                line = data.get("line", "")
+                if line:
+                    self._agent_output_buffer.append(line)
+            return
         handler = self._dispatch.get(event_type)
         if handler is not None:
             handler(data)

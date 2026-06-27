@@ -319,7 +319,7 @@ class TestRunAllMonitorE2E:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json"])
+        result = runner.invoke(cli, ["run", "--all", "--json", "--verbose"])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
@@ -390,7 +390,7 @@ class TestRunAllMonitorE2E:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json"])
+        result = runner.invoke(cli, ["run", "--all", "--json", "--verbose"])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
@@ -407,6 +407,60 @@ class TestRunAllMonitorE2E:
             assert event.get("line") == emitted, (
                 f"FIFO order violation: expected {emitted!r}, got {event.get('line')!r}"
             )
+
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_json_default_omits_agent_output_events(
+        self,
+        mock_load_skill: MagicMock,
+        mock_invoke_agent: MagicMock,
+        mock_verify: MagicMock,
+        mock_run_test: MagicMock,
+        mock_run_format: MagicMock,
+        env3: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(env3)
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        mock_load_skill.return_value = "# Dummy skill content"
+
+        def invoke_side_effect(
+            prompt: str,
+            c: object,
+            backend_name: str = "opencode",
+            task_id: str = "",
+            phase: str = "",
+            output_callback: object = None,
+            **kwargs: object,
+        ) -> tuple[HandoverManifest | None, str]:
+            if output_callback is not None:
+                output_callback(f"[{phase}] {task_id} stdout line")
+            return (HandoverManifest(phase=phase, status="SUCCESS"), "")
+
+        mock_invoke_agent.side_effect = invoke_side_effect
+
+        result = runner.invoke(cli, ["run", "--all", "--json"])
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+        all_lines = [line for line in result.output.splitlines() if line.strip()]
+        events = [json.loads(line) for line in all_lines if line.startswith("{")]
+        event_types = [e["event"] for e in events]
+
+        assert "task_started" in event_types
+        assert "phase_change" in event_types
+        assert "task_completed" in event_types
+        assert "agent_output" not in event_types, (
+            "Default --json should not stream agent_output; use --verbose for full stream"
+        )
 
     @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._run_test_cmd")
