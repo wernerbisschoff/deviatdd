@@ -26,6 +26,12 @@ def _create_feature_directory(slug: str, repo_path: Path) -> Path:
 
 
 def _create_feature_branch(slug: str, repo_path: Path) -> None:
+    """Create `feat/<slug>` via Graphite (`gt create -am`) or git.
+
+    Git Isolation: never `git checkout -b` — agents running TDD cycles
+    must not mutate branch state. This CLI command is the only
+    sanctioned entry point for branch creation in a worktree.
+    """
     branch_name = f"feat/{slug}"
 
     result = subprocess.run(
