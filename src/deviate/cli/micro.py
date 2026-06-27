@@ -1446,6 +1446,19 @@ def _run_judge_phase(
         return session
 
     _log_run("PHASE_DECISION", task_id=tid, phase="JUDGE", decision="passed")
+    refactor_note = (
+        getattr(manifest, "train_feedback", None)
+        or (manifest.model_extra or {}).get("train_feedback", "")
+        or ""
+    )
+    if refactor_note.strip():
+        note_preview = refactor_note.replace("\n", " ")[:200]
+        c.print(f"  [cyan]JUDGE_REFACTOR_NOTE[/] {tid}: {note_preview}")
+        _log_run(
+            "JUDGE_REFACTOR_NOTE",
+            task_id=tid,
+            note=refactor_note,
+        )
     session = session.force_transition_to("JUDGE")
     session.train_feedback = ""
     session.judge_rejected = False
