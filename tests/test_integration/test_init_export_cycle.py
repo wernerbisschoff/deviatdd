@@ -99,10 +99,10 @@ class TestFullInitCycle:
             assert session_data["active_issue_id"] is None
 
             claude_text = claude_path.read_text()
-            assert "## DeviaTDD Orchestration Rules" in claude_text
+            assert "## 🛠 DeviaTDD Phase Architecture" in claude_text
 
             agents_text = agents_path.read_text()
-            assert "## DeviaTDD Orchestration Rules" in agents_text
+            assert "## 🛠 DeviaTDD Phase Architecture" in agents_text
 
             const_text = const_path.read_text()
             assert "# Project Constitution" in const_text
@@ -189,7 +189,7 @@ class TestFullInitCycle:
             claude_path = workdir / "CLAUDE.md"
             existing_claude = (
                 "# My Project\n\n"
-                "## DeviaTDD Orchestration Rules\n"
+                "## 🛠 DeviaTDD Phase Architecture\n"
                 "Existing rules\n\n"
                 "## Other Section\n"
                 "Preserved content\n"
@@ -209,12 +209,12 @@ class TestFullInitCycle:
             content = claude_path.read_text()
             assert "Existing rules" not in content
             assert "Preserved content" in content
-            assert "## DeviaTDD Orchestration Rules" in content
+            assert "## 🛠 DeviaTDD Phase Architecture" in content
             assert "## Other Section" in content
 
             assert agents_path.exists()
             agents_content = agents_path.read_text()
-            assert "## DeviaTDD Orchestration Rules" in agents_content
+            assert "## 🛠 DeviaTDD Phase Architecture" in agents_content
 
 
 class TestProductLayerSkillExportCycle:

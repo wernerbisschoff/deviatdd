@@ -47,7 +47,7 @@ class TestInitCommand:
             claude_path = workdir / "CLAUDE.md"
             assert claude_path.exists()
             content = claude_path.read_text()
-            assert "## DeviaTDD Orchestration Rules" in content
+            assert "## 🛠 DeviaTDD Phase Architecture" in content
 
     def test_init_overwrites_governance_block_when_exists(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -55,7 +55,7 @@ class TestInitCommand:
             claude_path = workdir / "CLAUDE.md"
             existing_content = (
                 "# My Project\n\n"
-                "## DeviaTDD Orchestration Rules\n"
+                "## 🛠 DeviaTDD Phase Architecture\n"
                 "Old content\n\n"
                 "## Other Section\n"
                 "Preserved content\n"
@@ -68,7 +68,7 @@ class TestInitCommand:
             content = claude_path.read_text()
             assert "Old content" not in content
             assert "Preserved content" in content
-            assert "## DeviaTDD Orchestration Rules" in content
+            assert "## 🛠 DeviaTDD Phase Architecture" in content
             assert "## Other Section" in content
 
     def test_init_replaces_multi_section_governance_block(self, tmp_path: Path):
@@ -78,9 +78,9 @@ class TestInitCommand:
             claude_path = workdir / "CLAUDE.md"
             existing_content = (
                 "# My Project\n\n"
-                "## DeviaTDD Orchestration Rules\n"
+                "## 🛠 DeviaTDD Phase Architecture\n"
                 "Old orchestration content\n\n"
-                "## Offline Documentation System\n"
+                "## 📚 Offline Documentation (libref)\n"
                 "Old docs content\n\n"
                 "## Other Section\n"
                 "Preserved content\n"
@@ -95,8 +95,8 @@ class TestInitCommand:
             assert "Old docs content" not in content
             assert "Preserved content" in content
             assert "## Other Section" in content
-            assert content.count("## DeviaTDD Orchestration Rules") == 1
-            assert content.count("## Offline Documentation System") == 1
+            assert content.count("## 🛠 DeviaTDD Phase Architecture") == 1
+            assert content.count("## 📚 Offline Documentation (libref)") == 1
 
     def test_init_normalized_heading_replaces_annotated_heading(self, tmp_path: Path):
         """Existing heading has emoji/parenthetical that seed lacks; normalized match finds it."""
@@ -105,7 +105,7 @@ class TestInitCommand:
             claude_path = workdir / "CLAUDE.md"
             existing_content = (
                 "# Project\n\n"
-                "## \U0001f4da Offline Documentation System (MANDATORY)\n"
+                "## 📚 Offline Documentation (libref) — MANDATORY\n"
                 "Old docs content\n\n"
                 "## Other Section\n"
                 "Preserved\n"
@@ -119,7 +119,7 @@ class TestInitCommand:
             assert "Old docs content" not in content
             assert "Preserved" in content
             assert "## Other Section" in content
-            assert content.count("## Offline Documentation System") == 1
+            assert content.count("## 📚 Offline Documentation (libref)") == 1
 
     def test_init_skip_existing_dotfiles(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -181,7 +181,7 @@ class TestInitCommand:
             claude_path = workdir / "CLAUDE.md"
             assert claude_path.exists()
             claude_content = claude_path.read_text()
-            assert "## Offline Documentation System" in claude_content
+            assert "## 📚 Offline Documentation (libref)" in claude_content
             assert "libref query" in claude_content
             assert "libref list" in claude_content
             assert "libref add" in claude_content
@@ -189,7 +189,7 @@ class TestInitCommand:
             agents_path = workdir / "AGENTS.md"
             assert agents_path.exists()
             agents_content = agents_path.read_text()
-            assert "## Offline Documentation System" in agents_content
+            assert "## 📚 Offline Documentation (libref)" in agents_content
 
     def test_init_libref_flag_overrides_missing_binary(self, tmp_path: Path):
         """--libref forces use_libref=true even when shutil.which returns None."""
@@ -268,7 +268,7 @@ class TestInitCommand:
             for fname in ["CLAUDE.md", "AGENTS.md"]:
                 content = (workdir / fname).read_text()
                 assert "## Graphite Stacked Changes Workflow" in content
-                assert "## Offline Documentation System" in content
+                assert "## 📚 Offline Documentation (libref)" in content
 
     def test_resolve_graphite_config_round_trip_after_init(self, tmp_path: Path):
         """init --graphite produces a config that resolve_graphite_config() reads as True."""
