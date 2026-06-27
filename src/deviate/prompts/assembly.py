@@ -30,6 +30,10 @@ _LAYER_MAP: dict[str, str | None] = {
     "execute": "micro-auto",
 }
 
+# All skills live as package resources under `src/deviate/prompts/skills/<name>/SKILL.md`
+# and are invoked via the `deviate` CLI (`deviate <subcommand>`). No `.sh` wrappers
+# in `prompts/` — every template is loaded with `importlib.resources.files()`.
+
 _CORE_DIR = "deviate.prompts.core"
 _AUTO_DIR = "deviate.prompts.auto"
 
