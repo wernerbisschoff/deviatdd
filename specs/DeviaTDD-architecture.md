@@ -604,31 +604,42 @@ the customisations documented below.
 
 ### 10.1 Backend Selection Matrix
 
-| Backend | CLI Command | Skill Strategy | Model Selection | Notes |
+| Backend | CLI Command | Command Strategy | Model Selection | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `opencode` | `opencode run` | Skills copied into `.opencode/skills/` | `--model <id>` flag | Default backend |
-| `claude` | `claude -p --permission-mode auto` | Skills copied into `.claude/skills/` | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
-| `droid` | `droid exec` | Skills copied into `.factory/skills/` | `--model <id>` flag | Factory Droid IDE-owned skills dir |
-| `pi` | `pi -p` | Skills file-copied into `<workdir>/.pi/skills/<name>/SKILL.md` (project-local, same convention as `.claude/`, `.opencode/`, `.factory/`) | Operator's responsibility via Pi's own config (no `--model` flag, no `settings.json` generated) | Native Agent Skills discovery; opt-in RPC mode available |
+| `opencode` | `opencode run` | Commands copied into `.opencode/commands/` (flat `.md`) | `--model <id>` flag | Default backend |
+| `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
+| `droid` | `droid exec` | Commands copied into `.factory/commands/` (flat `.md`) | `--model <id>` flag | Factory Droid IDE-owned commands dir |
+| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | Operator's responsibility via Pi's own config (no `--model` flag, no `settings.json` generated) | Native slash-command discovery via `.pi/prompts/`; opt-in RPC mode available |
 
-### 10.2 Pi Backend Customizations
+Pi implements slash-command discovery natively — `pi -p` loads commands from
+`~/.pi/agent/`, `.pi/prompts/`, and `.agents/` on startup, parses the
+`name:` + `description:` YAML frontmatter from each `<name>.md` flat file,
+and registers them as slash commands. DeviaTDD integrates Pi on top of the
+standard `AgentBackend.invoke()` contract with three customisations:
 
-Pi implements the [Agent Skills specification](https://agentskills.io/specification)
-natively — `pi -p` discovers skills from `~/.pi/agent/skills/`, `.pi/skills/`, and
-`.agents/skills/` on startup, parses the `name:` + `description:` YAML frontmatter from
-each `SKILL.md`, and registers them as in-context tools. DeviaTDD integrates Pi on top
-of the standard `AgentBackend.invoke()` contract with three customisations:
-
-1. **Skill file-copy strategy (project-local).** `deviate setup` file-copies each project
-   skill into `<workdir>/.pi/skills/<skill-name>/SKILL.md` via the existing
-   `install_skill` pipeline — the same code path used for `.claude/`, `.opencode/`, and
-   `.factory/`. Pi discovers skills from `.pi/skills/` natively per the Agent Skills
-   spec. The corresponding `.gitignore` entry (`.pi/skills/deviate-*/`) is added by
-   `_ensure_agent_gitignored`, preventing the file-copied skills from being committed.
+1. **Command file-copy strategy (project-local, flat).** `deviate setup`
+   file-copies each project command to `<workdir>/.pi/prompts/<name>.md`
+   via the existing `install_command` pipeline — the same code path used
+   for `.claude/commands/`, `.opencode/commands/`, and `.factory/commands/`.
+   Pi discovers commands from `.pi/prompts/` natively per its documented
+   slash-command convention. The corresponding project-root `.gitignore`
+   entries (``*/commands/deviate-*.md``, ``*/commands/tome-*.md``,
+   ``*/prompts/deviate-*.md``, ``*/prompts/tome-*.md``) are added by
+   `_ensure_root_gitignore` (see `src/deviate/cli/__init__.py:638`),
+   preventing the file-copied commands from being committed. The
+   single-level ``*/`` prefix scopes each pattern to one directory
+   before ``commands/`` or ``prompts/`` — broad enough to cover every
+   supported agent (`.claude/commands/`, `.opencode/commands/`,
+   `.factory/commands/`, `.pi/prompts/`) plus any future agent, but
+   tight enough NOT to match the deviatdd project's own command
+   sources at ``src/deviate/prompts/commands/deviate-*.md`` (three
+   directories deep). The root gitignore is the single source of
+   truth for all agent-platform exclusions; per-agent `.gitignore`
+   files were consolidated.
    **DeviaTDD does NOT write to `~/.pi/agent/`** — the operator's global Pi config
-   is out of scope. Idempotency: re-running setup with identical skill content is a
-   no-op (`install_skill` compares file content before writing). Total cost ≤ 200ms
-   for 20 skills on macOS/Linux.
+   is out of scope. Idempotency: re-running setup with identical command content
+   is a no-op (`install_command` compares file content before writing). Total cost
+   ≤ 200ms for 32 commands on macOS/Linux.
 2. **No `settings.json` generation.** DeviaTDD does not generate a `settings.json`
    file (neither project-local nor under `~/.pi/agent/`). Model/provider selection
    is the operator's responsibility and is configured via Pi's own configuration

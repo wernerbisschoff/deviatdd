@@ -30,7 +30,7 @@ from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
-from deviate.core.skills import detect_agents, discover_skills, install_skill
+from deviate.core.commands import discover_commands, install_command
 from deviate.ui.render import is_interactive
 
 cli = typer.Typer(no_args_is_help=True)
@@ -507,32 +507,52 @@ def _scaffold_constitution(workdir: Path) -> None:
     console.print(f"  [green]CREATE[/] {const_path.relative_to(workdir)}")
 
 
-def _get_agent_skill_dir(agent_name: str, workdir: Path) -> Path | None:
-    if agent_name == "claude":
-        return workdir / ".claude" / "skills"
-    if agent_name == "opencode":
-        return workdir / ".opencode" / "skills"
-    if agent_name == "factory":
-        return workdir / ".factory" / "skills"
+def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
+    """Resolve the slash-command directory for a given agent platform.
+
+    Factory, Claude, and OpenCode discover slash commands from
+    ``<workdir>/.{agent}/commands/`` (flat top-level only). Pi uses
+    ``<workdir>/.pi/prompts/`` per the platform's documented convention.
+    All four require flat ``.md`` files — nested folders are ignored.
+    """
+    if agent_name in ("claude", "opencode", "factory"):
+        return workdir / f".{agent_name}" / "commands"
     if agent_name == "pi":
-        return workdir / ".pi" / "skills"
+        return workdir / ".pi" / "prompts"
     return None
 
 
-def _install_skills_to_agents(workdir: Path, agents: list[str]) -> None:
-    skills = discover_skills()
-    if not skills:
+def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
+    """Install the command library into every supported agent directory.
+
+    Output is aggregated per-agent — one summary line per agent instead of
+    one line per (command × agent) — to keep ``deviate setup`` output
+    readable when 32 commands are written to four agent directories
+    (128 lines per invocation under the legacy per-command format).
+    """
+    commands = discover_commands()
+    if not commands:
         return
     for agent in agents:
-        target_dir = _get_agent_skill_dir(agent, workdir)
+        target_dir = _get_agent_command_dir(agent, workdir)
         if target_dir is None:
             console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
             continue
-        for skill_name in skills:
-            if install_skill(skill_name, target_dir, workdir=workdir):
-                console.print(f"  [green]INSTALL[/] {skill_name} → {agent}")
+        installed = 0
+        skipped = 0
+        for command_name in commands:
+            if install_command(command_name, target_dir, workdir=workdir, agent=agent):
+                installed += 1
             else:
-                console.print(f"  [yellow]SKIP[/] {skill_name} → {agent}")
+                skipped += 1
+        if installed and not skipped:
+            console.print(f"  [green]INSTALL[/] {installed} commands → {agent}")
+        elif skipped and not installed:
+            console.print(f"  [yellow]SKIP[/] {skipped} commands → {agent}")
+        else:
+            console.print(
+                f"  [green]INSTALL[/] {installed}, [yellow]SKIP[/] {skipped} → {agent}"
+            )
 
 
 def _ensure_gitignore(workdir: Path) -> None:
@@ -613,71 +633,78 @@ def setup(
 
     _scaffold_constitution(workdir)
 
-    # ``droid`` and ``factory`` share the Factory Droid IDE skills directory
-    # (``.factory/skills/``); ``droid`` is the underlying backend binary that
-    # both user-facing names dispatch to. ``pi`` is treated as a regular
-    # project-local agent (``.pi/skills/``) — same convention as ``.claude/``,
-    # ``.opencode/``, ``.factory/``. No global ``~/.pi/agent/`` writes, no
-    # ``settings.json`` generation — the operator's Pi config is out of scope.
-    if selected_agent and selected_agent in (
-        "claude",
-        "opencode",
-        "factory",
-        "droid",
-        "pi",
-    ):
-        skills_agent = "factory" if selected_agent == "droid" else selected_agent
-        active_agents = [skills_agent]
-    else:
-        active_agents = detect_agents(workdir)
-
-    if active_agents:
-        _install_skills_to_agents(workdir, active_agents)
+    # DeviaTDD commands are installed into ALL agent directories regardless
+    # of ``--agent``. ``--agent`` only drives the ``[agent].backend`` value
+    # written to ``.deviate/config.toml`` — that value is consumed by the
+    # meso/micro layers to dispatch agent invocations, never to gate which
+    # agents receive commands. ``droid`` is normalised to ``factory`` —
+    # both names map to the Factory Droid IDE commands directory
+    # (``.factory/commands/``); ``droid`` is the underlying backend binary.
+    # ``pi`` uses ``.pi/prompts/`` per the platform's documented convention;
+    # the other three use ``commands/``. No global ``~/.pi/agent/`` writes,
+    # no ``settings.json`` generation — the operator's Pi config is out of
+    # scope.
+    active_agents = ("claude", "opencode", "factory", "pi")
+    _install_commands_to_agents(workdir, list(active_agents))
 
     _ensure_gitignore(workdir)
-
-    if selected_agent:
-        gitignore_agent = "factory" if selected_agent == "droid" else selected_agent
-        _ensure_agent_gitignored(workdir, gitignore_agent)
+    _ensure_root_gitignore(workdir)
 
 
-def _ensure_agent_gitignored(workdir: Path, agent: str) -> None:
-    """Write a per-agent ``.gitignore`` that excludes DeviaTDD-installed skills.
+def _ensure_root_gitignore(workdir: Path) -> None:
+    """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
+    commands across all agent platforms.
 
-    Two skill families are installed into ``.<agent>/skills/`` and must not
-    be committed:
+    Two command families are installed and must not be committed:
 
-    - ``deviate-*`` — the core DeviaTDD skill library
+    - ``deviate-*`` — the core DeviaTDD command library
     - ``tome-*``    — the Tome Subsystem (ISS-ADH-011)
 
-    The gitignore lives inside the agent's own directory (e.g.
-    ``.factory/.gitignore``) so the project root ``.gitignore`` stays clean.
-    Patterns are scoped to the ``skills/`` subtree so any user-authored
-    content in ``.<agent>/`` (e.g. settings, themes, custom commands) is
-    not affected.
+    The patterns are scoped with ``*/commands/`` and ``*/prompts/`` so they
+    only match a SINGLE directory level before the agent subdir — this is
+    deliberately tight because the project itself stores command sources
+    three levels deep at ``src/deviate/prompts/commands/deviate-*.md``
+    (plus spec files like ``specs/plans/deviate-content.md``). A broader
+    ``**/deviate-*.md`` pattern would silently ignore those source-of-truth
+    files and break ``deviate setup`` in the deviatdd repo itself. The
+    patterns cover every supported agent (``.claude/commands/``,
+    ``.opencode/commands/``, ``.factory/commands/``, ``.pi/prompts/``) and
+    any future agent that follows the same ``<dir>/commands/`` or
+    ``<dir>/prompts/`` flat-file convention.
 
-    The caller is responsible for normalising ``droid`` → ``factory`` before
-    invocation so this helper never writes a ``.droid/.gitignore`` (the
-    droid CLI does not own a directory).
+    The four patterns are written to the single project-root ``.gitignore``
+    so the agent exclusion surface lives in one canonical file (the prior
+    per-agent ``.<agent>/.gitignore`` files were consolidated — see the
+    spec note in ``specs/DeviaTDD-api.md`` § ``deviate init`` and
+    ``deviate setup``). Idempotent: re-running ``deviate setup`` does not
+    duplicate entries and never rewrites user-authored lines.
     """
-    agent_dir = workdir / f".{agent}"
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    gitignore_path = agent_dir / ".gitignore"
-    entries = ("skills/deviate-*/", "skills/tome-*/")
-    body = "\n".join(entries) + "\n"
+    gitignore_path = workdir / ".gitignore"
+    entries = (
+        "*/commands/deviate-*.md",
+        "*/commands/tome-*.md",
+        "*/prompts/deviate-*.md",
+        "*/prompts/tome-*.md",
+    )
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
-        if all(entry in content for entry in entries):
+        existing_lines = content.splitlines()
+        missing = [entry for entry in entries if entry not in existing_lines]
+        if not missing:
             return
-        merged_lines = [line for line in content.splitlines() if line.strip()]
-        for entry in entries:
-            if entry not in merged_lines:
-                merged_lines.append(entry)
-        gitignore_path.write_text("\n".join(merged_lines) + "\n", encoding="utf-8")
-        console.print(f"  [green]UPDATE[/] .{agent}/.gitignore with {entries}")
+        merged = list(existing_lines)
+        if merged and merged[-1].strip():
+            merged.append("")
+        merged.extend(missing)
+        gitignore_path.write_text("\n".join(merged) + "\n", encoding="utf-8")
+        console.print(
+            f"  [green]UPDATE[/] .gitignore added {len(missing)} agent entries"
+        )
     else:
-        gitignore_path.write_text(body, encoding="utf-8")
-        console.print(f"  [green]CREATE[/] .{agent}/.gitignore with {entries}")
+        gitignore_path.write_text("\n".join(entries) + "\n", encoding="utf-8")
+        console.print(
+            f"  [green]CREATE[/] .gitignore with {len(entries)} agent entries"
+        )
 
 
 cli.add_typer(explore_app, name="explore")

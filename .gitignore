@@ -17,6 +17,7 @@ node_modules/
 
 .deviate/artifacts/
 .deviate/review/
-.opencode/skills/deviate-*/
-.factory/skills/deviate-*/
-.pi/skills/deviate-*/
+*/commands/deviate-*.md
+*/commands/tome-*.md
+*/prompts/deviate-*.md
+*/prompts/tome-*.md
