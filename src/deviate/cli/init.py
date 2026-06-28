@@ -394,6 +394,14 @@ def pre() -> None:
         (repo_root / "AGENTS.md").symlink_to("CLAUDE.md")
         artifacts_created.append("AGENTS.md")
 
+    # Provision union-merge rules for append-only JSONL ledgers.
+    # Idempotent: never duplicates entries, never overwrites user content.
+    from deviate.cli import _ensure_root_gitattributes
+
+    _ensure_root_gitattributes(repo_root)
+    if (repo_root / ".gitattributes").exists():
+        artifacts_created.append(".gitattributes")
+
     try:
         top_level_entries = [
             p.name for p in repo_root.iterdir() if p.name not in (".git",)
@@ -453,6 +461,8 @@ def post() -> None:
         artifacts.append("specs/issues.jsonl")
     if (repo_root / "AGENTS.md").is_symlink():
         artifacts.append("AGENTS.md")
+    if (repo_root / ".gitattributes").exists():
+        artifacts.append(".gitattributes")
 
     if artifacts:
         subprocess.run(

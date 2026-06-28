@@ -1,6 +1,6 @@
 # Project Constitution
 
-Version: 0.2.0
+Version: 0.4.0
 
 ---
 
@@ -91,6 +91,7 @@ Version: 0.2.0
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
 ## 6. Version History
+- 0.4.0 — Added cross-branch merge strategy for append-only JSONL ledgers via `merge=union` in `.gitattributes`; provisioned by `deviate setup`/`deviate init` to prevent line-level conflicts when concurrent feature branches both append to `specs/issues.jsonl`; semantic-duplicate records still resolved by sequential-parse canonical-state per §1
 
 - 0.2.0 — Added `[models]` config section for per-phase model routing; documented resolution order and backend support matrix
 - 0.1.0 — Initial constitution generation for DeviaTDD Python CLI

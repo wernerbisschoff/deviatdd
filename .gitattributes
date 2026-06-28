@@ -1,0 +1,5 @@
+# DeviaTDD append-only JSONL ledgers: union-merge so concurrent
+# appends never conflict at branch-merge time.
+# See specs/constitution.md §1 Append-Only Ledger Protocol.
+specs/issues.jsonl merge=union
+specs/**/tasks.jsonl merge=union

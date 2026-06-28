@@ -50,6 +50,18 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   responsibility via Pi's own configuration mechanism). All four command
   directories are excluded from version control via the project-root
   `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:653`).
+  Additionally, both `deviate setup` and `deviate init pre` provision a project-root
+  `.gitattributes` declaring `merge=union` for `specs/issues.jsonl` and
+  `specs/**/tasks.jsonl` (see `_ensure_root_gitattributes` at
+  `src/deviate/cli/__init__.py:675` and the `DEVIATE_GITATTRIBUTES_SEED`
+  constant). This implements the cross-branch merge strategy declared in
+  `specs/constitution.md` §1 Append-Only Ledger Protocol — concurrent
+  appends to the append-only JSONL ledgers on parallel feature branches
+  merge without conflict markers; the union driver keeps every unique
+  line across all sides. Behaviour: idempotent (re-running setup never
+  duplicates rules), preserves user-authored `.gitattributes` content,
+  and stages the file via `deviate init post` alongside the other
+  scaffolded artifacts.
 * **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi]` to override
   auto-detect. If omitted, the persisted value is reused; if no persisted value exists and
   the session is interactive, a Rich `Prompt.ask` menu is shown. In non-interactive mode
