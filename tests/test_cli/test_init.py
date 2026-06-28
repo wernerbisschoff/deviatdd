@@ -1,3 +1,4 @@
+import subprocess
 import tomllib
 from contextlib import chdir
 from pathlib import Path
@@ -10,6 +11,7 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 from deviate.cli.__init__ import resolve_graphite_config
 from deviate.core.commands import _resolve_commands_root
+from tests.conftest import _git_env
 
 runner = CliRunner()
 
@@ -1037,6 +1039,118 @@ class TestInitAgentFlag:
                 assert root_gi.count(entry) == 1, (
                     f"{entry} duplicated in root .gitignore"
                 )
+
+    # ------------------------------------------------------------------
+    # .gitattributes — append-only JSONL ledger union-merge strategy
+    # ------------------------------------------------------------------
+    def test_init_writes_root_gitattributes_with_union_driver(self, tmp_path: Path):
+        """``deviate setup`` writes ``.gitattributes`` with ``merge=union``
+        applied to the append-only JSONL ledgers declared by the
+        Append-Only Ledger Protocol (constitution §1).
+
+        Without this, concurrent ``deviate shard`` runs on feature
+        branches produce line-level conflicts in ``specs/issues.jsonl``
+        at merge time. ``merge=union`` resolves those conflicts
+        automatically by keeping the line-wise union of all sides.
+        """
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            attr_path = tmp_path / ".gitattributes"
+            assert attr_path.exists(), ".gitattributes not written by setup"
+            content = attr_path.read_text(encoding="utf-8")
+            assert "specs/issues.jsonl merge=union" in content
+            assert "specs/**/tasks.jsonl merge=union" in content
+
+    def test_init_root_gitattributes_preserves_user_content(self, tmp_path: Path):
+        """User-authored entries in the root ``.gitattributes`` are
+        preserved when ``deviate setup`` adds its union-merge rules.
+        """
+        (tmp_path / ".gitattributes").write_text(
+            "# user content\n*.log binary\n", encoding="utf-8"
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            content = (tmp_path / ".gitattributes").read_text(encoding="utf-8")
+            assert "# user content" in content
+            assert "*.log binary" in content
+            assert "specs/issues.jsonl merge=union" in content
+            assert "specs/**/tasks.jsonl merge=union" in content
+
+    def test_init_root_gitattributes_idempotent_across_runs(self, tmp_path: Path):
+        """Re-running ``deviate setup`` does not duplicate the
+        union-merge entries in ``.gitattributes``.
+        """
+        with chdir(tmp_path):
+            runner.invoke(cli, ["setup", "--agent", "opencode"])
+            runner.invoke(cli, ["setup", "--agent", "opencode"])
+            content = (tmp_path / ".gitattributes").read_text(encoding="utf-8")
+            for line in (
+                "specs/issues.jsonl merge=union",
+                "specs/**/tasks.jsonl merge=union",
+            ):
+                assert content.count(line) == 1, (
+                    f"{line!r} duplicated in root .gitattributes"
+                )
+
+    def test_init_root_gitattributes_union_driver_recognised_by_git(
+        self, tmp_path: Path, tmp_git_repo: Path
+    ):
+        """Integration guarantee: after ``deviate setup``, git itself
+        recognises the ``merge=union`` driver for the ledgers — this
+        is what prevents merge conflicts in practice.
+
+        Uses ``tmp_git_repo`` (a real git repo) because ``git check-attr``
+        requires being inside a working tree.
+        """
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+        # ``git check-attr`` is the canonical way to verify a
+        # .gitattributes rule is in effect for a given path.
+        attr_out = subprocess.check_output(
+            [
+                "git",
+                "check-attr",
+                "-a",
+                "specs/issues.jsonl",
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            text=True,
+        )
+        assert "merge: union" in attr_out, (
+            f"git does not see merge=union for specs/issues.jsonl:\n{attr_out}"
+        )
+        task_attr_out = subprocess.check_output(
+            [
+                "git",
+                "check-attr",
+                "-a",
+                "specs/001-test/tasks.jsonl",
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            text=True,
+        )
+        assert "merge: union" in task_attr_out, (
+            f"git does not see merge=union for "
+            f"specs/001-test/tasks.jsonl:\n{task_attr_out}"
+        )
+
+    def test_init_pre_writes_root_gitattributes(self, tmp_git_repo: Path):
+        """``deviate init pre`` (the Typer sub-group used by skills)
+        also provisions ``.gitattributes``. Without this wiring,
+        skill-orchestrated init runs would skip the merge strategy
+        — a pre-existing asymmetry versus ``deviate setup``.
+        """
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["init", "pre"])
+            assert result.exit_code == 0, result.output
+            content = (tmp_git_repo / ".gitattributes").read_text(encoding="utf-8")
+            assert "specs/issues.jsonl merge=union" in content
+            assert "specs/**/tasks.jsonl merge=union" in content
 
     def test_init_no_agent_no_config_non_interactive_errors(self, tmp_path: Path):
         """Without `--agent`, no config, and no TTY → init exits with a clear error."""
