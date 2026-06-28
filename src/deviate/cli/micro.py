@@ -63,6 +63,12 @@ _MANIFEST_HEADER_RE = re.compile(r"^##\s*\[(?:HANDOVER_MANIFEST|MINIMAL_HANDOVER
 _DEVIATE_MICRO_HEADER_RE = re.compile(r"^# DeviaTDD Micro")
 _HANDOVER_XML_RE = re.compile(r"^</?handover_manifest>\s*$")
 
+# Mise prefixes each task's stdout with "[<task-name>] ". Ruff and pytest
+# emit "Finished in Nms" timing lines. Both are operational noise that
+# the user does not need between phases — visible under --verbose.
+_MISE_TASK_PREFIX_RE = re.compile(r"^\[[a-zA-Z][a-zA-Z0-9_-]*\]\s")
+_MISE_TIMING_RE = re.compile(r"^Finished in \d+(?:\.\d+)?ms\s*$")
+
 
 def _log(msg: str) -> None:
     if _verbose:
@@ -73,6 +79,25 @@ def _log_run(event: str, **kwargs: object) -> None:
     logger = get_run_logger()
     if logger is not None:
         logger.log(event, **kwargs)
+
+
+_TASK_DESC_MAX = 60
+
+
+def _task_label(task: dict) -> str:
+    """Render ``"TSK-NNN-NN: <description>"`` for log lines.
+
+    Falls back to the bare id when description is missing or empty.
+    Description is truncated to ``_TASK_DESC_MAX`` chars to keep log lines
+    scannable.
+    """
+    tid = task.get("id", "?")
+    desc = task.get("description", "").strip()
+    if not desc:
+        return tid
+    if len(desc) > _TASK_DESC_MAX:
+        desc = desc[:_TASK_DESC_MAX].rstrip() + "…"
+    return f"{tid}: {desc}"
 
 
 def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
@@ -253,6 +278,10 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
             if _DEVIATE_MICRO_HEADER_RE.match(stripped):
                 return
             if _HANDOVER_XML_RE.match(stripped):
+                return
+            if _MISE_TASK_PREFIX_RE.match(stripped):
+                return
+            if _MISE_TIMING_RE.match(stripped):
                 return
 
         if "<thinking" in stripped.lower():
@@ -861,10 +890,10 @@ def _run_red_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "RED"):
-        c.print(f"  [dim]RED already done for {tid}, skipping[/]")
+        c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
         return session
     _log_run("PHASE_START", task_id=tid, phase="RED")
-    c.print(f"  [bold blue]RED →[/] {tid}")
+    c.print(f"  [bold blue]RED →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -938,14 +967,14 @@ def _run_green_phase(
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "GREEN"):
         if not session.train_feedback:
-            c.print(f"  [dim]GREEN already done for {tid}, skipping[/]")
+            c.print(f"  [dim]GREEN already done for {_task_label(task)}, skipping[/]")
             return session
         c.print(
-            f"  [dim]GREEN already done for {tid}"
+            f"  [dim]GREEN already done for {_task_label(task)}"
             f" but train_feedback present — re-running[/]"
         )
     _log_run("PHASE_START", task_id=tid, phase="GREEN")
-    c.print(f"  [bold green]GREEN →[/] {tid}")
+    c.print(f"  [bold green]GREEN →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1254,7 +1283,7 @@ def _run_judge_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="JUDGE")
-    c.print(f"  [bold magenta]JUDGE →[/] {tid}")
+    c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1478,13 +1507,13 @@ def _run_refactor_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, task.get("id", ""), "COMPLETED"):
-        c.print(f"  [dim]Already completed for {tid}, skipping[/]")
+        c.print(f"  [dim]Already completed for {_task_label(task)}, skipping[/]")
         _log_run(
             "PHASE_SKIP", task_id=tid, phase="REFACTOR", reason="already_completed"
         )
         return session
     _log_run("PHASE_START", task_id=tid, phase="REFACTOR")
-    c.print(f"  [bold green]REFACTOR →[/] {tid}")
+    c.print(f"  [bold green]REFACTOR →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1528,7 +1557,7 @@ def _run_refactor_phase(
     session.yellow_triggered = False
     session.save(session_path)
     _verify_clean_worktree(root, "REFACTOR", tid)
-    c.print(f"  [bold green]COMPLETED[/] {tid}")
+    c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
     return session
 
 
@@ -1543,7 +1572,7 @@ def _run_yellow_phase(
 ) -> tuple[SessionState, str]:
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="YELLOW")
-    c.print(f"  [bold magenta]YELLOW →[/] {tid}")
+    c.print(f"  [bold magenta]YELLOW →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1626,7 +1655,7 @@ def _finish_tdd_cycle(
         )
     else:
         _append_status_transition(task, "COMPLETED", ledger_path)
-        c.print(f"  [bold green]COMPLETED[/] {tid}")
+        c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
         session = session.force_transition_to("IDLE")
         session.yellow_triggered = False
         session.train_feedback = ""
@@ -1648,7 +1677,7 @@ def _run_tdd_cycle(
     root = Path.cwd()
     tid = task.get("id", "?")
     if _phase_already_done(ledger_path, tid, "COMPLETED"):
-        c.print(f"  [dim]Already completed for {tid}, skipping[/]")
+        c.print(f"  [dim]Already completed for {_task_label(task)}, skipping[/]")
         return
     _verify_worktree_branch(root)
     dot_dir = root / ".deviate"
@@ -1872,7 +1901,7 @@ def _run_execute_phase(
 ) -> None:
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="EXECUTE")
-    c.print(f"  [bold green]EXECUTE \u2192[/] {tid}")
+    c.print(f"  [bold green]EXECUTE →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1942,7 +1971,7 @@ def _run_execute_phase(
             c.print(f"  [dim]JUDGE_SKIP \u2014 no diff in commit for {tid}[/]")
             break
 
-        c.print(f"  [bold magenta]JUDGE \u2192[/] {tid} (spec compliance)")
+        c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)} (spec compliance)")
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
@@ -2036,7 +2065,7 @@ def _run_execute_phase(
 
         break
 
-    c.print(f"  [bold green]COMPLETED[/] {tid}")
+    c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
     try:
         record = TaskRecord.model_validate(task)
         record.status = "COMPLETED"
@@ -2065,7 +2094,7 @@ def _dispatch_task(
     start_phase: str | None = None,
 ) -> None:
     mode = task.get("execution_mode", "TDD")
-    c.print(f"[cyan]Processing {task.get('id', '?')} ({mode})[/]")
+    c.print(f"[cyan]Processing {_task_label(task)} ({mode})[/]")
 
     if mode == "TDD" and batch_mode:
         description = task.get("description", "")
@@ -2359,10 +2388,15 @@ def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
             cmd,
             cwd=root,
             env=_git_env(),
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             console.print("[red]COMMIT_FAILED[/]")
+            if result.stderr.strip():
+                console.print(result.stderr.strip(), style="red")
             return False
+        console.print(f"  [green]Committed[/] [dim]{message}[/]")
         return True
     return False
 
