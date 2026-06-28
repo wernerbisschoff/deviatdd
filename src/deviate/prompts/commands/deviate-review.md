@@ -123,12 +123,6 @@ For each `structured_diff` entry (and corresponding section in `structured_diff_
 
 </system_instructions>
 
-<handover_persistence>
-
-After emitting the YAML manifest, call the Write tool to persist it at `.deviate/feat/<epic>/<issue>/[<task>/]<phase>.yaml` via `deviate.core.handover.handover_path()` (FLOW-11 capture).
-
-</handover_persistence>
-
 <execution_sequence>
 
 ### STEP 1: GATHER
