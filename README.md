@@ -12,7 +12,7 @@
 
 > **An agent-orchestration framework that runs your entire TDD loop — explore, spec, red, green, refactor — with three mandatory human-in-the-loop gates.**
 
-DeviaTDD is a Python CLI (`deviate`) that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a three-layer architecture, append-only JSONL ledgers, worktree isolation, and tamper-guarded test execution. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, and Droid are first-class backends today.
+DeviaTDD is a Python CLI (`deviate`) that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a four-layer architecture (Product · Macro · Meso · Micro), append-only JSONL ledgers, worktree isolation, and tamper-guarded test execution. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, and Droid are first-class backends today.
 
 ---
 
@@ -46,19 +46,58 @@ uv tool install deviate
 deviate setup --agent claude     # or: opencode | pi | droid
 ```
 
-Once setup is done, drive the entire lifecycle from inside your agent:
+Once setup is done, drive the entire lifecycle from inside your agent. The phases follow a strict dependency order; each one commits an artifact and (at the three HITL gates) pauses for your review.
+
+**Product layer** *(optional, for cross-product framing — skip if your repo only does single features):*
 
 ```
+/deviate-flows         "Onboard a new tenant"      # FLOW-01 customer flow → specs/_product/flows/
+/deviate-architecture                                # FLOW-02 cross-epic architecture → specs/_product/architecture.md
+/deviate-release        "Ship the v2 onboarding"    # FLOW-03 release plan → specs/_product/release-next.md
+```
+
+**Macro** — pick one of two paths. Full path for new features, the `adhoc` shortcut for low/medium-complexity tasks:
+
+```
+# Full path: feature scoping with a Gate 1 design review
 /deviate-explore "Add user authentication via OAuth2"
-/deviate-research
+/deviate-research                          # ← Gate 1: review design.md + data-model.md
 /deviate-prd
-/deviate-shard
-/deviate-plan
-/deviate-tasks
-/deviate-red T001          # starts the strict TDD loop
-/deviate-green             # after the failing test is committed
-/deviate-judge             # gate decision
-/deviate-refactor          # once green is approved
+/deviate-shard                             # ← Gate 2: review every ISS-NNN spec-enriched issue
+
+# — or — Adhoc shortcut for low/medium-complexity work
+/deviate-adhoc "Add a /healthz endpoint"   # condenses explore+research+prd+shard into one issue
+```
+
+**Meso** — for each sharded issue, decompose into tasks. `tasks.md` is the human's execution blueprint:
+
+```
+/deviate-plan                              # per-issue localized research → plan.md
+/deviate-tasks                             # → tasks.md: 4-8 tasks, each with Verification CLI
+                                           #   TDD tasks flow to the Red→Green→Judge→Refactor loop;
+                                           #   IMMEDIATE tasks flow to /deviate-execute
+```
+
+**Micro** — for each task, pick the loop that fits:
+
+```
+# TDD cycle (default for TDD-typed tasks)
+/deviate-red      T001                   # write a failing test
+/deviate-green    T001                   # implement it; TamperGuard reverts test edits
+/deviate-judge    T001                   # Gate decision; on rejection, the
+                                         # Green → Judge → Green loop kicks in
+                                         # (revert + <train_feedback> → re-GREEN, up to 3x)
+/deviate-refactor T001                   # only on JUDGE_PASS
+
+# — or — Direct path for low-complexity tasks (boilerplate, config, trivial fixes)
+/deviate-execute  T002                   # skips the TDD cycle; still has its own JUDGE pass
+```
+
+**Release** — close the loop:
+
+```
+/deviate-pr       T001                   # conventional-commit PR; merge appends COMPLETED
+/deviate-review                          # ← Gate 3: final PR scan; merge or request changes
 ```
 
 > **Don't run `deviate <phase>` directly.** The CLI subcommands are the engine the slash commands drive — invoking them by hand skips contract emission, validation, commits, and ledger transitions.
@@ -67,88 +106,88 @@ The full lifecycle takes you from a problem statement to merged, tested code wit
 
 ---
 
-## Architecture: Three Layers, Three Gates
+## Architecture: Four Layers, Three Gates
 
 ```mermaid
 flowchart TB
+subgraph Product["Product Layer — Customer &amp; Release Framing (optional)"]
+  F[flows] --> A[architecture]
+  A --> R[release]
+end
+
 subgraph Macro["Macro Layer — Feature Scoping"]
-E[explore] --> R[research]
-R --> P[prd]
-P --> S[shard]
+  E[explore] --> Re[research]
+  Re --> P[prd]
+  P --> S[shard]
+  E -.->|low/medium complexity| Ad[adhoc]
 end
 
 S -.->|HITL Gate 2| Pl
 
 subgraph Meso["Meso Layer — Issue Engineering"]
-Pl[plan] --> T[tasks]
+  Pl[plan] --> T[tasks]
 end
 
-subgraph Micro["Micro Layer — TDD Sandbox"]
-T --> Re[red]
-Re --> G[green]
-G --> J{judge}
-J -->|violation| Y[yellow]
-Y --> G
-J -->|pass| Rf[refactor]
-Rf -.->|HITL Gate 3| Done[merged]
+subgraph Micro["Micro Layer — Per-Task Loop"]
+  T --> Re1[red]
+  Re1 --> G1[green]
+  G1 --> J{judge}
+  J -->|violation| G1
+  J -->|tamper detected| Y[yellow]
+  Y --> G1
+  J -->|pass| Rf[refactor]
+  Rf -.->|HITL Gate 3| Done[merged]
 end
 
+subgraph MicroAlt["Micro Layer — Direct Path (low-complexity tasks)"]
+  T -.->|complexity ≤ 3| Ex[execute]
+end
+
+style F fill:#f5e1f5
+style A fill:#f5e1f5
+style R fill:#f5e1f5
 style E fill:#e1f5e1
-style R fill:#e1f5e1
+style Re fill:#e1f5e1
 style P fill:#e1f5e1
 style S fill:#e1f5e1
+style Ad fill:#e1f5e1
 style Pl fill:#e1e7f5
 style T fill:#e1e7f5
-style Re fill:#f5e1e1
-style G fill:#f5e1e1
+style Re1 fill:#f5e1e1
+style G1 fill:#f5e1e1
 style J fill:#f5e1e1
 style Y fill:#f5e1e1
 style Rf fill:#f5e1e1
+style Ex fill:#f5e1e1
 ```
 
-### Layers
+### Workflow at a Glance
 
-- **Macro** — `explore → research → prd → shard`. Scopes a feature into spec-enriched issue files (`shard` produces them directly — no separate `specify` step). Outputs land in `specs/issues.jsonl` (append-only ledger).
-- **Meso** — `plan → tasks`. Decomposes an issue into executable tasks with DAG dependencies. Tasks live at `specs/{epic}/tasks.jsonl`.
-- **Micro** — `red → green → [yellow?] → judge → refactor`. The strict TDD sandbox. Micro-layer agents are sandboxed: they can write **only** to `src/**/*.py`. Test/spec mutations trigger an immediate rollback.
+Each phase emits a single artifact, commits it, and (at gates) hands off to a human for review. The **slash command** is the user-facing entrypoint; the **artifact** is what lands in your repo; the **review** column tells you what the human should be looking at before clearing the gate.
 
-### Gates (no programmatic bypass)
-
-- **Gate 1** — After `/deviate-research`, before `/deviate-prd`: design + data-model sign-off.
-- **Gate 2** — After `/deviate-shard`, before `/deviate-plan`: spec-enriched issue approval.
-- **Gate 3** — Final merge audit after all tasks complete.
-
-### Append-Only Ledger Protocol
-
-All state lives in JSONL ledgers (`specs/issues.jsonl`, `specs/**/tasks.jsonl`). Existing lines are never modified. `.gitattributes` configures `merge=union` so concurrent feature branches don't conflict at merge time. Canonical state is derived by sequential parsing.
-
----
-
-## Agent Backends
-
-DeviaTDD is agent-agnostic. Configure one or more in `.deviate/config.toml`:
-
-```toml
-[models]
-default = "sonnet"
-explore = "haiku"
-plan = "opus"
-```
-
-| Backend | Mode | Skills Path |
-|---------|------|-------------|
-| **Claude Code** | Native | `~/.claude/skills/deviate-*/` |
-| **OpenCode** | Native | `~/.config/opencode/skills/deviate-*/` |
-| **Pi** | Print + opt-in RPC | `<workdir>/.pi/skills/deviate-*/` |
-| **Droid** | Native | `~/.factory/skills/deviate-*/` |
-
-Per-phase model routing is enforced via `src/deviate/state/config.py::resolve_phase_model`. Resolution order: phase-specific key → `default` → backend default.
-
----
+| Phase | Slash command | Artifact committed | What the human reviews / decides |
+|-------|---------------|--------------------|----------------------------------|
+| **Bootstrap** | `deviate setup --agent <name>` | `.deviate/config.toml`, `specs/constitution.md`, governance blocks, installed `/deviate-*` slash commands | Sanity-check the constitution and the agent skills list; commit. |
+| **Product · Flows** | `/deviate-flows` | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Conversational: confirm the actor, job-to-be-done, and trigger are right; commit the flow file when asked. |
+| **Product · Architecture** | `/deviate-architecture` | `specs/_product/architecture.md`, `specs/_product/domain-model.md` | Reads existing flows; classify the change as Local / Context-Bridging / Context-Creating; commit when satisfied. |
+| **Product · Release** | `/deviate-release` | `specs/_product/release-next.md` (overrides previous) | Supply a release-goal sentence; confirm the Included Flows / Included Work / Acceptance tables reflect that goal; commit. |
+| **Macro · Explore** | `/deviate-explore` | `specs/{epic}/explore.md` (raw codebase scan — what exists, not what to do) | Light review: does the scan cover the right subsystems? Commit to advance. |
+| **Macro · Research** *(Gate 1)* | `/deviate-research` | `specs/{epic}/design.md`, `specs/{epic}/data-model.md` | **Gate 1**: approve the design + data-model before PRD synthesis. |
+| **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
+| **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — there is no separate `/deviate-specify` step. |
+| **Macro · Adhoc** *(shortcut)* | `/deviate-adhoc` | `specs/adhoc/ISS-ADH-NNN-*.md` (single issue, spec-enriched) | Use for low/medium-complexity tasks; the complexity classifier auto-routes high-complexity work to the full Macro path. |
+| **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
+| **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | **The `tasks.md` artifact is the human's execution blueprint for the issue.** Verify: (a) 4–8 tasks per issue, (b) every task has a Verification CLI command, (c) each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, (d) DAG `blocked_by` deps are right. TDD tasks will go through red→green→judge→refactor; IMMEDIATE tasks are routed to `/deviate-execute`. |
+| **Micro · Red** | `/deviate-red <task-id>` | A failing test (no production code) | Agent-internal; you see the test on commit. |
+| **Micro · Green** | `/deviate-green <task-id>` | Production code that passes the test | Agent-internal; the TamperGuard reverts any unauthorized test edits before the suite runs. |
+| **Micro · Yellow** *(conditional)* | `/deviate-yellow <task-id>` | An amendment to the test, gated on TamperGuard detection | **Review the `<propose_test_amendment>` block**: if approved, the CLI commits it and advances to JUDGE; if rejected, `git restore .` rolls back and the loop returns to GREEN. |
+| **Micro · Judge** | `/deviate-judge <task-id>` | A `JUDGE_PASS` or `JUDGE_REJECTED` verdict over the GREEN diff | On rejection, the **Green → Judge → Green loop** rolls back via `git revert --no-edit <green_sha>`, injects `<train_feedback>` into the next GREEN prompt, and retries (up to 3 attempts). Read the feedback — it's the only signal you'll get for what the compliance checker objected to. |
 
 ## Slash Commands
 
 DeviaTDD's user-facing interface is the library of `/deviate-*` slash commands installed by `deviate setup`. Each command emits a `pre` contract, the agent authors the artifact, then invokes a `post` command to validate, commit, and advance the ledger. **The CLI subcommands (`deviate explore`, `deviate plan`, etc.) are the engine beneath these prompts — never invoke them directly.**
+
+> The full library lives at `src/deviate/prompts/commands/` — **31 prompts** total: 24 `deviate-*` slash commands (Product · Macro · Meso · Micro · Inspection) plus 7 `tome-*` documentation-curation skills.
 
 ### Bootstrap (run once per project / agent)
 
@@ -159,29 +198,35 @@ DeviaTDD's user-facing interface is the library of `/deviate-*` slash commands i
 
 > Note: `deviate init` exists as the engine backing the `/deviate-init` slash command (see `src/deviate/cli/init.py`). It is **not** a user-facing shell command — use `deviate setup` instead.
 
+### Product *(optional, sits above Macro)*
+
+`/deviate-flows` · `/deviate-architecture` · `/deviate-release`
+
+Frames the *what* and *why* across the whole product. `/deviate-flows` writes customer flows at `specs/_product/flows/`, `/deviate-architecture` writes the cross-epic contract at `specs/_product/architecture.md` (gated on the flows precondition), and `/deviate-release` writes the next coherent release plan at `specs/_product/release-next.md` (gated on architecture + flows). `deviate-shard` and `deviate-adhoc` consume these via the `flow_refs:` frontmatter so vertical slices stay traceable back to the flow that motivated them.
+
 ### Macro (Feature Scoping)
 
 `/deviate-explore` · `/deviate-research` · `/deviate-prd` · `/deviate-shard` · `/deviate-adhoc`
 
-Scopes a feature into spec-enriched issue files. `deviate shard` now produces the spec-enriched issue files directly — there is no separate `specify` step. Outputs land in `specs/issues.jsonl` (append-only ledger).
+Two paths: the full `explore → research → prd → shard` chain for new features (with a Gate 1 design review after research and a Gate 2 issue review after shard), or the `/deviate-adhoc` shortcut that condenses all four into a single spec-enriched issue for low/medium-complexity tasks. `deviate shard` produces the spec-enriched issue files directly — there is no separate `specify` step. Outputs land in `specs/issues.jsonl` (append-only ledger).
 
 ### Meso (Issue Engineering)
 
 `/deviate-plan` · `/deviate-tasks` · `/deviate-pr` · `/deviate-review`
 
-Decomposes a spec-enriched issue into executable tasks with DAG dependencies. Tasks live at `specs/{epic}/tasks.jsonl`. `/deviate-review` is HITL Gate 3 — the structured PR scan before merge.
+Decomposes a spec-enriched issue into executable tasks with DAG dependencies. `/deviate-plan` writes `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research); `/deviate-tasks` writes the human-facing `tasks.md` blueprint plus a `specs/{epic}/tasks.jsonl` append-only ledger. `/deviate-pr` opens a GitHub PR and on merge appends `COMPLETED` to the issues ledger; `/deviate-review` is HITL Gate 3 — the structured PR scan before merge.
 
-### Micro (TDD Sandbox)
+### Micro (Per-Task Loop)
 
-`/deviate-red` · `/deviate-green` · `/deviate-yellow` · `/deviate-judge` · `/deviate-refactor` · `/deviate-e2e`
+`/deviate-red` · `/deviate-green` · `/deviate-yellow` · `/deviate-judge` · `/deviate-refactor` · `/deviate-execute` · `/deviate-e2e`
 
-The strict TDD cycle. Micro-layer agents are sandboxed: they can write **only** to `src/**/*.py`. Test/spec mutations trigger an immediate rollback. Use `/deviate-execute` instead for low-complexity tasks, trivial changes, or refactors with existing coverage (no TDD cycle).
+Two paths: the strict TDD cycle for `TDD`-typed tasks (`red → green → [yellow?] → judge → refactor`, with a **Green → Judge → Green loop** that fires on `JUDGE_REJECTED` to inject `<train_feedback>` and re-run GREEN up to 3 times), or `/deviate-execute` for `direct`/`e2e`-typed tasks that skip the test-first cycle. `/deviate-yellow` is a conditional branch triggered by TamperGuard when unauthorized test edits are detected between GREEN and JUDGE. `/deviate-e2e` orchestrates external runtime environments for end-to-end validation. Micro-layer agents are sandboxed: they can write **only** to `src/**/*.py`. Test/spec mutations trigger an immediate rollback.
 
 ### Inspection & Maintenance
 
-`/deviate-triage` · `/deviate-constitution` · `/deviate-hotfix` · `/deviate-prune` · `/deviate-flows` · `/deviate-architecture` · `/deviate-release`
+`/deviate-triage` · `/deviate-constitution` · `/deviate-hotfix` · `/deviate-prune`
 
-The full library lives at `src/deviate/prompts/commands/` — 29 prompts spanning Macro, Meso, Micro, and the Tome subsystem.
+Operational tools: triage ledger state, regenerate the constitution, ship hotfixes outside the standard flow, prune completed features.
 
 ---
 
@@ -237,12 +282,11 @@ mise run setup        # installs deps + configures git hooks
 ### Test performance discipline
 
 `src/deviate/cli/micro.py::_run_pytest` invokes pytest as a subprocess (~5s per call). Tests that exercise CLI commands internally calling `_run_pytest` MUST mock `deviate.cli.micro._run_pytest` with a `subprocess.CompletedProcess` fixture to keep the full suite under budget.
-
 - Full test suite (820 tests): **< 30s**
 
 ## Project Status
 
-DeviaTDD v2.0.0 is **production-ready** for individual developer workflows and small-team adoption. The three-layer architecture is stable; the public CLI surface and append-only ledger protocol are committed contracts.
+DeviaTDD v2.0.0 is **production-ready** for individual developer workflows and small-team adoption. The four-layer architecture (Product · Macro · Meso · Micro) is stable; the public CLI surface and append-only ledger protocol are committed contracts.
 
 **Known constraints** (will be addressed in subsequent releases):
 

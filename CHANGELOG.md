@@ -27,6 +27,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   threat model).
 
 ### Changed
+- README reframed around the four-layer architecture (Product · Macro ·
+  Meso · Micro). The Product layer (FLOW-01 flows → FLOW-02 architecture →
+  FLOW-03 release) was previously absent from the README; it is now
+  presented as an optional layer above Macro and reachable through
+  `/deviate-flows`, `/deviate-architecture`, and `/deviate-release`.
+  The Macro section now surfaces the dual path (full `explore → research
+  → prd → shard` *or* `adhoc` shortcut); the Micro section surfaces the
+  TDD cycle *or* `/deviate-execute` alternative, including the
+  Green → Judge → Green TRAIN loop on `JUDGE_REJECTED`. The "Workflow at
+  a Glance" table enumerates every phase with its slash command, the
+  artifact committed, and what the human reviews at each gate —
+  including the `tasks.md` execution blueprint produced by
+  `/deviate-tasks`. Prompt-count claim corrected from 29 to 31
+  (24 `deviate-*` + 7 `tome-*`).
+- `specs/DeviaTDD-architecture.md` and `specs/DeviaTDD-api.md` aligned with
+  the four-layer framing and the corrected Green → Judge → Green TRAIN
+  semantics. Architecture spec: Section 1 ASCII diagram now includes the
+  Product layer above Macro; Section 2.3 JUDGE/TRAIN phase block describes
+  the `git reset --hard <red_sha>` rollback + `force_transition_to("GREEN")`
+  retry flow (replacing the prior incorrect `git revert` description);
+  Section 3.5 EDD rewritten to call out the Green → Judge → Green loop by
+  name; Section 4 micro cycle diagram carries the explicit JUDGE → GREEN
+  TRAIN arrow distinct from the YELLOW → GREEN (rejected) branch; new
+  Section 5.0 Product Layer Phase Prompts documents FLOW-01..FLOW-03 with
+  precondition gates (`[red]FLOWS_MISSING[/]`,
+  `[red]ARCH_OR_FLOWS_MISSING[/]`); Section 6 gates diagram shows the
+  Product-layer conversational checkpoints as soft gates; Section 8.5
+  invariant tightened to the loop name. API spec: command count corrected
+  from 32 to 31 in three places (Bootstrap description, output artifacts
+  list, file tree blueprint — `deviate-content` removed since it is not
+  in the canonical commands directory); new Section 1.5 Product Layer
+  documents the three agent-skill commands and their downstream
+  `flow_refs:` consumption; `IssueRecord.flow_refs` field documented in
+  Section 3 with the `^FLOW-\d{2,}$` validation rule; `deviate run`
+  description now uses the Green → Judge → Green loop name and spells
+  out the feedback source precedence; `deviate execute pre/post`
+  documented with the EXECUTE → JUDGE → EXECUTE retry pattern.
 - Bats suite relocated from `tests/test_e2e/` to the canonical `tests/e2e/`
   path referenced by `mise run test-e2e` and `specs/constitution.md`. The
   stale macro-workflow tests have been replaced with a focused CLI smoke
