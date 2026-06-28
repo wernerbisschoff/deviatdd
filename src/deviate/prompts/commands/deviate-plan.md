@@ -1,6 +1,6 @@
 ---
 name: deviate-plan
-description: Per-issue localized codebase research — scans current codebase state, analyzes prior issue implementations, and produces a planning document (plan.md) with implementation strategy, file mappings, and risk assessment
+description: Per-issue localized research — scan codebase and prior implementations; produce plan.md with strategy, file mappings, and risks.
 category: deviatdd-meso-layer
 version: 1.0.0
 layer: meso

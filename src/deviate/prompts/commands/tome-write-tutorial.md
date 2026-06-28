@@ -1,6 +1,6 @@
 ---
 name: tome-write-tutorial
-description: Tome C2 tutorial writer (FLOW-05) — produce or update exactly one tutorial page in apps/docs/src/content/docs/tutorials/ when FLOW-04 selects tutorial as the required Diátaxis type
+description: Tome C2 (FLOW-05) — write one tutorial page under apps/docs/.../tutorials/ when FLOW-04 selects tutorial.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

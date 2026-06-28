@@ -1,6 +1,6 @@
 ---
 name: deviate-triage
-description: Classify development requirements against fixed decision predicates for deterministic workflow routing (FULL, CORE, TDD, NONE)
+description: Classify requirements against fixed predicates (FULL, CORE, TDD, NONE) for deterministic workflow routing.
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:

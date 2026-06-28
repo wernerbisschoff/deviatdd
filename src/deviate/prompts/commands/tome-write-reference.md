@@ -1,6 +1,6 @@
 ---
 name: tome-write-reference
-description: Tome C4 reference writer (FLOW-07) — produce or update exactly one reference page in apps/docs/src/content/docs/reference/ when FLOW-04 selects reference as the required Diátaxis type
+description: Tome C4 (FLOW-07) — write one reference page under apps/docs/.../reference/ when FLOW-04 selects reference.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

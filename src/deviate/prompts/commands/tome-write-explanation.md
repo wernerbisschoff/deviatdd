@@ -1,6 +1,6 @@
 ---
 name: tome-write-explanation
-description: Tome C5 explanation writer (FLOW-08) — produce or update exactly one explanation page in apps/docs/src/content/docs/explanation/ when FLOW-04 selects explanation as the required Diátaxis type
+description: Tome C5 (FLOW-08) — write one explanation page under apps/docs/.../explanation/ when FLOW-04 selects explanation.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

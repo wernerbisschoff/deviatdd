@@ -1,6 +1,6 @@
 ---
 name: deviate-constitution
-description: Governance artifact generation — initialize or update specs/constitution.md as an authoritative document defining architectural standards, tech stack constraints, testing mandates, and completion criteria
+description: Initialize or update specs/constitution.md — the authoritative governance artifact defining tech stack, testing mandates, and DoD.
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:

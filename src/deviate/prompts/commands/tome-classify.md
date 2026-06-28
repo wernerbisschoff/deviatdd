@@ -1,6 +1,6 @@
 ---
 name: tome-classify
-description: Tome C1 classifier (FLOW-04) — ingest commit or branch-level diff evidence and emit a Diátaxis classification report naming the required tutorial, how-to, reference, and explanation doc types with per-file action and confidence
+description: Tome C1 (FLOW-04) — ingest diff evidence and emit a Diátaxis classification report naming the required doc-type quadrants.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

@@ -1,6 +1,6 @@
 ---
 name: deviate-architecture
-description: Product-layer FLOW-02 (Architecture) authoring — produce and maintain specs/_product/architecture.md and specs/_product/domain-model.md as cross-epic integration contracts, gated on the existence of user flows in specs/_product/flows/
+description: FLOW-02 architecture authoring — produce specs/_product/architecture.md and domain-model.md as cross-epic contracts (requires flows).
 category: deviatdd-product-layer
 version: 1.0.0
 aliases:
