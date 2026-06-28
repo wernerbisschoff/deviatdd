@@ -28,7 +28,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   project-specific test/lint/format/setup/dev commands, applies the `## DeviaTDD
   Orchestration Rules` and `## Libref Usage` governance blocks to `CLAUDE.md` and
   `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt commands (currently
-  32 flat `.md` files: 25 `deviate-*` + 7 `tome-*`) into **all four** supported agent
+  31 flat `.md` files: 24 `deviate-*` + 7 `tome-*`) into **all four** supported agent
   directories — `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
   `.pi/prompts/` — in a single invocation, regardless of which agent was passed
   via `--agent`. Each command is a flat `<name>.md` file with a minimal YAML
@@ -109,7 +109,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `specs/constitution.md` — Resolved boilerplate constitution
   * `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
     `.pi/prompts/` — DeviaTDD prompt commands installed for every
-    supported agent (32 flat `.md` files total, split across the four
+    supported agent (31 flat `.md` files total, split across the four
     dirs)
 
 #### `deviate constitution`
@@ -132,6 +132,18 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     `validate_sections()`, then commits the constitution file via `commit_artifact()`
     with the message `Update constitution`. Emits `{"status": "SUCCESS"}` on success.
 * **Common Flags:** None (each sub-command exposes its own options).
+
+### 1.5 Product Layer *(optional, sits above Macro)*
+
+The Product layer ships as **agent skills** (no dedicated CLI subcommands) — the prompts live at `src/deviate/prompts/commands/deviate-{flows,architecture,release}.md` and are installed to all four agent directories alongside the rest. They are **not** wired into the `deviate` CLI's `pre`/`post` subcommand pattern: the agent invokes them directly as `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, and the conversation produces the artifact. The CLI's only involvement is installing the skill files during `deviate setup` and (via `deviate-shard` / `deviate-adhoc`) consuming the `flow_refs:` frontmatter those artifacts emit.
+
+| Command | Source skill | Artifact committed | Notes |
+|---------|--------------|--------------------|-------|
+| `/deviate-flows` | `src/deviate/prompts/commands/deviate-flows.md` (FLOW-01) | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Conversational; the agent must surface clarifying questions when actor, job-to-be-done, or trigger is ambiguous. FLOW-NN IDs use `^FLOW-\d{2,}$`. |
+| `/deviate-architecture` | `src/deviate/prompts/commands/deviate-architecture.md` (FLOW-02) | `specs/_product/architecture.md` + `specs/_product/domain-model.md` | **Precondition:** at least one flow file under `specs/_product/flows/` must exist; otherwise the skill must surface `[red]FLOWS_MISSING[/]` and recommend `/deviate-flows` first. |
+| `/deviate-release` | `src/deviate/prompts/commands/deviate-release.md` (FLOW-03) | `specs/_product/release-next.md` (overrides previous) | **Precondition:** both `specs/_product/architecture.md` and at least one flow file must exist; otherwise `[red]ARCH_OR_FLOWS_MISSING[/]`. The release goal (free-text user input) drives the Included Flows / Included Work / Acceptance tables. |
+
+**Downstream consumption:** `deviate-shard` and `deviate-adhoc` SKILL.md bodies read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context. Each sharded or adhoc issue emits a `flow_refs: [FLOW-XX, ...]` field in its YAML frontmatter and in the `IssueRecord.flow_refs` ledger entry (validated against `^FLOW-\d{2,}$`), so vertical slices stay traceable back to the flow that motivated them. `deviate adhoc pre` accepts a `--flow-ref FLOW-01,FLOW-02` CLI override to set the flow refs explicitly when the agent's natural-language inference is ambiguous.
 
 #### `/deviate-shard` (Macro Layer)
 
@@ -417,12 +429,12 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate execute pre [--task <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** DIRECT mode (bypasses RED/GREEN/REFACTOR). Emits completion criteria.
+* **Description:** DIRECT execution mode for `direct`/`immediate`-typed tasks — boilerplate, config, asset syncs, trivial fixes, or refactors with existing test coverage. Bypasses the RED phase entirely. Emits JSON contract with completion criteria; the agent runs once and the result is committed.
 
 #### `deviate execute post [<manifest>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Validates manifest, commits DIRECT execution result.
+* **Description:** Validates manifest, then runs `_run_execute_phase()` which invokes the EXECUTE agent and follows with a JUDGE pass against `spec.md`. On `COMPLIANCE_VIOLATION`, `_execute_rollback()` resets the implementation and the phase is retried with `<train_feedback>` injected (up to `max_judge_attempts = 3`). The EXECUTE → JUDGE → EXECUTE iteration mirrors the Green → Judge → Green loop in shape but skips the RED boundary: the EXECUTE phase is allowed to start from any clean working tree and the JUDGE pass evaluates the diff post-hoc. Exhaustion raises `PhaseFailedError`. The task is marked `COMPLETED` only on `COMPLIANCE_PASS`; the result is committed with the manifest's `commit_message` (or a default `chore({scope}): execute`).
 
 #### `deviate e2e pre`
 
@@ -459,12 +471,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   `start_phase = "YELLOW"`. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`, which
   commits the work, then optionally runs a JUDGE pass against `spec.md` and rolls back
   on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
-* **Train Retry (TDD only):** `_run_tdd_cycle` wraps the GREEN→JUDGE pair in a `while not
-  judge_passed` loop with up to `max_train_attempts = 3`. On test failure or
-  `COMPLIANCE_VIOLATION`, the previous attempt's output is injected as `<train_feedback>`
-  into the next GREEN prompt, the implementation is rolled back to the RED boundary
-  (`_execute_rollback` → `git reset --hard <red_sha>`), and the cycle retries from GREEN.
-  After 3 attempts the task is marked `FAILED` and the pipeline halts.
+* **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the GREEN→JUDGE pair in a `while not judge_passed` loop with up to `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`, `_execute_rollback()` runs `git reset --hard <red_sha>` against the RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of the RED phase), the session is `force_transition_to("GREEN")`, and the previous attempt's feedback is injected as `<train_feedback>` into the next GREEN prompt via `_build_auto_prompt("green", ...) + "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts with `PhaseFailedError`. The feedback source precedence is `train_feedback` (preferred) → `violations` (structured list) → `rationale` → `summary` → fallback string. The YELLOW → GREEN (rejected) branch and the Green → Judge → Green loop are distinct mechanisms — the former only fires on TamperGuard detection, the latter on JUDGE_REJECTED.
 * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE`, `YELLOW`, or
   `REFACTOR` when invoked, the cycle resumes from that phase via the `start_phase`
   parameter. IDLE / RED trigger a fresh cycle from RED.
@@ -713,7 +720,7 @@ src/deviate/
 │   │   ├── red.md, green.md, yellow.md, judge.md, refactor.md
 │   │   └── plan.md (planned)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 32 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, content, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage, yellow} + tome-{classify, setup, verify-docs, write-explanation, write-how-to, write-reference, write-tutorial}
+│   └── commands/             # 31 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage, yellow} (24) + tome-{classify, setup, verify-docs, write-explanation, write-how-to, write-reference, write-tutorial} (7)
 └── state/
     ├── __init__.py
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
@@ -801,6 +808,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `source_file` | `str` | Path to the issue's source file |
 | `blocked_by` | `list[str]` | DAG dependency issue IDs |
 | `coordinates_with` | `list[str]` | Related issue IDs |
+| `flow_refs` | `list[str]` | Product-layer FLOW-NN IDs this issue implements (e.g. `["FLOW-01", "FLOW-04"]`). Defaults to `[]`. Populated by `deviate-shard` and `deviate-adhoc` from `specs/_product/flows/` so vertical slices stay traceable back to the Product-layer flows that motivated them. Validated against `^FLOW-\d{2,}$` on `--flow-ref` CLI overrides. |
 | `timestamp` | `datetime` | When the record was created |
 | `created_at` | `datetime` | When the issue was first created |
 
@@ -820,8 +828,14 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 > only as a session phase and is gated by the TamperGuard in the TDD cycle body. The
 > YELLOW verdict is recorded in the ledger as `YELLOW_APPROVED` (amendments accepted,
 > cycle proceeds to JUDGE) or `YELLOW_REJECTED` (amendments reverted via `git restore .`,
-> cycle loops back to GREEN). The `_SKILL_NAMES` dict maps `"YELLOW"` to
-> `"deviate-yellow"` and `"JUDGE"` to `"deviate-judge"` for agent skill resolution.
+> cycle loops back to GREEN). The YELLOW → GREEN branch is distinct from the
+> **Green → Judge → Green loop**, which fires on `JUDGE_REJECTED`: `_execute_rollback()`
+> runs `git reset --hard <red_sha>` to reset to the verified-good RED boundary, the
+> session is `force_transition_to("GREEN")`, and the next GREEN attempt runs with
+> `<train_feedback>` injected. Up to `max_train_attempts = 3` retries; exhaustion
+> raises `PhaseFailedError` and marks the task `FAILED`. The `_SKILL_NAMES` dict maps
+> `"YELLOW"` to `"deviate-yellow"` and `"JUDGE"` to `"deviate-judge"` for agent skill
+> resolution.
 
 #### Append-Only Ledger Protocol
 
