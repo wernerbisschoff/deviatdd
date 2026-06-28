@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.github/ISSUE_TEMPLATE/feature.md`) and a pull request template
   (`.github/PULL_REQUEST_TEMPLATE.md`) to standardize contributions.
 - This `CHANGELOG.md`.
+- Community health files: `CONTRIBUTING.md` (derived from
+  `specs/constitution.md` and `AGENTS.md`, covering setup, branch
+  strategy, commit conventions, PR workflow, test discipline, spec
+  alignment, and slash-command edit policy), `CODE_OF_CONDUCT.md`
+  (Contributor Covenant v2.1), and `SECURITY.md` (private disclosure
+  via GitHub Security Advisories, supported-versions policy, 90-day
+  coordinated-disclosure window, and explicit in-scope / out-of-scope
+  threat model).
 
 ### Changed
 - Bats suite relocated from `tests/test_e2e/` to the canonical `tests/e2e/`
