@@ -116,12 +116,12 @@ def _load_skill_content(phase_name: str) -> str | None:
     if not skill_name:
         return None
     try:
-        path = importlib.resources.files("deviate.prompts.skills").joinpath(
-            skill_name, "SKILL.md"
+        path = importlib.resources.files("deviate.prompts.commands").joinpath(
+            f"{skill_name}.md"
         )
         return path.read_text(encoding="utf-8")
     except (FileNotFoundError, ModuleNotFoundError, TypeError):
-        fallback = Path("src/deviate/prompts/skills") / skill_name / "SKILL.md"
+        fallback = Path("src/deviate/prompts/commands") / f"{skill_name}.md"
         if fallback.exists():
             return fallback.read_text(encoding="utf-8")
         return None

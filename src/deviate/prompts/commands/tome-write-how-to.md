@@ -1,6 +1,6 @@
 ---
 name: tome-write-how-to
-description: Tome C3 how-to writer (FLOW-06) — produce or update exactly one how-to page in apps/docs/src/content/docs/how-to/ when FLOW-04 selects how-to as the required Diátaxis type
+description: Tome C3 (FLOW-06) — write one how-to page under apps/docs/.../how-to/ when FLOW-04 selects how-to.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

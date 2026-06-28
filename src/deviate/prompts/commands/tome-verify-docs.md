@@ -1,6 +1,6 @@
 ---
 name: tome-verify-docs
-description: Tome C6 verifier (FLOW-09) — perform a read-only cross-doc pass over writer outputs (C2-C5) checking factual consistency, path correctness, command/config/API accuracy, no cross-type contamination, and valid Starlight location, then emit a PASS/FAIL/human-review report
+description: Tome C6 (FLOW-09) — read-only cross-doc verification over C2-C5 outputs, checking factual consistency, paths, and Diátaxis purity.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

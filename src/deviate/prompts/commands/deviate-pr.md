@@ -1,6 +1,6 @@
 ---
 name: deviate-pr
-description: Create a pull request from the current worktree branch and, upon successful merge, append a COMPLETED event to the issues ledger to unblock dependent issues
+description: Create a PR from the current worktree branch; on merge, append COMPLETED to specs/issues.jsonl to unblock dependents.
 category: deviatdd-meso-layer
 version: 1.0.0
 aliases:

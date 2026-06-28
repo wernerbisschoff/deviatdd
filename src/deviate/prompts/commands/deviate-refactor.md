@@ -1,6 +1,6 @@
 ---
 name: deviate-refactor
-description: Use when executing the REFACTOR (code cleanup) phase of TDD for a single task — behavior-preserving structural improvement after tests pass
+description: TDD REFACTOR phase — behavior-preserving structural improvement after tests pass.
 category: deviattd-macro-layer
 version: 1.0.0
 layer: micro

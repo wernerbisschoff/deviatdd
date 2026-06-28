@@ -1,6 +1,6 @@
 ---
 name: deviate-yellow
-description: Use when executing the YELLOW (conditional test amendment) phase of TDD — evaluate proposed test changes from the GREEN phase
+description: TDD YELLOW phase — evaluate proposed test changes from the GREEN phase for conditional amendment.
 category: deviattd-micro-layer
 version: 1.0.0
 layer: micro

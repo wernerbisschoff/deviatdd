@@ -78,7 +78,7 @@ GREEN resets `tests/` to post-RED state before evaluation. Micro-layer agents wr
 Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR (no model switches). JUDGE runs in an isolated V4 Pro session.
 ## 🐍 Python-Only Architecture
 
-Skills are package resources under `src/deviate/prompts/skills/<name>/SKILL.md`, invoked via `deviate <subcommand>`. No `.sh` files in `prompts/`. Layer routing: `src/deviate/prompts/assembly.py::_LAYER_MAP`. All task execution runs through `uv run` (`.mise.toml`).
+Slash commands are package resources under `src/deviate/prompts/commands/<name>.md`, invoked via `deviate <subcommand>` and installed to `<workdir>/.<agent>/commands/<name>.md` by `deviate setup`. No `.sh` files in `prompts/`. Layer routing: `src/deviate/prompts/assembly.py::_LAYER_MAP`. All task execution runs through `uv run` (`.mise.toml`).
 
 ## 📚 Offline Documentation (libref)
 

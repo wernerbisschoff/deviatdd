@@ -1,6 +1,6 @@
 ---
 name: deviate-tasks
-description: Decompose a spec-enriched issue file (with embedded-first fallback to spec.md) into a granular task decomposition (tasks.md) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
+description: Decompose a spec-enriched issue into tasks.md — autonomous Red-Green-Refactor units (vertical, 30-90 min each).
 category: deviatdd-meso-layer
 version: 1.0.0
 layer: meso

@@ -701,7 +701,7 @@ src/deviate/
 │   │   ├── red.md, green.md, yellow.md, judge.md, refactor.md
 │   │   └── plan.md (planned)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── skills/               # 21 DeviaTDD skill directories: deviate-{adhoc, constitution, e2e, execute, explore, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, research, review, shard, tasks, triage, yellow}
+│   └── commands/             # 32 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, content, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage, yellow} + tome-{classify, setup, verify-docs, write-explanation, write-how-to, write-reference, write-tutorial}
 └── state/
     ├── __init__.py
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
@@ -741,9 +741,9 @@ src/deviate/
 
 ### 2. Prompt Matrix & File Generation Lifecycle
 
-Macroscopic commands are user-facing interactive slash commands registered as prompt skills
-in agent runtime directories during `deviate init`. Skills live in `src/deviate/prompts/skills/`
-and are installed to `.{agent}/skills/` per workspace.
+Macroscopic commands are user-facing interactive slash commands registered as prompt files
+in agent runtime directories during `deviate setup`. Commands live in `src/deviate/prompts/commands/`
+and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompts/<name>.md` for Pi).
 
 | Client Command Trigger | Responsible Persona Role | Targets Created / Mutated | Internal CLI Endpoints | Action Logic Steps |
 | --- | --- | --- | --- | --- |

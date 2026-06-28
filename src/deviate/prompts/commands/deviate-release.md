@@ -1,6 +1,6 @@
 ---
 name: deviate-release
-description: Product-layer FLOW-03 (Release) planning — accept a release-goal description, compile the next coherent product release from existing flows and architecture, and write or override specs/_product/release-next.md as the guiding compass for downstream exploration
+description: FLOW-03 release planning — compile the next coherent release from flows/architecture and write specs/_product/release-next.md.
 category: deviatdd-product-layer
 version: 1.0.0
 aliases:

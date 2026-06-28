@@ -70,10 +70,10 @@ class TestSkillInstallation:
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".opencode").mkdir()
         (tmp_path / ".factory").mkdir()
-        from deviate.core import skills as skills_module
+        from deviate.core import commands as commands_module
 
         with chdir(tmp_path):
-            agents = skills_module.detect_agents()
+            agents = commands_module.detect_agents()
             assert "opencode" in agents
             assert "claude" in agents
             assert "factory" in agents

@@ -1,6 +1,6 @@
 ---
 name: tome-setup
-description: Tome C7 setup (FLOW-10) — idempotent bootstrap of apps/docs/ with Starlight plus the four Diátaxis quadrant directories, content.config.ts extending docsSchema() with Tome frontmatter fields, and a starter set of one explanation, one reference, one how-to, and one tutorial
+description: Tome C7 (FLOW-10) — idempotent bootstrap of apps/docs/ with Starlight, the four Diátaxis quadrants, and content.config.ts.
 category: deviatdd-tome-layer
 version: 1.0.0
 aliases:

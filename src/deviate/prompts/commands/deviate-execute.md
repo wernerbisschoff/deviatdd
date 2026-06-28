@@ -1,6 +1,6 @@
 ---
 name: deviate-execute
-description: Use when executing a single task directly (without TDD cycle) — for low-complexity tasks, trivial changes, docs updates, or simple refactors with existing test coverage
+description: Direct task execution (no TDD cycle) for low-complexity tasks, trivial changes, docs, or refactors with existing coverage.
 category: deviattd-micro-layer
 version: 1.0.0
 layer: micro

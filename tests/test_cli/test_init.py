@@ -371,7 +371,7 @@ class TestInitCommand:
         ``aliases`` containing slash-command forms).
 
         Source: ``specs/_product/release-next.md:26`` (acceptance criterion) and
-        ``src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11``
+        ``src/deviate/prompts/commands/deviate-constitution.md:1-11``
         (canonical frontmatter schema reference).
         """
         commands_root = _resolve_commands_root()
@@ -495,7 +495,7 @@ class TestInitCommand:
         Mirrors ``test_init_creates_product_layer_skills`` for the Tome layer.
 
         Source: AC-ADHOC-011-01 (``specs/adhoc/011-tome-subsystem-v1.md``)
-        and ``src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11``
+        and ``src/deviate/prompts/commands/deviate-constitution.md:1-11``
         (canonical frontmatter schema reference).
         """
         assert len(_TOME_LAYER_SKILLS) == 7, (

@@ -1,6 +1,6 @@
 ---
 name: deviate-content
-description: FLOW-12 synthesis skill — render durable content drafts (blog, x-thread, release-notes, commit-story, resume-bullet) from `.deviate/feat/**/*.yaml` handover records
+description: FLOW-12 synthesis — render durable content drafts (blog, x-thread, release-notes, commit-story, resume-bullet) from .deviate/feat/*.yaml.
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:

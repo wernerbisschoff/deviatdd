@@ -1,6 +1,6 @@
 ---
 name: deviate-e2e
-description: Use when executing the E2E (end-to-end verification) phase after ALL tasks complete — runs final user-facing tests to verify feature meets intent
+description: Run final E2E verification after all tasks complete — user-facing tests confirming the feature meets intent.
 category: deviattd-macro-layer
 version: 1.0.0
 aliases:

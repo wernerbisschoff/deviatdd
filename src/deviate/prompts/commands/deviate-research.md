@@ -1,6 +1,6 @@
 ---
 name: deviate-research
-description: Architectural analysis of the feature scope. Consumes `explore.md` and produces `design.md` (architecture, options matrix, design trade-offs, risk register, constitutional alignment audit) and `data-model.md` (entities, relationships, schemas, state machines). This is the expensive reasoning phase; do not run before `deviate-explore`.
+description: Architectural analysis — produce design.md (options, trade-offs, risk register) and data-model.md from explore.md.
 category: deviatdd-macro-layer
 version: 2.0.0
 layer: macro
