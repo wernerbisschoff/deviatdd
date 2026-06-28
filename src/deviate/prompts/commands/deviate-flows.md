@@ -1,8 +1,8 @@
 ---
 name: deviate-flows
-description: FLOW-01 flows authoring — discover customer flows, write flows-<domain>.md, and maintain specs/_product/flows/index.md.
+description: FLOW-01 flows authoring — discover customer flows, write concise flows-<domain>.md, and maintain specs/_product/flows/index.md.
 category: deviatdd-product-layer
-version: 1.1.0
+version: 1.2.0
 aliases:
   - flows
   - /deviate-flows
@@ -27,7 +27,7 @@ SCOPE: DeviaTDD Product-layer FLOW-01 (Flows) authoring.
 WRITES: `specs/_product/flows/flows-<domain>.md` files and `specs/_product/flows/index.md`.
 DOES NOT WRITE: `specs/_product/architecture.md`, `specs/_product/domain-model.md`, `specs/_product/release-next.md`.
 SEED: `specs/_product/flows/flows-product.md` is read-only; extend, never regenerate.
-GOAL: Produce FLOW-NN flow blocks that conform to the FLOW-01 section schema and remain traceable via `flow_refs:` frontmatter.
+GOAL: Produce FLOW-NN flow blocks that conform to the FLOW-01 section schema, stay terse, and remain traceable via `flow_refs:` frontmatter.
 </domain_construct>
 
 <system_instructions>
@@ -37,32 +37,58 @@ CRITICAL INVARIANTS:
 0. **Input Resolution Rule**: First, read and consider the contents of the `<user_input>` container before continuing with execution. If that container is unpopulated or empty, resolve the target prompt by parsing the conversational history.
 
 1. **Seed Extension, Not Regeneration**: `specs/_product/flows/flows-product.md`
-   is the authoritative FLOW-01 seed. Treat it as the foundation to extend with
-   domain-specific flow files (`flows-<domain>.md`); never regenerate it from
-   scratch and never delete existing flow IDs (FLOW-01, FLOW-02, FLOW-03) from
-   the catalog.
-2. **Flow ID Format**: Every flow block MUST carry a `## FLOW-NN <Name>` header
-   where `NN` is a zero-padded two-digit (or more) integer. Flow IDs are the
+   is the authoritative FLOW-01 seed. Extend it with domain-specific flow files
+   (`flows-<domain>.md`); never regenerate it and never delete existing flow
+   IDs (FLOW-01/02/03) from the catalog.
+2. **Flow ID Format**: Every flow block carries a `## FLOW-NN <Name>` header
+   where `NN` is a zero-padded two-digit (or more) integer. IDs are the
    cross-layer traceability anchors used by `deviate shard`, `deviate adhoc`,
    and the issues ledger (`flow_refs:` frontmatter).
 3. **Index Sync Discipline**: After authoring any new flow file under
    `specs/_product/flows/`, append a row to `specs/_product/flows/index.md`
    with `Flow ID`, `Name`, `Actor`, `Domain`, `Status`, and `Source` columns.
-   Source column must be the relative path of the file that defines the flow.
+   Source column carries the relative path of the file that defines the flow.
 4. **Conversation-First Discovery**: Before writing any flow block, converse
-   with the user to identify the actor, the job-to-be-done, the trigger, the
-   preconditions, the happy path, the alternate paths, and the success state.
-   Surface a clarifying question when any of these are ambiguous.
+   with the user to identify actor, job-to-be-done, trigger, preconditions,
+   happy path, alternate paths, and success state. Surface a clarifying
+   question when any of these are ambiguous.
 5. **No Cross-Layer Mutation**: This skill writes exclusively under
    `specs/_product/flows/`. Do NOT touch `specs/_product/architecture.md`,
    `specs/_product/domain-model.md`, or `specs/_product/release-next.md` —
-   those belong to `deviate-architecture` and `deviate-release` respectively.
+   those belong to `deviate-architecture` and `deviate-release`.
 6. **FLOW-01 Schema Conformance**: Each flow file uses the section schema
-   established at `specs/_product/flows/flows-product.md:1-32`: Actor,
-   Domain, Status, Problem / job to be done, Trigger, Preconditions, Happy
-   path, Alternate / error paths, Success State, Metrics / Signals.
+   defined in `specs/_product/flows/flows-product.md` (header bullets:
+   `Actor`, `Domain`, `Status`, `Source`; sections: `Problem / job to be done`,
+   `Trigger`, `Preconditions`, `Happy path (primary steps)`,
+   `Alternate / error paths`, `Success State`, `Metrics / Signals`). Use the
+   same bullet-list style as the seed — never invent a table-only variant.
 7. **Relative Path Discipline**: Every path written to a flow file or to the
-   index MUST be relative to `repo_root`. No absolute machine paths.
+   index is relative to `repo_root`. No absolute machine paths.
+
+8. **Concise Output Discipline (downstream-consumption contract)**:
+   Downstream phases (`/prd` Pass 2.1, `/shard` Pass 2.1, `/plan`,
+   `/tasks`, micro `/red`/`/green`/`/judge`) consume flow files as
+   structured inputs — they do NOT read every section. To keep their
+   token budget small and parsing deterministic, the following length
+   budgets are mandatory per flow block:
+   - Header bullets (`Actor`, `Domain`, `Status`, `Source`): exactly one
+     line each, no prose, no nested bullets.
+   - `Problem / job to be done`: 1 sentence, ≤ 25 words.
+   - `Trigger`: 1 sentence (or 1 short bullet) — the canonical entry
+     point that downstream phases restate. Always present.
+   - `Preconditions`: 0–3 bullets. Omit the heading entirely if there are
+     none.
+   - `Happy path (primary steps)`: 3–7 numbered steps, ≤ 12 words each.
+     Always present — this is what micro phases translate into tests.
+   - `Alternate / error paths`: 0–3 bullets or literal `TBD`. Omit the
+     heading if there are none.
+   - `Success State`: 1–3 bullets. Always present.
+   - `Metrics / Signals`: 0–3 bullets. Omit the heading if there are none.
+     Cross-references to other `FLOW-NN` IDs go here in the form
+     `references FLOW-XX, FLOW-YY`.
+   - Total flow block target: **≤ 35 lines of markdown**. The previous
+     bloat (~150 lines per flow) was the bug; keep each flow scannable
+     in a single screen.
 
 </system_instructions>
 
@@ -70,36 +96,40 @@ CRITICAL INVARIANTS:
 
 ## 1. Discovery Conversation
 
-First, read and consider the contents of the `<user_input>` container before continuing.
+Read `<user_input>` first; if empty, parse conversational history.
 
-Ask the user targeted questions to clarify:
-- Who is the actor (Developer, End-User, Operator, External System)?
-- What is the domain (Software Engineering, DevOps, Customer Support, etc.)?
-- What is the job-to-be-done (single sentence, in actor's voice)?
-- What triggers the flow (slash command, event, schedule, manual)?
-- What preconditions must hold before the flow starts?
-- What is the happy path (3-7 primary steps)?
-- What alternate or error paths exist?
+Ask targeted questions to clarify:
+- Actor (Developer / End-User / Operator / External System)
+- Domain (Software Engineering / DevOps / Customer Support / etc.)
+- Job-to-be-done (1 sentence, in actor's voice)
+- Trigger (slash command, event, schedule, manual)
+- Preconditions (any non-trivial state required before the flow starts)
+- Happy path (3–7 primary steps)
+- Alternate / error paths (only if non-obvious; otherwise mark `TBD`)
 
-If the user already has `specs/_product/flows/flows-product.md` populated, read
-it first to avoid asking redundant discovery questions about FLOW-01/02/03.
+If `specs/_product/flows/flows-product.md` is populated, read it first to
+avoid re-asking about FLOW-01/02/03.
 
 ## 2. Determine Flow ID
-Scan existing flow IDs in `specs/_product/flows/index.md`. Assign the next
-sequential `FLOW-NN` ID, padding to at least two digits. If the user provides
-an explicit ID, validate format `^FLOW-\d{2,}$`.
+Scan existing IDs in `specs/_product/flows/index.md`. Assign the next
+sequential `FLOW-NN` (zero-padded, ≥ two digits). If the user supplies an
+explicit ID, validate it matches `^FLOW-\d{2,}$`.
 
 ## 3. Write Flow File
-Write to `specs/_product/flows/flows-<domain>.md` (or `flows.md` if no domain
-qualifier is needed). Use the FLOW-01 section schema verbatim. Embed at least
-two cross-references to other flow IDs in the Metrics / Signals block.
+Write to `specs/_product/flows/flows-<domain>.md` (or `flows.md` if no
+domain qualifier applies). Use the FLOW-01 bullet-list schema verbatim —
+do NOT switch to a table format. Stay within the per-section length
+budgets in invariant 8. Cross-references to other `FLOW-NN` IDs belong
+under `Metrics / Signals`; at least one cross-reference is recommended
+whenever a related flow exists.
 
 ## 4. Update Index
-Append a row to `specs/_product/flows/index.md` with the new flow's metadata.
-If the index file does not yet exist, create it with a markdown table header.
+Append a row to `specs/_product/flows/index.md` (create the file with a
+header row if absent). Source column carries the relative path of the new
+flow file.
 
 ## 5. Cross-Layer Signal
-Inform the user that the new flow ID is now available for downstream
+Inform the user that the new `FLOW-NN` ID is now available for downstream
 `deviate shard` invocations to reference via `flow_refs: [FLOW-NN]`.
 
 </execution_sequence>
@@ -114,26 +144,35 @@ Inform the user that the new flow ID is now available for downstream
 ````markdown
 ## FLOW-04 Provision Developer Environment
 
-| Field | Value |
-|---|---|
-| Actor | Developer |
-| Domain | Onboarding |
-| Status | Active |
-| Source | specs/_product/flows/flows-onboarding.md |
+- Actor: Developer
+- Domain: Onboarding
+- Status: Active
+- Source: specs/_product/flows/flows-onboarding.md
 
-**Problem / job to be done**: As a Developer, I need a reproducible local environment so I can run the test suite without manual setup.
+### Problem / job to be done
+- As a Developer, I need a reproducible local environment so I can run the test suite without manual setup.
 
-**Trigger**: `deviate onboard` slash command.
+### Trigger
+- `deviate onboard` slash command.
 
-**Preconditions**: Repository cloned; `.deviate/` directory present.
+### Preconditions
+- Repository cloned; `.deviate/` directory present.
 
-**Happy path**: 1. Run `deviate onboard`. 2. Skill provisions mise tasks. 3. Skill installs git hooks. 4. Skill reports green status.
+### Happy path (primary steps)
+1. Run `deviate onboard`.
+2. Skill provisions mise tasks.
+3. Skill installs git hooks.
+4. Skill reports green status.
 
-**Alternate / error paths**: If mise binary missing → abort with diagnostic link; offer manual fallback.
+### Alternate / error paths
+- If mise binary missing → abort with diagnostic link; offer manual fallback.
 
-**Success State**: `mise run check` exits 0 within 30s.
+### Success State
+- `mise run check` exits 0 within 30s.
 
-**Metrics / Signals**: setup_time_seconds ≤ 30; references FLOW-01, FLOW-02.
+### Metrics / Signals
+- `setup_time_seconds` ≤ 30.
+- references FLOW-01, FLOW-02.
 ````
 
     </output>
@@ -163,6 +202,7 @@ Inform the user that the new flow ID is now available for downstream
 | Duplicate flow ID detected | Refuse to overwrite; surface a collision error and prompt the user for the next ID |
 | Index file is malformed (not a markdown table) | Append the new row as a markdown table; preserve the existing malformed header verbatim |
 | Cross-layer file referenced | Refuse and route to the appropriate skill (`deviate-architecture` or `deviate-release`) |
+| Generated flow block exceeds the line/word budgets in invariant 8 | Tighten prose before writing; downstream `/prd` and `/shard` will fail to parse bloated sections |
 
 </edge_case_handling>
 
