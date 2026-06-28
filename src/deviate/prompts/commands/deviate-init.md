@@ -1,6 +1,6 @@
 ---
 name: deviate-init
-description: Initialize a repository with DeviaTDD conventions — mise.toml with zero-test-pass test task, specs/ directory with issues.jsonl ledger, and constitution.md scaffold
+description: Initialize a repo with DeviaTDD conventions — mise.toml (zero-test-pass), specs/ + issues.jsonl, constitution.md scaffold.
 category: deviatdd-macro-layer
 version: 1.0.0
 layer: macro

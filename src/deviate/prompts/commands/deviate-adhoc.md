@@ -1,6 +1,6 @@
 ---
 name: deviate-adhoc
-description: Generate a single ad-hoc vertical-slice issue from a natural language description with lightweight codebase discovery, shared PRD tracking, and Product-layer flow traceability (emits flow_refs)
+description: Emit a single ad-hoc vertical-slice issue from a natural-language task with lightweight discovery, shared PRD tracking, and flow_refs.
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:

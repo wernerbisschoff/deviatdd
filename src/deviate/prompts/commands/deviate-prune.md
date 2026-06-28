@@ -1,6 +1,6 @@
 ---
 name: deviate-prune
-description: Use when executing the PRUNE (test optimization) phase of TDD — removes implementation-coupled and redundant tests while preserving public behavioral contracts
+description: TDD PRUNE phase — remove implementation-coupled and redundant tests while preserving public behavioral contracts.
 category: deviattd-macro-layer
 version: 1.0.0
 aliases:
