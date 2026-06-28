@@ -1,6 +1,6 @@
 # Project Constitution
 
-Version: 0.4.0
+Version: 0.5.0
 
 ---
 
@@ -87,10 +87,12 @@ Version: 0.4.0
 - [ ] Judge phase passed (git diff validated against `spec.md` invariants)
 - [ ] E2E tests passing (if applicable; bats for CLI integration)
 - [ ] Documentation updated (`spec.md` and `design.md` reflect final implementation)
+- [ ] CHANGELOG.md updated under `[Unreleased]` for user-visible changes (new commands/flags, behavior changes, user-affecting bug fixes, breaking changes, new user-visible dependencies); docs-only, test-only, CI/tooling, and behavior-preserving refactors are exempt
 - [ ] No governance violations (constitution rules upheld, no HITL gates bypassed)
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
 ## 6. Version History
+- 0.5.0 — Added CHANGELOG discipline: §5 Definition of Done now requires `CHANGELOG.md` `[Unreleased]` updates for user-visible changes; mirrored in `AGENTS.md` as a cross-cutting rule, and as a checkbox in the PR template
 - 0.4.0 — Added cross-branch merge strategy for append-only JSONL ledgers via `merge=union` in `.gitattributes`; provisioned by `deviate setup`/`deviate init` to prevent line-level conflicts when concurrent feature branches both append to `specs/issues.jsonl`; semantic-duplicate records still resolved by sequential-parse canonical-state per §1
 
 - 0.2.0 — Added `[models]` config section for per-phase model routing; documented resolution order and backend support matrix

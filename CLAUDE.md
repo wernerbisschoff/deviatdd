@@ -35,6 +35,10 @@ Production: `src/deviate/core/_shared.py::git_env` is the canonical helper. Bran
 
 `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are authoritative. CLI commands, phase workflows, model routing, file structure, and HITL gates MUST be reflected in both in the same commit as the implementation change.
 
+## 📝 CHANGELOG Discipline
+
+User-visible changes MUST append a bullet to `CHANGELOG.md` under `[Unreleased]` in the same commit as the implementation change. "User-visible" means: new commands/flags/subcommands, behavior changes, user-affecting bug fixes, breaking changes, and new user-visible dependencies. Exempt: docs-only, test-only, CI/tooling, and internal refactors with no behavior change. `specs/constitution.md` §5 mirrors this in the Definition of Done; the PR template's CHANGELOG checkbox enforces it at review.
+
 ## 🛠 DeviaTDD Phase Architecture
 
 ### Three-Layer Model
