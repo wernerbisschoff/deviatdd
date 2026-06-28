@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Lint + format-check + pytest on a single Python 3.13 runner.
+  # Sequential rather than matrix because `uv sync` + cache restore dominate
+  # setup cost; matrix fan-out would multiply that without meaningful speedup.
+  quality:
+    name: Lint / Format / Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dev dependencies
+        run: uv sync --extra dev
+
+      - name: Lint (ruff check)
+        run: uv run ruff check
+
+      - name: Format check (ruff format --check)
+        run: uv run ruff format --check
+
+      - name: Test (pytest)
+        run: uv run pytest tests/
+
+  # Bats end-to-end smoke suite. Installs the package as a real CLI tool
+  # (`uv tool install --editable`) so the smoke suite exercises the installed
+  # binary, not the in-repo module — closer to what users actually run.
+  e2e:
+    name: E2E (bats)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync dev dependencies
+        run: uv sync --extra dev
+
+      - name: Install bats + jq
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bats jq
+
+      - name: Install deviate CLI (editable)
+        run: uv tool install --editable .
+
+      - name: Run bats smoke suite
+        # Force `deviate` onto PATH for this step; `uv tool install` puts it in
+        # a uv-managed directory that GitHub Actions does not expose by default.
+        run: |
+          set -euo pipefail
+          export PATH="$(uv tool dir --bin):$PATH"
+          which deviate
+          deviate --version
+          bats tests/e2e/
