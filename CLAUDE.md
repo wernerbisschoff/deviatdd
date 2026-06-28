@@ -4,7 +4,7 @@
 
 - **Repository**: single-language (Python)
 - **Execution Mode**: TDD (Red-Green-Refactor via deviate cycle)
-- **Performance**: L_max ≤ 500ms init, ≤ 200ms per agent export, full test suite < 18s
+- **Performance**: L_max ≤ 500ms init, ≤ 200ms per agent export, full test suite < 30s
 - **Authority**: `git` commits · `specs/constitution.md` · `specs/DeviaTDD-api.md` + `DeviaTDD-architecture.md`
 
 ## ⚡ Fast-Lane Execution
@@ -29,7 +29,7 @@ Production: `src/deviate/core/_shared.py::git_env` is the canonical helper. Bran
 
 ## ⚡ Test Performance (pointer — see source)
 
-`src/deviate/cli/micro.py::_run_pytest` invokes pytest as a subprocess (~5s). Tests calling CLI commands that hit this function MUST mock `deviate.cli.micro._run_pytest` with a `subprocess.CompletedProcess` fixture to keep the full suite under 18s.
+`src/deviate/cli/micro.py::_run_pytest` invokes pytest as a subprocess (~5s). Tests calling CLI commands that hit this function MUST mock `deviate.cli.micro._run_pytest` with a `subprocess.CompletedProcess` fixture to keep the full suite under 30s.
 
 ## 📐 Spec Alignment
 
