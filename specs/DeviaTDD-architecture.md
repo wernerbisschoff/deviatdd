@@ -8,6 +8,17 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
 
 ```plaintext
                           ┌──────────────┐
+                          │ /deviate-flows│  (optional, FLOW-01 — customer flows)
+                          │ FLOW-01      │
+                          │ Actor/Domain │
+                          └──────┬───────┘
+                                 ▼
+[ PRODUCT LAYER: Framing ] /deviate-architecture /deviate-release
+                          (FLOW-02 cross-epic contract)   (FLOW-03 next release)
+                          → specs/_product/architecture.md → specs/_product/release-next.md
+                                 │
+                                 ▼  (downstream shard/adhoc read flow_refs: from issue frontmatter)
+                          ┌──────────────┐
                           │ /deviate-adhoc│  (complexity gate: low/medium only)
                           │ Condensed    │
                           │ E+P+S→ Issue │  (spec-enriched with Gherkin)
@@ -16,7 +27,7 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
                                  ▼
                           ┌──────────────┐
                           │ specs/adhoc/ │ → single issue, prd.md, issues.jsonl
-                          └──────────────┘
+                          └──────┘
 
 [ MACRO LAYER: Scoping ]    Explore → Research → PRD → Shard+Specify
                                                           │
@@ -25,10 +36,21 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
                                                        │
                                                        ▼
 [ MICRO LAYER: TDD Loop ] ──> Red ──> Green ──> Judge/Train ──> Refactor
-                                │  ▲
-                                ▼  │
-                     [ YELLOW: Conditional Amend Gate ]
-                     (only triggered by TamperGuard between GREEN and JUDGE)
+                                │  ▲                       ▲
+                                ▼  │                       │
+                     [ YELLOW: Conditional Amend Gate ]   │
+                     (only triggered by TamperGuard       │
+                      between GREEN and JUDGE)            │
+                                                         │
+              ┌──────────────────────────────────────────┘
+              │  Green → Judge → Green loop (TRAIN):
+              │  JUDGE_REJECTED → git reset --hard <red_sha>
+              │  → force_transition_to("GREEN") → re-run
+              │  GREEN with <train_feedback> injected
+              │  (up to max_train_attempts = 3)
+
+[ MICRO ALTERNATE ]      /deviate-execute (direct: boilerplate, config, trivial)
+                          → skips TDD cycle; runs its own JUDGE pass
 ```
 
 ---
@@ -185,23 +207,18 @@ E2E tests are elevated to explicit phases in the state machine, executed at two 
     * **If Approved:** `deviate yellow post --approved` commits the amendments, transitions session to JUDGE (not GREEN), and appends YELLOW_APPROVED to the ledger.
     * **If Rejected:** `deviate yellow post --rejected` runs `git restore .` to revert test changes, transitions session back to GREEN, and appends YELLOW_REJECTED to the ledger.
     * **In auto cycle:** YELLOW is NOT in `_PHASE_MAP`. The conditional branch lives in the `_run_tdd_cycle()` loop body between GREEN and JUDGE phase calls.
-* **JUDGE / TRAIN (The Compliance Gate):**
+* **JUDGE / TRAIN (The Compliance Gate) — with Green → Judge → Green loop:**
     * **The Judge:** The CLI evaluates `git diff HEAD~1 HEAD` (only the implementation) against `spec.md` for invariant/security violations. Uses `_detect_phase_changes()` and `_find_protected_modules()` from `spec.md` `Module:` declarations. This judge operates in a clean, zero-shared-history session to break recursive subjectivity. A `deviate-judge` skill (loaded from `_SKILL_NAMES["JUDGE"]`) guides the agent through supplementary compliance evaluation.
-    * **The Train (Ephemeral Rollback):** If rejected, the CLI safely resets without destroying task progress:
-        1. Derive current task states from `tasks.jsonl` into memory. Track the GREEN commit SHA.
-        2. Rollback via `git revert --no-edit <green_sha>` (uses precise SHA tracking — never `git reset --hard` which could destroy YELLOW-phase amendments).
-        3. Persist a `RollbackSnapshot` to the task ledger.
-        4. Inject `<judge_feedback>` into session state via `session.train_feedback`.
-        5. Append new state events to `tasks.jsonl` as needed; route the agent back to GREEN.
+    * **The Train (Green → Judge → Green loop):** On `COMPLIANCE_VIOLATION` or test failure, the CLI safely resets without destroying task progress:
+        1. Derive current task states from `tasks.jsonl` into memory. Resolve the RED-boundary SHA from `session.red_commit_sha`.
+        2. Rollback via `git reset --hard <red_sha>` (line 1181 of `src/deviate/cli/micro.py`). The RED boundary is the precise commit SHA captured at the end of the RED phase; resetting to it discards the suspect GREEN implementation (and any YELLOW amendments that followed) so the next GREEN attempt starts from a known-good test.
+        3. Persist a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`.
+        4. `force_transition_to("GREEN")` returns the session to GREEN, populating `session.train_feedback` with the previous failure output (extracted from the JUDGE manifest's `train_feedback` / `violations` / `rationale` / `summary` fields in that priority order).
+        5. The `_run_tdd_cycle()` loop re-runs GREEN, appending `<train_feedback>` to the prompt. The cycle retries up to **`max_train_attempts = 3`** times before raising `PhaseFailedError` and marking the task `FAILED`. The JUDGE → GREEN → JUDGE → … iteration is the Green → Judge → Green loop, distinct from the YELLOW → GREEN branch (which only fires when TamperGuard detects unauthorized test edits).
 * **REFACTOR (The Polish Gate):**
     * **Action:** If the Judge accepts the work, the workspace unlocks for an isolated run to polish readability.
     * **Regression Gate:** Post-refactor, the CLI re-runs the test suite. If the tests fail (agent broke code), the CLI safely discards the refactor (`git reset --hard`) and successfully completes the task using the verified Green commit.
 
----
-
-## 3. Mapping of Architectural Fulfillment
-
-This closed-loop lifecycle converts high-level human intent into strict machine-level invariants. The framework satisfies core development methodologies as follows:
 
 ### 3.1 Spec-Driven Development (SDD)
 * **How it is fulfilled:** Executed directly via the Macro Layer and Meso Layer.
@@ -220,8 +237,8 @@ This closed-loop lifecycle converts high-level human intent into strict machine-
 * **Mechanisms:** During the Meso phase, `deviate tasks pre/post` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate evaluates the collective task execution delta directly against the overarching functional constraints of `spec.md`. This guarantees that passing unit tests mathematically equal a passed business acceptance spec.
 
 ### 3.5 Evaluation-Driven Development (EDD)
-* **How it is fulfilled:** Realized via the Yellow Amend Gate and the Judge/Train Compliance Gate.
-* **Mechanisms:** This architecture shifts validation from basic functional checks to prompt optimization and alignment validation. If the execution agent attempts to bend architectural constraints, the isolated Judge evaluates the `git diff` against code-level invariants. When a violation occurs, the Train Gate initiates an ephemeral rollback (`git reset --hard HEAD~1`), writes diagnostic adjustments to the `<judge_feedback>` tag, and feeds that fresh context back into the agent's prompt context. This treats the agent's context window as an iteratively trained parameter optimized for perfect execution compliance.
+* **How it is fulfilled:** Realized via the Yellow Amend Gate and the Judge/Train Compliance Gate — the **Green → Judge → Green loop**.
+* **Mechanisms:** This architecture shifts validation from basic functional checks to prompt optimization and alignment validation. If the execution agent attempts to bend architectural constraints, the isolated Judge evaluates the `git diff` against code-level invariants. When `COMPLIANCE_VIOLATION` fires, the TRAIN protocol executes: `_execute_rollback()` runs `git reset --hard <red_sha>` against the precise RED-boundary SHA stored in `session.red_commit_sha` (set at the end of the RED phase), discarding the suspect GREEN implementation and any post-RED state. The session is then `force_transition_to("GREEN")` and a `RollbackSnapshot` is appended to the task ledger. The previous failure output is injected as `<train_feedback>` into the next GREEN prompt. `_run_tdd_cycle()` allows up to **`max_train_attempts = 3`** retries (re-running GREEN with refreshed feedback) before raising `PhaseFailedError` and marking the task `FAILED`. The agent's context window is treated as an iteratively trained parameter optimized for perfect execution compliance.
 
 ---
 
@@ -295,40 +312,48 @@ backward compatibility but routes through the new merged path.
                                                    │   GREEN    │ <──────────┐
                                                    └────────────┘            │
                                                          │                  │
-                                              TamperGuard│                  │
-                                              TAMPER_DET.│                  │ git
-                                              (conditional)                 │ restore
-                                                         ▼                  │
-                                                   ┌───────────┐            │
+                                              TamperGuard│                  │ git
+                                              TAMPER_DET.│                  │ reset
+                                              (conditional)                 │ --hard
+                                                         ▼                  │ <red_sha>
+                                                   ┌───────────┐            │ (TRAIN)
                                                    │  YELLOW   │────────────┘
-                                                   └───────────┘ (rejected)
-                                                         │
-                                             Approved    │
-                                             Amendment   ▼
-                                                   ┌────────────┐
-                                                   │   JUDGE    │
-                                                   └────────────┘
-                                                         │
-                                              Compliance │  Violation
-                                              Pass       │  (TRAIN: git revert)
-                                                         ▼
+                                                   └───────────┘ (rejected) │
+                                                         │                 │
+                                             Approved    │                 │
+                                             Amendment   ▼                 │
+                                                   ┌────────────┐          │
+                                                   │   JUDGE    │──────────┘
+                                                   └────────────┘ (TRAIN:  │
+                                                         │   rejected;   │
+                                              Compliance  │   git reset   │
+                                              Pass        │   --hard      │
+                                                         ▼   <red_sha>)   │
                                                    ┌──────────────┐
                                                    │  REFACTOR    │─┐
                                                    └──────────────┘ │
                                                          │          │ Regression
                                                          │ git      │ rollback
                                                          ▼ restore  ▼
-                                                   ┌──────────────┐
-                                                   │  COMPLETED   │
-                                                   └──────────────┘
+                                                   ┌──────────────────┐
+                                                   │   COMPLETED      │
+                                                   └──────────────────┘
 
 NOTES:
+- The **Green → Judge → Green loop** is the JUDGE → GREEN arrow at the top of
+  the GREEN box: on `JUDGE_REJECTED` (or test failure), `_execute_rollback()`
+  runs `git reset --hard <red_sha>` against `session.red_commit_sha` and
+  `force_transition_to("GREEN")` sends the session back to GREEN with
+  `<train_feedback>` injected. Up to `max_train_attempts = 3` retries;
+  exhaustion raises `PhaseFailedError`. This is distinct from the YELLOW →
+  GREEN (rejected) branch.
 - YELLOW is NOT a fixed phase in _PHASE_MAP — it is a conditional branch
-  in the _run_tdd_cycle() loop body between GREEN and JUDGE.
-- YELLOW only triggers when TamperGuard.evaluate(GREEN_IMPLEMENTATION)
-  returns TAMPER_DETECTED.
-- TRAIN rollback uses `git revert --no-edit <green_sha>` (precise SHA tracking)
-  — never `git reset --hard` to avoid destroying YELLOW-phase amendments.
+  in the _run_tdd_cycle() loop body between GREEN and JUDGE, triggered
+  only when TamperGuard.evaluate(GREEN_IMPLEMENTATION) returns
+  TAMPER_DETECTED.
+- TRAIN rollback uses `git reset --hard <red_sha>` (precise RED-boundary
+  SHA) — never `git revert`, because resetting to the verified-good RED
+  boundary discards the suspect GREEN (and any YELLOW amendments) cleanly.
 ```
 
 ---
@@ -336,6 +361,18 @@ NOTES:
 ## 5. Phase Prompts & System Context Injection Boundaries
 
 Agents are bound into specialized operational scopes by context restrictions. Open-ended instructions are forbidden.
+
+### 5.0 Product Layer Phase Prompts *(optional, sits above Macro)*
+
+The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optional — repositories that only ship single features can skip it and route `/deviate-shard` and `/deviate-adhoc` directly to the Macro layer.
+
+* **`/deviate-flows` (FLOW-01, `deviatdd-product-layer`):** Conversational flow authoring. Reads `specs/_product/flows/flows-product.md` as the seed catalog; converses with the user to identify actor, domain, job-to-be-done, trigger, and success state; writes a new `flows-<domain>.md` under `specs/_product/flows/`; appends a row to `specs/_product/flows/index.md` (Flow ID, Name, Actor, Domain, Status, Source).
+    * *System Directives:* Extend the seed (never regenerate); preserve the FLOW-NN ID format `^FLOW-\d{2,}$`; every flow block must carry a `## FLOW-NN <Name>` header; the agent must ask clarifying questions when the actor, job, or trigger is ambiguous before writing the flow file.
+* **`/deviate-architecture` (FLOW-02, `deviatdd-product-layer`):** Cross-epic architecture authoring. **Precondition:** at least one flow file must already exist under `specs/_product/flows/` (FLOW-02 Preconditions Gate); if absent, the skill must surface `[red]FLOWS_MISSING[/]` and recommend `/deviate-flows` first.
+    * *System Directives:* Produce or maintain `specs/_product/architecture.md` and the supporting `specs/_product/domain-model.md`; classify the requested change as Local (epic-bounded), Context-Bridging (spans two epics), or Context-Creating (defines a new product surface); route local changes to the Meso layer.
+* **`/deviate-release` (FLOW-03, `deviatdd-product-layer`):** Release planning. **Precondition:** both `specs/_product/architecture.md` and at least one flow file under `specs/_product/flows/` must exist (FLOW-03 Preconditions Gate); if either is absent, surface `[red]ARCH_OR_FLOWS_MISSING[/]`.
+    * *System Directives:* Accept a release-goal description from the user; compile the next coherent product release from the existing flows and architecture; write or override `specs/_product/release-next.md` (Included Flows table, Included Work table, Acceptance Criteria). Downstream `/deviate-explore` and other prompts treat `specs/_product/release-next.md` as the guiding compass when deciding what the next epic should be.
+* **Downstream consumption:** `deviate-shard` and `deviate-adhoc` SKILL.md bodies read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context. Each sharded issue emits a `flow_refs: [FLOW-XX, ...]` field in its YAML frontmatter (and in the `IssueRecord.flow_refs` ledger entry), so vertical slices stay traceable back to the flow that motivated them.
 
 ### 5.1 Meso Layer Phase Prompts
 * **`/deviate-specify` (Deprecated):** Merged into `/deviate-shard`. Shard now produces spec-enriched issue files directly. The legacy skill remains for backward compatibility with a redirect notice.
@@ -454,16 +491,26 @@ guidance for agent implementers and prompt engineers.
 The framework prevents total autonomy drift by enforcing non-bypassable verification steps where a human supervisor must unlock the transition.
 
 ```
-[Macro /research] ──> ( GATE 1: Design Approval ) ──> [PRD ──> Shard+Specify]
+[Product /flows]     ──> ( FLOW GATE: actor / job-to-be-done approval ) ──> [/architecture]
+[Product /architecture] (GATE P2: cross-epic contract sign-off — only when Product layer in use) ──> [/release]
                                   │
                                   ▼
-[Meso /shard]    ──>  ( GATE 2: Contract Sign-Off )  ──> [/plan → /tasks]
+[Macro /research]   ──> ( GATE 1: Design Approval ) ──> [PRD ──> Shard+Specify]
                                   │
                                   ▼
-[Meso /tasks]    ──>  ( GATE 2b: Task Review — opt-in for complex features )
+[Meso /shard]       ──>  ( GATE 2: Contract Sign-Off )  ──> [/plan → /tasks]
                                   │
                                   ▼
-[Micro Success] ──>  ( GATE 3: Final Merge Audit )   ──> [Production Deployment]
+[Meso /tasks]       ──>  ( GATE 2b: Task Review — opt-in for complex features )
+                                  │
+                                  ▼
+[Micro Success]     ──>  ( GATE 3: Final Merge Audit )   ──> [Production Deployment]
+
+NOTE: The Product-layer gates (FLOW-01 actor sign-off, FLOW-02 cross-epic contract
+sign-off) are **soft gates** — they are conversational checkpoints inside
+`/deviate-flows` and `/deviate-architecture` and do not block Macro-layer
+phases. They are listed above to show the full dependency chain; the
+framework's three non-bypassable HITL gates remain Gate 1, Gate 2, and Gate 3.
 ```
 
 * **Gate 1: Blueprint Approval (After `/deviate-research`, Before `/deviate-prd`)**
@@ -511,7 +558,7 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 4. **Deterministic Test Failure Check:** For a `RED` phase to be valid (`deviate red post`), `_classify_pytest_outcome()` must return `ASSERTION_FAILURE`. Return codes of `PASS` or `SYNTAX_ERROR` (SyntaxError, IndentationError, TabError, ImportError, ModuleNotFoundError) are rejected. Current implementation uses string-based parsing of `pytest -v` output; `pytest --json-report` migration is specified but not yet implemented.
 
-5. **Memory Preservation via Train Gates:** The `deviate yellow post --rejected` path restores changes via `git restore .` without losing session state. The JUDGE phase implements Train rollback on compliance violations: `_execute_rollback()` runs `git reset --hard <red_sha>` (the RED boundary SHA stored in `session.red_commit_sha`) and persists a `RollbackSnapshot` to the task ledger via `append_rollback_snapshot()`. The agent's next GREEN attempt receives the previous failure output as `<train_feedback>` injected into the prompt. The `_run_tdd_cycle()` loop allows up to **`max_train_attempts = 3`** retries (re-rolling back to RED and re-running GREEN with refreshed feedback) before marking the task `FAILED` and halting the pipeline. Note: `_execute_rollback` uses `git reset --hard` against the red boundary, not `git revert --no-edit` — the red boundary is the precise commit SHA stored in `session.red_commit_sha` (set by `_run_red_phase` at the end of the RED phase), which avoids destroying YELLOW-phase amendments that were committed between RED and JUDGE. The `deviate refactor post` regression check runs `git restore .` on type mismatch or test regression.
+5. **Memory Preservation via Train Gates (Green → Judge → Green loop):** The `deviate yellow post --rejected` path restores changes via `git restore .` without losing session state. The JUDGE phase implements Train rollback on compliance violations: `_execute_rollback()` runs `git reset --hard <red_sha>` (the RED-boundary SHA captured at the end of the RED phase and stored in `session.red_commit_sha`); this discards the suspect GREEN implementation so the next attempt starts from a verified-good test. `_execute_rollback()` then persists a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`. The session is `force_transition_to("GREEN")` and the next GREEN attempt receives the previous failure output as `<train_feedback>` injected into the prompt. The `_run_tdd_cycle()` loop allows up to **`max_train_attempts = 3`** retries (re-running GREEN with refreshed feedback on each iteration) before raising `PhaseFailedError` and marking the task `FAILED`. The JUDGE → GREEN → JUDGE → … iteration is the **Green → Judge → Green loop**, distinct from the YELLOW → GREEN (rejected) branch which only fires when TamperGuard detects unauthorized test edits. The `_execute_rollback` function deliberately uses `git reset --hard <red_sha>` rather than `git revert --no-edit <green_sha>`: resetting to the verified-good RED boundary discards the suspect GREEN (and any YELLOW amendments that followed) cleanly, so the agent's next attempt starts from a known-good test rather than a reverted-but-still-suspect GREEN. The `deviate refactor post` regression check still runs `git restore .` on type mismatch or test regression.
 
 6. **The Elastic Governance Rule:** The `deviate run` command supports `--profile [full|fast|secure]` to control which phases execute. `full` runs the complete RED → GREEN → [YELLOW?] → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as composable overrides that take precedence over profile defaults. Execution profiles and agent backends are configured via `DeviateConfig.agent.backend`.
 
@@ -639,7 +686,7 @@ standard `AgentBackend.invoke()` contract with three customisations:
    **DeviaTDD does NOT write to `~/.pi/agent/`** — the operator's global Pi config
    is out of scope. Idempotency: re-running setup with identical command content
    is a no-op (`install_command` compares file content before writing). Total cost
-   ≤ 200ms for 32 commands on macOS/Linux.
+   ≤ 200ms for 31 commands on macOS/Linux.
 2. **No `settings.json` generation.** DeviaTDD does not generate a `settings.json`
    file (neither project-local nor under `~/.pi/agent/`). Model/provider selection
    is the operator's responsibility and is configured via Pi's own configuration
