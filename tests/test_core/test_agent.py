@@ -527,8 +527,8 @@ class TestPiBackendRegistration:
         assert cmd[1] == "-p", f"Expected second argv '-p', got {cmd[1]!r}"
         assert kwargs.get("stdin") is not None, "Expected stdin=PIPE for prompt"
 
-    def test_pi_backend_model_flag_not_injected(self):
-        """AC-009-02 / US-009-02: Pi print mode rejects ``--model`` — skip injection."""
+    def test_pi_backend_model_flag_injected(self):
+        """Pi print mode accepts ``--model <id>`` — flag is injected when set."""
         yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
         mock_proc = MagicMock(spec=subprocess.Popen)
         mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
@@ -541,9 +541,9 @@ class TestPiBackendRegistration:
 
         args, _ = mock_popen.call_args
         cmd = args[0]
-        assert "--model" not in cmd, (
-            f"Pi print mode must NOT receive --model flag (got {cmd})"
-        )
+        assert "--model" in cmd, f"Expected --model in command, got {cmd}"
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "anthropic/claude-sonnet-4-5"
 
     def test_pi_backend_missing_binary(self):
         """Edge case: ``pi`` not on PATH → ``AgentBinaryNotFoundError``."""
@@ -654,12 +654,11 @@ class TestStubPiBackend:
 
 
 class TestModelFlagsRegistry:
-    """TSK-009-01: per-backend model-flag dispatch via ``MODEL_FLAGS`` map.
+    """Per-backend model-flag dispatch via ``MODEL_FLAGS`` map.
 
     The dispatch table maps backend names to the flag prefix used for
-    model injection. ``pi`` is mapped to ``None`` (print mode rejects
-    ``--model``); ``opencode`` and ``droid`` use ``['--model']``; ``claude``
-    ignores model config (existing behavior).
+    model injection. ``pi``, ``opencode``, and ``droid`` all use
+    ``['--model']``; ``claude`` ignores model config (existing behavior).
     """
 
     def test_model_flags_map_contains_pi(self):
@@ -667,11 +666,11 @@ class TestModelFlagsRegistry:
 
         assert "pi" in MODEL_FLAGS
 
-    def test_model_flags_pi_is_none(self):
-        """Pi print mode must NOT receive ``--model`` — entry is ``None``."""
+    def test_model_flags_pi_uses_model_flag(self):
+        """Pi accepts ``--model <id>`` — entry is ``['--model']``."""
         from deviate.core.agent import MODEL_FLAGS
 
-        assert MODEL_FLAGS["pi"] is None
+        assert MODEL_FLAGS["pi"] == ["--model"]
 
     def test_model_flags_opencode_uses_model_flag(self):
         from deviate.core.agent import MODEL_FLAGS
@@ -683,12 +682,12 @@ class TestModelFlagsRegistry:
 
         assert MODEL_FLAGS["droid"] == ["--model"]
 
-    def test_pi_model_flag_lookup_returns_none(self):
+    def test_pi_model_flag_lookup_returns_model_flag(self):
         """``AgentBackend.invoke()`` consults ``MODEL_FLAGS[backend]`` —
-        when the entry is ``None``, ``--model`` is skipped entirely."""
+        ``pi`` resolves to ``['--model']`` so ``--model <id>`` is appended."""
         from deviate.core.agent import MODEL_FLAGS
 
-        assert MODEL_FLAGS.get("pi") is None
+        assert MODEL_FLAGS.get("pi") == ["--model"]
 
 
 class TestPiSessionStatsLogging:

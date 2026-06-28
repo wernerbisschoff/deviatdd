@@ -609,7 +609,7 @@ the customisations documented below.
 | `opencode` | `opencode run` | Commands copied into `.opencode/commands/` (flat `.md`) | `--model <id>` flag | Default backend |
 | `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
 | `droid` | `droid exec` | Commands copied into `.factory/commands/` (flat `.md`) | `--model <id>` flag | Factory Droid IDE-owned commands dir |
-| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | Operator's responsibility via Pi's own config (no `--model` flag, no `settings.json` generated) | Native slash-command discovery via `.pi/prompts/`; opt-in RPC mode available |
+| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Native slash-command discovery via `.pi/prompts/`; opt-in RPC mode available |
 
 Pi implements slash-command discovery natively — `pi -p` loads commands from
 `~/.pi/agent/`, `.pi/prompts/`, and `.agents/` on startup, parses the
@@ -647,15 +647,13 @@ standard `AgentBackend.invoke()` contract with three customisations:
    across all `deviate setup` runs. This keeps DeviaTDD's blast radius minimal:
    selecting `pi` as a backend does not overwrite or merge into the operator's
    global Pi configuration.
-3. **Model flag injection difference.** Pi print mode (`pi -p`) rejects a bare
-   `--model <id>` flag — Pi's model selection requires either
-   `--provider <name> --model <pattern>` on the command line or, preferably, the
-   `~/.pi/agent/settings.json` runtime configuration file. DeviaTDD therefore does
-   **not** inject `--model` for the Pi backend via the per-backend `MODEL_FLAGS` map;
-   per-phase `[models]` overrides apply to the next subprocess spawn in print mode
-   (no-op for Pi — the operator's settings take precedence) or via Pi's `set_model`
-   RPC command in RPC mode (opt-in). This differs from `opencode` / `droid` (which
-   accept `--model` on the command line) and from `claude` (which uses print mode
+3. **Model flag injection.** Pi print mode (`pi -p`) accepts the
+   `--model <id>` flag directly (e.g. `pi --model minimax/MiniMax-M3`) — same
+   as `opencode` and `droid`. DeviaTDD therefore injects `--model` for the Pi
+   backend via the per-backend `MODEL_FLAGS` map;
+   the `provider/model` string from `[models]` is passed verbatim. This is identical
+   to `opencode` / `droid` behavior. RPC mode additionally supports Pi's `set_model`
+   JSONL command for per-invocation swaps. `claude` uses print mode
    but ignores `--model`).
 4. **RPC mode opt-in.** Pi's RPC mode (`pi --mode rpc --no-session`) exposes a
    JSONL-over-stdin/stdout protocol with streaming events (`agent_start`,

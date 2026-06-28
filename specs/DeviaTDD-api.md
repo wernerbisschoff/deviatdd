@@ -847,10 +847,9 @@ The architecture defines a model routing strategy in `specs/constitution.md` see
 
 The `AgentBackend` class (`src/deviate/core/agent.py`) supports `opencode`, `claude`,
 `droid`, and `pi` backends with configurable timeout. Output is parsed as YAML
-`HandoverManifest`. Pi uses print mode (`pi -p`) by default; model selection routes
-through `~/.pi/agent/settings.json` rather than the `--model` CLI flag (which Pi print
-mode rejects), so per-phase `[models]` config applies at subprocess-spawn time. RPC
-mode (`pi --mode rpc --no-session`) is opt-in via `agent.pi_rpc = true` in
+`HandoverManifest`. Pi uses print mode (`pi -p`) by default and accepts the
+`--model <id>` CLI flag (the `provider/model` string from `[models]` is passed
+verbatim). RPC mode (`pi --mode rpc --no-session`) is opt-in via `agent.pi_rpc = true` in
 `.deviate/config.toml` and streams JSONL events so `pi.session_stats`
 (`tokens.input`/`output`/`cacheRead`/`cacheWrite`) can be appended to the
 `AGENT_RESULT` event in `.deviate/prompts.log` for cost observability. See
