@@ -655,6 +655,63 @@ def setup(
 
     _ensure_gitignore(workdir)
     _ensure_root_gitignore(workdir)
+    _ensure_root_gitattributes(workdir)
+
+
+# Canonical ``.gitattributes`` content provisioned by ``deviate setup``.
+# Marked as a module constant so the deviatdd repo's own ``.gitattributes``
+# file and every downstream scaffolded project stay in sync — single source
+# of truth for the union-merge rules over append-only JSONL ledgers.
+DEVIATE_GITATTRIBUTES_SEED = (
+    "# DeviaTDD append-only JSONL ledgers: union-merge so concurrent\n"
+    "# appends never conflict at branch-merge time.\n"
+    "# See specs/constitution.md §1 Append-Only Ledger Protocol.\n"
+    "specs/issues.jsonl merge=union\n"
+    "specs/**/tasks.jsonl merge=union\n"
+)
+
+
+def _ensure_root_gitattributes(workdir: Path) -> None:
+    """Provision a project-root ``.gitattributes`` declaring
+    ``merge=union`` for the append-only JSONL ledgers.
+
+    Mirrors the idempotent-merge contract of :func:`_ensure_root_gitignore`:
+    user-authored entries are preserved, and re-running setup never
+    duplicates the union-merge rules.
+
+    Without this, concurrent ``deviate shard`` runs on feature branches
+    produce line-level conflicts in ``specs/issues.jsonl`` at merge time
+    that require manual resolution. ``merge=union`` is git's built-in
+    line-wise union driver — it keeps every unique line across all
+    branches and emits no conflict markers.
+
+    Rationale, semantic-dup behaviour, and diamond-merge verification
+    are documented in ``specs/DeviaTDD-api.md`` under ``deviate init``
+    and ``deviate setup``.
+    """
+    attr_path = workdir / ".gitattributes"
+    if attr_path.exists():
+        content = attr_path.read_text(encoding="utf-8")
+        existing_lines = content.splitlines()
+        union_lines = [
+            line
+            for line in DEVIATE_GITATTRIBUTES_SEED.splitlines()
+            if line and not line.startswith("#")
+        ]
+        missing = [line for line in union_lines if line not in existing_lines]
+        if not missing:
+            return
+        merged = list(existing_lines)
+        if merged and merged[-1].strip():
+            merged.append("")
+        merged.extend(missing)
+        attr_path.write_text("\n".join(merged) + "\n", encoding="utf-8")
+        console.print(
+            f"  [green]UPDATE[/] .gitattributes added {len(missing)} union-merge rules"
+        )
+    else:
+        attr_path.write_text(DEVIATE_GITATTRIBUTES_SEED, encoding="utf-8")
+        console.print("  [green]CREATE[/] .gitattributes with union-merge rules")
 
 
 def _ensure_root_gitignore(workdir: Path) -> None:
