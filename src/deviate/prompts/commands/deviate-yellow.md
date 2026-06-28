@@ -119,10 +119,6 @@ test_changes:
 
 
 
-## Handover Persistence (FLOW-11)
-
-After emitting the YAML manifest, call the Write tool to persist it at `.deviate/feat/<epic>/<issue>/[<task>/]<phase>.yaml` via `deviate.core.handover.handover_path()` (FLOW-11 capture).
-
 </output_format_schemas>
 
 <evaluation_guidelines>
