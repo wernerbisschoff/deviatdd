@@ -47,39 +47,18 @@ class TestInitCommand:
             claude_path = workdir / "CLAUDE.md"
             assert claude_path.exists()
             content = claude_path.read_text()
-            assert "## 🛠 DeviaTDD Phase Architecture" in content
+            # Phase Architecture block was removed (project-internal, did not
+            # help consuming projects). The libref block is still seeded.
+            assert "## 🛠 DeviaTDD Phase Architecture" not in content
+            assert "## 📚 Offline Documentation (libref)" in content
 
-    def test_init_overwrites_governance_block_when_exists(self, tmp_path: Path):
+    def test_init_replaces_governance_block_in_place(self, tmp_path: Path):
+        """Existing governance block is replaced without duplication; unrelated sections are preserved."""
         with chdir(tmp_path):
             workdir = tmp_path
             claude_path = workdir / "CLAUDE.md"
             existing_content = (
                 "# My Project\n\n"
-                "## 🛠 DeviaTDD Phase Architecture\n"
-                "Old content\n\n"
-                "## Other Section\n"
-                "Preserved content\n"
-            )
-            claude_path.write_text(existing_content)
-
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result.exit_code == 0, result.output
-
-            content = claude_path.read_text()
-            assert "Old content" not in content
-            assert "Preserved content" in content
-            assert "## 🛠 DeviaTDD Phase Architecture" in content
-            assert "## Other Section" in content
-
-    def test_init_replaces_multi_section_governance_block(self, tmp_path: Path):
-        """Seed has multiple sections; each is replaced independently without duplication."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            claude_path = workdir / "CLAUDE.md"
-            existing_content = (
-                "# My Project\n\n"
-                "## 🛠 DeviaTDD Phase Architecture\n"
-                "Old orchestration content\n\n"
                 "## 📚 Offline Documentation (libref)\n"
                 "Old docs content\n\n"
                 "## Other Section\n"
@@ -91,11 +70,9 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
 
             content = claude_path.read_text()
-            assert "Old orchestration content" not in content
             assert "Old docs content" not in content
             assert "Preserved content" in content
             assert "## Other Section" in content
-            assert content.count("## 🛠 DeviaTDD Phase Architecture") == 1
             assert content.count("## 📚 Offline Documentation (libref)") == 1
 
     def test_init_normalized_heading_replaces_annotated_heading(self, tmp_path: Path):

@@ -458,18 +458,24 @@ def _scaffold_dotfiles(
 
 
 def _apply_governance(workdir: Path, graphite: bool = False) -> None:
+    # NOTE: claudemd_seed.md and agents_seed.md are intentionally empty — the
+    # former ``## 🛠 DeviaTDD Phase Architecture`` block was project-internal
+    # guidance that did not help consuming projects. An empty seed (read
+    # successfully but with no content) is skipped silently so the remaining
+    # blocks below still run. A missing seed is treated as a packaging error.
     claude_path = workdir / "CLAUDE.md"
     claude_content = _read_seed(_GOVERNANCE_MODULE, "claudemd_seed.md")
     if claude_content is None:
         return
-    _upsert_governance_block(claude_path, claude_content)
+    if "## " in claude_content:
+        _upsert_governance_block(claude_path, claude_content)
 
     agents_path = workdir / "AGENTS.md"
     agents_content = _read_seed(_GOVERNANCE_MODULE, "agents_seed.md")
     if agents_content is None:
         return
-    _upsert_governance_block(agents_path, agents_content)
-
+    if "## " in agents_content:
+        _upsert_governance_block(agents_path, agents_content)
     libref_content = _read_seed(_GOVERNANCE_MODULE, "libref_seed.md")
     if libref_content:
         _upsert_governance_block(claude_path, libref_content)
