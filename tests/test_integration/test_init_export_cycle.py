@@ -109,10 +109,14 @@ class TestFullInitCycle:
             assert session_data["active_issue_id"] is None
 
             claude_text = claude_path.read_text()
-            assert "## 🛠 DeviaTDD Phase Architecture" in claude_text
+            # Phase Architecture block was removed (project-internal, did not
+            # help consuming projects). The libref block is still seeded.
+            assert "## 🛠 DeviaTDD Phase Architecture" not in claude_text
+            assert "## 📚 Offline Documentation (libref)" in claude_text
 
             agents_text = agents_path.read_text()
-            assert "## 🛠 DeviaTDD Phase Architecture" in agents_text
+            assert "## 🛠 DeviaTDD Phase Architecture" not in agents_text
+            assert "## 📚 Offline Documentation (libref)" in agents_text
 
             const_text = const_path.read_text()
             assert "# Project Constitution" in const_text
@@ -199,8 +203,8 @@ class TestFullInitCycle:
             claude_path = workdir / "CLAUDE.md"
             existing_claude = (
                 "# My Project\n\n"
-                "## 🛠 DeviaTDD Phase Architecture\n"
-                "Existing rules\n\n"
+                "## 📚 Offline Documentation (libref)\n"
+                "Existing docs content\n\n"
                 "## Other Section\n"
                 "Preserved content\n"
             )
@@ -217,14 +221,18 @@ class TestFullInitCycle:
             assert session_path.read_text() == original_session
             assert claude_path.exists()
             content = claude_path.read_text()
-            assert "Existing rules" not in content
+            # Pre-existing libref section is replaced by fresh seed; unrelated
+            # sections stay untouched. Phase Architecture is no longer seeded.
+            assert "Existing docs content" not in content
             assert "Preserved content" in content
-            assert "## 🛠 DeviaTDD Phase Architecture" in content
+            assert "## 📚 Offline Documentation (libref)" in content
             assert "## Other Section" in content
+            assert "## 🛠 DeviaTDD Phase Architecture" not in content
 
             assert agents_path.exists()
             agents_content = agents_path.read_text()
-            assert "## 🛠 DeviaTDD Phase Architecture" in agents_content
+            assert "## 📚 Offline Documentation (libref)" in agents_content
+            assert "## 🛠 DeviaTDD Phase Architecture" not in agents_content
 
 
 class TestProductLayerSkillExportCycle:
