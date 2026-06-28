@@ -6,7 +6,6 @@ bun.lock
 
 graphify-out/
 __pycache__/
-uv.lock
 
 # Tooling
 .rgr
@@ -24,3 +23,6 @@ node_modules/
 # Allow OMP slash commands sourced from .pi/prompts/ via the .omp/commands symlink
 !/.omp/commands/deviate-*.md
 !/.omp/commands/tome-*.md
+
+# Internal launch prep notes
+.launch/
