@@ -72,11 +72,11 @@ PI_RPC_COMMAND: list[str] = ["pi", "--mode", "rpc", "--no-session"]
 
 
 # Per-backend model-flag dispatch. ``None`` means the backend does not
-# accept ``--model`` on the CLI (model routing happens via other channels —
-# Pi routes via ``~/.pi/agent/settings.json``; claude ignores model config).
-# ``["--model"]`` means the backend accepts the ``--model <id>`` flag.
+# accept ``--model`` on the CLI (model routing is the operator's responsibility
+# — claude ignores model config entirely). ``["--model"]`` means the backend
+# accepts the ``--model <id>`` flag (opencode, droid, and pi all do).
 MODEL_FLAGS: dict[str, list[str] | None] = {
-    "pi": None,
+    "pi": ["--model"],
     "claude": None,
     "opencode": ["--model"],
     "droid": ["--model"],
