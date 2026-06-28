@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.cli.__init__ import resolve_graphite_config
-from deviate.core.skills import _resolve_skills_root
+from deviate.core.commands import _resolve_commands_root
 
 runner = CliRunner()
 
@@ -374,10 +374,10 @@ class TestInitCommand:
         ``src/deviate/prompts/skills/deviate-constitution/SKILL.md:1-11``
         (canonical frontmatter schema reference).
         """
-        skills_root = _resolve_skills_root()
+        commands_root = _resolve_commands_root()
 
         for skill_name in _PRODUCT_LAYER_SKILLS:
-            skill_path = skills_root / skill_name / "SKILL.md"
+            skill_path = commands_root / f"{skill_name}.md"
             assert skill_path.exists(), (
                 f"Product-layer skill template missing: {skill_path}"
             )
@@ -425,12 +425,12 @@ class TestInitCommand:
         where the three Product-layer skill files are already installed produces
         SKIP log lines (no errors, no duplicate writes).
 
-        Source: ``src/deviate/cli/__init__.py:518-531`` (``_install_skills_to_agents``)
+        Source: ``src/deviate/cli/__init__.py:518-531`` (``_install_commands_to_agents``)
         existing skip-on-equal-content logic.
         """
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
@@ -439,7 +439,7 @@ class TestInitCommand:
             assert first.exit_code == 0, first.output
 
             for skill_name in _PRODUCT_LAYER_SKILLS:
-                installed = tmp_path / ".claude" / "skills" / skill_name / "SKILL.md"
+                installed = tmp_path / ".claude" / "commands" / f"{skill_name}.md"
                 assert installed.exists(), (
                     f"first setup did not install {skill_name}: {installed}"
                 )
@@ -453,33 +453,33 @@ class TestInitCommand:
                     f"got: {second.output!r}"
                 )
 
-    def test_init_discover_skills_enumerates_product_layer(self) -> None:
-        """TSK-010-06: ``discover_skills()`` enumerates >= 23 skill names and
+    def test_init_discover_commands_enumerates_product_layer(self) -> None:
+        """TSK-010-06: ``discover_commands()`` enumerates >= 23 skill names and
         includes the three new Product-layer skills (``deviate-flows``,
         ``deviate-architecture``, ``deviate-release``) exactly once each.
 
-        Source: AC-ADHOC-010-02 (``discover_skills()`` must return 23 names after
+        Source: AC-ADHOC-010-02 (``discover_commands()`` must return 23 names after
         the three Product-layer skills are added; >= 23 chosen for forward
         compatibility per ``specs/adhoc/010-deviate-setup-product-layer/tasks.md``
         §`Risk Hotspots`).
         """
-        from deviate.core.skills import discover_skills
+        from deviate.core.commands import discover_commands
 
-        skills = discover_skills()
+        skills = discover_commands()
 
         assert len(skills) >= 23, (
-            f"discover_skills() returned {len(skills)} skill names; "
+            f"discover_commands() returned {len(skills)} skill names; "
             f"expected >= 23. Got: {sorted(skills)}"
         )
 
         for skill_name in _PRODUCT_LAYER_SKILLS:
             assert skill_name in skills, (
                 f"Product-layer skill '{skill_name}' missing from "
-                f"discover_skills() output. Got: {sorted(skills)}"
+                f"discover_commands() output. Got: {sorted(skills)}"
             )
             assert skills.count(skill_name) == 1, (
                 f"Product-layer skill '{skill_name}' appears "
-                f"{skills.count(skill_name)} times in discover_skills() output; "
+                f"{skills.count(skill_name)} times in discover_commands() output; "
                 f"expected exactly 1. Got: {sorted(skills)}"
             )
 
@@ -517,10 +517,10 @@ class TestInitCommand:
             f"got={set(_TOME_LAYER_SKILLS)!r}"
         )
 
-        skills_root = _resolve_skills_root()
+        commands_root = _resolve_commands_root()
 
         for skill_name in _TOME_LAYER_SKILLS:
-            skill_path = skills_root / skill_name / "SKILL.md"
+            skill_path = commands_root / f"{skill_name}.md"
             assert skill_path.exists(), f"Tome skill template missing: {skill_path}"
 
             content = skill_path.read_text(encoding="utf-8")
@@ -572,7 +572,7 @@ class TestInitCommand:
 
         Mirrors ``test_init_product_layer_skills_idempotent`` for the Tome
         layer. Source: ``src/deviate/cli/__init__.py:518-531``
-        (``_install_skills_to_agents`` existing skip-on-equal-content logic).
+        (``_install_commands_to_agents`` existing skip-on-equal-content logic).
         """
         assert len(_TOME_LAYER_SKILLS) == 7, (
             f"_TOME_LAYER_SKILLS must declare all 7 Tome skills "
@@ -580,8 +580,8 @@ class TestInitCommand:
         )
 
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
@@ -590,7 +590,7 @@ class TestInitCommand:
             assert first.exit_code == 0, first.output
 
             for skill_name in _TOME_LAYER_SKILLS:
-                installed = tmp_path / ".claude" / "skills" / skill_name / "SKILL.md"
+                installed = tmp_path / ".claude" / "commands" / f"{skill_name}.md"
                 assert installed.exists(), (
                     f"first setup did not install {skill_name}: {installed}"
                 )
@@ -604,8 +604,8 @@ class TestInitCommand:
                     f"got: {second.output!r}"
                 )
 
-    def test_init_discover_skills_enumerates_tome(self) -> None:
-        """TSK-011-06: ``discover_skills()`` enumerates >= 30 skill names
+    def test_init_discover_commands_enumerates_tome(self) -> None:
+        """TSK-011-06: ``discover_commands()`` enumerates >= 30 skill names
         and the seven Tome skills each appear exactly once.
 
         Forward-compatible count assertion per the FR-ADHOC-010 ``>= 23``
@@ -619,8 +619,8 @@ class TestInitCommand:
         ``specs/adhoc/011-tome-subsystem-v1.md`` §`ATDD Acceptance Criteria`
         Scenario 011-08.
 
-        Note on execution context: ``discover_skills()`` calls
-        ``_resolve_skills_root()`` (see ``src/deviate/core/skills.py:8-18``)
+        Note on execution context: ``discover_commands()`` calls
+        ``_resolve_commands_root()`` (see ``src/deviate/core/skills.py:8-18``)
         which uses ``importlib.resources.files("deviate.prompts")`` to locate
         the skills directory. When this test is run from a worktree via
         ``uv run pytest ...`` (no ``--project`` flag), the resolver returns
@@ -631,17 +631,17 @@ class TestInitCommand:
         invoke ``uv run pytest`` without ``--project``, to exercise this
         assertion against the worktree's source tree.
         """
-        from deviate.core.skills import discover_skills
+        from deviate.core.commands import discover_commands
 
         assert len(_TOME_LAYER_SKILLS) == 7, (
             f"_TOME_LAYER_SKILLS must declare all 7 Tome skills "
             f"(got {len(_TOME_LAYER_SKILLS)})"
         )
 
-        skills = discover_skills()
+        skills = discover_commands()
 
         assert len(skills) >= 30, (
-            f"discover_skills() returned {len(skills)} skill names; "
+            f"discover_commands() returned {len(skills)} skill names; "
             f"expected >= 30 (24 base + 7 Tome per AC-ADHOC-011-08). "
             f"Got: {sorted(skills)}"
         )
@@ -649,11 +649,11 @@ class TestInitCommand:
         for skill_name in _TOME_LAYER_SKILLS:
             assert skill_name in skills, (
                 f"Tome skill '{skill_name}' missing from "
-                f"discover_skills() output. Got: {sorted(skills)}"
+                f"discover_commands() output. Got: {sorted(skills)}"
             )
             assert skills.count(skill_name) == 1, (
                 f"Tome skill '{skill_name}' appears "
-                f"{skills.count(skill_name)} times in discover_skills() output; "
+                f"{skills.count(skill_name)} times in discover_commands() output; "
                 f"expected exactly 1. Got: {sorted(skills)}"
             )
 
@@ -677,16 +677,16 @@ class TestInitCommand:
         """
         import re
 
-        from deviate.core.skills import discover_skills
+        from deviate.core.commands import discover_commands
 
-        skills_root = _resolve_skills_root()
+        commands_root = _resolve_commands_root()
         user_input_re = re.compile(
             r"<user_input>\s*(\$ARGUMENTS)\s*</user_input>", re.DOTALL
         )
 
         violations: list[str] = []
-        for skill_name in discover_skills():
-            skill_path = skills_root / skill_name / "SKILL.md"
+        for skill_name in discover_commands():
+            skill_path = commands_root / f"{skill_name}.md"
             if not skill_path.exists():
                 continue
             content = skill_path.read_text(encoding="utf-8")
@@ -955,78 +955,111 @@ class TestInitAgentFlag:
         ``.droid/skills/`` directory.
         """
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
             assert result.exit_code == 0, result.output
-            assert (tmp_path / ".factory" / "skills").exists()
+            assert (tmp_path / ".factory" / "commands").exists()
             assert not (tmp_path / ".droid").exists()
 
-    def test_init_agent_droid_writes_factory_gitignore_entry(
+    def test_init_agent_droid_writes_root_gitignore_entry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """`--agent droid` writes ``.factory/.gitignore`` (not ``.droid/...``)."""
+        """`--agent droid` does NOT create a ``.droid/`` directory.
+
+        The root ``.gitignore`` covers ``*/commands/deviate-*.md`` and
+        ``*/commands/tome-*.md`` so no per-agent ``.gitignore`` is created.
+        ``droid`` is normalised to ``factory`` for the command directory.
+        """
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
             assert result.exit_code == 0, result.output
-            assert (tmp_path / ".factory" / ".gitignore").exists()
-            assert not (tmp_path / ".droid" / ".gitignore").exists()
-            gi = (tmp_path / ".factory" / ".gitignore").read_text(encoding="utf-8")
-            assert "skills/deviate-*/" in gi
-            assert "skills/tome-*/" in gi
-            # Root .gitignore should NOT be polluted with per-agent entries.
-            root_gi = tmp_path / ".gitignore"
-            assert (
-                not root_gi.exists()
-                or ".factory/skills/deviate-*/" not in root_gi.read_text()
-            )
+            assert not (tmp_path / ".droid").exists()
+            assert not (tmp_path / ".factory" / ".gitignore").exists()
+            root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+            assert "*/commands/deviate-*.md" in root_gi
+            assert "*/commands/tome-*.md" in root_gi
 
-    def test_init_agent_writes_per_agent_gitignore(self, tmp_path: Path):
-        """``deviate setup --agent <agent>`` writes ``.<agent>/.gitignore``
-        with both ``skills/deviate-*/`` and ``skills/tome-*/`` entries.
+    def test_init_writes_root_gitignore_for_all_agent_dirs(self, tmp_path: Path):
+        """``deviate setup`` writes four ``*/commands/`` and ``*/prompts/``
+        patterns to the project-root ``.gitignore``.
 
-        Keeps the project root ``.gitignore`` clean — agent config concerns
-        stay inside the agent's own directory.
+        The single-level ``*/`` prefix scopes the patterns to one directory
+        before ``commands/`` or ``prompts/`` — broad enough to cover every
+        supported agent (``.claude/``, ``.opencode/``, ``.factory/``,
+        ``.pi/``) but tight enough NOT to match the project's own source
+        paths (e.g. ``src/deviate/prompts/commands/``, which is three
+        directories deep).
         """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
-            gi = (tmp_path / ".opencode" / ".gitignore").read_text(encoding="utf-8")
-            assert "skills/deviate-*/" in gi
-            assert "skills/tome-*/" in gi
+            root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+            assert "*/commands/deviate-*.md" in root_gi
+            assert "*/commands/tome-*.md" in root_gi
+            assert "*/prompts/deviate-*.md" in root_gi
+            assert "*/prompts/tome-*.md" in root_gi
 
-    def test_init_agent_gitignore_preserves_user_content(self, tmp_path: Path):
-        """User-authored content in ``.<agent>/.gitignore`` is preserved when
-        DeviaTDD writes its entries. DeviaTDD's two skill-family lines are
-        appended, never replacing or duplicating prior content.
+    def test_init_installs_commands_to_all_agent_dirs(self, tmp_path: Path):
+        """``deviate setup --agent <x>`` installs the command library into
+        EVERY agent's command directory, not just the one selected.
+
+        ``--agent`` is the meso/micro backend selector; command installation
+        is intentionally unconditional so a single ``setup`` run prepares
+        the workspace for any of the supported agents.
         """
-        (tmp_path / ".opencode").mkdir()
-        (tmp_path / ".opencode" / ".gitignore").write_text(
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            for agent_dir, sub in (
+                (".claude", "commands"),
+                (".opencode", "commands"),
+                (".factory", "commands"),
+                (".pi", "prompts"),
+            ):
+                sample = tmp_path / agent_dir / sub / "deviate-red.md"
+                assert sample.exists(), (
+                    f"Expected {sample} to exist — setup installs into ALL "
+                    f"agent dirs regardless of --agent"
+                )
+
+    def test_init_root_gitignore_preserves_user_content(self, tmp_path: Path):
+        """User-authored entries in the root ``.gitignore`` are preserved when
+        DeviaTDD writes its agent-command exclusion entries.
+        """
+        (tmp_path / ".gitignore").write_text(
             "# user content\ncustom-thing/\n", encoding="utf-8"
         )
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
-            gi = (tmp_path / ".opencode" / ".gitignore").read_text(encoding="utf-8")
-            assert "# user content" in gi
-            assert "custom-thing/" in gi
-            assert "skills/deviate-*/" in gi
-            assert "skills/tome-*/" in gi
+            root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+            assert "# user content" in root_gi
+            assert "custom-thing/" in root_gi
+            assert "*/commands/deviate-*.md" in root_gi
+            assert "*/prompts/tome-*.md" in root_gi
 
-    def test_init_agent_gitignore_idempotent_across_runs(self, tmp_path: Path):
+    def test_init_root_gitignore_idempotent_across_runs(self, tmp_path: Path):
         """Re-running ``deviate setup`` does not duplicate the gitignore entries."""
         with chdir(tmp_path):
             runner.invoke(cli, ["setup", "--agent", "opencode"])
             runner.invoke(cli, ["setup", "--agent", "opencode"])
-            gi = (tmp_path / ".opencode" / ".gitignore").read_text(encoding="utf-8")
-            assert gi.count("skills/deviate-*/") == 1
-            assert gi.count("skills/tome-*/") == 1
+            root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+            for entry in (
+                "*/commands/deviate-*.md",
+                "*/commands/tome-*.md",
+                "*/prompts/deviate-*.md",
+                "*/prompts/tome-*.md",
+            ):
+                assert root_gi.count(entry) == 1, (
+                    f"{entry} duplicated in root .gitignore"
+                )
 
     def test_init_no_agent_no_config_non_interactive_errors(self, tmp_path: Path):
         """Without `--agent`, no config, and no TTY → init exits with a clear error."""
@@ -1090,7 +1123,7 @@ class TestInitPiBackend:
     Validates that ``deviate setup --agent pi``:
         1. Exposes 'pi' in the AGENT_CHOICES / AGENT_TO_BACKEND constants.
         2. File-copies each DeviaTDD skill into
-           ``<workdir>/.pi/skills/<skill-name>/SKILL.md`` (same path convention
+           ``<workdir>/.pi/prompts/<skill-name>/SKILL.md`` (same path convention
            as ``.claude/``, ``.opencode/``, ``.factory/``).
         3. Does NOT write to ``~/.pi/agent/`` (operator's global Pi config is
            out of scope).
@@ -1128,29 +1161,28 @@ class TestInitPiBackend:
             assert parsed["agent"]["backend"] == "pi"
 
     def test_init_creates_pi_skill_files(self, tmp_path: Path):
-        """AC-ADHOC-009-02: ``--agent pi`` file-copies each DeviaTDD skill.
+        """AC-ADHOC-009-02: ``--agent pi`` file-copies each DeviaTDD command.
 
-        Each skill is written to ``<workdir>/.pi/skills/<skill-name>/SKILL.md``
-        — the same path convention used for ``.claude/``, ``.opencode/``,
-        ``.factory/``. Pi discovers skills from ``.pi/skills/`` natively per
-        the Agent Skills spec.
+        Each command is written to ``<workdir>/.pi/prompts/<command-name>.md``
+        — the flat-file convention Pi discovers natively per its
+        documented slash-command convention.
         """
-        from deviate.core.skills import discover_skills
+        from deviate.core.commands import discover_commands
 
-        skills = discover_skills()
+        skills = discover_commands()
         assert skills, "No skills discovered — test invariant violated"
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
             assert result.exit_code == 0, result.output
 
-            pi_skills_dir = tmp_path / ".pi" / "skills"
+            pi_skills_dir = tmp_path / ".pi" / "prompts"
             assert pi_skills_dir.is_dir(), (
                 f"Pi skills directory not created: {pi_skills_dir}"
             )
 
             for skill_name in skills:
-                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                skill_file = pi_skills_dir / f"{skill_name}.md"
                 assert skill_file.is_file(), (
                     f"Skill file missing for '{skill_name}' at {skill_file}"
                 )
@@ -1169,14 +1201,14 @@ class TestInitPiBackend:
         """DeviaTDD must NOT touch ``~/.pi/`` — operator's global Pi config.
 
         The user's ``~/.pi/agent/`` directory is operator-managed. DeviaTDD
-        manages only project-local ``<workdir>/.pi/skills/`` and must leave
+        manages only project-local ``<workdir>/.pi/prompts/`` and must leave
         the user's home directory untouched.
         """
-        from deviate.core.skills import discover_skills
+        from deviate.core.commands import discover_commands
 
         # Point the user's HOME at a separate directory so the test can
         # assert that the home ``.pi/`` stays empty while the project
-        # workdir (also tmp_path) gets its ``.pi/skills/`` written normally.
+        # workdir (also tmp_path) gets its ``.pi/prompts/`` written normally.
         fake_home = tmp_path / "fake-home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -1197,12 +1229,12 @@ class TestInitPiBackend:
             )
 
             # Project-local skill files were still written (sanity check).
-            project_pi = tmp_path / ".pi" / "skills"
+            project_pi = tmp_path / ".pi" / "prompts"
             assert project_pi.is_dir(), (
                 f"Project-local .pi/skills was not created: {project_pi}"
             )
 
-            skills = discover_skills()
+            skills = discover_commands()
             assert skills, "No skills discovered — test invariant violated"
 
     def test_init_does_not_generate_settings_json(
@@ -1233,23 +1265,22 @@ class TestInitPiBackend:
     def test_init_idempotent_pi_setup(self, tmp_path: Path):
         """Re-running setup does not duplicate skill files or corrupt state.
 
-        The existing ``install_skill`` contract compares file content before
+        The existing ``install_command`` contract compares file content before
         writing, so re-running setup with identical source skills is a no-op
-        at the file level. The ``.pi/skills/`` directory layout is preserved.
+        at the file level. The ``.pi/prompts/`` directory layout is preserved.
         """
-        from deviate.core.skills import discover_skills
+        from deviate.core.commands import discover_commands
 
-        skills = discover_skills()
+        skills = discover_commands()
         assert skills, "No skills discovered — test invariant violated"
 
         with chdir(tmp_path):
             r1 = runner.invoke(cli, ["setup", "--agent", "pi"])
             assert r1.exit_code == 0, r1.output
 
-            pi_skills_dir = tmp_path / ".pi" / "skills"
+            pi_skills_dir = tmp_path / ".pi" / "prompts"
             first_run_skill_files = sorted(
-                str(p.relative_to(pi_skills_dir))
-                for p in pi_skills_dir.rglob("SKILL.md")
+                str(p.relative_to(pi_skills_dir)) for p in pi_skills_dir.glob("*.md")
             )
             assert len(first_run_skill_files) == len(skills), (
                 f"Expected {len(skills)} skill files, found "
@@ -1260,8 +1291,7 @@ class TestInitPiBackend:
             assert r2.exit_code == 0, r2.output
 
             second_run_skill_files = sorted(
-                str(p.relative_to(pi_skills_dir))
-                for p in pi_skills_dir.rglob("SKILL.md")
+                str(p.relative_to(pi_skills_dir)) for p in pi_skills_dir.glob("*.md")
             )
             assert second_run_skill_files == first_run_skill_files, (
                 f"Idempotent re-run changed skill file layout: "
@@ -1269,7 +1299,7 @@ class TestInitPiBackend:
             )
 
             for skill_name in skills:
-                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                skill_file = pi_skills_dir / f"{skill_name}.md"
                 assert skill_file.is_file(), (
                     f"Skill file removed on re-run: {skill_file}"
                 )

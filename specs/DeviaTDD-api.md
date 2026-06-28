@@ -27,11 +27,29 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `elixir_phoenix`, or `unknown`) and writes a `specs/constitution.md` populated with
   project-specific test/lint/format/setup/dev commands, applies the `## DeviaTDD
   Orchestration Rules` and `## Libref Usage` governance blocks to `CLAUDE.md` and
-  `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt skills (currently
-  21) into the selected agent's skills directory (`.claude/skills/`,
-  `.opencode/skills/`, `.factory/skills/`). The agent backend (`opencode`, `claude`,
-  `droid`, `factory`, `pi`) is persisted to `[agent].backend` in `config.toml`.
-  **Agent-to-skills-directory mapping:** `--agent claude` → `.claude/skills/`; `--agent opencode` → `.opencode/skills/`; `--agent factory` and `--agent droid` both → `.factory/skills/` (the Factory Droid IDE owns that directory; `droid` is the underlying backend binary both user-facing names dispatch to, so there is no `.droid/skills/`); `--agent pi` → `.pi/skills/` (Pi implements the [Agent Skills specification](https://agentskills.io/specification) natively and discovers skills from `~/.pi/agent/skills/`, `.pi/skills/`, and `.agents/skills/` on startup; DeviaTDD file-copies the project skill vault `src/deviate/prompts/skills/<name>` into `<workdir>/.pi/skills/<name>`, so the project vault remains the single source of truth. DeviaTDD does **not** write to `~/.pi/agent/` and does **not** generate a `settings.json` — model/provider selection is the operator's responsibility via Pi's own configuration mechanism). The corresponding `.gitignore` entry follows the same mapping.
+  `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt commands (currently
+  32 flat `.md` files: 25 `deviate-*` + 7 `tome-*`) into **all four** supported agent
+  directories — `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
+  `.pi/prompts/` — in a single invocation, regardless of which agent was passed
+  via `--agent`. Each command is a flat `<name>.md` file with a minimal YAML
+  frontmatter (`name:` + `description:`). The agent backend selected via `--agent`
+  (`opencode`, `claude`, `droid`, `factory`, `pi`) is persisted to `[agent].backend` in
+  `config.toml` for use by the meso/micro layers; it does **not** gate which agent
+  directories receive commands.
+  **Agent-to-commands-directory mapping:** `.claude/` → `.claude/commands/`;
+  `.opencode/` → `.opencode/commands/`; `.factory/` (shared by both `--agent
+  factory` and `--agent droid` — the Factory Droid IDE owns that directory;
+  `droid` is the underlying backend binary both user-facing names dispatch to,
+  so there is no `.droid/commands/`) → `.factory/commands/`; `.pi/` →
+  `.pi/prompts/` (Pi discovers slash commands from `<workdir>/.pi/prompts/*.md`
+  per the platform's documented convention; DeviaTDD file-copies the project
+  command vault `src/deviate/prompts/commands/<name>.md` into
+  `<workdir>/.pi/prompts/<name>.md`, so the project vault remains the single
+  source of truth. DeviaTDD does **not** write to `~/.pi/agent/` and does **not**
+  generate a `settings.json` — model/provider selection is the operator's
+  responsibility via Pi's own configuration mechanism). All four command
+  directories are excluded from version control via the project-root
+  `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:653`).
 * **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi]` to override
   auto-detect. If omitted, the persisted value is reused; if no persisted value exists and
   the session is interactive, a Rich `Prompt.ask` menu is shown. In non-interactive mode
@@ -60,23 +78,27 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
 * **Output Artifacts:**
-  * `.deviate/config.toml` — Persisted configuration profile
+  * `.deviate/config.toml` — Persisted configuration profile (includes
+    `[agent].backend` set from `--agent` for meso/micro dispatch)
   * `.deviate/session.json` — Current session state snapshot
-  * `.deviate/.gitignore` — Excludes session.json from version control
+  * `.deviate/.gitignore` — Excludes session.json and runtime state
+    directories from version control
+  * `<workdir>/.gitignore` — Updated with four concise DeviaTDD
+    agent-command exclusions: `*/commands/deviate-*.md`,
+    `*/commands/tome-*.md`, `*/prompts/deviate-*.md`,
+    `*/prompts/tome-*.md` (covers every supported agent directory
+    — ``.claude/commands/``, ``.opencode/commands/``,
+    ``.factory/commands/``, ``.pi/prompts/`` — and any future agent
+    that follows the same flat-file convention). The single-level
+    ``*/`` prefix is deliberate: a broader ``**/deviate-*.md`` would
+    silently ignore the deviatdd project's own command sources at
+    ``src/deviate/prompts/commands/deviate-*.md`` (three directories
+    deep) and break ``deviate setup`` in this repo itself.
   * `specs/constitution.md` — Resolved boilerplate constitution
-  * Agent skill directories — DeviaTDD prompt skills installed per-agent
-* **Governance File Provisioning:** Writes `## 🛠 DeviaTDD Phase Architecture` block to both
-  `CLAUDE.md` and `AGENTS.md`. Idempotent: replaces existing block if present, appends if
-  file exists without the block, creates if absent.
-* **Common Flags:** `deviate init` currently does not accept `--json`/`--quiet`. The
-  `@with_json_quiet` decorator (in `cli/_common.py`) is applied to all `pre` subcommands
-  in macro, meso, and micro layers — emitting JSON contracts on stdout when `--json` is
-  passed and suppressing Rich output when `--quiet` is passed.
-* **Constitution Governance:** The `/deviate-constitution` skill (prompt skill, not a CLI
-  command) handles governance artifact generation — initialize or update `specs/constitution.md`
-  as an authoritative document defining architectural standards, tech stack constraints,
-  testing mandates, and completion criteria. The companion CLI command is `deviate
-  constitution` (see below).
+  * `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
+    `.pi/prompts/` — DeviaTDD prompt commands installed for every
+    supported agent (32 flat `.md` files total, split across the four
+    dirs)
 
 #### `deviate constitution`
 

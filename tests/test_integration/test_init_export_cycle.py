@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 import tomllib
-import yaml
+
 from typer.testing import CliRunner
 
 from deviate.cli import cli
-from deviate.core.skills import _resolve_skills_root
-from deviate.core.skills import discover_skills
+from deviate.core.commands import _resolve_commands_root
+from deviate.core.commands import discover_commands
 
 runner = CliRunner()
 
@@ -49,9 +49,19 @@ def _assert_product_layer_skill_installed(
 
     src_fm = src_text.split("---", 2)[1]
     dst_fm = dst_text.split("---", 2)[1]
-    assert src_fm == dst_fm, (
-        f"{skill_name}: source frontmatter not byte-equal in installed file. "
-        f"Source fm: {src_fm!r}\nInstalled fm: {dst_fm!r}"
+    # New design: install_command strips non-essential frontmatter keys
+    # (``category``, ``version``, ``aliases``) and only preserves ``name``
+    # and ``description``. Compare those two keys instead of byte-equality.
+    import yaml
+
+    src_parsed = yaml.safe_load(src_fm) or {}
+    dst_parsed = yaml.safe_load(dst_fm) or {}
+    assert src_parsed.get("name") == dst_parsed.get("name"), (
+        f"{skill_name}: installed frontmatter name mismatch: "
+        f"{src_parsed.get('name')!r} vs {dst_parsed.get('name')!r}"
+    )
+    assert src_parsed.get("description") == dst_parsed.get("description"), (
+        f"{skill_name}: installed frontmatter description mismatch"
     )
 
     src_body = src_text.split("---", 2)[2]
@@ -234,8 +244,8 @@ class TestProductLayerSkillExportCycle:
         Product-layer skills into ``.claude/skills/`` with source content preserved.
         """
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
@@ -244,10 +254,10 @@ class TestProductLayerSkillExportCycle:
             result = runner.invoke(cli, ["setup", "--agent", "claude"])
             assert result.exit_code == 0, result.output
 
-            skills_root = _resolve_skills_root()
+            commands_root = _resolve_commands_root()
             for skill_name in _PRODUCT_LAYER_SKILLS:
-                installed = workdir / ".claude" / "skills" / skill_name / "SKILL.md"
-                source = skills_root / skill_name / "SKILL.md"
+                installed = workdir / ".claude" / "commands" / f"{skill_name}.md"
+                source = commands_root / f"{skill_name}.md"
                 _assert_product_layer_skill_installed(installed, source, skill_name)
 
     def test_init_export_cycle_installs_product_layer_skills_opencode(
@@ -257,8 +267,8 @@ class TestProductLayerSkillExportCycle:
         Product-layer skills into ``.opencode/skills/`` with source content preserved.
         """
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".opencode").mkdir(parents=True, exist_ok=True)
 
@@ -267,10 +277,10 @@ class TestProductLayerSkillExportCycle:
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
-            skills_root = _resolve_skills_root()
+            commands_root = _resolve_commands_root()
             for skill_name in _PRODUCT_LAYER_SKILLS:
-                installed = workdir / ".opencode" / "skills" / skill_name / "SKILL.md"
-                source = skills_root / skill_name / "SKILL.md"
+                installed = workdir / ".opencode" / "commands" / f"{skill_name}.md"
+                source = commands_root / f"{skill_name}.md"
                 _assert_product_layer_skill_installed(installed, source, skill_name)
 
     def test_init_export_cycle_product_layer_skills_idempotent(
@@ -279,12 +289,12 @@ class TestProductLayerSkillExportCycle:
         """AC-ADHOC-010-04: re-running ``deviate setup --agent claude`` against a
         workdir where the three Product-layer skill files are already installed
         emits a ``[yellow]SKIP[/]`` log line for each present skill and produces
-        no errors (per existing ``_install_skills_to_agents`` skip logic at
+        no errors (per existing ``_install_commands_to_agents`` skip logic at
         ``src/deviate/cli/__init__.py:518-531``).
         """
         monkeypatch.setattr(
-            "deviate.cli._get_agent_skill_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "skills",
+            "deviate.cli._get_agent_command_dir",
+            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
@@ -293,7 +303,7 @@ class TestProductLayerSkillExportCycle:
             assert first.exit_code == 0, first.output
 
             for skill_name in _PRODUCT_LAYER_SKILLS:
-                installed = tmp_path / ".claude" / "skills" / skill_name / "SKILL.md"
+                installed = tmp_path / ".claude" / "commands" / f"{skill_name}.md"
                 assert installed.exists(), (
                     f"first setup did not install {skill_name}: {installed}"
                 )
@@ -301,11 +311,18 @@ class TestProductLayerSkillExportCycle:
             second = runner.invoke(cli, ["setup", "--agent", "claude"])
             assert second.exit_code == 0, second.output
 
+            # Output is aggregated per-agent: ``SKIP 32 commands → claude``.
+            # All Product-layer skills are part of those 32 commands; the
+            # per-skill log lines were retired to keep setup output readable.
+            # File-presence is the canonical idempotency proof.
             for skill_name in _PRODUCT_LAYER_SKILLS:
-                assert f"SKIP {skill_name}" in second.output, (
-                    f"second setup did not emit SKIP log for {skill_name}; "
-                    f"got: {second.output!r}"
+                installed = tmp_path / ".claude" / "commands" / f"{skill_name}.md"
+                assert installed.exists(), (
+                    f"second setup removed {skill_name}: {installed}"
                 )
+            assert "SKIP" in second.output, (
+                f"second setup did not emit SKIP summary; got: {second.output!r}"
+            )
 
 
 class TestFullInitCyclePiBackend:
@@ -313,7 +330,7 @@ class TestFullInitCyclePiBackend:
 
     Exercises the full ``deviate setup --agent pi`` flow end-to-end and
     verifies the artifacts the Pi backend needs at runtime — config.toml
-    and the project-local ``<workdir>/.pi/skills/<name>/SKILL.md`` files.
+    and the project-local ``<workdir>/.pi/prompts/<name>/SKILL.md`` files.
     No writes to ``~/.pi/agent/`` and no ``settings.json`` generation.
     ``Path.home()`` is monkeypatched to the per-test ``tmp_path`` so the
     test can assert that DeviaTDD did not write to the user's home
@@ -329,7 +346,7 @@ class TestFullInitCyclePiBackend:
         fake_home = tmp_path / "fake-home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
-        skills = discover_skills()
+        skills = discover_commands()
         assert skills, "Test invariant violated: no skills discovered"
 
         with chdir(tmp_path):
@@ -343,13 +360,13 @@ class TestFullInitCyclePiBackend:
                 f"Expected backend='pi', got: {parsed.get('agent')}"
             )
 
-            pi_skills_dir = tmp_path / ".pi" / "skills"
+            pi_skills_dir = tmp_path / ".pi" / "prompts"
             assert pi_skills_dir.is_dir(), (
                 f"Project-local Pi skills dir not created at {pi_skills_dir}"
             )
 
             for skill_name in skills:
-                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                skill_file = pi_skills_dir / f"{skill_name}.md"
                 assert skill_file.is_file(), (
                     f"Skill file missing for '{skill_name}' at {skill_file}"
                 )
@@ -394,16 +411,15 @@ class TestFullInitCyclePiBackend:
         also stays within 500ms.
         """
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        skills = discover_skills()
+        skills = discover_commands()
 
         with chdir(tmp_path):
             r1 = runner.invoke(cli, ["setup", "--agent", "pi"])
             assert r1.exit_code == 0, r1.output
 
-            pi_skills_dir = tmp_path / ".pi" / "skills"
+            pi_skills_dir = tmp_path / ".pi" / "prompts"
             first_files = sorted(
-                str(p.relative_to(pi_skills_dir))
-                for p in pi_skills_dir.rglob("SKILL.md")
+                str(p.relative_to(pi_skills_dir)) for p in pi_skills_dir.glob("*.md")
             )
             assert len(first_files) == len(skills)
 
@@ -417,8 +433,7 @@ class TestFullInitCyclePiBackend:
             )
 
             second_files = sorted(
-                str(p.relative_to(pi_skills_dir))
-                for p in pi_skills_dir.rglob("SKILL.md")
+                str(p.relative_to(pi_skills_dir)) for p in pi_skills_dir.glob("*.md")
             )
             assert second_files == first_files, (
                 f"Idempotent re-run changed skill file layout: "
@@ -426,7 +441,7 @@ class TestFullInitCyclePiBackend:
             )
 
             for skill_name in skills:
-                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                skill_file = pi_skills_dir / f"{skill_name}.md"
                 assert skill_file.is_file(), (
                     f"Skill file removed on re-run: {skill_file}"
                 )
@@ -437,20 +452,20 @@ class TestFullInitCyclePiBackend:
     def test_init_export_pi_backend_skill_files_contain_frontmatter(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Each ``<workdir>/.pi/skills/<name>/SKILL.md`` carries the
+        """Each ``<workdir>/.pi/prompts/<name>/SKILL.md`` carries the
         ``name:`` YAML frontmatter field — so Pi's native skill discovery
         actually registers each skill.
         """
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        skills = discover_skills()
+        skills = discover_commands()
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
             assert result.exit_code == 0, result.output
 
-            pi_skills_dir = tmp_path / ".pi" / "skills"
+            pi_skills_dir = tmp_path / ".pi" / "prompts"
             for skill_name in skills:
-                skill_file = pi_skills_dir / skill_name / "SKILL.md"
+                skill_file = pi_skills_dir / f"{skill_name}.md"
                 content = skill_file.read_text(encoding="utf-8")
                 assert f"name: {skill_name}" in content, (
                     f"Skill file for '{skill_name}' does not declare its name"

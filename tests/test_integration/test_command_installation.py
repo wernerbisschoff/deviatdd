@@ -11,13 +11,13 @@ from deviate.cli import cli
 runner = CliRunner()
 
 
-class TestSkillInstallation:
-    """T007: Wire agent detection, skill installation, and contract handoff into deviate init."""
+class TestCommandInstallation:
+    """T007: Wire agent detection, command installation, and contract handoff into deviate init."""
 
-    def test_init_installs_skills_to_agent_dirs(
+    def test_init_installs_commands_to_agent_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """US-005-SKILLS Scenario 2: SKILL.md copied to detected agent paths."""
+        """US-005-COMMANDS Scenario 2: command .md copied to detected agent paths."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
@@ -29,17 +29,17 @@ class TestSkillInstallation:
             assert result.exit_code == 0
             assert "INSTALL" in result.output.upper()
 
-    def test_skill_idempotency_skip_identical(
+    def test_command_idempotency_skip_identical(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """US-005-SKILLS Scenario 3: skip when content matches."""
+        """US-005-COMMANDS Scenario 3: skip when content matches."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".claude").mkdir(parents=True)
         with chdir(tmp_path):
-            # First install — all skills get composed (INSTALL expected)
+            # First install — all commands get composed (INSTALL expected)
             first = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert first.exit_code == 0
             # Second install — identical content (SKIP expected)
@@ -47,10 +47,10 @@ class TestSkillInstallation:
             assert second.exit_code == 0
             assert "SKIP" in second.output
 
-    def test_skill_idempotency_overwrite_stale(
+    def test_command_idempotency_overwrite_stale(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """US-005-SKILLS Scenario 4: overwrite when content differs."""
+        """US-005-COMMANDS Scenario 4: overwrite when content differs."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
@@ -70,10 +70,10 @@ class TestSkillInstallation:
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".opencode").mkdir()
         (tmp_path / ".factory").mkdir()
-        from deviate.core import skills as skills_module
+        from deviate.core import commands as commands_module
 
         with chdir(tmp_path):
-            agents = skills_module.detect_agents()
+            agents = commands_module.detect_agents()
             assert "opencode" in agents
             assert "claude" in agents
             assert "factory" in agents
@@ -102,10 +102,10 @@ class TestSkillInstallation:
             content = gitignore.read_text(encoding="utf-8")
             assert "session.json" in content
 
-    def test_init_graphite_emits_routing_section_in_pr_skill(
+    def test_init_graphite_emits_routing_section_in_pr_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """`init --graphite` injects `<graphite_routing>` into installed deviate-pr SKILL.md."""
+        """`init --graphite` injects `<graphite_routing>` into installed deviate-pr command."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
@@ -114,16 +114,16 @@ class TestSkillInstallation:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
             assert result.exit_code == 0, result.output
-            skill_path = tmp_path / ".opencode" / "commands" / "deviate-pr.md"
-            assert skill_path.exists()
-            content = skill_path.read_text(encoding="utf-8")
+            command_path = tmp_path / ".opencode" / "commands" / "deviate-pr.md"
+            assert command_path.exists()
+            content = command_path.read_text(encoding="utf-8")
             assert "<graphite_routing>" in content
             assert "gt submit --stack" in content
 
-    def test_init_without_graphite_omits_routing_section_in_pr_skill(
+    def test_init_without_graphite_omits_routing_section_in_pr_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """`init` (no flag) installs deviate-pr SKILL.md without Graphite Routing."""
+        """`init` (no flag) installs deviate-pr command file without Graphite Routing."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
@@ -132,7 +132,7 @@ class TestSkillInstallation:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
-            skill_path = tmp_path / ".opencode" / "commands" / "deviate-pr.md"
-            assert skill_path.exists()
-            content = skill_path.read_text(encoding="utf-8")
+            command_path = tmp_path / ".opencode" / "commands" / "deviate-pr.md"
+            assert command_path.exists()
+            content = command_path.read_text(encoding="utf-8")
             assert "<graphite_routing>" not in content
