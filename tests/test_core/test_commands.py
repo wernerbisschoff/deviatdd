@@ -5,28 +5,37 @@ from pathlib import Path
 from deviate.core.commands import discover_commands, install_command, resolve_command
 
 
-class TestDiscoverSkills:
-    def test_discover_commands_lists_directories(self, tmp_path: Path):
+class TestDiscoverCommands:
+    def test_discover_commands_lists_flat_files(self, tmp_path: Path):
         commands_root = tmp_path / "commands"
-        (commands_root / "deviate-specify").mkdir(parents=True)
-        (commands_root / "deviate-specify.md").touch()
-        (commands_root / "deviate-red").mkdir(parents=True)
-        (commands_root / "deviate-red.md").touch()
+        commands_root.mkdir(parents=True)
+        (commands_root / "deviate-red.md").write_text("# red", encoding="utf-8")
+        (commands_root / "deviate-green.md").write_text("# green", encoding="utf-8")
         result = discover_commands(commands_root=commands_root)
-        assert "deviate-specify" in result
         assert "deviate-red" in result
+        assert "deviate-green" in result
 
-    def test_discover_commands_skips_dirs_without_skill_md(self, tmp_path: Path):
+    def test_discover_commands_skips_non_md_files(self, tmp_path: Path):
         commands_root = tmp_path / "commands"
-        (commands_root / "with-skill").mkdir(parents=True)
-        (commands_root / "with-skill.md").touch()
-        (commands_root / "without-skill").mkdir(parents=True)
+        commands_root.mkdir(parents=True)
+        (commands_root / "with-cmd.md").write_text("# ok", encoding="utf-8")
+        (commands_root / "no-extension").write_text("# ignored", encoding="utf-8")
+        (commands_root / "wrong-extension.txt").write_text(
+            "# ignored", encoding="utf-8"
+        )
         result = discover_commands(commands_root=commands_root)
-        assert "with-skill" in result
-        assert "without-skill" not in result
+        assert "with-cmd" in result
+        assert "no-extension" not in result
+        assert "wrong-extension" not in result
+
+    def test_discover_commands_empty_dir_returns_empty_list(self, tmp_path: Path):
+        commands_root = tmp_path / "commands"
+        commands_root.mkdir(parents=True)
+        result = discover_commands(commands_root=commands_root)
+        assert result == []
 
 
-class TestInstallSkillGraphiteRouting:
+class TestInstallCommandGraphiteRouting:
     """Conditional `## Graphite Routing` section in deviate-pr based on config."""
 
     @staticmethod
@@ -43,7 +52,7 @@ class TestInstallSkillGraphiteRouting:
             )
 
     def test_install_deviate_pr_appends_graphite_when_configured(self, tmp_path: Path):
-        """graphite = true in config → installed skill contains routing section."""
+        """graphite = true in config → installed command contains routing section."""
         workdir = tmp_path / "repo"
         workdir.mkdir()
         self._seed_graphite_config(workdir, True)
@@ -123,8 +132,8 @@ class TestInstallSkillGraphiteRouting:
         content = (target / "deviate-pr.md").read_text(encoding="utf-8")
         assert "<graphite_routing>" not in content
 
-    def test_install_other_skills_unaffected_by_graphite(self, tmp_path: Path):
-        """graphite = true must not inject the section into non-deviate-pr skills."""
+    def test_install_other_commands_unaffected_by_graphite(self, tmp_path: Path):
+        """graphite = true must not inject the section into non-deviate-pr commands."""
         workdir = tmp_path / "repo"
         workdir.mkdir()
         self._seed_graphite_config(workdir, True)
@@ -135,43 +144,75 @@ class TestInstallSkillGraphiteRouting:
         assert "<graphite_routing>" not in content
 
 
-class TestShardSkillIssueIdFormat:
-    """deviate-shard SKILL.md must use the flat ``ISS-<NNN>`` format.
+class TestShardCommandIssueIdFormat:
+    """deviate-shard command must use the flat ``ISS-<NNN>`` format.
 
     The ``next_issue_id`` returned by ``deviate shard pre`` is the flat global
-    counter (``ISS-001``, ``ISS-002``, ...). The skill must instruct the LLM
+    counter (``ISS-001``, ``ISS-002``, ...). The command must instruct the LLM
     to consume ``next_issue_id`` directly and increment per shard — it must
     NEVER concatenate the epic identifier, which would produce duplicate
     ``ISS-<epic>-<NNN>`` IDs across epics.
     """
 
     @staticmethod
-    def _skill_text() -> str:
+    def _command_text() -> str:
         return resolve_command("deviate-shard").read_text(encoding="utf-8")
 
     def test_instruction_uses_flat_format_not_epic_prefixed(self):
         """Issue ID assignment rule must show flat ``ISS-<NNN>`` examples."""
-        text = self._skill_text()
+        text = self._command_text()
         assert "ISS-001-004" not in text
         assert "ISS-001-005" not in text
 
     def test_blocked_by_and_coordinates_with_examples_use_flat_format(self):
         """blocked_by / coordinates_with examples must reference flat IDs."""
-        text = self._skill_text()
+        text = self._command_text()
         assert 'blocked_by: ["ISS-001-004"]' not in text
 
     def test_manifest_schema_uses_flat_format(self):
         """Manifest schema must declare ``ISS-<NNN>``, not ``ISS-<epic>-<NNN>``."""
-        text = self._skill_text()
+        text = self._command_text()
         assert "ISS-<epic>-<NNN>" not in text
 
     def test_manifest_example_uses_flat_format(self):
         """Manifest example must show flat IDs (e.g. ``ISS-003``, not ``ISS-003-001``)."""
-        text = self._skill_text()
+        text = self._command_text()
         assert "ISS-003-001" not in text
         assert "ISS-003-002" not in text
 
     def test_instruction_references_flat_counter_format(self):
         """The rule must explicitly show the flat counter pattern."""
-        text = self._skill_text()
+        text = self._command_text()
         assert "ISS-003" in text or "ISS-004" in text
+
+
+class TestPlatformFrontmatter:
+    """On-disk command frontmatter is minimal and platform-agnostic."""
+
+    def test_installed_command_has_only_name_and_description(self, tmp_path: Path):
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-red", target)
+        content = (target / "deviate-red.md").read_text(encoding="utf-8")
+        # Frontmatter block: only `description:` and `name:` (no category,
+        # version, aliases, or other DeviaTDD-internal keys).
+        fm = content.split("---\n", 2)[1]
+        lines = [line.strip() for line in fm.splitlines() if line.strip()]
+        keys = [line.split(":", 1)[0].strip() for line in lines]
+        assert set(keys) <= {"name", "description"}
+
+    def test_installed_command_drops_layer_from_frontmatter(self, tmp_path: Path):
+        """The internal `layer:` key (used for composition) is stripped on install."""
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-red", target)
+        content = (target / "deviate-red.md").read_text(encoding="utf-8")
+        fm = content.split("---\n", 2)[1]
+        assert "layer:" not in fm
+
+    def test_installed_command_body_preserved_after_strip(self, tmp_path: Path):
+        """Body (post-frontmatter) is the composed body, layer prefix included."""
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-red", target)
+        content = (target / "deviate-red.md").read_text(encoding="utf-8")
+        # The universal-invariants block is part of the composed body and
+        # must remain in the installed output (proves core prefix is composed).
+        assert "<universal_invariants>" in content
