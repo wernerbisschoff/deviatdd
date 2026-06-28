@@ -1,6 +1,6 @@
 ---
 name: deviate-prd
-description: Compile exploration results into a Product Requirements Document (prd.md) — the singular, deeply coherent source of truth for downstream automated sharding into local issues via specs/issues.jsonl
+description: Compile explore.md into prd.md — the singular source of truth for downstream sharding into specs/issues.jsonl.
 category: deviatdd-macro-layer
 version: 1.0.0
 layer: macro

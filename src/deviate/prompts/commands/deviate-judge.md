@@ -1,6 +1,6 @@
 ---
 name: deviate-judge
-description: Use when executing the JUDGE (correctness gate) phase of TDD — reviews GREEN implementation against spec.md for correctness, completeness, and integrity. Emits COMPLIANCE_PASS unless a real correctness gap exists; REFACTOR owns refactoring concerns.
+description: TDD JUDGE phase — review GREEN implementation against spec.md for correctness and integrity; emit COMPLIANCE_PASS.
 category: deviattd-micro-layer
 version: 1.1.0
 layer: micro

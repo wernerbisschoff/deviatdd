@@ -1,6 +1,6 @@
 ---
 name: deviate-review
-description: Multi-domain PR/merge review — evaluates structured merge-base diff against Security, Clean Code, Pragmatism, Idiomacy, Constitution, PRD, and Flow Coverage domains for HITL Gate 3
+description: HITL Gate 3 PR review — structured scan across Security, Clean Code, Pragmatism, Idiomacy, Constitution, PRD, and Flow Coverage.
 category: deviatdd-meso-layer
 version: 2.0.0
 aliases:

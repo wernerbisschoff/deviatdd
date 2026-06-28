@@ -1,6 +1,6 @@
 ---
 name: deviate-explore
-description: Pure exploration only. Deterministic, factual structural scan of the codebase. Allocates a feature bucket, scans the repo, and emits a raw explore.md (what exists, not what to do). NEVER writes, modifies, or generates any implementation code. The research/design phase belongs to the deviate-research skill.
+description: Read-only structural scan of the codebase; emits raw explore.md (what exists, not what to do).
 category: deviatdd-macro-layer
 version: 2.0.0
 layer: macro
