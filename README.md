@@ -1,7 +1,7 @@
 # DeviaTDD
 
 <p align="center">
-<img src="logo.png" alt="DeviaTDD logo" width="720"/>
+<img src="logo.png" alt="DeviaTDD logo" width="480"/>
 </p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -37,20 +37,31 @@ Most AI coding agents stop at "write code that passes." DeviaTDD goes further �
 # Install (requires Python 3.13+ and uv)
 uv tool install deviate
 
-# Initialize a new project — scaffolds .deviate/, specs/, governance blocks
-deviate init
-
-# Explore a problem (Macro layer)
-deviate explore "Add user authentication via OAuth2"
-
-# Specify and plan (Meso layer)
-deviate specify ISS-001-001
-deviate plan
-deviate tasks
-
-# Run the TDD cycle on a single task (Micro layer)
-deviate run --task T001
+# Bootstrap a new project + install slash commands into your agent of
+# choice. Does it all in one shot: scaffolds .deviate/, specs/constitution.md,
+# governance blocks, and installs /deviate-* slash commands for every
+# supported agent. The `--agent` flag picks the default backend persisted
+# to .deviate/config.toml (slash commands themselves are installed to all
+# four agent directories regardless).
+deviate setup --agent claude     # or: opencode | pi | droid
 ```
+
+Once setup is done, drive the entire lifecycle from inside your agent:
+
+```
+/deviate-explore "Add user authentication via OAuth2"
+/deviate-research
+/deviate-prd
+/deviate-shard
+/deviate-plan
+/deviate-tasks
+/deviate-red T001          # starts the strict TDD loop
+/deviate-green             # after the failing test is committed
+/deviate-judge             # gate decision
+/deviate-refactor          # once green is approved
+```
+
+> **Don't run `deviate <phase>` directly.** The CLI subcommands are the engine the slash commands drive — invoking them by hand skips contract emission, validation, commits, and ledger transitions.
 
 The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail. See [`specs/DeviaTDD-architecture.md`](specs/DeviaTDD-architecture.md) for the canonical state machine.
 
@@ -60,52 +71,51 @@ The full lifecycle takes you from a problem statement to merged, tested code wit
 
 ```mermaid
 flowchart TB
-    subgraph Macro["Macro Layer — Feature Scoping"]
-        E[explore] --> R[research]
-        R --> P[prd]
-        P --> S[shard]
-        S -.->|HITL Gate 2| M
-    end
+subgraph Macro["Macro Layer — Feature Scoping"]
+E[explore] --> R[research]
+R --> P[prd]
+P --> S[shard]
+end
 
-    subgraph Meso["Meso Layer — Issue Engineering"]
-        M[specify] --> Pl[plan]
-        Pl --> T[tasks]
-    end
+S -.->|HITL Gate 2| Pl
 
-    subgraph Micro["Micro Layer — TDD Sandbox"]
-        T --> Re[red]
-        Re --> G[green]
-        G --> J{judge}
-        J -->|violation| Y[yellow]
-        Y --> G
-        J -->|pass| Rf[refactor]
-        Rf -.->|HITL Gate 3| Done[merged]
-    end
+subgraph Meso["Meso Layer — Issue Engineering"]
+Pl[plan] --> T[tasks]
+end
 
-    style E fill:#e1f5e1
-    style R fill:#e1f5e1
-    style P fill:#e1f5e1
-    style S fill:#e1f5e1
-    style M fill:#e1e7f5
-    style Pl fill:#e1e7f5
-    style T fill:#e1e7f5
-    style Re fill:#f5e1e1
-    style G fill:#f5e1e1
-    style J fill:#f5e1e1
-    style Y fill:#f5e1e1
-    style Rf fill:#f5e1e1
+subgraph Micro["Micro Layer — TDD Sandbox"]
+T --> Re[red]
+Re --> G[green]
+G --> J{judge}
+J -->|violation| Y[yellow]
+Y --> G
+J -->|pass| Rf[refactor]
+Rf -.->|HITL Gate 3| Done[merged]
+end
+
+style E fill:#e1f5e1
+style R fill:#e1f5e1
+style P fill:#e1f5e1
+style S fill:#e1f5e1
+style Pl fill:#e1e7f5
+style T fill:#e1e7f5
+style Re fill:#f5e1e1
+style G fill:#f5e1e1
+style J fill:#f5e1e1
+style Y fill:#f5e1e1
+style Rf fill:#f5e1e1
 ```
 
 ### Layers
 
-- **Macro** — `explore → research → prd → shard → specify`. Scopes a feature into spec-enriched issue files. Outputs land in `specs/issues.jsonl` (append-only ledger).
+- **Macro** — `explore → research → prd → shard`. Scopes a feature into spec-enriched issue files (`shard` produces them directly — no separate `specify` step). Outputs land in `specs/issues.jsonl` (append-only ledger).
 - **Meso** — `plan → tasks`. Decomposes an issue into executable tasks with DAG dependencies. Tasks live at `specs/{epic}/tasks.jsonl`.
 - **Micro** — `red → green → [yellow?] → judge → refactor`. The strict TDD sandbox. Micro-layer agents are sandboxed: they can write **only** to `src/**/*.py`. Test/spec mutations trigger an immediate rollback.
 
 ### Gates (no programmatic bypass)
 
-- **Gate 1** — After `/research`, before `/prd`: design + data-model sign-off.
-- **Gate 2** — After `/shard`, before `/plan`: spec-enriched issue approval.
+- **Gate 1** — After `/deviate-research`, before `/deviate-prd`: design + data-model sign-off.
+- **Gate 2** — After `/deviate-shard`, before `/deviate-plan`: spec-enriched issue approval.
 - **Gate 3** — Final merge audit after all tasks complete.
 
 ### Append-Only Ledger Protocol
@@ -136,34 +146,42 @@ Per-phase model routing is enforced via `src/deviate/state/config.py::resolve_ph
 
 ---
 
-## Commands
+## Slash Commands
 
-### Lifecycle
+DeviaTDD's user-facing interface is the library of `/deviate-*` slash commands installed by `deviate setup`. Each command emits a `pre` contract, the agent authors the artifact, then invokes a `post` command to validate, commit, and advance the ledger. **The CLI subcommands (`deviate explore`, `deviate plan`, etc.) are the engine beneath these prompts — never invoke them directly.**
 
-| Command | Layer | Purpose |
-|---------|-------|---------|
-| `deviate init` | — | Scaffold `.deviate/`, `specs/constitution.md`, agent governance |
-| `deviate setup` | — | Install skill prompts into detected agent directories |
-| `deviate feature create` | — | Create a feature worktree with isolated branch |
-| `deviate adhoc` | Macro | Auto-route simple work to the right phase by complexity |
+### Bootstrap (run once per project / agent)
+
+| Command | Purpose |
+|---------|---------|
+| `deviate setup --agent <name>` | One-shot bootstrap: scaffolds `.deviate/`, `specs/constitution.md`, governance blocks, and installs `/deviate-*` slash commands for every supported agent (`claude` \| `opencode` \| `factory` \| `pi`). The `--agent` flag sets the default backend. |
+| `deviate feature create` | Create a feature worktree with isolated branch |
+
+> Note: `deviate init` exists as the engine backing the `/deviate-init` slash command (see `src/deviate/cli/init.py`). It is **not** a user-facing shell command — use `deviate setup` instead.
 
 ### Macro (Feature Scoping)
 
-`deviate explore` · `deviate research` · `deviate prd` · `deviate shard` · `deviate specify`
+`/deviate-explore` · `/deviate-research` · `/deviate-prd` · `/deviate-shard` · `/deviate-adhoc`
 
-Each follows a `pre` (emit contract) / `post` (validate, commit) pattern. The CLI reads context from the filesystem and the ledger; the agent does the authoring; the CLI handles all git, validation, and ledger transitions.
+Scopes a feature into spec-enriched issue files. `deviate shard` now produces the spec-enriched issue files directly — there is no separate `specify` step. Outputs land in `specs/issues.jsonl` (append-only ledger).
 
 ### Meso (Issue Engineering)
 
-`deviate plan` · `deviate tasks` · `deviate pr`
+`/deviate-plan` · `/deviate-tasks` · `/deviate-pr` · `/deviate-review`
+
+Decomposes a spec-enriched issue into executable tasks with DAG dependencies. Tasks live at `specs/{epic}/tasks.jsonl`. `/deviate-review` is HITL Gate 3 — the structured PR scan before merge.
 
 ### Micro (TDD Sandbox)
 
-`deviate red` · `deviate green` · `deviate yellow` · `deviate judge` · `deviate refactor` · `deviate e2e`
+`/deviate-red` · `/deviate-green` · `/deviate-yellow` · `/deviate-judge` · `/deviate-refactor` · `/deviate-e2e`
+
+The strict TDD cycle. Micro-layer agents are sandboxed: they can write **only** to `src/**/*.py`. Test/spec mutations trigger an immediate rollback. Use `/deviate-execute` instead for low-complexity tasks, trivial changes, or refactors with existing coverage (no TDD cycle).
 
 ### Inspection & Maintenance
 
-`deviate inspect issues` · `deviate inspect tasks` · `deviate review` · `deviate hotfix` · `deviate prune` · `deviate constitution`
+`/deviate-triage` · `/deviate-constitution` · `/deviate-hotfix` · `/deviate-prune` · `/deviate-flows` · `/deviate-architecture` · `/deviate-release`
+
+The full library lives at `src/deviate/prompts/commands/` — 29 prompts spanning Macro, Meso, Micro, and the Tome subsystem.
 
 ---
 
@@ -236,7 +254,7 @@ DeviaTDD v2.0.0 is **production-ready** for individual developer workflows and s
 
 ## Contributing
 
-We welcome contributions. Open an issue first for non-trivial changes — DeviaTDD is itself dogfooded, so significant work usually goes through the same `deviate explore → shard → plan → tasks → run` lifecycle the framework prescribes.
+We welcome contributions. Open an issue first for non-trivial changes — DeviaTDD is itself dogfooded, so significant work usually goes through the same `/deviate-explore → /deviate-shard → /deviate-plan → /deviate-tasks → /deviate-red` lifecycle the framework prescribes.
 
 Before opening a PR:
 

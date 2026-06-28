@@ -37,6 +37,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[Unreleased]` in the same commit. Exempts docs-only, test-only,
   CI/tooling, and behavior-preserving refactors. Constitution bumped to
   0.5.0.
+- README onboarding flow corrected: the user-facing entrypoint is the
+  `/deviate-<phase>` slash commands installed by `deviate setup`, not
+  direct `deviate <phase>` CLI invocations. Quickstart rewritten to
+  show `deviate setup --agent <name>` → `/deviate-*`; the `Commands`
+  section replaced with a `Slash Commands` section grouped by layer.
+  Removed stale references to `deviate specify` (deprecated; the SPECIFY
+  phase was absorbed into `deviate shard` per
+  `src/deviate/cli/meso.py::_specify_legacy` and `specs/DeviaTDD-api.md`)
+  and dropped the `M[specify]` node from the architecture mermaid.
+  Quickstart also no longer shows `deviate init` — `deviate init` is the
+  engine backing the `/deviate-init` slash command, not a user-facing
+  shell command; `deviate setup --agent <name>` is the single one-shot
+  bootstrap that scaffolds `.deviate/`, `specs/constitution.md`,
+  governance blocks, and installs `/deviate-*` slash commands.
 
 ## [2.0.0] - 2026-06-28
 
