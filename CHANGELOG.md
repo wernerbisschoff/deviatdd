@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path referenced by `mise run test-e2e` and `specs/constitution.md`. The
   stale macro-workflow tests have been replaced with a focused CLI smoke
   suite that matches the current `pre|post` subcommand shape.
+- `AGENTS.md` now mandates a `## 📝 CHANGELOG Discipline` rule (mirrored
+  in `specs/constitution.md` §5 Definition of Done and the PR template's
+  CHANGELOG checkbox): user-visible changes must append a bullet to
+  `[Unreleased]` in the same commit. Exempts docs-only, test-only,
+  CI/tooling, and behavior-preserving refactors. Constitution bumped to
+  0.5.0.
 
 ## [2.0.0] - 2026-06-28
 
