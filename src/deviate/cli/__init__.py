@@ -30,6 +30,7 @@ from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
+from deviate.cli.tome import tome_app
 from deviate.core.commands import discover_commands, install_command
 from deviate.ui.render import is_interactive
 
@@ -720,6 +721,7 @@ def _ensure_root_gitignore(workdir: Path) -> None:
     Two command families are installed and must not be committed:
 
     - ``deviate-*`` — the core DeviaTDD command library
+    - ``tome-*``    — the Tome Subsystem (ISS-ADH-011)
 
     The patterns are scoped with ``*/commands/`` and ``*/prompts/`` so they
     only match a SINGLE directory level before the agent subdir — this is
@@ -743,7 +745,9 @@ def _ensure_root_gitignore(workdir: Path) -> None:
     gitignore_path = workdir / ".gitignore"
     entries = (
         "*/commands/deviate-*.md",
+        "*/commands/tome-*.md",
         "*/prompts/deviate-*.md",
+        "*/prompts/tome-*.md",
     )
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
@@ -790,4 +794,5 @@ cli.add_typer(init_app, name="init")
 cli.add_typer(feature_app, name="feature")
 cli.add_typer(inspect_app, name="inspect")
 cli.add_typer(review_app, name="review")
+cli.add_typer(tome_app, name="tome")
 cli.command(name="run")(run_command)
