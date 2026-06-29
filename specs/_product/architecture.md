@@ -40,6 +40,7 @@ This document is Product-level — it covers components that span the seven Tome
   - `/tome-classify <sha>` → specific commit
   - `/tome-classify --merge-base` → `git diff $(git merge-base HEAD main)..HEAD` of current branch
   - `/tome-classify --working-tree` → uncommitted/staged changes
+  - `/tome-classify --codebase` → entire working tree (no diff). The cold-start / retroactive path for bootstrapping docs on a project that has not yet been committed-to-doc convention. Walks manifests, source tree, CLI definitions, config schemas, and public API surface; emits an exhaustive capability table where every user-facing capability appears as a row (pre-existing valid docs are pre-marked `update`). Evidence-gathering procedure inlined in the C1 prompt under `<codebase_evidence>`; verifier (C6) handles the `codebase` evidence source by reading source files directly.
 - **Inputs (per mode)**: commit SHA or branch diff, commit message(s), changed files, changed tests, optional `specs/` artifacts (issues, tasks, flows), existing `apps/docs/src/content/docs/` tree.
 - **Outputs**: A classification report containing:
   1. brief change summary
