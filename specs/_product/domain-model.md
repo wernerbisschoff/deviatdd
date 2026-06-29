@@ -14,7 +14,7 @@
   - input to `ClassificationReport`
 
 ### ClassificationReport
-- **Attributes**: `change_summary`, `capabilities[]` (Capability list), `no_touch_list[]` (file paths), `mode` (commit | sha | merge-base | working-tree), `target_sha`
+- **Attributes**: `change_summary`, `capabilities[]` (Capability list), `no_touch_list[]` (file paths), `mode` (`commit` | `sha` | `merge-base` | `working-tree` | `codebase`), `target_sha` (commit SHA for diff modes; `codebase:<head-short-sha>` for the `codebase` mode)
 - **Relationships**:
   - produced by C1 (Tome Classifier)
   - consumed by C2-C5 (writers, via human handoff)
