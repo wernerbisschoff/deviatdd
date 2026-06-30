@@ -680,6 +680,24 @@ specs/
             ├── tasks.md      # Task decomposition (human-authored, what/why/how)
             └── tasks.jsonl   # Append-only task event ledger (CLI-managed)
 
+apps/
+├── docs/                    # Starlight docs site (Astro 7 + @astrojs/starlight 0.41)
+│   ├── astro.config.mjs     # Starlight integration; site title + description
+│   ├── package.json         # astro / @astrojs/starlight / sharp deps
+│   ├── package-lock.json    # Pinned npm resolution; committed
+│   ├── mise.toml            # Per-directory mise tasks: install, dev, build, preview
+│   ├── tsconfig.json        # Extends astro/tsconfigs/strict
+│   ├── .gitignore           # Ignores node_modules/, dist/, .astro/
+│   ├── dist/                # Static build output (gitignored)
+│   ├── node_modules/        # Installed deps (gitignored)
+│   └── src/
+│       ├── content.config.ts    # `docs` collection schema — Diátaxis + provenance fields
+│       └── content/
+│           └── docs/            # Four-quadrant Diátaxis layout:
+│               ├── tutorials/   # intro.md + per-walkthrough pages
+│               ├── how-to/      # one task per page, named after phase or operator action
+│               ├── reference/   # flag tables, schemas, lookup material
+│               └── explanation/ # design rationale, mental models
 src/deviate/
 ├── __init__.py
 ├── main.py                   # Entry point: from .cli import cli; app = cli
@@ -890,3 +908,81 @@ The architecture optimizes for cache-hit pricing wherever feasible.
 
 Context length: 1M tokens. See `api-docs.deepseek.com/quick_start/pricing` for current rates.
 ~85% of all recommended LLM turns target V4 Flash at cache-hit rates.
+
+### 6. Documentation Site (`apps/docs/`)
+
+The user-facing documentation site lives outside the `deviate` package at `apps/docs/`
+and is rendered by [Starlight](https://starlight.astro.build/) (Astro 7 + `@astrojs/starlight`
+0.41). It is the **output surface** of the Tome documentation curation subsystem
+(seven prompt-only skills under `src/deviate/prompts/commands/tome-*.md`); it is not
+part of the `deviate` CLI and is not invoked through any slash command — only through
+the mise aggregator tasks documented below.
+
+#### Content layout (Diátaxis, file-tree-blueprint-mirrored)
+
+Markdown sources live under `apps/docs/src/content/docs/` and self-organise into the
+four Diátaxis quadrants, one directory per quadrant:
+
+- `tutorials/` — `intro.md` + per-walkthrough guides; one happy path per page.
+- `how-to/` — one operator task per page; filenames match phase names or operator actions.
+- `reference/` — flag tables, command schemas, configuration field lookup.
+- `explanation/` — design rationale, mental models, trade-offs.
+
+The default Starlight sidebar auto-groups these directories with no per-link config.
+
+#### Content schema (`apps/docs/src/content.config.ts`)
+
+The `docs` content collection is declared via `defineCollection({ loader: docsLoader(),
+schema: docsSchema({ extend: z.object({ ... }) }) })`. The `extend` block declares
+every Diátaxis / provenance field each page carries in its YAML frontmatter, so
+`astro build` validates every page rather than silently ignoring unknown fields:
+
+| Field | Type | Required | Purpose |
+|---|---|---|---|
+| `title` | `string` (Starlight default) | yes | Sidebar entry + `<title>` text. |
+| `description` | `string` (Starlight default) | yes | Page meta description. |
+| `doc_type` | `'tutorial' \| 'how-to' \| 'reference' \| 'explanation'` | yes | Diátaxis quadrant — enforced to match the directory the file lives in. |
+| `status` | `'draft' \| 'reviewed' \| 'verified'` (default `'draft'`) | no | Review-state marker; surfaced in the Diátaxis discipline contract. |
+| `last_verified_at` | `Date` (coerced) | yes | The date the page's content was last verified against `verified_sha`. |
+| `verified_sha` | `string` | yes | The commit SHA the page was generated from; the provenance anchor. |
+| `related_issues` | `array<string>` (default `[]`) | no | Cross-reference to issue IDs in `specs/issues.jsonl`. |
+
+Pages with broken or missing frontmatter fail the build with
+`InvalidContentEntryDataError`. To author a new page, copy an existing one (the existing
+files all share `verified_sha: 8daa502` until `/tome-verify-docs` rebases them).
+
+#### Mise tasks
+
+Two layers, with delegation from root to per-directory:
+
+- **Root (`mise.toml`)** — aggregator tasks that `cd` into `apps/docs/` and call the
+  per-directory task:
+  - `mise run docs` — runs the Starlight dev server at `http://localhost:4321` with hot reload.
+  - `mise run docs:install` — runs `npm install` in `apps/docs/` (one-shot; idempotent).
+  - `mise run docs:build` — runs `npm run build`, producing `apps/docs/dist/`.
+  - `mise run docs:preview` — runs `npm run preview`, serving the built static site.
+
+- **`apps/docs/mise.toml`** — the source of truth; declares Node as a tool
+  (`node = "lts"`) and exposes the four tasks above (`install`, `dev`, `build`,
+  `preview`) with `dev` depending on `install` so first invocation is one command.
+
+Both layers assume an internet connection for the initial `npm install`. The
+`package-lock.json` is **committed** to lock reproducible resolution across machines.
+
+#### Build verification (as of v0.1 scaffold)
+
+- 56 markdown pages compile to 56 static HTML files (plus 1 generated 404 page).
+- `astro build` emits `dist/sitemap-index.xml` and a Pagefind search index under
+  `dist/pagefind/`.
+- Build time is approximately 5–7 seconds on a warm cache.
+
+#### Relationship to Tome
+
+The documentation site is **content-only** as far as the CLI is concerned: `deviate`
+reads and writes the markdown files (and frontmatter fields) but does not invoke
+Starlight, Astro, or any Node-side renderer. The Tome slash commands
+(`/tome-classify`, `/tome-write-tutorial`, `/tome-write-how-to`, `/tome-write-reference`,
+`/tome-write-explanation`, `/tome-verify-docs`, `/tome-setup`) are responsible for
+producing, updating, and verifying the markdown — they do not write to `package.json`,
+`astro.config.mjs`, or `node_modules/`. Those scaffolding concerns are operator-managed
+via the mise tasks above.

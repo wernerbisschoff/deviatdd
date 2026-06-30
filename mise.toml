@@ -60,3 +60,20 @@ description = "Install package as editable tool via uv"
 [tasks.help]
 run = "mise tasks"
 description = "List tasks"
+
+
+[tasks.docs]
+run = "cd apps/docs && mise run dev"
+description = "Run the Starlight docs dev server (alias for cd apps/docs && mise run dev)"
+
+[tasks."docs:install"]
+run = "cd apps/docs && mise run install"
+description = "Install Starlight + Astro dependencies (creates apps/docs/node_modules/)"
+
+[tasks."docs:build"]
+run = "cd apps/docs && mise run build"
+description = "Build the static docs site into apps/docs/dist/"
+
+[tasks."docs:preview"]
+run = "cd apps/docs && mise run preview"
+description = "Serve the built static docs site"

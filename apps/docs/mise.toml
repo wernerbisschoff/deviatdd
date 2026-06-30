@@ -1,0 +1,34 @@
+[env]
+# Matches docs/package.json engines / Starlight minimum runtime.
+_node = "lts"
+
+[tools]
+node = "lts"
+
+# `install` is intentionally unconditional so a fresh checkout still installs
+# node_modules on first run; subsequent runs are no-ops.
+[tasks.install]
+run = "npm install"
+description = "Install Starlight + Astro dependencies into node_modules"
+
+# `dev` depends on `install` so first invocation is one command, not two.
+# `--host` binds the Starlight dev server to all interfaces (preview over LAN);
+# the actual URL is printed by `astro dev` on launch.
+[tasks.dev]
+depends = ["install"]
+run = "npm run dev -- --host"
+description = "Start the Starlight dev server (default: http://localhost:4321)"
+
+[tasks.build]
+depends = ["install"]
+run = "npm run build"
+description = "Produce the static site into apps/docs/dist/"
+
+[tasks.preview]
+depends = ["build"]
+run = "npm run preview"
+description = "Serve the built static site locally"
+
+[tasks.help]
+run = "mise tasks"
+description = "List docs tasks"

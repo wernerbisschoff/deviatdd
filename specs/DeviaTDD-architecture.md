@@ -733,3 +733,72 @@ REFACTOR) and the **meso layer** (plan, tasks). Macro-layer phases (explore,
 research, prd, shard, adhoc) continue to use `opencode` / `claude` / `droid` for this
 issue — macro support is deferred to a follow-up if token savings are observed in
 practice.
+
+---
+
+## 11. Documentation Site Architecture (`apps/docs/`)
+
+The Starlight documentation site at `apps/docs/` is the output surface of the Tome
+documentation curator subsystem (the seven `tome-*` slash commands; see
+`specs/_product/architecture.md` for the full Tome contract). This section
+documents its renderer-only architecture — the markdown content is governed by Tome;
+the renderer is a single-purpose Astro/Starlight site independent of the `deviate` CLI.
+
+### 11.1 Renderer Stack
+
+- **Astro 7** as the static-site generator; **pure static output** (`output: "static"`).
+- **`@astrojs/starlight` 0.41** for theme + sidebar + search + sitemap; default
+  English-only locale (the project is single-language).
+- **`@astrojs/starlight/loaders.docsLoader()`** for the Astro Content Layer
+  `docs` collection; globs `src/content/docs/**/*.{md,mdx,...}` and skips files
+  whose path starts with `_`.
+- **`@astrojs/starlight/schema.docsSchema({ extend })`** for the frontmatter schema;
+  `extend` declares Diátaxis and provenance fields so unknown frontmatter fails the
+  build instead of being silently accepted. `last_verified_at` uses `z.coerce.date()`
+  because YAML parses `2026-06-29` into a `Date` rather than a string.
+
+### 11.2 Mise Wiring
+
+Two-layer mise config so root-level tasks can drive sub-directory work without
+scope drift:
+
+- Root `mise.toml` exposes four aggregator tasks (`docs`, `docs:install`, `docs:build`,
+  `docs:preview`) that each `cd` into `apps/docs/` and call the matching per-directory
+  task. The aggregator is intentionally verbose (no `cwd` flag) — explicit `cd`
+  is more legible for first-time contributors and survives mise version changes.
+- `apps/docs/mise.toml` owns the source-of-truth task definitions and declares
+  `node = "lts"` so contributors on a fresh checkout automatically receive the
+  matching Node runtime alongside the Python runtime declared by the root `mise.toml`.
+  `dev` depends on `install` so the first `mise run docs` is a single command.
+
+### 11.3 Build Pipeline
+
+1. `apps/docs/mise.toml::install` → `npm install` (materialises `apps/docs/node_modules/`
+   and refreshes `apps/docs/package-lock.json`; the lockfile is committed).
+2. `npm run dev` (`astro dev`) → Starlight dev server at `http://localhost:4321` with
+   hot reload for content edits.
+3. `npm run build` (`astro build`) → writes static HTML to `apps/docs/dist/`,
+   builds the Pagefind search index under `apps/docs/dist/pagefind/`, and writes
+   `apps/docs/dist/sitemap-index.xml`.
+4. `npm run preview` → serves `apps/docs/dist/` locally for last-mile preview
+   before publishing.
+
+Total build time is approximately 5–7 seconds on a warm cache; full cold
+`npm install` adds ~60 seconds for 357 transitive packages. The committed
+`package-lock.json` keeps the install deterministic across machines.
+
+### 11.4 CLI ↔ Documentation Boundary
+
+`deviate` reads and writes the markdown files (and frontmatter fields) under
+`apps/docs/src/content/docs/` through the Tome slash commands; it does **not**
+invoke the renderer. Concretely:
+
+- The CLI never shells out to `astro`, `npm`, or `mise run docs:*`.
+- The CLI never writes to `package.json`, `astro.config.mjs`, `src/content.config.ts`,
+  `tsconfig.json`, `.gitignore`, or `mise.toml` inside `apps/docs/`.
+- The renderer never invokes the CLI; it only consumes the markdown frontmatter.
+
+This separation keeps `apps/docs/` runnable independently of the Python
+toolchain (`mise run docs` works on a clean checkout that has Node but not
+Python installed), and it lets the renderer evolve at its own cadence — future
+migrations to Astro 8 / Starlight 1.x do not require CLI changes.
