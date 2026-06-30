@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Verified by re-running `astro build`: 56 HTML pages emit, zero
   link-internal-broken warnings.
 
+### Fixed
+- **Missing landing page at `apps/docs/src/content/docs/index.md`** —
+  discovered during the first `mise run docs` session: the root URL
+  `/` 404'd because none of the four Diátaxis quadrant directories
+  carry an `index.md` at the docs root. Added a Diátaxis-oriented
+  landing page that links into the four quadrant intros and documents
+  the `verified_sha` / `related_issues` provenance contract. Verified
+  via `npm run build`: 57 HTML pages now emit (was 56); `curl -I http://localhost:4321/` returns 200 after dev-server hot reload.
+
 ### Changed
 - Removed all references to flows (FLOW-04..FLOW-10, `specs/_product/flows/flows-tome.md`) from the seven Tome subsystem prompt bodies under `src/deviate/prompts/commands/tome-*.md`. Flows remain as documentation artifacts under `specs/_product/flows/`; the prompts now reference `/tome-classify`, `/tome-write-tutorial`, `/tome-write-how-to`, `/tome-write-reference`, `/tome-write-explanation`, `/tome-verify-docs`, and `/tome-setup` directly, and read source-of-truth inputs only from `specs/_product/architecture.md` and `specs/_product/domain-model.md`.
 - README reframed around the four-layer architecture (Product · Macro ·
