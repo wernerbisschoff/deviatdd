@@ -7,18 +7,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/badge/managed%20with-uv-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/tests-820%20collected%20%E2%9C%93-brightgreen.svg)](#development)
-[![Lint: ruff](https://img.shields.io/badge/lint-ruff-orange.svg)](https://docs.astral.sh/ruff/)
 
 > **An agent-orchestration framework that runs your entire TDD loop — explore, spec, red, green, refactor — with three mandatory human-in-the-loop gates.**
 
-DeviaTDD is a Python CLI (`deviate`) that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a four-layer architecture (Product · Macro · Meso · Micro), append-only JSONL ledgers, worktree isolation, and tamper-guarded test execution. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, and Droid are first-class backends today.
+DeviaTDD is a CLI that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a four-layer architecture (Product · Macro · Meso · Micro), append-only ledgers, worktree isolation, and tamper-guarded test execution. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, and Droid are first-class backends today.
 
 ---
 
 ## Why DeviaTDD?
 
-Most AI coding agents stop at "write code that passes." DeviaTDD goes further — it runs the entire engineering loop:
+Most AI coding agents stop at "write code that passes." DeviaTDD goes further — it runs the entire engineering loop with verification, not just generation:
 
 | Without DeviaTDD | With DeviaTDD |
 |------------------|---------------|
@@ -27,7 +25,7 @@ Most AI coding agents stop at "write code that passes." DeviaTDD goes further �
 | Lost track of which task is in which state | Append-only JSONL ledgers derive canonical state |
 | Branch drift between parallel features | Worktree isolation + append-only ledger merge driver |
 | Locked to one agent vendor | First-class support for Claude, OpenCode, Pi, Droid |
-| Specs drift from implementation | Spec-aligned issue files with FR traceability |
+| Specs drift from implementation | Spec-enriched issue files with FR traceability |
 
 ---
 
@@ -40,15 +38,15 @@ uv tool install deviate
 # Bootstrap a new project + install slash commands into your agent of
 # choice. Does it all in one shot: scaffolds .deviate/, specs/constitution.md,
 # governance blocks, and installs /deviate-* slash commands for every
-# supported agent. The `--agent` flag picks the default backend persisted
+# supported agent. The --agent flag picks the default backend persisted
 # to .deviate/config.toml (slash commands themselves are installed to all
 # four agent directories regardless).
 deviate setup --agent claude     # or: opencode | pi | droid
 ```
 
-Once setup is done, drive the entire lifecycle from inside your agent. The phases follow a strict dependency order; each one commits an artifact and (at the three HITL gates) pauses for your review.
+Once setup is done, drive the entire lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the three gates) pauses for human review.
 
-**Product layer** *(optional, for cross-product framing — skip if your repo only does single features):*
+**Product layer** *(optional, for cross-product framing — skip if your repo only ships single features):*
 
 ```
 /deviate-flows         "Onboard a new tenant"      # FLOW-01 customer flow → specs/_product/flows/
@@ -100,9 +98,7 @@ Once setup is done, drive the entire lifecycle from inside your agent. The phase
 /deviate-review                          # ← Gate 3: final PR scan; merge or request changes
 ```
 
-> **Don't run `deviate <phase>` directly.** The CLI subcommands are the engine the slash commands drive — invoking them by hand skips contract emission, validation, commits, and ledger transitions.
-
-The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail. See [`specs/DeviaTDD-architecture.md`](specs/DeviaTDD-architecture.md) for the canonical state machine.
+The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail.
 
 ---
 
@@ -110,7 +106,7 @@ The full lifecycle takes you from a problem statement to merged, tested code wit
 
 ```mermaid
 flowchart TB
-subgraph Product["Product Layer — Customer &amp; Release Framing (optional)"]
+subgraph Product["Product Layer — Customer & Release Framing (optional)"]
   F[flows] --> A[architecture]
   A --> R[release]
 end
@@ -163,76 +159,132 @@ style Ex fill:#f5e1e1
 
 ### Workflow at a Glance
 
-Each phase emits a single artifact, commits it, and (at gates) hands off to a human for review. The **slash command** is the user-facing entrypoint; the **artifact** is what lands in your repo; the **review** column tells you what the human should be looking at before clearing the gate.
-
 | Phase | Slash command | Artifact committed | What the human reviews / decides |
 |-------|---------------|--------------------|----------------------------------|
 | **Bootstrap** | `deviate setup --agent <name>` | `.deviate/config.toml`, `specs/constitution.md`, governance blocks, installed `/deviate-*` slash commands | Sanity-check the constitution and the agent skills list; commit. |
-| **Product · Flows** | `/deviate-flows` | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Conversational: confirm the actor, job-to-be-done, and trigger are right; commit the flow file when asked. |
+| **Product · Flows** | `/deviate-flows` | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Confirm the actor, job-to-be-done, and trigger are right; commit the flow file when asked. |
 | **Product · Architecture** | `/deviate-architecture` | `specs/_product/architecture.md`, `specs/_product/domain-model.md` | Reads existing flows; classify the change as Local / Context-Bridging / Context-Creating; commit when satisfied. |
 | **Product · Release** | `/deviate-release` | `specs/_product/release-next.md` (overrides previous) | Supply a release-goal sentence; confirm the Included Flows / Included Work / Acceptance tables reflect that goal; commit. |
-| **Macro · Explore** | `/deviate-explore` | `specs/{epic}/explore.md` (raw codebase scan — what exists, not what to do) | Light review: does the scan cover the right subsystems? Commit to advance. |
+| **Macro · Explore** | `/deviate-explore` | `specs/{epic}/explore.md` (raw codebase scan — what exists, not what to do) | Does the scan cover the right subsystems? Commit to advance. |
 | **Macro · Research** *(Gate 1)* | `/deviate-research` | `specs/{epic}/design.md`, `specs/{epic}/data-model.md` | **Gate 1**: approve the design + data-model before PRD synthesis. |
 | **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
-| **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — there is no separate `/deviate-specify` step. |
+| **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — there is no separate specify step. |
 | **Macro · Adhoc** *(shortcut)* | `/deviate-adhoc` | `specs/adhoc/ISS-ADH-NNN-*.md` (single issue, spec-enriched) | Use for low/medium-complexity tasks; the complexity classifier auto-routes high-complexity work to the full Macro path. |
 | **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
-| **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | **The `tasks.md` artifact is the human's execution blueprint for the issue.** Verify: (a) 4–8 tasks per issue, (b) every task has a Verification CLI command, (c) each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, (d) DAG `blocked_by` deps are right. TDD tasks will go through red→green→judge→refactor; IMMEDIATE tasks are routed to `/deviate-execute`. |
+| **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | The `tasks.md` artifact is the human's execution blueprint. Verify: 4–8 tasks per issue, every task has a Verification CLI command, each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, DAG `blocked_by` deps are right. TDD tasks flow to red→green→judge→refactor; IMMEDIATE tasks route to `/deviate-execute`. |
 | **Micro · Red** | `/deviate-red <task-id>` | A failing test (no production code) | Agent-internal; you see the test on commit. |
 | **Micro · Green** | `/deviate-green <task-id>` | Production code that passes the test | Agent-internal; the TamperGuard reverts any unauthorized test edits before the suite runs. |
-| **Micro · Yellow** *(conditional)* | `/deviate-yellow <task-id>` | An amendment to the test, gated on TamperGuard detection | **Review the `<propose_test_amendment>` block**: if approved, the CLI commits it and advances to JUDGE; if rejected, `git restore .` rolls back and the loop returns to GREEN. |
-| **Micro · Judge** | `/deviate-judge <task-id>` | A `JUDGE_PASS` or `JUDGE_REJECTED` verdict over the GREEN diff | On rejection, the **Green → Judge → Green loop** rolls back via `git revert --no-edit <green_sha>`, injects `<train_feedback>` into the next GREEN prompt, and retries (up to 3 attempts). Read the feedback — it's the only signal you'll get for what the compliance checker objected to. |
+| **Micro · Yellow** *(conditional)* | `/deviate-yellow <task-id>` | An amendment to the test, gated on TamperGuard detection | **Review the `<propose_test_amendment>` block**: if approved, the CLI commits it and advances to JUDGE; if rejected, the workspace rolls back and the loop returns to GREEN. |
+| **Micro · Judge** | `/deviate-judge <task-id>` | A `JUDGE_PASS` or `JUDGE_REJECTED` verdict over the GREEN diff | On rejection, the **Green → Judge → Green loop** rolls back to the RED commit, injects `<train_feedback>` into the next GREEN, and retries (up to 3 attempts). Read the feedback — it's the only signal you'll get for what the compliance checker objected to. |
+| **Micro · Refactor** | `/deviate-refactor <task-id>` | Polished, behavior-preserving code (only on `JUDGE_PASS`) | If the refactor breaks tests, the CLI discards it and the task completes on the verified GREEN. |
+| **Micro · Execute** | `/deviate-execute <task-id>` | A targeted change for `direct` / `e2e` tasks | Skips the TDD cycle; still has its own JUDGE pass. |
+| **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
+| **Release** *(Gate 3)* | `/deviate-review` | Final PR scan | **Gate 3**: merge or request changes. |
 
-## Slash Commands
-
-DeviaTDD's user-facing interface is the library of `/deviate-*` slash commands installed by `deviate setup`. Each command emits a `pre` contract, the agent authors the artifact, then invokes a `post` command to validate, commit, and advance the ledger. **The CLI subcommands (`deviate explore`, `deviate plan`, etc.) are the engine beneath these prompts — never invoke them directly.**
-
-> The full library lives at `src/deviate/prompts/commands/` — **31 prompts** total: 24 `deviate-*` slash commands (Product · Macro · Meso · Micro · Inspection) plus 7 `tome-*` documentation-curation skills.
-
-### Bootstrap (run once per project / agent)
-
-| Command | Purpose |
-|---------|---------|
-| `deviate setup --agent <name>` | One-shot bootstrap: scaffolds `.deviate/`, `specs/constitution.md`, governance blocks, and installs `/deviate-*` slash commands for every supported agent (`claude` \| `opencode` \| `factory` \| `pi`). The `--agent` flag sets the default backend. |
-| `deviate feature create` | Create a feature worktree with isolated branch |
-
-> Note: `deviate init` exists as the engine backing the `/deviate-init` slash command (see `src/deviate/cli/init.py`). It is **not** a user-facing shell command — use `deviate setup` instead.
-
-### Product *(optional, sits above Macro)*
-
-`/deviate-flows` · `/deviate-architecture` · `/deviate-release`
-
-Frames the *what* and *why* across the whole product. `/deviate-flows` writes customer flows at `specs/_product/flows/`, `/deviate-architecture` writes the cross-epic contract at `specs/_product/architecture.md` (gated on the flows precondition), and `/deviate-release` writes the next coherent release plan at `specs/_product/release-next.md` (gated on architecture + flows). `deviate-shard` and `deviate-adhoc` consume these via the `flow_refs:` frontmatter so vertical slices stay traceable back to the flow that motivated them.
-
-### Macro (Feature Scoping)
-
-`/deviate-explore` · `/deviate-research` · `/deviate-prd` · `/deviate-shard` · `/deviate-adhoc`
-
-Two paths: the full `explore → research → prd → shard` chain for new features (with a Gate 1 design review after research and a Gate 2 issue review after shard), or the `/deviate-adhoc` shortcut that condenses all four into a single spec-enriched issue for low/medium-complexity tasks. `deviate shard` produces the spec-enriched issue files directly — there is no separate `specify` step. Outputs land in `specs/issues.jsonl` (append-only ledger).
-
-### Meso (Issue Engineering)
-
-`/deviate-plan` · `/deviate-tasks` · `/deviate-pr` · `/deviate-review`
-
-Decomposes a spec-enriched issue into executable tasks with DAG dependencies. `/deviate-plan` writes `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research); `/deviate-tasks` writes the human-facing `tasks.md` blueprint plus a `specs/{epic}/tasks.jsonl` append-only ledger. `/deviate-pr` opens a GitHub PR and on merge appends `COMPLETED` to the issues ledger; `/deviate-review` is HITL Gate 3 — the structured PR scan before merge.
-
-### Micro (Per-Task Loop)
-
-`/deviate-red` · `/deviate-green` · `/deviate-yellow` · `/deviate-judge` · `/deviate-refactor` · `/deviate-execute` · `/deviate-e2e`
-
-Two paths: the strict TDD cycle for `TDD`-typed tasks (`red → green → [yellow?] → judge → refactor`, with a **Green → Judge → Green loop** that fires on `JUDGE_REJECTED` to inject `<train_feedback>` and re-run GREEN up to 3 times), or `/deviate-execute` for `direct`/`e2e`-typed tasks that skip the test-first cycle. `/deviate-yellow` is a conditional branch triggered by TamperGuard when unauthorized test edits are detected between GREEN and JUDGE. `/deviate-e2e` orchestrates external runtime environments for end-to-end validation. Micro-layer agents are sandboxed: they can write **only** to `src/**/*.py`. Test/spec mutations trigger an immediate rollback.
-
-### Inspection & Maintenance
-
-`/deviate-triage` · `/deviate-constitution` · `/deviate-hotfix` · `/deviate-prune`
-
-Operational tools: triage ledger state, regenerate the constitution, ship hotfixes outside the standard flow, prune completed features.
+Operational tools (no gate, no commit): `/deviate-triage`, `/deviate-constitution`, `/deviate-hotfix`, `/deviate-prune`.
 
 ---
 
-## The Tome Subsystem (Documentation Curator)
+## Why Each Phase Exists
 
-DeviaTDD ships with **Tome** — a post-merge documentation curator that classifies your commits into Diátaxis quadrants (tutorial, how-to, reference, explanation) and routes them to the right writer skill. Output is a Starlight docs site at `apps/docs/`.
+DeviaTDD's phase structure is not arbitrary. Each phase exists because the alternative — an agent that skips it — produces a documented failure mode. The rationale below is split into five parts: why the four layers exist, why each Product / Macro / Meso phase exists, why the three non-bypassable human gates exist, why the append-only ledgers exist, and why the TDD micro-loop is `Red → Green → [Yellow] → Judge/Train → Refactor`.
+
+### Why the four layers
+
+- **Each layer matches a different model strength and a different cost profile.** Spec authoring, issue decomposition, and isolated judgement are high-judgment, low-frequency tasks best suited to a strong model. Test writing, implementation, and refactor are high-frequency, low-judgment tasks that a cheap model can perform with the right context. Splitting them into layers routes each turn to the appropriate model — a structural implementation of cost-optimal cascade routing.
+- **Layering converts a monolithic chat into a chain of accountable artifacts.** Each phase commits a single artifact (an exploration note, a design doc, an issue file, a test, a commit). A chain of small, committed artifacts is auditable, recoverable, and parallelizable; a single long conversation is none of those.
+- **The Product layer is optional because most repos only ship one feature stream at a time.** A team maintaining ten products needs cross-product framing; a team shipping one web app does not. Making the Product layer optional means DeviaTDD does not impose ceremony on teams that do not need it.
+- **The Macro / Meso / Micro split separates *what to build* from *how to build it* from *how to verify it*.** Macro is intent. Meso is structure. Micro is verification. Conflating any two of these in a single prompt is a documented source of agent failure — the model loses the discipline of one role while playing another.
+- **Escalation between layers is risk-gated, not always-on.** The strong model intervenes as judge or verifier when the repair budget exhausts or when the change touches protected modules. Routine work stays in the cheap layer; high-risk work escalates automatically.
+
+### Why the Product layer phases exist
+
+- **The Product layer is the only place where the *product*, not the *feature*, is defined.** Features can each be correct in isolation and still contradict each other at the system level. Without a layer above the feature, there is no place where cross-feature coherence is reviewed.
+- **Splitting Flows, Architecture, and Release into three artifacts is what lets each answer a different question and be revised on a different cadence.** *Flows* answer "what is the customer's job." *Architecture* answers "how do the pieces fit together at the product level." *Release* answers "what did we promise to ship." Conflating them makes each harder to review and revise independently.
+- **A flow is what prevents the agent's mental model of "what the product is" from drifting toward "what the latest spec says."** A flow defines an actor, a job-to-be-done, and a trigger — the minimum information an agent needs to evaluate whether a feature is on-strategy or off-strategy. Less than this and every feature is equally valid; more and the framework becomes bureaucratic.
+- **A single-sentence release goal is the only mechanism that prevents the release from drifting into "whatever happened to be ready."** A release is a contract with users — the set of things they will get and the acceptance bar for each. A list of merged PRs is a history, not a release. Without a release goal, the release is whatever the agents produced, and there is no way to scope, evaluate, or descope it when priorities change.
+
+### Why the Macro layer phases exist
+
+- **The Macro layer is the only place where a business goal is decomposed into spec-enriched issues at the right granularity.** Without a dedicated decomposition layer, the agent either ships the goal as one monolithic change (too large to review) or as ad-hoc task lists (too small to be independently testable). The Macro layer is where the granularity decision is made.
+- **Splitting Explore and Research is what lets a cheap model do the cheap work and a strong model do the strong work.** Explore is a factual codebase scan; Research is an architectural reasoning task. A combined phase would either over-pay for trivial scans or under-pay for critical design decisions. The split routes each turn to the appropriate model and gives the human a cheaper artifact to review at the cheap stage.
+- **Keeping Explore a *what exists* artifact, not a *what to do* artifact, is what lets the research phase build on it without inheriting the scan's biases.** A factual scan is the only input a research phase can build on without smuggling in design recommendations. Conflated "scan and recommend" phases lock the research phase into a direction before the human has reviewed anything.
+- **Splitting the PRD, the design, and the data-model into three artifacts is what lets each be reviewed by a different lens and revised on a different cadence.** The PRD is *what* the system must do (requirements); the design is *how* (architecture); the data-model is *what shape the information takes* (entities, relations). Conflated artifacts force joint review and weaken every review.
+- **Testable acceptance criteria are the requirement for a requirement to enter the PRD.** A requirement without criteria is a wish; a PRD full of wishes cannot be sharded because there is nothing for the issues to test against. The criterion test is what turns a wishlist into a PRD.
+- **Decomposing a feature into vertical slices, not horizontal layers, is what makes each issue independently shippable and Gate-2-reviewable.** A vertical slice is a complete, testable behavior end-to-end; a horizontal layer is a file or module. Vertical slices can be reviewed for missing behavior; horizontal layers hide integration risk until merge.
+- **Embedding the spec (Gherkin AC, user stories, edge cases) in the shard output, rather than running a separate Specify step, is what keeps the contract and the decomposition reviewed together.** A two-step "decompose, then specify" sequence adds latency and a second place for spec errors to compound. Co-locating the spec and the decomposition means they are revised together or not at all.
+- **A complexity gate (low / medium → proceed, high → reject) is what makes Adhoc safe to expose as a shortcut.** Without the gate, "adhoc" becomes a workaround for skipping ceremony on work that needs the full Macro chain. The gate is the structural mechanism that prevents the shortcut from being misused.
+
+### Why the Meso layer phases exist
+
+- **The Meso layer is the only place where a spec-enriched issue is decomposed into TDD-executable tasks at the right granularity.** A spec is too coarse for a single TDD cycle (15-60 minutes); a task list is too fine for a human to review coherently. The Meso layer is where the granularity decision is made.
+- **Re-running Plan per issue is what keeps the "what exists now" context fresh within a sprint.** Epic-level Explore becomes stale within days — by the time the fifth issue of a feature is being planned, the codebase has changed and prior issues have shipped. Per-issue Plan reads what prior issues implemented via the issues ledger, so the context reflects the current state, not the state at the start of the epic.
+- **Human review of decomposition and machine execution of decomposition require different formats and must be separate files.** `tasks.md` is the only surface a human can read, amend, and approve task decomposition against; `tasks.jsonl` is the only surface a CLI can parse deterministically and replay across parallel branches. Combining them forces one format to compromise on both readers.
+- **The 4-8 tasks-per-issue target matches the granularity at which a single TDD cycle can complete in 15-60 minutes — outside that range, the cycle becomes either fragmented or bloated.** More tasks force micro-decomposition that fragments the acceptance criteria; fewer tasks hide integration risk and balloon the cycle time past human-tolerable.
+- **Explicit DAG `blocked_by` dependencies are what make the parallel work graph visible to both the CLI and the human reviewer.** A flat list of tasks with implicit order is invisible to a parallelizing CLI and uninspectable to a human looking for the critical path. The DAG is the only structure that supports parallel-execution scheduling and critical-path reasoning.
+- **Treating the GitHub PR as a structural merge boundary, not a code-formatting step, is what gives reviewers a single artifact to review (title, body, diff, review surface).** A list of commits is a history; a PR is the unit of *what we are about to merge*.
+- **Gate 3 (final PR review) is the only audit over the full atomic git history of a feature.** Per-task review sees a slice; Gate 3 sees the whole. A final human audit catches the long-tail issues — integration regressions, doc drift, scope creep — that escaped per-task validation.
+
+### Why three non-bypassable human gates
+
+- **Spec errors are the most expensive to fix downstream.** A bug in a contract caught at Gate 2 saves the plan, the tasks, and every TDD cycle that would have implemented the bug. The same bug caught after merge costs the bug report, the rollback, the post-mortem, and the customer trust. Task decomposition is cheap to regenerate; cascades of implemented tasks are not.
+- **An LLM cannot self-verify its own output.** Every frontier model is a stochastic generator with zero internal semantic verification capability — the tool is irrelevant, the process is determinative. The same agent that produces a plausible design, plausible issue files, or plausible code will produce a plausible-looking review of them. A human gate at design, contract, and merge is the only verification mechanism with the necessary independence.
+- **Gates are cheap; the work that gates prevent is expensive.** A five-minute human check at Gate 1 prevents a multi-day agent cycle that would have built the wrong thing. The economics favor verification early (Gate 1), at the contract boundary (Gate 2), and at the merge boundary (Gate 3) — but not in between, where a working agent loop is already verifiable on its own.
+- **"Do not let an agent implement from a long chat; let it implement from a reviewed brief."** Gates are the mechanism that converts a long conversation into a reviewed brief. The contract is what the agent implements against; the chat is at most a source of the contract. Without gates, the implementation drifts away from the original intent as the chat lengthens.
+- **Three gates, not one and not ten.** One gate at the end is too late — errors have already cascaded. A gate at every micro-step is bureaucracy. Three gates correspond to the three failure modes that compound across the lifecycle: bad design, bad contract, bad merge. Each gate catches the class of error that the prior phases are most likely to produce.
+
+### Why the append-only ledgers exist
+
+- **Append-only is the merge strategy DeviaTDD uses to let parallel feature branches share state without coordination or a database.** Mutable state files would require lock-step coordination; a `.jsonl` file with `merge=union` declared in `.gitattributes` lets concurrent appends on parallel branches merge without conflict markers. The state machine scales beyond a single branch because the state format is append-only.
+- **Deriving CLI state from the ledger, rather than caching it in a separate file, is what prevents state drift between the CLI and the repo.** The CLI's view of current task, active issue, completed work, and FR traceability is computed by sequential parsing of the ledger on demand. A separate state file would be a cache that could disagree with the source; a derived state cannot disagree with itself.
+- **Recording transitions as events, rather than mutating state in place, is what makes the ledger re-derivable from history.** An event can be replayed; a mutation cannot. A corrupted state file can be reconstructed by re-running the event stream, and the canonical state can always be recomputed by re-parsing the ledger.
+- **Deriving issue IDs from the ledger, rather than assigning them externally, is what makes them collision-free across parallel branches.** Externally-assigned IDs require coordination to avoid duplicates; ledger-derived IDs compute the next ID from the current ledger state and encode the issue's lineage by construction. The `next_issue_id` field on each shard contract is computed by parsing the ledger, not from a counter file.
+- **`flow_refs:` in each issue's frontmatter is the only mechanism that connects a code change back to the customer flow that motivated it.** Without the trace, a refactor that "improves" a vertical slice may break the flow that motivated it without anyone noticing. The trace is what makes the issue→flow→release chain auditable.
+- **A review surface and an execution surface serve different readers and must be separate files.** `tasks.md` is the only artifact a human can read, amend, and approve task decomposition against; `tasks.jsonl` is the only artifact a CLI can parse deterministically and replay across parallel branches. Combining them forces one format to compromise on both readers — a human-readable markdown becomes hard to parse, or a parseable JSONL becomes hard to review.
+
+### Why the TDD micro-loop is `Red → Green → [Yellow] → Judge/Train → Refactor`
+
+The TDD micro-loop is what makes agent-written code trustworthy. Each phase exists because the agent has a documented failure mode that the phase structurally prevents.
+
+#### Why Red (write a failing test first)
+
+- **Tests written after implementation tend to reflect what the code does, not what it should do.** When the same agent writes both test and implementation in one session, the implementation bleeds into the test — a failure mode known as *context pollution*. The test ends up passing trivially because it asserts whatever the implementation does, not whatever the spec requires. Forcing the test to be written first, in a session with no implementation, prevents the bleed.
+- **A test that passes immediately is not a test.** Confirming the test fails before any production code exists verifies that the test actually exercises the new behavior. Skipping this step risks shipping a test that exercises nothing — green by construction, useless by construction.
+- **The test is the agent's only objective specification.** An agent given "make this work" produces plausible-looking code; an agent given "make this test pass" produces code whose correctness is mechanically checkable. The test is the only artifact in the loop that the agent cannot rationalize its way past.
+
+#### Why Green (write the minimum code to pass)
+
+- **"Do not change the tests" must be structurally enforced, not just instructed.** When an agent is given a failing test and a goal of making it pass, the cheapest path is often to weaken the test — delete an assertion, catch an exception, return a hard-coded value. Without structural enforcement (a Tamper Guard that reverts unauthorized test edits), the green phase collapses into test-hacking. Documented frontier-model failures include deleting scoring code and calling `sys.exit(0)` to make all tests appear to pass.
+- **The minimum code to pass is the only code that is verifiably correct.** Any code beyond the minimum introduces the possibility of bugs the tests do not cover. Constraining green to the minimum keeps the implementation close to the specification and the test surface meaningful.
+- **Green is bounded by the test.** The red test is the agent's goal; the implementation is just a means to that goal. Removing the test as the goal removes the only objective success criterion in the loop and replaces it with the agent's own judgment of "looks right" — which is exactly the failure mode the loop exists to prevent.
+
+#### Why Yellow (a conditional test-amendment gate)
+
+- **Sometimes the test is wrong, not the implementation.** The agent may discover during green that the test encodes an incorrect assumption — a wrong API, a misunderstanding of the spec, a fragile assertion, a missing fixture. Silently editing the test violates the immutability guarantee the loop is built on; halting the work stalls the loop indefinitely. Neither default is acceptable.
+- **Yellow is the structurally safe path DeviaTDD chose from "test is wrong" back to "test is right."** When the Tamper Guard detects that green edited the test, it routes the agent to a human-controlled amendment review instead of silently reverting (which would force the loop to fail on a test the agent has correctly identified as broken) or silently accepting (which would allow test-hacking to slip through). The human becomes the authority on whether the test was actually wrong. *(The test-amendment gate pattern is a DeviaTDD design proposal — the underlying principle that agents cannot self-verify their own output is well-evidenced, e.g. IACDM 2026's "verification gap" and PRIME's Executor/Verifier asymmetry.)*
+- **Yellow is conditional, not routine.** It fires only when the green agent tried to edit the test. A green phase that produces no test edits never enters yellow. The phase exists to make the rare structural-fix case safe, not to add ceremony to the common case.
+- **Yellow is the mechanism DeviaTDD uses to distinguish "agent cheating" from "agent caught a real spec error."** Both look identical in the diff — the test file changed during green. The amendment block forces the agent to justify the change, and the human decides which it is.
+
+#### Why Judge / Train (the Green → Judge → Green loop)
+
+- **The same agent that wrote the green code cannot reliably review it.** A self-review inherits the biases and blind spots of the producer — the same hallucinations, the same shortcuts, the same rationalizations. The Judge phase runs in an isolated session with a fresh context, breaking the recursive subjectivity of "did I do what I would have approved?"
+- **Tests passing is necessary but not sufficient.** A green test suite verifies the implementation matches the test; it does not verify the implementation matches the spec, the architecture, the security model, the performance budget, or the protected-module list. Judge evaluates the production diff against the contract for invariant, security, and structural violations the test cannot express. A separate human-style validation step at the end of an agentic session is required even when tests are green.
+- **Bounded repair with feedback injection converts failure into a learning signal.** When Judge rejects, the CLI rolls the task back to the RED commit (a known-good state), injects the failure feedback into the next GREEN prompt, and retries — up to three times. The next attempt has the same context plus the explicit feedback of why the previous attempt failed. This is the "Train" half: the failure is preserved as a constraint on the next attempt, not discarded as a dead end.
+- **Three retries is enough; more would be a sign of a wrong test or a wrong spec.** A green implementation that fails Judge three times is unlikely to converge on the fourth. The bound forces escalation back to the human (an amendment, a new plan, or a spec revision) rather than burning compute on a fundamentally misaligned task. The empirical cap `N=3` is consistent with documented multi-agent TDD governance practice.
+- **Rollback is to a known-good commit, not a fresh start.** The RED commit is the verified-good test boundary. Resetting to it discards the suspect GREEN cleanly, but preserves all prior work — the test, the spec, the agent session, the audit trail. Starting from a fresh checkout would also discard the test, which is the only artifact whose correctness has actually been confirmed.
+
+#### Why Refactor (behavior-preserving improvement)
+
+- **Refactor's benefits are delayed and invisible, so without an explicit phase it gets skipped.** The same agent that just got a green test is heavily biased to commit and move on. A dedicated refactor phase, gated on Judge's `JUDGE_PASS`, structurally separates "make it work" from "make it clean."
+- **The green test suite enables aggressive restructuring.** Refactoring is safe only while the test suite passes. After Judge, the test suite is the refactor's safety net — any behavior change breaks a test, which is caught immediately and rolled back. Without the green gate in front of the refactor, no refactor is safe.
+- **Refactor must be behavior-preserving — never test-preserving.** The discipline of "tests must still pass when you're done" is the refactor's definition. If a refactor requires changing a test, the original code was wrong, not just ugly — and that is a Judge issue, not a refactor issue. Conflating the two erodes the test's role as the contract.
+- **Refactor that breaks tests is discarded, not debugged.** A failed refactor means the agent misjudged the surface area of the change. The safe outcome is to fall back to the verified GREEN — the user gets a working implementation either way, and the diff stays minimal.
+
+---
+
+## Tome — Post-Merge Documentation
+
+DeviaTDD ships with **Tome**, a post-merge documentation curator that classifies your commits into Diátaxis quadrants (tutorial, how-to, reference, explanation) and routes them to the right writer skill. Output is a Starlight docs site at `apps/docs/`.
 
 ```
 Commit → tome-classify → [tome-write-tutorial | tome-write-how-to |
@@ -240,74 +292,7 @@ Commit → tome-classify → [tome-write-tutorial | tome-write-how-to |
                        → tome-verify-docs
 ```
 
-Tome is **prompt-only** in v1 — no Python runtime added. Configure it in any target repo via `deviate setup`.
-
----
-
-## Documentation
-
-- **Authoritative specs**: [`specs/DeviaTDD-api.md`](specs/DeviaTDD-api.md) and [`specs/DeviaTDD-architecture.md`](specs/DeviaTDD-architecture.md) define the contract every implementation must satisfy.
-- **Project constitution**: [`specs/constitution.md`](specs/constitution.md) — governance, tech stack, testing protocols, definition of done.
-- **Skill prompts**: [`src/deviate/prompts/commands/`](src/deviate/prompts/commands/) — the markdown instructions each agent invokes.
-
----
-
-## Development
-
-### Setup
-
-```bash
-git clone https://github.com/wbisschoff13/deviatdd.git
-cd deviatdd
-mise run setup        # installs deps + configures git hooks
-```
-
-### Tasks (via `mise`)
-
-| Task | Purpose |
-|------|---------|
-| `mise run test` | Run unit tests (`pytest tests/ -v`) |
-| `mise run lint` | Lint with ruff |
-| `mise run format` / `format-check` | Format / verify formatting |
-| `mise run check` | Lint + format-check (pre-commit gate) |
-| `mise run dev <args>` | Run the CLI in dev mode |
-| `mise run clean` | Remove caches and build artifacts |
-
-### Performance contract
-
-- CLI init: **≤ 500ms** (measured: ~120ms median)
-- Per-agent skill export: **≤ 200ms**
-- Full test suite (820 tests): **< 25s**
-
-### Test performance discipline
-
-`src/deviate/cli/micro.py::_run_pytest` invokes pytest as a subprocess (~5s per call). Tests that exercise CLI commands internally calling `_run_pytest` MUST mock `deviate.cli.micro._run_pytest` with a `subprocess.CompletedProcess` fixture to keep the full suite under budget.
-- Full test suite (820 tests): **< 30s**
-
-## Project Status
-
-DeviaTDD v2.0.0 is **production-ready** for individual developer workflows and small-team adoption. The four-layer architecture (Product · Macro · Meso · Micro) is stable; the public CLI surface and append-only ledger protocol are committed contracts.
-
-**Known constraints** (will be addressed in subsequent releases):
-
-- No public CI yet — runners are local; tests are green on the maintainer's machine at every release.
-- No hosted service / SaaS layer.
-- Multi-language code intelligence is limited to Python (full AST), with signature-level support for TypeScript, Rust, Go, C++, Elixir, C#, Markdown, Bash, JSON, TOML, YAML, HTML, CSS, SQL, Dockerfile, Terraform, Kotlin, Swift.
-
----
-
-## Contributing
-
-We welcome contributions. Open an issue first for non-trivial changes — DeviaTDD is itself dogfooded, so significant work usually goes through the same `/deviate-explore → /deviate-shard → /deviate-plan → /deviate-tasks → /deviate-red` lifecycle the framework prescribes.
-
-Before opening a PR:
-
-```bash
-mise run check       # lint + format must be clean
-mise run test        # all tests must pass
-```
-
-See [`specs/constitution.md`](specs/constitution.md) for the full execution contract.
+Tome is prompt-only in v1 — no runtime added. Configure it in any target repo via `deviate setup`.
 
 ---
 
