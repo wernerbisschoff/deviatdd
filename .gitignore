@@ -17,12 +17,11 @@ node_modules/
 .deviate/artifacts/
 .deviate/review/
 */commands/deviate-*.md
-*/commands/tome-*.md
+
 */prompts/deviate-*.md
-*/prompts/tome-*.md
+
 # Allow OMP slash commands sourced from .pi/prompts/ via the .omp/commands symlink
 !/.omp/commands/deviate-*.md
-!/.omp/commands/tome-*.md
 
 # Internal launch prep notes
 .launch/

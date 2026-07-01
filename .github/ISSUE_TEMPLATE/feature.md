@@ -22,8 +22,7 @@ labels: ["enhancement"]
 - [ ] Meso (Specify / Plan / Tasks)
 - [ ] Micro (RED / GREEN / YELLOW / JUDGE / REFACTOR / Execute)
 - [ ] CLI surface (`deviate <subcommand>`)
-- [ ] Tome (Diátaxis documentation)
-- [ ] Agent backend integration (opencode / claude / droid / pi)
+
 - [ ] Other: ____
 
 ## Alternatives considered

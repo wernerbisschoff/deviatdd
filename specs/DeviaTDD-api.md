@@ -28,9 +28,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   project-specific test/lint/format/setup/dev commands, applies the `## DeviaTDD
   Orchestration Rules` and `## Libref Usage` governance blocks to `CLAUDE.md` and
   `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt commands (currently
-  31 flat `.md` files: 24 `deviate-*` + 7 `tome-*`) into **all four** supported agent
-  directories — `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
-  `.pi/prompts/` — in a single invocation, regardless of which agent was passed
+  24 flat `.md` files: 24 `deviate-*`) into **all four** supported agent
+  directories — `.claude/commands/`, `.opencode/commands/`,
+  `.factory/commands/`, `.pi/prompts/` — in a single invocation, regardless of which agent was passed
   via `--agent`. Each command is a flat `<name>.md` file with a minimal YAML
   frontmatter (`name:` + `description:`). The agent backend selected via `--agent`
   (`opencode`, `claude`, `droid`, `factory`, `pi`) is persisted to `[agent].backend` in
@@ -97,8 +97,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     directories from version control
   * `<workdir>/.gitignore` — Updated with four concise DeviaTDD
     agent-command exclusions: `*/commands/deviate-*.md`,
-    `*/commands/tome-*.md`, `*/prompts/deviate-*.md`,
-    `*/prompts/tome-*.md` (covers every supported agent directory
+    `*/prompts/deviate-*.md` (covers every supported agent directory
     — ``.claude/commands/``, ``.opencode/commands/``,
     ``.factory/commands/``, ``.pi/prompts/`` — and any future agent
     that follows the same flat-file convention). The single-level
@@ -109,7 +108,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `specs/constitution.md` — Resolved boilerplate constitution
   * `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
     `.pi/prompts/` — DeviaTDD prompt commands installed for every
-    supported agent (31 flat `.md` files total, split across the four
+    supported agent (24 flat `.md` files total, split across the four
     dirs)
 
 #### `deviate constitution`
@@ -720,9 +719,7 @@ src/deviate/
 │   │   ├── red.md, green.md, yellow.md, judge.md, refactor.md
 │   │   └── plan.md (planned)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 31 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage, yellow} (24) + tome-{classify, setup, verify-docs, write-explanation, write-how-to, write-reference, write-tutorial} (7)
-└── state/
-    ├── __init__.py
+│   └── commands/             # 24 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage, yellow} (24)
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
     └── ledger.py             # IssueRecord, TaskRecord, append_issue_transition, append_task_transition
 ```

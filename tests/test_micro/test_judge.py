@@ -769,20 +769,20 @@ class TestJudgeFeedbackLogging:
         # production convention specs/<epic>/issues/<slug>.md so
         # _find_tasks_md_for_issue derives the right path.
         specs_dir = tmp_path / "specs"
-        (specs_dir / "adhoc" / "011-tome-subsystem-v1").mkdir(parents=True)
+        (specs_dir / "adhoc" / "001-test-issue-pad-name").mkdir(parents=True)
         (specs_dir / "issues.jsonl").write_text(
             json.dumps(
                 {
-                    "issue_id": "ISS-ADH-011",
-                    "source_file": ("specs/adhoc/issues/011-tome-subsystem-v1.md"),
+                    "issue_id": "ISS-ADH-001",
+                    "source_file": ("specs/adhoc/issues/001-test-issue-pad-name.md"),
                 }
             )
             + "\n",
             encoding="utf-8",
         )
-        tasks_md = specs_dir / "adhoc" / "011-tome-subsystem-v1" / "tasks.md"
+        tasks_md = specs_dir / "adhoc" / "001-test-issue-pad-name" / "tasks.md"
         tasks_md.write_text(
-            "# Tasks\n\n- TSK-011-05: Sample task\n",
+            "# Tasks\n\n- TSK-001-01: Sample task\n",
             encoding="utf-8",
         )
 
@@ -791,7 +791,7 @@ class TestJudgeFeedbackLogging:
                 phase="JUDGE",
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
-                task_id="TSK-011-05",
+                task_id="TSK-001-01",
                 rationale="Incomplete — missing required logic",
                 train_feedback="",
             ),
@@ -799,8 +799,8 @@ class TestJudgeFeedbackLogging:
         )
 
         task = {
-            "id": "TSK-011-05",
-            "issue_id": "ISS-ADH-011",
+            "id": "TSK-001-01",
+            "issue_id": "ISS-ADH-001",
             "description": "Test tasks.md logging",
             "status": "PENDING",
             "execution_mode": "TDD",
