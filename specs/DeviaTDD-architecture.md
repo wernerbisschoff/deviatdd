@@ -670,8 +670,7 @@ standard `AgentBackend.invoke()` contract with three customisations:
    for `.claude/commands/`, `.opencode/commands/`, and `.factory/commands/`.
    Pi discovers commands from `.pi/prompts/` natively per its documented
    slash-command convention. The corresponding project-root `.gitignore`
-   entries (``*/commands/deviate-*.md``, ``*/commands/tome-*.md``,
-   ``*/prompts/deviate-*.md``, ``*/prompts/tome-*.md``) are added by
+   entries (``*/commands/deviate-*.md``, ``*/prompts/deviate-*.md``) are added by
    `_ensure_root_gitignore` (see `src/deviate/cli/__init__.py:638`),
    preventing the file-copied commands from being committed. The
    single-level ``*/`` prefix scopes each pattern to one directory

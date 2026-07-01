@@ -717,11 +717,9 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
     commands across all agent platforms.
-
     Two command families are installed and must not be committed:
 
     - ``deviate-*`` — the core DeviaTDD command library
-    - ``tome-*``    — the Tome Subsystem (ISS-ADH-011)
 
     The patterns are scoped with ``*/commands/`` and ``*/prompts/`` so they
     only match a SINGLE directory level before the agent subdir — this is
@@ -745,9 +743,7 @@ def _ensure_root_gitignore(workdir: Path) -> None:
     gitignore_path = workdir / ".gitignore"
     entries = (
         "*/commands/deviate-*.md",
-        "*/commands/tome-*.md",
         "*/prompts/deviate-*.md",
-        "*/prompts/tome-*.md",
     )
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
