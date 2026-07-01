@@ -201,8 +201,8 @@ read-only install target. Edit the source in
 `src/deviate/prompts/commands/<name>.md`.
 
 If you are adding a new command, follow the existing layer routing in
-`src/deviate/prompts/assembly.py::_LAYER_MAP` (macro / meso / micro /
-tome) and update `specs/DeviaTDD-api.md` §"Slash commands" accordingly.
+`src/deviate/prompts/assembly.py::_LAYER_MAP` (macro / meso /
+micro) and update `specs/DeviaTDD-api.md` §"Slash commands" accordingly.
 
 ---
 

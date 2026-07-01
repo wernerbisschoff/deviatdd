@@ -151,7 +151,7 @@ Single pass over the diff, structured diff, and governance files. For each of th
 - **Suggestions** — improvements worth making
 - **Opportunities** — future work worth deferring
 
-Use the structured diff to identify per-language symbol-level issues. Reference specific `| Language | Kind | Name | Change |` rows in your analysis. For the Flow Coverage domain, cite the specific `FLOW-XX` ID and the flow definition file (e.g., `specs/_product/flows/flows-tome.md:42`).
+Use the structured diff to identify per-language symbol-level issues. Reference specific `| Language | Kind | Name | Change |` rows in your analysis. For the Flow Coverage domain, cite the specific `FLOW-XX` ID and the flow definition file (e.g., `specs/_product/flows/flows-product.md:42`).
 
 ### STEP 3: SURFACE — Structured Output
 
@@ -164,13 +164,13 @@ Format:
 ## Positive Patterns
 - Effective use of pattern matching in the new Rust `match` block (src/parser.rs:42)
 - Clean separation of concerns in the extracted Calculator class (src/mod.py:15-45)
-- FLOW-04 Trigger (Tome Classify on HEAD~1) is correctly preserved in src/deviate/prompts/commands/tome-classify.md:1-30
+
 
 ## Critical Issues
 - [HIGH] Python function `execute_query` accepts raw SQL string — SQL injection vector (src/db.py:25)
 - [MEDIUM] TypeScript interface `UserConfig` adds required field `apiKey` — breaks all existing callers (src/config.ts:10)
 - [LOW] Deleted function `legacy_format` has 3 remaining call sites not updated (src/utils.py)
-- [HIGH] FLOW_BREAKAGE — FLOW-05 (Tome Write Tutorial) Happy Path step 3 is broken: removed `tutorials_writer()` function in src/tome/writers.py has no replacement caller (per spec AC for FLOW-05)
+
 
 ## Suggestions
 - Remove unused import `os` from src/mod.py:2
@@ -203,7 +203,7 @@ Each item is tagged with its category so the agent can filter by type:
 ### Critical
 - `[CRITICAL]` **src/db.py:25** — parameterize SQL query (security)
 - `[CRITICAL]` **src/config.ts:10** — make `apiKey` optional with default (backward compat)
-- `[CRITICAL]` **src/tome/writers.py** — restore FLOW-05 Happy Path step 3 (flow breakage)
+
 
 ### Suggestions
 - `[SUGGESTION]` **src/utils.py:7** — update callers or add deprecation shim

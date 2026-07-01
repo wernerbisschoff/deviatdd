@@ -282,18 +282,6 @@ The TDD micro-loop is what makes agent-written code trustworthy. Each phase exis
 
 ---
 
-## Tome — Post-Merge Documentation
-
-DeviaTDD ships with **Tome**, a post-merge documentation curator that classifies your commits into Diátaxis quadrants (tutorial, how-to, reference, explanation) and routes them to the right writer skill. Output is a Starlight docs site at `apps/docs/`.
-
-```
-Commit → tome-classify → [tome-write-tutorial | tome-write-how-to |
-                          tome-write-reference | tome-write-explanation]
-                       → tome-verify-docs
-```
-
-Tome is prompt-only in v1 — no runtime added. Configure it in any target repo via `deviate setup`.
-
 ---
 
 ## License
