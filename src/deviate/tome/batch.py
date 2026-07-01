@@ -17,17 +17,35 @@ wraps it with Typer argument parsing and Rich output.
 from __future__ import annotations
 
 import concurrent.futures
+import signal
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .dispatch import dispatch_writer, DispatchResult
+from .dispatch import dispatch_writer, DispatchResult, kill_all_running_procs
 from .parser import (
     CapabilityRow,
     filter_actionable_rows,
     parse_classification_report,
     writer_skill_for,
 )
+
+
+# SIGINT plumbing: a flag the dispatch loop polls, plus a handler that
+# installs the flag and kills every tracked subprocess. We deliberately
+# do NOT raise KeyboardInterrupt from the handler — the main loop is
+# still in the middle of `as_completed` and would lose the chance to
+# drain in-flight results and return a clean summary. ``BatchSummary.interrupted``
+# is the signal that the CLI checks to emit a clear Ctrl+C message and
+# exit 130 (POSIX SIGINT convention).
+_INTERRUPTED = threading.Event()
+
+
+def _sigint_handler(signum, frame):  # noqa: ARG001 — signal API
+    """SIGINT handler: set the cancellation flag and kill in-flight subprocesses."""
+    _INTERRUPTED.set()
+    kill_all_running_procs()
 
 
 @dataclass
@@ -54,9 +72,10 @@ class BatchConfig:
 class BatchSummary:
     """Summary of a completed batch run.
 
-    ``exit_code`` returns 0 when no rows failed (status != DONE) and
-    1 otherwise. CLI consumers typically use this to decide whether
-    to raise ``typer.Exit(1)``.
+    ``exit_code`` returns 130 when the batch was interrupted by SIGINT
+    (POSIX convention for Ctrl+C), 1 when any row failed (status != DONE),
+    and 0 otherwise. CLI consumers typically use this to decide whether
+    to raise ``typer.Exit(<code>)``.
     """
 
     total: int  # Total rows in the report.
@@ -66,9 +85,12 @@ class BatchSummary:
     skipped: int  # Rows skipped because the target file already exists.
     duration_seconds: float
     results: list[DispatchResult] = field(default_factory=list)
+    interrupted: bool = False  # True iff SIGINT killed the fan-out mid-flight.
 
     @property
     def exit_code(self) -> int:
+        if self.interrupted:
+            return 130  # POSIX convention for SIGINT.
         return 0 if self.failed == 0 else 1
 
 
@@ -200,6 +222,7 @@ def run_batch(config: BatchConfig) -> BatchSummary:
     # Dispatch in parallel. Each task is one subprocess; the pool is
     # bounded by config.workers so we don't overwhelm the backend.
     log = open(config.log_path, "w", encoding="utf-8") if config.log_path else None
+    prev_sigint = signal.signal(signal.SIGINT, _sigint_handler)
     try:
         results: list[DispatchResult] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=config.workers) as ex:
@@ -215,6 +238,12 @@ def run_batch(config: BatchConfig) -> BatchSummary:
                 for row, prompt in work
             }
             for future in concurrent.futures.as_completed(future_to_row):
+                if _INTERRUPTED.is_set():
+                    # Stop accepting new results; let the executor drain
+                    # in-flight threads (which unblock quickly now that
+                    # kill_all_running_procs() has been called from the
+                    # signal handler).
+                    break
                 row = future_to_row[future]
                 try:
                     result = future.result()
@@ -238,9 +267,14 @@ def run_batch(config: BatchConfig) -> BatchSummary:
                     if result.status != "DONE" and result.stderr_tail:
                         log.write(f"           stderr: {result.stderr_tail}\n")
                     log.flush()
+            # Cancel any pending futures that never started, then drain
+            # in-flight threads. cancel_futures=True is Python 3.9+; the
+            # project requires >=3.13 per pyproject.toml.
+            ex.shutdown(wait=True, cancel_futures=True)
 
         done = sum(1 for r in results if r.status == "DONE")
         failed = len(results) - done
+        interrupted = _INTERRUPTED.is_set()
         return BatchSummary(
             total=len(all_rows),
             actionable=len(actionable),
@@ -249,7 +283,15 @@ def run_batch(config: BatchConfig) -> BatchSummary:
             skipped=skipped,
             duration_seconds=time.monotonic() - start,
             results=results,
+            interrupted=interrupted,
         )
     finally:
+        signal.signal(signal.SIGINT, prev_sigint)
         if log is not None:
             log.close()
+
+
+# NOTE: the dispatch loop returns from inside the `try` block, so
+# code after `finally` is unreachable. ``BatchSummary.interrupted`` is
+# the signal that the CLI (``src/deviate/cli/tome.py``) checks to
+# emit a clean Ctrl+C message and exit 130 (POSIX SIGINT convention).

@@ -275,3 +275,72 @@ def test_dispatch_result_status_property() -> None:
         DispatchResult(returncode=-1, file_exists=False, timed_out=True, **base).status
         == "TIMEOUT"
     )
+
+
+# ---------------------------------------------------------------------------
+# SIGINT / Ctrl+C handling
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_writer_killable_via_kill_all_running_procs(
+    work_dir: Path, fake_writers_dir: Path, restore_backend_commands
+) -> None:
+    """``kill_all_running_procs()`` must terminate a hang-ing dispatch mid-flight.
+
+    Simulates the SIGINT handler firing while ``dispatch_writer`` is waiting
+    on ``proc.communicate``. The tracked Popen should be killed and the
+    function should return (with a FAIL or TIMEOUT status, not hang).
+    """
+    import threading
+    import time
+
+    from deviate.tome.dispatch import (
+        _RUNNING_PROCS,
+        _RUNNING_PROCS_LOCK,
+        kill_all_running_procs,
+    )
+
+    _reg("fakehang", fake_writers_dir, "fake-hang")
+
+    # Launch the dispatch in a worker thread so the test can fire
+    # kill_all_running_procs() while it's blocked in proc.communicate().
+    result_box: dict = {}
+
+    def _runner() -> None:
+        result_box["result"] = dispatch_writer(
+            backend="fakehang",
+            prompt="x",
+            target_file="docs/x.md",
+            cwd=work_dir,
+            timeout=30,
+        )
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+
+    # Wait for the Popen to register itself in _RUNNING_PROCS.
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        with _RUNNING_PROCS_LOCK:
+            if _RUNNING_PROCS:
+                break
+        time.sleep(0.01)
+
+    with _RUNNING_PROCS_LOCK:
+        procs_before = len(_RUNNING_PROCS)
+    assert procs_before >= 1, "dispatch did not register its Popen"
+
+    killed = kill_all_running_procs()
+    assert killed >= 1
+
+    t.join(timeout=5.0)
+    assert not t.is_alive(), "dispatch_writer did not return after kill"
+
+    with _RUNNING_PROCS_LOCK:
+        procs_after = len(_RUNNING_PROCS)
+    assert procs_after == 0, f"_RUNNING_PROCS should be drained, got {procs_after}"
+
+    result = result_box["result"]
+    # The subprocess was killed; status is FAIL (non-zero returncode) or
+    # TIMEOUT if the per-row timeout happened to elapse first.
+    assert result.status in {"FAIL", "TIMEOUT"}

@@ -15,11 +15,19 @@ The backend prompt is fed via stdin. Per the existing
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+
+# Track every running subprocess.Popen so a SIGINT handler in batch.py can
+# kill them all on Ctrl+C without waiting for the per-row 600s timeout.
+# The set is guarded by a lock because dispatch_writer may be called from
+# multiple worker threads concurrently (ThreadPoolExecutor fan-out).
+_RUNNING_PROCS: set[subprocess.Popen[str]] = set()
+_RUNNING_PROCS_LOCK = threading.Lock()
 
 BackendName = Literal["opencode", "claude", "droid", "pi", "stub"]
 
@@ -89,35 +97,42 @@ def dispatch_writer(
         )
 
     start = time.monotonic()
+    proc: subprocess.Popen[str] | None = None
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            input=prompt,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             cwd=cwd,
         )
+        with _RUNNING_PROCS_LOCK:
+            _RUNNING_PROCS.add(proc)
+        try:
+            stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            duration = time.monotonic() - start
+            return DispatchResult(
+                returncode=-1,
+                file_exists=(cwd / target_file).exists() if target_file else False,
+                target_file=target_file,
+                stdout_tail=_tail(stdout, _STDOUT_TAIL_CHARS),
+                stderr_tail=_tail(stderr, _STDERR_TAIL_CHARS),
+                duration_seconds=duration,
+                timed_out=True,
+            )
         duration = time.monotonic() - start
         file_exists = (cwd / target_file).exists() if target_file else False
         return DispatchResult(
-            returncode=proc.returncode,
+            returncode=proc.returncode if proc.returncode is not None else -1,
             file_exists=file_exists,
             target_file=target_file,
-            stdout_tail=_tail(proc.stdout, _STDOUT_TAIL_CHARS),
-            stderr_tail=_tail(proc.stderr, _STDERR_TAIL_CHARS),
+            stdout_tail=_tail(stdout, _STDOUT_TAIL_CHARS),
+            stderr_tail=_tail(stderr, _STDERR_TAIL_CHARS),
             duration_seconds=duration,
-        )
-    except subprocess.TimeoutExpired as e:
-        duration = time.monotonic() - start
-        return DispatchResult(
-            returncode=-1,
-            file_exists=(cwd / target_file).exists() if target_file else False,
-            target_file=target_file,
-            stdout_tail=_tail(_decode(e.output), _STDOUT_TAIL_CHARS),
-            stderr_tail=_tail(_decode(e.stderr), _STDERR_TAIL_CHARS),
-            duration_seconds=duration,
-            timed_out=True,
         )
     except FileNotFoundError as e:
         # The backend binary isn't on PATH — surface as a FAIL with a
@@ -131,6 +146,27 @@ def dispatch_writer(
             stderr_tail=f"BINARY_NOT_FOUND: {e}",
             duration_seconds=duration,
         )
+    finally:
+        if proc is not None:
+            with _RUNNING_PROCS_LOCK:
+                _RUNNING_PROCS.discard(proc)
+
+
+def kill_all_running_procs() -> int:
+    """SIGINT helper: kill every tracked subprocess and return how many were killed.
+
+    Idempotent — safe to call multiple times. Called from the SIGINT handler
+    installed by ``run_batch`` so Ctrl+C aborts the fan-out immediately
+    instead of waiting for the per-row timeout to elapse.
+    """
+    with _RUNNING_PROCS_LOCK:
+        procs = list(_RUNNING_PROCS)
+    for p in procs:
+        try:
+            p.kill()
+        except ProcessLookupError:
+            pass
+    return len(procs)
 
 
 def _tail(text: str | None, n: int) -> str:
@@ -138,10 +174,3 @@ def _tail(text: str | None, n: int) -> str:
     if not text:
         return ""
     return text[-n:]
-
-
-def _decode(value: bytes | None) -> str:
-    """Decode ``bytes | None`` from subprocess exception fields."""
-    if value is None:
-        return ""
-    return value.decode("utf-8", errors="replace")

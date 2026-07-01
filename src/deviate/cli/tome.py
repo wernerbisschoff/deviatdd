@@ -183,6 +183,14 @@ def write_command(
 
     summary = run_batch(config)
 
+    if summary.interrupted:
+        console.print(
+            f"\n[bold yellow]INTERRUPTED[/] Ctrl+C received — killed in-flight "
+            f"subprocesses and drained {summary.done + summary.failed} in-flight "
+            f"results before exiting. {summary.actionable - summary.done - summary.failed - summary.skipped} "
+            f"rows were not started."
+        )
+
     console.print(
         f"\n[bold green]DONE[/] {summary.done}  "
         f"[bold red]FAIL[/] {summary.failed}  "
@@ -193,6 +201,12 @@ def write_command(
 
     if log_path is not None:
         console.print(f"[dim]Log: {log_path}[/]")
+
+    if summary.interrupted:
+        # 130 is the POSIX convention for SIGINT (Ctrl+C). Use it so shell
+        # scripts and CI runners can detect an interrupted run distinctly
+        # from a normal failure.
+        raise typer.Exit(130)
 
     if summary.failed:
         console.print(f"\n[bold red]Failures ({summary.failed}):[/]")

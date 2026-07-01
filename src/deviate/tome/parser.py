@@ -20,7 +20,15 @@ from pathlib import Path
 
 
 # Canonical column count for the ## Capabilities table.
-_EXPECTED_COLUMNS = 7
+# Eleven columns per the IA-extended schema in
+# `<classification_report_schema>` (tome-classify.md) and
+# `specs/_product/architecture.md:143` + `specs/_product/domain-model.md`:
+#   capability, evidence, audience, doc_type, action, target_file, confidence,
+#   layer_order, parent, next, group.
+# Earlier versions of the parser expected 7 columns; that predates the
+# IA fields added in v1.2.0 (`feat(tome): add IA landing-page contract to
+# writer prompts`).
+_EXPECTED_COLUMNS = 11
 
 # Mapping of DocType value to the writer skill basename.
 WRITER_SKILL_FOR_DOC_TYPE: dict[str, str] = {
@@ -35,8 +43,12 @@ WRITER_SKILL_FOR_DOC_TYPE: dict[str, str] = {
 class CapabilityRow:
     """One row from the ``## Capabilities`` table of a classification report.
 
-    Attributes mirror the seven columns of the report schema
-    (see ``<classification_report_schema>`` in ``tome-classify.md``).
+    Attributes mirror the eleven columns of the report schema
+    (see ``<classification_report_schema>`` in ``tome-classify.md``):
+    capability, evidence, audience, doc_type, action, target_file,
+    confidence, layer_order, parent, next, group. The four trailing
+    fields are the IA contract introduced in v1.2.0; older reports
+    emitted only the first seven columns and will be silently dropped.
     """
 
     capability: str
@@ -46,6 +58,11 @@ class CapabilityRow:
     action: str
     target_file: str
     confidence: float
+    # IA fields (new in v1.2.0; see `specs/_product/domain-model.md` §Capability).
+    layer_order: int = 0
+    parent: str = ""
+    next: str = ""
+    group: str = ""
 
 
 def parse_classification_report(report_path: Path) -> list[CapabilityRow]:
@@ -88,7 +105,10 @@ def parse_classification_report_text(text: str) -> list[CapabilityRow]:
         if _is_separator_row(stripped):
             continue
         cells = _split_row(stripped)
-        if len(cells) != _EXPECTED_COLUMNS:
+        # Backward-compat: older reports emitted 7 columns (no IA fields).
+        # Accept those too, leaving layer_order/parent/next/group at their
+        # dataclass defaults.
+        if len(cells) not in (7, _EXPECTED_COLUMNS):
             continue
         rows.append(
             CapabilityRow(
@@ -99,6 +119,18 @@ def parse_classification_report_text(text: str) -> list[CapabilityRow]:
                 action=cells[4].strip(),
                 target_file=_normalize_target_file(cells[5].strip()),
                 confidence=_parse_confidence(cells[6].strip()),
+                layer_order=_parse_int(cells[7].strip())
+                if len(cells) >= _EXPECTED_COLUMNS
+                else 0,
+                parent=_normalize_null(cells[8].strip())
+                if len(cells) >= _EXPECTED_COLUMNS
+                else "",
+                next=_normalize_null(cells[9].strip())
+                if len(cells) >= _EXPECTED_COLUMNS
+                else "",
+                group=_normalize_null(cells[10].strip())
+                if len(cells) >= _EXPECTED_COLUMNS
+                else "",
             )
         )
     return rows
@@ -167,9 +199,31 @@ def _normalize_target_file(value: str) -> str:
     return value
 
 
+def _normalize_null(value: str) -> str:
+    """Normalize an IA cell: the literal ``null`` becomes empty string.
+
+    Used for ``parent``, ``next``, and ``group`` — these are
+    repo-relative paths or ``null`` per the schema. Empty string round-trips
+    cleanly through the writer prompts which check ``if not row.parent:``.
+    """
+    if value.lower() == "null":
+        return ""
+    return value
+
+
 def _parse_confidence(value: str) -> float:
     """Parse a confidence value like ``0.85``; default 0.0 on failure."""
     try:
         return float(value)
     except ValueError:
         return 0.0
+
+
+def _parse_int(value: str) -> int:
+    """Parse an int value like ``1`` or ``0``; default 0 on failure / empty."""
+    if not value:
+        return 0
+    try:
+        return int(value)
+    except ValueError:
+        return 0
