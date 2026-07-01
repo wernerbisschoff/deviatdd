@@ -1,3 +1,5 @@
 label: "Config Schema"
 pages:
   - starter-config.md
+  - deviate-config.md
+  - mise-toml.md
