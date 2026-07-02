@@ -38,6 +38,7 @@ deviate = "deviate.main:app"
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
+    "pytest-testmon>=2.2",
 ]
 
 [build-system]
@@ -56,6 +57,7 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "pytest-testmon>=2.2.0",
     "ruff>=0.15.16",
     "typer>=0.26.7",
 ]

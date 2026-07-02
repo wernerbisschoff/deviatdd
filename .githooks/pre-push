@@ -1,3 +1,38 @@
 #!/usr/bin/env bash
+# Pre-push: lint + format-check + selective pytest on the Python files
+# changed since the upstream branch (or HEAD~1 if no upstream yet).
+# `mise run test` stays the canonical full-suite command for CI / pre-release.
+#
+# Portable to bash 3.2 (macOS /bin/bash): no `mapfile`, no `declare -A`, etc.
 set -e
-mise run test
+set -o pipefail
+
+# Unset git env inherited from the hook context. Tests in this repo invoke
+# git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
+GIT_DIR_SAVED="${GIT_DIR-}"
+unset GIT_DIR
+
+trap '[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED" || unset GIT_DIR' EXIT
+
+# Pick a base: upstream if we have one, else the previous commit.
+if upstream=$(git rev-parse --verify --quiet '@{u}' 2>/dev/null); then
+  base=$(git merge-base "$upstream" HEAD)
+elif base=$(git rev-parse --verify --quiet 'HEAD~1' 2>/dev/null); then
+  :
+else
+  # No upstream, no parent — nothing to compare against.
+  exit 0
+fi
+
+changed=()
+while IFS= read -r f; do
+  [ -n "$f" ] && changed+=("$f")
+done < <(git diff --name-only --diff-filter=ACMR "$base...HEAD" -- '*.py' | sort -u)
+
+if [ "${#changed[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+uv run ruff check "${changed[@]}"
+uv run ruff format --check "${changed[@]}"
+mise run test-affected

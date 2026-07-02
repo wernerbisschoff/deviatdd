@@ -41,7 +41,8 @@ jobs:
         run: uv run ruff format --check
 
       - name: Test (pytest)
-        run: uv run pytest tests/
+        # --testmon-noselect pins full-suite behavior so testmon selection never silently narrows CI.
+        run: uv run pytest --testmon-noselect tests/
 
   # Bats end-to-end smoke suite. Installs the package as a real CLI tool
   # (`uv tool install --editable`) so the smoke suite exercises the installed
