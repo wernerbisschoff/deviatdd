@@ -98,6 +98,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shell command; `deviate setup --agent <name>` is the single one-shot
   bootstrap that scaffolds `.deviate/`, `specs/constitution.md`,
   governance blocks, and installs `/deviate-*` slash commands.
+- README `Why Each Phase Exists` rationale now annotates each architectural
+  claim with inline article citations (Agile-V/SCOPE-V, IACDM, PRIME,
+  State Contamination, SDD, Spec Kit, Mise en Place, Runtime Decomp, TDAD,
+  TDFlow, TDDev, TDD Governance, TDAID, Red-Green-Refactor Agents, TDD
+  Agent Dev, Definitive SDD 2026, Acceptance Test Gen, LLM BDD, Vibe vs
+  Agentic, UCCI, RoBatch, Agentic AI Survey) and adds a `## References`
+  section consolidating 21 source URLs. DeviaTDD-original claims (Yellow
+  test-amendment gate, Product layer optionality, Flows / Architecture /
+  Release triad, 4–8 task count, three-gate count, append-only ledger
+  rationale, `flow_refs:` frontmatter convention, ledger-derived IDs,
+  per-issue Plan cadence, Adhoc complexity classifier, deriving CLI state
+  from the ledger) are tagged `_(design proposal)_` and grouped under
+  `References § Gaps` for transparency.
 - Pre-commit hook (`.githooks/pre-commit`) now lints and format-checks
   only the staged + unstaged `.py` files (was: whole repo via
   `mise run check`). Early-exits cleanly on docs-only, prompt-only, or
