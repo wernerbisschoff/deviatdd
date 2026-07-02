@@ -27,13 +27,13 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `elixir_phoenix`, or `unknown`) and writes a `specs/constitution.md` populated with
   project-specific test/lint/format/setup/dev commands, applies the `## DeviaTDD
   Orchestration Rules` and `## Libref Usage` governance blocks to `CLAUDE.md` and
-  `AGENTS.md` (idempotent upsert), and installs the DeviaTDD prompt commands (currently
-  24 flat `.md` files: 24 `deviate-*`) into **all four** supported agent
+  and installs the DeviaTDD prompt commands (currently
+  24 flat `.md` files: 24 `deviate-*`) into **all five** supported agent
   directories — `.claude/commands/`, `.opencode/commands/`,
-  `.factory/commands/`, `.pi/prompts/` — in a single invocation, regardless of which agent was passed
+  `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/` — in a single invocation, regardless of which agent was passed
   via `--agent`. Each command is a flat `<name>.md` file with a minimal YAML
   frontmatter (`name:` + `description:`). The agent backend selected via `--agent`
-  (`opencode`, `claude`, `droid`, `factory`, `pi`) is persisted to `[agent].backend` in
+  (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`) is persisted to `[agent].backend` in
   `config.toml` for use by the meso/micro layers; it does **not** gate which agent
   directories receive commands.
   **Agent-to-commands-directory mapping:** `.claude/` → `.claude/commands/`;
@@ -47,7 +47,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `<workdir>/.pi/prompts/<name>.md`, so the project vault remains the single
   source of truth. DeviaTDD does **not** write to `~/.pi/agent/` and does **not**
   generate a `settings.json` — model/provider selection is the operator's
-  responsibility via Pi's own configuration mechanism). All four command
+  responsibility via Pi's own configuration mechanism); `.omp/` →
+  `.omp/prompts/` (OMP is an extensible wrapper around the Pi executor; it
+  discovers slash commands from `.omp/prompts/`). All five command
   directories are excluded from version control via the project-root
   `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:653`).
   Additionally, both `deviate setup` and `deviate init pre` provision a project-root
