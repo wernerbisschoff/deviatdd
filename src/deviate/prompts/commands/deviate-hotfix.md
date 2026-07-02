@@ -39,7 +39,7 @@ For comprehensive feature work, use `deviate-tasks` instead. This skill is exclu
 <step_0_run_pre_script>
 deviate hotfix pre
 </step_0_run_pre_script>
-<step_1_identify_targets>grep "def calc_total" *.py → cart.py, test file → test_cart.py</step_1_identify_targets>
+<step_1_identify_targets>codebase_search "function calc_total" → cart.py, test file → test_cart.py</step_1_identify_targets>
 <step_2_construct_task>T001: Fix division-by-zero in cart.py / test_cart.py
   - RED: test_calc_total_empty_cart() asserts zero returned for empty cart
   - GREEN: add if cart.empty? guard clause in calc_total() at line 47</step_2_construct_task>
@@ -70,7 +70,7 @@ The contract on stdout contains: `status`, `issue_id`, `bug_description`, `git_b
 <step id="bug_analysis">
 Given bug description from user input or JSON contract:
 1. Read `specs/constitution.md` for architectural invariants, coding conventions, and testing mandates
-2. Identify broken file(s): use grep/find to locate files matching bug keywords
+2. Identify broken file(s): use `codebase_search` / `codebase_peek` to locate files matching bug keywords; fall back to `grep` / `find` only when the codebase-index MCP is unavailable
 3. Identify matching test file(s): look for *.spec.*, *_test.*, test_*.py
 4. Confirm root cause: read the broken file, identify exact line/function causing the bug
 5. Verify test exists: if no test exists, create one in the standard test location
@@ -167,7 +167,7 @@ Return output as a raw JSON object with schema:
 |---|---|
 | NO_TEST_FOUND | Create a new test file alongside the broken file. Use existing test framework conventions. |
 | MULTIPLE_BUGS | If bug description mentions multiple issues, create separate T001/T002 tasks. If more than 2 tasks needed, reject to /deviate-tasks. |
-| NO_BUG_LOCATION | Use grep to search for relevant keywords, function names, or error messages mentioned in the bug report. |
+| NO_BUG_LOCATION | Use `codebase_search` for semantic matches of relevant keywords, function names, or error messages mentioned in the bug report; fall back to `grep` for literal keyword search when the codebase-index MCP is unavailable. |
 | WRONG_BRANCH | Abort and instruct user to create a feature branch. |
 | Pre-script returns FAILURE | Surface the reason from the JSON contract and stop. |
 

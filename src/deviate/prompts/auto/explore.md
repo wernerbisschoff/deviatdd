@@ -32,7 +32,7 @@ If `is_greenfield` is false, capture `Tech Stack Standards`, `Testing Protocols`
 
 <step id="exploratory_scan">
 For non-trivial repos (>20 source files), spawn two read-only subagents in parallel:
-- **Codebase Scanner**: Produces fragments for discovery audit results, file registry, architectural baselines.
+- **Codebase Scanner**: Produces fragments for discovery audit results, file registry, architectural baselines. Verify the codebase-index is current via `index_status` first; use `codebase_peek`, `codebase_search`, `implementation_lookup`, and `call_graph` as the primary discovery path, with `find`, `tree -L 3`, glob, and `cat`/`head` as last-mile supplements for dotfiles gitignored from the index.
 - **Ecosystem Researcher**: Produces fragments for ecosystem research (web search for best practices).
 
 For trivial repos, collapse to a single linear pass.

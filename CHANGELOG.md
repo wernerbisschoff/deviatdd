@@ -132,6 +132,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.testmondata` exists. New dev dep `pytest-testmon>=2.2` added to
   both `[project.optional-dependencies].dev` and
   `[dependency-groups].dev`; `.testmondata` added to `.gitignore`.
+- Phase prompts now prefer the codebase-index MCP tools (`codebase_search`,
+  `codebase_peek`, `implementation_lookup`, `call_graph`) over `grep` /
+  `glob` for semantic code discovery, symbol location, and call-graph
+  traversal. A new universal invariant #9 in
+  `src/deviate/prompts/core/core.md` propagates the mandate to every
+  `auto/*` phase via `load_template`; the discovery-bearing command
+  variants (`deviate-adhoc`, `deviate-explore`, `deviate-hotfix`,
+  `deviate-plan`) and the meso `Deterministic Discovery` discipline now
+  lead with codebase-index tools, with `grep` / `glob` / `Read` demoted
+  to a documented last-mile fallback when the MCP is unavailable. 10
+  prompt files affected.
 
 ## [2.0.0] - 2026-06-28
 

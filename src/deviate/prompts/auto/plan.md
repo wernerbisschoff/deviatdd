@@ -24,7 +24,7 @@ Read `{spec_path}` in full — extract user stories, Gherkin acceptance criteria
 </step>
 
 <step id="codebase_scan">
-Run `git log --oneline -20`, read `specs/issues.jsonl` for related issues, scan workstation files from system topology mapping, check prior `plan.md` in related issue directories. If `specs/_product/` exists, also read `specs/_product/release-next.md` Goal and `specs/_product/architecture.md` §3 Components table for the Architecture Components Touched field.
+Use the codebase-index MCP tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) to scan the workstation files declared in the system topology mapping — verify symbol presence, surface call relationships, and locate prior `plan.md` references. Verify the index is current via `index_status` before depending on it. Augment with `git log --oneline -20` for prior-commit context, read `specs/issues.jsonl` for related issues, and check prior `plan.md` in related issue directories. If `specs/_product/` exists, also read `specs/_product/release-next.md` Goal and `specs/_product/architecture.md` §3 Components table for the Architecture Components Touched field.
 </step>
 
 <step id="prior_analysis">

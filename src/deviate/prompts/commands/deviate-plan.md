@@ -47,13 +47,14 @@ CRITICAL INSTRUCTION INVARIANTS:
    - `[MULTI_TIERED_VERIFICATION_TARGETS]` — unit and integration test paths
 
 3. **Current Codebase State Scan** (deterministic, L_max <= 200ms):
-   a) Run `git log --oneline -20` to identify recent commits and related work
-   b) Read `specs/issues.jsonl` to find related issues and their status
-   c) Read each file listed in `[SYSTEM_TOPOLOGY_MAPPING]` primary workstations to assess current state
-   d) If a `tasks.md` or prior `plan.md` exists in related issue directories, read it for prior implementation patterns
-   e) If research artifacts (`design.md`, `data-model.md`) exist in the epic workspace, read them for architectural context
-   f) Scan `specs/constitution.md` for applicable architectural invariants
-   g) Use `libref query <library> <topic>` to understand library APIs and framework conventions detected in the codebase — provides offline, version-pinned documentation without network overhead
+   a) Use the codebase-index MCP tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) to scan the workstation files declared in `[SYSTEM_TOPOLOGY_MAPPING]` — verify symbol presence, surface call relationships, and locate prior `plan.md` references. Verify the index is current via `index_status` before depending on it. Reserve `Read` / `grep` / `glob` for last-mile patterns and dotfiles gitignored from the index.
+   b) Run `git log --oneline -20` to identify recent commits and related work
+   c) Read `specs/issues.jsonl` to find related issues and their status
+   d) Read each file listed in `[SYSTEM_TOPOLOGY_MAPPING]` primary workstations to assess current state
+   e) If a `tasks.md` or prior `plan.md` exists in related issue directories, read it for prior implementation patterns
+   f) If research artifacts (`design.md`, `data-model.md`) exist in the epic workspace, read them for architectural context
+   g) Scan `specs/constitution.md` for applicable architectural invariants
+   h) Use `libref query <library> <topic>` to understand library APIs and framework conventions detected in the codebase — provides offline, version-pinned documentation without network overhead
 
 4. **Prior Implementation Analysis**:
    a) Identify related issues in the issue ledger that share FR tokens or user story concerns
