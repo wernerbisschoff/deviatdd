@@ -12,6 +12,7 @@ __pycache__/
 .tdd-session.json
 .deviate/session.json
 .opencode/index/
+.opencode/codebase-index.json
 node_modules/
 
 .deviate/artifacts/
