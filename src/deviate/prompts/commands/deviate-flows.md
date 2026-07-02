@@ -1,6 +1,6 @@
 ---
 name: deviate-flows
-description: FLOW-01 flows authoring — discover customer flows, write concise flows-<domain>.md, and maintain specs/_product/flows/index.md.
+description: Author customer flows — discover user-visible flows, write concise flows-<domain>.md files, and maintain the flows catalog at specs/_product/flows/index.md.
 category: deviatdd-product-layer
 version: 1.2.0
 aliases:

@@ -28,9 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coordinated-disclosure window, and explicit in-scope / out-of-scope
   threat model).
 - `/tome-classify --codebase` mode for whole-codebase ingest (cold-start / retroactive docs). Walks manifests, source tree, CLI definitions, config schemas, and public API surface; emits an exhaustive capability table; pre-marks existing valid docs as `update`. Documented in `specs/_product/architecture.md` §3.1 and `specs/_product/domain-model.md` `ClassificationReport.mode`; verifier (C6) handles the new evidence source by reading source files directly.
+- `mise run test-affected` task: runs only tests touched by current changes
+  via `pytest --testmon-forceselect`. Companion to the existing
+  `mise run test` full-suite task; the populated `.testmondata` file
+  makes the selection fast on every subsequent run.
 
 ### Changed
-- Removed all references to flows (FLOW-04..FLOW-10, `specs/_product/flows/flows-tome.md`) from the seven Tome subsystem prompt bodies under `src/deviate/prompts/commands/tome-*.md`. Flows remain as documentation artifacts under `specs/_product/flows/`; the prompts now reference `/tome-classify`, `/tome-write-tutorial`, `/tome-write-how-to`, `/tome-write-reference`, `/tome-write-explanation`, `/tome-verify-docs`, and `/tome-setup` directly, and read source-of-truth inputs only from `specs/_product/architecture.md` and `specs/_product/domain-model.md`.
+- Removed all references to flows (FLOW-04..FLOW-10, `specs/_product/flows/flows-tome.md`) from the seven Tome subsystem prompt bodies under `src/deviate/prompts/commands/tome-*.md`. Flows remain as documentation artifacts under `specs/_product/`; the prompts now reference `/tome-classify`, `/tome-write-tutorial`, `/tome-write-how-to`, `/tome-write-reference`, `/tome-write-explanation`, `/tome-verify-docs`, and `/tome-setup` directly, and read source-of-truth inputs only from `specs/_product/architecture.md` and `specs/_product/domain-model.md`.
+- Stripped the framework-internal `FLOW-01/02/03` phase identifiers from the three Product-layer slash-command descriptions (`/deviate-flows`, `/deviate-architecture`, `/deviate-release`) and rewrote them as end-user action phrases ("Author customer flows…", "Author the cross-epic architecture contract…", "Plan the next coherent release…"). Generic terminology that any project would call on — the `flow_refs:` issue-frontmatter field, the `--flow-ref` CLI flag, the `**Flow References**` task anchor, the `Flow Coverage` review domain — is preserved verbatim. Internal anchors in `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, and prompt bodies remain unchanged.
 - README reframed around the four-layer architecture (Product · Macro ·
 
   Meso · Micro). The Product layer (FLOW-01 flows → FLOW-02 architecture →
@@ -93,6 +98,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shell command; `deviate setup --agent <name>` is the single one-shot
   bootstrap that scaffolds `.deviate/`, `specs/constitution.md`,
   governance blocks, and installs `/deviate-*` slash commands.
+- Pre-commit hook (`.githooks/pre-commit`) now lints and format-checks
+  only the staged + unstaged `.py` files (was: whole repo via
+  `mise run check`). Early-exits cleanly on docs-only, prompt-only, or
+  non-Python commits. Adds `set -o pipefail` and the `GIT_DIR` env-var
+  guard.
+- Pre-push hook (`.githooks/pre-push`) now lints, format-checks, and
+  runs `mise run test-affected` against the `.py` files changed since
+  the upstream branch (was: full test suite via `mise run test`).
+  Adds the `GIT_DIR` env-var guard that the previous script was
+  missing, plus `set -o pipefail`.
+- `mise run test` and the CI pytest step now pass `--testmon-noselect`
+  to pin full-suite behavior. Without the flag, `pytest-testmon`'s
+  default selection would silently narrow both commands once
+  `.testmondata` exists. New dev dep `pytest-testmon>=2.2` added to
+  both `[project.optional-dependencies].dev` and
+  `[dependency-groups].dev`; `.testmondata` added to `.gitignore`.
 
 ## [2.0.0] - 2026-06-28
 
