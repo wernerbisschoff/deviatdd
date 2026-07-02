@@ -754,7 +754,17 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         console.print(
             f"  [green]UPDATE[/] .gitignore added {len(missing)} agent entries"
         )
+    else:
+        gitignore_path.write_text("\n".join(entries) + "\n", encoding="utf-8")
+        console.print(
+            f"  [green]CREATE[/] .gitignore with {len(entries)} agent entries"
+        )
 
+
+cli.add_typer(explore_app, name="explore")
+cli.add_typer(research_app, name="research")
+cli.add_typer(prd_app, name="prd")
+cli.add_typer(shard_app, name="shard")
 
 cli.add_typer(meso_app, name="meso")
 cli.add_typer(macro_app, name="macro")
