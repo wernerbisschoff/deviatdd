@@ -19,7 +19,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **Single Issue Mandate**: You must emit exactly ONE vertical-slice issue. Never generate horizontal-layer shards (separate DB, API, UI tasks). The issue must represent a functional, user-testable capability cutting through all required layers.
 3. **Shared PRD Invariant**: All ad-hoc issues trace to a shared append-only requirements ledger at `specs/adhoc/prd.md`. If the file does not exist, initialize it. Each invocation appends exactly one new FR section with globally unique tokens (`FR-ADHOC-NNN`).
 4. **Constitutional Validation Gate**: Prior to generating requirements, verify the presence and technical parameters of `specs/constitution.md`. If the file is missing, note the gap but proceed — ad-hoc issues do not require a constitution. If present, every requirement must comply.
-5. **Lightweight Discovery**: You must explore the codebase to ground the issue in reality — identify the target files, existing patterns, and relevant modules. This is NOT the full 3-subagent explore phase. Use targeted grep, glob, ls, and read operations within a single reasoning pass.
+5. **Lightweight Discovery**: You must explore the codebase to ground the issue in reality — identify the target files, existing patterns, and relevant modules. This is NOT the full 3-subagent explore phase. Use the codebase-index MCP tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) as the primary discovery path; verify the index is current via `index_status` before depending on it. Reserve `grep`, `glob`, `ls`, and `read` for last-mile regex patterns, dotfiles gitignored from the index, and other cases the index cannot answer.
 6. **Context Packaging Invariant**: The generated issue must programmatically inject: the precise entities it mutates, explicit boundaries of what it must NOT do (Defensive Exclusions), upstream requirement tokens, acceptance criteria in Gherkin syntax, and a copy-pasteable verification command block.
 7. **Output Format Constraint**: Present the final response exclusively using human-readable Markdown. Do not wrap output in XML boundaries. Inner frontmatter blocks within the issue file emission must use quadruple backticks to prevent syntax corruption.
 8. **Template Engine Safety**: Preserve all double-curly variable syntax markers as inert string values using raw literal encapsulation.
@@ -41,7 +41,7 @@ CRITICAL INSTRUCTION INVARIANTS:
     - If not found: proceed to step 3 (Lightweight Discovery Pass) as normal.
 
 3. **Lightweight Discovery Pass**: Skip this step if an existing explore.md was consumed in step 2.5. Otherwise, explore the codebase to ground the issue:
-   - Use grep/glob to find files and modules relevant to the user's description
+   - Use `codebase_peek` to locate symbols and `codebase_search` for semantic matches relevant to the user's description; fall back to `grep` / `glob` only for last-mile patterns and dotfiles gitignored from the index
    - Identify existing patterns, hooks, utilities, or components that the task should extend or integrate with
    - Map target files (both existing files to modify and new files to create)
    - Determine scope boundaries: what is in-scope vs defensively excluded

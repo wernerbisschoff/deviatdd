@@ -36,7 +36,7 @@ Analyze only files directly mapped in the system topology mapping. Do not expand
 
 <item>
 <title>Deterministic Discovery</title>
-Use only local, deterministic operations — `git log`, file reads, grep, glob. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
+Use only local, deterministic operations. The codebase-index MCP tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) are the primary discovery path — verify the index is current via `index_status` before depending on it. Supplement with `git log`, `Read`, `grep`, and `glob` for prior-commit context, raw text reads, and last-mile regex patterns or dotfiles gitignored from the index. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
 </item>
 
 <item>
