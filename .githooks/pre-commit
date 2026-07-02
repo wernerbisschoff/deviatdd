@@ -1,8 +1,33 @@
 #!/usr/bin/env bash
+# Pre-commit: lint + format-check only the Python files touched by this commit.
+# Tests stay in pre-push — even filtered, pytest on every commit is too slow.
+#
+# Portable to bash 3.2 (macOS /bin/bash): no `mapfile`, no `declare -A`, etc.
 set -e
-# Unset git environment variables inherited from the hook context.
-# Tests use git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
-GIT_DIR_SAVED="${GIT_DIR:-}"
+set -o pipefail
+
+# Unset git env inherited from the hook context. Tests in this repo invoke
+# git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
+GIT_DIR_SAVED="${GIT_DIR-}"
 unset GIT_DIR
-mise run check
-if [ -n "$GIT_DIR_SAVED" ]; then export GIT_DIR="$GIT_DIR_SAVED"; fi
+
+trap '[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED" || unset GIT_DIR' EXIT
+
+# Collect staged + unstaged Python files (Added/Copied/Modified/Renamed).
+# Untracked and Deleted files are skipped — no content to check.
+changed=()
+while IFS= read -r f; do
+  [ -n "$f" ] && changed+=("$f")
+done < <(
+  {
+    git diff --cached --name-only --diff-filter=ACMR HEAD -- '*.py' 2>/dev/null
+    git diff          --name-only --diff-filter=ACMR      -- '*.py' 2>/dev/null
+  } | sort -u
+)
+
+if [ "${#changed[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+uv run ruff check "${changed[@]}"
+uv run ruff format --check "${changed[@]}"

@@ -6,12 +6,17 @@ python = "3.13"
 uv = "latest"
 
 [tasks.test]
-run = "uv run pytest tests/ -v"
-description = "Run unit tests"
+run = "uv run pytest --testmon-noselect tests/ -v"
+description = "Run the full test suite (forces full-suite; keeps .testmondata fresh)"
 
 [tasks.test-e2e]
 run = "bats tests/e2e/"
 description = "Run E2E tests via bats"
+
+[tasks.test-affected]
+run = "uv run pytest --testmon-forceselect"
+description = "Run only tests affected by current changes (pytest-testmon selection)"
+
 
 [tasks.lint]
 run = "uv run ruff check"
