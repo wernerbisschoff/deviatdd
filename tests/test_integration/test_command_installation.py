@@ -70,6 +70,7 @@ class TestCommandInstallation:
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".opencode").mkdir()
         (tmp_path / ".factory").mkdir()
+        (tmp_path / ".omp").mkdir()
         from deviate.core import commands as commands_module
 
         with chdir(tmp_path):
@@ -77,6 +78,7 @@ class TestCommandInstallation:
             assert "opencode" in agents
             assert "claude" in agents
             assert "factory" in agents
+            assert "omp" in agents
 
     def test_agent_flag_overrides_detection(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

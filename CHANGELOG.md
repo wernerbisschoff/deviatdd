@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Tome subsystem from `main`: the seven `/tome-*` slash commands (`tome-classify`, `tome-setup`, `tome-verify-docs`, `tome-write-tutorial`, `tome-write-how-to`, `tome-write-reference`, `tome-write-explanation`) and their agent-mirror copies under `.claude/commands/`, `.factory/commands/`, `.pi/prompts/`; the pure-Tome specs (`specs/_product/architecture.md`, `domain-model.md`, `release-next.md`, `flows/flows-tome.md`), exploration notes (`specs/explore/tome-subsystem.md`), the `011-tome-subsystem-v1` issue file and plan dir; the FLOW-04..FLOW-10 entries in `_product/flows/index.md`; the `_ensure_root_gitignore` Tome patterns; the Feature issue template Tome checkbox; the `_TOME_LAYER_SKILLS` test trio in `tests/test_cli/test_init.py`; the Tome fixture path in `tests/test_micro/test_judge.py`; and the Tome illustrative examples in `deviate-review` (canonical + 3 agent mirrors). Tome work continues on the `tome` branch.
+
 ### Added
+- `deviate setup` now installs slash commands to `.omp/commands/` (Oh-My-Pi),
+  in addition to the existing `.claude/commands/`, `.opencode/commands/`,
+  `.factory/commands/`, and `.pi/prompts/` targets. `omp` is now a valid
+  `--agent` choice and maps to the `pi` backend.
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running ruff lint,
   ruff format check, and pytest on push to `main` and on pull requests.
 - Bats end-to-end smoke suite at `tests/e2e/` covering the installed `deviate`

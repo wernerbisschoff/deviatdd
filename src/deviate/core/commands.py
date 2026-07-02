@@ -190,12 +190,13 @@ def install_command(
 def detect_agents(workdir: Path | None = None) -> list[str]:
     """Detect agent platforms from cwd directories.
 
-    Scans *workdir* for ``.claude/``, ``.opencode/``, ``.factory/``, and
-    ``.pi/`` subdirectories and returns the matching agent names.
+    Scans *workdir* for ``.claude/``, ``.opencode/``, ``.factory/``,
+    ``.pi/``, and ``.omp/`` subdirectories and returns the matching
+    agent names.
     """
     workdir = workdir or Path.cwd()
     agents: list[str] = []
-    for name in ("claude", "opencode", "factory", "pi"):
+    for name in ("claude", "opencode", "factory", "pi", "omp"):
         if (workdir / f".{name}").is_dir():
             agents.append(name)
     return sorted(agents)

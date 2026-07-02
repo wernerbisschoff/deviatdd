@@ -41,18 +41,20 @@ _GOVERNANCE_MODULE = "deviate.prompts.governance"
 # User-facing agent platform choices (selectable via --agent and the
 # interactive init prompt). Order is intentional: factory/droid (Droid
 # ecosystem) come first, then the third-party CLIs.
-AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode", "pi")
+AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode", "pi", "omp")
 
 # Map a user-facing agent name to the underlying backend that meso/micro
 # layers invoke. ``factory`` is the Factory Droid IDE — the meso/micro
 # commands still drive the ``droid`` binary under the hood. ``pi`` is
-# the @earendil-works/pi-coding-agent CLI binary.
+# the @earendil-works/pi-coding-agent CLI binary. ``omp`` uses the same
+# backend as ``pi`` (Oh-My-Pi is a wrapper around the Pi executor).
 AGENT_TO_BACKEND: dict[str, str] = {
     "factory": "droid",
     "droid": "droid",
     "claude": "claude",
     "opencode": "opencode",
     "pi": "pi",
+    "omp": "pi",
 }
 
 
@@ -510,21 +512,22 @@ def _scaffold_constitution(workdir: Path) -> None:
 
     specs_dir.mkdir(parents=True, exist_ok=True)
     const_path.write_text(seed, encoding="utf-8")
-    console.print(f"  [green]CREATE[/] {const_path.relative_to(workdir)}")
+    console.print("  [green]CREATE[/] specs/constitution.md")
 
 
 def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     """Resolve the slash-command directory for a given agent platform.
 
-    Factory, Claude, and OpenCode discover slash commands from
-    ``<workdir>/.{agent}/commands/`` (flat top-level only). Pi uses
-    ``<workdir>/.pi/prompts/`` per the platform's documented convention.
-    All four require flat ``.md`` files — nested folders are ignored.
+    Factory, Claude, OpenCode discover slash commands from
+    ``<workdir>/.{agent}/commands/`` (flat top-level only). Pi and OMP use
+    ``<workdir>/.{agent}/prompts/`` per their platform conventions.
     """
     if agent_name in ("claude", "opencode", "factory"):
         return workdir / f".{agent_name}" / "commands"
     if agent_name == "pi":
         return workdir / ".pi" / "prompts"
+    if agent_name == "omp":
+        return workdir / ".omp" / "prompts"
     return None
 
 
@@ -638,7 +641,6 @@ def setup(
     _apply_governance(workdir, graphite=graphite)
 
     _scaffold_constitution(workdir)
-
     # DeviaTDD commands are installed into ALL agent directories regardless
     # of ``--agent``. ``--agent`` only drives the ``[agent].backend`` value
     # written to ``.deviate/config.toml`` — that value is consumed by the
@@ -647,10 +649,11 @@ def setup(
     # both names map to the Factory Droid IDE commands directory
     # (``.factory/commands/``); ``droid`` is the underlying backend binary.
     # ``pi`` uses ``.pi/prompts/`` per the platform's documented convention;
-    # the other three use ``commands/``. No global ``~/.pi/agent/`` writes,
+    # ``omp`` uses ``.omp/prompts/`` per the OMP platform convention; the
+    # other three use ``commands/``. No global ``~/.pi/agent/`` writes,
     # no ``settings.json`` generation — the operator's Pi config is out of
     # scope.
-    active_agents = ("claude", "opencode", "factory", "pi")
+    active_agents = ("claude", "opencode", "factory", "pi", "omp")
     _install_commands_to_agents(workdir, list(active_agents))
 
     _ensure_gitignore(workdir)
@@ -729,16 +732,9 @@ def _ensure_root_gitignore(workdir: Path) -> None:
     ``**/deviate-*.md`` pattern would silently ignore those source-of-truth
     files and break ``deviate setup`` in the deviatdd repo itself. The
     patterns cover every supported agent (``.claude/commands/``,
-    ``.opencode/commands/``, ``.factory/commands/``, ``.pi/prompts/``) and
-    any future agent that follows the same ``<dir>/commands/`` or
-    ``<dir>/prompts/`` flat-file convention.
-
-    The four patterns are written to the single project-root ``.gitignore``
-    so the agent exclusion surface lives in one canonical file (the prior
-    per-agent ``.<agent>/.gitignore`` files were consolidated — see the
-    spec note in ``specs/DeviaTDD-api.md`` § ``deviate init`` and
-    ``deviate setup``). Idempotent: re-running ``deviate setup`` does not
-    duplicate entries and never rewrites user-authored lines.
+    ``.opencode/commands/``, ``.factory/commands/``, ``.pi/prompts/``,
+    ``.omp/prompts/``) and any future agent that follows the same
+    ``<dir>/commands/`` or ``<dir>/prompts/`` flat-file convention.
     """
     gitignore_path = workdir / ".gitignore"
     entries = (

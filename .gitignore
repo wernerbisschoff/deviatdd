@@ -20,8 +20,8 @@ node_modules/
 
 */prompts/deviate-*.md
 
-# Allow OMP slash commands sourced from .pi/prompts/ via the .omp/commands symlink
-!/.omp/commands/deviate-*.md
+# Allow OMP slash commands — installed to .omp/prompts/ by deviate setup
+!/.omp/prompts/deviate-*.md
 
 # Internal launch prep notes
 .launch/
