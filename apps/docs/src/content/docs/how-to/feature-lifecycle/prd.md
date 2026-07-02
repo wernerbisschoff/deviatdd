@@ -6,8 +6,8 @@ status: draft
 last_verified_at: 2026-07-01
 verified_sha: d47f88c
 related_issues: []
-prev: null
-next: null
+prev: false
+next: false
 ---
 
 This how-to covers compiling an approved `design.md` + `data-model.md` pair into `prd.md` so the downstream `/deviate-shard` phase can split functional requirements into ledger-tracked issues.

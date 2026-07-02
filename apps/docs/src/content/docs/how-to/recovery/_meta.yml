@@ -1,2 +1,4 @@
 label: "Recovery & Maintenance"
-pages: []
+pages:
+- hotfix
+  - review

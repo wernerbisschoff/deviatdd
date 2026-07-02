@@ -1,2 +1,5 @@
 label: "Issue Execution"
-pages: []
+pages:
+- tasks
+- execute
+- pr

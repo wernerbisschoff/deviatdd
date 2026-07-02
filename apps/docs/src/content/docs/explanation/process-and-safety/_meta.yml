@@ -1,2 +1,5 @@
 label: "Process & Safety"
-pages: []
+pages:
+  - git-isolation.md
+  - micro-sandboxing.md
+  - session-continuity.md

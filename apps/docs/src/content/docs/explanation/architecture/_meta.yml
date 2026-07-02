@@ -1,3 +1,6 @@
 label: "Architecture"
 pages:
   - starter-architecture.md
+  - model-tiering.md
+  - three-layer-model.md
+  - hitl-gates.md

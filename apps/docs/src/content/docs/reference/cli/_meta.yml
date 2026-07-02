@@ -1,2 +1,5 @@
 label: "CLI"
-pages: []
+pages:
+  - index.md
+  - inspect-issues.md
+  - inspect-tasks.md

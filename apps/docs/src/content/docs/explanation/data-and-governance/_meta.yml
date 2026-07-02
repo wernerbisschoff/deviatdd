@@ -1,2 +1,5 @@
 label: "Data & Governance"
-pages: []
+pages:
+- append-only-ledgers.md
+- sha-anchored-verification.md
+- tamper-guard.md

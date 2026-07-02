@@ -1,2 +1,3 @@
 label: "Slash Commands"
-pages: []
+pages:
+  - index.md

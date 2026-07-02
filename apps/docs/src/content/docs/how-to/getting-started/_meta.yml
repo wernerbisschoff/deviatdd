@@ -1,3 +1,6 @@
 label: "Getting Started"
 pages:
+  - init.md
+  - constitution.md
   - starter-first-task.md
+  - setup.md

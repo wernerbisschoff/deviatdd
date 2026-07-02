@@ -7,7 +7,7 @@ last_verified_at: 2026-07-01
 verified_sha: ce05af8
 related_issues: []
 prev: config/starter-config.md
-next: null
+next: false
 ---
 
 `.deviate/config.toml` is the per-workspace configuration file scaffolded by `deviate setup` (alias of `deviate init`). Its schema is declared in `src/deviate/state/config.py` as the `DeviateConfig` Pydantic model with `extra = "forbid"` — any unknown key fails validation at load time.

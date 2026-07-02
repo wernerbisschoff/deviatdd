@@ -1,2 +1,5 @@
 label: "Tome Subsystem"
-pages: []
+pages:
+- tome-list.md
+- report-schema.md
+- tome-write.md

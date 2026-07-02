@@ -1,2 +1,4 @@
 label: "State & Ledger"
-pages: []
+pages:
+  - issues-jsonl.md
+  - tasks-jsonl.md

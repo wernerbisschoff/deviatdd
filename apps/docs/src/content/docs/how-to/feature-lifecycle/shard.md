@@ -6,8 +6,8 @@ status: draft
 last_verified_at: 2026-07-01
 verified_sha: d47f88c
 related_issues: []
-prev: null
-next: null
+prev: false
+next: false
 ---
 
 This how-to covers the macro-layer `/deviate-shard` phase: decomposing a completed PRD into self-contained vertical-slice issues and registering each as `BACKLOG` in the append-only ledger. Run it after `/deviate-prd` has committed `prd.md` and HITL Gate 1 is clear.

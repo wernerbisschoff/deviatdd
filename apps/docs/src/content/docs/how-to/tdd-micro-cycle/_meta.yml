@@ -1,2 +1,7 @@
 label: "TDD Micro-Cycle"
-pages: []
+pages:
+  - red
+  - green
+  - yellow
+  - judge
+  - refactor
