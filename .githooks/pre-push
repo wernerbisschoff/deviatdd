@@ -35,4 +35,14 @@ fi
 
 uv run ruff check "${changed[@]}"
 uv run ruff format --check "${changed[@]}"
-mise run test-affected
+
+# testmon forceselect requires a warm .testmondata from a prior full-suite
+# run. Without it, testmon selects zero tests and passes silently — defeating
+# the purpose of the pre-push gate. Fall back to the full suite when the
+# data file is missing or empty.
+if [ -s .testmondata ]; then
+  mise run test-affected
+else
+  echo "pre-push: .testmondata missing or empty — running full suite"
+  mise run test
+fi
