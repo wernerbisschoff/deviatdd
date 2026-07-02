@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Tome subsystem from `main`: the seven `/tome-*` slash commands (`tome-classify`, `tome-setup`, `tome-verify-docs`, `tome-write-tutorial`, `tome-write-how-to`, `tome-write-reference`, `tome-write-explanation`) and their agent-mirror copies under `.claude/commands/`, `.factory/commands/`, `.pi/prompts/`; the pure-Tome specs (`specs/_product/architecture.md`, `domain-model.md`, `release-next.md`, `flows/flows-tome.md`), exploration notes (`specs/explore/tome-subsystem.md`), the `011-tome-subsystem-v1` issue file and plan dir; the FLOW-04..FLOW-10 entries in `_product/flows/index.md`; the `_ensure_root_gitignore` Tome patterns; the Feature issue template Tome checkbox; the `_TOME_LAYER_SKILLS` test trio in `tests/test_cli/test_init.py`; the Tome fixture path in `tests/test_micro/test_judge.py`; and the Tome illustrative examples in `deviate-review` (canonical + 3 agent mirrors). Tome work continues on the `tome` branch.
+- YELLOW phase and Tamper Guard: removed the conditional YELLOW test-amendment phase, `TamperGuard`/`TamperContext`/`TamperVerdict` classes, `yellow_pre`/`yellow_post` commands, `deviate-yellow` skill, auto yellow prompt, `yellow_trigger` field from `HandoverManifest`, `yellow_triggered` from `SessionState`, and YELLOW/YELLOW_APPROVED/YELLOW_REJECTED from `TaskRecord.status`. JUDGE now handles scope verification — GREEN may only write to `src/` and permitted paths; modifications to `tests/`, `specs/`, or config files are flagged as scope violations.
 
 ### Added
 - `deviate setup` now installs slash commands to `.omp/commands/` (Oh-My-Pi),
@@ -141,8 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variants (`deviate-adhoc`, `deviate-explore`, `deviate-hotfix`,
   `deviate-plan`) and the meso `Deterministic Discovery` discipline now
   lead with codebase-index tools, with `grep` / `glob` / `Read` demoted
-  to a documented last-mile fallback when the MCP is unavailable. 10
-  prompt files affected.
+  to a documented last-mile fallback when the MCP is unavailable. 10 prompt files affected.
+- `/deviate-research` now dispatches two sequential subagent stages instead of three parallel ones. The former Alpha (architecture options) and Beta (data modeling) subagents are merged into a single **AlphaBeta** subagent that produces the architecture and data-model fragments in one coherent pass, with data modeling explicitly deriving from the recommended architecture (not from `explore.md` in isolation). The adversarial **Gamma** subagent now runs strictly AFTER AlphaBeta returns and consumes its full fragment output, fixing a latent bug where Gamma was instructed to read Alpha/Beta outputs that ran in parallel with it. Updated files: `src/deviate/prompts/commands/deviate-research.md` (subagent blueprint directory, `map_phase_sequential_fork` step, `reduce_phase` merge language, intro) and `src/deviate/prompts/auto/research.md` (`sequential_fork` step, intro). Command prompt version bumped 2.0.0 → 2.1.0.
 
 ## [2.0.0] - 2026-06-28
 

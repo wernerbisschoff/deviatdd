@@ -885,18 +885,6 @@ class TestFindTaskRecord:
                 "id": "TSK-005-07",
                 "issue_id": "ISS-002-005",
                 "description": "first",
-                "status": "YELLOW",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
-                "status": "YELLOW_APPROVED",
-            },
-            {
-                "id": "TSK-005-07",
-                "issue_id": "ISS-002-005",
-                "description": "first",
                 "status": "JUDGE",
             },
             {
@@ -1089,10 +1077,6 @@ class TestPhaseModelUnitResolution:
     ) -> None:
         """Phase not in models dict and default exists -> uses default."""
         assert resolve_model_for_phase("PLAN", config_default_only) == "fast/model"
-
-    def test_yellow_phase_reuses_green_model(self, config_with_models: Path) -> None:
-        """YELLOW has no explicit override -> falls back to default."""
-        assert resolve_model_for_phase("YELLOW", config_with_models) == "fast/model"
 
     def test_explore_phase_gets_default(self, config_with_models: Path) -> None:
         """EXPLORE phase not in dict -> uses default."""

@@ -330,66 +330,6 @@ class TestSessionResume:
 
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_run_resumes_from_yellow(self, mock_agent, mock_verify, tmp_git_repo: Path):
-        mock_agent.return_value = (self._RESUME_MANIFEST, "")
-        with chdir(tmp_git_repo):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="YELLOW")
-            session.save(dot_dir / "session.json")
-
-            task = _make_task_record(
-                task_id="TSK-005-07",
-                issue_id="ISS-002-005",
-                description="Resume from YELLOW",
-                status="PENDING",
-                execution_mode="TDD",
-            )
-            ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
-            _write_ledger(ledger_path, task)
-
-            result = runner.invoke(cli, ["run", "TSK-005-07"])
-
-            assert result.exit_code == 0, (
-                f"Expected exit 0, got {result.exit_code}: {result.output}"
-            )
-            assert "RED" not in result.output, (
-                f"Session resume from YELLOW must skip RED phase: {result.output}"
-            )
-            assert "YELLOW" in result.output, (
-                f"Expected YELLOW phase in output: {result.output}"
-            )
-
-    @patch("deviate.cli.micro._verify_clean_worktree")
-    @patch("deviate.cli.micro._invoke_agent")
-    def test_task_already_done_triggers_for_yellow_latest(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
-    ):
-        mock_agent.return_value = (self._RESUME_MANIFEST, "")
-        with chdir(tmp_git_repo):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="IDLE")
-            session.save(dot_dir / "session.json")
-
-            task = _make_task_record(
-                task_id="TSK-005-07",
-                issue_id="ISS-002-005",
-                description="Already done with YELLOW",
-                status="YELLOW",
-                execution_mode="TDD",
-            )
-            ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
-            _write_ledger(ledger_path, task)
-
-            result = runner.invoke(cli, ["run", "TSK-005-07"])
-            assert result.exit_code == 0, result.output
-            assert "TASK_ALREADY_DONE" in result.output, (
-                f"Expected TASK_ALREADY_DONE for YELLOW-latest task: {result.output}"
-            )
-
-    @patch("deviate.cli.micro._verify_clean_worktree")
-    @patch("deviate.cli.micro._invoke_agent")
     def test_task_already_done_triggers_for_judge_latest(
         self, mock_agent, mock_verify, tmp_git_repo: Path
     ):

@@ -35,7 +35,6 @@ _VALID_PHASES = frozenset(
         "TASKS",
         "RED",
         "GREEN",
-        "YELLOW",
         "JUDGE",
         "REFACTOR",
         "E2E",
@@ -196,7 +195,6 @@ class SessionState(BaseModel):
     current_phase: str = "IDLE"
     active_issue_id: Optional[str] = None
     last_command: str = ""
-    yellow_triggered: bool = False
     train_feedback: str = ""
     judge_rejected: bool = False
     red_commit_sha: str = ""
@@ -215,7 +213,6 @@ class SessionState(BaseModel):
             current_phase=phase,
             active_issue_id=self.active_issue_id,
             last_command=self.last_command,
-            yellow_triggered=self.yellow_triggered,
             red_commit_sha=self.red_commit_sha,
             timestamp=datetime.now(timezone.utc),
         )
@@ -225,7 +222,6 @@ class SessionState(BaseModel):
             current_phase=phase,
             active_issue_id=self.active_issue_id,
             last_command=self.last_command,
-            yellow_triggered=self.yellow_triggered,
             red_commit_sha=self.red_commit_sha,
             train_feedback=self.train_feedback,
             judge_rejected=self.judge_rejected,

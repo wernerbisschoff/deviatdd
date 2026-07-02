@@ -9,10 +9,10 @@ Version: 0.5.0
 - **Three-Layer Architecture**: Macro (feature scoping: Explore → Research → PRD → Shard+Specify), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Each layer has strict phase gates — no layer may be skipped.
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing.
 - **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
-- **Tamper Guard & Micro-Sandboxing**: GREEN phase resets test directories to post-RED commit state before evaluation. Micro-layer LLM execution (Aider) is strictly sandboxed: it is granted write access **only** to files matching `src/**/*.py`. All `tests/`, `specs/`, and configuration files are strictly read-only during Micro-layer execution. Any mutation outside this allow-list triggers an immediate rollback.
+- **Micro-Layer Scope**: GREEN phase writes only to `src/` and permitted implementation paths. Any mutation outside this allow-list is flagged by the JUDGE phase as a scope violation.
 - **Human-in-the-Loop (HITL)**: Three mandatory gates (Design Approval after research, Contract Sign-Off after shard, Final Merge Audit after micro) prevent autonomous drift. No gate may be programmatically bypassed.
 - **Session Continuity**: Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases. Model switching mid-task is prohibited.
-- **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, YELLOW, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`). This tiering is enforced via `.deviate/config.toml` `[models]` section — the `default` key sets the fallback model, and per-phase keys override it.
+- **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`). This tiering is enforced via `.deviate/config.toml` `[models]` section — the `default` key sets the fallback model, and per-phase keys override it.
 - **Config-Driven Model Routing**: Phase→model assignments are declared in `.deviate/config.toml` under `[models]`. The `default` key sets the model for all phases without an explicit entry. Any other key (e.g., `judge`, `plan`, `red`) is treated as a phase name. Resolution order: phase-specific key → `default` key → no model flag (backend-native default). Both `opencode` and `droid` backends support `--model`; `claude` backend ignores model config silently.
 
 ## 2. Tech Stack Standards
@@ -57,8 +57,7 @@ Version: 0.5.0
 
 ### Coverage
 - Coverage target: >= 80%
-- RED phase tests must fail with `AssertionError` or `NotImplementedError` — syntax crashes are rejected
-- GREEN phase must pass all tests; Tamper Guard resets unauthorized test edits
+- GREEN phase must pass all tests; JUDGE verifies GREEN only modified allowed files
 - REFACTOR phase runs regression gate: tests must re-pass after polish
 
 ## 4. Development Workflow

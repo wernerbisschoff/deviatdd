@@ -69,29 +69,14 @@ class TestHandoverManifestModel:
         assert (
             manifest.verification_command == "pytest tests/test_core/test_agent.py -v"
         )
-        assert manifest.yellow_trigger is None
-
-    def test_handover_manifest_yellow_trigger(self):
-        from deviate.core.agent import HandoverManifest
-
-        manifest = HandoverManifest(
-            phase="GREEN",
-            status="YELLOW_TRIGGERED",
-            yellow_trigger=True,
-            test_changes={"file": "test_x.py", "diff": "..."},
-            rationale="Need to adjust assertion",
-        )
-        assert manifest.yellow_trigger is True
-        assert manifest.test_changes == {"file": "test_x.py", "diff": "..."}
-        assert manifest.rationale == "Need to adjust assertion"
+        assert manifest.rationale is None
 
     def test_handover_manifest_minimal_fields(self):
         from deviate.core.agent import HandoverManifest
 
         manifest = HandoverManifest(phase="RED", status="TEST_WRITTEN_FAILING")
         assert manifest.test_file is None
-        assert manifest.verification_command is None
-        assert manifest.yellow_trigger is None
+        assert manifest.rationale is None
 
     def test_handover_manifest_allows_extra_fields(self):
         from deviate.core.agent import HandoverManifest
@@ -122,30 +107,6 @@ class TestAgentBackendInvocation:
         assert manifest.phase == "RED"
         assert manifest.status == "TEST_WRITTEN_FAILING"
         assert manifest.test_file == "tests/test_core/test_agent.py"
-
-    def test_agent_backend_parses_yellow_handover(self):
-        from deviate.core.agent import AgentBackend
-
-        yaml_output = (
-            "phase: GREEN\n"
-            "status: YELLOW_TRIGGERED\n"
-            "yellow_trigger: true\n"
-            "test_changes:\n"
-            "  file: test_agent.py\n"
-            '  diff: "@@ -1,5 +1,6 @@"\n'
-            "rationale: Need to widen assertion scope\n"
-        )
-        mock_proc = MagicMock(spec=subprocess.Popen)
-        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
-        mock_proc.returncode = 0
-
-        with patch("subprocess.Popen", return_value=mock_proc):
-            backend = AgentBackend()
-            manifest = backend.invoke("test prompt")
-
-        assert manifest.yellow_trigger is True
-        assert manifest.phase == "GREEN"
-        assert manifest.rationale == "Need to widen assertion scope"
 
     def test_agent_uses_opencode_command_default(self):
         from deviate.core.agent import AgentBackend

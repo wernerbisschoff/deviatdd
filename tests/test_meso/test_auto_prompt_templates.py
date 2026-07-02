@@ -89,7 +89,6 @@ class TestPromptComposition:
         "red": "<micro_layer_model>",
         "green": "<micro_layer_model>",
         "refactor": "<micro_layer_model>",
-        "yellow": "<micro_layer_model>",
         "judge": "<micro_layer_model>",
     }
 

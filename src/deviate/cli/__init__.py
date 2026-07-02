@@ -11,7 +11,7 @@ from rich.prompt import Prompt
 
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
-from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app
+from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
 from deviate.cli.meso import meso_app, plan, pr, specify, tasks
 from deviate.cli.micro import (
     e2e_app,
@@ -22,7 +22,6 @@ from deviate.cli.micro import (
     red_app,
     refactor_app,
     run_command,
-    yellow_app,
 )
 from deviate.cli.adhoc import adhoc_app
 from deviate.cli.constitution import constitution_app
@@ -755,26 +754,12 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         console.print(
             f"  [green]UPDATE[/] .gitignore added {len(missing)} agent entries"
         )
-    else:
-        gitignore_path.write_text("\n".join(entries) + "\n", encoding="utf-8")
-        console.print(
-            f"  [green]CREATE[/] .gitignore with {len(entries)} agent entries"
-        )
 
 
-cli.add_typer(explore_app, name="explore")
-cli.add_typer(research_app, name="research")
-cli.add_typer(prd_app, name="prd")
-cli.add_typer(shard_app, name="shard")
-cli.command(name="specify")(specify)
-cli.command(name="plan")(plan)
-cli.command(name="tasks")(tasks)
-cli.command(name="pr")(pr)
 cli.add_typer(meso_app, name="meso")
 cli.add_typer(macro_app, name="macro")
 cli.add_typer(red_app, name="red")
 cli.add_typer(green_app, name="green")
-cli.add_typer(yellow_app, name="yellow")
 cli.add_typer(judge_app, name="judge")
 cli.add_typer(refactor_app, name="refactor")
 cli.add_typer(execute_app, name="execute")
@@ -785,5 +770,9 @@ cli.add_typer(constitution_app, name="constitution")
 cli.add_typer(init_app, name="init")
 cli.add_typer(feature_app, name="feature")
 cli.add_typer(inspect_app, name="inspect")
+cli.command(name="specify")(specify)
+cli.command(name="plan")(plan)
 cli.add_typer(review_app, name="review")
+cli.command(name="tasks")(tasks)
+cli.command(name="pr")(pr)
 cli.command(name="run")(run_command)

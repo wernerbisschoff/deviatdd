@@ -391,21 +391,8 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Verifies a RED transition exists for the active issue. Runs `pytest -v`,
-  requires returncode 0. Evaluates `TamperGuard` in `GREEN_IMPLEMENTATION` context (resets
-  test/spec/config file edits). Appends GREEN transition to ledger, forces session to GREEN,
+  requires returncode 0. Appends GREEN transition to ledger, forces session to GREEN,
   commits with `feat({scope}): GREEN phase - implementation passes tests`.
-
-#### `deviate yellow pre [--task <id>]`
-
-* **Source:** `src/deviate/cli/micro.py`
-* **Description:** Detects phase changes via `git status --porcelain`, emits JSON contract
-  with `proposed_changes`, `rationale`, and `test_files`.
-
-#### `deviate yellow post --approved | --rejected`
-
-* **Source:** `src/deviate/cli/micro.py`
-* **Description:** If `--approved`, commits the amendments and forces session to GREEN. If
-  `--rejected`, restores all changes via `git restore .` and forces session back to GREEN.
 
 #### `deviate judge pre`
 
@@ -465,15 +452,12 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 * **Source:** `src/deviate/cli/micro.py` (`_run_single`, `_dispatch_task`)
 * **Description:** Triggers the automated execution cycle for a single task node. Routes by
-  `execution_mode` (TDD or non-TDD). TDD mode runs the RED -> GREEN -> [TamperGuard gate
-  → YELLOW?] → JUDGE -> REFACTOR cycle. YELLOW is a conditional branch (not a fixed phase
-  in `_PHASE_MAP`) triggered only when the GREEN phase sets `session.yellow_triggered = True`
-  (TamperGuard detected unauthorized test edits) or when `_run_tdd_cycle` is invoked with
-  `start_phase = "YELLOW"`. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`, which
+  `execution_mode` (TDD or non-TDD). TDD mode runs the RED -> GREEN -> JUDGE -> REFACTOR
+  cycle. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`, which
   commits the work, then optionally runs a JUDGE pass against `spec.md` and rolls back
   on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
-* **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the GREEN→JUDGE pair in a `while not judge_passed` loop with up to `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`, `_execute_rollback()` runs `git reset --hard <red_sha>` against the RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of the RED phase), the session is `force_transition_to("GREEN")`, and the previous attempt's feedback is injected as `<train_feedback>` into the next GREEN prompt via `_build_auto_prompt("green", ...) + "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts with `PhaseFailedError`. The feedback source precedence is `train_feedback` (preferred) → `violations` (structured list) → `rationale` → `summary` → fallback string. The YELLOW → GREEN (rejected) branch and the Green → Judge → Green loop are distinct mechanisms — the former only fires on TamperGuard detection, the latter on JUDGE_REJECTED.
-* **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE`, `YELLOW`, or
+* **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the GREEN→JUDGE pair in a `while not judge_passed` loop with up to `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`, `_execute_rollback()` runs `git reset --hard <red_sha>` against the RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of the RED phase), the session is `force_transition_to("GREEN")`, and the previous attempt's feedback is injected as `<train_feedback>` into the next GREEN prompt via `_build_auto_prompt("green", ...) + "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts with `PhaseFailedError`. The feedback source precedence is `train_feedback` (preferred) → `violations` (structured list) → `rationale` → `summary` → fallback string.
+* **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
   `REFACTOR` when invoked, the cycle resumes from that phase via the `start_phase`
   parameter. IDLE / RED trigger a fresh cycle from RED.
 * **Input Parameters:**
@@ -690,7 +674,7 @@ src/deviate/
 │   ├── _common.py            # Shared helpers (_halt, _extract_epic_num, with_json_quiet)
 │   ├── macro.py              # explore, research, prd, shard (pre/post), macro run
 │   ├── meso.py               # specify, tasks, pr (pre/post/run), meso run
-│   ├── micro.py              # red, green, yellow, judge, refactor, execute, e2e, hotfix, run
+│   ├── micro.py              # red, green, judge, refactor, execute, e2e, hotfix, run
 │   ├── adhoc.py              # adhoc pre/post (complexity gate, ad-hoc issues)
 │   ├── feature.py            # feature create (slug, branch, directory)
 │   └── inspect.py            # (planned) tasks list, issues list
@@ -706,7 +690,6 @@ src/deviate/
 │   ├── profile.py            # ExecutionProfile (full/fast/secure), resolve_profile()
 │   ├── repo.py               # find_repo_root, gather_git_state
 │   ├── skills.py             # detect_agents, discover_skills, install_skill
-│   ├── tamper.py             # TamperGuard, TamperContext, TamperVerdict
 │   ├── validation.py         # validate_artifact, validate_gherkin, YAML frontmatter
 │   ├── worktree.py           # create_worktree, remove_worktree, branch detection
 │   ├── cache_discipline.py   # (planned) CacheDiscipline — 4 validation rules
@@ -718,10 +701,10 @@ src/deviate/
 │   ├── constitution_seed.md  # Template with ${VARIABLE} placeholders
 │   ├── auto/                 # explore, research, prd, shard, specify, tasks, plan (planned)
 │   │   ├── explore.md, research.md, prd.md, shard.md, specify.md, tasks.md
-│   │   ├── red.md, green.md, yellow.md, judge.md, refactor.md
+│   │   ├── red.md, green.md, judge.md, refactor.md
 │   │   └── plan.md (planned)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 24 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage, yellow} (24)
+│   └── commands/             # 23 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage} (23)
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
     └── ledger.py             # IssueRecord, TaskRecord, append_issue_transition, append_task_transition
 ```
@@ -787,10 +770,9 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 - **Meso layer** (`/deviate-plan` -> `/deviate-tasks`): Single continuous LLM session per issue.
   The system prompt, tool definitions, issue content, and `constitution.md` form a stable
   prefix cached after turn 1.
-- **Micro layer** (RED -> GREEN -> [YELLOW?] -> JUDGE -> REFACTOR): Task execution reuses
+- **Micro layer** (RED -> GREEN -> JUDGE -> REFACTOR): Task execution reuses
   the same in-process state via `force_transition_to()`. The `deviate run <task-id>` command
-  dispatches through the full cycle programmatically. YELLOW is a conditional branch in the
-  cycle body between GREEN and JUDGE, not a `_PHASE_MAP` entry.
+  dispatches through the full cycle programmatically.
 
 ---
 
@@ -818,23 +800,10 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `id` | `str` | Unique ID (`TSK-NNN-NN` format, validated via regex) |
 | `issue_id` | `str` | Parent issue ID |
 | `description` | `str` | Task description |
-| `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED`, `YELLOW_APPROVED`, `YELLOW_REJECTED` |
+| `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED` |
 | `execution_mode` | Literal | `TDD`, `DIRECT`, `E2E` |
 | `created_at` | `datetime` | When the task was created |
 
-> **Note:** `JUDGE` is a first-class status in `TaskRecord.status`. `YELLOW` is a
-> conditional branch phase that does not map to a `TaskRecord.status` literal — it exists
-> only as a session phase and is gated by the TamperGuard in the TDD cycle body. The
-> YELLOW verdict is recorded in the ledger as `YELLOW_APPROVED` (amendments accepted,
-> cycle proceeds to JUDGE) or `YELLOW_REJECTED` (amendments reverted via `git restore .`,
-> cycle loops back to GREEN). The YELLOW → GREEN branch is distinct from the
-> **Green → Judge → Green loop**, which fires on `JUDGE_REJECTED`: `_execute_rollback()`
-> runs `git reset --hard <red_sha>` to reset to the verified-good RED boundary, the
-> session is `force_transition_to("GREEN")`, and the next GREEN attempt runs with
-> `<train_feedback>` injected. Up to `max_train_attempts = 3` retries; exhaustion
-> raises `PhaseFailedError` and marks the task `FAILED`. The `_SKILL_NAMES` dict maps
-> `"YELLOW"` to `"deviate-yellow"` and `"JUDGE"` to `"deviate-judge"` for agent skill
-> resolution.
 
 #### Append-Only Ledger Protocol
 
@@ -858,7 +827,6 @@ The architecture defines a model routing strategy in `specs/constitution.md` see
 |---|---|---|---|---|---|
 | RED | V4 Flash (or V4 Pro for complex) | Same task session | Stable prefix: system prompt + test files + repo map |
 | GREEN | V4 Flash | Same task session | Cache hit on prefix from RED turn (~98% discount) |
-| YELLOW | V4 Pro | Isolated session | No cache sharing — compliance requires fresh context |
 | JUDGE | V4 Pro | Isolated session | No cache sharing — breaks recursive subjectivity |
 | REFACTOR | V4 Flash | Same task session | Cache hit on prefix from GREEN turn |
 | `/deviate-explore` | V4 Flash | Single invocation | One-shot |

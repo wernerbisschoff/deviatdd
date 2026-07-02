@@ -26,7 +26,6 @@ from deviate.core.agent import (
 )
 from deviate.core.profile import resolve_profile
 from deviate.core.run_logger import RunLogger, get_run_logger, set_run_logger
-from deviate.core.tamper import TamperContext, TamperGuard, TamperVerdict
 from deviate.core.treesitter import (
     detect_duplicate_blocks,
     estimate_cyclomatic_complexity,
@@ -117,7 +116,6 @@ def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
 # Typer apps for manual phase commands
 red_app = typer.Typer(no_args_is_help=True)
 green_app = typer.Typer(no_args_is_help=True)
-yellow_app = typer.Typer(no_args_is_help=True)
 judge_app = typer.Typer(no_args_is_help=True)
 refactor_app = typer.Typer(no_args_is_help=True)
 execute_app = typer.Typer(no_args_is_help=True)
@@ -129,7 +127,6 @@ _LEDGER_GLOB = "specs/**/tasks.jsonl"
 _SKILL_NAMES: dict[str, str | None] = {
     "RED": "deviate-red",
     "GREEN": "deviate-green",
-    "YELLOW": "deviate-yellow",
     "JUDGE": "deviate-judge",
     "REFACTOR": "deviate-refactor",
     "EXECUTE": "deviate-execute",
@@ -431,10 +428,6 @@ def _invoke_agent(
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
         return None, ""
-
-
-_YELLOW_DECISION_REJECTED = "rejected"
-_YELLOW_DECISION_APPROVED = "approved"
 
 
 _TIMEOUT_SUMMARY_PROMPT = """\
@@ -917,8 +910,6 @@ def _run_red_phase(
         raise PhaseFailedError(
             f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
         )
-    if manifest.yellow_trigger:
-        c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
 
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
@@ -1010,9 +1001,6 @@ def _run_green_phase(
         )
 
     session = session.force_transition_to("GREEN")
-    if manifest and manifest.yellow_trigger:
-        c.print(f"  [yellow]YELLOW_TRIGGERED[/] {tid}")
-        session.yellow_triggered = True
     session.train_feedback = ""
     session.judge_rejected = False
     session.save(session_path)
@@ -1057,9 +1045,7 @@ def _run_green_phase(
             capture_output=True,
             env=_git_env(),
         )
-        session = session.force_transition_to("RED")
         session.train_feedback = str(e)
-        session.yellow_triggered = False
         session.save(session_path)
         return session
     return session
@@ -1470,7 +1456,6 @@ def _run_judge_phase(
         session = session.force_transition_to("GREEN")
         session.train_feedback = feedback
         session.judge_rejected = True
-        session.yellow_triggered = False
         session.save(session_path)
         return session
 
@@ -1554,70 +1539,10 @@ def _run_refactor_phase(
     _commit_phase(f"refactor({scope}): REFACTOR phase - cleanup", root)
 
     session = session.force_transition_to("IDLE")
-    session.yellow_triggered = False
     session.save(session_path)
     _verify_clean_worktree(root, "REFACTOR", tid)
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
     return session
-
-
-def _run_yellow_phase(
-    task: dict,
-    ledger_path: Path,
-    session: SessionState,
-    session_path: Path,
-    c: Console,
-    agent: str | None = None,
-    monitor: OrchestrationMonitor | None = None,
-) -> tuple[SessionState, str]:
-    tid = task.get("id", "?")
-    _log_run("PHASE_START", task_id=tid, phase="YELLOW")
-    c.print(f"  [bold magenta]YELLOW →[/] {_task_label(task)}")
-
-    backend = agent or "opencode"
-    root = Path.cwd()
-    prompt = _build_auto_prompt("yellow", task, root)
-    agent_output_callback = _make_agent_output_callback(monitor, tid, "YELLOW")
-    yellow_model = resolve_model_for_phase("YELLOW", root)
-    manifest, _ = _invoke_agent(
-        prompt,
-        c,
-        backend_name=backend,
-        task_id=tid,
-        phase="YELLOW",
-        output_callback=agent_output_callback,
-        model=yellow_model,
-    )
-    if manifest is None:
-        raise PhaseFailedError(
-            f"YELLOW phase agent error for {tid}: agent returned no manifest"
-        )
-    verdict = getattr(manifest, "verdict", "")
-    if verdict.upper() == "REJECTED":
-        c.print(f"  [yellow]YELLOW_REJECTED[/] {tid}: {manifest.rationale or ''}")
-        _log_run(
-            "PHASE_DECISION",
-            task_id=tid,
-            phase="YELLOW",
-            decision="rejected",
-            reroute="GREEN",
-        )
-        subprocess.run(
-            ["git", "restore", "."],
-            cwd=Path.cwd(),
-            env=_git_env(),
-            check=False,
-        )
-        c.print("  [dim]Reverted test changes, re-running GREEN[/]")
-        _append_status_transition(task, "YELLOW_REJECTED", ledger_path)
-        return session, _YELLOW_DECISION_REJECTED
-
-    _log_run("PHASE_DECISION", task_id=tid, phase="YELLOW", decision="approved")
-    session = session.force_transition_to("YELLOW")
-    session.yellow_triggered = False
-    session.save(session_path)
-    _append_status_transition(task, "YELLOW_APPROVED", ledger_path)
-    return session, _YELLOW_DECISION_APPROVED
 
 
 _PHASE_MAP: dict[str, Callable] = {
@@ -1657,7 +1582,6 @@ def _finish_tdd_cycle(
         _append_status_transition(task, "COMPLETED", ledger_path)
         c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
         session = session.force_transition_to("IDLE")
-        session.yellow_triggered = False
         session.train_feedback = ""
         session.judge_rejected = False
         session.save(session_path)
@@ -1703,40 +1627,6 @@ def _run_tdd_cycle(
         )
         return
 
-    if start_phase == "YELLOW":
-        _maybe_push_event(
-            monitor,
-            "phase_change",
-            task_id=tid,
-            phase="YELLOW",
-            description=task_desc,
-        )
-        session, _ = _run_yellow_phase(
-            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
-        )
-        _maybe_push_event(
-            monitor,
-            "phase_change",
-            task_id=tid,
-            phase="JUDGE",
-            description=task_desc,
-        )
-        session = _run_judge_phase(
-            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
-        )
-
-        session = _finish_tdd_cycle(
-            task,
-            ledger_path,
-            session,
-            session_path,
-            c,
-            no_refactor,
-            monitor=monitor,
-            agent=agent,
-        )
-        return
-
     _maybe_push_event(
         monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
     )
@@ -1754,43 +1644,6 @@ def _run_tdd_cycle(
         session = _run_green_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-
-        if session.yellow_triggered:
-            _maybe_push_event(
-                monitor,
-                "phase_change",
-                task_id=tid,
-                phase="YELLOW",
-                description=task_desc,
-            )
-            session, decision = _run_yellow_phase(
-                task,
-                ledger_path,
-                session,
-                session_path,
-                c,
-                agent=agent,
-                monitor=monitor,
-            )
-            if decision == _YELLOW_DECISION_REJECTED:
-                c.print("  [yellow]Re-running GREEN after YELLOW[/]")
-
-                _maybe_push_event(
-                    monitor,
-                    "phase_change",
-                    task_id=tid,
-                    phase="GREEN",
-                    description=task_desc,
-                )
-                session = _run_green_phase(
-                    task,
-                    ledger_path,
-                    session,
-                    session_path,
-                    c,
-                    agent=agent,
-                    monitor=monitor,
-                )
 
         green_tests_failed = bool(
             session.train_feedback and session.current_phase == "GREEN"
@@ -2652,26 +2505,6 @@ def green_post() -> None:
 
     task_uuid = red_task[0].get("id", "")
 
-    tamper_verdict = TamperGuard.evaluate(
-        context=TamperContext.GREEN_IMPLEMENTATION, repo_path=root
-    )
-
-    if tamper_verdict == TamperVerdict.TAMPER_DETECTED:
-        console.print("[yellow]TAMPER_DETECTED[/]")
-        console.print("[yellow]YELLOW_TRIGGERED[/]")
-        # Transition to YELLOW and append YELLOW to ledger,
-        # bypassing the normal GREEN commit flow.
-        try:
-            record = TaskRecord.model_validate(red_task[0])
-            record.status = "YELLOW"
-            append_task_transition(record, red_task[1])
-        except Exception as e:
-            console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
-            raise typer.Exit(code=1)
-        session = session.force_transition_to("YELLOW")
-        session.save(session_path)
-        raise typer.Exit(code=0)
-
     # Append GREEN transition for this specific task
     try:
         record = TaskRecord.model_validate(red_task[0])
@@ -2741,80 +2574,6 @@ def _detect_phase_changes(root: Path) -> list[str]:
         else:
             expanded.append(f)
     return expanded
-
-
-@yellow_app.command(name="pre")
-def yellow_pre(
-    task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
-) -> None:
-    root = Path.cwd()
-    _resolve_task_context(task, root)
-
-    if not _load_skill_content("YELLOW"):
-        console.print("[yellow]SKILL_NOT_FOUND[/] deviate-yellow")
-
-    changed = _detect_phase_changes(root)
-    test_files = [str(f) for f in _find_test_files(root)]
-
-    contract = {
-        "proposed_changes": changed,
-        "rationale": "YELLOW phase - review proposed test amendments",
-        "test_files": test_files,
-    }
-    print(json.dumps(contract, ensure_ascii=False))
-    raise typer.Exit(code=0)
-
-
-@yellow_app.command(name="post")
-def yellow_post(
-    approved: bool = typer.Option(False, "--approved", help="Approve amendments"),
-    rejected: bool = typer.Option(False, "--rejected", help="Reject amendments"),
-) -> None:
-    if approved and rejected:
-        console.print(
-            "[red]MUTUALLY_EXCLUSIVE[/] --approved and --rejected cannot both be set"
-        )
-        raise typer.Exit(code=1)
-
-    root = Path.cwd()
-
-    if not _load_skill_content("YELLOW"):
-        console.print("[yellow]SKILL_NOT_FOUND[/] deviate-yellow")
-
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
-    session = SessionState.load(session_path)
-
-    changed = _detect_phase_changes(root)
-
-    if not changed:
-        console.print("NO_CHANGES_PROPOSED")
-        raise typer.Exit(code=0)
-
-    # Find latest YELLOW or GREEN task across all ledger files
-    latest_task: tuple[dict, Path] | None = None
-    for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
-        for rec in _read_ledger_records(ledger_file):
-            if rec.get("status") in ("GREEN", "YELLOW"):
-                latest_task = (rec, ledger_file)
-
-    if approved:
-        _commit_phase("feat: YELLOW phase - approved amendments", root)
-        if latest_task is not None:
-            _append_status_transition(latest_task[0], "YELLOW_APPROVED", latest_task[1])
-        session = session.force_transition_to("JUDGE")
-        session.save(session_path)
-        console.print("[green]YELLOW_POST_OK[/]")
-
-    if rejected:
-        subprocess.run(["git", "restore", "."], cwd=root, env=_git_env(), check=False)
-        if latest_task is not None:
-            _append_status_transition(latest_task[0], "YELLOW_REJECTED", latest_task[1])
-        session = session.force_transition_to("GREEN")
-        session.save(session_path)
-        console.print("[yellow]YELLOW_REVERTED[/]")
-
-    raise typer.Exit(code=0)
 
 
 # ---------------------------------------------------------------------------
@@ -3097,7 +2856,6 @@ def refactor_post() -> None:
         raise typer.Exit(code=1)
 
     session = session.force_transition_to("IDLE")
-    session.yellow_triggered = False
     session.save(session_path)
 
     scope = _build_scope(issue_id, task_uuid)
@@ -3143,7 +2901,6 @@ def refactor_post() -> None:
         console.print(f"  [bold green]COMPLETED[/] {task_uuid}")
 
         session = session.force_transition_to("IDLE")
-        session.yellow_triggered = False
         session.save(session_path)
     else:
         console.print("[yellow]NOTHING_CHANGED[/]")
