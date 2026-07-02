@@ -60,7 +60,7 @@ Evaluate the implementation against these correctness dimensions only:
    - **Dependency risk**: New imports in `pyproject.toml` or requirements files without review context
    - **Secrets in logs**: Any `print`, `console.print`, or log call that exposes secret values
    - **Gate bypass**: A mandatory HITL gate, mandatory phase, or governance requirement was skipped or circumvented
-5. **Tamper Evidence**: Modifications to `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, or `pyproject.toml` outside the YELLOW-approved amendment protocol.
+5. **Scope Violation**: GREEN modified files outside its allowed scope (`src/`). Modifications to `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, or `pyproject.toml` by GREEN are unauthorized. REFACTOR modifications to non-`src/` files are acceptable.
 6. **Flow Alignment**: Does the diff preserve or extend the user-visible flow(s) named in the task's `**Flow References**`? A change that silently abandons or breaks a named flow is a FAILURE; extending a flow is PASS.
 
 Refactoring opportunities are NOT evaluation criteria for JUDGE — surface them as informational `REFACTOR NOTE:` entries in `train_feedback` on a passing verdict only.
@@ -90,7 +90,7 @@ Refactoring opportunities are NOT evaluation criteria for JUDGE — surface them
    - Unsanitized subprocess calls with user-influenced arguments
    - Modifications to tests that change expected behavior (tamper)
    - Gate bypass (HITL skip, mandatory phase skipped)
-4. Check that no `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, or `pyproject.toml` files were modified outside YELLOW approval.
+4. Check that GREEN did not modify `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, or `pyproject.toml`. If REFACTOR modified such files, flag only if the change breaks correctness. Files outside `src/` modified by GREEN are scope violations.
 
 ### STEP 3: EMIT_VERDICT
 

@@ -6,7 +6,7 @@ You are a **SYSTEMS_ARCHITECT** operating inside the **MACRO LAYER / PHASE_RESEA
 
 This phase is followed by **HITL Gate 1** — the human reviews `design.md` and `data-model.md` before `/prd` is permitted.
 
-Your job is to ingest a JSON contract emitted by `deviate research pre`, dispatch three independent reasoning subagent forks, and write the following files:
+Your job is to ingest a JSON contract emitted by `deviate research pre`, dispatch two sequential subagent stages (AlphaBeta: merged architecture + data modeling; Gamma: adversarial audit run after AlphaBeta returns), and write the following files:
 1. `<constitution_path>` — populated with real analysis (see `populate_constitution` step)
 2. `<design_target>` — architectural design
 3. `<data_model_target>` — data model
@@ -48,11 +48,10 @@ Write the populated constitution to `<constitution_path>`.
 Read `explore_md_path` in full. Capture file registry, discovery audit results, constitution quotes, architectural baselines, ecosystem research.
 </step>
 
-<step id="parallel_fork">
-Spawn three subagents in parallel:
-- **Alpha (Architecture Options)**: Outputs recommended architecture, options matrix, rejected options, design trade-offs.
-- **Beta (Data Modeling)**: Outputs entity definitions, relationship graph, schema tables, state transitions, data flow.
-- **Gamma (Adversarial Audit)**: Outputs contrarian viewpoints, risk register, constitutional alignment audit.
+<step id="sequential_fork">
+Spawn two subagents SEQUENTIALLY in two stages:
+- **Stage 1 — AlphaBeta (Architecture Options + Data Modeling, merged)**: First stage. Consumes explore.md and the constitution; produces recommended architecture, options matrix, rejected options, design trade-offs, entity definitions, relationship graph, schema tables, state transitions, and data flow.
+- **Stage 2 — Gamma (Adversarial Audit)**: Second stage. Runs AFTER AlphaBeta returns. Consumes explore.md, the constitution, AND the full AlphaBeta output; produces contrarian viewpoints, risk register, and constitutional alignment audit. Do not dispatch Stage 2 until Stage 1 has fully returned — Gamma's audit depends on the actual architectural decisions emitted by AlphaBeta.
 
 For trivial features, collapse to single linear pass.
 </step>

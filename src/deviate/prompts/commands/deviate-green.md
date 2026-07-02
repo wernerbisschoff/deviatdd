@@ -62,7 +62,6 @@ files:
   - path: "tests/auth/test_jwt.py"
     action: "unchanged"
 status: "PASS"
-yellow_trigger: false
 verification_command: "pytest tests/auth/test_jwt.py"
 next_phase: "/deviate-refactor"
 ```
@@ -136,9 +135,6 @@ If the post-command returns a non-zero exit code or output contains `COMMIT_FAIL
 ```bash
 deviate green post
 ```
-
-If `deviate green post` still fails after 3 attempts (tests persistently fail or hook issues cannot be resolved), do NOT emit a PASS handover manifest. Instead, emit a YELLOW_TRIGGER manifest (see handover_emission step) with `yellow_trigger: true`, a rationale explaining why tests cannot pass, and `test_changes` describing what test modifications may be needed.
-
 Do NOT proceed to a PASS handover manifest until the post-command completes successfully (exit code 0, output contains `GREEN_POST_OK`).
 </step>
 
@@ -167,23 +163,9 @@ files:
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
 status: "PASS"
-yellow_trigger: false
 verification_command: "{VERIFICATION_COMMAND}"
 next_phase: "/deviate-refactor"
-```
 
-If tests persistently fail and `deviate green post` cannot commit after 3 attempts, emit this instead:
-
-```yaml
-phase: "GREEN"
-task_id: "{TASK_ID}"
-status: "FAIL"
-yellow_trigger: true
-test_changes:
-  "{TEST_FILE_PATH}": "{DESCRIPTION_OF_NEEDED_CHANGE}"
-rationale: "{WHY_TESTS_CANNOT_PASS_WITH_CURRENT_IMPLEMENTATION_APPROACH}"
-next_phase: "/deviate-yellow"
-```
 </step>
 
 </execution_sequence>
@@ -206,10 +188,8 @@ files:
   - path: "path/to/test_file.ext"
     action: "modified|unchanged"
 status: "PASS"
-yellow_trigger: false
 verification_command: "{VERIFICATION_COMMAND}"
 next_phase: "/deviate-refactor"
-```
 
 
 </output_format_schemas>
@@ -223,10 +203,8 @@ next_phase: "/deviate-refactor"
 | Tests fail after implementation | Fix implementation iteratively until all tests pass |
 | Tests involve git operations | Ensure test isolation via `create_temp_dir` + `git init` — run tests in temp dir, not the project repo |
 | Lint fails | Fix lint issues, re-run tests and lint until both pass |
-| Contract drift detected | Halt and report API signature conflict with `spec.md` or `data-model.md` |
 | Test file not found | Read RED handover manifest for test file path; if missing, search for test files matching the task_id |
-| Post-script returns non-zero exit code or COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post`. After 3 failed attempts, emit YELLOW_TRIGGER manifest (see handover_emission) |
-| Tests persistently fail after 3 implementation attempts | Do NOT emit PASS. Emit `yellow_trigger: true` manifest with `rationale` and `test_changes`. The orchestrator will route to YELLOW phase for isolated amendment review |
+| Post-script returns non-zero exit code or COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
 
 </edge_case_handling>

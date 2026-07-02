@@ -39,7 +39,7 @@ teardown() {
 }
 
 @test "every documented micro-layer subcommand is on PATH" {
-    for cmd in red green yellow judge refactor execute; do
+    for cmd in red green judge refactor execute; do
         run deviate "$cmd" --help
         [ "$status" -eq 0 ] || { echo "deviate $cmd --help failed"; false; }
     done

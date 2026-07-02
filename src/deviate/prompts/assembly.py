@@ -25,7 +25,6 @@ _LAYER_MAP: dict[str, str | None] = {
     "red": "micro-auto",
     "green": "micro-auto",
     "refactor": "micro-auto",
-    "yellow": "micro-auto",
     "judge": "micro-auto",
     "execute": "micro-auto",
 }

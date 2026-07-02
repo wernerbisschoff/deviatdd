@@ -47,7 +47,7 @@ User-visible changes MUST append a bullet to `CHANGELOG.md` under `[Unreleased]`
 |-------|--------|-----------------|
 | **Macro** | explore → research → prd → shard | spec-enriched issue files |
 | **Meso** | (HITL Gate 2) → plan → tasks → review | `plan.md`, `tasks.md` |
-| **Micro** | red → green → yellow? → judge → refactor | passing test + ledger entry |
+| **Micro** | red → green → judge → refactor | passing test + ledger entry |
 
 ### HITL Gates (no programmatic bypass)
 
@@ -60,7 +60,7 @@ User-visible changes MUST append a bullet to `CHANGELOG.md` under `[Unreleased]`
 | Tier | Phases |
 |------|--------|
 | V4 Flash (low-cost) | explore, red, green, refactor |
-| V4 Pro (cached/compliance) | plan, tasks, yellow, judge |
+| V4 Pro (cached/compliance) | plan, tasks, judge |
 | Qwen 3.7+ [Thinking] | research, prd, shard, adhoc |
 
 Per-phase overrides: `.deviate/config.toml` → `[models]` → `default` + phase keys. Resolution: `src/deviate/state/config.py::resolve_phase_model`.
@@ -73,9 +73,6 @@ Per-phase overrides: `.deviate/config.toml` → `[models]` → `default` + phase
 
 Every task loop runs on a clean branch/worktree. Commits happen at phase boundaries. **Never delete a branch unless the user explicitly requests it.**
 
-### Tamper Guard & Micro-Sandboxing
-
-GREEN resets `tests/` to post-RED state before evaluation. Micro-layer agents write **only** to `src/**/*.py`; mutations elsewhere trigger an immediate rollback.
 
 ### Session Continuity
 

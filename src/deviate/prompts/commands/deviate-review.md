@@ -93,7 +93,7 @@ Evaluate ALL seven domains in a single pass:
 - Do all task transitions lead to a clean COMPLETED terminal state?
 - Any orphaned lines with no corresponding implementation?
 - HITL gate bypasses (Gates 1, 2, or 3 skipped)
-- Violations of the Git Isolation Principle, Tamper Guard, or session continuity rules
+- Violations of the Git Isolation Principle or session continuity rules
 - Model tiering violations (V4 Flash for high-frequency phases, V4 Pro for compliance)
 
 ### 6. PRD Alignment

@@ -25,8 +25,6 @@ class HandoverManifest(BaseModel):
     test_file: str | None = None
     verification_command: str | None = None
     expected_failure_node: str | None = None
-    yellow_trigger: bool | None = None
-    test_changes: dict[str, Any] | None = None
     rationale: str | None = None
     next_phase: str | None = None
 
