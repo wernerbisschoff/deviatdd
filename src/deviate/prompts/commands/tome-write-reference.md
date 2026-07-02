@@ -281,8 +281,8 @@ last_verified_at: YYYY-MM-DD
 verified_sha: abc1234
 related_issues:
   - ISS-XXX
-prev: <path | null>
-next: <path | null>
+prev: <path | false>
+next: <path | false>
 ---
 
 (Body opens with a one-sentence purpose statement. NO `#` H1 heading — Starlight renders the frontmatter `title` as the page H1.)
