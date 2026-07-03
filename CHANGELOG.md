@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- `deviate setup` now ensures a symlink relationship between `CLAUDE.md` and
+  `AGENTS.md` via `_linkify_governance_files`. If neither file exists, an empty
+  `CLAUDE.md` is created and `AGENTS.md` is symlinked to it. If exactly one
+  exists, the other is symlinked to it. If both exist as regular files, they are
+  left unchanged. Governance seed writes (libref, graphite) now target only the
+  canonical file to avoid double-writing through symlinks. The `deviate init pre`
+  command uses the same shared helper.
 
 ## [2.2.0] - 2026-07-02
 

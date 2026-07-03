@@ -25,9 +25,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   the `.deviate/` directory (containing `config.toml`, `session.json`, `.gitignore`, and an
   empty `artifacts/` workspace), detects the project type (`python`, `node`, `rust`, `go`,
   `elixir_phoenix`, or `unknown`) and writes a `specs/constitution.md` populated with
-  project-specific test/lint/format/setup/dev commands, applies the `## DeviaTDD
-  Orchestration Rules` and `## Libref Usage` governance blocks to `CLAUDE.md` and
-  and installs the DeviaTDD prompt commands (currently
+  project-specific test/lint/format/setup/dev commands, ensures a symlink
+  relationship between `CLAUDE.md` and `AGENTS.md` (via
+  `_linkify_governance_files`), applies governance blocks to the canonical
+  file, and installs the DeviaTDD prompt commands (currently
   24 flat `.md` files: 24 `deviate-*`) into **all five** supported agent
   directories — `.claude/commands/`, `.opencode/commands/`,
   `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/` — in a single invocation, regardless of which agent was passed
@@ -108,6 +109,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     ``src/deviate/prompts/commands/deviate-*.md`` (three directories
     deep) and break ``deviate setup`` in this repo itself.
   * `specs/constitution.md` — Resolved boilerplate constitution
+  * `AGENTS.md` — Symlink to `CLAUDE.md` (or vice-versa if only `AGENTS.md`
+    existed pre-setup). Created by `_linkify_governance_files`; idempotent.
   * `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
     `.pi/prompts/` — DeviaTDD prompt commands installed for every
     supported agent (24 flat `.md` files total, split across the four
