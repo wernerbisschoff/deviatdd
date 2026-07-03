@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 
 from deviate.core.commit import commit_artifact
+from deviate.core.convention import format_commit_message
 from deviate.core.constitution import (
     extract_commands,
     validate_constitution,
@@ -103,5 +104,10 @@ def post(
     if missing:
         _fail_with(f"Missing sections: {', '.join(missing)}")
 
-    commit_artifact(path=const_path, message="Update constitution")
+    commit_artifact(
+        path=const_path,
+        message=format_commit_message(
+            "chore(constitution): update constitution", Path.cwd()
+        ),
+    )
     print(json.dumps({"status": "SUCCESS"}))

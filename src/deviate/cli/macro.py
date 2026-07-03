@@ -22,6 +22,7 @@ from deviate.cli._common import (
 from deviate.core._shared import git_env as _git_env
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact, stage_and_commit
+from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.cli.feature import _derive_slug
 from deviate.core.epic import (
@@ -269,7 +270,9 @@ def explore_post(
     _run_pre_commit_hooks()
 
     sha = commit_artifact(
-        explore_path, f"docs(explore): scan {explore_path.stem}", repo=Path.cwd()
+        explore_path,
+        format_commit_message(f"docs(explore): scan {explore_path.stem}", Path.cwd()),
+        repo=Path.cwd(),
     )
     if sha is None:
         console.print(f"[yellow]COMMIT_SKIP[/] {explore_path} — no changes to stage")
@@ -407,7 +410,10 @@ def research_post(
     _run_pre_commit_hooks()
 
     epic_num = _extract_epic_num(epic_slug)
-    message = f"docs({epic_num}): add research artifacts (design.md, data-model.md)"
+    message = format_commit_message(
+        f"docs({epic_num}): add research artifacts (design.md, data-model.md)",
+        Path.cwd(),
+    )
     sha = stage_and_commit(message=message, files=artifacts, repo=Path.cwd())
     if sha is None:
         console.print("[yellow]COMMIT_SKIP[/] research artifacts — no changes to stage")
@@ -555,7 +561,9 @@ def prd_post(
     try:
         epic_num = _extract_epic_num(epic_slug)
         sha = commit_artifact(
-            prd_path, f"docs({epic_num}): create prd.md", repo=Path.cwd()
+            prd_path,
+            format_commit_message(f"docs({epic_num}): create prd.md", Path.cwd()),
+            repo=Path.cwd(),
         )
         if sha is None:
             console.print("[yellow]COMMIT_SKIP[/] prd.md — no changes to stage")
@@ -709,7 +717,9 @@ def shard_post(
     if (Path.cwd() / ".git").exists():
         epic_num = _extract_epic_num(epic_slug)
         sha = stage_and_commit(
-            message=f"docs({epic_num}): shard issue files and ledger",
+            message=format_commit_message(
+                f"docs({epic_num}): shard issue files and ledger", Path.cwd()
+            ),
             files=artifacts,
             repo=Path.cwd(),
         )
