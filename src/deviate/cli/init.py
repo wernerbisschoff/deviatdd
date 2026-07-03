@@ -390,8 +390,10 @@ def pre() -> None:
         has_constitution = True
         artifacts_created.append("specs/constitution.md")
 
-    if has_claude_md and not (repo_root / "AGENTS.md").exists():
-        (repo_root / "AGENTS.md").symlink_to("CLAUDE.md")
+    from deviate.cli import _linkify_governance_files
+
+    _linkify_governance_files(repo_root)
+    if (repo_root / "AGENTS.md").is_symlink():
         artifacts_created.append("AGENTS.md")
 
     # Provision union-merge rules for append-only JSONL ledgers.

@@ -458,35 +458,80 @@ def _scaffold_dotfiles(
     _write_if_missing(session_path, session.model_dump_json(indent=2))
 
 
+def _linkify_governance_files(workdir: Path) -> None:
+    """Ensure CLAUDE.md ↔ AGENTS.md symlink relationship.
+
+    If neither file exists, create an empty CLAUDE.md and symlink
+    AGENTS.md → CLAUDE.md.  If exactly one exists, symlink the other
+    to it.  If both exist (as regular files), leave them alone.
+    Idempotent — an existing symlink is never replaced.
+    """
+    claude = workdir / "CLAUDE.md"
+    agents = workdir / "AGENTS.md"
+    claude_exists = claude.exists() or claude.is_symlink()
+    agents_exists = agents.exists() or agents.is_symlink()
+
+    if claude_exists and agents_exists:
+        return
+
+    if not claude_exists and not agents_exists:
+        claude.write_text("", encoding="utf-8")
+        agents.symlink_to("CLAUDE.md")
+        console.print("  [green]CREATE[/] CLAUDE.md")
+        console.print("  [green]LINK[/]  AGENTS.md -> CLAUDE.md")
+        return
+
+    if claude_exists and not agents_exists:
+        agents.symlink_to("CLAUDE.md")
+        console.print("  [green]LINK[/]  AGENTS.md -> CLAUDE.md")
+        return
+
+    # agents_exists and not claude_exists
+    claude.symlink_to("AGENTS.md")
+    console.print("  [green]LINK[/]  CLAUDE.md -> AGENTS.md")
+
+
 def _apply_governance(workdir: Path, graphite: bool = False) -> None:
     # NOTE: claudemd_seed.md and agents_seed.md are intentionally empty — the
     # former ``## 🛠 DeviaTDD Phase Architecture`` block was project-internal
     # guidance that did not help consuming projects. An empty seed (read
     # successfully but with no content) is skipped silently so the remaining
     # blocks below still run. A missing seed is treated as a packaging error.
+
+    # Ensure CLAUDE.md ↔ AGENTS.md symlink before any seed writes.
+    # After linking, determine which paths are canonical (not symlinks)
+    # so upserts only write to the real file — never double-write through
+    # a symlink to the same target.
+    _linkify_governance_files(workdir)
+
     claude_path = workdir / "CLAUDE.md"
+    agents_path = workdir / "AGENTS.md"
+    targets: list[Path] = [p for p in (claude_path, agents_path) if not p.is_symlink()]
+
     claude_content = _read_seed(_GOVERNANCE_MODULE, "claudemd_seed.md")
     if claude_content is None:
         return
     if "## " in claude_content:
-        _upsert_governance_block(claude_path, claude_content)
+        for t in targets:
+            _upsert_governance_block(t, claude_content)
 
-    agents_path = workdir / "AGENTS.md"
     agents_content = _read_seed(_GOVERNANCE_MODULE, "agents_seed.md")
     if agents_content is None:
         return
     if "## " in agents_content:
-        _upsert_governance_block(agents_path, agents_content)
+        for t in targets:
+            _upsert_governance_block(t, agents_content)
+
     libref_content = _read_seed(_GOVERNANCE_MODULE, "libref_seed.md")
     if libref_content:
-        _upsert_governance_block(claude_path, libref_content)
-        _upsert_governance_block(agents_path, libref_content)
+        for t in targets:
+            _upsert_governance_block(t, libref_content)
 
     if graphite:
         content = _read_seed(_GOVERNANCE_MODULE, "graphite_seed.md")
         if content:
-            _upsert_governance_block(claude_path, content)
-            _upsert_governance_block(agents_path, content)
+            for t in targets:
+                _upsert_governance_block(t, content)
 
 
 _CONSTITUTION_SEED_MODULE = "deviate.prompts"

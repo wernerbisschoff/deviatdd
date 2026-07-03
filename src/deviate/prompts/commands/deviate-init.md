@@ -50,7 +50,7 @@ You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAY
 2. A `specs/` directory containing:
    - `specs/constitution.md` — project governance document
    - `specs/issues.jsonl` — append-only issue ledger (empty, or with initial entry)
-3. Optionally link `AGENTS.md` -> `CLAUDE.md`
+3. Symlink `AGENTS.md` ↔ `CLAUDE.md` (via `_linkify_governance_files`)
 
 **CRITICAL: Zero-Test-Pass Invariant**
 The `mise test` task MUST exit 0 when no tests are written yet. This is essential for DeviaTDD's Micro Layer to execute — the RED phase writes failing tests, then GREEN phase passes them. If `mise test` fails on a green-field project, the entire workflow blocks.
@@ -94,7 +94,7 @@ Verify the pre-script created the expected artifacts:
 - `specs/` directory
 - `specs/constitution.md` (or note if it already existed)
 - `specs/issues.jsonl` (or note if it already existed)
-- `AGENTS.md` symlink to `CLAUDE.md` (if applicable)
+- `AGENTS.md` symlink to `CLAUDE.md` (or vice-versa)
 </step>
 
 <step id="post_script">
@@ -145,8 +145,9 @@ The post-script:
 - Purpose: Append-only issue ledger
 - Initial state: Empty file (header ready for issues)
 
-### AGENTS.md -> CLAUDE.md
-- Symlink created if CLAUDE.md exists
+### AGENTS.md ↔ CLAUDE.md
+- Symlink created by `_linkify_governance_files` (always, not optional)
+- Direction: AGENTS.md → CLAUDE.md (canonical) unless only AGENTS.md existed
 - Purpose: Agent governance compatibility
 
 </output_format_schemas>
