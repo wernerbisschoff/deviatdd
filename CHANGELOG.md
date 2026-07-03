@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emoji usage from CONTRIBUTING.md (or `.commit-convention.md`) and falls back
   to sampling recent git history. When detected, the appropriate emoji is
   prepended to the conventional-commit message (e.g. `📚 docs(epic): create prd.md`).
+- `/deviate-prd` now explicitly forbids intermediate `git add`/`git commit` between
+  `prd_generation` and `post_script`; the post-script is the sole commit authority.
+  The `IMPORTANT` note in the `post_script` step also corrected: pre-commit hooks run
+  ruff only, not the test suite — timeout guidance updated from 180s to 60s.
 
 ## [2.2.0] - 2026-07-02
 

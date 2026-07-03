@@ -196,11 +196,13 @@ Write an execution manifest JSON to `plan_target` (absolute path from the contra
 </step>
 
 <step id="post_script">
+CRITICAL INVARIANT: Do NOT run `git add` or `git commit` at any point before this step. The post-script is the sole commit authority; intervening commits will produce duplicate commits.
+
 Run the post-script to validate the PRD, stage files, and commit:
 ```bash
 deviate prd post "$PLAN_TARGET"
 ```
-**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
+**IMPORTANT**: The post-script runs pre-commit hooks (ruff lint + format only). Allocate a timeout of at least 60s when running this command.
 
 The post-script:
 1. Reads the manifest from `$PLAN_TARGET`
