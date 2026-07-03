@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left unchanged. Governance seed writes (libref, graphite) now target only the
   canonical file to avoid double-writing through symlinks. The `deviate init pre`
   command uses the same shared helper.
+- Commit messages from `deviate` phase commands (`explore post`, `research post`,
+  `prd post`, `shard post`, `plan post`, `tasks post`, `constitution post`) now
+  respect the project's emoji convention. A new `convention.py` module detects
+  emoji usage from CONTRIBUTING.md (or `.commit-convention.md`) and falls back
+  to sampling recent git history. When detected, the appropriate emoji is
+  prepended to the conventional-commit message (e.g. `📚 docs(epic): create prd.md`).
 
 ## [2.2.0] - 2026-07-02
 

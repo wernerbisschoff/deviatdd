@@ -101,7 +101,8 @@ judgment rather than persisting report files.
   worktree, claims the issue, force-transitions the session to `PLAN`, and syncs
   `.deviate/` into the new worktree; inside a linked worktree it emits a `plan_pre`
   JSON contract for the agent. The `post` subcommand validates `plan.md` is non-empty
-  and commits it as `docs({epic}-{issue}): create plan.md`, then transitions the
+  and commits it with a convention-aware message (emoji-prefixed when the project's
+  CONTRIBUTING.md or git history indicates emoji usage), then transitions the
   session to `TASKS`. Addresses the problem that epic-level explore/research artifacts
   become stale by the time later issues are worked on.
 * **Tasks (`deviate tasks pre` / `deviate tasks post`):** Decomposes the spec-enriched issue

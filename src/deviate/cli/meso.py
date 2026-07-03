@@ -23,6 +23,7 @@ from deviate.cli._common import (
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
+from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
@@ -833,7 +834,9 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
     try:
         sha = commit_artifact(
             plan_md,
-            f"docs({epic_num}-{issue_num}): create plan.md",
+            format_commit_message(
+                f"docs({epic_num}-{issue_num}): create plan.md", Path.cwd()
+            ),
             repo=Path.cwd(),
             no_verify=True,
         )
@@ -1018,7 +1021,9 @@ def _tasks_post(
     try:
         sha = commit_artifact(
             tasks_md,
-            f"docs({epic_num}-{issue_num}): create tasks.md",
+            format_commit_message(
+                f"docs({epic_num}-{issue_num}): create tasks.md", Path.cwd()
+            ),
             repo=Path.cwd(),
             no_verify=True,
         )

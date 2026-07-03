@@ -134,7 +134,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     `sections` array and an optional `constitution_path` (default
     `specs/constitution.md`), validates that each named section is present via
     `validate_sections()`, then commits the constitution file via `commit_artifact()`
-    with the message `Update constitution`. Emits `{"status": "SUCCESS"}` on success.
+    with a convention-aware message (`🔧 chore(constitution): update constitution` when
+    emoji conventions are detected, otherwise `chore(constitution): update constitution`).
+    Emits `{"status": "SUCCESS"}` on success.
 * **Common Flags:** None (each sub-command exposes its own options).
 
 ### 1.5 Product Layer *(optional, sits above Macro)*
@@ -321,9 +323,9 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Source:** `src/deviate/cli/meso.py` (`_plan_post`)
 * **Description:** Resolves the active issue from the session (or `--issue-id` override),
   reads `specs/{epic}/{issue}/plan.md`, validates that the file exists and is non-empty
-  (unless `--force`), commits via `commit_artifact()` with the message
-  `docs({epic}-{issue}): create plan.md`, and `transition_to("TASKS")`. Skips the commit
-  silently when there are no changes to stage.
+  (unless `--force`), commits via `commit_artifact()` with a convention-aware message
+  (`📚 docs({epic}-{issue}): create plan.md` when emoji conventions are detected),
+  and `transition_to("TASKS")`. Skips the commit silently when there are no changes to stage.
 
 #### `deviate tasks pre [--force] [--dry-run]`
 
@@ -684,6 +686,7 @@ src/deviate/
 ├── core/
 │   ├── agent.py              # AgentBackend, HandoverManifest, BACKEND_COMMANDS
 │   ├── commit.py             # stage_and_commit, commit_artifact
+│   ├── convention.py         # detect_uses_emojis, format_commit_message, TYPE_EMOJI_MAP
 │   ├── complexity.py         # ComplexityGate.classify() — adhoc task complexity
 │   ├── constitution.py       # resolve_constitution, extract_commands, validate
 │   ├── contract.py           # emit_contract, load_contract
