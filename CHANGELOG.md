@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emoji usage from CONTRIBUTING.md (or `.commit-convention.md`) and falls back
   to sampling recent git history. When detected, the appropriate emoji is
   prepended to the conventional-commit message (e.g. `📚 docs(epic): create prd.md`).
+- `deviate specify` claim commit now respects the project's emoji convention
+  via `format_commit_message()`, matching the behavior of all other phase
+  commits (e.g. `🔧 chore(001-001): claim ISS-001` when emoji prefixes are
+  detected).
 - `/deviate-prd` now explicitly forbids intermediate `git add`/`git commit` between
   `prd_generation` and `post_script`; the post-script is the sole commit authority.
   The `IMPORTANT` note in the `post_script` step also corrected: pre-commit hooks run

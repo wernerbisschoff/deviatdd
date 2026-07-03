@@ -562,13 +562,19 @@ def _try_claim_issue(
                 )
                 epic_num = _extract_epic_num(epic_slug)
                 issue_num = _extract_issue_num(resolved_id)
+                commit_msg = format_commit_message(
+                    f"chore({epic_num}-{issue_num}): claim {resolved_id}",
+                    Path(worktree_path),
+                )
+                # --no-verify: claim only touches specs/issues.jsonl (not .py),
+                # so hooks are no-ops; bypass avoids worktree hook config issues.
                 subprocess.run(
                     [
                         "git",
                         "commit",
                         "--no-verify",
                         "-m",
-                        f"chore({epic_num}-{issue_num}): claim {resolved_id}",
+                        commit_msg,
                     ],
                     cwd=worktree_path,
                     env=_git_env(),
@@ -579,6 +585,8 @@ def _try_claim_issue(
                 console.print("[yellow]COMMIT_CLAIM_SKIP[/] could not commit claim")
 
             try:
+                # --no-verify: pre-push hook checks only .py files; claim push
+                # has none, so bypass avoids unnecessary hook execution in worktree.
                 subprocess.run(
                     ["git", "push", "--no-verify", "-u", remote, branch],
                     cwd=worktree_path,
