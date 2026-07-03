@@ -56,7 +56,7 @@ Pass 4 (Verification Mapping): [Verify that each AC maps to an explicit end-to-e
 ### Summary Topology Table
 | Index | Local Issue File | PRD Requirements Tokens | Demonstration Path Blueprint | Blocked By | Coordinates With |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 000 | `000-[kebab-slug].md` | FR-NNN-01, FR-NNN-02, ..., AC-NNN-01-01, ... | [Verification Script Path] | [] | [] |
+| 001 | `001-[kebab-slug].md` | FR-NNN-01, FR-NNN-02, ..., AC-NNN-01-01, ... | [Verification Script Path] | [] | [] |
 
 
 
