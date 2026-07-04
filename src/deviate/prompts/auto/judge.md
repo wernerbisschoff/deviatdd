@@ -39,6 +39,8 @@ REFACTOR owns structural improvements. You MUST NOT flag refactoring opportuniti
 
 If you observe a refactoring opportunity, surface it as an **informational note** in `train_feedback` on a COMPLIANCE_PASS verdict. The orchestrator logs it for the operator; REFACTOR may pick it up. Never emit COMPLIANCE_VIOLATION for a refactoring opportunity.
 
+**CRITICAL — `train_feedback` on a COMPLIANCE_VIOLATION verdict is the next GREEN's only memory of its prior attempt. It gets injected directly into GREEN's prompt and appended to `tasks.md`. Do NOT put `REFACTOR NOTE:` content in rejection feedback — the prefix tells GREEN to defer to REFACTOR, which defeats the training purpose. On COMPLIANCE_VIOLATION, see the Format Requirements in STEP_3 below.**
+
 </system_instructions>
 
 <task_content>
@@ -111,6 +113,14 @@ Then run these hard checks:
 
 Default to COMPLIANCE_PASS. Emit `COMPLIANCE_VIOLATION` only when one of the seven Categories of Violations above is genuinely present.
 
+**Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST:
+1. **State what GREEN did wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
+2. **Tell the next GREEN what to do instead** — concrete, actionable steps starting with "The next GREEN attempt must:"
+3. **Be instruction, not observation** — GREEN must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
+4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
+
+Do NOT write operator-directed observations in `train_feedback` (e.g. "Observational note for the operator: ..."). Those belong in `summary`.
+
 ```yaml
 phase: JUDGE
 status: "PASS"
@@ -125,10 +135,13 @@ violations:
     severity: "CRITICAL" | "HIGH" | "MEDIUM"
     recommendation: "How to resolve the violation (specific files, specific changes)"
 train_feedback: |
-  Optional: informational refactoring observation for REFACTOR.
-  On COMPLIANCE_PASS: log-only breadcrumb (REFACTOR may read).
-  On COMPLIANCE_VIOLATION: same precedence as the failure contract below.
-evaluation:
+  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next GREEN.
+  MUST state what went wrong AND what to do ("The next GREEN
+  attempt must:" steps). NEVER "REFACTOR NOTE:" or operator
+  observations here — those go in summary.
+
+  COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
+  observations for the REFACTOR phase.
   spec_compliance: "PASS" | "FAIL"
   functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
@@ -144,7 +157,7 @@ diff_summary:
 
 **On COMPLIANCE_PASS with an observed refactoring opportunity**: populate `train_feedback` with a short note prefixed `REFACTOR NOTE:` (e.g., `REFACTOR NOTE: consider splitting src/x.py into helper + entry; not blocking`). The orchestrator logs it as `JUDGE_REFACTOR_NOTE`.
 
-**On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below; `train_feedback` is optional but allowed.
+**On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below. If you also populate `train_feedback`, it MUST be specific actionable instructions for the next GREEN attempt (state what went wrong and what to do) — NEVER `REFACTOR NOTE:` content (that tells GREEN to defer, defeating training). Refactoring concerns alongside a correctness gap belong in `summary`, not `train_feedback`.
 
 </execution_sequence>
 
@@ -166,8 +179,13 @@ violations:
     severity: "..."
     recommendation: "..."
 train_feedback: |
-  Optional: informational refactoring observation for REFACTOR.
-  On COMPLIANCE_VIOLATION: same precedence as below.
+  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next GREEN.
+  MUST state what went wrong AND what to do ("The next GREEN
+  attempt must:" steps). NEVER "REFACTOR NOTE:" or operator
+  observations here — those go in summary.
+
+  COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
+  observations for the REFACTOR phase.
 evaluation:
   spec_compliance: "PASS" | "FAIL"
   functional_invariance: "PASS" | "FAIL"
@@ -196,7 +214,7 @@ diff_summary:
 | `--no-judge` flag | Skipped by orchestrator |
 | `<test_feedback>` present with failures | Evaluate whether GREEN implementation caused the failures; if so, COMPLIANCE_VIOLATION with category "Spec Non-Compliance" or "Test Integrity Violation" and test-failure detail |
 | Empty `**Flow References**` in task | Treat task as enabling / infrastructure; set `flow_alignment: SKIP`; do not penalize |
-| Refactoring opportunity observed | COMPLIANCE_PASS; populate `train_feedback` with `REFACTOR NOTE:` prefix |
+| Refactoring opportunity observed | COMPLIANCE_PASS **only** (never COMPLIANCE_VIOLATION). Populate `train_feedback` with `REFACTOR NOTE:` prefix. On COMPLIANCE_VIOLATION, put refactoring observations in `summary`, not `train_feedback`. |
 | "Should split into N modules" / "code smell" / "naming preference" / "could be cleaner" | COMPLIANCE_PASS — these are REFACTOR concerns, never blocking |
 
 </edge_case_handling>
