@@ -1502,3 +1502,60 @@ class TestTddCycleIntegration:
 
 def Console() -> MagicMock:  # noqa: N802
     return MagicMock()
+
+
+class TestCommitPhaseConventionFormatting:
+    """Verify _commit_phase applies format_commit_message before git commit."""
+
+    def test_commit_phase_prepends_emoji_when_repo_uses_emojis(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """When the repo has emoji commits, _commit_phase formats the message."""
+        from deviate.cli.micro import _commit_phase
+
+        # Seed git history with an emoji commit so detect_uses_emojis returns True
+        seed = tmp_git_repo / "seed.txt"
+        seed.write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "add", "seed.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        # Create a new file so _commit_phase has something to commit
+        new_file = tmp_git_repo / "impl.py"
+        new_file.write_text("x = 1\n", encoding="utf-8")
+
+        result = _commit_phase("feat(T001): add implementation", tmp_git_repo)
+
+        assert result is True
+        log = subprocess.run(
+            ["git", "log", "-1", "--pretty=format:%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert log.stdout == "✨ feat(T001): add implementation"
+
+    def test_commit_phase_leaves_plain_message_when_no_emoji_convention(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """When the repo has no emoji commits, _commit_phase passes message as-is."""
+        from deviate.cli.micro import _commit_phase
+
+        new_file = tmp_git_repo / "impl.py"
+        new_file.write_text("x = 1\n", encoding="utf-8")
+
+        result = _commit_phase("feat(T001): add implementation", tmp_git_repo)
+
+        assert result is True
+        log = subprocess.run(
+            ["git", "log", "-1", "--pretty=format:%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert log.stdout == "feat(T001): add implementation"

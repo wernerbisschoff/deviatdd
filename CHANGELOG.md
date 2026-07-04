@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via `format_commit_message()`, matching the behavior of all other phase
   commits (e.g. `🔧 chore(001-001): claim ISS-001` when emoji prefixes are
   detected).
+- Micro-layer commit messages (`deviate red post`, `deviate green post`,
+  `deviate refactor post`, `deviate execute post`, `deviate e2e post`,
+  `deviate hotfix post`, and judge feedback commits) now respect the project's
+  emoji convention via `format_commit_message()` in `_commit_phase()`, matching
+  the behavior already present in macro and meso layer commits.
 - `/deviate-prd` now explicitly forbids intermediate `git add`/`git commit` between
   `prd_generation` and `post_script`; the post-script is the sole commit authority.
   The `IMPORTANT` note in the `post_script` step also corrected: pre-commit hooks run

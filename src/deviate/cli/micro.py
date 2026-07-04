@@ -24,6 +24,7 @@ from deviate.core.agent import (
     HandoverManifest,
     MalformedHandoverManifestError,
 )
+from deviate.core.convention import format_commit_message
 from deviate.core.profile import resolve_profile
 from deviate.core.run_logger import RunLogger, get_run_logger, set_run_logger
 from deviate.core.treesitter import (
@@ -1427,12 +1428,15 @@ def _run_judge_phase(
                     capture_output=True,
                     env=_git_env(),
                 )
+                judge_msg = format_commit_message(
+                    f"docs({tid}): add judge feedback for GREEN retry", root
+                )
                 subprocess.run(
                     [
                         "git",
                         "commit",
                         "-m",
-                        f"docs({tid}): add judge feedback for GREEN retry",
+                        judge_msg,
                     ],
                     cwd=root,
                     capture_output=True,
@@ -2234,6 +2238,7 @@ def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
     has_untracked = bool(untracked.stdout.strip())
     if staged.returncode != 0 or unstaged.returncode != 0 or has_untracked:
         subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
+        message = format_commit_message(message, root)
         cmd = ["git", "commit", "-m", message]
         if no_verify:
             cmd.append("--no-verify")

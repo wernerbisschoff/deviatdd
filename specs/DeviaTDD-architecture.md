@@ -588,6 +588,9 @@ Micro-layer tasks dispatched via `deviate run <task-id>` reuse the same in-proce
 through `SessionState.force_transition_to()`. Each phase is a synchronous function call
 within the same process — there is no subprocess or LLM session restart between phases.
 The `_commit_phase()` function handles automatic git commits between phase transitions.
+All commit messages are routed through `format_commit_message()` from `src/deviate/core/convention.py`,
+which detects the project's emoji convention (via CONTRIBUTING.md or git history) and prepends
+the appropriate gitmoji when applicable (e.g. `✨ feat(TSK-001-01): add implementation`).
 
 ### 9.3 In-Process Dispatch
 

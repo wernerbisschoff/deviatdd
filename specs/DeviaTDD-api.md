@@ -385,6 +385,8 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Description:** Runs `pytest -v` on all test files. Validates the test fails explicitly
   (ASSERTION_FAILURE, not PASS or SYNTAX_ERROR). Appends RED status transition to task
   ledger, forces session to RED, commits with `test({scope}): RED phase - failing test`.
+  Commit messages are convention-aware: when the project uses emoji prefixes (detected via
+  CONTRIBUTING.md or git history), the appropriate emoji is prepended automatically.
 
 #### `deviate green pre [--task <id>]`
 
