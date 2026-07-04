@@ -1,6 +1,6 @@
 ---
 name: deviate-architecture
-description: Author the cross-epic architecture contract — produce specs/_product/architecture.md and domain-model.md (requires flows to exist first).
+description: Author the cross-epic architecture contract — produce specs/_product/architecture.md (with ADRs) and domain-model.md (requires flows to exist first).
 category: deviatdd-product-layer
 version: 1.0.0
 aliases:
@@ -57,6 +57,18 @@ CRITICAL INVARIANTS:
 8. **Flow Traceability**: Every component in `architecture.md` lists the
    `FLOW-NN` IDs it participates in via an inline reference. Downstream
    `deviate shard` derives `flow_refs:` from this mapping.
+9. **Architectural Decision Records (ADRs)**: When a decision meets ALL
+   three criteria, append a one-paragraph ADR entry to the
+   `## Architectural Decision Records` section of `architecture.md`:
+   (a) **Hard to reverse** — changing later is expensive,
+   (b) **Surprising without context** — a future reader will wonder
+   "why did they do it this way?",
+   (c) **Real tradeoff** — genuine alternatives existed and one was
+   chosen for specific reasons. If any criterion is missing, skip the
+   ADR. Format: `### <Short title>` followed by 1–3 sentences naming
+   the context, the decision, and the rationale. No sections, no
+   templates — the value is in recording *that* a decision was made
+   and *why*.
 
 </system_instructions>
 
@@ -69,11 +81,24 @@ Scan `specs/_product/flows/`. Refuse if no flow file exists; recommend
 ## 2. Read Flow Catalog
 Load every `flows*.md` file under `specs/_product/flows/` and
 `specs/_product/flows/index.md` to build the canonical flow inventory.
-
 ## 3. Discovery Conversation
 Ask the user to describe the new architectural surface or modification. For
 greenfield architectures, prompt for: components, integration contracts, data
 ownership, and the flow IDs each component serves.
+
+**Discovery discipline** (adapted from the "grill with docs" pattern):
+- Ask ONE question at a time. For each question, provide your recommended
+  answer. Wait for the human's response before asking the next.
+- Walk the decision tree dependency-first: resolve components before
+  integration contracts, contracts before data ownership.
+- If a question can be answered by reading the codebase, existing flows,
+  or `domain-model.md`, do that instead of asking.
+- **Term-challenging** (at most once per turn): if the user's term
+  conflicts with an existing definition in `domain-model.md` or
+  `architecture.md`, call it out immediately — "Your domain model
+  defines X as Y, but you seem to mean Z — which is it?" If the user
+  uses a vague term ("account", "thing", "service"), propose a canonical
+  name. Do not loop on challenges — surface once, then move on.
 
 ## 4. Classify the Change
 Apply the Local / Context-Bridging / Context-Creating classification
@@ -82,8 +107,10 @@ diff for traceability.
 
 ## 5. Write or Update architecture.md
 Author `specs/_product/architecture.md`. Use the existing file if present;
-otherwise create it with the schema enumerated in invariant 3.
-
+otherwise create it with the schema enumerated in invariant 3. Include a
+`## Architectural Decision Records` section (invariant 9) — append ADR
+entries for any decisions that meet the three-criteria gate during this
+session. If no qualifying decisions were made, omit the section entirely.
 ## 6. Update domain-model.md
 Mirror entity and relationship changes in `specs/_product/domain-model.md`.
 Create the file if absent.

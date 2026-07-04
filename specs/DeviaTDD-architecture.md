@@ -15,7 +15,7 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
                                  ▼
 [ PRODUCT LAYER: Framing ] /deviate-architecture /deviate-release
                           (FLOW-02 cross-epic contract)   (FLOW-03 next release)
-                          → specs/_product/architecture.md → specs/_product/release-next.md
+                          → specs/_product/architecture.md (includes ADRs) → specs/_product/release-next.md
                                  │
                                  ▼  (downstream shard/adhoc read flow_refs: from issue frontmatter)
                           ┌──────────────┐
