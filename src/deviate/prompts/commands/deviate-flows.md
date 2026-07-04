@@ -98,6 +98,14 @@ CRITICAL INVARIANTS:
 
 Read `<user_input>` first; if empty, parse conversational history.
 
+**Discovery discipline** (adapted from the "grill with docs" pattern):
+- Ask ONE question at a time. For each question, provide your recommended
+  answer. Wait for the human's response before asking the next.
+- Walk the dependency tree: resolve Actor before Domain, Domain before
+  Trigger, Trigger before Happy Path.
+- If a question can be answered by reading the codebase or existing flow
+  files, do that instead of asking.
+
 Ask targeted questions to clarify:
 - Actor (Developer / End-User / Operator / External System)
 - Domain (Software Engineering / DevOps / Customer Support / etc.)
