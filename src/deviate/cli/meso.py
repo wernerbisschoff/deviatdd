@@ -1698,3 +1698,131 @@ def pr(
     else:
         console.print(f"[red]UNKNOWN_ACTION[/] '{action}'. Use 'pre' or 'run'")
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# Merge — mark issue COMPLETED after external merge (e.g. squash-merge skill)
+# ---------------------------------------------------------------------------
+
+
+def _merge_run(
+    issue_id: str | None = None,
+    delete_branch: bool = False,
+    delete_worktree: bool = False,
+) -> None:
+    """Mark an issue COMPLETED in the ledger with a full IssueRecord.
+
+    Intended for use after an external merge (e.g. the /squash-merge skill)
+    that does not write DeviaTDD-compatible ledger entries.  Unlike the bare
+    ``{issue_id, status, timestamp}`` format, this writes a full record that
+    ``resolve_issue_record`` can always validate.
+    """
+    session, session_path = _load_session_accept("TASKS", "IDLE", force=True)
+    if issue_id is None:
+        issue_id = session.active_issue_id
+    if not issue_id:
+        console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
+        raise typer.Exit(code=1)
+
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    record = resolve_issue_record(issue_id, ledger_path)
+    if record is None:
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
+        raise typer.Exit(code=1)
+
+    if record.status == "COMPLETED":
+        console.print(f"[yellow]ALREADY_COMPLETED[/] {issue_id}")
+    else:
+        completed = record.model_copy(
+            update={
+                "status": "COMPLETED",
+                "timestamp": datetime.now(timezone.utc),
+            }
+        )
+        appended = append_issue_transition(completed, ledger_path)
+        if appended:
+            console.print(f"[green]COMPLETED[/] {issue_id} → COMPLETED")
+        else:
+            console.print(
+                f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
+            )
+
+        # Commit the ledger change
+        repo_root = Path.cwd()
+        try:
+            subprocess.run(
+                ["git", "add", str(ledger_path)],
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"chore({issue_id}): mark COMPLETED in ledger",
+                ],
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            console.print("[green]LEDGER_COMMITTED[/]")
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            if "nothing to commit" in stderr:
+                console.print("[yellow]LEDGER_UNCHANGED[/]")
+            else:
+                console.print(f"[yellow]COMMIT_WARN[/] {stderr}")
+
+    # Optional cleanup
+    if delete_worktree:
+        worktree_path = Path.cwd()
+        if _is_linked_worktree(worktree_path):
+            remove_worktree(worktree_path)
+            console.print(f"[green]WORKTREE_REMOVED[/] {worktree_path}")
+        else:
+            console.print("[yellow]SKIP_WORKTREE[/] not in a linked worktree")
+
+    if delete_branch:
+        branch_name = (
+            f"feat/{_resolve_bucket_dir(record.source_file)}"
+            f"/{_source_stem(record.source_file)}"
+        )
+        try:
+            subprocess.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=Path.cwd(),
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            console.print(f"[green]BRANCH_DELETED[/] {branch_name}")
+        except subprocess.CalledProcessError:
+            console.print(f"[yellow]BRANCH_SKIP[/] {branch_name} not found locally")
+
+    session.active_issue_id = None
+    session.current_phase = "IDLE"
+    _save_session(session, session_path, "IDLE")
+
+
+def merge(
+    issue: str | None = typer.Option(
+        None, "--issue", help="Issue ID to mark completed"
+    ),
+    delete_branch: bool = typer.Option(
+        False, "--delete-branch", help="Delete the feature branch"
+    ),
+    delete_worktree: bool = typer.Option(
+        False, "--delete-worktree", help="Remove the worktree"
+    ),
+) -> None:
+    """Mark an issue COMPLETED after an external merge (e.g. squash-merge)."""
+    _merge_run(
+        issue_id=issue, delete_branch=delete_branch, delete_worktree=delete_worktree
+    )
