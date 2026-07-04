@@ -180,14 +180,40 @@ def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
 
 
 def resolve_issue_record(issue_id: str, ledger_path: Path) -> IssueRecord | None:
+    """Resolve the latest *valid* record for *issue_id*.
+
+    Tolerates sparse transitions (e.g. bare ``{issue_id, status, timestamp}``
+    written by external tools like squash-merge) by merging them with the last
+    fully-resolved record.  This prevents status-only updates from being
+    silently dropped by Pydantic validation.
+    """
     records = _read_ledger(ledger_path)
+    base: IssueRecord | None = None
     for data in reversed(records):
-        if data.get("issue_id") == issue_id:
-            try:
-                return IssueRecord.model_validate(data)
-            except PydanticValidationError:
-                continue
-    return None
+        if data.get("issue_id") != issue_id:
+            continue
+        try:
+            candidate = IssueRecord.model_validate(data)
+            if base is None:
+                base = candidate
+            return candidate
+        except PydanticValidationError:
+            # Sparse transition — resolve base on first need.
+            if base is None:
+                for prev in reversed(records):
+                    if prev.get("issue_id") == issue_id and prev is not data:
+                        try:
+                            base = IssueRecord.model_validate(prev)
+                            break
+                        except PydanticValidationError:
+                            continue
+            if base is not None:
+                merged = {**base.model_dump(), **data}
+                try:
+                    return IssueRecord.model_validate(merged)
+                except PydanticValidationError:
+                    continue
+    return base
 
 
 def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:

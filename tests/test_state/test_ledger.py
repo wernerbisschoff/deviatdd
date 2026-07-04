@@ -300,6 +300,72 @@ class TestResolveIssueRecord:
         result = resolve_issue_record("nonexistent-id", ledger_path)
         assert result is None
 
+    def test_sparse_transition_merged_with_full_record(self, tmp_path: Path):
+        """Bare COMPLETED transition (missing type/title/source_file) should
+        be merged with the last full record, not silently dropped."""
+        ledger_path = tmp_path / "issues.jsonl"
+        import json
+
+        # Write a full BACKLOG record
+        full = IssueRecord(
+            issue_id="ISS-SPARSE",
+            type="feature",
+            title="Sparse Test",
+            status="BACKLOG",
+            source_file="specs/issues/001.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        append_issue_record(full, ledger_path)
+
+        # Write a bare COMPLETED transition (like squash-merge produces)
+        bare = {
+            "issue_id": "ISS-SPARSE",
+            "status": "COMPLETED",
+            "timestamp": "2026-07-04T07:49:30Z",
+        }
+        with ledger_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(bare) + "\n")
+
+        result = resolve_issue_record("ISS-SPARSE", ledger_path)
+        assert result is not None
+        assert result.status == "COMPLETED"
+        assert result.title == "Sparse Test"  # inherited from full record
+        assert result.source_file == "specs/issues/001.md"
+
+    def test_full_record_still_works(self, tmp_path: Path):
+        """Full COMPLETED record should still resolve directly."""
+        ledger_path = tmp_path / "issues.jsonl"
+        full = IssueRecord(
+            issue_id="ISS-FULL",
+            type="feature",
+            title="Full Test",
+            status="COMPLETED",
+            source_file="specs/issues/002.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        append_issue_record(full, ledger_path)
+
+        result = resolve_issue_record("ISS-FULL", ledger_path)
+        assert result is not None
+        assert result.status == "COMPLETED"
+        assert result.title == "Full Test"
+
+    def test_sparse_only_returns_none(self, tmp_path: Path):
+        """A bare transition with no prior full record returns None."""
+        ledger_path = tmp_path / "issues.jsonl"
+        import json
+
+        bare = {
+            "issue_id": "ISS-ONLY",
+            "status": "COMPLETED",
+            "timestamp": "2026-07-04T07:49:30Z",
+        }
+        with ledger_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(bare) + "\n")
+
+        result = resolve_issue_record("ISS-ONLY", ledger_path)
+        assert result is None
+
 
 class TestIssueRecordFlowRefs:
     def test_flow_refs_round_trip_on_issue_record(self):
