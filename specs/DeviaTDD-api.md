@@ -386,7 +386,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   (ASSERTION_FAILURE, not PASS or SYNTAX_ERROR). Appends RED status transition to task
   ledger, forces session to RED, commits with `test({scope}): RED phase - failing test`.
   Commit messages are convention-aware: when the project uses emoji prefixes (detected via
-  CONTRIBUTING.md or git history), the appropriate emoji is prepended automatically.
+  CONTRIBUTING.md or git history), the appropriate emoji is prepended automatically. RED
+  phase `test:` commits are prefixed with 🚨 to flag the failing test (see
+  `format_commit_message(..., phase="red")` in `core/convention.py`); GREEN phase `test:`
+  commits use ✅. `feat:` commits always use ✨ regardless of phase.
 
 #### `deviate green pre [--task <id>]`
 
@@ -688,7 +691,7 @@ src/deviate/
 ├── core/
 │   ├── agent.py              # AgentBackend, HandoverManifest, BACKEND_COMMANDS
 │   ├── commit.py             # stage_and_commit, commit_artifact
-│   ├── convention.py         # detect_uses_emojis, format_commit_message, TYPE_EMOJI_MAP
+│   ├── convention.py         # detect_uses_emojis, format_commit_message, TYPE_EMOJI_MAP, PHASE_TEST_EMOJI
 │   ├── complexity.py         # ComplexityGate.classify() — adhoc task complexity
 │   ├── constitution.py       # resolve_constitution, extract_commands, validate
 │   ├── contract.py           # emit_contract, load_contract

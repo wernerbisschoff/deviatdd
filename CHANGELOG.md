@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `format_commit_message()` and `_commit_phase()` accept an optional `phase`
+  argument that overrides the `test:` emoji for the red-green TDD cycle:
+  `phase="red"` → 🚨 (failing test), `phase="green"` → ✅ (passing test).
+  Micro-layer RED phase commits are now prefixed with 🚨 so the failing
+  test is visible at a glance; `feat:` commits continue to use ✨
+  regardless of phase.
 
 ## [2.4.0] - 2026-07-04
 ### Changed

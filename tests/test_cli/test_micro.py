@@ -1559,3 +1559,38 @@ class TestCommitPhaseConventionFormatting:
             env=_git_env(),
         )
         assert log.stdout == "feat(T001): add implementation"
+
+    def test_commit_phase_red_phase_test_uses_siren_emoji(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """RED-phase `test:` commit routed through _commit_phase uses 🚨."""
+        from deviate.cli.micro import _commit_phase
+
+        seed = tmp_git_repo / "seed.txt"
+        seed.write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "add", "seed.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        new_file = tmp_git_repo / "red_test.py"
+        new_file.write_text("x = 1\n", encoding="utf-8")
+
+        result = _commit_phase(
+            "test(T001): RED phase - failing test",
+            tmp_git_repo,
+            no_verify=True,
+            phase="red",
+        )
+
+        assert result is True
+        log = subprocess.run(
+            ["git", "log", "-1", "--pretty=format:%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert log.stdout == "🚨 test(T001): RED phase - failing test"

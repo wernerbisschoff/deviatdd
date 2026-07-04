@@ -29,6 +29,15 @@ TYPE_EMOJI_MAP: dict[str, str] = {
     "revert": "⏪",
 }
 
+# Per-phase emoji override for `test:` commits during the red-green TDD cycle.
+# RED commits a failing test (🚨); GREEN commits a passing test (✅). All other
+# types keep their `TYPE_EMOJI_MAP` entry. An unknown phase falls back to the
+# default for the type.
+PHASE_TEST_EMOJI: dict[str, str] = {
+    "red": "\U0001f6a8",  # 🚨 — failing test
+    "green": "\u2705",  # ✅ — passing test
+}
+
 # Conventional-commit type pattern at the start of a message.
 _TYPE_RE = re.compile(r"^(\w+)")
 
@@ -103,20 +112,36 @@ def _extract_type(message: str) -> str | None:
     return m.group(1) if m else None
 
 
-def format_commit_message(message: str, repo: Path) -> str:
+def format_commit_message(message: str, repo: Path, phase: str | None = None) -> str:
     """Prepend the appropriate emoji to a conventional-commit message.
 
     If the repository uses emoji prefixes (detected via CONTRIBUTING.md
     or git history) and the message starts with a known type, the
     corresponding emoji is prepended.  Otherwise the message is returned
     unchanged.
+
+    The optional ``phase`` argument selects a per-phase emoji override for
+    ``test:`` commits during the red-green TDD cycle:
+
+    - ``phase="red"``   → 🚨 (failing test, RED phase commit)
+    - ``phase="green"`` → ✅ (passing test, GREEN phase commit)
+
+    For any other commit type the ``phase`` argument is ignored, and the
+    emoji falls back to ``TYPE_EMOJI_MAP``. An unknown ``phase`` value
+    also falls back to the type's default emoji.
     """
     if not detect_uses_emojis(repo):
         return message
 
     commit_type = _extract_type(message)
-    if commit_type and commit_type in TYPE_EMOJI_MAP:
-        emoji = TYPE_EMOJI_MAP[commit_type]
-        return f"{emoji} {message}"
+    if commit_type is None:
+        return message
 
-    return message
+    if commit_type == "test" and phase in PHASE_TEST_EMOJI:
+        emoji = PHASE_TEST_EMOJI[phase]
+    elif commit_type in TYPE_EMOJI_MAP:
+        emoji = TYPE_EMOJI_MAP[commit_type]
+    else:
+        return message
+
+    return f"{emoji} {message}"
