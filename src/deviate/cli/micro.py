@@ -1168,9 +1168,25 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     )
 
-    # Hard reset to RED boundary — discards GREEN's unverified implementation
+    # Reset to HEAD~1 — discards ONLY the GREEN commit, preserving RED
+    # and any previous judge feedback commits.
+    #
+    # Edge case: if GREEN never committed (tests failed, early return),
+    # HEAD == red_sha and HEAD~1 would destroy RED.  In that case,
+    # reset to red_sha directly (a no-op on history, clears dirty tree).
+    if commit_sha == red_sha:
+        reset_target = red_sha
+    else:
+        parent = subprocess.run(
+            ["git", "rev-parse", "HEAD~1"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+        reset_target = parent if parent else red_sha
     subprocess.run(
-        ["git", "reset", "--hard", red_sha],
+        ["git", "reset", "--hard", reset_target],
         cwd=root,
         capture_output=True,
         env=_git_env(),
@@ -1447,6 +1463,19 @@ def _run_judge_phase(
                     capture_output=True,
                     env=_git_env(),
                 )
+                # Advance the red boundary so the next rollback (on a
+                # second judge rejection) preserves this feedback commit
+                # and only kills the subsequent GREEN commit.
+                fb_head = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                ).stdout.strip()
+                if fb_head:
+                    session.red_commit_sha = fb_head
+                    session.save(session_path)
         else:
             c.print(f"  [dim]TASKS_MD_SKIP[/] {tid}: no tasks.md resolved for issue")
             _log_run(
