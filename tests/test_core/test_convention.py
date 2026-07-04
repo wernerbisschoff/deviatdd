@@ -176,3 +176,83 @@ class TestFormatCommitMessage:
 
         result = format_commit_message("custom: some work", tmp_git_repo)
         assert result == "custom: some work"
+
+    def test_red_phase_test_uses_siren_emoji(self, tmp_git_repo: Path) -> None:
+        """`test:` commit during RED phase uses 🚨 to flag the failing test."""
+        file_path = tmp_git_repo / "file.txt"
+        file_path.write_text("content", encoding="utf-8")
+        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        result = format_commit_message(
+            "test(T001): RED phase - failing test", tmp_git_repo, phase="red"
+        )
+        assert result == "🚨 test(T001): RED phase - failing test"
+
+    def test_green_phase_test_uses_check_emoji(self, tmp_git_repo: Path) -> None:
+        """`test:` commit during GREEN phase uses ✅ to flag the passing test."""
+        file_path = tmp_git_repo / "file.txt"
+        file_path.write_text("content", encoding="utf-8")
+        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        result = format_commit_message(
+            "test(T001): GREEN phase - implementation", tmp_git_repo, phase="green"
+        )
+        assert result == "✅ test(T001): GREEN phase - implementation"
+
+    def test_test_type_without_phase_keeps_default_check_emoji(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """`test:` commit without phase falls back to TYPE_EMOJI_MAP default (✅)."""
+        file_path = tmp_git_repo / "file.txt"
+        file_path.write_text("content", encoding="utf-8")
+        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        result = format_commit_message("test(T001): add coverage", tmp_git_repo)
+        assert result == "✅ test(T001): add coverage"
+
+    def test_non_test_type_ignores_phase(self, tmp_git_repo: Path) -> None:
+        """The phase parameter only affects `test:` commits; other types unchanged."""
+        file_path = tmp_git_repo / "file.txt"
+        file_path.write_text("content", encoding="utf-8")
+        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        result = format_commit_message(
+            "feat(T001): implementation", tmp_git_repo, phase="red"
+        )
+        assert result == "✨ feat(T001): implementation"
+
+    def test_unknown_phase_falls_back_to_default(self, tmp_git_repo: Path) -> None:
+        """An unknown phase value (e.g. 'refactor') falls back to TYPE_EMOJI_MAP."""
+        file_path = tmp_git_repo / "file.txt"
+        file_path.write_text("content", encoding="utf-8")
+        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "✨ feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+        result = format_commit_message(
+            "test(T001): some work", tmp_git_repo, phase="refactor"
+        )
+        assert result == "✅ test(T001): some work"

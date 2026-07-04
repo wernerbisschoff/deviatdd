@@ -591,6 +591,10 @@ The `_commit_phase()` function handles automatic git commits between phase trans
 All commit messages are routed through `format_commit_message()` from `src/deviate/core/convention.py`,
 which detects the project's emoji convention (via CONTRIBUTING.md or git history) and prepends
 the appropriate gitmoji when applicable (e.g. `✨ feat(TSK-001-01): add implementation`).
+For the red-green TDD cycle, `_commit_phase` accepts an optional `phase` argument; RED phase
+`test:` commits are prefixed with 🚨 (siren) and GREEN phase `test:` commits with ✅ (check
+mark) via the `PHASE_TEST_EMOJI` map. `feat:` commits always use ✨ regardless of phase, and
+unknown `phase` values fall back to `TYPE_EMOJI_MAP["test"]` (✅).
 
 ### 9.3 In-Process Dispatch
 

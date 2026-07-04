@@ -931,7 +931,12 @@ def _run_red_phase(
     session = session.force_transition_to("RED")
     session.save(session_path)
 
-    _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
+    _commit_phase(
+        f"test({scope}): RED phase - failing test",
+        root,
+        no_verify=True,
+        phase="red",
+    )
 
     head_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -2223,7 +2228,12 @@ def _run_pytest(
     )
 
 
-def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
+def _commit_phase(
+    message: str,
+    root: Path,
+    no_verify: bool = False,
+    phase: str | None = None,
+) -> bool:
     staged = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=root, env=_git_env()
     )
@@ -2238,7 +2248,7 @@ def _commit_phase(message: str, root: Path, no_verify: bool = False) -> bool:
     has_untracked = bool(untracked.stdout.strip())
     if staged.returncode != 0 or unstaged.returncode != 0 or has_untracked:
         subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
-        message = format_commit_message(message, root)
+        message = format_commit_message(message, root, phase=phase)
         cmd = ["git", "commit", "-m", message]
         if no_verify:
             cmd.append("--no-verify")
@@ -2429,9 +2439,13 @@ def red_post() -> None:
 
     session = session.force_transition_to("RED")
     session.save(session_path)
-
     scope = _build_scope(issue_id, task_uuid)
-    _commit_phase(f"test({scope}): RED phase - failing test", root, no_verify=True)
+    _commit_phase(
+        f"test({scope}): RED phase - failing test",
+        root,
+        no_verify=True,
+        phase="red",
+    )
 
     head_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
