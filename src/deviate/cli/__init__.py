@@ -12,7 +12,7 @@ from rich.prompt import Prompt
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
-from deviate.cli.meso import meso_app, plan, pr, specify, tasks
+from deviate.cli.meso import merge, meso_app, plan, pr, specify, tasks
 from deviate.cli.micro import (
     e2e_app,
     execute_app,
@@ -830,4 +830,5 @@ cli.command(name="plan")(plan)
 cli.add_typer(review_app, name="review")
 cli.command(name="tasks")(tasks)
 cli.command(name="pr")(pr)
+cli.command(name="merge")(merge)
 cli.command(name="run")(run_command)

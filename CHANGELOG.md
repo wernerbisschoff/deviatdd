@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0] - 2026-07-04
+### Added
+- `deviate merge` command (`/deviate-merge` slash command) for marking issues
+  COMPLETED in the ledger after an external merge (e.g. the `/squash-merge`
+  skill). Writes a full IssueRecord with all required fields, unlike bare
+  `{issue_id, status, timestamp}` transitions that are silently dropped by
+  `resolve_issue_record`. Supports `--delete-branch` and `--delete-worktree`
+  flags for post-merge cleanup.
+
+### Fixed
+- `resolve_issue_record` now tolerates sparse/bare ledger transitions (e.g.
+  `{"issue_id":"ISS-001","status":"COMPLETED","timestamp":"..."}`) by merging
+  them with the last fully-resolved record instead of silently dropping them.
+  Previously, bare COMPLETED entries written by external tools like
+  `/squash-merge` caused `_is_issue_completed` to return `False`, blocking
+  downstream issues that depend on the completed one.
+
 ### Changed
 - `deviate setup` now ensures a symlink relationship between `CLAUDE.md` and
   `AGENTS.md` via `_linkify_governance_files`. If neither file exists, an empty
@@ -33,6 +49,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prd_generation` and `post_script`; the post-script is the sole commit authority.
   The `IMPORTANT` note in the `post_script` step also corrected: pre-commit hooks run
   ruff only, not the test suite — timeout guidance updated from 180s to 60s.
+- `/deviate-architecture` discovery step now follows "grill with docs"
+  discipline: one question at a time with a recommended answer,
+  dependency-ordered (components before contracts before ownership),
+  and at most one term-challenge per turn when the user's language
+  conflicts with existing `domain-model.md` or `architecture.md`
+  definitions.
+- `/deviate-flows` discovery step now follows the same one-question-at-a-time
+  discipline with recommended answers, dependency-ordered (Actor before
+  Domain before Trigger before Happy Path).
+- `/deviate-architecture` now produces Architectural Decision Records (ADRs)
+  as a `## Architectural Decision Records` section within `architecture.md`.
+  ADRs are one-paragraph entries gated on three criteria: hard to reverse,
+  surprising without context, and the result of a real tradeoff. No ADR is
+  written when any criterion is missing.
 
 ## [2.2.0] - 2026-07-02
 
