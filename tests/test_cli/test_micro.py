@@ -645,7 +645,7 @@ class TestJudgeTrainRollback:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_judge_train_rollback_all_commits_since_red(
+    def test_judge_rollback_kills_only_top_commit(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
@@ -689,8 +689,13 @@ class TestJudgeTrainRollback:
         )
         assert session_after.train_feedback == "Compliance violation"
 
-        assert not (root / "feature_test.py").exists(), (
-            "GREEN-introduced file must be discarded after hard reset"
+        # HEAD~1 rollback kills only the LAST commit (GREEN2/refactor),
+        # preserving earlier commits (RED and GREEN1).
+        assert not (root / "refactor.py").exists(), (
+            "Last GREEN commit's file must be discarded after rollback"
+        )
+        assert (root / "feature_test.py").exists(), (
+            "Earlier GREEN commit's file must be preserved after rollback"
         )
         assert (root / "feature.py").exists(), (
             "RED-introduced file must be preserved after rollback"
@@ -705,6 +710,157 @@ class TestJudgeTrainRollback:
         ).stdout
         assert red_sha[:7] in log_after, (
             "RED commit must remain in git history after rollback"
+        )
+
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_judge_feedback_preserved_across_rejection_rounds(
+        self,
+        mock_skill: MagicMock,
+        mock_invoke: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Round 2 rollback must NOT destroy Round 1's judge feedback commit."""
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        # Git: initial → RED → GREEN
+        red_file = root / "feature.py"
+        red_file.write_text("def feature(): pass")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-005-05): RED phase"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        red_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+
+        green_file = root / "impl.py"
+        green_file.write_text("def impl(): pass")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "feat(TSK-005-05): GREEN phase"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+        # Session + ledger
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        # tasks.md with a line matching TSK-005-05
+        tasks_dir = (
+            root / "specs" / "002-deviatdd-gap-analysis" / "005-micro-layer-integrity"
+        )
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        tasks_md = tasks_dir / "tasks.md"
+        tasks_md.write_text("- [ ] TSK-005-05: The task\n")
+        # issues.jsonl so _resolve_tasks_md finds tasks.md
+        issues_path = root / "specs" / "issues.jsonl"
+        issues_path.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-002-005",
+                    "source_file": "specs/002-deviatdd-gap-analysis/005-micro-layer-integrity/005-micro-layer-integrity.md",
+                }
+            )
+            + "\n"
+        )
+
+        from rich.console import Console
+
+        c = Console()
+
+        # --- Round 1: judge rejects ---
+        mock_skill.return_value = "# JUDGE skill"
+        mock_invoke.return_value = (
+            HandoverManifest(
+                phase="JUDGE",
+                status="SUCCESS",
+                verdict="COMPLIANCE_VIOLATION",
+                rationale="Missing error handling",
+            ),
+            "",
+        )
+
+        session = SessionState.load(session_path)
+        session.red_commit_sha = red_sha
+        _run_judge_phase(
+            task=task,
+            ledger_path=ledger_path,
+            session=session,
+            session_path=session_path,
+            c=c,
+        )
+
+        # Verify: rollback killed GREEN, feedback committed, boundary advanced
+        s1 = SessionState.load(session_path)
+        assert s1.current_phase == "GREEN"
+        assert s1.train_feedback == "Missing error handling"
+        assert s1.red_commit_sha != red_sha, (
+            "red_commit_sha must advance past the feedback commit"
+        )
+        fb1_sha = s1.red_commit_sha
+        assert "Missing error handling" in tasks_md.read_text(), (
+            "Round 1 feedback must appear in tasks.md"
+        )
+
+        # --- Round 2: new GREEN on top of feedback commit ---
+        green2_file = root / "impl2.py"
+        green2_file.write_text("def impl2(): pass")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "feat(TSK-005-05): GREEN retry"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+        mock_invoke.return_value = (
+            HandoverManifest(
+                phase="JUDGE",
+                status="SUCCESS",
+                verdict="COMPLIANCE_VIOLATION",
+                rationale="Still wrong",
+            ),
+            "",
+        )
+
+        session2 = SessionState.load(session_path)
+        session2.red_commit_sha = fb1_sha
+        _run_judge_phase(
+            task=task,
+            ledger_path=ledger_path,
+            session=session2,
+            session_path=session_path,
+            c=c,
+        )
+
+        # Verify: Round 1 feedback survives Round 2 rollback
+        s2 = SessionState.load(session_path)
+        assert s2.current_phase == "GREEN"
+        tasks_content = tasks_md.read_text()
+        assert "Missing error handling" in tasks_content, (
+            "Round 1 judge feedback must survive Round 2 rollback"
+        )
+        assert "Still wrong" in tasks_content, (
+            "Round 2 judge feedback must be present in tasks.md"
+        )
+        # RED file still exists
+        assert (root / "feature.py").exists(), (
+            "RED-introduced file must survive both rollbacks"
+        )
+        # Round 2 GREEN killed
+        assert not (root / "impl2.py").exists(), (
+            "Round 2 GREEN file must be discarded after rollback"
         )
 
     @patch("deviate.cli.micro._invoke_agent")
