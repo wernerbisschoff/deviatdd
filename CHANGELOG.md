@@ -14,6 +14,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test is visible at a glance; `feat:` commits continue to use ✨
   regardless of phase.
 
+### Changed
+- JUDGE/TRAIN feedback is now actionable for the next GREEN. The JUDGE
+  prompts (`src/deviate/prompts/auto/judge.md`,
+  `src/deviate/prompts/commands/deviate-judge.md`) now:
+  - Carry an explicit **CRITICAL** note that `train_feedback` is the next
+    GREEN's only memory of its prior attempt and that the `REFACTOR NOTE:`
+    prefix must NEVER appear on a rejection (the prefix tells GREEN to
+    defer, defeating training).
+  - State **Format Requirements** for rejection `train_feedback`: state
+    what GREEN did wrong, tell the next GREEN what to do ("The next GREEN
+    attempt must:"), be instruction not observation, and never contain
+    `REFACTOR NOTE:` content.
+  - Replace the prior "train_feedback is optional but allowed" wording
+    with explicit guidance that on rejection `train_feedback` MUST be
+    specific actionable instructions (refactoring concerns belong in
+    `summary` / `rationale`, not `train_feedback`).
+  - Refresh the edge case row for refactoring opportunities to
+    COMPLIANCE_PASS/PASS **only**, with the FAILURE/COMPLIANCE_VIOLATION
+    branch pointing refactoring observations at `summary` / `rationale`.
+  Pre-fix behavior: judges emitted `train_feedback` containing
+  `REFACTOR NOTE:` content on `COMPLIANCE_VIOLATION`, which the orchestrator
+  injected verbatim into the next GREEN's prompt — GREEN then deferred to
+  the REFACTOR phase and the implementation stayed broken. The orchestrator
+  code (`micro.py::_run_judge_phase`, `_append_judge_feedback`,
+  `_run_green_phase`) is unchanged; only the prompts that drive JUDGE
+  emission are fixed.
+- Manual command prompt `deviate-judge.md` bumped to `1.2.0`; auto prompt
+  `auto/judge.md` has no frontmatter and no version key.
+
 ## [2.4.0] - 2026-07-04
 ### Changed
 - `/deviate-architecture` discovery step now follows "grill with docs"

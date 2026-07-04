@@ -2,7 +2,7 @@
 name: deviate-judge
 description: TDD JUDGE phase — review GREEN implementation against spec.md for correctness and integrity; emit COMPLIANCE_PASS.
 category: deviattd-micro-layer
-version: 1.1.0
+version: 1.2.0
 layer: micro
 aliases:
   - judge
@@ -42,6 +42,8 @@ REFACTOR owns structural improvements. You MUST NOT flag refactoring opportuniti
 - **Code smell opinions** (duplication, complexity, coupling) → REFACTOR's domain
 
 If you observe a refactoring opportunity on a passing verdict, surface it as an **informational note** in `train_feedback` prefixed `REFACTOR NOTE:`. Never emit FAILURE for a refactoring opportunity.
+
+**CRITICAL — `train_feedback` on a FAILURE verdict is injected directly into the next GREEN's prompt and appended to `tasks.md`. GREEN has no memory of its prior attempt — `train_feedback` is its only context. Do NOT put `REFACTOR NOTE:` content in rejection feedback; the prefix tells GREEN to defer (to the REFACTOR phase), which defeats the training purpose. On FAILURE, see the EMIT_VERDICT format requirements below.**
 
 </system_instructions>
 
@@ -107,6 +109,15 @@ train_feedback: |
 ```
 
 On rejection (a real correctness gap exists):
+
+**Format Requirements for Rejection `train_feedback`:** Every rejection `train_feedback` MUST:
+1. **State what GREEN did wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
+2. **Tell the next GREEN what to do instead** — concrete, actionable steps starting with "The next GREEN attempt must:"
+3. **Be instruction, not observation** — GREEN must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
+4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `rationale`, not `train_feedback`.
+
+Do NOT write operator-directed observations in `train_feedback` (e.g. "Observational note for the operator: ..."). Those belong in `rationale`.
+
 ```yaml
 phase: JUDGE
 status: FAILURE
@@ -141,8 +152,13 @@ task_id: "{TASK_ID}"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 rationale: "Summary of the evaluation outcome"
 train_feedback: |
-  Specific, actionable guidance for the next GREEN attempt
-  (required on FAILURE, optional informational note on PASS)
+  FAILURE: Specific, actionable instructions for the next GREEN.
+  MUST state what went wrong AND what to do ("The next GREEN
+  attempt must:" steps). NEVER "REFACTOR NOTE:" or operator
+  observations here — those go in rationale.
+
+  PASS: Optional informational REFACTOR NOTE: about non-blocking
+  observations for the REFACTOR phase.
 violations:
   - category: "..."
     file: "path/to/file"
@@ -163,10 +179,10 @@ violations:
 | spec.md not found | Emit FAILURE with category "Spec Non-Compliance" and note "SPEC_NOT_FOUND" |
 | No diff to evaluate | Emit PASS with note "NO_DIFF" |
 | Binary files in diff | Skip binary files, note in rationale |
-| All changes are test-only without src changes | Flag as SUSPICIOUS — FAILURE with category "Test Integrity Violation" |
+| All changes are test-only without src changes | Flag as SUSPICIOUS — FAILURE with category "Test Integrity Violation". In `train_feedback`, state: "GREEN modified only test files. The next GREEN attempt must implement the feature in `src/` per `spec.md` and `data-model.md`." |
 | Pre-existing violations (not from this task) | Flag only violations introduced by this diff |
 | Empty `**Flow References**` in task | Treat task as enabling / infrastructure; flow alignment is SKIP |
-| Refactoring opportunity observed | Emit PASS; populate `train_feedback` with `REFACTOR NOTE:` prefix |
+| Refactoring opportunity observed | Emit PASS **only** (never FAILURE for refactoring). Populate `train_feedback` with `REFACTOR NOTE:` prefix. On FAILURE, put refactoring observations in `rationale`, not `train_feedback`. |
 
 </edge_case_handling>
 
