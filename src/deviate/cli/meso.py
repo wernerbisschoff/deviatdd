@@ -967,8 +967,9 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
         _resolve_constitution_commands(repo_root)
     )
 
-    # Resolve tasks_target (per-issue, not per-epic)
+    # Resolve tasks_target and plan_path (per-issue, not per-epic)
     tasks_target: str = ""
+    plan_path: str = ""
     if issue_id:
         ledger_path = _resolve_specs_root() / "issues.jsonl"
         record = resolve_issue_record(issue_id, ledger_path)
@@ -976,7 +977,15 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
             bucket = _resolve_bucket_dir(record.source_file)
             slug = _source_stem(record.source_file)
             tasks_target = str(_resolve_specs_root() / bucket / slug / "tasks.md")
+            plan_path = str(_resolve_specs_root() / bucket / slug / "plan.md")
 
+    # ── Enforce plan.md prerequisite ─────────────────────────────────
+    if plan_path and not Path(plan_path).exists() and not force:
+        status = "PLAN_NOT_FOUND"
+        console.print(
+            f"[red]PLAN_NOT_FOUND[/] {plan_path} — run deviate plan first "
+            "(use --force to bypass)"
+        )
     if dry_run:
         console.print("[yellow]DRY_RUN[/] skipping side effects")
 
@@ -989,6 +998,7 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
         "branch_name": branch_name,
         "constitution_path": constitution_path,
         "constitution_test_command": constitution_test_command,
+        "plan_path": plan_path,
         "constitution_lint_command": constitution_lint_command,
         "timestamp": timestamp,
         "status": status,
@@ -1709,6 +1719,7 @@ def _merge_run(
     issue_id: str | None = None,
     delete_branch: bool = False,
     delete_worktree: bool = False,
+    stage_only: bool = False,
 ) -> None:
     """Mark an issue COMPLETED in the ledger with a full IssueRecord.
 
@@ -1716,6 +1727,11 @@ def _merge_run(
     that does not write DeviaTDD-compatible ledger entries.  Unlike the bare
     ``{issue_id, status, timestamp}`` format, this writes a full record that
     ``resolve_issue_record`` can always validate.
+
+    When *stage_only* is True, the ledger is written and ``git add``-ed but
+    NOT committed — the caller is expected to fold it into a squash-merge
+    commit.  Cleanup and session-reset are also skipped so a subsequent
+    ``--delete-branch`` pass can handle them.
     """
     session, session_path = _load_session_accept("TASKS", "IDLE", force=True)
     if issue_id is None:
@@ -1758,57 +1774,60 @@ def _merge_run(
                 capture_output=True,
                 text=True,
             )
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "-m",
-                    f"chore({issue_id}): mark COMPLETED in ledger",
-                ],
-                cwd=repo_root,
-                env=_git_env(),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            console.print("[green]LEDGER_COMMITTED[/]")
+            if not stage_only:
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"chore({issue_id}): mark COMPLETED in ledger",
+                    ],
+                    cwd=repo_root,
+                    env=_git_env(),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                console.print("[green]LEDGER_COMMITTED[/]")
+            else:
+                console.print("[green]LEDGER_STAGED[/]")
         except subprocess.CalledProcessError as e:
             stderr = (e.stderr or "").strip()
             if "nothing to commit" in stderr:
                 console.print("[yellow]LEDGER_UNCHANGED[/]")
             else:
                 console.print(f"[yellow]COMMIT_WARN[/] {stderr}")
+    # Optional cleanup (skip in stage-only mode)
+    if not stage_only:
+        if delete_worktree:
+            worktree_path = Path.cwd()
+            if _is_linked_worktree(worktree_path):
+                remove_worktree(worktree_path)
+                console.print(f"[green]WORKTREE_REMOVED[/] {worktree_path}")
+            else:
+                console.print("[yellow]SKIP_WORKTREE[/] not in a linked worktree")
 
-    # Optional cleanup
-    if delete_worktree:
-        worktree_path = Path.cwd()
-        if _is_linked_worktree(worktree_path):
-            remove_worktree(worktree_path)
-            console.print(f"[green]WORKTREE_REMOVED[/] {worktree_path}")
-        else:
-            console.print("[yellow]SKIP_WORKTREE[/] not in a linked worktree")
-
-    if delete_branch:
-        branch_name = (
-            f"feat/{_resolve_bucket_dir(record.source_file)}"
-            f"/{_source_stem(record.source_file)}"
-        )
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                cwd=Path.cwd(),
-                env=_git_env(),
-                check=True,
-                capture_output=True,
-                text=True,
+        if delete_branch:
+            branch_name = (
+                f"feat/{_resolve_bucket_dir(record.source_file)}"
+                f"/{_source_stem(record.source_file)}"
             )
-            console.print(f"[green]BRANCH_DELETED[/] {branch_name}")
-        except subprocess.CalledProcessError:
-            console.print(f"[yellow]BRANCH_SKIP[/] {branch_name} not found locally")
+            try:
+                subprocess.run(
+                    ["git", "branch", "-D", branch_name],
+                    cwd=Path.cwd(),
+                    env=_git_env(),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                console.print(f"[green]BRANCH_DELETED[/] {branch_name}")
+            except subprocess.CalledProcessError:
+                console.print(f"[yellow]BRANCH_SKIP[/] {branch_name} not found locally")
 
-    session.active_issue_id = None
-    session.current_phase = "IDLE"
-    _save_session(session, session_path, "IDLE")
+        session.active_issue_id = None
+        session.current_phase = "IDLE"
+        _save_session(session, session_path, "IDLE")
 
 
 def merge(
@@ -1821,8 +1840,16 @@ def merge(
     delete_worktree: bool = typer.Option(
         False, "--delete-worktree", help="Remove the worktree"
     ),
+    stage_only: bool = typer.Option(
+        False,
+        "--stage-only",
+        help="Append to ledger and stage, but do not commit (for folding into squash-merge commit)",
+    ),
 ) -> None:
     """Mark an issue COMPLETED after an external merge (e.g. squash-merge)."""
     _merge_run(
-        issue_id=issue, delete_branch=delete_branch, delete_worktree=delete_worktree
+        issue_id=issue,
+        delete_branch=delete_branch,
+        delete_worktree=delete_worktree,
+        stage_only=stage_only,
     )

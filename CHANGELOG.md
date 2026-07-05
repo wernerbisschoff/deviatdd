@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emission are fixed.
 - Manual command prompt `deviate-judge.md` bumped to `1.2.0`; auto prompt
   `auto/judge.md` has no frontmatter and no version key.
+- `/deviate-merge` prompt (`src/deviate/prompts/commands/deviate-merge.md`
+  v2.0.0) now performs the full squash-merge pipeline end-to-end: validates
+  branch state, resolves the feature branch, generates a conventional-commit
+  message from the branch history, runs `git merge --squash`, pushes, and
+  writes a full IssueRecord to the ledger via `deviate merge --delete-branch`.
+  Previously it only updated the ledger after an external merge. The `deviate
+  merge` CLI command is unchanged — the prompt now drives it as a final step
+  rather than relying on an external squash-merge tool.
 
 ## [2.4.0] - 2026-07-04
 ### Changed

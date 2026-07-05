@@ -522,3 +522,66 @@ class TestYellowHandoffContract:
                 f"Expected zero exit when GREEN recovers from test failure, "
                 f"got exit {result.exit_code}: {result.output}"
             )
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_green_clean_worktree_failure_preserves_commit(
+        self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path
+    ):
+        """When _verify_clean_worktree raises during GREEN, the GREEN commit
+        must NOT be destroyed.  The old code did ``git reset --hard`` to the
+        RED SHA which wiped the GREEN commit entirely.  The new code tries
+        to commit residual files instead."""
+        from deviate.cli.micro import PhaseFailedError
+
+        def _verify_side_effect(root, phase, tid):
+            if phase == "GREEN":
+                raise PhaseFailedError(
+                    f"{phase} phase agent for {tid} did not commit all files"
+                )
+
+        mock_verify.side_effect = _verify_side_effect
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-88",
+                issue_id="ISS-001-004",
+                description="Preserve GREEN commit on worktree failure",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            Path("README.md").write_text("# repo\n")
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: init"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            # JUDGE will reject (mock agent produces no real code), but the
+            # GREEN commit must survive — the old code destroyed it.
+            runner.invoke(cli, ["run", "TSK-004-88"])
+
+            # GREEN commit must still be in history — not destroyed by reset
+            log = subprocess.run(
+                ["git", "log", "--oneline", "--all"],
+                cwd=tmp_git_repo,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+            ).stdout
+            assert "GREEN phase" in log, f"GREEN commit was destroyed! Git log:\n{log}"

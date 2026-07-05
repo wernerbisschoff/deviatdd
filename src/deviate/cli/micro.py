@@ -1038,22 +1038,35 @@ def _run_green_phase(
     except Exception as e:
         raise PhaseFailedError(f"GREEN phase ledger update failed for {tid}: {e}")
 
-    _commit_phase(f"feat({scope}): GREEN phase - implementation", root)
+    _commit_phase(
+        f"feat({scope}): GREEN phase - implementation",
+        root,
+        no_verify=True,
+        phase="green",
+    )
 
     try:
         _verify_clean_worktree(root, "GREEN", tid)
     except PhaseFailedError as e:
-        c.print(f"  [red]CLEAN_WORKTREE_FAILED[/] {e}")
-        boundary_sha = session.red_commit_sha or "HEAD~1"
-        subprocess.run(
-            ["git", "reset", "--hard", boundary_sha],
-            cwd=root,
-            capture_output=True,
-            env=_git_env(),
+        c.print(f"  [yellow]CLEAN_WORKTREE_FAILED[/] {e}")
+        # Try to commit leftover files instead of destroying the GREEN commit
+        issue_id = task.get("issue_id", "")
+        scope = _build_scope(issue_id, tid)
+        residual_committed = _commit_phase(
+            f"feat({scope}): GREEN phase - residual files",
+            root,
+            no_verify=True,
+            phase="green",
         )
+        if residual_committed:
+            c.print(f"  [green]Residual files committed[/] for {tid}")
+        else:
+            c.print(
+                f"  [yellow]WARNING[/] {tid} has uncommitted files after GREEN — "
+                "leaving for JUDGE assessment"
+            )
         session.train_feedback = str(e)
         session.save(session_path)
-        return session
     return session
 
 
@@ -1168,25 +1181,14 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     )
 
-    # Reset to HEAD~1 — discards ONLY the GREEN commit, preserving RED
+    # Reset to red_sha — discards ALL commits made during GREEN (agent
+    # commit, orchestrator commit, residual commit) preserving only RED
     # and any previous judge feedback commits.
     #
-    # Edge case: if GREEN never committed (tests failed, early return),
-    # HEAD == red_sha and HEAD~1 would destroy RED.  In that case,
-    # reset to red_sha directly (a no-op on history, clears dirty tree).
-    if commit_sha == red_sha:
-        reset_target = red_sha
-    else:
-        parent = subprocess.run(
-            ["git", "rev-parse", "HEAD~1"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout.strip()
-        reset_target = parent if parent else red_sha
+    # If GREEN never committed (tests failed, early return),
+    # HEAD == red_sha and the reset is a no-op on history.
     subprocess.run(
-        ["git", "reset", "--hard", reset_target],
+        ["git", "reset", "--hard", red_sha],
         cwd=root,
         capture_output=True,
         env=_git_env(),
@@ -1574,7 +1576,12 @@ def _run_refactor_phase(
     except Exception as e:
         raise PhaseFailedError(f"REFACTOR phase ledger update failed for {tid}: {e}")
 
-    _commit_phase(f"refactor({scope}): REFACTOR phase - cleanup", root)
+    _commit_phase(
+        f"refactor({scope}): REFACTOR phase - cleanup",
+        root,
+        no_verify=True,
+        phase="refactor",
+    )
 
     session = session.force_transition_to("IDLE")
     session.save(session_path)
