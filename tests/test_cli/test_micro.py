@@ -57,6 +57,79 @@ def _setup_session(root: Path, issue_id: str) -> None:
     session.save(dot_dir / "session.json")
 
 
+class TestResolveAgentConfigBackendAlias:
+    """Regression: ``_resolve_agent_config`` normalises user-facing backend
+    aliases (``factory``) to canonical backends (``droid``) before the
+    value reaches the dispatch layer. ``omp`` is canonical and passes
+    through unchanged.
+
+    Before the fix, ``--agent omp`` (or ``backend = "omp"`` in
+    ``.deviate/config.toml``) was returned to ``_invoke_agent`` raw with
+    ``backend="omp"`` tripping Pydantic Literal validation — aborting
+    the ``deviate run`` pipeline before any agent invocation. ``omp``
+    is now widened into the ``AgentConfig.backend`` Literal as a
+    first-class backend. The canonical home for the resolution is
+    :func:`deviate.core.agent.resolve_agent_to_backend`.
+    """
+
+    def test_cli_arg_omp_passes_through_as_canonical(self, tmp_path: Path) -> None:
+        """`--agent omp` from the CLI must return ``omp`` (canonical,
+        not aliased to ``pi``)."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        assert _resolve_agent_config(tmp_path, "omp") == "omp"
+
+    def test_cli_arg_factory_resolves_to_droid(self, tmp_path: Path) -> None:
+        """`--agent factory` from the CLI must return ``droid``."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        assert _resolve_agent_config(tmp_path, "factory") == "droid"
+
+    def test_cli_arg_canonical_passes_through(self, tmp_path: Path) -> None:
+        """Canonical backend names pass through unchanged."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        for canonical in ("opencode", "claude", "droid", "pi", "omp"):
+            assert _resolve_agent_config(tmp_path, canonical) == canonical
+
+    def test_config_toml_omp_passes_through_as_canonical(self, tmp_path: Path) -> None:
+        """``backend = "omp"`` in ``.deviate/config.toml`` must return ``omp``."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text('[agent]\nbackend = "omp"\n')
+
+        assert _resolve_agent_config(tmp_path, None) == "omp"
+
+    def test_config_toml_factory_resolves_to_droid(self, tmp_path: Path) -> None:
+        """``backend = "factory"`` in config.toml must return ``droid``."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text('[agent]\nbackend = "factory"\n')
+
+        assert _resolve_agent_config(tmp_path, None) == "droid"
+
+    def test_config_toml_canonical_passes_through(self, tmp_path: Path) -> None:
+        """Canonical backends in config.toml pass through unchanged."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+
+        for canonical in ("opencode", "claude", "droid", "pi", "omp"):
+            (dot / "config.toml").write_text(f'[agent]\nbackend = "{canonical}"\n')
+            assert _resolve_agent_config(tmp_path, None) == canonical
+
+    def test_no_config_returns_none(self, tmp_path: Path) -> None:
+        """No config file and no CLI arg → None (dispatch falls back to default)."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        assert _resolve_agent_config(tmp_path, None) is None
+
+
 class TestPytestReportConfig:
     def test_default_values(self):
         from deviate.state.config import PytestReportConfig

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -860,3 +861,137 @@ class TestPiSessionStatsLogging:
         ]
         assert agent_result_calls
         assert "pi_session_stats" not in agent_result_calls[0].kwargs
+        agent_result_calls = [
+            call
+            for call in mock_log_run.call_args_list
+            if call.args and call.args[0] == "AGENT_RESULT"
+        ]
+        assert agent_result_calls
+        assert "pi_session_stats" not in agent_result_calls[0].kwargs
+
+
+class TestAgentToBackendResolution:
+    """Canonical home of ``AGENT_TO_BACKEND`` and ``resolve_agent_to_backend``
+    is :mod:`deviate.core.agent` — both must remain importable from there
+    and the resolution contract must hold for every supported alias.
+
+    ``factory`` is the only true alias (Factory Droid IDE → ``droid``
+    binary); every other entry (``opencode``, ``claude``, ``droid``,
+    ``pi``, ``omp``) is canonical and resolves to itself.
+    """
+
+    def test_resolve_factory_to_droid(self) -> None:
+        from deviate.core.agent import resolve_agent_to_backend
+
+        assert resolve_agent_to_backend("factory") == "droid"
+
+    def test_resolve_canonical_passthrough(self) -> None:
+        from deviate.core.agent import resolve_agent_to_backend
+
+        for canonical in ("opencode", "claude", "droid", "pi", "omp"):
+            assert resolve_agent_to_backend(canonical) == canonical
+
+    def test_resolve_omp_is_identity_not_alias(self) -> None:
+        """``omp`` is its own backend, not an alias for ``pi``.
+
+        Oh-My-Pi wraps Pi internally but is invoked as a distinct CLI
+        binary (``omp -p``); aliasing it to ``pi`` would route
+        ``deviate`` through the wrong process.
+        """
+        from deviate.core.agent import resolve_agent_to_backend
+
+        assert resolve_agent_to_backend("omp") == "omp"
+
+    def test_resolve_unknown_passthrough_for_validation_error(self) -> None:
+        """Unknown names pass through so ``AgentConfig`` raises a clear
+        Literal validation error (instead of silently mapping to ``opencode``)."""
+        from deviate.core.agent import resolve_agent_to_backend
+
+        assert resolve_agent_to_backend("aider") == "aider"
+
+    def test_agent_to_backend_table_includes_omp_identity(self) -> None:
+        """``AGENT_TO_BACKEND['omp'] == 'omp'`` (canonical, not aliased)."""
+        from deviate.core.agent import AGENT_TO_BACKEND
+
+        assert AGENT_TO_BACKEND["omp"] == "omp"
+
+    def test_cli_re_export_is_same_object_as_core(self) -> None:
+        """``deviate.cli.AGENT_TO_BACKEND`` is the SAME dict object as
+        ``deviate.core.agent.AGENT_TO_BACKEND`` (no shadow copy)."""
+        from deviate.cli import AGENT_TO_BACKEND as cli_table
+        from deviate.core.agent import AGENT_TO_BACKEND as core_table
+
+        assert cli_table is core_table
+
+    def test_cli_private_resolver_delegates_to_core(self) -> None:
+        """``deviate.cli._resolve_agent_to_backend`` is the public
+        :func:`deviate.core.agent.resolve_agent_to_backend` function —
+        keeping the existing private import path working."""
+        from deviate.cli import _resolve_agent_to_backend as cli_resolve
+        from deviate.core.agent import resolve_agent_to_backend as core_resolve
+
+        assert cli_resolve is core_resolve
+
+
+class TestOmpBackendRegistration:
+    """``omp`` is a first-class dispatch backend (not an alias for ``pi``).
+
+    The dispatch layer must accept ``omp`` as a valid ``BackendName``,
+    resolve it to its own ``BACKEND_COMMANDS`` entry (``omp -p``), and
+    pass it through the Pydantic ``AgentConfig.backend`` Literal. The
+    ``MODEL_FLAGS`` entry supports ``--model <id>`` like the other
+    subprocess-driven backends.
+    """
+
+    def test_omp_is_valid_backend_literal(self) -> None:
+        from deviate.state.config import AgentConfig
+
+        cfg = AgentConfig(backend="omp")
+        assert cfg.backend == "omp"
+
+    def test_omp_in_backend_commands_runs_omp_binary(self) -> None:
+        """``BACKEND_COMMANDS['omp']`` must spawn ``omp -p``, not ``pi -p``."""
+        from deviate.core.agent import BACKEND_COMMANDS
+
+        assert BACKEND_COMMANDS["omp"] == "omp -p"
+
+    def test_omp_supports_model_flag(self) -> None:
+        """``MODEL_FLAGS['omp']`` accepts ``--model`` (subprocess-driven
+        backend, like ``pi``)."""
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert MODEL_FLAGS["omp"] == ["--model"]
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_omp_dispatch_spawns_omp_command(self, mock_popen: MagicMock) -> None:
+        """``AgentBackend.invoke(backend='omp')`` spawns ``omp -p`` (NOT
+        ``pi -p``). This is the contract that distinguishes ``omp`` as a
+        distinct backend from an alias to ``pi``.
+        """
+        from deviate.core.agent import AgentBackend
+        from deviate.state.config import AgentConfig
+
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (
+            b"phase: RED\nstatus: TEST_WRITTEN_FAILING\ntask_id: T\n",
+            b"",
+        )
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        backend = AgentBackend(config=AgentConfig(backend="omp"))
+        backend.invoke("test prompt")
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[0] == "omp", (
+            f"Expected first argv 'omp' for backend=omp, got {cmd[0]!r}"
+        )
+        assert "-p" in cmd, f"Expected '-p' in cmd, got {cmd}"
+        assert "pi" not in cmd, f"omp backend must NOT invoke pi binary, got {cmd}"
+
+    def test_omp_passes_through_resolve_agent_to_backend(self) -> None:
+        """``_resolve_agent_config`` returns ``omp`` unchanged (identity,
+        since ``omp`` is canonical, not an alias)."""
+        from deviate.cli.micro import _resolve_agent_config
+
+        assert _resolve_agent_config(Path.cwd(), "omp") == "omp"

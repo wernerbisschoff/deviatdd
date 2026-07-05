@@ -29,6 +29,8 @@ from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
+from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
+from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
 from deviate.core.commands import discover_commands, install_command
 from deviate.ui.render import is_interactive
 
@@ -45,16 +47,14 @@ AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode", "pi"
 # Map a user-facing agent name to the underlying backend that meso/micro
 # layers invoke. ``factory`` is the Factory Droid IDE — the meso/micro
 # commands still drive the ``droid`` binary under the hood. ``pi`` is
-# the @earendil-works/pi-coding-agent CLI binary. ``omp`` uses the same
-# backend as ``pi`` (Oh-My-Pi is a wrapper around the Pi executor).
-AGENT_TO_BACKEND: dict[str, str] = {
-    "factory": "droid",
-    "droid": "droid",
-    "claude": "claude",
-    "opencode": "opencode",
-    "pi": "pi",
-    "omp": "pi",
-}
+# the @earendil-works/pi-coding-agent CLI binary. ``omp`` is the
+# Oh-My-Pi CLI (``omp -p``) — a distinct backend from ``pi``, even
+# though OMP internally wraps Pi. ``deviate`` spawns the ``omp`` binary
+# directly, not ``pi``, when the user selects ``omp``.
+# Canonical source is :data:`deviate.core.agent.AGENT_TO_BACKEND`; the
+# top-of-module re-export keeps the existing
+# ``from deviate.cli import AGENT_TO_BACKEND`` import path working and
+# keeps the cli init flow reading the same values.
 
 
 def _version_callback(value: bool) -> None:
@@ -284,16 +284,6 @@ def _read_agent_backend_from_config(config_path: Path) -> str | None:
         return None
     backend = data.get("agent", {}).get("backend")
     return backend if isinstance(backend, str) and backend else None
-
-
-def _resolve_agent_to_backend(agent: str) -> str:
-    """Map a user-facing agent name to its underlying backend.
-
-    Falls back to the input value when it is already a valid backend
-    literal (``opencode``, ``claude``, ``droid``). Unknown values are
-    returned unchanged so the caller can surface a validation error.
-    """
-    return AGENT_TO_BACKEND.get(agent, agent)
 
 
 def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:

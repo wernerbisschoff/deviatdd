@@ -15,7 +15,7 @@ from deviate.state.config import AgentConfig
 
 OutputCallback = Callable[[str], None]
 
-BackendName = Literal["opencode", "claude", "droid", "pi", "stub"]
+BackendName = Literal["opencode", "claude", "droid", "pi", "omp", "stub"]
 
 
 class HandoverManifest(BaseModel):
@@ -63,22 +63,63 @@ BACKEND_COMMANDS: dict[str, str] = {
     "claude": "claude -p --permission-mode auto",
     "droid": "droid exec",
     "pi": "pi -p",
+    # Oh-My-Pi: a distinct CLI binary that wraps Pi internally but is
+    # invoked directly (``omp -p``). The dispatch layer treats ``omp``
+    # as a first-class backend, not an alias for ``pi`` — model flag,
+    # timeout, and YAML manifest extraction all apply.
+    "omp": "omp -p",
     "stub": "stub",
 }
+
+# Map a user-facing agent name (CLI ``--agent`` value, or ``[agent].backend``
+# in ``.deviate/config.toml``) to the canonical backend that the dispatch
+# layer invokes. Only ``factory`` remains as an alias — the Factory Droid
+# IDE drives the ``droid`` binary under the hood. All other names are
+# canonical: ``omp`` is its own backend (not an alias for ``pi``); the
+# remaining names already match the dispatch-layer identifier.
+AGENT_TO_BACKEND: dict[str, str] = {
+    "factory": "droid",
+    "droid": "droid",
+    "claude": "claude",
+    "opencode": "opencode",
+    "pi": "pi",
+    "omp": "omp",
+}
+
+
+def resolve_agent_to_backend(agent: str) -> str:
+    """Return the canonical backend for *agent*.
+
+    User-facing aliases (``factory``) are mapped to their underlying
+    backend binary. Already-canonical names (``opencode``, ``claude``,
+    ``droid``, ``pi``, ``omp``) pass through unchanged. Unknown values
+    are returned unchanged so the caller can surface a validation error
+    against :class:`~deviate.state.config.AgentConfig`'s ``backend``
+    Literal.
+    """
+    return AGENT_TO_BACKEND.get(agent, agent)
+
 
 PI_RPC_COMMAND: list[str] = ["pi", "--mode", "rpc", "--no-session"]
 
 
 # Per-backend model-flag dispatch. ``None`` means the backend does not
-# accept ``--model`` on the CLI (model routing is the operator's responsibility
-# — claude ignores model config entirely). ``["--model"]`` means the backend
-# accepts the ``--model <id>`` flag (opencode, droid, and pi all do).
+# accept ``--model`` on the CLI (model routing is the operator's
+# responsibility — claude ignores model config entirely).
+# ``["--model"]`` means the backend accepts the ``--model <id>`` flag
+# (``opencode``, ``droid``, ``pi``, and ``omp`` all do).
 MODEL_FLAGS: dict[str, list[str] | None] = {
     "pi": ["--model"],
     "claude": None,
     "opencode": ["--model"],
     "droid": ["--model"],
+    "omp": ["--model"],
 }
+
+# Backends whose CLI expects the prompt as a positional argument rather
+# than via stdin. The prompt gets appended as the last element of the
+# command list before spawning the subprocess.
+PROMPT_AS_ARG_BACKENDS: frozenset[str] = frozenset({"omp"})
 
 
 _YAML_BLOCK_RE = re.compile(r"```(?:yaml)?\s*\n(.*?)```", re.DOTALL)
@@ -364,6 +405,13 @@ class AgentBackend:
             model_flag = MODEL_FLAGS.get(backend_name, ["--model"])
             if model is not None and model_flag is not None:
                 cmd.extend([model_flag[0], model])
+            # Backends that expect the prompt as a positional CLI argument
+            # (e.g. ``omp -p "prompt"``) get the prompt appended to the
+            # command. The ``prompt`` variable is then cleared so the
+            # subprocess dispatch does not send it via stdin.
+            if backend_name in PROMPT_AS_ARG_BACKENDS:
+                cmd.append(prompt)
+                prompt = ""
         effective_timeout = timeout or self.config.timeout
 
         popen_kwargs: dict[str, Any] = dict(

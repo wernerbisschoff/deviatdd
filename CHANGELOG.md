@@ -59,9 +59,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issue to appear non-`COMPLETED`. The bug was user-visible in two ways:
   `inspect issues list` showed the wrong status, and `_is_issue_completed`
   (called from `deviate specify` and `select_unblocked_candidates`)
-  returned `False` for an already-completed issue, allowing it to be
   re-claimed. Among non-`COMPLETED` entries the prior "last valid wins"
   behaviour is preserved.
+- `omp` (Oh-My-Pi) is now a first-class dispatch backend, not an alias
+  for `pi`. `BackendName` (`src/deviate/core/agent.py:18`) and
+  `AgentConfig.backend` (`src/deviate/state/config.py:14`) Literals
+  both widened to include `"omp"`; `BACKEND_COMMANDS["omp"] = "omp -p"`
+  spawns the Oh-My-Pi CLI binary directly (not `pi -p`); `MODEL_FLAGS`
+  recognises `omp` for `--model <id>` dispatch. `AGENT_TO_BACKEND["omp"]`
+  is identity (`omp → omp`). User-facing aliases (`factory` for the
+  Factory Droid IDE) are still normalised to their canonical backend
+  (`droid`) via `deviate.core.agent.resolve_agent_to_backend` at every
+  load boundary (`micro.py::_resolve_agent_config`,
+  `meso.py::_invoke_agent_phase`) before reaching `AgentConfig` — the
+  same fix that previously made `backend = "omp"` valid in the Literal.
+  The re-exports `from deviate.cli import AGENT_TO_BACKEND` and
+  `_resolve_agent_to_backend` remain as alias shims over the canonical
+  home in `deviate.core.agent`.
 
 ## [2.4.0] - 2026-07-04
 ### Changed
