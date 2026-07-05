@@ -83,9 +83,9 @@ CRITICAL INSTRUCTION INVARIANTS:
 ```
 Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
-7. **Commit**: Stage and commit all changes:
+7. **Commit**: Commit all changes and mark the record as completed via the post-script. The `deviate adhoc post` CLI applies the project's commit convention (emoji prefix if configured, no-op otherwise):
    ```
-   git add -A && deviate commit --no-verify -m "docs(adhoc): add issue {ISSUE_ID} - {title}"
+   deviate adhoc post {ISSUE_ID} --title "{title}"
    ```
 
 8. **Output Summary**: Display the `## Discovery Audit`, the `## Target Issue Emission`, and the `## Ledger Registration` blocks to the user in clean Markdown. Do NOT emit the full PRD contents — only confirm the FR section was appended.

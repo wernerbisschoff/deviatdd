@@ -119,11 +119,14 @@ If the post-script exits non-zero, fix the underlying issue and retry.
 
 1. Run `git status` and `git diff` to understand the state
 2. If changes exist but are unstaged: `git add -u`
-3. Commit manually via `deviate commit` (so the project's commit convention is applied) using the commit subject and body you would have passed to the post-script:
+3. Commit manually using the conventional commit subject and body you would have passed to the post-script:
    ```bash
-   deviate commit -m "$commit_subject" -m "Mode: DIRECT" -m "Validation: manual-fallback" --no-verify
+   git commit --no-verify \
+     -m "$commit_subject" \
+     -m "Mode: DIRECT" \
+     -m "Validation: manual-fallback"
    ```
- 4. If the manual commit also fails, surface `git status` and `git log -1` to the user with a clear explanation
+4. If the manual commit also fails, surface `git status` and `git log -1` to the user with a clear explanation
 </step>
 
 <step id="handover_emission">
