@@ -58,11 +58,24 @@ def _check_orphan_claim(issue: IssueRecord, repo: Path) -> bool | None:
 
 
 def _deduplicate_issues(records: list[dict]) -> list[dict]:
+    """Deduplicate issue records by ``issue_id``.
+
+    ``COMPLETED`` is a terminal status and always takes precedence: once any
+    ``COMPLETED`` entry is captured for an issue, subsequent non-``COMPLETED``
+    transitions (e.g. a ``SPECIFIED`` entry appended after the ``COMPLETED``
+    write during a merge flow) do not override it. Among non-``COMPLETED``
+    entries, the last entry by file position wins (the prior behaviour).
+    """
     seen: dict[str, dict] = {}
     for rec in records:
         issue_id = rec.get("issue_id")
-        if issue_id:
-            seen[issue_id] = rec
+        if not issue_id:
+            continue
+        current = seen.get(issue_id)
+        # Preserve any COMPLETED entry already captured — COMPLETED is terminal.
+        if current is not None and current.get("status") == "COMPLETED":
+            continue
+        seen[issue_id] = rec
     return list(seen.values())
 
 
