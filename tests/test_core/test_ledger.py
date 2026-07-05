@@ -233,6 +233,97 @@ class TestResolveIssueRecordByIssueId:
         assert result.title == "Updated"
         assert result.status == "COMPLETED"
 
+    def test_resolve_prefers_completed_over_later_specified(self, tmp_path: Path):
+        """COMPLETED is terminal — a later SPECIFIED entry must not override it.
+
+        Regression test for the bug where ``resolve_issue_record`` returned
+        the first valid record in reverse iteration (i.e. last by file
+        position), causing a SPECIFIED entry appended after the COMPLETED
+        write during a merge flow to surface as the issue's status. The
+        downstream ``_is_issue_completed`` gate then incorrectly returned
+        ``False``, allowing the issue to be re-claimed.
+        """
+        ledger_path = tmp_path / "issues.jsonl"
+        # COMPLETED written first (line 1), SPECIFIED written second (line 2).
+        ledger_path.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-001-001",
+                    "type": "feature",
+                    "title": "Original",
+                    "status": "COMPLETED",
+                    "source_file": "test.md",
+                    "timestamp": "2026-01-02T00:00:00Z",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "ISS-001-001",
+                    "type": "feature",
+                    "title": "Original",
+                    "status": "SPECIFIED",
+                    "source_file": "test.md",
+                    "timestamp": "2026-01-03T00:00:00Z",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = resolve_issue_record("ISS-001-001", ledger_path)
+        assert result is not None
+        assert result.status == "COMPLETED"
+
+    def test_resolve_prefers_completed_sparse_over_later_specified_full(
+        self, tmp_path: Path
+    ):
+        """A sparse COMPLETED entry beats a later full SPECIFIED entry.
+
+        The merge flow sometimes writes a bare ``{issue_id, status, timestamp}``
+        COMPLETED transition (sparse), then a follow-up SPECIFIED transition
+        written by another path may arrive with the full schema. COMPLETED
+        must still take precedence.
+        """
+        ledger_path = tmp_path / "issues.jsonl"
+        ledger_path.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-001-002",
+                    "type": "feature",
+                    "title": "Original",
+                    "status": "BACKLOG",
+                    "source_file": "test.md",
+                    "timestamp": "2026-01-01T00:00:00Z",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "ISS-001-002",
+                    "status": "COMPLETED",
+                    "timestamp": "2026-01-02T00:00:00Z",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "ISS-001-002",
+                    "type": "feature",
+                    "title": "Original",
+                    "status": "SPECIFIED",
+                    "source_file": "test.md",
+                    "timestamp": "2026-01-03T00:00:00Z",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = resolve_issue_record("ISS-001-002", ledger_path)
+        assert result is not None
+        assert result.status == "COMPLETED"
+
     def test_old_id_field_does_not_match(self, tmp_path: Path):
         ledger_path = tmp_path / "issues.jsonl"
         ledger_path.write_text(

@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   merge` CLI command is unchanged — the prompt now drives it as a final step
   rather than relying on an external squash-merge tool.
 
+### Fixed
+- `resolve_issue_record` and `_deduplicate_issues` now treat `COMPLETED`
+  as a terminal status that always takes precedence. Previously, both
+  surfaced the last entry by file position, so a `SPECIFIED` transition
+  appended after the `COMPLETED` write during a merge flow caused the
+  issue to appear non-`COMPLETED`. The bug was user-visible in two ways:
+  `inspect issues list` showed the wrong status, and `_is_issue_completed`
+  (called from `deviate specify` and `select_unblocked_candidates`)
+  returned `False` for an already-completed issue, allowing it to be
+  re-claimed. Among non-`COMPLETED` entries the prior "last valid wins"
+  behaviour is preserved.
+
 ## [2.4.0] - 2026-07-04
 ### Changed
 - `/deviate-architecture` discovery step now follows "grill with docs"

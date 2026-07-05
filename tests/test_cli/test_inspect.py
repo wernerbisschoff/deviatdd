@@ -217,6 +217,62 @@ class TestIssuesListMalformed:
         assert result.exit_code != 0
 
 
+class TestIssuesListCompletedPrecedence:
+    """COMPLETED is terminal — a later SPECIFIED entry must not override it.
+
+    Regression test for the bug where ``_deduplicate_issues`` surfaced the
+    last record by file position, so a SPECIFIED entry appended after the
+    COMPLETED write during a merge flow was returned instead of the
+    authoritative COMPLETED status.
+    """
+
+    def test_deduplicate_issues_completed_over_specified(self, tmp_path: Path) -> None:
+        # COMPLETED written first, SPECIFIED written second.
+        records = [
+            _make_issue(
+                "ISS-002",
+                status="COMPLETED",
+                source_file="specs/epic/issues/iss-002.md",
+            ),
+            _make_issue(
+                "ISS-002",
+                status="SPECIFIED",
+                source_file="specs/epic/issues/iss-002.md",
+            ),
+        ]
+        _seed_issues_jsonl(tmp_path, records)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "issues", "list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert len(data) == 1
+        assert data[0]["issue_id"] == "ISS-002"
+        assert data[0]["status"] == "COMPLETED"
+        assert data[0]["orphan_claim"] is None
+
+    def test_deduplicate_issues_last_wins_among_non_completed(
+        self, tmp_path: Path
+    ) -> None:
+        # Among non-COMPLETED entries, last-by-file-position still wins.
+        records = [
+            _make_issue("ISS-A", status="BACKLOG"),
+            _make_issue(
+                "ISS-A",
+                status="SPECIFIED",
+                source_file="specs/epic/issues/iss-a.md",
+            ),
+        ]
+        _seed_issues_jsonl(tmp_path, records)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "issues", "list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert len(data) == 1
+        assert data[0]["status"] == "SPECIFIED"
+
+
 class TestTasksList:
     """US-004-TasksList: Tasks list commands."""
 

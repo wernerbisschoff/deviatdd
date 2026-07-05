@@ -180,40 +180,62 @@ def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
 
 
 def resolve_issue_record(issue_id: str, ledger_path: Path) -> IssueRecord | None:
-    """Resolve the latest *valid* record for *issue_id*.
+    """Resolve the authoritative record for *issue_id*.
+
+    ``COMPLETED`` is a terminal status and always takes precedence over later
+    non-``COMPLETED`` entries: once an issue has been recorded ``COMPLETED``,
+    no subsequent ``SPECIFIED`` / ``BACKLOG`` / ``DRAFT`` transition overrides
+    it — even if that transition appears later in the ledger. This guards
+    against merge flows that re-append a non-terminal transition after the
+    ``COMPLETED`` write, and against idempotent merges whose write order is
+    non-monotonic.
+
+    Among non-``COMPLETED`` entries, the most recent valid record by file
+    position wins (the prior behaviour).
 
     Tolerates sparse transitions (e.g. bare ``{issue_id, status, timestamp}``
-    written by external tools like squash-merge) by merging them with the last
-    fully-resolved record.  This prevents status-only updates from being
-    silently dropped by Pydantic validation.
+    written by external tools like squash-merge) by merging them with the
+    last fully-resolved record so they are not silently dropped by Pydantic
+    validation.
     """
     records = _read_ledger(ledger_path)
+    fallback: IssueRecord | None = None
     base: IssueRecord | None = None
+
+    def _resolve_base(exclude: dict) -> IssueRecord | None:
+        for prev in reversed(records):
+            if prev.get("issue_id") != issue_id or prev is exclude:
+                continue
+            try:
+                return IssueRecord.model_validate(prev)
+            except PydanticValidationError:
+                continue
+        return None
+
     for data in reversed(records):
         if data.get("issue_id") != issue_id:
             continue
         try:
             candidate = IssueRecord.model_validate(data)
-            if base is None:
-                base = candidate
-            return candidate
         except PydanticValidationError:
             # Sparse transition — resolve base on first need.
             if base is None:
-                for prev in reversed(records):
-                    if prev.get("issue_id") == issue_id and prev is not data:
-                        try:
-                            base = IssueRecord.model_validate(prev)
-                            break
-                        except PydanticValidationError:
-                            continue
-            if base is not None:
-                merged = {**base.model_dump(), **data}
-                try:
-                    return IssueRecord.model_validate(merged)
-                except PydanticValidationError:
-                    continue
-    return base
+                base = _resolve_base(data)
+            if base is None:
+                continue
+            merged = {**base.model_dump(), **data}
+            try:
+                candidate = IssueRecord.model_validate(merged)
+            except PydanticValidationError:
+                continue
+        # COMPLETED is terminal — return immediately, regardless of file order.
+        if candidate.status == "COMPLETED":
+            return candidate
+        # Track the latest non-COMPLETED candidate as a fallback.
+        if fallback is None:
+            fallback = candidate
+
+    return fallback
 
 
 def append_issue_record(record: IssueRecord, ledger_path: Path) -> bool:
