@@ -645,7 +645,7 @@ class TestJudgeTrainRollback:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_judge_rollback_kills_only_top_commit(
+    def test_judge_rollback_resets_to_red_sha(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
@@ -689,13 +689,13 @@ class TestJudgeTrainRollback:
         )
         assert session_after.train_feedback == "Compliance violation"
 
-        # HEAD~1 rollback kills only the LAST commit (GREEN2/refactor),
-        # preserving earlier commits (RED and GREEN1).
+        # Rollback resets to red_sha — ALL green commits are discarded,
+        # not just the last one.  Only RED and initial commits survive.
         assert not (root / "refactor.py").exists(), (
-            "Last GREEN commit's file must be discarded after rollback"
+            "GREEN2 commit's file must be discarded after rollback to red_sha"
         )
-        assert (root / "feature_test.py").exists(), (
-            "Earlier GREEN commit's file must be preserved after rollback"
+        assert not (root / "feature_test.py").exists(), (
+            "GREEN1 commit's file must be discarded after rollback to red_sha"
         )
         assert (root / "feature.py").exists(), (
             "RED-introduced file must be preserved after rollback"

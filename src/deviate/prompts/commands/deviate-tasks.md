@@ -14,7 +14,7 @@ aliases:
 
 <system_instructions>
 
-This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim, locates the spec source, validates its required sections, and checks for optional research artifacts) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
+This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim, locates the spec source, validates its required sections, and validates the plan.md prerequisite) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
 
 **Embedded-First Spec Consumption**: The tasks pipeline reads spec content from the issue file itself when embedded sections are present — the issue file carries `## User Stories Ledger`, `## ATDD Acceptance Criteria`, and other spec sections directly. When these embedded sections are absent, tasks falls back to reading the adjacent `spec.md` file in the same issue directory. Embedded sections take precedence when both exist.
 
@@ -31,14 +31,14 @@ This system operates strictly as an isolated, deterministic execution compilatio
 
 **Meso Workflow Position**: Shard+Specify → [HITL Gate 2] → Plan → Tasks → TDD (red-green-refactor)
 - **Shard+Specify**: Precedes this phase. Produces spec-enriched issue files with embedded `[USER_STORIES_LEDGER]`, `[ATDD_ACCEPTANCE_CRITERIA]`, `[EDGE_CASES_AND_BOUNDARIES]`, and `[PERFORMANCE_CONSTRAINTS]` sections.
-- **Plan** (HITL Gate 2 → Plan): Optional per-issue localized research phase producing `plan.md`. When absent, tasks reads directly from the spec-enriched issue file.
+- **Plan** (HITL Gate 2 → Plan): Per-issue localized research phase producing `plan.md`. The pre-script enforces that plan.md exists before tasks can proceed — plan is a mandatory prerequisite.
 - **Tasks** (this phase): Write `tasks.md` only. Commit it. STOP.
 - **TDD**: Begins after the tasks artifact is committed.
 
 Research artifacts (`design.md`, `data-model.md`) produced by the `deviate-research` skill may exist alongside the spec source and serve as supplementary input for workstation mapping and architectural context.
 
 CRITICAL INFERENCE PHYSICS INVARIANTS:
-1. **Context Reuse Rule**: This phase typically follows `/deviate-shard` or `/deviate-plan` in the same conversation. Reuse `BRANCH_NAME`, `WORKTREE_PATH`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG` from the shard/plan contract in your context. Do NOT re-run the shard or plan pre-script.
+1. **Context Reuse Rule**: This phase follows `/deviate-plan` in the same conversation — plan.md has already been written. Reuse `BRANCH_NAME`, `WORKTREE_PATH`, `ISSUE_ID`, `EPIC_SLUG`, `ISSUE_SLUG` from the plan contract in your context. Do NOT re-run the plan or shard pre-script.
 2. **Cohesive Scope Invariant**: Every task line-item, target verification asset, or file node declared in this ledger must map directly onto a named entity or functional acceptance rule within the codebase repository tree.
 
 </system_instructions>
@@ -49,10 +49,11 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
    ```
    deviate tasks pre
    ```
-   The pre-script detects the worktree via `Path.cwd()` — it must run from inside the worktree. It accepts the session in SHARD, PLAN, or TASKS phase (the shard/plan post-script may or may not have run yet). Use `--force` to bypass any phase validation. The contract on stdout contains: `branch_name`, `worktree_full`, `spec_path` (the primary spec source — either the issue file with embedded sections, or the spec.md fallback, resolved from the active issue ID), `tasks_target` (where to write tasks.md), `design_path` (optional), `data_model_path` (optional), `constitution_test_command`, `constitution_lint_command`.
-   - If the pre-script emits `STATUS: SPEC_NOT_FOUND` or `STATUS: NO_ACTIVE_ISSUE`, surface the status. The `/deviate-shard` phase must produce a valid spec-enriched issue file for the active issue first.
+   The pre-script detects the worktree via `Path.cwd()` — it must run from inside the worktree. It accepts the session in PLAN or TASKS phase (plan must have completed). Use `--force` to bypass the plan.md prerequisite. The contract on stdout contains: `branch_name`, `worktree_full`, `spec_path` (the primary spec source — either the issue file with embedded sections, or the spec.md fallback, resolved from the active issue ID), `plan_path` (path to the required plan.md), `tasks_target` (where to write tasks.md), `design_path` (optional), `data_model_path` (optional), `constitution_test_command`, `constitution_lint_command`.
+   - If the pre-script emits `STATUS: PLAN_NOT_FOUND`, the `/deviate-plan` phase must complete and produce `plan.md` before tasks can proceed (use `--force` to bypass).
+   - If the pre-script emits `STATUS: SPEC_NOT_FOUND` or `STATUS: NO_ACTIVE_ISSUE`, surface the status. The spec-enriched issue file must exist first.
 
-2. Read the spec source from `spec_path` — this is the issue file itself when it contains embedded `## User Stories Ledger` and `## ATDD Acceptance Criteria` sections (primary path). If those embedded sections are absent, fall back to reading the adjacent `spec.md` file in the same issue directory (legacy path). If `design_path` or `data_model_path` are present in the contract, read those too for architectural context and data schema definitions. Embedded sections take precedence when both exist.
+2. Read the plan artifact from `plan_path` (the plan.md produced by `/deviate-plan`) for implementation strategy, workstation mapping, risk assessment, and integration point analysis. Then read the spec source from `spec_path` — this is the issue file itself when it contains embedded `## User Stories Ledger` and `## ATDD Acceptance Criteria` sections (primary path). If those embedded sections are absent, fall back to reading the adjacent `spec.md` file in the same issue directory (legacy path). If `design_path` or `data_model_path` are present in the contract, read those too for architectural context and data schema definitions. Embedded sections take precedence when both exist.
 
 3. **Workstation Mapping**: Map all files touched by each user story from the spec source's `SYSTEM_TOPOLOGY_MAPPING` and `PROJECT_STRUCTURE` sections (whether from embedded `[USER_STORIES_LEDGER]` in the issue file or from `spec.md`). Group related files (e.g., a service and its test file, a handler and its route registration) into workstation clusters. Derive phases from logical groupings of related user stories.
 
@@ -242,6 +243,9 @@ def find_repo_root() -> Path:  # BAD — untestable
 <edge_case_handling>
 <case condition="Pre-script emits STATUS: NOT_IN_WORKTREE or STATUS: SPEC_NOT_FOUND">
 <action>Stop. The /deviate-shard phase must produce a valid spec-enriched issue file (or a spec.md must exist as fallback) before tasks can run. Surface the status to the human operator.</action>
+</case>
+<case condition="Pre-script emits STATUS: PLAN_NOT_FOUND">
+<action>Halt. The /deviate-plan phase must complete and produce plan.md before tasks can run. Surface the missing plan.md path to the human operator. Use `deviate tasks pre --force` only if you have a documented reason to bypass the prerequisite.</action>
 </case>
 <case condition="Issue file contains embedded ## User Stories Ledger and ## ATDD Acceptance Criteria sections">
 <action>Read spec from the issue file directly — this is the primary path. Do NOT look for a separate spec.md. Per spec AC-ADHOC-003-07, embedded sections take precedence over spec.md when both exist.</action>

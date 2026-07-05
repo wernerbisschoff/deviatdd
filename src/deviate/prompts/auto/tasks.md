@@ -181,6 +181,7 @@ next_phase: "IDLE"
 | Condition | Action |
 | :--- | :--- |
 | Pre-script returns SPEC_NOT_FOUND | Halt; /deviate-specify must complete first. |
+| Pre-script returns PLAN_NOT_FOUND | Halt; /deviate-plan must complete and produce plan.md before tasks can run. Surface the missing artifact. |
 | spec.md missing required sections | Halt with Failure_State. Continue with available sections if partial. |
 | Circular dependencies between tasks | Detect and reject; require human resolution. |
 | Post-script rejects output | Fix violations and re-run. |
