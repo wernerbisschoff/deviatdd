@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 
 from deviate.cli._common import console
+from deviate.core._shared import git_env as _git_env
 from deviate.core.complexity import ClassificationResult, ComplexityGate
+from deviate.core.convention import format_commit_message
 from deviate.state.ledger import AdhocRecord
 
 adhoc_app = typer.Typer(no_args_is_help=True)
@@ -115,12 +118,56 @@ def pre(
 
 @adhoc_app.command()
 def post(
-    issue_id: str = typer.Argument(..., help="Issue/manifest ID to mark complete"),
+    issue_id: str = typer.Argument(..., help="Issue/manifest ID"),
+    title: str = typer.Option(
+        "", "--title", "-t", help="Issue title for commit message"
+    ),
 ) -> None:
-    """Mark an ad-hoc record as completed."""
+    """Stage, commit ad-hoc issue artifacts, and mark record as completed."""
+    root = Path.cwd()
+
+    # --- Commit step (skip if not a git repo) ---
+    if (root / ".git").is_dir():
+        subject = f"docs(adhoc): add issue {issue_id}"
+        if title:
+            subject += f" - {title}"
+        message = format_commit_message(subject, root)
+
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], cwd=root, env=_git_env()
+        )
+        unstaged = subprocess.run(["git", "diff", "--quiet"], cwd=root, env=_git_env())
+        untracked = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        has_untracked = bool(untracked.stdout.strip())
+
+        if staged.returncode != 0 or unstaged.returncode != 0 or has_untracked:
+            subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
+            result = subprocess.run(
+                ["git", "commit", "-m", message, "--no-verify"],
+                cwd=root,
+                env=_git_env(),
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                console.print(f"[green]COMMITTED[/] adhoc issue {issue_id}")
+            else:
+                console.print(f"[red]COMMIT_FAILED[/] {result.stderr.strip()}")
+                raise typer.Exit(code=1)
+        else:
+            console.print("[yellow]COMMIT_SKIP[/] no changes to commit")
+    else:
+        console.print("[dim]COMMIT_SKIP[/] not a git repository")
+
+    # --- Mark adhoc record as COMPLETED ---
     ledger_path = _adhoc_ledger_path()
     records = _read_adhoc_ledger(ledger_path)
-
     found = records.get(issue_id)
 
     if found is None:
@@ -129,9 +176,8 @@ def post(
     completed = found.copy()
     completed["status"] = "COMPLETED"
     completed["timestamp"] = datetime.now(timezone.utc).isoformat()
-
     with ledger_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(completed) + "\n")
-
     console.print(f"[green]COMPLETED[/] {issue_id}")
+
     _emit_contract(status="COMPLETED", issue_id=issue_id)

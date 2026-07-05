@@ -1730,6 +1730,7 @@ def _merge_run(
     delete_branch: bool = False,
     delete_worktree: bool = False,
     stage_only: bool = False,
+    message: list[str] | None = None,
 ) -> None:
     """Mark an issue COMPLETED in the ledger with a full IssueRecord.
 
@@ -1742,6 +1743,11 @@ def _merge_run(
     NOT committed — the caller is expected to fold it into a squash-merge
     commit.  Cleanup and session-reset are also skipped so a subsequent
     ``--delete-branch`` pass can handle them.
+
+    When *message* is provided, ``git add -A`` includes pre-staged feature
+    changes, and the first element is routed through ``format_commit_message``
+    (applying the project's emoji convention) with the rest passed verbatim
+    as body paragraphs.
     """
     session, session_path = _load_session_accept("TASKS", "IDLE", force=True)
     if issue_id is None:
@@ -1785,20 +1791,34 @@ def _merge_run(
                 text=True,
             )
             if not stage_only:
+                if message:
+                    # Custom message: combined commit (feature + ledger)
+                    subprocess.run(
+                        ["git", "add", "-A"],
+                        cwd=repo_root,
+                        env=_git_env(),
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    subject = format_commit_message(message[0], repo_root)
+                    cmd: list[str] = ["git", "commit", "-m", subject]
+                    for body in message[1:]:
+                        cmd.extend(["-m", body])
+                else:
+                    subject = format_commit_message(
+                        f"chore({issue_id}): mark COMPLETED in ledger", repo_root
+                    )
+                    cmd = ["git", "commit", "-m", subject]
                 subprocess.run(
-                    [
-                        "git",
-                        "commit",
-                        "-m",
-                        f"chore({issue_id}): mark COMPLETED in ledger",
-                    ],
+                    cmd,
                     cwd=repo_root,
                     env=_git_env(),
                     check=True,
                     capture_output=True,
                     text=True,
                 )
-                console.print("[green]LEDGER_COMMITTED[/]")
+                console.print("[green]COMMITTED[/]")
             else:
                 console.print("[green]LEDGER_STAGED[/]")
         except subprocess.CalledProcessError as e:
@@ -1855,6 +1875,14 @@ def merge(
         "--stage-only",
         help="Append to ledger and stage, but do not commit (for folding into squash-merge commit)",
     ),
+    message: list[str] = typer.Option(
+        [],
+        "-m",
+        "--message",
+        help="Commit message. The first -m is the subject (formatted via "
+        "the project's emoji convention); remaining -m values are passed "
+        "verbatim as body paragraphs. Repeat the flag for each paragraph.",
+    ),
 ) -> None:
     """Mark an issue COMPLETED after an external merge (e.g. squash-merge)."""
     _merge_run(
@@ -1862,4 +1890,5 @@ def merge(
         delete_branch=delete_branch,
         delete_worktree=delete_worktree,
         stage_only=stage_only,
+        message=message,
     )

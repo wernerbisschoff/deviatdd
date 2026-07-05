@@ -78,7 +78,7 @@ Generate a conventional-commit title and multi-paragraph description synthesised
 {type}({ISSUE_ID}): {description}
 ```
 
-The `deviate commit` CLI applies the project's commit convention (emoji prefix if configured, no-op otherwise), so do NOT pre-pend an emoji here.
+The ``deviate merge --message`` CLI applies the project's commit convention (emoji prefix if configured, no-op otherwise), so do NOT pre-pend an emoji here.
 
 - **type**: `feature → feat`, `bug → fix`, `chore → chore`, `refactor → refactor`, `docs → docs`, default → `feat`
 - **description**: the ledger issue title with any bracketed prefix (e.g. `[FR-NNN]`) stripped. If no ledger title is available, synthesise from commit history.
@@ -144,13 +144,12 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    ```bash
    deviate merge --issue {ISSUE_ID} --stage-only
    ```
-
 4. **Commit everything together** — a single commit containing both the feature
-   changes and the ledger update. The `deviate commit` CLI applies the project's
-   commit convention (emoji prefix if configured, no-op otherwise):
+   changes and the ledger update. The ``deviate merge --message`` CLI applies
+   the project's commit convention (emoji prefix if configured, no-op otherwise):
 
    ```bash
-   deviate commit --no-verify \
+   deviate merge --issue {ISSUE_ID} \
      -m "{commit_type}({ISSUE_ID}): {description}" \
      -m "{summary paragraph}" \
      -m "## Changes
