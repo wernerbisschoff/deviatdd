@@ -85,7 +85,7 @@ Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Use
 
 7. **Commit**: Stage and commit all changes:
    ```
-   git add -A && git commit --no-verify -m "docs(adhoc): add issue {ISSUE_ID} - {title}"
+   git add -A && deviate commit --no-verify -m "docs(adhoc): add issue {ISSUE_ID} - {title}"
    ```
 
 8. **Output Summary**: Display the `## Discovery Audit`, the `## Target Issue Emission`, and the `## Ledger Registration` blocks to the user in clean Markdown. Do NOT emit the full PRD contents — only confirm the FR section was appended.

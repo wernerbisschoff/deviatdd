@@ -72,31 +72,20 @@ jq -R 'fromjson?' specs/issues.jsonl 2>/dev/null \
 
 Generate a conventional-commit title and multi-paragraph description synthesised from the branch history.
 
-**Step A — Detect emoji convention**. Read `CONTRIBUTING.md` and `.commit-convention.md` for emoji references; if neither exists, sample the last 10 commit subjects for Unicode emoji characters. If any emoji is found, the project uses emoji-prefixed commits.
-
-Default type→emoji mapping (gitmoji standard):
-```
-feat → ✨     fix → 🐛     docs → 📚     style → 🎨
-refactor → ♻️  perf → 🚀    test → ✅     build → 📦
-ci → 👷       chore → 🔧    revert → ⏪
-```
-
-**Step B — Title format** (consistent with `deviate pr`):
+**Step A — Title format** (consistent with `deviate pr`):
 
 ```
-{emoji} {type}({ISSUE_ID}): {description}
+{type}({ISSUE_ID}): {description}
 ```
 
-Omit the emoji when the repo does not use emoji-prefixed commits.
+The `deviate commit` CLI applies the project's commit convention (emoji prefix if configured, no-op otherwise), so do NOT pre-pend an emoji here.
 
 - **type**: `feature → feat`, `bug → fix`, `chore → chore`, `refactor → refactor`, `docs → docs`, default → `feat`
-- **emoji**: look up in the type→emoji mapping above (only when repo uses emojis)
 - **description**: the ledger issue title with any bracketed prefix (e.g. `[FR-NNN]`) stripped. If no ledger title is available, synthesise from commit history.
 - Max 72 characters, imperative mood, no period.
-- Final examples (emoji-using repo): `✨ feat(ISS-001): add user authentication` / `🐛 fix(ISS-002): handle null pointer`
-- Final examples (no emoji): `feat(ISS-001): add user authentication` / `fix(ISS-002): handle null pointer`
+- Example: `feat(ISS-001): add user authentication`
 
-**Step C — Description body** (2-4 paragraphs):
+**Step B — Description body** (2-4 paragraphs):
 
 ```
 {Summary — 2-4 sentences, problem-led}
@@ -124,7 +113,7 @@ Commits:        {N} commits
 Files changed:  {N} files, {N}+ / {N}-
 
 Commit:
-  {emoji}{commit_type}({ISSUE_ID}): {description}
+  {commit_type}({ISSUE_ID}): {description}
 
 Proceed with squash merge?
 ```
@@ -157,21 +146,17 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    ```
 
 4. **Commit everything together** — a single commit containing both the feature
-   changes and the ledger update:
+   changes and the ledger update. The `deviate commit` CLI applies the project's
+   commit convention (emoji prefix if configured, no-op otherwise):
 
    ```bash
-   git commit -m "$(cat <<'EOF'
-   {emoji}{commit_type}({ISSUE_ID}): {description}
-
-   {summary paragraph}
-
-   ## Changes
+   deviate commit --no-verify \
+     -m "{commit_type}({ISSUE_ID}): {description}" \
+     -m "{summary paragraph}" \
+     -m "## Changes
    - {change 1}
-   - {change 2}
-
-   Closes {ISSUE_ID}
-   EOF
-   )"
+   - {change 2}" \
+     -m "Closes {ISSUE_ID}"
    ```
 
 5. **Push to remote**:
