@@ -20,7 +20,11 @@ from deviate.cli._common import (
     with_json_quiet,
 )
 
-from deviate.core.agent import AgentBackend, AgentSubprocessError
+from deviate.core.agent import (
+    AgentBackend,
+    AgentSubprocessError,
+    resolve_agent_to_backend,
+)
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact
 from deviate.core.convention import format_commit_message
@@ -1367,16 +1371,22 @@ def _invoke_agent_phase(
         root = Path(cwd) if cwd else Path.cwd()
         model = resolve_model_for_phase(phase, root)
         data = _load_deviate_config_toml(root)
-        agent_cfg = AgentConfig()
+        backend_name = "opencode"
         if data:
             agent_data = data.get("agent", {})
-            if isinstance(agent_data, dict):
-                agent_cfg = AgentConfig(
-                    backend=agent_data.get("backend", "opencode"),
-                    timeout=agent_data.get("timeout", 600),
-                )
+            if isinstance(agent_data, dict) and isinstance(
+                agent_data.get("backend"), str
+            ):
+                # Normalise user-facing aliases (``factory``, ``omp``) to
+                # canonical backends before constructing AgentConfig —
+                # the Pydantic ``backend`` Literal only accepts canonical
+                # names (``opencode`` / ``claude`` / ``droid`` / ``pi``).
+                backend_name = resolve_agent_to_backend(agent_data["backend"])
+        agent_cfg = AgentConfig(
+            backend=backend_name,
+            timeout=(data.get("agent", {}).get("timeout", 600) if data else 600),
+        )
         backend = AgentBackend(config=agent_cfg)
-        backend_name = backend.config.backend
         model_str = f" --model {model}" if model else ""
         console.print(
             f"[green]INVOKE_AGENT[/] running '{backend_name}{model_str}'"

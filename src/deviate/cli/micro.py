@@ -23,6 +23,7 @@ from deviate.core.agent import (
     EmptyOutputError,
     HandoverManifest,
     MalformedHandoverManifestError,
+    resolve_agent_to_backend,
 )
 from deviate.core.convention import format_commit_message
 from deviate.core.profile import resolve_profile
@@ -3101,9 +3102,17 @@ def hotfix_post(
 
 
 def _resolve_agent_config(root: Path, agent: str | None) -> str | None:
-    """Resolve agent backend from CLI arg or config.toml fallback."""
+    """Resolve agent backend from CLI arg or config.toml fallback.
+
+    User-facing aliases (``factory`` for the Factory Droid IDE, ``omp``
+    for Oh-My-Pi) are normalised to their canonical backend via
+    :func:`deviate.core.agent.resolve_agent_to_backend` so the returned
+    value is always a valid :class:`~deviate.state.config.AgentConfig`
+    ``backend`` Literal. The ``run`` dispatch layer therefore never sees
+    a raw alias — it only sees canonical backend identifiers.
+    """
     if agent is not None:
-        return agent
+        return resolve_agent_to_backend(agent)
     config_path = root / ".deviate" / "config.toml"
     if not config_path.exists():
         return None
@@ -3112,7 +3121,10 @@ def _resolve_agent_config(root: Path, agent: str | None) -> str | None:
 
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
-        return data.get("agent", {}).get("backend") or None
+        backend = data.get("agent", {}).get("backend")
+        if not isinstance(backend, str) or not backend:
+            return None
+        return resolve_agent_to_backend(backend)
     except Exception:
         return None
 

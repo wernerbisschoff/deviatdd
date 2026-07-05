@@ -1019,6 +1019,10 @@ class TestInitAgentFlag:
         assert AGENT_TO_BACKEND["droid"] == "droid"
         assert AGENT_TO_BACKEND["claude"] == "claude"
         assert AGENT_TO_BACKEND["opencode"] == "opencode"
+        # ``pi`` and ``omp`` are canonical backends (not aliases) — each
+        # spawns its own binary (``pi -p`` / ``omp -p``).
+        assert AGENT_TO_BACKEND["pi"] == "pi"
+        assert AGENT_TO_BACKEND["omp"] == "omp"
 
 
 class TestInitPiBackend:
