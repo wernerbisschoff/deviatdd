@@ -1,12 +1,12 @@
 # Project Constitution
 
-Version: 0.5.0
+Version: 0.6.0
 
 ---
 
 ## 1. Architectural Principles
 
-- **Three-Layer Architecture**: Macro (feature scoping: Explore → Research → PRD → Shard+Specify), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Each layer has strict phase gates — no layer may be skipped.
+- **Four-Layer Architecture**: Product (optional cross-product framing: Flows → Architecture → Release), Macro (feature scoping: Explore → Research → PRD → Shard+Specify), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). The Product layer is skipped in single-feature repos; the remaining three layers have strict phase gates — no layer may be skipped.
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing.
 - **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
 - **Micro-Layer Scope**: GREEN phase writes only to `src/` and permitted implementation paths. Any mutation outside this allow-list is flagged by the JUDGE phase as a scope violation.
@@ -91,6 +91,7 @@ Version: 0.5.0
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
 ## 6. Version History
+- 0.6.0 — Promoted the Product layer (Flows → Architecture → Release) into §1 Architectural Principles as an optional fourth layer above Macro; updated the principle count from three to four layers; aligned GREEN-scope enforcement language with v2.2.0 (JUDGE performs scope verification against `src/` + permitted paths — no separate TamperGuard)
 - 0.5.0 — Added CHANGELOG discipline: §5 Definition of Done now requires `CHANGELOG.md` `[Unreleased]` updates for user-visible changes; mirrored in `AGENTS.md` as a cross-cutting rule, and as a checkbox in the PR template
 - 0.4.0 — Added cross-branch merge strategy for append-only JSONL ledgers via `merge=union` in `.gitattributes`; provisioned by `deviate setup`/`deviate init` to prevent line-level conflicts when concurrent feature branches both append to `specs/issues.jsonl`; semantic-duplicate records still resolved by sequential-parse canonical-state per §1
 

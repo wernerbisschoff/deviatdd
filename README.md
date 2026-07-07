@@ -10,7 +10,7 @@
 
 > **An agent-orchestration framework that runs your entire TDD loop — explore, spec, red, green, refactor — with three mandatory human-in-the-loop gates.**
 
-DeviaTDD is a CLI that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a four-layer architecture (Product · Macro · Meso · Micro), append-only ledgers, worktree isolation, and tamper-guarded test execution. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, and Droid are first-class backends today.
+DeviaTDD is a CLI that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a four-layer architecture (Product · Macro · Meso · Micro), append-only ledgers, worktree isolation, and path-scoped GREEN writes. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, Droid, the Factory Droid IDE, and Oh-My-Pi are first-class backends today.
 
 ---
 
@@ -21,10 +21,10 @@ Most AI coding agents stop at "write code that passes." DeviaTDD goes further �
 | Without DeviaTDD | With DeviaTDD |
 |------------------|---------------|
 | Agent writes code, you review after | Three mandatory human gates: design, contract, merge |
-| Test edits slip in silently during "GREEN" | Tamper Guard detects and rejects unauthorized test edits |
+| Test edits slip in silently during "GREEN" | JUDGE flags out-of-scope writes to `tests/`, `specs/`, or protected modules as `COMPLIANCE_VIOLATION` |
 | Lost track of which task is in which state | Append-only JSONL ledgers derive canonical state |
 | Branch drift between parallel features | Worktree isolation + append-only ledger merge driver |
-| Locked to one agent vendor | First-class support for Claude, OpenCode, Pi, Droid |
+| Locked to one agent vendor | First-class support for Claude, OpenCode, Pi, Droid, Factory, and OMP |
 | Specs drift from implementation | Spec-enriched issue files with FR traceability |
 
 ---
@@ -41,7 +41,7 @@ uv tool install deviate
 # supported agent. The --agent flag picks the default backend persisted
 # to .deviate/config.toml (slash commands themselves are installed to all
 # four agent directories regardless).
-deviate setup --agent claude     # or: opencode | pi | droid
+deviate setup --agent claude     # or: opencode | pi | droid | factory | omp
 ```
 
 Once setup is done, drive the entire lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the three gates) pauses for human review.
@@ -81,7 +81,7 @@ Once setup is done, drive the entire lifecycle from inside your agent. Each phas
 ```
 # TDD cycle (default for TDD-typed tasks)
 /deviate-red      T001                   # write a failing test
-/deviate-green    T001                   # implement it; TamperGuard reverts test edits
+/deviate-green    T001                   # implement it; GREEN is bounded to src/ + permitted paths
 /deviate-judge    T001                   # Gate decision; on rejection, the
                                          # Green → Judge → Green loop kicks in
                                          # (revert + <train_feedback> → re-GREEN, up to 3x)
@@ -129,8 +129,6 @@ subgraph Micro["Micro Layer — Per-Task Loop"]
   Re1 --> G1[green]
   G1 --> J{judge}
   J -->|violation| G1
-  J -->|tamper detected| Y[yellow]
-  Y --> G1
   J -->|pass| Rf[refactor]
   Rf -.->|HITL Gate 3| Done[merged]
 end
@@ -152,7 +150,6 @@ style T fill:#e1e7f5
 style Re1 fill:#f5e1e1
 style G1 fill:#f5e1e1
 style J fill:#f5e1e1
-style Y fill:#f5e1e1
 style Rf fill:#f5e1e1
 style Ex fill:#f5e1e1
 ```
@@ -173,8 +170,7 @@ style Ex fill:#f5e1e1
 | **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
 | **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | The `tasks.md` artifact is the human's execution blueprint. Verify: 4–8 tasks per issue, every task has a Verification CLI command, each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, DAG `blocked_by` deps are right. TDD tasks flow to red→green→judge→refactor; IMMEDIATE tasks route to `/deviate-execute`. |
 | **Micro · Red** | `/deviate-red <task-id>` | A failing test (no production code) | Agent-internal; you see the test on commit. |
-| **Micro · Green** | `/deviate-green <task-id>` | Production code that passes the test | Agent-internal; the TamperGuard reverts any unauthorized test edits before the suite runs. |
-| **Micro · Yellow** *(conditional)* | `/deviate-yellow <task-id>` | An amendment to the test, gated on TamperGuard detection | **Review the `<propose_test_amendment>` block**: if approved, the CLI commits it and advances to JUDGE; if rejected, the workspace rolls back and the loop returns to GREEN. |
+| **Micro · Green** | `/deviate-green <task-id>` | Production code that passes the test | Agent-internal; GREEN is constrained to `src/` + permitted paths, and JUDGE checks scope before advancing. |
 | **Micro · Judge** | `/deviate-judge <task-id>` | A `JUDGE_PASS` or `JUDGE_REJECTED` verdict over the GREEN diff | On rejection, the **Green → Judge → Green loop** rolls back to the RED commit, injects `<train_feedback>` into the next GREEN, and retries (up to 3 attempts). Read the feedback — it's the only signal you'll get for what the compliance checker objected to. |
 | **Micro · Refactor** | `/deviate-refactor <task-id>` | Polished, behavior-preserving code (only on `JUDGE_PASS`) | If the refactor breaks tests, the CLI discards it and the task completes on the verified GREEN. |
 | **Micro · Execute** | `/deviate-execute <task-id>` | A targeted change for `direct` / `e2e` tasks | Skips the TDD cycle; still has its own JUDGE pass. |
@@ -187,7 +183,7 @@ Operational tools (no gate, no commit): `/deviate-triage`, `/deviate-constitutio
 
 ## Why Each Phase Exists
 
-DeviaTDD's phase structure is not arbitrary. Each phase exists because the alternative — an agent that skips it — produces a documented failure mode. The rationale below is split into five parts: why the four layers exist, why each Product / Macro / Meso phase exists, why the three non-bypassable human gates exist, why the append-only ledgers exist, and why the TDD micro-loop is `Red → Green → [Yellow] → Judge/Train → Refactor`. Direct article citations appear inline in italics; consolidated URLs are listed under [References](#references) below.
+DeviaTDD's phase structure is not arbitrary. Each phase exists because the alternative — an agent that skips it — produces a documented failure mode. The rationale below is split into five parts: why the four layers exist, why each Product / Macro / Meso phase exists, why the three non-bypassable human gates exist, why the append-only ledgers exist, and why the TDD micro-loop is `Red → Green → Judge/Train → Refactor`. Direct article citations appear inline in italics; consolidated URLs are listed under [References](#references) below.
 
 ### Why the four layers
 
@@ -242,7 +238,7 @@ DeviaTDD's phase structure is not arbitrary. Each phase exists because the alter
 - **`flow_refs:` in each issue's frontmatter is the only mechanism that connects a code change back to the customer flow that motivated it.** Without the trace, a refactor that "improves" a vertical slice may break the flow that motivated it without anyone noticing. The trace is what makes the issue→flow→release chain auditable. *_(The traceability principle is supported by SDD's spec-first case studies; the specific `flow_refs:` frontmatter convention is DeviaTDD-original.)_*
 - **A review surface and an execution surface serve different readers and must be separate files.** `tasks.md` is the only artifact a human can read, amend, and approve task decomposition against; `tasks.jsonl` is the only artifact a CLI can parse deterministically and replay across parallel branches. Combining them forces one format to compromise on both readers — a human-readable markdown becomes hard to parse, or a parseable JSONL becomes hard to review *(TDAD — `test_map.txt` vs `SKILL.md` separation; TDFlow)*.
 
-### Why the TDD micro-loop is `Red → Green → [Yellow] → Judge/Train → Refactor`
+### Why the TDD micro-loop is `Red → Green → Judge/Train → Refactor`
 
 The TDD micro-loop is what makes agent-written code trustworthy. Each phase exists because the agent has a documented failure mode that the phase structurally prevents.
 
@@ -254,16 +250,9 @@ The TDD micro-loop is what makes agent-written code trustworthy. Each phase exis
 
 #### Why Green (write the minimum code to pass)
 
-- **"Do not change the tests" must be structurally enforced, not just instructed.** When an agent is given a failing test and a goal of making it pass, the cheapest path is often to weaken the test — delete an assertion, catch an exception, return a hard-coded value. Without structural enforcement (a Tamper Guard that reverts unauthorized test edits), the green phase collapses into test-hacking. Documented frontier-model failures include deleting scoring code and calling `sys.exit(0)` to make all tests appear to pass *(TDD Governance — proposal-execution separation; TDD Agent Dev)*.
+- **"Do not change the tests" must be structurally enforced, not just instructed.** When an agent is given a failing test and a goal of making it pass, the cheapest path is often to weaken the test — delete an assertion, catch an exception, return a hard-coded value. Without a structural constraint, the green phase collapses into test-hacking. Documented frontier-model failures include deleting scoring code and calling `sys.exit(0)` to make all tests appear to pass. DeviaTDD enforces this by constraining GREEN writes to `src/` (and a small permitted-paths list) and surfacing out-of-scope modifications to `tests/`, `specs/`, or protected modules as `COMPLIANCE_VIOLATION` from JUDGE *(TDD Governance — proposal-execution separation; TDD Agent Dev)*.
 - **The minimum code to pass is the only code that is verifiably correct.** Any code beyond the minimum introduces the possibility of bugs the tests do not cover. Constraining green to the minimum keeps the implementation close to the specification and the test surface meaningful *(parallel: TDAD — "regression as first-class metric")*.
 - **Green is bounded by the test.** The red test is the agent's goal; the implementation is just a means to that goal. Removing the test as the goal removes the only objective success criterion in the loop and replaces it with the agent's own judgment of "looks right" — which is exactly the failure mode the loop exists to prevent *(Refactor Pattern — refactor is safe only while the test suite passes; failing tests roll back the change)*.
-
-#### Why Yellow (a conditional test-amendment gate)
-
-- **Sometimes the test is wrong, not the implementation.** The agent may discover during green that the test encodes an incorrect assumption — a wrong API, a misunderstanding of the spec, a fragile assertion, a missing fixture. Silently editing the test violates the immutability guarantee the loop is built on; halting the work stalls the loop indefinitely. Neither default is acceptable.
-- **Yellow is the structurally safe path DeviaTDD chose from "test is wrong" back to "test is right."** When the Tamper Guard detects that green edited the test, it routes the agent to a human-controlled amendment review instead of silently reverting (which would force the loop to fail on a test the agent has correctly identified as broken) or silently accepting (which would allow test-hacking to slip through). The human becomes the authority on whether the test was actually wrong. *(The test-amendment gate pattern is a DeviaTDD design proposal — the underlying principle that agents cannot self-verify their own output is well-evidenced: IACDM's "verification gap" and PRIME's Executor/Verifier asymmetry — see References §Gaps.)*
-- **Yellow is conditional, not routine.** It fires only when the green agent tried to edit the test. A green phase that produces no test edits never enters yellow. The phase exists to make the rare structural-fix case safe, not to add ceremony to the common case.
-- **Yellow is the mechanism DeviaTDD uses to distinguish "agent cheating" from "agent caught a real spec error."** Both look identical in the diff — the test file changed during green. The amendment block forces the agent to justify the change, and the human decides which it is.
 
 #### Why Judge / Train (the Green → Judge → Green loop)
 
@@ -327,7 +316,6 @@ The rationale above grounds each architectural choice in published agentic-engin
 
 Claims in this README flagged with an italic _design proposal_ note have **no direct source** in the agentic-engineering literature at the time of writing. They are explicit gaps in the evidence chain; treat them as DeviaTDD design choices, not research findings:
 
-- **Yellow test-amendment gate** — the test-amendment review pattern is a DeviaTDD design proposal (no direct source covers it). The underlying principle — agents cannot self-verify their own output — is well-evidenced (IACDM, PRIME, State Contamination).
 - **Append-only JSONL over mutable state** — the "only viable merge strategy across parallel branches" claim is a software-engineering argument supported by git's `merge=union` semantics and TDFlow's parallel state-isolation work, not a direct research finding.
 - **Product layer optionality; Flows / Architecture / Release triad; single-sentence release goal** — DeviaTDD-original; closest support is SDD's spec-from-plan-from-implementation separation at the feature level.
 - **4–8 tasks per issue** — the 15–60 min cycle target is supported (TDAID); the specific 4–8 count is not.
