@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regardless of phase.
 
 ### Changed
+- **Shard prompts now own all vertical-slicing rules**; the PRD prompt's
+  §Issue Sharding Strategy was removed to eliminate drift between the two.
+  `src/deviate/prompts/commands/deviate-shard.md` (v1.1.0) now hard-enforces
+  the 4–8 / max-10 cap via Pass 1.5 (Slice Cap Gate — halts with
+  `SLICE_CAP_EXCEEDED`), flow-anchors issue boundaries via Pass 1 (Topological
+  Layout + Flow Anchor), and merges horizontal slices via Pass 3.5 (Merge
+  Pass). `src/deviate/prompts/commands/deviate-prd.md` (v1.1.0) gained a
+  concise FR-authoring guidance blockquote urging flow-shaped FRs (one
+  user-visible capability or flow segment per FR, not module-shaped FRs).
+  Architecture spec §2.1 and API spec §1.4 now reflect the enforcement
+  surface; PRD-level §Issue Sharding Strategy is gone.
+
 - JUDGE/TRAIN feedback is now actionable for the next GREEN. The JUDGE
   prompts (`src/deviate/prompts/auto/judge.md`,
   `src/deviate/prompts/commands/deviate-judge.md`) now:
