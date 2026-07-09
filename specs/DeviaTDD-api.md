@@ -151,6 +151,8 @@ The Product layer ships as **agent skills** (no dedicated CLI subcommands) — t
 
 **Downstream consumption:** `deviate-shard` and `deviate-adhoc` SKILL.md bodies read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context. Each sharded or adhoc issue emits a `flow_refs: [FLOW-XX, ...]` field in its YAML frontmatter and in the `IssueRecord.flow_refs` ledger entry (validated against `^FLOW-\d{2,}$`), so vertical slices stay traceable back to the flow that motivated them. `deviate adhoc pre` accepts a `--flow-ref FLOW-01,FLOW-02` CLI override to set the flow refs explicitly when the agent's natural-language inference is ambiguous.
 
+**Active Domain Discipline** is enforced at HITL gates: the Product-layer discovery steps (`/deviate-flows`, `/deviate-architecture`) follow a structured 7–8 bullet active discipline — one question at a time with a recommended answer, dependency-ordered, read-first, term-challenge against the glossary, sharpen fuzzy language, stress-test with scenarios, and update the artifact (`flows-<domain>.md` or `domain-model.md`) inline as terms resolve.
+
 #### `/deviate-shard` (Macro Layer)
 
 * **Objective:** Decomposes the PRD into standalone, testable issue files.
@@ -169,6 +171,8 @@ The Product layer ships as **agent skills** (no dedicated CLI subcommands) — t
 All macro-layer commands follow the `pre`/`post` subcommand pattern (except `init`).
 Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--quiet`
 (suppress diagnostic output).
+
+**Active Domain Discipline** is enforced at HITL gates: the macro phases that interact with the human (`/deviate-research` Gate 1, `/deviate-prd` Ambiguity Interrogation, `/deviate-shard` Gate 2) actively term-challenge against the upstream glossary, sharpen fuzzy language, stress-test with concrete edge-case scenarios, and update the relevant artifact (`design.md`, `data-model.md`, `prd.md`) inline as terms resolve — not as a passive sign-off step.
 
 #### `deviate explore pre <problem> [--slug]`
 

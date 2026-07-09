@@ -177,18 +177,19 @@ Write the entities, relationships, schemas, state transitions, and data flow int
 </step>
 
 <step id="interactive_hitl_gate_1">
-**HITL Gate 1 — Interactive Review.** After writing `<design_target>` and `<data_model_target>`, pause to get human feedback before finalizing:
+**HITL Gate 1 — Interactive Review.** After writing `<design_target>` and `<data_model_target>`, pause to get human feedback before finalizing. The interaction is **active**, not a sign-off: complete a full domain-discipline pass below before presenting the `## Pending HITL Decisions` questions.
 
-1. Use the `question` tool to present the key architectural decisions to the human operator. Ask specific questions about any items in `## Pending HITL Decisions` that need human judgment. For example:
-   - "The recommended architecture uses [Option A]. Do you approve, or would you prefer [Option B]?"
-   - "The data model defines [Entity] with [attribute]. Does this match your domain model?"
-   - "The design reverses the explore brief on [decision]. Do you accept this deviation?"
+**Domain discipline (mandatory before requesting sign-off):**
+- **Term-challenge against glossary**: when the user or any subagent uses a term that conflicts with `<data_model_target>`, `specs/_product/domain-model.md`, or constitution definitions, call it out immediately with the conflicting definitions and the user's apparent meaning.
+- **Sharpen fuzzy language**: when terms like "service", "thing", or "account" appear without a precise definition, propose a canonical term and ask the human to confirm before continuing.
+- **Stress-test with scenarios**: for each major architectural decision and each new entity boundary, invent one concrete edge-case scenario ("what happens when…") and ask the human to confirm the expected behavior.
+- **Update glossary inline**: as terms resolve, update `<data_model_target>` immediately — do not batch these up. Capture the term, the chosen definition, and the rejected alternatives.
+- **Cross-reference with code**: when the user states how something works, check the codebase via `codebase_search` / `codebase_peek`. If the code disagrees, surface the contradiction.
+- **Suggest ADRs sparingly**: when a decision meets all three criteria (hard to reverse, surprising without context, real tradeoff), offer to record it as an ADR — `/deviate-architecture` owns the format and storage.
 
-2. Wait for the human's answers. If they request changes:
-   - Update `<design_target>` and/or `<data_model_target>` accordingly
-   - Update the `## Pending HITL Decisions` table: set resolved items to `RESOLVED`
-   - Return to the question step if further clarification is needed
-
+**Question protocol** (after the discipline pass):
+1. Use the `question` tool to present the remaining `## Pending HITL Decisions` and any unresolved discipline-pass questions. Ask ONE question at a time, with your recommended answer, and wait for the human's response before asking the next.
+2. If the human requests changes: update `<design_target>` and/or `<data_model_target>`, update the `## Pending HITL Decisions` table (set resolved items to `RESOLVED`), and return to the question step if further clarification is needed.
 3. Once the human is satisfied, proceed to the post-script.
 
 Do NOT proceed to `prd` — that is the human's decision after this phase completes.
