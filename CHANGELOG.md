@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the process command line — no exposure in `ps aux`,
   `/proc/<pid>/cmdline`, audit logs, or shell history. `uv publish` reads
   `UV_PUBLISH_TOKEN` natively.
+- README: PyPI version badge in the badge row; one-line `deviate --version`
+  verification step in Quickstart (right after `uv tool install deviatdd`);
+  new `## Troubleshooting` section covering the five most common first-run
+  failures (no `uv`, CLI binary confusion, slash commands not appearing,
+  missing PyPI token, missing agent backend), each with a one-paragraph
+  fix and a link back to the canonical docs (`CONTRIBUTING.md`,
+  `specs/constitution.md`).
+- README: Quickstart wording updated — "four agent directories" → "all
+  supported agent directories" to track the six backends listed in the
+  install comment.
+
 
 
 - `format_commit_message()` and `_commit_phase()` accept an optional `phase`
