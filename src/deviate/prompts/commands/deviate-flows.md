@@ -98,13 +98,14 @@ CRITICAL INVARIANTS:
 
 Read `<user_input>` first; if empty, parse conversational history.
 
-**Discovery discipline** (adapted from the "grill with docs" pattern):
-- Ask ONE question at a time. For each question, provide your recommended
-  answer. Wait for the human's response before asking the next.
-- Walk the dependency tree: resolve Actor before Domain, Domain before
-  Trigger, Trigger before Happy Path.
-- If a question can be answered by reading the codebase or existing flow
-  files, do that instead of asking.
+**Discovery discipline** (adapted from the "grill with docs" pattern, made active):
+- **Ask ONE question at a time**, with your recommended answer, and wait for the human's response before asking the next. Do not advance to the next question until the human has answered.
+- **Walk the dependency tree** dependency-first: resolve Actor before Domain, Domain before Trigger, Trigger before Happy Path.
+- **Read first, ask second**: if a question can be answered by reading the codebase, existing flow files, or `specs/_product/architecture.md`, do that instead of asking.
+- **Term-challenge against the glossary** (at most once per turn): if the user's term conflicts with `flows-product.md`, `specs/_product/domain-model.md`, or any existing `flows-<domain>.md`, call it out immediately — "The seed defines X as Y, but you seem to mean Z — which is it?" Propose a canonical name for vague terms ("account", "thing"). Do not loop on challenges — surface once, then move on.
+- **Sharpen fuzzy language**: when the user names the flow with a vague term, propose a precise canonical name and confirm before writing the `## FLOW-NN <Name>` header.
+- **Stress-test with scenarios**: for each happy-path step, invent one concrete edge case ("what if the user is offline when the trigger fires?") and ask the human to confirm the alternate-path behavior.
+- **Update flow file inline**: as terms and scenarios resolve, update the in-progress flow block immediately. Do not batch up the corrections — capture them as they happen.
 
 Ask targeted questions to clarify:
 - Actor (Developer / End-User / Operator / External System)

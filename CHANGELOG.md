@@ -113,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Previously it only updated the ledger after an external merge. The `deviate
   merge` CLI command is unchanged — the prompt now drives it as a final step
   rather than relying on an external squash-merge tool.
+- Active domain discipline applied to `/deviate-research`, `/deviate-prd`, `/deviate-flows`, and `/deviate-architecture`. Each phase now actively term-challenges against the relevant glossary (`data-model.md`, `domain-model.md`, `flows-product.md`), sharpens fuzzy language, stress-tests with concrete scenarios, and updates the artifact inline as terms resolve. The macro-layer `interactive_hitl_gate_1` and the PRD `AMBIGUITY_INTERROGATION` gate now require a discipline pass before presenting HITL questions; the Product-layer discovery steps are upgraded from passive 3–4 bullet blocks to structured 7–8 bullet active disciplines. Spec alignment: `specs/DeviaTDD-architecture.md` §2.1 and §5.0, `specs/DeviaTDD-api.md` §1.5 and §2.
 
 ### Fixed
 - `resolve_issue_record` and `_deduplicate_issues` now treat `COMPLETED`

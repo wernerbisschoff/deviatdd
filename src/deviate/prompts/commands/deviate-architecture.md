@@ -86,19 +86,15 @@ Ask the user to describe the new architectural surface or modification. For
 greenfield architectures, prompt for: components, integration contracts, data
 ownership, and the flow IDs each component serves.
 
-**Discovery discipline** (adapted from the "grill with docs" pattern):
-- Ask ONE question at a time. For each question, provide your recommended
-  answer. Wait for the human's response before asking the next.
-- Walk the decision tree dependency-first: resolve components before
-  integration contracts, contracts before data ownership.
-- If a question can be answered by reading the codebase, existing flows,
-  or `domain-model.md`, do that instead of asking.
-- **Term-challenging** (at most once per turn): if the user's term
-  conflicts with an existing definition in `domain-model.md` or
-  `architecture.md`, call it out immediately — "Your domain model
-  defines X as Y, but you seem to mean Z — which is it?" If the user
-  uses a vague term ("account", "thing", "service"), propose a canonical
-  name. Do not loop on challenges — surface once, then move on.
+**Discovery discipline** (adapted from the "grill with docs" pattern, made active):
+- **Ask ONE question at a time**, with your recommended answer, and wait for the human's response before asking the next. Do not advance to the next question until the human has answered.
+- **Walk the decision tree dependency-first**: resolve components before integration contracts, contracts before data ownership.
+- **Read first, ask second**: if a question can be answered by reading the codebase, existing flows, `domain-model.md`, or `architecture.md`, do that instead of asking.
+- **Term-challenge against the glossary** (at most once per turn): if the user's term conflicts with an existing definition in `domain-model.md` or `architecture.md`, call it out immediately — "Your domain model defines X as Y, but you seem to mean Z — which is it?" Propose a canonical name for vague terms ("account", "thing", "service"). Do not loop on challenges — surface once, then move on.
+- **Sharpen fuzzy language**: when the user names a component with a vague term, propose a precise canonical name and confirm before writing the architecture entry.
+- **Stress-test with scenarios**: for each new component or contract, invent one concrete failure scenario ("what happens when the message bus is down at handoff time?") and ask the human to confirm the degraded behavior.
+- **Update domain-model.md inline**: as entities and relationships resolve, mirror them in `specs/_product/domain-model.md` immediately. Do not batch up the corrections — capture them as they happen.
+- **Offer ADRs sparingly**: when a decision meets all three criteria (hard to reverse, surprising without context, real tradeoff), append a one-paragraph ADR per invariant 9. Do not propose ADRs for routine component selections.
 
 ## 4. Classify the Change
 Apply the Local / Context-Bridging / Context-Creating classification
