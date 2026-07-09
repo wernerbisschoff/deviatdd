@@ -624,7 +624,7 @@ def _ensure_gitignore(workdir: Path) -> None:
         gitignore.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
 
-@cli.command(name="setup")
+@cli.command(name="setup", rich_help_panel="Run by you (start here)")
 def setup(
     agent_export_mode: str = typer.Option(
         "local", "--agent-export-mode", help="Export mode for agent commands"
@@ -644,6 +644,7 @@ def setup(
         callback=_validate_agent_choice,
     ),
 ) -> None:
+    """Bootstrap a new project with DeviaTDD (start here)."""
     workdir = Path.cwd()
     config_path = workdir / ".deviate" / "config.toml"
 
@@ -800,29 +801,145 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         )
 
 
-cli.add_typer(explore_app, name="explore")
-cli.add_typer(research_app, name="research")
-cli.add_typer(prd_app, name="prd")
-cli.add_typer(shard_app, name="shard")
+# Command panels — keep "Run by you (start here)" at the top so first-timers
+# see the human entry points first. The "Optional / manual utilities" panel
+# sits right under it for the occasional manual entry points. The
+# "Agent/internal (via /deviate-* slash commands)" panel is everything the
+# agent drives; pre/post phase dispatchers are explicitly listed there so
+# first-timers do not run them by hand.
+_USER_PANEL = "Run by you (start here)"
+_OPTIONAL_PANEL = "Optional / manual utilities"
+_AGENT_PANEL = "Agent/internal (via /deviate-* slash commands)"
 
-cli.add_typer(meso_app, name="meso")
-cli.add_typer(macro_app, name="macro")
-cli.add_typer(red_app, name="red")
-cli.add_typer(green_app, name="green")
-cli.add_typer(judge_app, name="judge")
-cli.add_typer(refactor_app, name="refactor")
-cli.add_typer(execute_app, name="execute")
-cli.add_typer(e2e_app, name="e2e")
-cli.add_typer(hotfix_app, name="hotfix")
-cli.add_typer(adhoc_app, name="adhoc")
-cli.add_typer(constitution_app, name="constitution")
-cli.add_typer(init_app, name="init")
-cli.add_typer(feature_app, name="feature")
-cli.add_typer(inspect_app, name="inspect")
-cli.command(name="specify")(specify)
-cli.command(name="plan")(plan)
-cli.add_typer(review_app, name="review")
-cli.command(name="tasks")(tasks)
-cli.command(name="pr")(pr)
-cli.command(name="merge")(merge)
-cli.command(name="run")(run_command)
+# `setup` is registered above (line ~627) with `rich_help_panel="Run by you
+# (start here)"`; the literal string is used there because Typer evaluates
+# the decorator at import time, before these constants are defined.
+cli.add_typer(
+    feature_app,
+    name="feature",
+    rich_help_panel=_OPTIONAL_PANEL,
+    help="Create a new feature branch",
+)
+cli.add_typer(
+    inspect_app,
+    name="inspect",
+    rich_help_panel=_OPTIONAL_PANEL,
+    help="Inspect issue and task ledgers",
+)
+
+# Top-level macro-phase Typer groups (agent-internal).
+cli.add_typer(
+    explore_app,
+    name="explore",
+    rich_help_panel=_AGENT_PANEL,
+    help="Macro: codebase exploration",
+)
+cli.add_typer(
+    research_app,
+    name="research",
+    rich_help_panel=_AGENT_PANEL,
+    help="Macro: design + data-model (Gate 1)",
+)
+cli.add_typer(
+    prd_app,
+    name="prd",
+    rich_help_panel=_AGENT_PANEL,
+    help="Macro: PRD synthesis",
+)
+cli.add_typer(
+    shard_app,
+    name="shard",
+    rich_help_panel=_AGENT_PANEL,
+    help="Macro: shard feature into issues (Gate 2)",
+)
+cli.add_typer(
+    macro_app,
+    name="macro",
+    rich_help_panel=_AGENT_PANEL,
+    help="Macro: explore → research → prd → shard",
+)
+
+# Micro-phase Typer groups (agent-internal).
+cli.add_typer(
+    red_app,
+    name="red",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: write a failing test",
+)
+cli.add_typer(
+    green_app,
+    name="green",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: implement to pass the test",
+)
+cli.add_typer(
+    judge_app,
+    name="judge",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: review GREEN diff against contract",
+)
+cli.add_typer(
+    refactor_app,
+    name="refactor",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: behavior-preserving cleanup",
+)
+cli.add_typer(
+    execute_app,
+    name="execute",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: direct execution for non-TDD tasks",
+)
+cli.add_typer(
+    e2e_app,
+    name="e2e",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: end-to-end verification",
+)
+cli.add_typer(
+    hotfix_app,
+    name="hotfix",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: bug fix (bypasses RED)",
+)
+cli.add_typer(
+    adhoc_app,
+    name="adhoc",
+    rich_help_panel=_AGENT_PANEL,
+    help="Macro: low/medium-complexity shortcut",
+)
+cli.add_typer(
+    constitution_app,
+    name="constitution",
+    rich_help_panel=_AGENT_PANEL,
+    help="Validate specs/constitution.md",
+)
+cli.add_typer(
+    init_app,
+    name="init",
+    rich_help_panel=_AGENT_PANEL,
+    help="Detect project type + scaffold structure",
+)
+cli.add_typer(
+    review_app,
+    name="review",
+    rich_help_panel=_AGENT_PANEL,
+    help="Final PR review (Gate 3)",
+)
+
+# Meso-phase pre/post dispatchers (agent-internal). The `pre` / `post`
+# subcommands are emitted by the agent, not run by hand.
+cli.command(name="specify", rich_help_panel=_AGENT_PANEL)(specify)
+cli.command(name="plan", rich_help_panel=_AGENT_PANEL)(plan)
+cli.command(name="tasks", rich_help_panel=_AGENT_PANEL)(tasks)
+cli.command(name="pr", rich_help_panel=_AGENT_PANEL)(pr)
+cli.command(name="merge", rich_help_panel=_AGENT_PANEL)(merge)
+# `meso` and `run` are user-facing. `meso run` drives the automated pipeline;
+# `run` (with `--all`) drains the pending-task queue.
+cli.add_typer(
+    meso_app,
+    name="meso",
+    rich_help_panel=_USER_PANEL,
+    help="Use `deviate meso run` to run the automated setup → plan → tasks pipeline",
+)
+cli.command(name="run", rich_help_panel=_USER_PANEL)(run_command)
