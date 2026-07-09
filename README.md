@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/badge/managed%20with-uv-purple.svg)](https://docs.astral.sh/uv/)
+[![PyPI](https://img.shields.io/pypi/v/deviatdd)](https://pypi.org/project/deviatdd/)
 
 # DeviaTDD
 
@@ -33,17 +34,18 @@ Most AI coding agents stop at "write code that passes." DeviaTDD goes further �
 ## Quickstart
 
 ```bash
-# Install (requires Python 3.13+ and uv)
+# Install (requires Python 3.13+ and uv).
 # The PyPI package is `deviatdd`; the CLI binary it installs is `deviate`.
 
 uv tool install deviatdd
+deviate --version                # confirm install
 
 # Bootstrap a new project + install slash commands into your agent of
 # choice. Does it all in one shot: scaffolds .deviate/, specs/constitution.md,
 # governance blocks, and installs /deviate-* slash commands for every
 # supported agent. The --agent flag picks the default backend persisted
 # to .deviate/config.toml (slash commands themselves are installed to all
-# four agent directories regardless).
+# supported agent directories regardless).
 deviate setup --agent claude     # or: opencode | pi | droid | factory | omp
 ```
 
@@ -326,6 +328,39 @@ Claims in this README flagged with an italic _design proposal_ note have **no di
 - **Three gates, not one and not ten** — the risk-adaptive framing is supported (Agile-V R0–R3); the specific count of three is DeviaTDD-original.
 
 ---
+
+## Troubleshooting
+
+**`uv: command not found`** — Install [uv](https://docs.astral.sh/uv/) first
+(it's the project's mandated package manager per
+[`specs/constitution.md`](specs/constitution.md)). macOS / Linux:
+`curl -LsSf https://astral.sh/uv/install.sh | sh`.
+
+**`deviate: command not found` after `uv tool install deviatdd`** — Verify
+the install landed: `uv tool list | grep deviatdd`. Reinstall if missing:
+`uv tool install --reinstall deviatdd`. The PyPI package name and the CLI
+binary name differ — that's intentional (see [Quickstart](#quickstart)).
+
+**`deviate setup` runs but `/deviate-*` commands don't appear in the
+agent** — Slash commands are installed to `<workdir>/.claude/commands/`,
+`.opencode/commands/`, `.omp/commands/`, `.factory/commands/`, and
+`.pi/prompts/`. Verify the directory exists and is readable, then restart
+the agent so it picks up the new commands.
+
+**`mise run publish` fails with `PYPI_API_TOKEN is not set`** — The task
+loads `.env` from the project root. `.env` must contain
+`PYPI_API_TOKEN=pypi-...`. `.env.example` documents the variable name;
+`.env` itself is gitignored.
+
+**Agent backend not installed** — `deviate setup --agent <name>` scaffolds
+the project without the agent present, but invoking `/deviate-*` slash
+commands requires the agent to be installed. Install Claude Code / OpenCode
+/ Pi / Droid / Factory / OMP first per their respective install
+instructions.
+
+For development-setup details, see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#development-setup) and
+[`specs/constitution.md`](specs/constitution.md).
 
 ## License
 
