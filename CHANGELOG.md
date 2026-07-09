@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing PyPI token, missing agent backend), each with a one-paragraph
   fix and a link back to the canonical docs (`CONTRIBUTING.md`,
   `specs/constitution.md`).
+
 - README: Quickstart wording updated — "four agent directories" → "all
   supported agent directories" to track the six backends listed in the
   install comment.
@@ -47,6 +48,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Micro-layer RED phase commits are now prefixed with 🚨 so the failing
   test is visible at a glance; `feat:` commits continue to use ✨
   regardless of phase.
+
+### Fixed
+- `deviate --version` (and any code path importing `deviate.__version__`)
+  raised `importlib.metadata.PackageNotFoundError: No package metadata was
+  found for deviate` at import time. The two call sites in
+  `src/deviate/__init__.py` and `src/deviate/cli/__init__.py` queried
+  metadata for the import name `"deviate"` instead of the distribution
+  name `"deviatdd"` declared in `pyproject.toml`. Both now query
+  `"deviatdd"` and additionally fall back to a `"0.0.0+unknown"` sentinel
+  (so source checkouts without a dist-info still import). The
+  `test_version` test was tautological (asserted against the same broken
+  `version("deviate")` call it was meant to guard); it now asserts
+  `deviate --version` stdout equals the real
+  `importlib.metadata.version("deviatdd")`, and a new
+  `test_module_version_resolves` import-time guard fails loudly if the
+  module-level lookup regresses.
 
 ### Changed
 - **Shard prompts now own all vertical-slicing rules**; the PRD prompt's

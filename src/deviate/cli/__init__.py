@@ -59,9 +59,13 @@ AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode", "pi"
 
 def _version_callback(value: bool) -> None:
     if value:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
 
-        typer.echo(f"deviate {version('deviate')}")
+        try:
+            ver = version("deviatdd")
+        except PackageNotFoundError:
+            ver = "0.0.0+unknown"
+        typer.echo(f"deviate {ver}")
         raise typer.Exit()
 
 
