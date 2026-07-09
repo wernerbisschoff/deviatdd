@@ -64,8 +64,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `importlib.metadata.version("deviatdd")`, and a new
   `test_module_version_resolves` import-time guard fails loudly if the
   module-level lookup regresses.
+- Segmentation fault in `deviate run --all` during the micro-layer
+  JUDGE phase (and the latent `--json` path). `_invoke_streaming` in
+  `core/agent.py` reads subprocess stdout on a worker thread that
+  invokes a user-supplied output callback; `cli.micro._make_output_handler`'s
+  closure then called `c.print(...)` followed by a bare `sys.stdout.flush()`
+  on the worker thread. The flush bypassed Rich Console's internal RLock
+  and raced with main-thread `c.print` writes at the OS fd level,
+  producing a SIGSEGV on macOS. The same race existed in
+  `ui.render.emit_jsonl`, exercised only under `--json`. Introduced a
+  single shared `threading.Lock` in `deviate.ui.render` (`stdout_lock`)
+  that `_make_output_handler` and `emit_jsonl` both acquire; the
+  `sys.stdout.flush()` in the tool-call indicator now routes through
+  `c.file.flush()` to make Rich's writer the authoritative fd path.
+  Both call sites see the same lock instance so a future thread-emitting
+  code path can't re-open the race by acquiring the wrong one.
 
 ### Changed
+- `deviate --help` now renders three Typer help panels instead of a flat
+  command list. **"Run by you (start here)"** is the human entry point —
+  `setup` (with `Bootstrap a new project with DeviaTDD (start here).`),
+  `run` (with `Use \`deviate run --all\` to drain the queue.`), and `meso`
+  (with `Use \`deviate meso run\` to run the automated setup → plan →
+  tasks pipeline`) — `run` and `meso` are surfaced in the panel by name
+  with their literal invocation, since `run --all` and `meso run` are the
+  actual entry points. **"Agent/internal (via /deviate-* slash
+  commands)"** lists every phase dispatcher (`specify`, `plan`, `tasks`,
+  `pr`, `merge`) and Typer group (`explore`, `research`, `prd`, `shard`,
+  `macro`, `adhoc`, `red`, `green`, `judge`, `refactor`, `execute`, `e2e`,
+  `hotfix`, `init`, `constitution`, `review`) the agent drives; first-
+  timers see that those commands are not for them. **"Optional / manual
+  utilities"** holds `feature` (create a branch) and `inspect` (list
+  issue/task ledgers) — useful but not on the standard path. Each
+  agent-internal command gained a one-line description (e.g. `Macro:
+  codebase exploration`, `Micro: write a failing test`, `Final PR review
+  (Gate 3)`) so the panel reads as a glossary, not a wall of names. The
+  `run_command` docstring (`src/deviate/cli/micro.py`) was rewritten to
+  lead with the `--all` invocation. Backed by
+  `tests/test_cli/test_help.py`, which pins panel names, membership,
+  ordering, and the literal meso/run invocations so the first-timer
+  wording can't regress.
 - **Shard prompts now own all vertical-slicing rules**; the PRD prompt's
   §Issue Sharding Strategy was removed to eliminate drift between the two.
   `src/deviate/prompts/commands/deviate-shard.md` (v1.1.0) now hard-enforces
@@ -114,6 +152,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   merge` CLI command is unchanged — the prompt now drives it as a final step
   rather than relying on an external squash-merge tool.
 - Active domain discipline applied to `/deviate-research`, `/deviate-prd`, `/deviate-flows`, and `/deviate-architecture`. Each phase now actively term-challenges against the relevant glossary (`data-model.md`, `domain-model.md`, `flows-product.md`), sharpens fuzzy language, stress-tests with concrete scenarios, and updates the artifact inline as terms resolve. The macro-layer `interactive_hitl_gate_1` and the PRD `AMBIGUITY_INTERROGATION` gate now require a discipline pass before presenting HITL questions; the Product-layer discovery steps are upgraded from passive 3–4 bullet blocks to structured 7–8 bullet active disciplines. Spec alignment: `specs/DeviaTDD-architecture.md` §2.1 and §5.0, `specs/DeviaTDD-api.md` §1.5 and §2.
+- **Reworked `deviate meso run` and `deviate run --all` output** to a clean,
+  professional, rich-CLI format. New module `src/deviate/ui/pipeline.py`
+  ships five components — `PipelineBanner` (framed opening panel with
+  `MESO <issue_id>` and a `SPECIFY ▶ PLAN ▶ TASKS` step indicator),
+  `PhaseCallout` (per-phase rounded panel with `◐`/`●`/`✗` markers and
+  elapsed time), `RunBoard` (multi-column Rich `Table` updated in place
+  by the `OrchestrationMonitor` event stream), `TrainIndicator`
+  (sequential `● 1/3 ─▶─ ◐ 2/3 ─▶─ ○ 3/3` retry visual), and
+  `PipelineSummary` (closing totals / duration / status panel). The
+  `OrchestrationMonitor` gained an optional `board` parameter that
+  updates the board on every `phase_change` / `task_completed` /
+  `task_failed` event. All literal tokens the existing test suite
+  asserts against (`RED`, `GREEN`, `COMPLETED`, `JUDGE_REJECTED`,
+  `TRAIN`, `MESO`, `IDLE`, `DISCOVERED`, `INVOKE_AGENT`, `DRY_RUN`,
+  `NO_CLAIMABLE_ISSUES`, `ISSUE_COMPLETED`, `INVALID_ISSUE_ID`,
+  `BLOCKED`, `PROGRESS_RESET`, `TASK_ALREADY_DONE`, `TEST_FAILURE`,
+  `JUDGE_AGENT_NO_FEEDBACK`, `<PHASE>_FAILED`, etc.) are preserved
+  verbatim in the output — the framed panels are additive, not
+  replacements. Aesthetic: "Editorial / Refined Engineering" — restrained
+  palette (deep blue / semantic green-red-amber), heavy Unicode
+  box-drawing (`╭╮╰╯│─`), monospace tabular layout. 46 new tests in
+  `tests/test_ui/test_pipeline.py` pin the visual contract. Spec
+  alignment: `specs/DeviaTDD-api.md` §5.2 (`deviate run --all`) and §5.3
+  (`deviate meso run`) document the new output structure.
 
 ### Fixed
 - `resolve_issue_record` and `_deduplicate_issues` now treat `COMPLETED`

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import sys
 import warnings
 from collections.abc import Callable
@@ -46,6 +47,14 @@ from deviate.state.config import (
     resolve_model_for_phase,
 )
 from deviate.ui.monitor import OrchestrationMonitor
+from deviate.ui.pipeline import (
+    PhaseCallout,
+    PhaseMarker,
+    PipelineSummary,
+    RunBoard,
+    TrainIndicator,
+)
+from deviate.ui.render import stdout_lock
 
 
 from deviate.state.ledger import (
@@ -99,6 +108,42 @@ def _task_label(task: dict) -> str:
     if len(desc) > _TASK_DESC_MAX:
         desc = desc[:_TASK_DESC_MAX].rstrip() + "…"
     return f"{tid}: {desc}"
+
+
+def _phase_status_marker(outcome: str) -> PhaseMarker:
+    """Map outcome string -> PhaseMarker used by the callout footer."""
+    if outcome == "failed":
+        return PhaseMarker.FAILED
+    if outcome == "completed":
+        return PhaseMarker.COMPLETED
+    return PhaseMarker.IN_PROGRESS
+
+
+def _emit_phase_callout(
+    c: Console,
+    phase: str,
+    task: dict,
+    status: PhaseMarker,
+    duration_seconds: float | None = None,
+    note: str = "",
+) -> None:
+    """Print a framed callout for *phase* on *task*.
+
+    The callout header includes the literal phase token (RED / GREEN /
+    JUDGE / REFACTOR / EXECUTE) so existing tests that grep
+    ``result.output`` for those tokens keep passing.
+    """
+    c.print(
+        PhaseCallout(
+            phase=phase,
+            task_id=task.get("id", "?"),
+            task_description=task.get("description", ""),
+        ).render(
+            status=status,
+            duration_seconds=duration_seconds,
+            note=note,
+        )
+    )
 
 
 def _phase_already_done(ledger_path: Path, task_id: str, phase: str) -> bool:
@@ -252,71 +297,77 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
 
     def handler(line: str) -> None:
         nonlocal in_thinking, thinking_buf, in_yaml, yaml_lines
-
-        stripped = line.strip()
-        if not stripped:
-            return
-
-        if not verbose:
-            if _YAML_FENCE_OPEN_RE.match(stripped):
-                in_yaml = True
-                yaml_lines = []
+        with stdout_lock:
+            stripped = line.strip()
+            if not stripped:
                 return
 
-            if in_yaml:
-                if _YAML_FENCE_CLOSE_RE.match(stripped):
-                    _emit_yaml_summary(yaml_lines, c)
-                    in_yaml = False
+            if not verbose:
+                if _YAML_FENCE_OPEN_RE.match(stripped):
+                    in_yaml = True
                     yaml_lines = []
                     return
-                yaml_lines.append(stripped)
+
+                if in_yaml:
+                    if _YAML_FENCE_CLOSE_RE.match(stripped):
+                        _emit_yaml_summary(yaml_lines, c)
+                        in_yaml = False
+                        yaml_lines = []
+                        return
+                    yaml_lines.append(stripped)
+                    return
+
+                if _MANIFEST_HEADER_RE.match(stripped):
+                    return
+                if _DEVIATE_MICRO_HEADER_RE.match(stripped):
+                    return
+                if _HANDOVER_XML_RE.match(stripped):
+                    return
+                if _MISE_TASK_PREFIX_RE.match(stripped):
+                    return
+                if _MISE_TIMING_RE.match(stripped):
+                    return
+
+            if "<thinking" in stripped.lower():
+                in_thinking = True
+                thinking_buf = [stripped]
                 return
 
-            if _MANIFEST_HEADER_RE.match(stripped):
-                return
-            if _DEVIATE_MICRO_HEADER_RE.match(stripped):
-                return
-            if _HANDOVER_XML_RE.match(stripped):
-                return
-            if _MISE_TASK_PREFIX_RE.match(stripped):
-                return
-            if _MISE_TIMING_RE.match(stripped):
-                return
-
-        if "<thinking" in stripped.lower():
-            in_thinking = True
-            thinking_buf = [stripped]
-            return
-
-        if in_thinking:
-            if "</thinking>" in stripped.lower():
+            if in_thinking:
+                if "</thinking>" in stripped.lower():
+                    thinking_buf.append(stripped)
+                    content = " ".join(thinking_buf)
+                    content = (
+                        content.replace("<thinking>", "")
+                        .replace("</thinking>", "")
+                        .replace("<Thinking>", "")
+                        .replace("</Thinking>", "")
+                    )
+                    c.print(f"[dim]{content[:600]}[/]")
+                    in_thinking = False
+                    thinking_buf = []
+                    return
                 thinking_buf.append(stripped)
-                content = " ".join(thinking_buf)
-                content = (
-                    content.replace("<thinking>", "")
-                    .replace("</thinking>", "")
-                    .replace("<Thinking>", "")
-                    .replace("</Thinking>", "")
-                )
-                c.print(f"[dim]{content[:600]}[/]")
-                in_thinking = False
-                thinking_buf = []
                 return
-            thinking_buf.append(stripped)
-            return
 
-        claude_text = _try_parse_claude_text(stripped)
-        if claude_text is not None:
-            if claude_text.strip():
-                c.print(claude_text[:600], style="dim", markup=False)
-            return
+            claude_text = _try_parse_claude_text(stripped)
+            if claude_text is not None:
+                if claude_text.strip():
+                    c.print(claude_text[:600], style="dim", markup=False)
+                return
 
-        if _is_tool_call(stripped):
-            c.print("[dim].[/]", end="")
-            sys.stdout.flush()
-            return
+            if _is_tool_call(stripped):
+                c.print("[dim].[/]", end="")
+                # Flush through Rich's file handle so the live dot indicator
+                # reaches the TTY immediately. `c.file.flush()` is the same
+                # fd as `sys.stdout`, but routing through the Console makes
+                # the dependency on Rich's writer explicit. Both calls
+                # happen under `stdout_lock` (acquired at the top of
+                # `handler`) so they cannot race with main-thread `c.print`.
+                c.file.flush()
+                return
 
-        c.print(stripped[:600], style="dim", markup=False)
+            c.print(stripped[:600], style="dim", markup=False)
 
     return handler
 
@@ -888,6 +939,7 @@ def _run_red_phase(
         c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
         return session
     _log_run("PHASE_START", task_id=tid, phase="RED")
+    _emit_phase_callout(c, "RED", task, PhaseMarker.IN_PROGRESS)
     c.print(f"  [bold blue]RED →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
@@ -972,6 +1024,7 @@ def _run_green_phase(
             f" but train_feedback present — re-running[/]"
         )
     _log_run("PHASE_START", task_id=tid, phase="GREEN")
+    _emit_phase_callout(c, "GREEN", task, PhaseMarker.IN_PROGRESS)
     c.print(f"  [bold green]GREEN →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
@@ -1294,6 +1347,8 @@ def _run_judge_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="JUDGE")
+    c.print(f"[bold magenta]JUDGE →[/] {_task_label(task)}")
+    _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
     c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
@@ -1539,6 +1594,8 @@ def _run_refactor_phase(
         )
         return session
     _log_run("PHASE_START", task_id=tid, phase="REFACTOR")
+    c.print(f"[bold cyan]REFACTOR →[/] {_task_label(task)}")
+    _emit_phase_callout(c, "REFACTOR", task, PhaseMarker.IN_PROGRESS)
     c.print(f"  [bold green]REFACTOR →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
@@ -1708,6 +1765,13 @@ def _run_tdd_cycle(
                         f"after {max_train_attempts} train attempts"
                     )
                 c.print(
+                    TrainIndicator.render(
+                        attempt=train_attempts,
+                        maximum=max_train_attempts,
+                        phase="GREEN",
+                    )
+                )
+                c.print(
                     f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
                     f" \u2014 GREEN phase post-cleanup failed, retrying with feedback[/]"
                 )
@@ -1752,6 +1816,13 @@ def _run_tdd_cycle(
                 )
             if session.train_feedback:
                 c.print(
+                    TrainIndicator.render(
+                        attempt=train_attempts,
+                        maximum=max_train_attempts,
+                        phase="GREEN",
+                    )
+                )
+                c.print(
                     f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
                     f" \u2014 re-running GREEN with judge feedback[/]"
                 )
@@ -1762,6 +1833,13 @@ def _run_tdd_cycle(
                 )
                 session = session.force_transition_to("GREEN")
                 session.save(session_path)
+                c.print(
+                    TrainIndicator.render(
+                        attempt=train_attempts,
+                        maximum=max_train_attempts,
+                        phase="GREEN",
+                    )
+                )
                 c.print(
                     f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
                     f" \u2014 tests still failing, re-running GREEN with test feedback[/]"
@@ -1800,6 +1878,7 @@ def _run_execute_phase(
 ) -> None:
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="EXECUTE")
+    _emit_phase_callout(c, "EXECUTE", task, PhaseMarker.IN_PROGRESS)
     c.print(f"  [bold green]EXECUTE →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
@@ -2116,6 +2195,7 @@ def _run_all(
     agent: str | None = None,
     json_mode: bool = False,
 ) -> None:
+    _run_all_start = time.monotonic()
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = (
@@ -2133,6 +2213,18 @@ def _run_all(
         c.print(f"[yellow]{msg}[/]")
         raise typer.Exit(code=0)
 
+    # Issue-scoped run header: shows issue context and pending task count.
+    from rich.panel import Panel as _Panel
+    from rich.text import Text as _Text
+
+    _hdr = _Text()
+    _hdr.append("RUN", style="bold blue")
+    _hdr.append("  ")
+    _hdr.append(issue_id or "(no issue)", style="bold")
+    _hdr.append("  ")
+    _hdr.append(f"{len(pending)} pending task(s)", style="dim")
+    c.print(_Panel(_hdr, border_style="blue", padding=(0, 1)))
+
     _log_run(
         "RUN_ALL_START",
         issue_id=issue_id or "(none)",
@@ -2141,8 +2233,16 @@ def _run_all(
         skip_refactor=no_refactor,
     )
 
+    _board = RunBoard(
+        pending=[t for t, _ in pending],
+        title=f"Run --all [{issue_id or '?'}]",
+    )
     monitor = OrchestrationMonitor(
-        c, json_mode=json_mode, total_tasks=len(pending), verbose=_verbose
+        c,
+        json_mode=json_mode,
+        total_tasks=len(pending),
+        verbose=_verbose,
+        board=_board,
     )
 
     graphite = resolve_graphite_config(root)
@@ -2210,6 +2310,20 @@ def _run_all(
         total=total,
         failed=monitor.failed_count,
         status=pipeline_status,
+    )
+
+    # Final RunBoard snapshot — board is updated by the monitor event stream.
+    c.print(_board.render())
+
+    # Closing summary panel — total/completed/failed/duration/status.
+    c.print(
+        PipelineSummary.render(
+            total=total,
+            completed=monitor.failed_count and (total - monitor.failed_count) or total,
+            failed=monitor.failed_count,
+            duration_seconds=time.monotonic() - _run_all_start,
+            pipeline_status=pipeline_status,
+        )
     )
 
     if any_failed:
@@ -3160,9 +3274,11 @@ def run_command(
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
 ) -> None:
-    """Run dispatcher: route task by execution_mode to TDD cycle or execute phase.
+    """Use `deviate run --all` to drain the queue.
 
-    When called without arguments, picks the next PENDING task for the active issue.
+    Runs the next pending task by default. Routes each task by
+    execution_mode to the TDD cycle (red → green → judge → refactor)
+    or the execute phase.
     """
     global _verbose
     _verbose = verbose
