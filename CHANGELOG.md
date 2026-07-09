@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- PyPI-ready `pyproject.toml` metadata: `readme`, `license = "MIT"` (SPDX),
+  `authors`, `keywords`, `classifiers` (incl. `License :: OSI Approved :: MIT
+  License` and `Programming Language :: Python :: 3.13`), and a
+  `[project.urls]` block (Homepage / Repository / Issues / Changelog).
+  `twine check dist/*` now passes cleanly. The `[build-system]` was already
+  hatchling-based and is unchanged.
+- `mise run publish` task: depends on `check` (lint + format-check), rebuilds
+  the sdist + wheel from a clean `dist/`, validates with `twine check`, then
+  publishes via `uv publish` using `PYPI_API_TOKEN` loaded from a
+  project-local `.env` (loaded by `mise` via `_.file = ".env"` in
+  `mise.toml`). The task fails fast with a clear error if the token is
+  unset. A new `.env.example` documents the variable; `.env` is gitignored
+  via a pattern that ignores `.env` and `.env.*` while keeping
+  `.env.example` trackable.
+- Security: `mise run publish` passes the token via `UV_PUBLISH_TOKEN`
+  inline-prefix env var (`UV_PUBLISH_TOKEN="$PYPI_API_TOKEN" uv publish
+  dist/*`) instead of the `--token` CLI flag. The inline form scopes the
+  export to the single `uv publish` invocation, so the secret never appears
+  on the process command line — no exposure in `ps aux`,
+  `/proc/<pid>/cmdline`, audit logs, or shell history. `uv publish` reads
+  `UV_PUBLISH_TOKEN` natively.
+
+
 - `format_commit_message()` and `_commit_phase()` accept an optional `phase`
   argument that overrides the `test:` emoji for the red-green TDD cycle:
   `phase="red"` → 🚨 (failing test), `phase="green"` → ✅ (passing test).

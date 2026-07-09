@@ -1,5 +1,10 @@
 [env]
 python = "3.13"
+# Load secrets from project-local .env so `mise run publish` can pick up
+# PYPI_API_TOKEN. The file is gitignored — never commit real tokens.
+# See .env.example for the expected variable name.
+_.file = ".env"
+
 
 [tools]
 python = "3.13"
@@ -61,6 +66,33 @@ description = "Run the deviate CLI (pass args directly, e.g. `mise run dev init`
 [tasks.install-tool]
 run = "uv tool install --editable ."
 description = "Install package as editable tool via uv"
+
+[tasks.publish]
+depends = ["check"]
+description = "Build and publish deviatdd to PyPI using PYPI_API_TOKEN from .env (passed via UV_PUBLISH_TOKEN env var — never on argv)"
+run = '''
+set -euo pipefail
+
+if [ -z "${PYPI_API_TOKEN:-}" ]; then
+  echo "error: PYPI_API_TOKEN is not set" >&2
+  echo "  Add 'PYPI_API_TOKEN=pypi-...' to a project-local .env file" >&2
+  echo "  (see .env.example for the variable name; .env itself is gitignored)" >&2
+  exit 1
+fi
+
+rm -rf dist/
+uv build
+
+echo "→ twine check..."
+uv run --with twine twine check dist/*
+
+echo "→ Publishing deviatdd to PyPI..."
+# Pass token via UV_PUBLISH_TOKEN env var (read natively by `uv publish`).
+# Inline-prefix form scopes the export to this single command only, so the
+# token never appears on the process command line (no exposure in `ps aux`,
+# `/proc/<pid>/cmdline`, audit logs, or shell history).
+UV_PUBLISH_TOKEN="$PYPI_API_TOKEN" uv publish dist/*
+'''
 
 [tasks.help]
 run = "mise tasks"
