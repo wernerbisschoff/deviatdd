@@ -1,3 +1,10 @@
-from importlib.metadata import version as _version
+from importlib.metadata import PackageNotFoundError, version as _version
 
-__version__ = _version("deviate")
+try:
+    __version__ = _version("deviatdd")
+except PackageNotFoundError:
+    # Source checkouts without an editable install (e.g. running the module
+    # directly from a git clone) have no dist-info. Fall back to a sentinel
+    # so the CLI still imports; downstream code can detect it via the
+    # "+unknown" suffix.
+    __version__ = "0.0.0+unknown"
