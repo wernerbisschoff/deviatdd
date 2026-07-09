@@ -2,7 +2,7 @@
 name: deviate-prd
 description: Compile explore.md into prd.md — the singular source of truth for downstream sharding into specs/issues.jsonl.
 category: deviatdd-macro-layer
-version: 1.0.0
+version: 1.1.0
 layer: macro
 aliases:
   - prd
@@ -57,6 +57,8 @@ CRITICAL INSTRUCTION INVARIANTS:
 [Insert structural Mermaid.js sequence diagram tracking module operations, interface boundaries, and data layer transactions here]
 
 # Functional Requirements and Epics
+> **FR authoring guidance**: Each FR describes a user-visible capability or flow segment, not an internal component. Avoid module-shaped FRs ("Build the gloss parser") — these are horizontal slices invisible to the user. Prefer flow-shaped FRs ("Parse a gloss expression via CLI") that the shard prompt can collapse into one issue. Group related FRs that together deliver one flow segment under a single FR heading where natural; many FRs in one heading is fine. The downstream shard prompt owns slicing rules — do not pre-decide how the FRs will be grouped.
+
 ## FR-{NNN}-{ID}: [Module Name]
 - **Description**: [Precise engineering behavioral assertion]
 - **Preconditions**: [State configuration requirements prior to runtime execution]
@@ -78,16 +80,6 @@ CRITICAL INSTRUCTION INVARIANTS:
 - **Observability & Telemetry**: [Structured log payload requirements, telemetry metrics, trace collection targets]
 - **Reliability & Fallbacks**: [Retry algorithms, backoff configurations, fallback defaults, circuit thresholds]
 - **Type Safety & Modularity**: [Linting rules, typing requirements, strict minimum coverage flags]
-
-# Issue Sharding Strategy
-## Shard Mechanics
-[Explicit rules mapping requirements structures directly down to localized issue entities. Each shard is a vertical slice that may carry zero, one, or many FRs. Coverage is mandatory — every FR must appear in at least one shard, and an FR's ACs must co-locate with that FR (no AC orphans). Enabling shards (tooling, infrastructure, refactors) may carry zero FRs. Never shard horizontally across layers; every shard must remain a complete, independently verifiable vertical slice.]
-## Dependency Topology Graph
-```
-[Visual ASCII or markdown text representation of the Requirements Directed Acyclic Graph (DAG)]
-```
-## Issue Template Protocol
-[Contract rules dictating structural metadata extraction for down-stream isolated development loops]
 
 # Ambiguity Resolution and Stakeholder Decisions
 - `RESOLVED-Q-{ID}`: [Question from explore.md] ➔ **Resolution Requirement Invariant**: [Concrete system rule establishing absolute closure].

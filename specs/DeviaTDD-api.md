@@ -160,6 +160,7 @@ The Product layer ships as **agent skills** (no dedicated CLI subcommands) — t
   * **Independence:** Each issue should be independently implementable and testable
   * **Scope bounds:** No issue should require <1 task or >10 tasks
   * **Testability:** Each issue must have clear acceptance criteria
+  * **Enforcement:** The shard prompt owns all slicing rules. Pass 1 (Topological Layout + Flow Anchor) partitions by primary `FLOW-XX`, not by FR. Pass 1.5 (Slice Cap Gate) hard-enforces the 4–8 / max-10 cap with `SLICE_CAP_EXCEEDED`. Pass 3.5 (Merge Pass) collapses adjacent horizontal slices that share workstations or demo paths. The PRD prompt no longer carries §Issue Sharding Strategy; it shapes FRs via flow-segment authoring guidance only.
 
 ---
 
