@@ -84,7 +84,7 @@ wheels = [
 ]
 
 [[package]]
-name = "deviate"
+name = "deviatdd"
 version = "2.5.1"
 source = { editable = "." }
 dependencies = [

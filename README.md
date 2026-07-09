@@ -34,7 +34,9 @@ Most AI coding agents stop at "write code that passes." DeviaTDD goes further â€
 
 ```bash
 # Install (requires Python 3.13+ and uv)
-uv tool install deviate
+# The PyPI package is `deviatdd`; the CLI binary it installs is `deviate`.
+
+uv tool install deviatdd
 
 # Bootstrap a new project + install slash commands into your agent of
 # choice. Does it all in one shot: scaffolds .deviate/, specs/constitution.md,
