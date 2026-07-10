@@ -29,8 +29,7 @@ This is the **E2E** (final verification) phase of the DeviaTDD micro-cycle. Use 
 - All tasks in the `tasks.jsonl` ledger have a terminal status (REFACTOR or COMPLETED)
 - The feature needs final user-facing workflow verification
 - Ready to prepare for PR creation
-
-After completion, invoke `/tools:review` for code review, then `/tools:walkthrough` → `/tools:pr` → `/tools:pr-review`.
+After completion, invoke `/deviate-review` for code review, then `/deviate-walkthrough` → `/deviate-pr` → `/deviate-pr-review`.
 
 ## Product-Layer Flow Coverage
 

@@ -29,6 +29,7 @@ from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
+from deviate.cli.walkthrough import walkthrough_app
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
 from deviate.core.commands import discover_commands, install_command
@@ -926,6 +927,13 @@ cli.add_typer(
     rich_help_panel=_AGENT_PANEL,
     help="Final PR review (Gate 3)",
 )
+cli.add_typer(
+    walkthrough_app,
+    name="walkthrough",
+    rich_help_panel=_AGENT_PANEL,
+    help="Architectural code walkthrough (human-guided)",
+)
+
 
 # Meso-phase pre/post dispatchers (agent-internal). The `pre` / `post`
 # subcommands are emitted by the agent, not run by hand.

@@ -28,8 +28,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   project-specific test/lint/format/setup/dev commands, ensures a symlink
   relationship between `CLAUDE.md` and `AGENTS.md` (via
   `_linkify_governance_files`), applies governance blocks to the canonical
-  file, and installs the DeviaTDD prompt commands (currently
-  24 flat `.md` files: 24 `deviate-*`) into **all five** supported agent
+  file, and installs the DeviaTDD prompt commands. Currently 25 `deviate-*`
+  slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
+  — 26 flat `.md` files total — are installed to `.{agent}/commands/` (or
+  `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land in all agent
   directories — `.claude/commands/`, `.opencode/commands/`,
   `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/` — in a single invocation, regardless of which agent was passed
   via `--agent`. Each command is a flat `<name>.md` file with a minimal YAML
@@ -647,6 +649,36 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ---
 
+#### `deviate walkthrough pre [--base <branch>] [--branch <branch>]`
+
+* **Source:** `src/deviate/cli/walkthrough.py`
+* **Description:** Gathers git state and governance context for a human-guided
+  architectural walkthrough at HITL Gate 3, complementing `deviate review pre`.
+  Computes the unified diff and file list (via `git diff --name-only`) between
+  the merge-base of `--base` (default: `main`) and `--branch` (default: `HEAD`),
+  resolves governance paths, and collects commit messages for decision traceability.
+  Emits a JSON contract for consumption by the walkthrough skill.
+* **Input Parameters:**
+  * `--base <branch>` (Base branch for merge-base computation; default: `main`)
+  * `--branch <branch>` (Target branch for self-contained walkthrough; default: `HEAD`)
+* **Output Artifacts:** JSON contract with `diff`, `constitution_path`, `prd_path`,
+  `constitution_warning`, `prd_warning`, `base_branch`, `commit_messages`,
+  `changed_files`, `changed_files_count`, `timestamp`.
+* **Token Budget:** Contract is lighter than review's — no per-file AST parsing.
+  The skill reads the raw diff and file list; structured diff is available via
+  `deviate review pre` if deeper analysis is needed.
+
+---
+
+#### `deviate walkthrough post <status>`
+
+* **Source:** `src/deviate/cli/walkthrough.py`
+* **Description:** Placeholder for future walkthrough summary persistence.
+  Currently records the outcome (CLEAN or FLAGGED) with a timestamp.
+* **Input Parameters:**
+  * `status` (Positional: CLEAN or FLAGGED)
+* **Output Artifacts:** JSON contract with `status`, `phase`, `timestamp`.
+
 ### 8. (Removed — Context Sync)
 
 The `deviate context` concept was evaluated and removed. Reasoning:
@@ -801,6 +833,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-plan` **← NEW** | Localized Researcher | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/plan.md` | `deviate plan pre/post` (planned) | 4 steps: read spec-enriched issue, scan current codebase, analyze prior issues, produce plan.md with implementation strategy |
 | `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume spec-enriched issue + plan.md, decompose into tasks, assign execution modes, encode DAG deps, append terminal E2E task, validate granularity + commit |
 | `/deviate-pr` | Release Engineer | GitHub PR | `deviate pr pre/run` | 3 steps: gather git state, derive PR metadata, create PR via `gh pr create` |
+| `/deviate-walkthrough` | Architectural Walkthrough Guide | (none — conversation only) | `deviate walkthrough pre/post` | 5 steps: gather, sweep, curate, walk (conversational), synthesize |
 
 > **Deprecation Notice:** `/deviate-specify` is deprecated as a standalone step. Shard
 > now produces issues with full spec-level detail (Gherkin AC, user stories, edge cases).
@@ -879,6 +912,7 @@ The architecture defines a model routing strategy in `specs/constitution.md` see
 | `/deviate-shard` | Qwen 3.7+ | Single invocation | One-shot |
 | `/deviate-plan` (new) | V4 Pro | Single invocation | One-shot — fresh localized research per issue |
 | `/deviate-tasks` | V4 Pro | Single invocation (issue-scoped) | 90%+ cache hit after turn 1 when paired with `/deviate-plan` |
+| `/deviate-walkthrough` | V4 Flash | Single invocation | One-shot |
 | `/deviate-adhoc` | V4 Flash | Single invocation | One-shot |
 | EXECUTE / E2E / HOTFIX | V4 Flash | Single invocation | One-shot |
 
