@@ -382,7 +382,7 @@ class TestMicroOrchestration:
                 f"Expected JUDGE_REJECTED: {result.output}"
             )
             assert "TRAIN" in result.output, f"Expected TRAIN retry: {result.output}"
-            assert "GREEN →" in result.output.split("TRAIN")[-1], (
+            assert "TSK-004-11" in result.output.split("TRAIN")[-1], (
                 "GREEN must re-run during TRAIN retry after rejection"
             )
             assert result.exit_code == 0, (
