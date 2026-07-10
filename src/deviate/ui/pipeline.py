@@ -44,9 +44,10 @@ PHASE_STYLES: dict[str, tuple[str, str]] = {
     "JUDGE": ("bold magenta", "J"),
     "REFACTOR": ("bold cyan", "F"),
     "EXECUTE": ("bold green", "E"),
+    "SPECIFY": ("bold yellow", "S"),
+    "PLAN": ("bold cyan", "P"),
+    "TASKS": ("bold blue", "T"),
 }
-
-# Box-drawing glyphs reserved for the pipeline UI.
 G_PENDING = "\u25cb"  # ○
 G_IN_PROGRESS = "\u25d0"  # ◐
 G_COMPLETED = "\u25cf"  # ●
