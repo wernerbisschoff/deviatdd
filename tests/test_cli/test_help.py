@@ -32,11 +32,24 @@ OPTIONAL_PANEL = "Optional / manual utilities"
 AGENT_PANEL = "Agent/internal (via /deviate-* slash commands)"
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI SGR escape sequences (color, bold, dim, etc.)."""
+    return _ANSI_RE.sub("", text)
+
+
 def _help_output() -> str:
-    """Return ``deviate --help`` stdout via CliRunner."""
+    """Return ``deviate --help`` stdout via CliRunner, with ANSI codes stripped.
+
+    Rich/Typer uses SGR codes even for basic box-drawing: on non-TTY stdout
+    (CI, pipes) it wraps panel markers in ``\\x1b[2m`` (dim) which breaks
+    ``str.find`` — strip them so panel searching is encoding-agnostic.
+    """
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0, result.output
-    return result.output
+    return _strip_ansi(result.output)
 
 
 def _panel_block(output: str, panel_name: str) -> str:
