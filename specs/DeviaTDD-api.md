@@ -507,11 +507,30 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Graphite Integration:** If `.deviate/config.toml` contains `graphite = true`, after
   each successful task the runner invokes `gt create -m "feat({TSK}): {description}"`
   to spin up a stacked branch for the next task.
-* **Dashboard / Output:** Constructs an `OrchestrationMonitor` with `total_tasks` set to
-  the pending count. The monitor emits live Rich dashboard events (task markers, phase
-  transitions) in TTY mode and JSONL events (`task_started`, `phase_change`,
-  `task_completed`, `task_failed`, `pipeline_halted`, `pipeline_complete`) when
-  `--json` is passed. Agent output is forwarded to the monitor via a streaming callback.
+* **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
+  `src/deviate/ui/monitor.py`) wired to a `RunBoard` (`src/deviate/ui/pipeline.py`)
+  with `total_tasks` set to the pending count. The RunBoard renders as a
+  multi-column Rich `Table` whose rows are updated in place via the monitor's
+  event stream (`task_started` / `phase_change` / `task_completed` / `task_failed`).
+  Output structure:
+  * **Run header panel** — `RUN <issue_id> N pending task(s)` in a framed panel.
+  * **Per-phase callouts** — Each `RED` / `GREEN` / `JUDGE` / `REFACTOR` / `EXECUTE`
+    phase emits a `PhaseCallout` (rounded `╭─╮` panel) with the phase tag, task
+    ID, status marker (`◐` in-progress, `●` completed, `✗` failed), and elapsed
+    time. The original token-bearing line (`RED →`, `GREEN →`, etc.) is preserved
+    alongside for backwards-compat with existing tooling.
+  * **Train retry indicator** — On each `_run_tdd_cycle` retry, a
+    `TrainIndicator` renders the current attempt against the maximum
+    (`● 1/3 ─▶─ ◐ 2/3 ─▶─ ○ 3/3`). The literal `TRAIN` token is preserved.
+  * **Final RunBoard snapshot** — A full re-render of the board reflecting the
+    post-run state of every task (markers + per-row error reasons).
+  * **Pipeline summary** — A `PipelineSummary` panel with totals
+    (`Total tasks`, `Completed`, `Failed`, `Duration`, `Status`).
+  In `--json` mode the same monitor emits JSONL events
+  (`task_started`, `phase_change`, `task_completed`, `task_failed`,
+  `pipeline_halted`, `pipeline_complete`); the rich board panels are
+  suppressed in JSON mode. Agent output is forwarded to the monitor via a
+  streaming callback.
 * **Accepts:** `--profile [full|fast|secure]`, `--agent <name>`, `--json`, `--quiet`,
   `--dry-run` (prints all resolved pending tasks and exits without dispatching).
 
@@ -552,6 +571,15 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   aborts with `<PHASE>_FAILED`. Re-running the pipeline re-processes plan.md and tasks.md
   (no phase-skip logic); commits are skipped when there are no changes. The
   `UPSTREAM_MISSING` token is **not** emitted by the current implementation.
+* **Output:** The pipeline prints a `PipelineBanner` (`src/deviate/ui/pipeline.py`)
+  framed opening panel showing `MESO <issue_id> <issue_title>`, the epic / issue
+  slugs, and a horizontal step indicator (`SPECIFY ▶ PLAN ▶ TASKS`). On
+  completion it prints a `PipelineSummary` (totals + duration + `Status` row)
+  followed by a footer line `MESO pipeline complete - session at IDLE`. The
+  literal tokens `MESO`, `IDLE`, `DISCOVERED`, `INVOKE_AGENT`, `DRY_RUN`,
+  `NO_CLAIMABLE_ISSUES`, `ISSUE_COMPLETED`, `INVALID_ISSUE_ID`, `BLOCKED`,
+  `PROGRESS_RESET`, and `<PHASE>_FAILED` are all preserved in the output
+  for backwards-compat with existing tooling and the test suite.
 
 #### `deviate macro run` (Automated Macro Pipeline)
 

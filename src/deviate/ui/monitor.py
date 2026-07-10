@@ -47,11 +47,13 @@ class OrchestrationMonitor:
         json_mode: bool = False,
         total_tasks: int = 0,
         verbose: bool = False,
+        board: object | None = None,
     ) -> None:
         self._console = console
         self._json_mode = json_mode
         self._total_tasks = total_tasks
         self._verbose = verbose
+        self._board = board
         self._tasks: dict[str, TaskStatus] = {}
         self._interrupted = False
         self._exited = False
@@ -124,10 +126,14 @@ class OrchestrationMonitor:
                 marker=MarkdownStatus.IN_PROGRESS,
                 phase=phase,
             )
+            if self._board is not None and hasattr(self._board, "mark_phase"):
+                self._board.mark_phase(task_id, phase)
             return
         self._tasks[task_id].phase = phase
         if self._tasks[task_id].marker is MarkdownStatus.PENDING:
             self._tasks[task_id].marker = MarkdownStatus.IN_PROGRESS
+        if self._board is not None and hasattr(self._board, "mark_phase"):
+            self._board.mark_phase(task_id, phase)
 
     def _on_task_completed(self, data: dict[str, Any]) -> None:
         task_id = _resolve_task_id(data)
@@ -138,9 +144,13 @@ class OrchestrationMonitor:
                 marker=MarkdownStatus.COMPLETED,
                 phase=data.get("phase", ""),
             )
+            if self._board is not None and hasattr(self._board, "mark_completed"):
+                self._board.mark_completed(task_id)
             return
         self._tasks[task_id].marker = MarkdownStatus.COMPLETED
         self._tasks[task_id].phase = data.get("phase", self._tasks[task_id].phase)
+        if self._board is not None and hasattr(self._board, "mark_completed"):
+            self._board.mark_completed(task_id)
 
     def _on_task_failed(self, data: dict[str, Any]) -> None:
         task_id = _resolve_task_id(data)
@@ -152,10 +162,16 @@ class OrchestrationMonitor:
                 error_reason=data.get("error_reason", ""),
                 phase=data.get("phase", ""),
             )
+            if self._board is not None and hasattr(self._board, "mark_failed"):
+                self._board.mark_failed(
+                    task_id, reason=str(data.get("error_reason", ""))
+                )
             return
         self._tasks[task_id].marker = MarkdownStatus.FAILED
         self._tasks[task_id].error_reason = data.get("error_reason", "")
         self._tasks[task_id].phase = data.get("phase", self._tasks[task_id].phase)
+        if self._board is not None and hasattr(self._board, "mark_failed"):
+            self._board.mark_failed(task_id, reason=str(data.get("error_reason", "")))
 
     def _on_agent_output(self, data: dict[str, Any]) -> None:
         line = data.get("line", "")
@@ -175,6 +191,12 @@ class OrchestrationMonitor:
     @property
     def failed_count(self) -> int:
         return sum(1 for t in self._tasks.values() if t.marker is MarkdownStatus.FAILED)
+
+    @property
+    def completed_count(self) -> int:
+        return sum(
+            1 for t in self._tasks.values() if t.marker is MarkdownStatus.COMPLETED
+        )
 
     def signal_keyboard_interrupt(self) -> None:
         self._interrupted = True

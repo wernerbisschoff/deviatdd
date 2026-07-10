@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 import subprocess
+import time
 from contextlib import chdir
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -52,6 +53,10 @@ from deviate.state.ledger import (
     resolve_issue_record,
     select_next_unblocked_issue,
     select_unblocked_candidates,
+)
+from deviate.ui.pipeline import (
+    PipelineBanner,
+    PipelineSummary,
 )
 
 logger = logging.getLogger(__name__)
@@ -1519,6 +1524,17 @@ def _meso_run(
     issue_slug = _source_stem(record.source_file) if record else ""
     issue_title = record.title if record else ""
 
+    _pipeline_start = time.monotonic()
+    console.print(
+        PipelineBanner(
+            issue_id=issue_id,
+            issue_title=issue_title,
+            epic_slug=epic_slug,
+            issue_slug=issue_slug,
+            steps=("SPECIFY", "PLAN", "TASKS"),
+        ).render()
+    )
+
     # ── Dry-run mode ─────────────────────────────────────────────────
     if dry_run:
         contract: dict[str, str] = {
@@ -1608,7 +1624,16 @@ def _meso_run(
         if session.current_phase != "IDLE":
             session = session.force_transition_to("IDLE")
             session.save(session_path)
-    console.print("[green]MESO[/] pipeline complete — session at IDLE")
+    console.print(
+        PipelineSummary.render(
+            total=1,
+            completed=1,
+            failed=0,
+            duration_seconds=time.monotonic() - _pipeline_start,
+            pipeline_status="completed",
+            include_meso_footer=True,
+        )
+    )
 
 
 meso_app = typer.Typer(no_args_is_help=True)
