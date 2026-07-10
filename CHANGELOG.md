@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- `deviate-review` prompt v3.0.0: reframed as JUDGE-aware review. Three domains
+  (Clean Code, Constitution, PRD Alignment) downgraded to light-sniff — cross-task
+  only, no re-reading governance files. Domain 3 renamed to "Pragmatism &
+  Architectural Coherence" with 6 new cross-task checks. Added strategy-gated
+  review (full/diff_first/targeted), finding classification with Severity +
+  Confidence, and machine-parseable Fix Instructions block. Flow Coverage
+  domain made diff-only to match JUDGE-aware posture. (PR #?.)
 ### Added
 - PyPI-ready `pyproject.toml` metadata: `readme`, `license = "MIT"` (SPDX),
   `authors`, `keywords`, `classifiers` (incl. `License :: OSI Approved :: MIT
