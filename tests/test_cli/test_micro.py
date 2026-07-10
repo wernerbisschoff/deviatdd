@@ -300,7 +300,7 @@ class TestRunAllMonitorIntegration:
         )
         result = runner.invoke(cli, ["run", "--all"])
         assert result.exit_code == 0, f"CLI failed: {result.output}"
-        assert "Processing" in result.output
+        assert "RED →" in result.output
         assert '"event":' not in result.output
 
     @patch("deviate.cli.micro._invoke_agent")

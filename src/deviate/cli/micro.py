@@ -1347,7 +1347,6 @@ def _run_judge_phase(
 ) -> SessionState:
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="JUDGE")
-    c.print(f"[bold magenta]JUDGE →[/] {_task_label(task)}")
     _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
     c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
 
@@ -1948,6 +1947,8 @@ def _run_execute_phase(
         if not diff.strip():
             c.print(f"  [dim]JUDGE_SKIP \u2014 no diff in commit for {tid}[/]")
             break
+        _log_run("PHASE_START", task_id=tid, phase="JUDGE")
+        _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
 
         c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)} (spec compliance)")
         judge_prompt = _build_auto_prompt("judge", task, root)
@@ -2072,7 +2073,6 @@ def _dispatch_task(
     start_phase: str | None = None,
 ) -> None:
     mode = task.get("execution_mode", "TDD")
-    c.print(f"[cyan]Processing {_task_label(task)} ({mode})[/]")
 
     if mode == "TDD" and batch_mode:
         description = task.get("description", "")
