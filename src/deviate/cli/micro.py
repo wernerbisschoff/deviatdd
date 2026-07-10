@@ -358,13 +358,6 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
 
             if _is_tool_call(stripped):
                 c.print("[dim].[/]", end="")
-                # Flush through Rich's file handle so the live dot indicator
-                # reaches the TTY immediately. `c.file.flush()` is the same
-                # fd as `sys.stdout`, but routing through the Console makes
-                # the dependency on Rich's writer explicit. Both calls
-                # happen under `stdout_lock` (acquired at the top of
-                # `handler`) so they cannot race with main-thread `c.print`.
-                c.file.flush()
                 return
 
             c.print(stripped[:600], style="dim", markup=False)

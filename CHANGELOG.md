@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review (full/diff_first/targeted), finding classification with Severity +
   Confidence, and machine-parseable Fix Instructions block. Flow Coverage
   domain made diff-only to match JUDGE-aware posture. (PR #?.)
+### Fixed
+- `deviate run --all` no longer segfaults during the JUDGE phase when GREEN
+  fails to deliver passing tests. Root cause: the background-thread reader in
+  `_invoke_streaming` called `c.file.flush()` which bypassed Rich's RLock and
+  raced with main-thread `c.print` writes on `sys.stdout.fileno()`. Removed the
+  flush — both threads now only write through `c.print()`, which Rich
+  serializes internally via its own RLock on the shared Console instance.
+  (The `stdout_lock` in `_make_output_handler` already serialized the handler
+  body against `emit_jsonl` and remains in place for that purpose.)
 ### Added
 - PyPI-ready `pyproject.toml` metadata: `readme`, `license = "MIT"` (SPDX),
   `authors`, `keywords`, `classifiers` (incl. `License :: OSI Approved :: MIT
@@ -78,21 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `importlib.metadata.version("deviatdd")`, and a new
   `test_module_version_resolves` import-time guard fails loudly if the
   module-level lookup regresses.
-- Segmentation fault in `deviate run --all` during the micro-layer
-  JUDGE phase (and the latent `--json` path). `_invoke_streaming` in
-  `core/agent.py` reads subprocess stdout on a worker thread that
-  invokes a user-supplied output callback; `cli.micro._make_output_handler`'s
-  closure then called `c.print(...)` followed by a bare `sys.stdout.flush()`
-  on the worker thread. The flush bypassed Rich Console's internal RLock
-  and raced with main-thread `c.print` writes at the OS fd level,
-  producing a SIGSEGV on macOS. The same race existed in
-  `ui.render.emit_jsonl`, exercised only under `--json`. Introduced a
-  single shared `threading.Lock` in `deviate.ui.render` (`stdout_lock`)
-  that `_make_output_handler` and `emit_jsonl` both acquire; the
-  `sys.stdout.flush()` in the tool-call indicator now routes through
-  `c.file.flush()` to make Rich's writer the authoritative fd path.
-  Both call sites see the same lock instance so a future thread-emitting
-  code path can't re-open the race by acquiring the wrong one.
 
 :- CLI run output cleaned up: removed redundant "Processing TSK-..." line
   (the rich phase panel already shows task identity), added missing
