@@ -112,6 +112,32 @@ class TestTaskMarkers:
             assert task.marker == MarkdownStatus.COMPLETED
             assert task.phase == "GREEN"
 
+    def test_monitor_completed_and_failed_counts(
+        self, monitor: OrchestrationMonitor
+    ) -> None:
+        with monitor:
+            assert monitor.completed_count == 0
+            assert monitor.failed_count == 0
+
+            monitor.push_event("task_started", id="TSK-001", phase="RED")
+            assert monitor.completed_count == 0
+            assert monitor.failed_count == 0
+
+            monitor.push_event("task_completed", task_id="TSK-001")
+            assert monitor.completed_count == 1
+            assert monitor.failed_count == 0
+
+            monitor.push_event("task_started", id="TSK-002", phase="RED")
+            monitor.push_event("task_failed", task_id="TSK-002", error_reason="x")
+            assert monitor.completed_count == 1
+            assert monitor.failed_count == 1
+
+            # Tasks that were never started are not in _tasks at all
+            # so completed_count and failed_count are unaffected.
+            assert "TSK-003" not in monitor._tasks
+            assert monitor.completed_count == 1
+            assert monitor.failed_count == 1
+
 
 class TestKeyboardInterrupt:
     def test_monitor_keyboard_interrupt(self, monitor: OrchestrationMonitor) -> None:
