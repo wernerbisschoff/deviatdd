@@ -79,10 +79,17 @@ Breaks a business goal down into standard development project containers.
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
 `/deviate-plan` phase for per-issue localized research. A lightweight PR/merge review is handled by the `/deviate-review` skill using
-`deviate review pre` (see `src/deviate/cli/review.py`) at HITL Gate 3. It
 runs a fast single-pass scan (V4 Flash) over ledger integrity, cross-task
 consistency, and security surface — surfacing findings in chat for human
 judgment rather than persisting report files.
+
+Alongside the review, `/deviate-walkthrough` (see `src/deviate/cli/walkthrough.py`)
+provides a human-guided architectural tour of the same diff. Unlike the review's
+structured seven-domain scan, the walkthrough curates the diff into a narrative
+— spotlighting architectural decisions the automated phases (JUDGE, REFACTOR,
+REVIEW) missed, grouping changes by concern rather than file path, and letting
+the user control depth. It is the more human counterpart to the review, designed
+to build codebase comprehension and surface hidden trade-offs.
 
 * **Shard+Specify (merged):** The `/deviate-shard` skill now produces issue files with full
   spec-level detail: user stories (US-NNN), Gherkin acceptance criteria (Given/When/Then),

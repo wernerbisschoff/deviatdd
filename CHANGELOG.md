@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unset. A new `.env.example` documents the variable; `.env` is gitignored
   via a pattern that ignores `.env` and `.env.*` while keeping
   `.env.example` trackable.
+- `/deviate-walkthrough` slash command: human-guided architectural walkthrough
+  that curates the diff by concern (DEEP_DIVE / NOTE / SKIM / SKIP triage),
+  asks structured yes/no or multiple-choice questions via the `ask` tool with
+  a recommended default, and surfaces architectural decisions missed by
+  automated phases. Includes `deviate walkthrough pre/post` CLI backend.
+  (PR #?.)
 - Security: `mise run publish` passes the token via `UV_PUBLISH_TOKEN`
   inline-prefix env var (`UV_PUBLISH_TOKEN="$PYPI_API_TOKEN" uv publish
   dist/*`) instead of the `--token` CLI flag. The inline form scopes the
