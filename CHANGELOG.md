@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both call sites see the same lock instance so a future thread-emitting
   code path can't re-open the race by acquiring the wrong one.
 
+:- CLI run output cleaned up: removed redundant "Processing TSK-..." line
+  (the rich phase panel already shows task identity), added missing
+  JUDGE phase panel/block to the execute-phase path, and fixed
+  duplicate JUDGE → text in the TDD-cycle path.
 ### Changed
 - `deviate --help` now renders three Typer help panels instead of a flat
   command list. **"Run by you (start here)"** is the human entry point —
