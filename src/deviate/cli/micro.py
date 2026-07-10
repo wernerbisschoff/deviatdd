@@ -2319,7 +2319,7 @@ def _run_all(
     c.print(
         PipelineSummary.render(
             total=total,
-            completed=monitor.failed_count and (total - monitor.failed_count) or total,
+            completed=monitor.completed_count,
             failed=monitor.failed_count,
             duration_seconds=time.monotonic() - _run_all_start,
             pipeline_status=pipeline_status,
