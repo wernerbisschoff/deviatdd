@@ -940,7 +940,8 @@ def _run_red_phase(
         return session
     _log_run("PHASE_START", task_id=tid, phase="RED")
     _emit_phase_callout(c, "RED", task, PhaseMarker.IN_PROGRESS)
-    c.print(f"  [bold blue]RED →[/] {_task_label(task)}")
+    if _verbose:
+        c.print(f"  [bold blue]RED →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1025,7 +1026,8 @@ def _run_green_phase(
         )
     _log_run("PHASE_START", task_id=tid, phase="GREEN")
     _emit_phase_callout(c, "GREEN", task, PhaseMarker.IN_PROGRESS)
-    c.print(f"  [bold green]GREEN →[/] {_task_label(task)}")
+    if _verbose:
+        c.print(f"  [bold green]GREEN →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1348,7 +1350,8 @@ def _run_judge_phase(
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="JUDGE")
     _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
-    c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
+    if _verbose:
+        c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1593,9 +1596,11 @@ def _run_refactor_phase(
         )
         return session
     _log_run("PHASE_START", task_id=tid, phase="REFACTOR")
-    c.print(f"[bold cyan]REFACTOR →[/] {_task_label(task)}")
+    if _verbose:
+        c.print(f"[bold cyan]REFACTOR →[/] {_task_label(task)}")
     _emit_phase_callout(c, "REFACTOR", task, PhaseMarker.IN_PROGRESS)
-    c.print(f"  [bold green]REFACTOR →[/] {_task_label(task)}")
+    if _verbose:
+        c.print(f"  [bold green]REFACTOR →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1878,7 +1883,8 @@ def _run_execute_phase(
     tid = task.get("id", "?")
     _log_run("PHASE_START", task_id=tid, phase="EXECUTE")
     _emit_phase_callout(c, "EXECUTE", task, PhaseMarker.IN_PROGRESS)
-    c.print(f"  [bold green]EXECUTE →[/] {_task_label(task)}")
+    if _verbose:
+        c.print(f"  [bold green]EXECUTE →[/] {_task_label(task)}")
 
     backend = agent or "opencode"
     root = Path.cwd()
@@ -1950,7 +1956,8 @@ def _run_execute_phase(
         _log_run("PHASE_START", task_id=tid, phase="JUDGE")
         _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
 
-        c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)} (spec compliance)")
+        if _verbose:
+            c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)} (spec compliance)")
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
