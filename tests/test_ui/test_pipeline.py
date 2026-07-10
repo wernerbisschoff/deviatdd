@@ -163,7 +163,19 @@ class TestPipelineBanner:
 
 
 class TestPhaseCallout:
-    @pytest.mark.parametrize("phase", ["RED", "GREEN", "JUDGE", "REFACTOR", "EXECUTE"])
+    @pytest.mark.parametrize(
+        "phase",
+        [
+            "RED",
+            "GREEN",
+            "JUDGE",
+            "REFACTOR",
+            "EXECUTE",
+            "SPECIFY",
+            "PLAN",
+            "TASKS",
+        ],
+    )
     def test_callout_contains_phase_and_task(self, captured_console, phase):
         console, buf = captured_console
         callout = PhaseCallout(

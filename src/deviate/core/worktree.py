@@ -82,12 +82,14 @@ def create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path:
             cwd=repo,
             env=_git_env(),
             check=True,
+            capture_output=True,
         )
     subprocess.run(
         ["git", "worktree", "add", str(path), branch],
         cwd=repo,
         env=_git_env(),
         check=True,
+        capture_output=True,
     )
     return path
 

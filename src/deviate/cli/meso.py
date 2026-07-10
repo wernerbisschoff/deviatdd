@@ -6,12 +6,11 @@ import re
 import shutil
 import subprocess
 import time
-from contextlib import chdir
+from contextlib import chdir, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-
+from typing import Generator
 import typer
-
 from deviate.cli._common import (
     _build_slim_prompt,
     _extract_epic_num,
@@ -55,6 +54,8 @@ from deviate.state.ledger import (
     select_unblocked_candidates,
 )
 from deviate.ui.pipeline import (
+    PhaseCallout,
+    PhaseMarker,
     PipelineBanner,
     PipelineSummary,
 )
@@ -1463,6 +1464,49 @@ def _discover_claimable_issue() -> str | None:
     return None
 
 
+@contextmanager
+def _phase_callout(
+    phase: str,
+    task_id: str,
+    task_description: str = "",
+) -> Generator[None, None, None]:
+    """Context manager that renders PhaseCallout IN_PROGRESS on enter,
+    and COMPLETED or FAILED on exit depending on whether an exception
+    (including SystemExit) was raised."""
+    start = time.monotonic()
+    console.print(
+        PhaseCallout(
+            phase=phase,
+            task_id=task_id,
+            task_description=task_description,
+        ).render(status=PhaseMarker.IN_PROGRESS)
+    )
+    try:
+        yield
+    except BaseException:
+        console.print(
+            PhaseCallout(
+                phase=phase,
+                task_id=task_id,
+                task_description=task_description,
+            ).render(
+                status=PhaseMarker.FAILED,
+                duration_seconds=time.monotonic() - start,
+            )
+        )
+        raise
+    console.print(
+        PhaseCallout(
+            phase=phase,
+            task_id=task_id,
+            task_description=task_description,
+        ).render(
+            status=PhaseMarker.COMPLETED,
+            duration_seconds=time.monotonic() - start,
+        )
+    )
+
+
 @with_json_quiet
 def _meso_run(
     issue_id: str | None = None,
@@ -1486,9 +1530,7 @@ def _meso_run(
             )
             raise SystemExit(1)
         issue_id = discovered
-        console.print(f"[green]DISCOVERED[/] {issue_id}")
 
-    # ── Explicit --issue: validate, resolve record, and claim ───────
     # ── Check COMPLETED ──────────────────────────────────────────────
     if _is_issue_completed(issue_id, ledger_path):
         console.print(f"[red]ISSUE_COMPLETED[/] {issue_id} is already COMPLETED")
@@ -1602,22 +1644,21 @@ def _meso_run(
 
     ctx = chdir(worktree_path)
     with ctx:
-        _plan_pre(force=force, dry_run=False)
-
-        _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
-
-        _plan_post(force=force, issue_id=issue_id)
-
+        # ── PLAN phase ───────────────────────────────────────────────
+        with _phase_callout("PLAN", issue_id, issue_title or ""):
+            _plan_pre(force=force, dry_run=False)
+            _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
+            _plan_post(force=force, issue_id=issue_id)
         plan_md = Path(contract["plan_path"])
         contract["plan_content"] = (
             plan_md.read_text(encoding="utf-8") if plan_md.exists() else ""
         )
 
-        _tasks_pre(force=force, dry_run=False)
-
-        _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
-
-        _tasks_post(force=force, issue_id=issue_id)
+        # ── TASKS phase ──────────────────────────────────────────────
+        with _phase_callout("TASKS", issue_id, issue_title or ""):
+            _tasks_pre(force=force, dry_run=False)
+            _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
+            _tasks_post(force=force, issue_id=issue_id)
 
         # ── Final IDLE guard ─────────────────────────────────────────
         session = SessionState.load(session_path)
@@ -1651,7 +1692,9 @@ def meso_run_command(
     ),
     force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
     quiet: bool = typer.Option(
-        True, "--quiet/--verbose", help="Suppress non-essential output (default: quiet)"
+        False,
+        "--quiet/--verbose",
+        help="Suppress non-essential output (default: verbose)",
     ),
 ) -> None:
     """Run the meso automated pipeline (setup → plan → tasks)"""
