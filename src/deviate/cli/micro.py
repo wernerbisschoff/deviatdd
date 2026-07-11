@@ -32,7 +32,6 @@ from deviate.core.run_logger import RunLogger, get_run_logger, set_run_logger
 from deviate.core.treesitter import (
     detect_duplicate_blocks,
     estimate_cyclomatic_complexity,
-    extract_changed_symbols,
     extract_dead_code,
     get_language_id,
     incremental_parse,
@@ -1252,53 +1251,6 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
     return red_sha
 
 
-def _parse_diff_filepaths(diff_text: str) -> list[str]:
-    paths: list[str] = []
-    for line in diff_text.splitlines():
-        if line.startswith("diff --git"):
-            parts = line.split()
-            if len(parts) >= 4:
-                b_path = parts[-1].lstrip("b/")
-                paths.append(b_path)
-    return paths
-
-
-def _build_structured_diff_section(diff_text: str) -> str:
-    rows: list[str] = []
-    if diff_text.strip():
-        for fp in _parse_diff_filepaths(diff_text):
-            for sc in extract_changed_symbols(diff_text, fp):
-                lines = (
-                    f"{sc.start_line}-{sc.end_line}"
-                    if sc.start_line or sc.end_line
-                    else "-"
-                )
-                old_lines = (
-                    f"{sc.old_start_line}-{sc.old_end_line}"
-                    if sc.old_start_line or sc.old_end_line
-                    else "-"
-                )
-                sig = sc.new_signature or sc.old_signature or "-"
-                sz = (
-                    f"{sc.old_line_count}→{sc.new_line_count}"
-                    if sc.old_line_count or sc.new_line_count
-                    else "-"
-                )
-                rows.append(
-                    f"| {sc.language} | {sc.kind} | {sc.name} | {sc.change} "
-                    f"| {lines} | {old_lines} | {sz} | `{sig[:60]}` |"
-                )
-    if not rows:
-        return ""
-    table = (
-        "## Structured Diff Summary\n\n"
-        "| Language | Kind | Name | Change | Lines (new) | Lines (old) | Body Δ | Signature |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- |\n"
-    )
-    table += "\n".join(rows)
-    return "\n\n" + table
-
-
 def _format_violations_as_feedback(
     violations: list[dict[str, object]],
 ) -> str:
@@ -1375,11 +1327,7 @@ def _run_judge_phase(
         text=True,
         env=_git_env(),
     ).stdout
-
     prompt = _build_auto_prompt("judge", task, root)
-
-    prompt += _build_structured_diff_section(diff)
-
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
     if session.train_feedback:
         prompt += f"\n\n<test_feedback>\n{session.train_feedback}\n</test_feedback>\n"

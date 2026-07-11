@@ -119,10 +119,19 @@ class TestJudgePre:
             assert "details" in data
 
 
-class TestJudgeStructuredDiff:
-    """Structured diff injection into JUDGE prompt (TSK-008-03)."""
+class TestJudgePromptDiffSection:
+    """JUDGE prompt diff handling (TSK-008-03).
 
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
+    The structured symbol table (`extract_changed_symbols` →
+    `_build_structured_diff_section`) was removed in the tree-sitter
+    segfault fix because the C extension left ``subprocess.Popen`` in a
+    fork-unsafe state and `except Exception` cannot trap a SIGSEGV.
+    These tests are now regression guards asserting the structured
+    symbol section is **not** generated regardless of diff content.
+    The raw ``<diff>`` block (verified in ``TestJudgePromptRawDiff``)
+    remains the source of truth for symbol-level change visibility.
+    """
+
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -131,7 +140,7 @@ class TestJudgeStructuredDiff:
     @patch("deviate.cli.micro._phase_already_done")
     @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
-    def test_judge_prompt_contains_structured_diff(
+    def test_judge_prompt_no_structured_diff_section_for_python(
         self,
         mock_cwd: MagicMock,
         mock_subprocess: MagicMock,
@@ -141,11 +150,9 @@ class TestJudgeStructuredDiff:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         tmp_path: Path,
     ) -> None:
         from deviate.core.agent import HandoverManifest
-        from deviate.core.treesitter import SymbolChange
         from deviate.state.config import SessionState
         from deviate.cli.micro import _run_judge_phase
 
@@ -162,12 +169,6 @@ class TestJudgeStructuredDiff:
             stdout="diff --git a/src/mod.py b/src/mod.py\n@@ -1 +1 @@\n-def old():\n+def new():\n",
             stderr="",
         )
-
-        mock_extract.return_value = [
-            SymbolChange(
-                language="python", kind="function", name="foo", change="modified"
-            ),
-        ]
 
         mock_agent.return_value = (
             HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
@@ -189,11 +190,10 @@ class TestJudgeStructuredDiff:
         _run_judge_phase(task, ledger_path, session, session_path, Console())
 
         prompt_arg = mock_agent.call_args[0][0]
-        assert "## Structured Diff Summary" in prompt_arg, (
-            "Expected judge prompt to contain '## Structured Diff Summary' section"
-        )
-        assert "| python | function | foo | modified |" in prompt_arg, (
-            "Expected structured diff table to contain the python function change row"
+        assert "## Structured Diff Summary" not in prompt_arg, (
+            "Structured symbol section must NOT be generated: it triggered "
+            "the tree-sitter SIGSEGV → subprocess.Popen fork crash. The raw "
+            "<diff> block carries the same context."
         )
 
     @patch("deviate.cli.micro.extract_changed_symbols", create=True)
@@ -260,7 +260,6 @@ class TestJudgeStructuredDiff:
             "Expected NO structured diff section for empty diff"
         )
 
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -269,7 +268,7 @@ class TestJudgeStructuredDiff:
     @patch("deviate.cli.micro._phase_already_done")
     @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
-    def test_judge_prompt_structured_diff_mixed_languages(
+    def test_judge_prompt_no_structured_diff_section_for_mixed_languages(
         self,
         mock_cwd: MagicMock,
         mock_subprocess: MagicMock,
@@ -279,11 +278,9 @@ class TestJudgeStructuredDiff:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         tmp_path: Path,
     ) -> None:
         from deviate.core.agent import HandoverManifest
-        from deviate.core.treesitter import SymbolChange
         from deviate.state.config import SessionState
         from deviate.cli.micro import _run_judge_phase
 
@@ -310,22 +307,6 @@ class TestJudgeStructuredDiff:
             stderr="",
         )
 
-        mock_extract.side_effect = [
-            [
-                SymbolChange(
-                    language="python",
-                    kind="function",
-                    name="py_func",
-                    change="modified",
-                )
-            ],
-            [
-                SymbolChange(
-                    language="rust", kind="function", name="rs_func", change="added"
-                )
-            ],
-        ]
-
         mock_agent.return_value = (
             HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
             "",
@@ -346,8 +327,80 @@ class TestJudgeStructuredDiff:
         _run_judge_phase(task, ledger_path, session, session_path, Console())
 
         prompt_arg = mock_agent.call_args[0][0]
-        assert "| python" in prompt_arg, "Expected python row in structured diff table"
-        assert "| rust" in prompt_arg, "Expected rust row in structured diff table"
+        assert "## Structured Diff Summary" not in prompt_arg, (
+            "Structured symbol section must NOT be generated even for mixed-"
+            "language diffs (a Rust file in particular triggered the SIGSEGV)."
+        )
+
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_prompt_raw_diff_section_still_present(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Regression guard: dropping the tree-sitter section must NOT
+        drop the raw ``<diff>`` block (it carries the per-file line-level
+        context the JUDGE agent actually consumes)."""
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+
+        diff_text = (
+            "diff --git a/src/mod.py b/src/mod.py\n"
+            "@@ -1 +1 @@\n"
+            "-def old():\n"
+            "+def new():\n"
+        )
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=diff_text, stderr=""
+        )
+
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+
+        task = {
+            "id": "TSK-008-03",
+            "issue_id": "ISS-ADH-008",
+            "description": "Raw diff preservation regression test",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        _run_judge_phase(task, ledger_path, session, session_path, Console())
+
+        prompt_arg = mock_agent.call_args[0][0]
+        assert "<diff>" in prompt_arg, "Raw <diff> block must be present"
+        assert "</diff>" in prompt_arg, "Raw </diff> close must be present"
+        assert diff_text.strip() in prompt_arg, (
+            "Raw diff text must be embedded in the JUDGE prompt verbatim"
+        )
 
     @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")

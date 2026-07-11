@@ -57,8 +57,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.deviate/review/reports/` unstaged. `[OPPORTUNITY]` items remain
   deferred to a future slice. Pre-commit and pre-push hooks remain
   non-bypassable (`--no-verify` is never used); aggregate validation
-  failure reverts every fix via `git restore .` before aborting.
-- `/deviate-walkthrough` prompt v1.1.0: enforces true one-section-per-turn cadence. The prompt's STEP 4 previously said "then (optionally) ask a structured question" and the ADHD-friendly laws said sections "may include an `ask`" — both wordings gave the agent permission to skip interactive questioning and dump the entire walkthrough in a single response, defeating the HITL Gate 3 design intent. Replaced with mandatory per-section `ask`, an explicit "Two sections in one response is a bug" rule, a renumbered Law #5 ("One section per turn"), a "When to ask — always" rule that removes the old escape hatch, and an explicit override of universal invariant #1 (the "Automated Execution" no-questions rule) so the HITL gate's interactive posture wins. The `ask` is the pacing mechanism — a two-option "Clear? / Next section →" is a valid gate, even on awareness-only sections.
+- `/deviate-walkthrough` prompt v1.1.0: enforces true one-section-per-turn cadence. The prompt's STEP 4 previously said "then (optionally) ask a structured question" and the ADHD-friendly laws said sections "may include an `ask`" — both wordings gave the agent permission to skip interactive questioning and dump the entire walkthrough in a single response, defeating the HITL Gate 3 design intent. Replaced with mandatory per-section `ask`, an explicit "Two sections in one response is a bug" rule, a renumbered Law #5 ("One section per turn"), a "When to ask — always" rule that removes the old escape hatch, and an explicit override of universal invariant #1 (the "Automated Execution" no-questions rule) so the HITL gate's interactive posture wins. The `ask` is th…
+- `deviate micro run --all` no longer segfaults in the JUDGE phase on diffs that
+  contain a Rust (or any tree-sitter) file. Root cause: `_run_judge_phase`
+  synchronously called `_build_structured_diff_section(diff)`, which invoked
+  `extract_changed_symbols()` → `parser.parse(...)` on each file in the diff.
+  Tree-sitter's C extension (`tree_sitter_rust._binding`) was observed to leave
+  the interpreter in a fork-unsafe state after `parser.parse()` on sufficiently
+  large or freshly-parsed Rust sources. The next `subprocess.Popen` (the
+  `omp`/`pi`/etc. child fork) SIGSEGV'd in `_execute_child` → `fork_exec` —
+  `except Exception` cannot trap a C-level fault, so the orchestrator died
+  silently. The fix drops the entire structured-diff-symbol table from the
+  JUDGE prompt and removes the `_build_structured_diff_section` /
+  `_parse_diff_filepaths` helpers and the unused `extract_changed_symbols`
+  import from `cli.micro`. The raw `<diff>` block (already injected one line
+  below where the table used to go) provides the same content with strictly
+  more detail than the symbol table, so JUDGE verdict quality is unchanged.
+  Tree-sitter is still loaded for REFACTOR-time Python checks
+  (`_check_return_type_mismatch`) and for `deviate review pre`; those code
+  paths were not implicated in the reported crash and remain untouched per
+  minimum-scope discipline. (`src/deviate/cli/micro.py`,
+  `tests/test_micro/test_judge.py`.)
+- CLI process enables `faulthandler` at startup so future SIGSEGV /
+  SIGABRT / SIGBUS / SIGILL / SIGFPE dump a C-level traceback to stderr
+  rather than dying as an opaque `[N] segmentation fault` shell line.
+  Tree-sitter C extensions have been the culprit in two consecutive
+  fixes; future regressions will surface their traceback automatically.
+  (`src/deviate/main.py`.)
+
 ### Fixed
 - `deviate micro run --all` no longer segfaults during the JUDGE phase when GREEN
   fails to deliver passing tests. Root cause: the background-thread reader in
