@@ -2,7 +2,7 @@
 name: deviate-release
 description: Plan the next coherent release — compile from existing flows and architecture and write specs/_product/release-next.md.
 category: deviatdd-product-layer
-version: 1.0.0
+version: 1.1.0
 aliases:
   - release
   - /deviate-release
@@ -55,6 +55,30 @@ CRITICAL INVARIANTS:
 8. **No Product-Layer Command Modification**: This skill MUST NOT create, edit,
    or delete any file under `src/deviate/prompts/commands/`. Commands are the
    agent invocation surface, not the release artifact surface.
+9. **Persist and Commit**: After composing `release-next.md`, this skill
+   MUST persist the file to disk via the `write` tool and create a
+   single git commit via the canonical helper:
+
+   ```python
+   from pathlib import Path
+   from deviate.core.commit import commit_artifact
+
+   commit_artifact(
+       Path("specs/_product/release-next.md"),
+       "docs(release): <one-line summary of the release goal>",
+   )
+   ```
+
+   The commit message MUST follow Conventional Commits per
+   `specs/constitution.md:71-75`. The skill MUST NOT pass
+   `no_verify=True` per `AGENTS.md` §Commit Authority. If a pre-commit
+   hook fails, surface the failure verbatim and stop — do not retry
+   with `--no-verify`. Conversational output alone is not sufficient —
+   this invariant is grounded in the prior session's bug where the
+   release was emitted into chat but never written to disk, leaving
+   `/deviate-explore` (the recommended next step) without a guiding
+   compass file to read.
+
 
 </system_instructions>
 
@@ -92,14 +116,26 @@ If `specs/_product/release-next.md` exists, surface `[yellow]RELEASE_OVERRIDE[/]
 before overwriting. Compare Acceptance Criteria and surface any omissions.
 
 ## 6. Write Release File
-Write the composed content to `specs/_product/release-next.md`. Use the
-schema established at `specs/_product/release-next.md:1-26` as the canonical
-structure (Goal, Constraints, Included Flows, Included Work, Deferred Epics,
-Acceptance Criteria).
+Compose the release content per the schema in step 4. Step 7 handles
+the actual disk write and git commit; this step focuses on content
+correctness. Use the schema established at `release-next.md:1-26` as
+the canonical structure (Goal, Constraints, Included Flows, Included
+Work, Deferred Epics, Acceptance Criteria).
 
-## 7. Recommend Next Step
+## 7. Persist and Commit
+`specs/_product/release-next.md` MUST be written to disk via the `write`
+tool. After the write succeeds, create a single git commit using
+`deviate.core.commit.commit_artifact` with the conventional commit
+subject `docs(release): <one-line summary of the release goal>`. Never
+pass `no_verify=True`. The conversational output of this skill MUST
+NOT be considered complete until the file is on disk and committed —
+downstream `/deviate-explore` reads `release-next.md` from disk as the
+guiding compass.
+
+## 8. Recommend Next Step
 Inform the user that `/deviate-explore` should now be invoked against the
 release file as the guiding compass. Do NOT trigger exploration automatically.
+
 
 </workflow>
 
@@ -113,6 +149,8 @@ release file as the guiding compass. Do NOT trigger exploration automatically.
 | Prior release had non-trivial ACs that new release omits | Surface `[yellow]WARN[/]` listing dropped ACs |
 | User goal references no flows | Surface clarifying question: "Which flows should this release serve?" |
 | Included Work item has no flow refs | Default `Flow Refs: none` for enabling/infrastructure slices |
+| File write to `release-next.md` fails | Halt and surface the write error verbatim; do not commit a partial tree |
+| `commit_artifact` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; do not commit until the user remediates the underlying violation |
 
 </edge_case_handling>
 
