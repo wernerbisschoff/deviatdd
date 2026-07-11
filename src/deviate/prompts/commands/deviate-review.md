@@ -2,7 +2,7 @@
 name: deviate-review
 description: HITL Gate 3 PR review — JUDGE-aware scan focused on architectural coherence, cross-task drift, and bug catching, with light-sniff on JUDGE-validated domains.
 category: deviatdd-meso-layer
-version: 3.0.0
+version: 3.1.0
 aliases:
   - review
   - /deviate-review
@@ -304,44 +304,65 @@ If all seven domains are CLEAN with no findings:
 /deviate-review: CLEAN — all tasks passed JUDGE; no cross-task or architectural issues found
 ```
 
-### STEP 4: APPLY — Interactive Fix Selection
+### STEP 4: APPLY — Autonomous Fix Application + Commit
 
-After surfacing findings, offer the user a choice of which changes to apply. This is a **HITL interaction** — the user selects the scope of fixes.
+Apply every `[CRITICAL]` and `[SUGGESTION]` fix from the Quick Fix Summary deterministically — no user prompt, no HITL selection. `[OPPORTUNITY]` items stay deferred to a future slice. After all selected fixes land, commit the result on the current branch.
 
-Use the `question` tool to present these options:
+**Selection rule** (deterministic — no `ask` tool, no question prompt):
+- Apply every `[CRITICAL]` entry (must-fix: security, data loss, broken builds, flow breakage).
+- Apply every `[SUGGESTION]` entry (worth fixing: clean code, idiomacy, minor issues).
+- Skip every `[OPPORTUNITY]` entry — defer to a future slice.
+- If both lists are empty → emit `No CRITICAL or SUGGESTION items in this review — nothing to apply, nothing to commit.` and exit before applying or committing.
 
+**Per-fix protocol**:
+1. Read the FIX-NNN entry from the `## Fix Instructions` block (file, line, current snippet, expected snippet).
+2. Apply the transformation with the `edit` tool on the target file. Use the `[PATH#TAG]`-anchored SWAP from the latest read — never guess at line numbers.
+3. Validate the file still parses with a syntax-only fast gate (skip the slow full build):
+   - Python: `python -c "import ast; ast.parse(open(path).read())"`
+   - Rust: `cargo check --quiet -p <crate>` (skip when the crate graph is slow; defer to aggregate validation)
+   - TypeScript: `node --check <file>` for `.js`/`.mjs`; rely on `tsc --noEmit` at aggregate validation
+   - Other languages: best-effort syntax check; fall through to aggregate validation
+4. If the edit fails or the post-edit parse breaks: `git restore -- <file>` to revert that fix, log the failure, continue with the next fix. Never leave a broken file in the tree.
+
+**Aggregate validation** (mandatory before commit):
+Run the project's full validation gate from the repo root:
+- Discover the gate: prefer `mise run check` when `.mise.toml` exists; otherwise look for `package.json` scripts (`lint`, `test`), `pyproject.toml` `[tool.ruff]`, `Cargo.toml` clippy/fmt, etc.
+- Run the gate and capture exit code + last lines of output.
+- If the gate FAILS: `git restore .` to revert every fix from STEP 4, surface the gate output to the user, and abort the commit. Do NOT commit a broken tree.
+
+**Commit step** (mandatory when at least one fix landed and aggregate validation passed):
+1. Resolve the issue ID — read `.deviate/session.json` `active_issue_id` first; fall back to the branch slug (e.g. `feat/001-gloss-v1-mvp/002-parser-packet-stack` → `ISS-002`) when session is null; fall back to `unset-issue` when both are missing.
+2. Stage every file STEP 4 modified using explicit paths: `git add -- <file1> <file2> ...`. Never use `git add -A` — `.deviate/review/reports/` is advisory and must stay unstaged.
+3. Generate a Conventional Commit subject (≤50 chars):
+   ```
+   🐛 fix(review): apply N post-review fixes for {ISSUE_ID}
+   ```
+4. Generate a body (≤72-char wrap, optional footer):
+   ```
+   Applied {N} fix(es) from /deviate-review on {branch_name}.
+
+   - {file}:{line} — {short title}
+   - {file}:{line} — {short title}
+
+   Refs: {ISSUE_ID}
+   ```
+5. Run `git commit` with hooks enabled — **never** `--no-verify`. If the pre-commit hook fails: surface the failure, leave the changes staged, and tell the user the hook needs manual remediation. Do not retry with `--no-verify`. If `git commit` exits non-zero for any other reason: surface stderr and stop.
+
+**Output format**:
 ```
-/questions:
-  - header: "Apply review fixes"
-    question: "Which changes should I apply?"
-    options:
-      - label: "Critical only"
-        description: "Apply only [CRITICAL] items (must-fix: security, data loss, broken builds, flow breakage)"
-      - label: "Quick fixes only"
-        description: "Apply only the Quick Fix Summary items (critical + suggestions)"
-      - label: "Critical + Suggestions"
-        description: "Apply [CRITICAL] and [SUGGESTION] items, skip [OPPORTUNITY]"
-      - label: "All changes"
-        description: "Apply all items from Critical, Suggestions, and Opportunities"
+Applied {N} of {M} selected fixes:
+  ✓ {file}:{line} — {short title}
+  ✓ {file}:{line} — {short title}
+  ✗ {file}:{line} — reverted (parse failure: {reason})
+  - {file}:{line} — skipped ([OPPORTUNITY], not in scope)
+
+Validation: {gate command} → {PASS|FAIL}
+Committed: {short-sha} 🐛 fix(review): apply N post-review fixes for {ISSUE_ID}
 ```
 
-Wait for the user's selection, then:
-
-1. **Parse the Quick Fix Summary** — filter items by the selected category
-2. **Apply each fix** — one at a time, using the `edit` tool on the target file path
-3. **Report results** — list what was applied and what was skipped
-
+If no fixes match the selection rule:
 ```
-Applied 3 of 4 fixes:
-  ✓ src/db.py:25 — parameterize SQL query
-  ✓ src/config.ts:10 — made apiKey optional
-  ✓ src/utils.py:7 — updated callers
-  - src/mod.py:50-65 — skipped (opportunity, not in selected scope)
-```
-
-If no items match the selected category:
-```
-No fixes to apply in the "Critical only" category — no [CRITICAL] items found.
+No CRITICAL or SUGGESTION items in this review — nothing to apply, nothing to commit.
 ```
 
 </execution_sequence>
@@ -358,11 +379,13 @@ No fixes to apply in the "Critical only" category — no [CRITICAL] items found.
 | Binary files in diff | Skip binary files, note count in output |
 | Unknown language in structured_diff | Skip language-specific idiomacy checks for that file — use generic analysis |
 | Merge-base not reachable | `structured_diff` will be empty — review proceeds with raw diff only |
-| CLEAN review (all domains pass) | Skip STEP 4 — output CLEAN message and exit; no fixes to offer |
+| CLEAN review (all domains pass) | Skip STEP 4 — output CLEAN message and exit; nothing to apply, nothing to commit |
 | SKIP condition met (empty diff) | Skip STEP 4 — exit after SKIP message |
-| No `[CRITICAL]` or `[SUGGESTION]` items in findings | Note "no items in this category" and skip the apply step for that category |
-| Strategy-gated governance read skipped but anomaly later found | Upgrade to full governance read — note "upgraded from {strategy} to full — governance context needed" |
-| Edit tool fails on a fix | Log the error, continue with remaining fixes, report failures in summary |
+| No `[CRITICAL]` or `[SUGGESTION]` items in findings | Emit "No CRITICAL or SUGGESTION items in this review — nothing to apply, nothing to commit." and exit before applying or committing |
+| Aggregate validation gate fails after fixes applied | `git restore .` to revert every fix from STEP 4, surface the gate output, abort the commit — do NOT commit a broken tree |
+| Pre-commit hook fails after `git commit` | Surface the hook failure, leave changes staged, tell the user the hook needs manual remediation; never retry with `--no-verify` |
+| `git commit` exits non-zero for any other reason | Surface stderr verbatim, leave the staged tree as-is, stop before declaring success |
+| Edit tool fails on a fix | `git restore -- <file>` to revert that fix, log the failure, continue with the next fix; never leave a broken file in the tree |
 | `specs/_product/` absent | Flow Coverage continues as light-sniff (diff-only). Only `full` strategy's optional governance cross-check is unavailable — note `PRODUCT_LAYER_ABSENT` in Compliance Matrix |
 | Issue has empty `flow_refs` | Flow Coverage row reads `🟢 N/A — issue is enabling/infrastructure, no flow anchor required`. Only relevant for `full` strategy governance cross-check. |
 | `flow_refs` names a flow missing from `flows/index.md` | Flag as `[CRITICAL] STALE_FLOW_REF` in Flow Coverage (full strategy only — other strategies cannot detect this without governance reads) |
