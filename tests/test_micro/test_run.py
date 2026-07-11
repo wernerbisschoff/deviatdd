@@ -72,7 +72,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-004-01"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-01"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
@@ -98,7 +98,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-004-02"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-02"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
@@ -132,7 +132,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, tdd_task, imm_task)
 
-            result = runner.invoke(cli, ["run", "--all"])
+            result = runner.invoke(cli, ["micro", "run", "--all"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
@@ -158,7 +158,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "001-initial" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-004-05"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-05"])
             assert result.exit_code == 0, (
                 f"Expected exit code 0, got {result.exit_code}: {result.output}"
             )
@@ -173,7 +173,7 @@ class TestRunCommand:
             session = SessionState(current_phase="IDLE")
             session.save(dot_dir / "session.json")
 
-            result = runner.invoke(cli, ["run", "TSK-999-99"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-999-99"])
             assert result.exit_code != 0, (
                 f"Expected non-zero exit for unknown task, got {result.output}"
             )
@@ -199,7 +199,9 @@ class TestRunCommand:
             )
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-001-03", "--profile", "fast"])
+            result = runner.invoke(
+                cli, ["micro", "run", "TSK-001-03", "--profile", "fast"]
+            )
             assert result.exit_code == 0, (
                 f"Expected exit code 0 with --profile fast, got {result.exit_code}: {result.output}"
             )
@@ -232,7 +234,7 @@ class TestRunCommand:
 
             result = runner.invoke(
                 cli,
-                ["run", "TSK-001-03", "--profile", "fast", "--no-judge"],
+                ["micro", "run", "TSK-001-03", "--profile", "fast", "--no-judge"],
             )
             assert result.exit_code == 0, (
                 f"Expected exit code 0 with override, got {result.exit_code}: {result.output}"
@@ -257,7 +259,9 @@ class TestRunCommand:
             )
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-001-03", "--profile", "invalid"])
+            result = runner.invoke(
+                cli, ["micro", "run", "TSK-001-03", "--profile", "invalid"]
+            )
             assert result.exit_code != 0, (
                 f"Expected non-zero exit for invalid profile, got {result.exit_code}: {result.output}"
             )
@@ -282,7 +286,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-004-06"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-06"])
             assert result.exit_code == 0, result.output
             assert "TASK_ALREADY_DONE" in result.output, (
                 f"Expected TASK_ALREADY_DONE warning: {result.output}"
@@ -316,7 +320,7 @@ class TestSessionResume:
             ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-005-07"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-005-07"])
 
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
@@ -350,7 +354,7 @@ class TestSessionResume:
             ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-005-07"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-005-07"])
             assert result.exit_code == 0, result.output
             assert "TASK_ALREADY_DONE" in result.output, (
                 f"Expected TASK_ALREADY_DONE for JUDGE-latest task: {result.output}"
@@ -396,7 +400,7 @@ class TestSessionResume:
                 check=True,
             )
 
-            result = runner.invoke(cli, ["run", "TSK-004-98"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-98"])
 
             assert result.exit_code == 0, (
                 f"Expected zero exit when EXECUTE trusts the agent, "

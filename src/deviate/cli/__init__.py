@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+from contextlib import chdir
 import shutil
 from pathlib import Path
 
@@ -12,16 +13,18 @@ from rich.prompt import Prompt
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
-from deviate.cli.meso import merge, meso_app, plan, pr, specify, tasks
+from deviate.cli.meso import _meso_run, merge, meso_app, plan, pr, specify, tasks
 from deviate.cli.micro import (
+    _run_all,
+    _validate_profile,
     e2e_app,
     execute_app,
     green_app,
     hotfix_app,
     judge_app,
+    micro_app,
     red_app,
     refactor_app,
-    run_command,
 )
 from deviate.cli.adhoc import adhoc_app
 from deviate.cli.constitution import constitution_app
@@ -942,12 +945,125 @@ cli.command(name="plan", rich_help_panel=_AGENT_PANEL)(plan)
 cli.command(name="tasks", rich_help_panel=_AGENT_PANEL)(tasks)
 cli.command(name="pr", rich_help_panel=_AGENT_PANEL)(pr)
 cli.command(name="merge", rich_help_panel=_AGENT_PANEL)(merge)
-# `meso` and `run` are user-facing. `meso run` drives the automated pipeline;
-# `run` (with `--all`) drains the pending-task queue.
+# `meso run`, `micro run`, and `run` are three distinct entry points:
+#   - `meso run`         — user-facing; SPECIFY → PLAN → TASKS pipeline.
+#   - `micro run`        — agent-internal; drains the task queue (single or --all).
+#   - `run` (this)       — user-facing; `meso run` + `micro run --all` in the
+#                          created worktree, end-to-end.
+# `micro run` itself is surfaced as the `micro` Typer group so future
+# micro-layer helpers (e.g. `micro run --task <id>`) can ride along.
 cli.add_typer(
     meso_app,
     name="meso",
     rich_help_panel=_USER_PANEL,
     help="Use `deviate meso run` to run the automated setup → plan → tasks pipeline",
 )
-cli.command(name="run", rich_help_panel=_USER_PANEL)(run_command)
+cli.add_typer(
+    micro_app,
+    name="micro",
+    rich_help_panel=_AGENT_PANEL,
+    help="Micro: drain the task queue (single or --all) inside a worktree",
+)
+
+
+@cli.command(name="run", rich_help_panel=_USER_PANEL)
+def run_command(
+    issue: str | None = typer.Option(
+        None,
+        "--issue",
+        help="Target issue ID (default: next unblocked BACKLOG)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Bypass pre-flight guards (e.g. blocked_by dependencies)",
+    ),
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        callback=_validate_profile,
+        help="Forwarded to `deviate micro run`: full, fast, or secure",
+    ),
+    no_judge: bool | None = typer.Option(
+        None, "--no-judge", help="Skip JUDGE phase in `micro run`"
+    ),
+    no_refactor: bool | None = typer.Option(
+        None, "--no-refactor", help="Skip REFACTOR phase in `micro run`"
+    ),
+    agent: str | None = typer.Option(
+        None,
+        "--agent",
+        help="Override agent backend for the micro phase",
+    ),
+    json_mode: bool = typer.Option(
+        False, "--json", help="Forward --json to `deviate micro run`"
+    ),
+) -> None:
+    """Use `deviate run`; per-task drain is now `deviate micro run`.
+
+    Full-pipeline orchestrator: chains ``deviate meso run`` with the
+    micro drain (``deviate micro run --all``) inside the worktree the
+    meso step just created. Discovers the next unblocked BACKLOG issue,
+    claims it, runs SPECIFY → PLAN → TASKS, then iterates every
+    PENDING task through the TDD cycle (or the direct-execute phase
+    for IMMEDIATE-typed tasks).
+
+    This is the canonical "go do the next thing" command — it replaces
+    the old standalone ``deviate run`` task dispatcher. The old
+    ``deviate run [task-id] --all`` invocation is now reachable as
+    ``deviate micro run [task-id] --all`` for in-worktree drains.
+    """
+    worktree_path_str = _meso_run(issue_id=issue, force=force)
+    if not worktree_path_str:
+        # _meso_run has already raised SystemExit(1) on hard failures;
+        # reaching here means a soft failure (e.g. dry-run consumed the
+        # return). Treat as a no-op so we don't crash on a missing path.
+        console.print(
+            "[yellow]RUN_NO_WORKTREE[/] meso pipeline did not return a "
+            "worktree; skipping micro drain"
+        )
+        raise typer.Exit(code=1)
+
+    worktree_path = Path(worktree_path_str)
+    if not worktree_path.exists():
+        console.print(f"[red]RUN_WORKTREE_MISSING[/] {worktree_path} does not exist")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]MICRO_DRAIN[/] entering worktree {worktree_path} "
+        f"to drain PENDING tasks"
+    )
+
+    # ``deviate micro run --all`` accepts ``profile`` + boolean overrides
+    # + ``agent`` + ``--json``. The new ``deviate run`` carries the same
+    # flags through; ``profile``/``no_judge``/``no_refactor`` are honored
+    # exactly as if the user had typed ``deviate micro run --all ...``.
+    # ``_run_all`` only takes boolean overrides (not the profile enum),
+    # so we resolve the booleans via ``resolve_profile`` to stay aligned
+    # with the micro layer's own profile semantics.
+    from deviate.core.profile import resolve_profile  # local: avoids top-level cycle
+
+    effective_no_judge, effective_no_refactor = resolve_profile(
+        profile, no_judge, no_refactor
+    )
+
+    with chdir(worktree_path):
+        root = worktree_path
+        dot_dir = root / ".deviate"
+        session_path = dot_dir / "session.json"
+        if session_path.exists():
+            session = SessionState.load(session_path)
+            session = SessionState(
+                current_phase=session.current_phase,
+                active_issue_id=session.active_issue_id,
+                last_command="run --all",
+            )
+            session.save(session_path)
+        _run_all(
+            root,
+            console,
+            no_judge=effective_no_judge,
+            no_refactor=effective_no_refactor,
+            agent=agent,
+            json_mode=json_mode,
+        )

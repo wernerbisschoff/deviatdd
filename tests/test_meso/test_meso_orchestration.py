@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import io
 import subprocess
-from contextlib import chdir
+from contextlib import chdir, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -504,3 +505,51 @@ class TestDiscoverClaimableIssue:
         with chdir(tmp_path):
             result = _discover_claimable_issue()
             assert result is None
+
+
+class TestMesoRunStdoutSuppression:
+    """``_meso_run`` must not forward ``_plan_pre`` / ``_tasks_pre``'s
+    JSON contract ``print()`` to the user's terminal — those dumps are for
+    the agent-subprocess CLI workflow (``deviate plan pre``), not the
+    in-process parent pipeline which builds its own contract.
+    """
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_no_plan_or_tasks_contract_in_stdout(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        buf = io.StringIO()
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                with redirect_stdout(buf):
+                    _meso_run()
+
+        stdout = buf.getvalue()
+        # ``plan_target`` is a key unique to ``_plan_pre``'s contract
+        # and ``tasks_target`` to ``_tasks_pre``'s contract — confirming
+        # neither JSON dump leaked into the user's terminal.
+        assert '"plan_target"' not in stdout, (
+            "_plan_pre's JSON contract leaked into _meso_run output:\n" + stdout
+        )
+        assert '"tasks_target"' not in stdout, (
+            "_tasks_pre's JSON contract leaked into _meso_run output:\n" + stdout
+        )

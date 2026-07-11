@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **`deviate run` is now a full-pipeline orchestrator; per-task dispatch moved to `deviate micro run`.**
+  The top-level `deviate run` command now does both `deviate meso run` and
+  then runs `deviate micro run --all` inside the worktree the meso step just
+  created. The previous per-task / `--all` task dispatcher that used to live
+  as top-level `deviate run` was relocated to `deviate micro run [task-id]`
+  / `deviate micro run --all`. The new orchestrator supports `--issue`,
+  `--force`, `--profile`, `--no-judge`, `--no-refactor`, `--agent`, and
+  `--json`. The top-level command remains in the "Run by you (start here)"
+  panel as the canonical "go do the next thing" entry point; `deviate micro`
+  joined the agent-internal panel alongside `red`/`green`/`judge`/etc.
+  `_meso_run` now returns the created worktree path so the orchestrator
+  can `chdir` into it without re-deriving the path from the ledger; the
+  session's `last_command` is rewritten to the micro subcommand form when
+  the orchestrator hands off. (`src/deviate/cli/__init__.py`,
+  `src/deviate/cli/micro.py`, `src/deviate/cli/meso.py`,
+  `tests/test_cli/test_help.py`, `tests/test_cli/test_micro.py`,
+  `tests/test_micro/test_run.py`, `tests/test_micro/test_orchestration.py`,
+  `tests/test_cli/test_top_level_run.py`, `README.md`,
+  `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`,
+  `specs/implementation-gap.md`, `src/deviate/ui/pipeline.py`,
+  `src/deviate/prompts/commands/deviate-{walkthrough,review}.md`.)
+
+- **`deviate meso run` default output no longer dumps `_plan_pre` / `_tasks_pre` JSON contracts.**
+  Those pre subcommands `print()` their JSON contract on stdout for the
+  agent-subprocess CLI workflow (`deviate plan pre` / `deviate tasks pre`).
+  When the in-process `_meso_run` parent invoked them directly, the JSON
+  leaked onto the user's terminal alongside the useful
+  `WORKTREE` / `SPEC_DISCOVERED` lines. A small `_silence_stdout` helper
+  captures and discards stdout around the two calls; rich console output
+  is unaffected, and the `deviate plan pre` / `deviate tasks pre` CLI
+  paths (which route through `@with_json_quiet`) are unchanged.
+  (`src/deviate/cli/meso.py`, `tests/test_meso/test_meso_orchestration.py`.)
+
 - `deviate-review` prompt v3.0.0: reframed as JUDGE-aware review. Three domains
   (Clean Code, Constitution, PRD Alignment) downgraded to light-sniff — cross-task
   only, no re-reading governance files. Domain 3 renamed to "Pragmatism &
@@ -27,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure reverts every fix via `git restore .` before aborting.
 - `/deviate-walkthrough` prompt v1.1.0: enforces true one-section-per-turn cadence. The prompt's STEP 4 previously said "then (optionally) ask a structured question" and the ADHD-friendly laws said sections "may include an `ask`" — both wordings gave the agent permission to skip interactive questioning and dump the entire walkthrough in a single response, defeating the HITL Gate 3 design intent. Replaced with mandatory per-section `ask`, an explicit "Two sections in one response is a bug" rule, a renumbered Law #5 ("One section per turn"), a "When to ask — always" rule that removes the old escape hatch, and an explicit override of universal invariant #1 (the "Automated Execution" no-questions rule) so the HITL gate's interactive posture wins. The `ask` is the pacing mechanism — a two-option "Clear? / Next section →" is a valid gate, even on awareness-only sections.
 ### Fixed
-- `deviate run --all` no longer segfaults during the JUDGE phase when GREEN
+- `deviate micro run --all` no longer segfaults during the JUDGE phase when GREEN
   fails to deliver passing tests. Root cause: the background-thread reader in
   `_invoke_streaming` called `c.file.flush()` which bypassed Rich's RLock and
   raced with main-thread `c.print` writes on `sys.stdout.fileno()`. Removed the

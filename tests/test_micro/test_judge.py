@@ -516,7 +516,7 @@ class TestJudgeStructuredDiff:
         """When no RED commit is recorded, fallback to HEAD~1..HEAD.
 
         Mirrors the pre-fix fallback so isolated JUDGE runs (e.g.
-        ``deviate run --start-phase JUDGE``) still get a meaningful diff
+        ``deviate micro run --start-phase JUDGE``) still get a meaningful diff
         against the immediate parent — not HEAD~2.
         """
         from deviate.core.agent import HandoverManifest

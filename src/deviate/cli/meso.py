@@ -6,10 +6,12 @@ import re
 import shutil
 import subprocess
 import time
-from contextlib import chdir, contextmanager
+from contextlib import chdir, contextmanager, redirect_stdout
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path, PurePosixPath
-from typing import Generator
+from typing import Callable, Generator
+
 import typer
 from deviate.cli._common import (
     _build_slim_prompt,
@@ -1464,6 +1466,21 @@ def _discover_claimable_issue() -> str | None:
     return None
 
 
+def _silence_stdout(
+    func: Callable[..., object], *args: object, **kwargs: object
+) -> None:
+    """Invoke ``func`` with stdout redirected to a discarded buffer.
+
+    Used by ``_meso_run`` when calling ``_plan_pre`` / ``_tasks_pre``:
+    those pre subcommands ``print()`` their JSON contract to stdout for the
+    agent-subprocess CLI workflow, but ``_meso_run`` has already built its
+    own contract and only needs the pre's logging side effects. Without
+    this suppression the JSON dump would land on the user's terminal.
+    """
+    with redirect_stdout(StringIO()):
+        func(*args, **kwargs)
+
+
 @contextmanager
 def _phase_callout(
     phase: str,
@@ -1512,7 +1529,7 @@ def _meso_run(
     issue_id: str | None = None,
     dry_run: bool = False,
     force: bool = False,
-) -> None:
+) -> str | None:
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
         _handle_missing_dot_dir("MESO")
@@ -1588,7 +1605,7 @@ def _meso_run(
         console.print("[bold][yellow]DRY_RUN[/] — no state will be mutated[/]")
         prompt = _build_slim_prompt("tasks", contract)
         print(prompt)
-        return
+        return None  # dry-run: no worktree to drain
 
     # ── Setup step: create worktree and claim issue ──────────────────
     setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
@@ -1646,7 +1663,7 @@ def _meso_run(
     with ctx:
         # ── PLAN phase ───────────────────────────────────────────────
         with _phase_callout("PLAN", issue_id, issue_title or ""):
-            _plan_pre(force=force, dry_run=False)
+            _silence_stdout(_plan_pre, force=force, dry_run=False)
             _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
             _plan_post(force=force, issue_id=issue_id)
         plan_md = Path(contract["plan_path"])
@@ -1656,7 +1673,7 @@ def _meso_run(
 
         # ── TASKS phase ──────────────────────────────────────────────
         with _phase_callout("TASKS", issue_id, issue_title or ""):
-            _tasks_pre(force=force, dry_run=False)
+            _silence_stdout(_tasks_pre, force=force, dry_run=False)
             _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
             _tasks_post(force=force, issue_id=issue_id)
 
@@ -1675,6 +1692,11 @@ def _meso_run(
             include_meso_footer=True,
         )
     )
+    # Return the worktree path so the top-level `deviate run` orchestrator
+    # can ``chdir`` into it and dispatch `deviate micro run --all` without
+    # having to re-derive the path from the session/ledger. ``meso_app run``
+    # discards this return value — JSON mode serializes a plain string.
+    return str(worktree_path)
 
 
 meso_app = typer.Typer(no_args_is_help=True)
