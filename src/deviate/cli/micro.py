@@ -168,6 +168,13 @@ refactor_app = typer.Typer(no_args_is_help=True)
 execute_app = typer.Typer(no_args_is_help=True)
 e2e_app = typer.Typer(no_args_is_help=True)
 hotfix_app = typer.Typer(no_args_is_help=True)
+# `micro_app` is the umbrella for micro-layer subcommands surfaced as
+# `deviate micro <subcommand>`. The top-level `deviate run` (which does
+# `meso run` + `micro run --all`) drives `micro_app` indirectly; the
+# agent also invokes it directly when it needs to drain the queue
+# without going through the full meso pipeline.
+micro_app = typer.Typer(no_args_is_help=True)
+
 
 _LEDGER_GLOB = "specs/**/tasks.jsonl"
 
@@ -3252,6 +3259,7 @@ def _validate_profile(value: str) -> str:
     return value
 
 
+@micro_app.command("run")
 def run_command(
     task_id: str | None = typer.Argument(
         None, help="Task ID (TNNN or TSK-NNN-NN format)"
@@ -3274,11 +3282,15 @@ def run_command(
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
 ) -> None:
-    """Use `deviate run --all` to drain the queue.
+    """Use `deviate micro run --all` to drain the queue.
 
     Runs the next pending task by default. Routes each task by
     execution_mode to the TDD cycle (red → green → judge → refactor)
     or the execute phase.
+
+    Invoked directly via ``deviate micro run [task-id]`` and indirectly
+    by the top-level ``deviate run`` orchestrator after ``meso run``
+    creates the per-issue worktree.
     """
     global _verbose
     _verbose = verbose
@@ -3294,7 +3306,7 @@ def run_command(
     if session_path.exists():
         session = SessionState.load(session_path)
         _log(f"session: phase={session.current_phase}, issue={session.active_issue_id}")
-        cmd_parts = ["run"]
+        cmd_parts = ["micro", "run"]
         if task_id:
             cmd_parts.append(task_id)
         if all_tasks:
@@ -3336,7 +3348,7 @@ def run_command(
     run_logger = RunLogger(root)
     _log_run(
         "RUN_START",
-        command=f"deviate run {task_id or ''} {'--all' if all_tasks else ''}".strip(),
+        command=f"deviate micro run {task_id or ''} {'--all' if all_tasks else ''}".strip(),
     )
     set_run_logger(run_logger)
 

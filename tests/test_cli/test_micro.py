@@ -240,7 +240,7 @@ class TestRunAllMonitorIntegration:
         )
         mock_monitor = MagicMock(spec=OrchestrationMonitor)
         with patch("deviate.cli.micro.OrchestrationMonitor", return_value=mock_monitor):
-            result = runner.invoke(cli, ["run", "--all"])
+            result = runner.invoke(cli, ["micro", "run", "--all"])
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         mock_monitor.__enter__.assert_called_once()
         assert mock_monitor.push_event.called
@@ -270,7 +270,7 @@ class TestRunAllMonitorIntegration:
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        result = runner.invoke(cli, ["run", "--all", "--json"])
+        result = runner.invoke(cli, ["micro", "run", "--all", "--json"])
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert '"event":' in result.output
 
@@ -298,7 +298,7 @@ class TestRunAllMonitorIntegration:
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        result = runner.invoke(cli, ["run", "--all"])
+        result = runner.invoke(cli, ["micro", "run", "--all"])
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert "TSK-001-01" in result.output
         assert '"event":' not in result.output
@@ -311,7 +311,7 @@ class TestRunAllMonitorIntegration:
         mock_invoke_agent.side_effect = KeyboardInterrupt()
         mock_monitor = MagicMock(spec=OrchestrationMonitor)
         with patch("deviate.cli.micro.OrchestrationMonitor", return_value=mock_monitor):
-            result = runner.invoke(cli, ["run", "--all"])
+            result = runner.invoke(cli, ["micro", "run", "--all"])
         assert mock_monitor.signal_keyboard_interrupt.called
         assert result.exit_code == 130
 
@@ -392,7 +392,7 @@ class TestRunAllMonitorE2E:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json", "--verbose"])
+        result = runner.invoke(cli, ["micro", "run", "--all", "--json", "--verbose"])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
@@ -463,7 +463,7 @@ class TestRunAllMonitorE2E:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json", "--verbose"])
+        result = runner.invoke(cli, ["micro", "run", "--all", "--json", "--verbose"])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
@@ -520,7 +520,7 @@ class TestRunAllMonitorE2E:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json"])
+        result = runner.invoke(cli, ["micro", "run", "--all", "--json"])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
 
@@ -583,7 +583,7 @@ class TestRunAllMonitorE2E:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json"])
+        result = runner.invoke(cli, ["micro", "run", "--all", "--json"])
 
         assert result.exit_code == 1, (
             f"Expected exit code 1 on failure, got {result.exit_code}"
@@ -1208,7 +1208,7 @@ class TestPhaseModelRouting:
 
         mock_invoke_agent.side_effect = invoke_side_effect
 
-        result = runner.invoke(cli, ["run", "--all", "--json"])
+        result = runner.invoke(cli, ["micro", "run", "--all", "--json"])
 
         assert result.exit_code == 0
 

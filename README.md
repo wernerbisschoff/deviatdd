@@ -103,8 +103,28 @@ Once setup is done, drive the entire lifecycle from inside your agent. Each phas
 /deviate-review                          # ← Gate 3: final PR scan; merge or request changes
 ```
 
-The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail.
+**Or, run the whole pipeline in one command** — the top-level
+`deviate run` is the canonical "go do the next thing" entry point. It
+discovers the next BACKLOG issue, claims it (creating the per-issue
+worktree), runs SPECIFY → PLAN → TASKS in the worktree, then drains
+every PENDING task through the TDD cycle. Under the hood it chains
+`deviate meso run` with `deviate micro run --all` inside the created
+worktree:
 
+```
+deviate run                              # full pipeline (meso + micro --all)
+deviate run --issue ISS-001-007          # target a specific BACKLOG issue
+deviate run --profile fast               # skip JUDGE + REFACTOR in the micro drain
+deviate run --no-judge --no-refactor     # same, via boolean overrides
+```
+
+For per-task or `deviate micro run --all` invocations inside an
+already-claimed worktree, see [`deviate micro run`](https://github.com/werner-bisschoff/deviatdd):
+top-level `run` does both meso and micro for you; the per-task
+dispatcher is `deviate micro run <task-id>` and the queue drain is
+`deviate micro run --all`.
+
+The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail.
 ---
 
 ## Architecture: Four Layers, Three Gates
@@ -172,6 +192,7 @@ style Ex fill:#f5e1e1
 | **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
 | **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — there is no separate specify step. |
 | **Macro · Adhoc** *(shortcut)* | `/deviate-adhoc` | `specs/adhoc/ISS-ADH-NNN-*.md` (single issue, spec-enriched) | Use for low/medium-complexity tasks; the complexity classifier auto-routes high-complexity work to the full Macro path. |
+| **Run** *(full pipeline, end-to-end)* | `deviate run` | Worktree at `.worktrees/<branch>/`, `tasks.md`, `tasks.jsonl`, then completed task commits | The canonical "go do the next thing" command. Discovers the next BACKLOG issue, claims it (creating a per-issue worktree), runs SPECIFY → PLAN → TASKS in that worktree, then drains every PENDING task through the TDD cycle. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` to the micro drain. Internally calls `deviate meso run` then `deviate micro run --all` inside the created worktree. |
 | **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
 | **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | The `tasks.md` artifact is the human's execution blueprint. Verify: 4–8 tasks per issue, every task has a Verification CLI command, each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, DAG `blocked_by` deps are right. TDD tasks flow to red→green→judge→refactor; IMMEDIATE tasks route to `/deviate-execute`. |
 | **Micro · Red** | `/deviate-red <task-id>` | A failing test (no production code) | Agent-internal; you see the test on commit. |
@@ -179,6 +200,7 @@ style Ex fill:#f5e1e1
 | **Micro · Judge** | `/deviate-judge <task-id>` | A `JUDGE_PASS` or `JUDGE_REJECTED` verdict over the GREEN diff | On rejection, the **Green → Judge → Green loop** rolls back to the RED commit, injects `<train_feedback>` into the next GREEN, and retries (up to 3 attempts). Read the feedback — it's the only signal you'll get for what the compliance checker objected to. |
 | **Micro · Refactor** | `/deviate-refactor <task-id>` | Polished, behavior-preserving code (only on `JUDGE_PASS`) | If the refactor breaks tests, the CLI discards it and the task completes on the verified GREEN. |
 | **Micro · Execute** | `/deviate-execute <task-id>` | A targeted change for `direct` / `e2e` tasks | Skips the TDD cycle; still has its own JUDGE pass. |
+| **Micro · Run** *(agent-internal drain)* | `deviate micro run [task-id] --all` | Completed task commits per the cycle | Agent-internal dispatch — `deviate micro run <task-id>` runs a single task; `deviate micro run --all` drains every PENDING task. Top-level `deviate run` invokes this with `--all` inside the worktree the meso step just created. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json`. |
 | **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
 | **Release** *(Gate 3)* | `/deviate-review` | Final PR scan | **Gate 3**: merge or request changes. |
 

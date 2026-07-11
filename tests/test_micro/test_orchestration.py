@@ -75,7 +75,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "TSK-004-01"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-01"])
 
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
@@ -111,12 +111,12 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            runner.invoke(cli, ["run", "TSK-004-01"])
+            runner.invoke(cli, ["micro", "run", "TSK-004-01"])
 
             session_data = json.loads(
                 (dot_dir / "session.json").read_text(encoding="utf-8")
             )
-            assert session_data.get("last_command") == "run TSK-004-01", (
+            assert session_data.get("last_command") == "micro run TSK-004-01", (
                 f"Expected last_command to be set, got {session_data}"
             )
 
@@ -138,7 +138,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "--no-judge", "TSK-004-03"])
+            result = runner.invoke(cli, ["micro", "run", "--no-judge", "TSK-004-03"])
 
             assert result.exit_code == 0, (
                 f"Expected --no-judge flag to be accepted, got {result.exit_code}: {result.output}"
@@ -165,7 +165,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "--no-refactor", "TSK-004-04"])
+            result = runner.invoke(cli, ["micro", "run", "--no-refactor", "TSK-004-04"])
 
             assert result.exit_code == 0, (
                 f"Expected --no-refactor flag to be accepted, got {result.exit_code}: {result.output}"
@@ -192,7 +192,9 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            result = runner.invoke(cli, ["run", "--agent", "droid", "TSK-004-05"])
+            result = runner.invoke(
+                cli, ["micro", "run", "--agent", "droid", "TSK-004-05"]
+            )
 
             assert result.exit_code == 0, (
                 f"Expected --agent flag to be accepted, got {result.exit_code}: {result.output}"
@@ -221,7 +223,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
 
-            runner.invoke(cli, ["run", "TSK-004-06"])
+            runner.invoke(cli, ["micro", "run", "TSK-004-06"])
 
             ledger_lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")
             statuses = [json.loads(line).get("status") for line in ledger_lines if line]
@@ -266,7 +268,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task_a, task_b)
 
-            result = runner.invoke(cli, ["run", "--all"])
+            result = runner.invoke(cli, ["micro", "run", "--all"])
 
             assert result.exit_code == 0, (
                 f"Expected exit 0 for --all, got {result.exit_code}: {result.output}"
@@ -298,7 +300,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, failing_task, good_task)
 
-            result = runner.invoke(cli, ["run", "--all"])
+            result = runner.invoke(cli, ["micro", "run", "--all"])
 
             assert result.exit_code != 0, (
                 f"Expected non-zero exit when a task fails twice: {result.output}"
@@ -376,7 +378,7 @@ class TestMicroOrchestration:
                 check=True,
             )
 
-            result = runner.invoke(cli, ["run", "TSK-004-11"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-11"])
 
             assert "JUDGE_REJECTED" in result.output, (
                 f"Expected JUDGE_REJECTED: {result.output}"
@@ -456,7 +458,7 @@ class TestMicroOrchestration:
                 check=True,
             )
 
-            result = runner.invoke(cli, ["run", "TSK-004-12"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-12"])
 
             assert "JUDGE_AGENT_NO_FEEDBACK" in result.output, (
                 f"Expected JUDGE_AGENT_NO_FEEDBACK: {result.output}"
@@ -516,7 +518,7 @@ class TestYellowHandoffContract:
                 check=True,
             )
 
-            result = runner.invoke(cli, ["run", "TSK-004-99"])
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-99"])
 
             assert result.exit_code == 0, (
                 f"Expected zero exit when GREEN recovers from test failure, "
@@ -574,7 +576,7 @@ class TestYellowHandoffContract:
 
             # JUDGE will reject (mock agent produces no real code), but the
             # GREEN commit must survive — the old code destroyed it.
-            runner.invoke(cli, ["run", "TSK-004-88"])
+            runner.invoke(cli, ["micro", "run", "TSK-004-88"])
 
             # GREEN commit must still be in history — not destroyed by reset
             log = subprocess.run(

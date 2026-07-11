@@ -465,76 +465,130 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ### 5. Automated Pipeline Orchestration
 
-#### `deviate run <task-id>`
+#### `deviate run` (Full-Pipeline Orchestrator)
 
-* **Source:** `src/deviate/cli/micro.py` (`_run_single`, `_dispatch_task`)
-* **Description:** Triggers the automated execution cycle for a single task node. Routes by
-  `execution_mode` (TDD or non-TDD). TDD mode runs the RED -> GREEN -> JUDGE -> REFACTOR
-  cycle. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`, which
-  commits the work, then optionally runs a JUDGE pass against `spec.md` and rolls back
-  on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
-* **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the GREEN→JUDGE pair in a `while not judge_passed` loop with up to `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`, `_execute_rollback()` runs `git reset --hard <red_sha>` against the RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of the RED phase), the session is `force_transition_to("GREEN")`, and the previous attempt's feedback is injected as `<train_feedback>` into the next GREEN prompt via `_build_auto_prompt("green", ...) + "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts with `PhaseFailedError`. The feedback source precedence is `train_feedback` (preferred) → `violations` (structured list) → `rationale` → `summary` → fallback string.
-* **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
-  `REFACTOR` when invoked, the cycle resumes from that phase via the `start_phase`
-  parameter. IDLE / RED trigger a fresh cycle from RED.
+* **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)
+* **Description:** Canonical "go do the next thing" entry point. Chains the meso
+  pipeline (`deviate meso run`) with the micro drain (`deviate micro run --all`)
+  inside the worktree the meso step just created. Discovers the next unblocked
+  BACKLOG issue, claims it (creating the per-issue worktree), runs SPECIFY →
+  PLAN → TASKS in the worktree, then drains every PENDING task through the TDD
+  cycle (or the direct-execute phase for IMMEDIATE-typed tasks). Internally:
+  1. Calls `_meso_run(issue_id=...)` from `src/deviate/cli/meso.py`, which returns
+     the created worktree path on success (`str(worktree_path)`).
+  2. `chdir`s into that worktree, updates `.deviate/session.json` to record the
+     `run --all` handoff, and calls `_run_all()` from `src/deviate/cli/micro.py`
+     to drain every PENDING task.
+  3. On hard failure (no worktree returned, worktree missing) prints a structured
+     error (`RUN_NO_WORKTREE` / `RUN_WORKTREE_MISSING`) and exits non-zero.
 * **Input Parameters:**
-  * `<task-id>` (Positional: `TSK-NNN-NN` format; omit to auto-select the first PENDING
-    task for the active issue)
+  * `--issue <ISS-NNN-NN>` (Target a specific BACKLOG issue; default: next unblocked)
+  * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
+  * `--profile [full|fast|secure]` (Forwarded to the micro drain; resolved via
+    `resolve_profile()` from `src/deviate/core/profile.py`)
+  * `--no-judge`, `--no-refactor` (Composable boolean overrides for the profile;
+    forwarded to the micro drain)
+  * `--agent <name>` (Override agent backend for the micro phase)
+  * `--json` (Forward JSONL monitor events to stdout; suppresses Rich UI)
+* **Exit Codes:** 0 on full success; 1 if meso or micro reports failure.
+* **Replaces:** The old `deviate run <task-id>` and `deviate run --all`
+  task-dispatch surface. The per-task and `--all` dispatches now live at
+  `deviate micro run <task-id>` and `deviate micro run --all` respectively.
+
+#### `deviate micro run [task-id]` / `deviate micro run --all`
+
+* **Source:** `src/deviate/cli/micro.py` (`run_command` decorated by `micro_app`)
+* **Description:** The per-task / queue-drain dispatcher that used to live as the
+  top-level `deviate run`. Routes each task by `execution_mode` to the TDD cycle
+  (RED → GREEN → JUDGE → REFACTOR) or to the execute phase. Single-task by
+  default; `--all` drains every PENDING task for the active issue (or all
+  issues if no active issue is set).
+* **Single-Task (`deviate micro run <task-id>`):** Triggers the automated
+  execution cycle for a single task node. TDD mode runs the RED → GREEN →
+  JUDGE → REFACTOR cycle. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`,
+  which commits the work, then optionally runs a JUDGE pass against `spec.md`
+  and rolls back on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
+  Implements `_run_single` / `_dispatch_task` from `src/deviate/cli/micro.py`.
+  * **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the
+    GREEN → JUDGE pair in a `while not judge_passed` loop with up to
+    `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`,
+    `_execute_rollback()` runs `git reset --hard <red_sha>` against the
+    RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of
+    the RED phase), the session is `force_transition_to("GREEN")`, and the
+    previous attempt's feedback is injected as `<train_feedback>` into the next
+    GREEN prompt via `_build_auto_prompt("green", ...) +
+    "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from
+    GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts
+    with `PhaseFailedError`. The feedback source precedence is `train_feedback`
+    on the manifest → `_extract_judge_feedback(...)` from `tasks.md` → verbatim
+    verdict / rationale.
+  * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
+    `REFACTOR` when invoked, the cycle resumes from that phase via the
+    `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
+* **Queue Drain (`deviate micro run --all`):** **Issue-scoped** task sweep.
+  Resolves the active issue from `session.active_issue_id` (falling back to
+  branch-derived detection via the `feat/{epic}/{issue}` regex against
+  `specs/issues.jsonl`), then dispatches **every PENDING task for that issue**
+  sequentially. Each task gets up to **2 retry attempts**
+  (`_execute_task_with_retry`, `for attempt in range(2)`) before being marked
+  `FAILED` in the issue-scoped `tasks.jsonl`. The pipeline **halts on the first
+  failure** (`any_failed = True; break`) and exits with code `1`. If no
+  `active_issue_id` is set and the branch cannot resolve an issue, no tasks are
+  dispatched. Implements `_run_all` from `src/deviate/cli/micro.py`.
+  * **Train Retry Loop (per task):** Inside each task's TDD cycle,
+    `_run_tdd_cycle` allows up to **3 train attempts** (`max_train_attempts = 3`)
+    when GREEN tests fail or JUDGE returns `COMPLIANCE_VIOLATION`. Each train
+    attempt injects `<train_feedback>` from the previous attempt's failure
+    output back into the GREEN prompt and re-runs GREEN. Exhaustion raises
+    `PhaseFailedError`.
+  * **Graphite Integration:** If `.deviate/config.toml` contains
+    `graphite = true`, after each successful task the runner invokes
+    `gt create -m "feat({TSK}): {description}"` to spin up a stacked branch for
+    the next task.
+  * **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
+    `src/deviate/ui/monitor.py`) wired to a `RunBoard`
+    (`src/deviate/ui/pipeline.py`) with `total_tasks` set to the pending count.
+    The RunBoard renders as a multi-column Rich `Table` whose rows are updated
+    in place via the monitor's event stream (`task_started` / `phase_change` /
+    `task_completed` / `task_failed`). Output structure:
+    * **Run header panel** — `RUN <issue_id> N pending task(s)` in a framed panel.
+    * **Per-phase callouts** — Each `RED` / `GREEN` / `JUDGE` / `REFACTOR` /
+      `EXECUTE` phase emits a `PhaseCallout` (rounded `╭─╮` panel) with the
+      phase tag, task ID, status marker (`◐` in-progress, `●` completed,
+      `✗` failed), and elapsed time. The original token-bearing line
+      (`RED →`, `GREEN →`, etc.) is preserved alongside for backwards-compat
+      with existing tooling.
+    * **Train retry indicator** — On each `_run_tdd_cycle` retry, a
+      `TrainIndicator` renders the current attempt against the maximum
+      (`● 1/3 ─▶─ ◐ 2/3 ─▶─ ○ 3/3`). The literal `TRAIN` token is preserved.
+    * **Final RunBoard snapshot** — A full re-render of the board reflecting the
+      post-run state of every task (markers + per-row error reasons).
+    * **Pipeline summary** — A `PipelineSummary` panel with totals
+      (`Total tasks`, `Completed`, `Failed`, `Duration`, `Status`).
+    In `--json` mode the same monitor emits JSONL events
+    (`task_started`, `phase_change`, `task_completed`, `task_failed`,
+    `pipeline_halted`, `pipeline_complete`); the rich board panels are
+    suppressed in JSON mode. Agent output is forwarded to the monitor via a
+    streaming callback.
+* **Input Parameters:**
+  * `[task-id]` (Positional: `TSK-NNN-NN` format; omit to auto-select the first
+    PENDING task for the active issue; mutually exclusive with `--all`)
+  * `--all` (Drain every PENDING task for the active issue)
   * `--profile [full|fast|secure]` (Defaults to `full`):
     * `full` — RED + GREEN + JUDGE + REFACTOR (complete cycle)
     * `fast` — RED + GREEN only (skip JUDGE + REFACTOR)
     * `secure` — RED + GREEN + JUDGE (skip REFACTOR)
     * Boolean flags `--no-judge` / `--no-refactor` retained as composable overrides
-  * `--agent` (Override agent backend; falls back to `[agent].backend` in
+  * `--agent <name>` (Override agent backend; falls back to `[agent].backend` in
     `.deviate/config.toml`)
   * `--dry-run` (Print the resolved task and exit without dispatching)
-* **Common Flags:** `--json`, `--quiet`
+  * `--json`, `--quiet`, `--verbose`
 
-#### `deviate run --all`
-
-* **Source:** `src/deviate/cli/micro.py` (`_run_all`)
-* **Description:** **Issue-scoped** task sweep. Resolves the active issue from
-  `session.active_issue_id` (falling back to branch-derived detection via the
-  `feat/{epic}/{issue}` regex against `specs/issues.jsonl`), then dispatches **every
-  PENDING task for that issue** sequentially. Each task gets up to **2 retry attempts**
-  (`_execute_task_with_retry`, `for attempt in range(2)`) before being marked `FAILED` in
-  the issue-scoped `tasks.jsonl`. The pipeline **halts on the first failure**
-  (`any_failed = True; break`) and exits with code `1`. If no `active_issue_id` is set
-  and the branch cannot resolve an issue, no tasks are dispatched.
-* **Train Retry Loop (per task):** Inside each task's TDD cycle, `_run_tdd_cycle` allows
-  up to **3 train attempts** (`max_train_attempts = 3`) when GREEN tests fail or JUDGE
-  returns `COMPLIANCE_VIOLATION`. Each train attempt injects `<train_feedback>` from
-  the previous attempt's failure output back into the GREEN prompt and re-runs GREEN.
-  Exhaustion raises `PhaseFailedError`.
-* **Graphite Integration:** If `.deviate/config.toml` contains `graphite = true`, after
-  each successful task the runner invokes `gt create -m "feat({TSK}): {description}"`
-  to spin up a stacked branch for the next task.
-* **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
-  `src/deviate/ui/monitor.py`) wired to a `RunBoard` (`src/deviate/ui/pipeline.py`)
-  with `total_tasks` set to the pending count. The RunBoard renders as a
-  multi-column Rich `Table` whose rows are updated in place via the monitor's
-  event stream (`task_started` / `phase_change` / `task_completed` / `task_failed`).
-  Output structure:
-  * **Run header panel** — `RUN <issue_id> N pending task(s)` in a framed panel.
-  * **Per-phase callouts** — Each `RED` / `GREEN` / `JUDGE` / `REFACTOR` / `EXECUTE`
-    phase emits a `PhaseCallout` (rounded `╭─╮` panel) with the phase tag, task
-    ID, status marker (`◐` in-progress, `●` completed, `✗` failed), and elapsed
-    time. The original token-bearing line (`RED →`, `GREEN →`, etc.) is preserved
-    alongside for backwards-compat with existing tooling.
-  * **Train retry indicator** — On each `_run_tdd_cycle` retry, a
-    `TrainIndicator` renders the current attempt against the maximum
-    (`● 1/3 ─▶─ ◐ 2/3 ─▶─ ○ 3/3`). The literal `TRAIN` token is preserved.
-  * **Final RunBoard snapshot** — A full re-render of the board reflecting the
-    post-run state of every task (markers + per-row error reasons).
-  * **Pipeline summary** — A `PipelineSummary` panel with totals
-    (`Total tasks`, `Completed`, `Failed`, `Duration`, `Status`).
-  In `--json` mode the same monitor emits JSONL events
-  (`task_started`, `phase_change`, `task_completed`, `task_failed`,
-  `pipeline_halted`, `pipeline_complete`); the rich board panels are
-  suppressed in JSON mode. Agent output is forwarded to the monitor via a
-  streaming callback.
-* **Accepts:** `--profile [full|fast|secure]`, `--agent <name>`, `--json`, `--quiet`,
-  `--dry-run` (prints all resolved pending tasks and exits without dispatching).
+> **Note on the `last_command` field:** When the orchestrator hands off to
+> `micro run --all`, the session's `last_command` is rewritten to
+> `micro run [task-id] --all` (i.e. the micro subcommand path, not the
+> top-level `deviate run`), so the session always records the most
+> specific command that last touched it.
 
 #### `deviate meso run` (Automated Meso Pipeline)
 

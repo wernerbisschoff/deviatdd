@@ -1,7 +1,7 @@
 """Tests for the new pipeline UI components.
 
 These components power the redesigned output of `deviate meso run` and
-`deviate run --all`. The aesthetic is "Editorial / Refined Engineering":
+`deviate micro run --all`. The aesthetic is "Editorial / Refined Engineering":
 restrained palette, Unicode box-drawing, monospace tabular layout.
 
 The tests pin the visual contract:

@@ -207,7 +207,7 @@ class TestMesoInvokeAgentPhaseBackendAliasResolution:
         ``omp`` is a canonical backend (not an alias); the resolution
         layer must NOT silently rewrite it to ``pi``. This is the
         regression guard for the original ``AgentConfig(backend="omp")``
-        ``ValidationError`` that aborted ``deviate run --all``.
+        ``ValidationError`` that aborted ``deviate micro run --all``.
         """
         with patch("deviate.cli.meso.AgentBackend") as MockBackend:
             mock_inst = MagicMock()

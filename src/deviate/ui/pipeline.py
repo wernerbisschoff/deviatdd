@@ -1,4 +1,4 @@
-"""Pipeline UI components for `deviate meso run` and `deviate run --all`.
+"""Pipeline UI components for `deviate meso run` and `deviate micro run --all`.
 
 Aesthetic: "Editorial / Refined Engineering" — restrained palette, Unicode
 box-drawing, monospace tabular layout. Designed for senior engineers who
@@ -243,7 +243,7 @@ class PhaseCallout:
 
 @dataclass
 class RunBoard:
-    """Live, multi-row task table for `deviate run --all`.
+    """Live, multi-row task table for `deviate micro run --all`.
 
     Each row corresponds to a PENDING task. The board is updated in place
     by ``mark_phase`` / ``mark_completed`` / ``mark_failed``; the same

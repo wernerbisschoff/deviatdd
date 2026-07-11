@@ -126,7 +126,11 @@ def test_help_agent_panel_lists_macro_micro_groups():
     # Macro-phase groups
     for cmd in ("explore", "research", "prd", "shard", "macro", "adhoc"):
         assert cmd in block, f"Expected macro group {cmd!r} in {AGENT_PANEL!r} panel"
-    # Micro-phase groups
+    # Micro-phase groups (per-phase dispatchers + umbrella `micro` group).
+    # `micro` is the umbrella for `deviate micro run [task-id] --all`; it
+    # used to live as a top-level `run` and was moved to `micro run` when
+    # the top-level `deviate run` was promoted to the full-pipeline
+    # orchestrator.
     for cmd in (
         "red",
         "green",
@@ -135,6 +139,7 @@ def test_help_agent_panel_lists_macro_micro_groups():
         "execute",
         "e2e",
         "hotfix",
+        "micro",
     ):
         assert cmd in block, f"Expected micro group {cmd!r} in {AGENT_PANEL!r} panel"
     # Operational (still agent-internal)
@@ -173,13 +178,23 @@ def test_help_meso_row_pins_literal_invocation():
     )
 
 
-def test_help_run_docstring_promotes_dash_dash_all():
-    """The ``run`` row in --help must mention ``--all`` so first-timers
-    see the full-queue invocation alongside the per-task default."""
+def test_help_run_docstring_promotes_full_pipeline():
+    """The ``run`` row in --help must lead with the full-pipeline
+    invocation so first-timers discover it as the canonical entry point.
+
+    `deviate run` is now an orchestrator that runs ``deviate meso run``
+    followed by ``deviate micro run --all`` in the created worktree;
+    it does not take a task-id argument. The old per-task / ``--all``
+    dispatcher lives at ``deviate micro run`` now.
+    """
     output = _help_output()
-    assert "Use `deviate run --all`" in output, (
-        "Expected the literal 'Use `deviate run --all`' string in --help. "
-        "The 'run' row must lead with the full-queue invocation."
+    assert "Use `deviate run`" in output, (
+        "Expected the literal 'Use `deviate run`' string in --help. "
+        "The 'run' row must lead with the full-pipeline invocation."
+    )
+    assert "`deviate micro run`" in output, (
+        "Expected the docstring to mention `deviate micro run` so "
+        "operators know where the per-task / --all dispatcher moved."
     )
 
 

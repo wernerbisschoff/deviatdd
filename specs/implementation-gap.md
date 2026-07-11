@@ -19,7 +19,11 @@
 
 ## 1. CLI: `--profile` replaces `--no-judge`/`--no-refactor` [P0]
 
-**Spec says**: `deviate run <task-id> --profile [full|fast|secure]`
+**Spec says**: `deviate micro run <task-id> --profile [full|fast|secure]`
+> (Top-level `deviate run` was promoted to a full-pipeline orchestrator that chains
+> `deviate meso run` with `deviate micro run --all` inside the created worktree;
+> see `DeviaTDD-api.md` §5 for the new contract. The per-task / `--all` dispatch
+> surface lives at `deviate micro run`.)
 **Code has**: `--no-judge` and `--no-refactor` booleans
 
 | # | Task | File(s) | Status |
@@ -32,7 +36,7 @@
 | 1.6 | Update SKILL.md files that reference `--no-judge`/`--no-refactor`: `deviate-green`, `deviate-red`, `deviate-refactor`, `deviate-execute` | `src/deviate/prompts/skills/deviate-*/SKILL.md` | |
 | 1.7 | Write tests for all three profiles | `tests/` | |
 
-**Verify**: `deviate run TSK-001-01 --profile fast` skips JUDGE+REFACTOR; `--profile secure` runs JUDGE but skips REFACTOR; `--profile full` (default) runs all.
+**Verify**: `deviate micro run TSK-001-01 --profile fast` skips JUDGE+REFACTOR; `--profile secure` runs JUDGE but skips REFACTOR; `--profile full` (default) runs all.
 
 ---
 

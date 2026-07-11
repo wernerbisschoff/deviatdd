@@ -154,9 +154,12 @@ composable overrides).
 ### Execution Engine
 
 The Micro layer execution engine is implemented as an in-process Python function dispatch
-via `src/deviate/cli/micro.py`. The `deviate run <task-id>` command resolves a task by its
+via `src/deviate/cli/micro.py`. The `deviate micro run <task-id>` command (the per-task
+dispatcher that used to live as top-level `deviate run`) resolves a task by its
 `TSK-NNN-NN` identifier from the ledger and dispatches through the phase cycle based on
-`execution_mode`:
+`execution_mode`. The top-level `deviate run` orchestrator (`src/deviate/cli/__init__.py`)
+chains `deviate meso run` with `deviate micro run --all` inside the created worktree;
+see `DeviaTDD-api.md` §5 for the orchestration contract.:
 
 - **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle via `_run_tdd_cycle()`.
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
@@ -178,7 +181,8 @@ console output.
 
 Cache optimization strategies (prefix caching, session continuity) are defined as
 recommended patterns in `specs/constitution.md` seeds but are **not enforced programmatically**
-by the `deviate` CLI. The `--agent` flag on `deviate run` configures which agent backend
+by the `deviate` CLI. The `--agent` flag on `deviate micro run` (and on the top-level
+`deviate run` orchestrator, which forwards it to micro) configures which agent backend
 to invoke, but model selection is delegated to the calling environment.
 
 #### Task Execution Types
@@ -292,7 +296,7 @@ single invocation. The legacy SPECIFY → TASKS transition still exists for
 backward compatibility but routes through the new merged path.
 ```
 
-**Micro layer TDD cycle** (per task, dispatched by `deviate run <task-id>`):
+**Micro layer TDD cycle** (per task, dispatched by `deviate micro run <task-id>` or `deviate micro run --all`):
 
 ```
              ┌──────────────┐
@@ -380,7 +384,8 @@ preserved.
 
 The model routing table below is documented as a recommended strategy in the
 `specs/constitution.md` seeds and prompt skills. It is **not enforced programmatically**
-by the `deviate` CLI. The `--agent` flag on `deviate run` and the `DeviateConfig.agent.backend`
+by the `deviate` CLI. The `--agent` flag on `deviate micro run` (and on the top-level
+`deviate run` orchestrator, which forwards it) and the `DeviateConfig.agent.backend`
 field configure which agent backend to target, but model selection within the backend is
 delegated to the calling environment.
 
@@ -538,7 +543,14 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 5. **Memory Preservation via Train Gates (Green → Judge → Green loop):** The JUDGE phase implements Train rollback on compliance violations: `_execute_rollback()` runs `git reset --hard <red_sha>` (the RED-boundary SHA captured at the end of the RED phase and stored in `session.red_commit_sha`); this discards the suspect GREEN implementation so the next attempt starts from a verified-good test. `_execute_rollback()` then persists a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`. The session is `force_transition_to("GREEN")` and the next GREEN attempt receives the previous failure output as…
 
-6. **The Elastic Governance Rule:** The `deviate run` command supports `--profile [full|fast|secure]` to control which phases execute. `full` runs the complete RED → GREEN → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as composable overrides that take precedence over profile defaults. Execution profiles and agent backends are configured via `DeviateConfig.agent.backend`.
+6. **The Elastic Governance Rule:** The `deviate micro run` command (and the
+   top-level `deviate run` orchestrator, which forwards the flag) supports
+   `--profile [full|fast|secure]` to control which phases execute. `full` runs
+   the complete RED → GREEN → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN
+   only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip
+   REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as
+   composable overrides that take precedence over profile defaults. Execution
+   profiles and agent backends are configured via `DeviateConfig.agent.backend`.
 
 7. **Atomic Concurrency Protocol (Git Reference Locks):** To eliminate TOCTOU race conditions across distributed terminal instances, the issue claim workflow (formerly `deviate specify pre`, now part of the Plan phase orchestration) uses try-claim semantics: `select_unblocked_candidates()` returns all available BACKLOG issues, and the worker iterates through them attempting `claim_issue()` combined with `create_worktree()` and `git push -u <remote> <branch>`. The server serializes concurrent pushes; the first successful push wins. The `tasks.jsonl` ledger records the authoritative outcome.
 
@@ -546,9 +558,9 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 9. **The Model Tiering Constraint:** Model selection is defined as a recommended strategy in `specs/constitution.md` seeds and prompt skills. The `deviate` CLI does **not** enforce model selection programmatically. The `--agent` flag and `DeviateConfig.agent.backend` field configure agent backends (`opencode`, `claude`, `droid`), but the specific model used within each backend is chosen by the calling environment. The `_SKILL_NAMES` dict in `micro.py` maps `JUDGE → "deviate-judge"` for skill-based agent guidance.
 
-10. **The Issue-Scoped Task Sweep:** `deviate run --all` is **issue-scoped**, not global. The
-    active issue is resolved from `session.active_issue_id`, falling back to a
-    branch-derived lookup via the `feat/{epic}/{issue}` regex against
+10. **The Issue-Scoped Task Sweep:** `deviate micro run --all` is **issue-scoped**, not
+    global. The active issue is resolved from `session.active_issue_id`, falling
+    back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against
     `specs/issues.jsonl`. If neither resolves, no tasks are dispatched. Once the issue is
     resolved, only the PENDING tasks for that issue (`_find_all_pending_tasks(root,
     issue_id=...)`) are swept. Tasks are dispatched sequentially; each task gets up to
@@ -595,10 +607,11 @@ Model routing is **guidance, not enforcement** — the `deviate` CLI does not se
 
 `/deviate-plan` and `/deviate-tasks` share a single continuous session per issue (replacing the deprecated `/deviate-specify` + `/deviate-tasks` pairing). The system prompt, tool definitions, issue content, and `constitution.md` are written to the KV cache once (first turn, cache-miss pricing) and read at 98%+ discount on every subsequent turn. Without this, each turn would re-send the full context at full price.
 
-Micro-layer tasks dispatched via `deviate run <task-id>` reuse the same in-process state
-through `SessionState.force_transition_to()`. Each phase is a synchronous function call
-within the same process — there is no subprocess or LLM session restart between phases.
-The `_commit_phase()` function handles automatic git commits between phase transitions.
+Micro-layer tasks dispatched via `deviate micro run <task-id>` reuse the same
+in-process state through `SessionState.force_transition_to()`. Each phase is a
+synchronous function call within the same process — there is no subprocess or LLM
+session restart between phases. The `_commit_phase()` function handles automatic
+git commits between phase transitions.
 All commit messages are routed through `format_commit_message()` from `src/deviate/core/convention.py`,
 which detects the project's emoji convention (via CONTRIBUTING.md or git history) and prepends
 the appropriate gitmoji when applicable (e.g. `✨ feat(TSK-001-01): add implementation`).
@@ -609,11 +622,14 @@ unknown `phase` values fall back to `TYPE_EMOJI_MAP["test"]` (✅).
 
 ### 9.3 In-Process Dispatch
 
-The `deviate run` command avoids subprocess overhead entirely by dispatching phase transitions
-in-process via `_PHASE_MAP` function calls. Each phase transition is a single Python function
-call that reads session state, appends to the ledger, and runs synchronous verification
-(`_run_pytest`, `_detect_phase_changes`, `_check_return_type_mismatch`).
-There are no subprocess round-trips between phases within a single `deviate run` invocation.
+The `deviate micro run` command avoids subprocess overhead entirely by dispatching
+phase transitions in-process via `_PHASE_MAP` function calls. Each phase transition
+is a single Python function call that reads session state, appends to the ledger,
+and runs synchronous verification (`_run_pytest`, `_detect_phase_changes`,
+`_check_return_type_mismatch`). There are no subprocess round-trips between phases
+within a single `deviate micro run` invocation. The top-level `deviate run`
+orchestrator chains two in-process calls (meso, then micro) but does not add
+subprocess overhead beyond what each already does.
 
 ### 9.4 HITL Gate Prevention
 
