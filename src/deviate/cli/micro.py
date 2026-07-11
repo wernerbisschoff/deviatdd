@@ -393,7 +393,7 @@ def _extract_pi_session_stats(stdout: str) -> dict[str, int] | None:
 def _invoke_agent(
     prompt: str,
     c: Console,
-    backend_name: str = "opencode",
+    backend_name: str = "pi",
     task_id: str = "",
     phase: str = "",
     output_callback: Callable[[str], None] | None = None,
@@ -500,12 +500,12 @@ Concisely summarize (under 200 words):
 
 def _summarize_timeout_context(
     partial_output: str,
-    backend_name: str = "opencode",
+    backend_name: str = "pi",
 ) -> str:
     """Call the agent backend to summarize timeout partial output."""
     truncated = partial_output[-5000:] if len(partial_output) > 5000 else partial_output
     prompt = _TIMEOUT_SUMMARY_PROMPT.format(partial_text=truncated)
-    backend_cmd = BACKEND_COMMANDS.get(backend_name, "opencode run")
+    backend_cmd = BACKEND_COMMANDS.get(backend_name, "pi -p")
     cmd = backend_cmd.split()
     try:
         proc = subprocess.Popen(
@@ -942,7 +942,7 @@ def _run_red_phase(
     if _verbose:
         c.print(f"  [bold blue]RED →[/] {_task_label(task)}")
 
-    backend = agent or "opencode"
+    backend = agent or "pi"
     root = Path.cwd()
     prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
@@ -1028,7 +1028,7 @@ def _run_green_phase(
     if _verbose:
         c.print(f"  [bold green]GREEN →[/] {_task_label(task)}")
 
-    backend = agent or "opencode"
+    backend = agent or "pi"
     root = Path.cwd()
     prompt = _build_auto_prompt("green", task, root)
     if session.train_feedback:
@@ -1305,7 +1305,7 @@ def _run_judge_phase(
     if _verbose:
         c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
 
-    backend = agent or "opencode"
+    backend = agent or "pi"
     root = Path.cwd()
 
     # Span the RED→GREEN diff: use RED's parent as the baseline so the
@@ -1550,7 +1550,7 @@ def _run_refactor_phase(
     if _verbose:
         c.print(f"  [bold green]REFACTOR →[/] {_task_label(task)}")
 
-    backend = agent or "opencode"
+    backend = agent or "pi"
     root = Path.cwd()
     prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
@@ -1834,7 +1834,7 @@ def _run_execute_phase(
     if _verbose:
         c.print(f"  [bold green]EXECUTE →[/] {_task_label(task)}")
 
-    backend = agent or "opencode"
+    backend = agent or "pi"
     root = Path.cwd()
 
     spec_content = _resolve_spec_md(root, task)
@@ -2150,6 +2150,8 @@ def _run_all(
     agent: str | None = None,
     json_mode: bool = False,
 ) -> None:
+    if agent is None:
+        agent = _resolve_agent_config(root, None)
     _run_all_start = time.monotonic()
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
