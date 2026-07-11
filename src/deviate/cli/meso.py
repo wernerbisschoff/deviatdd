@@ -329,15 +329,15 @@ def _setup_mise(worktree_path: Path | None = None) -> None:
         console.print(f"[yellow]MISE_WARN[/] setup step failed — {e}")
 
 
-_AGENT_DIRS = (".claude", ".opencode", ".factory")
+_AGENT_DIRS = (".claude", ".opencode", ".factory", ".pi", ".omp")
 
 
 def _sync_agent_dirs_to_worktree(repo_root: Path, worktree_path: Path) -> None:
     """Copy agent skill directories from repo root to worktree.
 
     This ensures worktrees have the same skills (.claude/, .opencode/,
-    .factory/) as the main repository so deviate commands work inside
-    the worktree without re-running ``deviate setup``.
+    .factory/, .pi/, .omp/) as the main repository so deviate commands
+    work inside the worktree without re-running ``deviate setup``.
     """
     for agent_dir in _AGENT_DIRS:
         src = repo_root / agent_dir

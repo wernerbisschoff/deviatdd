@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serializes internally via its own RLock on the shared Console instance.
   (The `stdout_lock` in `_make_output_handler` already serialized the handler
   body against `emit_jsonl` and remains in place for that purpose.)
+- Worktrees created by `deviate meso run` now receive the `.pi/` and `.omp/`
+  skill directories alongside `.claude/`, `.opencode/`, and `.factory/`.
+  Root cause: `_sync_agent_dirs_to_worktree` in `src/deviate/cli/meso.py`
+  iterated a hardcoded `_AGENT_DIRS` tuple that pre-dated the pi/omp
+  agent platforms, while `deviate setup`, `detect_agents`, and the
+  `.gitignore` patterns in `cli/__init__.py` already targeted all five
+  — so users on those platforms had to re-run `deviate setup` inside
+  every worktree. Added `.pi` and `.omp` to `_AGENT_DIRS` and updated
+  the docstring; added a regression test pinning the sync list.
 ### Added
 - PyPI-ready `pyproject.toml` metadata: `readme`, `license = "MIT"` (SPDX),
   `authors`, `keywords`, `classifiers` (incl. `License :: OSI Approved :: MIT
