@@ -175,3 +175,20 @@
 14. **AC-ADHOC-010-14**: Given `deviate adhoc pre --flow-ref FLOW-01,FLOW-02`, When the command writes to `specs/adhoc.jsonl`, Then the JSONL line contains `"flow_refs": ["FLOW-01", "FLOW-02"]`; malformed values (e.g., `"FLOW-1"`, `"flow-01"`) raise a clear validation error before the ledger write.
 15. **AC-ADHOC-010-15**: Given an issue file with `flow_refs: [FLOW-01]` in its frontmatter, When `validate_yaml_frontmatter(shard_content)` runs at `src/deviate/cli/macro.py:659-661`, Then no `[yellow]SHARD_WARNING[/] invalid YAML frontmatter` is emitted and the issue is registered in `specs/issues.jsonl` with the `flow_refs` field preserved.
 16. **AC-ADHOC-010-16**: Given a shard's parsed `issue_data` dict at `src/deviate/cli/macro.py:682` contains `"flow_refs": ["FLOW-01", "FLOW-02"]`, When `append_issue_record(ledger_path, issue_data)` is called, Then the appended JSONL line carries the field and reading the ledger back yields the same list — round-trip serialization preserves flow traceability.
+
+## FR-ADHOC-012: TUI Renderer Component — Fixed-Region RPC Streaming Display (C6)
+
+- **Description**: Deliver component C6 of FLOW-04 — a Rich-based TUI renderer at `src/deviate/tui/renderer.py` that renders the last N lines of normalized `AgentEvent` activity into a fixed terminal region and redraws in place on each event, capped at 10 lines max. On phase completion, the live region clears and a final summary persists.
+- **Preconditions**: Python 3.13, `rich>=13.0` (already in `pyproject.toml`). Terminal is interactive (TTY) or fallback to final-summary-only. `stdout_lock` at `src/deviate/ui/render.py:24-30` available for thread-safe writes.
+- **Inputs/Outputs**: Input: `AgentEvent` instances via `Renderer.feed(event)`. Output: Fixed-region Rich TUI redraw (TTY) or plain-text final summary (non-TTY).
+- **Flow Refs**: `FLOW-04`
+- **User Stories**:
+  1. US-012-01: As a developer running `deviate` with Pi or OMP via RPC, I want agent progress rendered in a compact 10-line TUI region that redraws in place so I can monitor live progress without scrolling. *(Ref: FR-ADHOC-012)*
+  2. US-012-02: As a developer on CI or piping output, I want the live TUI region to be skipped automatically so pipelines are not corrupted. *(Ref: FR-ADHOC-012)*
+- **Acceptance Criteria**:
+  1. AC-ADHOC-012-01: Given a `Renderer(max_lines=10)`, When 15 events are fed sequentially, Then the rendered region contains exactly the last 10 events and does not grow.
+  2. AC-ADHOC-012-02: Given a `Renderer` that has received 5 events, When `flush_summary("Final")` is called, Then the live region clears and the final summary prints.
+  3. AC-ADHOC-012-03: Given stdout is not a TTY, When `feed(event)` is called, Then no Rich region is rendered.
+  4. AC-ADHOC-012-04: Given two threads concurrently calling `feed(event)`, When both execute, Then all writes are serialized through `stdout_lock`.
+  5. AC-ADHOC-012-05: Given a `Renderer` instance, When an `AgentEvent` with `kind="unknown"` is fed, Then it renders as `…` without raising.
+  6. AC-ADHOC-012-06: Given a `Renderer(max_lines=10)`, When 1,000 simulated events are fed, Then the rendered region never exceeds 10 lines (release-next AC §4 regression).
