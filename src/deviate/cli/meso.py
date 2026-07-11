@@ -1379,7 +1379,7 @@ def _invoke_agent_phase(
         root = Path(cwd) if cwd else Path.cwd()
         model = resolve_model_for_phase(phase, root)
         data = _load_deviate_config_toml(root)
-        backend_name = "opencode"
+        backend_name = "pi"
         if data:
             agent_data = data.get("agent", {})
             if isinstance(agent_data, dict) and isinstance(

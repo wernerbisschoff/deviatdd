@@ -14,7 +14,7 @@ from deviate.state.config import AgentConfig, DeviateConfig
 class TestAgentConfigModel:
     def test_agent_config_defaults(self):
         config = AgentConfig()
-        assert config.backend == "opencode"
+        assert config.backend == "pi"
         assert config.timeout == 600
 
     def test_agent_config_custom_values(self):
@@ -46,7 +46,7 @@ class TestAgentConfigModel:
 
     def test_agent_config_in_deviate_config_default(self):
         deviate = DeviateConfig()
-        assert deviate.agent.backend == "opencode"
+        assert deviate.agent.backend == "pi"
         assert deviate.agent.timeout == 600
 
     def test_agent_config_forbids_extra_fields(self):
@@ -109,7 +109,7 @@ class TestAgentBackendInvocation:
         assert manifest.status == "TEST_WRITTEN_FAILING"
         assert manifest.test_file == "tests/test_core/test_agent.py"
 
-    def test_agent_uses_opencode_command_default(self):
+    def test_agent_uses_pi_command_default(self):
         from deviate.core.agent import AgentBackend
 
         yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
@@ -123,7 +123,7 @@ class TestAgentBackendInvocation:
 
         args, kwargs = mock_popen.call_args
         cmd_str = " ".join(args[0]) if isinstance(args[0], list) else str(args[0])
-        assert "opencode run" in cmd_str
+        assert "pi -p" in cmd_str
 
     def test_agent_backend_pipe_heredoc_stdin(self):
         from deviate.core.agent import AgentBackend
