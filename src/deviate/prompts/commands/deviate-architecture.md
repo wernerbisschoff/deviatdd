@@ -2,7 +2,7 @@
 name: deviate-architecture
 description: Author the cross-epic architecture contract — produce specs/_product/architecture.md (with ADRs) and domain-model.md (requires flows to exist first).
 category: deviatdd-product-layer
-version: 1.0.0
+version: 1.2.0
 aliases:
   - architecture
   - /deviate-architecture
@@ -69,6 +69,46 @@ CRITICAL INVARIANTS:
    the context, the decision, and the rationale. No sections, no
    templates — the value is in recording *that* a decision was made
    and *why*.
+10. **Offline Documentation Mandate (libref)**: Before writing any
+    architectural claim — component, contract, event vocabulary, transport,
+    protocol, framework API, or domain entity — you MUST verify the claim
+    against installed `libref` documentation. Workflow:
+    `libref list` → `libref query <library> <topic>` → if absent,
+    `libref add <git-url>` → only then `web_search` / `fetch_url` as a
+    last-resort fallback. Every component description, integration
+    contract, and ADR in `architecture.md` MUST carry an inline source
+    anchor (verbatim snippet ≤ 10 lines or an exact contract field
+    reference) pointing to the `libref` doc that grounded it. Claims that
+    cannot be source-anchored MUST be surfaced as
+    `[yellow]UNVERIFIED_CLAIM[/]` and either deferred to a downstream
+    RED/GREEN discovery task or removed. This invariant is grounded in
+    the precedent of FLOW-04 architecture, where the initial draft
+    incorrectly asserted an LSP-style transport framing and a
+    `tool_call/thinking/edit/message` event vocabulary; both errors
+    were caught only by `libref query pi rpc` / `libref query oh-my-pi
+    streaming` after the architecture had been written. Architecture
+    authored without libref grounding is rejected by the JUDGE phase
+    under the same anti-fabrication rule that governs code.
+11. **Persist and Commit**: After writing `specs/_product/architecture.md`
+    and mirroring changes in `specs/_product/domain-model.md`, this skill
+    MUST persist both files to disk and create git commits via the
+    canonical helper `deviate.core.commit.commit_artifact`. Conventional
+    Commits subjects per `specs/constitution.md:71-75`:
+
+    - `docs(architecture): <one-line summary of the change classification>`
+    - `docs(architecture): sync domain model with architecture.md`
+
+    The classification banner (`Local` / `Context-Bridging` /
+    `Context-Creating`) MUST appear in either the subject or the body of
+    the first commit. The skill MUST NOT pass `no_verify=True` per
+    `AGENTS.md` §Commit Authority. If a pre-commit hook fails, surface
+    the failure verbatim and stop — do not retry with `--no-verify`.
+    This invariant is grounded in the prior session's bug where the
+    FLOW-04 architecture was emitted into chat but never written to
+    disk, which then blocked `/deviate-release` via its
+    `ARCH_OR_FLOWS_MISSING` precondition gate.
+
+
 
 </system_instructions>
 
@@ -81,6 +121,22 @@ Scan `specs/_product/flows/`. Refuse if no flow file exists; recommend
 ## 2. Read Flow Catalog
 Load every `flows*.md` file under `specs/_product/flows/` and
 `specs/_product/flows/index.md` to build the canonical flow inventory.
+
+### 2a. libref Discovery Pass (mandatory before any claim)
+Before asking the user a single architectural question, run a libref
+discovery pass on the libraries the architecture will touch:
+
+- `libref list` — confirm which libraries are installed; if the agent
+  runtime, RPC stack, TUI framework, or persistence layer is missing,
+  `libref add <git-url>` it before proceeding.
+- For each candidate library, run `libref query <lib> <topic>` for the
+  relevant subsystems (transport, events, errors, lifecycle, recovery).
+- Record the source anchors inline in your scratch notes so they can be
+  dropped verbatim into `architecture.md`.
+
+Until this pass completes, all architectural claims are provisional and
+must not be written to `architecture.md` or `domain-model.md`.
+
 ## 3. Discovery Conversation
 Ask the user to describe the new architectural surface or modification. For
 greenfield architectures, prompt for: components, integration contracts, data
@@ -89,7 +145,7 @@ ownership, and the flow IDs each component serves.
 **Discovery discipline** (adapted from the "grill with docs" pattern, made active):
 - **Ask ONE question at a time**, with your recommended answer, and wait for the human's response before asking the next. Do not advance to the next question until the human has answered.
 - **Walk the decision tree dependency-first**: resolve components before integration contracts, contracts before data ownership.
-- **Read first, ask second**: if a question can be answered by reading the codebase, existing flows, `domain-model.md`, or `architecture.md`, do that instead of asking.
+- **Read first, ask second**: if a question can be answered by reading the codebase, existing flows, `domain-model.md`, or `architecture.md`, do that instead of asking. After code-and-config sources, prefer `libref query` over web fetching.
 - **Term-challenge against the glossary** (at most once per turn): if the user's term conflicts with an existing definition in `domain-model.md` or `architecture.md`, call it out immediately — "Your domain model defines X as Y, but you seem to mean Z — which is it?" Propose a canonical name for vague terms ("account", "thing", "service"). Do not loop on challenges — surface once, then move on.
 - **Sharpen fuzzy language**: when the user names a component with a vague term, propose a precise canonical name and confirm before writing the architecture entry.
 - **Stress-test with scenarios**: for each new component or contract, invent one concrete failure scenario ("what happens when the message bus is down at handoff time?") and ask the human to confirm the degraded behavior.
@@ -103,20 +159,39 @@ diff for traceability.
 
 ## 5. Write or Update architecture.md
 Author `specs/_product/architecture.md`. Use the existing file if present;
-otherwise create it with the schema enumerated in invariant 3. Include a
+otherwise create it with the schema enumerated in invariant 3. Every
+component description, contract, and ADR MUST carry an inline source
+anchor (verbatim snippet ≤ 10 lines or exact contract field reference)
+to the `libref` doc that grounded it — see invariant 10. Include a
 `## Architectural Decision Records` section (invariant 9) — append ADR
 entries for any decisions that meet the three-criteria gate during this
 session. If no qualifying decisions were made, omit the section entirely.
-## 6. Update domain-model.md
-Mirror entity and relationship changes in `specs/_product/domain-model.md`.
-Create the file if absent.
+Any claim you cannot anchor MUST be flagged `[yellow]UNVERIFIED_CLAIM[/]`
+and either grounded before yield or removed.
 
-## 7. Flow Traceability Audit
+## 6. Mirror to domain-model.md
+Mirror entity and relationship changes in `specs/_product/domain-model.md`.
+Create the file if absent. This step is a data-only mirror — the file
+write happens in step 7 below.
+
+## 7. Persist and Commit
+Both `specs/_product/architecture.md` and `specs/_product/domain-model.md`
+MUST be written to disk via the `write` tool. After both writes succeed,
+create git commits using `deviate.core.commit.commit_artifact` with the
+Conventional Commits subjects `docs(architecture): <summary>` and
+`docs(architecture): sync domain model with architecture.md`. Embed the
+classification banner (`Local` / `Context-Bridging` / `Context-Creating`)
+in the commit body. Never pass `no_verify=True`. The conversational
+output of this skill MUST NOT be considered complete until both files
+are on disk and committed — downstream `/deviate-release` reads them from
+disk to satisfy its precondition gate.
+
+## 8. Flow Traceability Audit
 Cross-check: every component in `architecture.md` references at least one
 `FLOW-NN` ID. Every `FLOW-NN` ID in the flow catalog is referenced by at
 least one component. Surface gaps as `[yellow]TRACEABILITY_GAP[/]` warnings.
 
-## 8. Cross-Layer Signal
+## 9. Cross-Layer Signal
 Inform the user that downstream `deviate shard` invocations will now emit
 `flow_refs:` aligned with the component→flow map produced here.
 
@@ -133,9 +208,13 @@ Inform the user that downstream `deviate shard` invocations will now emit
 | Constitution conflict | Halt with `[red]CONSTITUTION_CONFLICT[/]` and cite the violating clause |
 | Component references no flow ID | Surface as `[yellow]ORPHAN_COMPONENT[/]` warning |
 | Flow ID references no component | Surface as `[yellow]ORPHAN_FLOW[/]` warning |
+| Component or ADR carries no `libref` source anchor | Halt write with `[yellow]UNVERIFIED_CLAIM[/]`; run `libref query` and ground the claim before yield |
+| `libref` package missing for a referenced library | Run `libref add <git-url>` first; only fall back to `web_search` if `libref add` fails |
+| File write to `specs/_product/architecture.md` or `domain-model.md` fails | Halt and surface the write error verbatim; do not commit a partial tree |
+| `commit_artifact` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; do not commit until the user remediates the underlying violation |
+| Git working tree dirty from prior work | Stash or revert before persisting; never co-mingle unrelated changes in the architecture commit |
 
 </edge_case_handling>
-
 <context>
 <user_input>
 $ARGUMENTS

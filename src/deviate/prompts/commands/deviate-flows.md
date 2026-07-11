@@ -2,7 +2,7 @@
 name: deviate-flows
 description: Author customer flows — discover user-visible flows, write concise flows-<domain>.md files, and maintain the flows catalog at specs/_product/flows/index.md.
 category: deviatdd-product-layer
-version: 1.2.0
+version: 1.3.0
 aliases:
   - flows
   - /deviate-flows
@@ -90,6 +90,35 @@ CRITICAL INVARIANTS:
      bloat (~150 lines per flow) was the bug; keep each flow scannable
      in a single screen.
 
+9. **Persist and Commit**: After authoring the new `flows-<domain>.md`
+   file and appending the `index.md` row, this skill MUST persist both
+   writes to disk (the conversational output is not enough — see the
+   FLOW-04 lesson where `deviate-architecture` correctly refused to
+   run `/deviate-release` because the architecture had only been
+   emitted into chat). The skill MUST then create a single git commit
+   containing both files using the canonical helper:
+
+   ```python
+   from pathlib import Path
+   from deviate.core.commit import commit_artifact
+
+   commit_artifact(
+       Path("specs/_product/flows/flows-<domain>.md"),
+       "docs(flows): add FLOW-<NN> <Name> (<domain>)",
+   )
+   commit_artifact(
+       Path("specs/_product/flows/index.md"),
+       "docs(flows): index FLOW-<NN>",
+   )
+   ```
+
+   Commit message MUST follow Conventional Commits per
+   `specs/constitution.md:71-75`. The skill MUST NOT pass
+   `no_verify=True` — pre-commit hooks run lint + format-check and are
+   non-bypassable per `AGENTS.md` §Commit Authority. If a hook fails,
+   surface the failure verbatim and stop; do not silently drop the
+   `--no-verify` flag.
+
 </system_instructions>
 
 <execution_sequence>
@@ -137,7 +166,17 @@ Append a row to `specs/_product/flows/index.md` (create the file with a
 header row if absent). Source column carries the relative path of the new
 flow file.
 
-## 5. Cross-Layer Signal
+## 5. Persist and Commit
+Both the new flow file and the appended index row MUST be written to
+disk. After both writes succeed, create a single git commit (or two
+commits, one per file) using `deviate.core.commit.commit_artifact` with
+the conventional commit subject `docs(flows): add FLOW-<NN> <Name>`
+and `docs(flows): index FLOW-<NN>`. Never pass `no_verify=True`; if
+hooks fail, surface and stop. Conversational output alone does not
+satisfy this skill — the files MUST land on disk and under version
+control before the skill yields.
+
+## 6. Cross-Layer Signal
 Inform the user that the new `FLOW-NN` ID is now available for downstream
 `deviate shard` invocations to reference via `flow_refs: [FLOW-NN]`.
 
@@ -212,6 +251,8 @@ Inform the user that the new `FLOW-NN` ID is now available for downstream
 | Index file is malformed (not a markdown table) | Append the new row as a markdown table; preserve the existing malformed header verbatim |
 | Cross-layer file referenced | Refuse and route to the appropriate skill (`deviate-architecture` or `deviate-release`) |
 | Generated flow block exceeds the line/word budgets in invariant 8 | Tighten prose before writing; downstream `/prd` and `/shard` will fail to parse bloated sections |
+| `commit_artifact` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; do not commit until the user remediated the underlying lint or format violation |
+| Git working tree is dirty from prior work | Stash or revert before persisting the new flow; never co-mingle unrelated changes in the flow commit |
 
 </edge_case_handling>
 

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **`/deviate-architecture` (v1.1.0) now mandates `libref` verification for every architectural claim.**
+  Added CRITICAL INVARIANT 10 (Offline Documentation Mandate): the architecture
+  skill MUST run `libref list` → `libref query <lib> <topic>` (and `libref add`
+  if the package is missing) before writing any component, contract, event
+  vocabulary, transport, protocol, framework API, or domain entity. Every
+  component description, integration contract, and ADR in `architecture.md`
+  MUST carry an inline source anchor (verbatim snippet ≤ 10 lines or exact
+  contract field reference) to the `libref` doc that grounded it. Claims that
+  cannot be anchored surface as `[yellow]UNVERIFIED_CLAIM[/]` and must be
+  grounded before yield or removed. Added a mandatory `### 2a. libref
+  Discovery Pass` between flow-catalog read and discovery conversation, and
+  added two new edge-case rows (unverified-claim halt + missing-libref-package
+  fallback). The mandate was motivated by the FLOW-04 architecture pass,
+  where the initial draft asserted an LSP-style transport framing and a
+  `tool_call/thinking/edit/message` event vocabulary that did not match the
+  actual JSONL-over-stdio protocol and `AgentSessionEvent` taxonomy documented
+  in `pi` and `oh-my-pi`; both errors were caught only after libref
+  verification. (`src/deviate/prompts/commands/deviate-architecture.md`.)
+- **Product-layer skills (`/deviate-flows` v1.3.0, `/deviate-architecture` v1.2.0, `/deviate-release` v1.1.0) now persist and commit their artifacts.**
+  All three skills gained a `Persist and Commit` invariant + workflow step +
+  edge-case rows. Conversational output alone no longer satisfies a
+  Product-layer skill — each skill MUST write its artifact file(s) to disk
+  via the `write` tool and create a git commit via
+  `deviate.core.commit.commit_artifact` (per `src/deviate/core/commit.py`).
+  Conventional Commits subjects per `specs/constitution.md:71-75`:
+  `docs(flows): ...`, `docs(architecture): ...`, `docs(release): ...`.
+  Architecture commits embed the `Local` / `Context-Bridging` /
+  `Context-Creating` classification banner. `--no-verify` is forbidden per
+  `AGENTS.md` §Commit Authority; pre-commit hook failures surface verbatim
+  and stop the skill. The mandate was motivated by a recurring bug in this
+  session where the corrected FLOW-04 architecture, the FLOW-04 release,
+  and the FLOW-04 flow block were all emitted into chat but never written
+  to disk — blocking `/deviate-release` via its `ARCH_OR_FLOWS_MISSING`
+  precondition gate and leaving `/deviate-explore` without a release file
+  to read. (`src/deviate/prompts/commands/deviate-{flows,architecture,release}.md`.)
 - **`deviate run` is now a full-pipeline orchestrator; per-task dispatch moved to `deviate micro run`.**
   The top-level `deviate run` command now does both `deviate meso run` and
   then runs `deviate micro run --all` inside the worktree the meso step just
