@@ -8,7 +8,7 @@ orchestration contract so the meso-then-micro contract cannot silently
 regress to "run meso only" or "run micro only".
 """
 
-from __future__ import annotations
+import re
 
 from contextlib import chdir
 from pathlib import Path
@@ -21,6 +21,14 @@ from deviate.cli import cli
 runner = CliRunner()
 
 
+# Strip ANSI codes before substring checks: under FORCE_COLOR (set by GitHub
+# Actions runners by default), Rich's option formatter splits `--` from the
+# flag name into separate style runs, e.g. `-ESCm-ESCm-issueESCm`. The visual
+# text reads `--issue` but the literal `--` is broken across escape codes, so
+# substring assertions against `result.output` only work on plain text.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def test_top_level_run_help_lists_orchestrator():
     """``deviate run --help`` documents the full-pipeline orchestrator
     and surfaces the new flag surface (--issue, --force, --profile,
@@ -31,25 +39,26 @@ def test_top_level_run_help_lists_orchestrator():
     """
     result = runner.invoke(cli, ["run", "--help"])
     assert result.exit_code == 0, result.output
+    output = _ANSI_RE.sub("", result.output)
 
     # Forwarded meso flags
-    assert "--issue" in result.output, "--issue must be accepted on `deviate run`"
-    assert "--force" in result.output, "--force must be accepted on `deviate run`"
+    assert "--issue" in output, "--issue must be accepted on `deviate run`"
+    assert "--force" in output, "--force must be accepted on `deviate run`"
 
     # Forwarded micro flags
-    assert "--profile" in result.output, (
+    assert "--profile" in output, (
         "--profile must be accepted on `deviate run` (forwarded to micro)"
     )
-    assert "--no-judge" in result.output, (
+    assert "--no-judge" in output, (
         "--no-judge must be accepted on `deviate run` (forwarded to micro)"
     )
-    assert "--no-refactor" in result.output, (
+    assert "--no-refactor" in output, (
         "--no-refactor must be accepted on `deviate run` (forwarded to micro)"
     )
-    assert "--agent" in result.output, (
+    assert "--agent" in output, (
         "--agent must be accepted on `deviate run` (forwarded to micro)"
     )
-    assert "--json" in result.output, (
+    assert "--json" in output, (
         "--json must be accepted on `deviate run` (forwarded to micro)"
     )
 
