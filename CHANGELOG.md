@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deferred to a future slice. Pre-commit and pre-push hooks remain
   non-bypassable (`--no-verify` is never used); aggregate validation
   failure reverts every fix via `git restore .` before aborting.
+- `/deviate-walkthrough` prompt v1.1.0: enforces true one-section-per-turn cadence. The prompt's STEP 4 previously said "then (optionally) ask a structured question" and the ADHD-friendly laws said sections "may include an `ask`" — both wordings gave the agent permission to skip interactive questioning and dump the entire walkthrough in a single response, defeating the HITL Gate 3 design intent. Replaced with mandatory per-section `ask`, an explicit "Two sections in one response is a bug" rule, a renumbered Law #5 ("One section per turn"), a "When to ask — always" rule that removes the old escape hatch, and an explicit override of universal invariant #1 (the "Automated Execution" no-questions rule) so the HITL gate's interactive posture wins. The `ask` is the pacing mechanism — a two-option "Clear? / Next section →" is a valid gate, even on awareness-only sections.
 ### Fixed
 - `deviate run --all` no longer segfaults during the JUDGE phase when GREEN
   fails to deliver passing tests. Root cause: the background-thread reader in
