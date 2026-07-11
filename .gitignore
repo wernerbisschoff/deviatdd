@@ -19,11 +19,7 @@ node_modules/
 .deviate/logs/
 .deviate/review/
 */commands/deviate-*.md
-
 */prompts/deviate-*.md
-
-# Allow OMP slash commands — installed to .omp/prompts/ by deviate setup
-!/.omp/prompts/deviate-*.md
 
 # Internal launch prep notes
 .launch/
