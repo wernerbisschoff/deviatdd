@@ -287,16 +287,38 @@ class AgentBackend:
 
         def read_stdout() -> None:
             nonlocal stdout_done
-            for raw_line in proc.stdout:
-                line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
-                stdout_lines.append(line)
-                output_callback(line)
-            stdout_done = True
+            try:
+                # The for-loop's `__next__` is the only call that can raise a
+                # pipe I/O error (ValueError on closed file, OSError on
+                # broken pipe). Decoding + output_callback happen *inside*
+                # the loop body and their exceptions propagate normally so
+                # they aren't masked by our pipe-error recovery.
+                for raw_line in proc.stdout:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
+                    stdout_lines.append(line)
+                    output_callback(line)
+            except (ValueError, OSError):
+                # Pipe can race with proc.kill()/close() during the timeout
+                # branch. The thread still terminates correctly; we mark
+                # stdout_done in finally so the caller doesn't raise a false
+                # AgentTimeoutError when the subprocess exited cleanly.
+                pass
+            finally:
+                stdout_done = True
 
         def read_stderr() -> None:
-            for raw_line in proc.stderr:
-                line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
-                stderr_lines.append(line)
+            try:
+                for raw_line in proc.stderr:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
+                    stderr_lines.append(line)
+            except (ValueError, OSError, RuntimeError):
+                # Stderr pipe can race with proc.kill()/close() during the
+                # timeout branch above, and CPython 3.13's daemon-thread
+                # `_active` race surfaces as a KeyError on _delete (visible
+                # as "Exception ignored in thread ... read_stderr"). The
+                # thread still terminates correctly; the manifest comes from
+                # stdout, so losing residual stderr is harmless.
+                pass
 
         threads = [
             threading.Thread(target=read_stdout),

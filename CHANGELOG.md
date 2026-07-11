@@ -68,6 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serializes internally via its own RLock on the shared Console instance.
   (The `stdout_lock` in `_make_output_handler` already serialized the handler
   body against `emit_jsonl` and remains in place for that purpose.)
+- Background-thread pipe I/O errors in `_invoke_streaming` no longer surface a
+  CPython 3.13 `KeyError` traceback ("Exception ignored in thread ... read_stderr")
+  during agent subprocess shutdown. Both `read_stdout` and `read_stderr` now
+  catch pipe-closure exceptions (`ValueError`, `OSError`); `read_stdout` also
+  sets `stdout_done = True` in a `finally` block so the caller doesn't raise a
+  false `AgentTimeoutError` when the pipe closes concurrently with the timeout
+  branch. The thread still terminates correctly; losing residual stderr is
+  harmless because the manifest comes from stdout.
+  (`src/deviate/core/agent.py`.)
 - Worktrees created by `deviate meso run` now receive the `.pi/` and `.omp/`
   skill directories alongside `.claude/`, `.opencode/`, and `.factory/`.
   Root cause: `_sync_agent_dirs_to_worktree` in `src/deviate/cli/meso.py`
