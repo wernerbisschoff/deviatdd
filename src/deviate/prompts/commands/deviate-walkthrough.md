@@ -2,7 +2,7 @@
 name: deviate-walkthrough
 description: HITL architectural walkthrough — discover design decisions, code flows, and hidden context across your diff
 category: deviatdd-meso-layer
-version: 1.0.0
+version: 1.1.0
 aliases:
   - walkthrough
   - /deviate-walkthrough
@@ -80,7 +80,7 @@ Group by **concern**, not filesystem path. Common groupings:
 | 2 | 🧩 **Group by concern** | Related changes across files shown together, not scattered. |
 | 3 | ⚡ **Variable pacing** | Boring files vanish. Interesting ones get room to breathe. |
 | 4 | 👁 **Surface the invisible** | Call out what automation misses — the WHY, the trade-off, the near-miss. |
-| 5 | 📍 **Progress markers** | Each section may include an `ask` tool call (yes/no or multiple choice) with the recommended answer pre-selected. User skips with one click. |
+| 5 | 📍 **One section per turn** | Present exactly ONE walkthrough section, then STOP. Call `ask`. Wait for the user's response before presenting the next section. Never show two sections in one message. The `ask` is the pacing mechanism, not a real question — even awareness-only sections ask "Clear? / Next →". |
 | 6 | 📍 **Show progress** | Number sections so the user knows where they are. |
 | 7 | 🧠 **Questions are structured** | Always use the `ask` tool with 2-4 options and a `recommended` default. Never ask free-text questions; never require typed responses. Include "Skip" as the last option. |
 | 8 | 💬 **Be conversational** | Plain English. No "here are my findings" formality. |
@@ -126,7 +126,7 @@ Order your selected items by **narrative flow**, not file path. A good order:
 
 ### STEP 4: WALK — Present the Tour
 
-For each walkthrough item, present the context in a lightweight block, then (optionally) ask a structured question using the `ask` tool.
+For each walkthrough item, present the context in a lightweight block, then call `ask` with a structured question. **This is mandatory after every section — not optional.** Do NOT present the next section until the user responds to the current `ask`. The walkthrough is a turn-by-turn conversation: section N → `ask` → user response → section N+1. Two sections in one response is a bug.
 
 #### Context Block
 
@@ -180,15 +180,16 @@ Multiple choice example:
 }
 ```
 
-**When to ask:**
-- The user might have a preference between two valid approaches
-- You spot a pattern that could become a convention
-- The diff suggests a design direction but you're not 100% sure
+**Overrides universal invariant #1.** The "Automated Execution" universal invariant ("Do not ask questions, request confirmation, or prompt for decisions") is **suspended** for this command. This walkthrough is HITL Gate 3 (Final Merge Audit) — human validation is the design intent, not a side effect. The `ask` after every section is the pacing mechanism that gates the next turn; it is not a free-form question requiring substantive judgment. A two-option "Clear? / Next section →" is a perfectly valid gate, even on awareness-only sections.
 
-**When to skip asking:**
-- The change is straightforward and well-justified
-- The decision was dictated by external constraints (library API, language limitation)
-- You're showing something just for awareness, not for sign-off
+**When to ask — always.** The `ask` is the pacing mechanism, not a real question requiring substantive judgment. Even awareness-only sections ask a one-tap "Clear? / Next →" so the user stays in control of pacing. Skip the ask only if the user has explicitly said "no questions, just walk me through it" — and even then, ask once: "Want me to continue without questions for the rest?".
+
+**Question content** varies by section type:
+- DEEP_DIVE: 2-3 options that capture the trade-off or next-step the section raised (e.g., "Stay with current X / Try Y / Skip").
+- NOTE: 2 options (confirm vs flag a concern, e.g., "OK to leave for now / Dig in / Skip").
+- SKIM: 1-2 options confirm-only (e.g., "Continue / Pause").
+
+**No question is too small.** A two-option "Clear? / Next section →" is a perfectly valid ask — its job is to gate the next turn, not to extract a design decision.
 
 **Rules:**
 - Never more than one `ask` call per walkthrough section
