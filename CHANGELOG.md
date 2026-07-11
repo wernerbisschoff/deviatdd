@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review (full/diff_first/targeted), finding classification with Severity +
   Confidence, and machine-parseable Fix Instructions block. Flow Coverage
   domain made diff-only to match JUDGE-aware posture. (PR #?.)
+- `deviate-review` prompt v3.1.0: STEP 4 now autonomously applies
+  `[CRITICAL]` and `[SUGGESTION]` fixes from the Quick Fix Summary
+  (deterministic selection rule — no `ask` tool, no HITL choice prompt),
+  runs the project's aggregate validation gate, then commits the result
+  with a Conventional Commit subject
+  (`🐛 fix(review): apply N post-review fixes for {ISSUE_ID}`). Explicit
+  `git add -- <files>` (never `git add -A`) keeps the advisory report at
+  `.deviate/review/reports/` unstaged. `[OPPORTUNITY]` items remain
+  deferred to a future slice. Pre-commit and pre-push hooks remain
+  non-bypassable (`--no-verify` is never used); aggregate validation
+  failure reverts every fix via `git restore .` before aborting.
 ### Fixed
 - `deviate run --all` no longer segfaults during the JUDGE phase when GREEN
   fails to deliver passing tests. Root cause: the background-thread reader in
