@@ -93,6 +93,9 @@ echo "→ Publishing deviatdd to PyPI..."
 # `/proc/<pid>/cmdline`, audit logs, or shell history).
 UV_PUBLISH_TOKEN="$PYPI_API_TOKEN" uv publish dist/*
 '''
+[tasks.bench-lmstudio]
+run = "uv run python scripts/benchmark_lmstudio.py"
+description = "Benchmark all chat models on LM Studio across the DeviaTDD micro cycle (RED/GREEN/JUDGE/REFACTOR x reasoning levels x cache modes). Loads only one model at a time by default. Use --list to preview."
 
 [tasks.help]
 run = "mise tasks"
