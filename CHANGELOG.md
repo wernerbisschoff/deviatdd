@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **`deviate micro run`: GREEN phase failures with empty rationale now surface the agent's last 50 stdout lines in the FAILED message.** Previously, when a GREEN agent returned a `status: ERROR/FAILURE/FAIL` manifest with empty rationale, the orchestrator surfaced `GREEN phase failed for {tid}: unknown` with no diagnostic context. The `_invoke_agent` second tuple slot now carries the agent's captured tail (last 50 raw stdout lines) through to the GREEN failure path so the operator can see what the agent actually said. Same retry cap (2 attempts) preserved. (`src/deviate/cli/micro.py`, `tests/test_micro/test_run.py::TestRunGreenDiagnostic`.)
+
 ### Changed
 - **`/deviate-architecture` (v1.1.0) now mandates `libref` verification for every architectural claim.**
   Added CRITICAL INVARIANT 10 (Offline Documentation Mandate): the architecture
@@ -195,6 +198,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Micro-layer RED phase commits are now prefixed with 🚨 so the failing
   test is visible at a glance; `feat:` commits continue to use ✨
   regardless of phase.
+- `scripts/benchmark_lmstudio.py` (`mise run bench-lmstudio`): an internal
+  benchmark harness that benchmarks every chat model exposed by LM Studio
+  across the full DeviaTDD micro cycle (`RED → GREEN → JUDGE → REFACTOR`).
+  Renders the real auto-templates from `src/deviate/prompts/auto/` via
+  `deviate.prompts.assembly.assemble_prompt` so the measured payloads are
+  byte-identical to what `deviate micro red|green|judge|refactor` would
+  send. Uses `stream=True` on `/v1/chat/completions` to derive `prefill_ms`
+  (time-to-first SSE chunk) and `decode_ms` (first chunk arrival → last
+  chunk arrival) from the actual SSE timeline — never aliases total time
+  into the decode column. Reports total wall time, `tok/s` including
+  prefill, `tok/s` excluding prefill (NaN if the SSE decode span collapses
+  to zero on a fast localhost — flagged in the table as `—`), and a
+  side-by-side "cache helped?" ratio between cold (fresh prefix per call —
+  what the micro layer actually pays in production) and warm (identical
+  prefix across rounds — prompt-cache amortised) cache modes, per
+  (model × phase × reasoning level × n_ctx × cache mode). Reasoning-level
+  sweep (`off | low | medium | high | on`) is the default; levels
+  unsupported by each model are read from
+  `/api/v1/models` `capabilities.reasoning.allowed_options` rather than a
+  runtime probe. Default `--context-lengths` sweep is `[16384, 65536]`
+  (set by the `DEFAULT_CONTEXT_LENGTHS` constant) — clears the JUDGE
+  auto-template cliff (~7.3K tokens) at the low end and exercises the
+  upper bound of every chat model exposed by the host at the high end;
+  pass `--context-lengths 16384 32768 65536` to widen to three windows.
+  `--context-length N` is the single-value override (loses to
+  `--context-lengths` when both are passed). Requested n_ctx is
+  auto-capped against the model's reported `max_context_length` from
+  `/api/v1/models` (the OpenAI-compat `/v1/models` payload omits it)
+  and clamped with a `[warn] ... clamping to ...` line so a 16K-cap
+  model never gets a 65K load request; the table row key preserves the
+  raw request while the load call and rendered prompt use the clamped
+  value. `--load-strategy single` (default) ensures only the model
+  under test is loaded at a time — every other loaded LLM is unloaded
+  first, and the model is unloaded after timing (the `_evict_self_from_memory`
+  cleanup runs in a `finally:` block so Ctrl-C / SIGTERM never leaves a
+  model in host memory). The orchestration reloads the model between
+  context windows inside a sweep, keeping host memory at one model at
+  one n_ctx at a time. Warm-mode prompt-cache stashes are keyed on
+  `(phase, n_ctx)` so a 16K sweep round never shares prefix with a 64K
+  round — KV cache is per-context-window. Each round also fires a
+  non-streaming probe against LM Studio's Responses-shaped `/api/v1/chat`
+  endpoint (distinct from the OpenAI Chat Completions stream used for
+  the SSE split) to capture the server-truth `stats.tokens_per_second`
+  and `stats.time_to_first_token_seconds`, populating
+  `stats_decode_tok_per_s` and `stats_ttft_s` per round — a real decode
+  rate even when the SSE split collapses to zero on bundled localhost
+  writes. Per-round results stream to a JSONL artifact at
+  `.deviate/artifacts/benchmark_lmstudio_<ts>.jsonl` (path overridable
+  via `--out`), one line per completed round, appended and flushed
+  incrementally so Ctrl-C / OOM / network drop never lose completed
+  work. Effective `load_config` per model per context window is recorded
+  per-round (`load_config` field on the JSONL row) for downstream
+  audit. NaN/Inf in any float field are scrubbed to `null` before
+  write so the file stays strictly valid JSON. Stdlib-only (no
+  external deps), `--list` for preview. (`scripts/benchmark_lmstudio.py`,
+  `mise.toml`.)
 
 ### Fixed
 - `deviate --version` (and any code path importing `deviate.__version__`)
