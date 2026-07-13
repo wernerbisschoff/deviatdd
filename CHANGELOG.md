@@ -411,6 +411,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_resolve_agent_to_backend` remain as alias shims over the canonical
   home in `deviate.core.agent`.
 
+### Added
+- **`specs/_product/flows.jsonl` append-only flow ledger + Flow Coverage Report.** `deviate explore post` now seeds and replays an event-sourced `flows.jsonl` (`FlowRecord` identity rows + `FlowEvent` append-only event rows: `FLOW_DISCOVERED`, `FLOW_DOCUMENTED`, `FLOW_IMPLEMENTATION_EVIDENCE_ADDED`, `FLOW_CONFIRMED_IMPLEMENTED`, `FLOW_REFERENCED_BY_ISSUE`, `FLOW_INCLUDED_IN_RELEASE`, `FLOW_DEPRECATED`) and renders a Rich-formatted Flow Coverage Report to stdout (`flow_id | actor/job/trigger | documented? | implementation evidence? | last referenced by issue/release? | drift flag`). Rows where `drift_flag ∈ {DOCUMENTED_BUT_NOT_IMPLEMENTED, IMPLEMENTED_BUT_UNDOCUMENTED, ORPHANED_FLOW, STALE_DRIFT}` are highlighted in yellow. The reverse index from `specs/issues.jsonl.flow_refs` makes the `specs/_product/release-next.md:58` acceptance criterion enforceable at scan time. Three new Pydantic models (`FlowRecord`, `FlowEvent`, `FlowCoverage`) in `src/deviate/state/ledger.py` enforce `^FLOW-\d{2,}$` regex validation against the canonical `_FLOW_REF_PATTERN` at `src/deviate/cli/adhoc.py:19`. Constitution bumped to v0.7.0; `.gitattributes` gains `specs/_product/flows.jsonl merge=union` parallel to the existing `specs/issues.jsonl` rule. Closes the substrate gap surfaced at `specs/explore/flow-ledger.md:35-38` ("framework has the frontmatter hook (`flow_refs`) but no inventory substrate"). `src/deviate/state/ledger.py`, `src/deviate/cli/explore.py`, `src/deviate/cli/__init__.py`, `specs/constitution.md`, `CHANGELOG.md`, `.gitattributes`.
+
 ## [2.4.0] - 2026-07-04
 ### Changed
 - `/deviate-architecture` discovery step now follows "grill with docs"
