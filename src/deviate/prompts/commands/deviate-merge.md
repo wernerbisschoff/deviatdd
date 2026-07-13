@@ -2,7 +2,7 @@
 name: deviate-merge
 description: Squash-merge a feature branch into main with a conventional-commit message, then update the ledger with a full IssueRecord.
 category: deviatdd-meso-layer
-version: 2.0.0
+version: 2.1.0
 aliases:
   - merge
   - /deviate-merge
@@ -144,7 +144,32 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    ```bash
    deviate merge --issue {ISSUE_ID} --stage-only
    ```
-4. **Commit everything together** — a single commit containing both the feature
+
+4. **Verify staging captured everything** — `git merge --squash` plus
+   `deviate merge --stage-only` should leave the index non-empty and the
+   working tree clean (everything in the index is staged, nothing
+   unstaged or untracked). Run:
+   ```bash
+   git status --porcelain
+   ```
+   If the porcelain output is non-empty **or** the staged tree is empty
+   (`git diff --cached --quiet` exits 1 with no diff), halt with
+   `Failure_State: Unstaged_Files_Post_Merge` before the final commit
+   runs. The diagnostic is **dual-channel** so the operator sees it
+   regardless of how the framework renders failure states:
+
+   1. **stderr** — `git status --porcelain` output is printed to stderr verbatim
+      (line-for-line, no truncation, no reformatting) before halting.
+   2. **`Failure_State` message body** — the same porcelain dump is embedded
+      inside the Failure_State string itself, prefixed with a one-line cause
+      (e.g. `Failure_State: Unstaged_Files_Post_Merge — porcelain non-empty
+      after squash + ledger staging: <full porcelain output here>`). This
+      guarantees the dump reaches the operator even if the framework only
+      renders the label.
+
+   Do NOT silently `git add` stray files and do NOT `--amend` anything —
+   the operator decides whether to investigate, drop, or commit strays.
+5. **Commit everything together** — a single commit containing both the feature
    changes and the ledger update. The ``deviate merge --message`` CLI applies
    the project's commit convention (emoji prefix if configured, no-op otherwise):
 
@@ -158,7 +183,7 @@ If the user chooses **Edit commit message**, collect the revised message and re-
      -m "Closes {ISSUE_ID}"
    ```
 
-5. **Push to remote**:
+6. **Push to remote**:
    ```bash
    git push
    ```
@@ -188,6 +213,7 @@ This resets the session to IDLE and cleans up the local feature branch.
 | Dirty working tree | Fail with `Failure_State: Working_Tree_Not_Clean` |
 | On main, no branch specified | Fail with `Failure_State: No_Feature_Branch_Specified` |
 | No commits to merge (`git merge --squash` outputs "Already up to date") | Checkout main + pull, then run `deviate merge --issue {ISSUE_ID} --delete-branch` — it will write the COMPLETED record, commit it, and clean up |
+| Unstaged files after squash + ledger staging (post-step 3 porcelain non-empty, or staged tree empty) | Fail with `Failure_State: Unstaged_Files_Post_Merge`. Dual-channel diagnostic: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` message body (`Failure_State: Unstaged_Files_Post_Merge — porcelain non-empty after squash + ledger staging: <porcelain dump>`) so the operator sees it regardless of how the framework renders failures. Do NOT silently `git add` or `--amend` — operator decides whether to investigate, drop, or commit strays |
 | Merge conflict during `git merge --squash` | Surface the conflict to the user, halt — do NOT force-resolve or skip. |
 | Issue not found in ledger | Proceed with merge anyway (the branch may have been created outside DeviaTDD). Pass `deviate merge --issue {ISSUE_ID}` — it will fail cleanly with `ISSUE_NOT_FOUND` |
 | Issue already COMPLETED | The ledger step is idempotent — `deviate merge` exits cleanly with `ALREADY_COMPLETED` |
