@@ -958,6 +958,19 @@ class TestInitAgentFlag:
             assert "specs/issues.jsonl merge=union" in content
             assert "specs/**/tasks.jsonl merge=union" in content
 
+    def test_init_seeds_flows_jsonl_merge_union(self, tmp_path: Path):
+        """``deviate setup`` seeds ``specs/_product/flows.jsonl merge=union``
+        in the root ``.gitattributes``, extending the constitution v0.4.0
+        union-merge strategy for the append-only JSONL ledgers.
+        """
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+            content = (tmp_path / ".gitattributes").read_text(encoding="utf-8")
+            assert "specs/_product/flows.jsonl merge=union" in content
+            assert "specs/issues.jsonl merge=union" in content
+            assert "specs/**/tasks.jsonl merge=union" in content
+
     def test_init_no_agent_no_config_non_interactive_errors(self, tmp_path: Path):
         """Without `--agent`, no config, and no TTY → init exits with a clear error."""
         with chdir(tmp_path):

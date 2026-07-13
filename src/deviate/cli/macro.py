@@ -41,8 +41,21 @@ from deviate.core.validation import (
     validate_source_file,
     validate_yaml_frontmatter,
 )
+from rich.console import Console
+from rich.table import Table
+from deviate.state.ledger import (
+    FlowCoverage,
+    FlowEvent,
+    FlowRecord,
+    append_flow_event,
+    append_flow_record,
+    load_flow_coverage,
+    _parse_flows_index,
+    IssueRecord,
+    _read_ledger,
+    append_issue_record,
+)
 from deviate.state.config import SessionState, resolve_model_for_phase
-from deviate.state.ledger import IssueRecord, _read_ledger, append_issue_record
 
 
 def _load_or_create_session(phase: str) -> tuple[SessionState, Path]:
@@ -278,7 +291,10 @@ def explore_post(
         console.print(f"[yellow]COMMIT_SKIP[/] {explore_path} — no changes to stage")
     else:
         console.print(f"[green]COMMITTED[/] {explore_path}")
-
+    # ------------------------------------------------------------------
+    # Product-layer: seed flow ledger and render coverage report
+    # ------------------------------------------------------------------
+    _run_flow_ledger_cycle(specs_root)
     _save_session(session, session_path, "EXPLORE")
 
 
@@ -908,6 +924,183 @@ def _shard_pre(epic: str | None = None) -> None:
 
 def _shard_post(manifest: Path, epic: str | None = None, force: bool = False) -> None:
     shard_post(manifest, epic=epic, force=force)
+
+
+def _run_flow_ledger_cycle(specs_root: Path) -> None:
+    """Seed the flow ledger, reverse-index issue refs, and render coverage.
+
+    Reads ``specs/_product/flows/index.md`` (the canonical flow index) and
+    ``specs/_product/flows.jsonl`` (the append-only flow event ledger) to
+    derive a ``FlowCoverage`` report. If the index is absent, emits a
+    ``FLOWS_INDEX_MISSING`` warning and returns early.
+    """
+    flows_index_path = specs_root / "_product" / "flows" / "index.md"
+    flows_ledger_path = specs_root / "_product" / "flows.jsonl"
+    issues_ledger_path = specs_root / "issues.jsonl"
+
+    if not flows_index_path.exists():
+        console.print(
+            "[yellow]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md — "
+            "skipping flow ledger seeding and coverage report"
+        )
+        return
+
+    records = _seed_flow_ledger(flows_ledger_path, flows_index_path)
+    seeded_ids = {r.flow_id for r in records}
+
+    if issues_ledger_path.exists():
+        _reverse_index_issue_flow_refs(
+            issues_ledger_path, flows_ledger_path, seeded_ids
+        )
+
+    records_by_id = {r.flow_id: r for r in records}
+
+    rows = load_flow_coverage(flows_ledger_path, flows_index_path, issues_ledger_path)
+    _render_flow_coverage_report(rows, records_by_id)
+
+
+# ---------------------------------------------------------------------------
+# Flow ledger helpers (seeding, reverse-indexing, report rendering)
+# ---------------------------------------------------------------------------
+
+
+def _seed_flow_ledger(ledger_path: Path, flows_index_path: Path) -> list[FlowRecord]:
+    """Parse the canonical flow index and append missing identity + event rows.
+
+    Reads ``specs/_product/flows/index.md`` (per the Product-layer contract),
+    builds ``FlowRecord`` identity rows for each canonical flow, and appends
+    ``FLOW_DISCOVERED`` + ``FLOW_DOCUMENTED`` events per flow. Both the
+    identity row and event rows are compound-key idempotent — re-seeding a
+    populated ledger produces zero net appends.
+    """
+    records = _parse_flows_index(flows_index_path)
+    now = datetime.now(timezone.utc)
+    for record in records:
+        append_flow_record(record, ledger_path)
+        append_flow_event(
+            FlowEvent(
+                flow_id=record.flow_id,
+                event_type="FLOW_DISCOVERED",
+                timestamp=now,
+            ),
+            ledger_path,
+        )
+        append_flow_event(
+            FlowEvent(
+                flow_id=record.flow_id,
+                event_type="FLOW_DOCUMENTED",
+                timestamp=now,
+            ),
+            ledger_path,
+        )
+    return records
+
+
+def _reverse_index_issue_flow_refs(
+    issues_ledger_path: Path,
+    flows_ledger_path: Path,
+    canonical_flow_ids: set[str],
+) -> None:
+    """Reverse-index ``flow_refs`` from the issue ledger into the flows ledger.
+
+    Iterates every row in ``specs/issues.jsonl`` that parses as an
+    ``IssueRecord``; for each ``flow_refs`` token, appends a
+    ``FLOW_REFERENCED_BY_ISSUE`` event to the flows ledger. Tokens not in
+    *canonical_flow_ids* emit a console warning and are skipped (the
+    issue row's ``flow_refs`` is preserved unchanged).
+    """
+    for data in _read_ledger(issues_ledger_path):
+        try:
+            record = IssueRecord.model_validate(data)
+        except Exception:
+            continue
+        flow_refs: list[str] = record.flow_refs or []
+        timestamp = record.created_at
+        for ref in flow_refs:
+            if not ref or not isinstance(ref, str):
+                continue
+            if ref in canonical_flow_ids:
+                append_flow_event(
+                    FlowEvent(
+                        flow_id=ref,
+                        event_type="FLOW_REFERENCED_BY_ISSUE",
+                        event_issue_id=record.issue_id,
+                        timestamp=timestamp,
+                    ),
+                    flows_ledger_path,
+                )
+            else:
+                console.print(
+                    f"[yellow]ORPHANED_FLOW_REF[/] {ref} "
+                    f"(no matching FlowRecord in flows ledger)"
+                )
+
+
+def _render_flow_coverage_report(
+    rows: list[FlowCoverage],
+    records_by_id: dict[str, FlowRecord],
+) -> None:
+    """Render a Rich-formatted Flow Coverage Report to stdout.
+
+    Builds a ``rich.table.Table`` with six columns drawn from the
+    ``FlowCoverage`` derived view. Rows whose ``drift_flag`` is one of
+    ``DOCUMENTED_BUT_NOT_IMPLEMENTED``, ``IMPLEMENTED_BUT_UNDOCUMENTED``,
+    ``ORPHANED_FLOW``, or ``STALE_DRIFT`` are styled in yellow.
+    """
+
+    table = Table(title="Flow Coverage")
+    table.add_column("flow_id")
+    table.add_column("Actor / Job / Trigger")
+    table.add_column("Documented?")
+    table.add_column("Implementation Evidence")
+    table.add_column("Last Referenced By")
+    table.add_column("Drift Flag", no_wrap=True)
+
+    yellow_flags = frozenset(
+        {
+            "DOCUMENTED_BUT_NOT_IMPLEMENTED",
+            "IMPLEMENTED_BUT_UNDOCUMENTED",
+            "ORPHANED_FLOW",
+            "STALE_DRIFT",
+        }
+    )
+
+    for row in rows:
+        flow_record = records_by_id.get(row.flow_id)
+        actor = flow_record.actor if flow_record else ""
+
+        documented_str = "Yes" if row.doc_status == "DOCUMENTED" else "No"
+
+        if row.evidence_paths:
+            impl_evidence = "; ".join(row.evidence_paths)
+        elif row.impl_status == "CONFIRMED_IMPLEMENTED":
+            impl_evidence = "Confirmed implemented"
+        elif row.impl_status == "PARTIALLY_IMPLEMENTED":
+            impl_evidence = "Partial evidence"
+        else:
+            impl_evidence = "None"
+
+        last_ref = row.last_referenced_by_issue_id or ""
+        if row.last_referenced_by_release_version:
+            if last_ref:
+                last_ref += f" / {row.last_referenced_by_release_version}"
+            else:
+                last_ref = row.last_referenced_by_release_version
+
+        style = "yellow" if row.drift_flag in yellow_flags else None
+
+        table.add_row(
+            row.flow_id,
+            actor,
+            documented_str,
+            impl_evidence,
+            last_ref,
+            row.drift_flag,
+            style=style,
+        )
+
+    rich_console = Console(width=200)
+    rich_console.print(table)
 
 
 # ---------------------------------------------------------------------------

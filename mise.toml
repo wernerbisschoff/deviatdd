@@ -97,6 +97,10 @@ UV_PUBLISH_TOKEN="$PYPI_API_TOKEN" uv publish dist/*
 run = "uv run python scripts/benchmark_lmstudio.py"
 description = "Benchmark all chat models on LM Studio across the DeviaTDD micro cycle (RED/GREEN/JUDGE/REFACTOR x reasoning levels x cache modes). Loads only one model at a time by default. Use --list to preview."
 
+[tasks.bench-coding-mini]
+run = "uv run python scripts/coding_eval.py --problems mini"
+description = "Run HumanEval+ mini (12 problems) through the 5 candidate LM Studio models (~1.5-2h wall time, qwen3.5-9b reasoning on+off counts as 2 cells). Use --model X to scope to one model; pass --problems full for the overnight 164-problem sweep. See scripts/coding_eval.py for the methodology and what pass-rate vs throughput actually measures."
+
 [tasks.help]
 run = "mise tasks"
 description = "List tasks"

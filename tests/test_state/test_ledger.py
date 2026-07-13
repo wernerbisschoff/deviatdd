@@ -7,11 +7,16 @@ from pydantic import ValidationError
 
 from deviate.state.ledger import (
     AdhocRecord,
+    FlowEvent,
+    FlowRecord,
     IssueRecord,
     RollbackSnapshot,
     TaskRecord,
+    append_flow_event,
+    append_flow_record,
     append_issue_record,
     append_task_record,
+    load_flow_coverage,
     resolve_issue_record,
 )
 
@@ -570,3 +575,111 @@ class TestAdhocRecord:
         restored = AdhocRecord.model_validate(parsed)
         assert restored.flow_refs == ["FLOW-01", "FLOW-03"]
         assert restored == record
+
+
+class TestAppendFlowEvent:
+    def test_append_flow_record_writes_identity_row(self, tmp_path: Path):
+        ledger_path = tmp_path / "flows.jsonl"
+        record = FlowRecord(
+            flow_id="FLOW-01",
+            name="Flows",
+            actor="Developer",
+            domain="Software Engineering",
+            source="specs/_product/flows/flows-product.md",
+        )
+
+        assert append_flow_record(record, ledger_path) is True
+        assert FlowRecord.model_validate_json(ledger_path.read_text()) == record
+
+    def test_append_flow_event_idempotent(self, tmp_path: Path):
+        ledger_path = tmp_path / "flows.jsonl"
+        timestamp = datetime(2026, 7, 13, tzinfo=timezone.utc)
+        event = FlowEvent(
+            flow_id="FLOW-04",
+            event_type="FLOW_REFERENCED_BY_ISSUE",
+            event_issue_id="ISS-ADH-012",
+            timestamp=timestamp,
+        )
+
+        assert append_flow_event(event, ledger_path) is True
+        original = ledger_path.read_bytes()
+        duplicate_with_later_timestamp = event.model_copy(
+            update={"timestamp": datetime(2026, 7, 14, tzinfo=timezone.utc)}
+        )
+        assert append_flow_event(duplicate_with_later_timestamp, ledger_path) is False
+        assert ledger_path.read_bytes() == original
+
+
+class TestLoadFlowCoverage:
+    @staticmethod
+    def _write_flows_index(path: Path) -> None:
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            """| Flow ID | Name | Actor | Domain | Status | Source |
+|---------|------|-------|--------|--------|--------|
+| FLOW-04 | Live-Stream Agent Progress via RPC | Developer | Agent Integration | Active | `specs/_product/flows/flows-streaming.md` |
+""",
+            encoding="utf-8",
+        )
+
+    def test_detects_documented_but_not_implemented(self, tmp_path: Path):
+        ledger_path = tmp_path / "specs/_product/flows.jsonl"
+        flows_index = tmp_path / "specs/_product/flows/index.md"
+        issues_ledger = tmp_path / "specs/issues.jsonl"
+        self._write_flows_index(flows_index)
+        record = FlowRecord(
+            flow_id="FLOW-04",
+            name="Live-Stream Agent Progress via RPC",
+            actor="Developer",
+            domain="Agent Integration",
+            source="specs/_product/flows/flows-streaming.md",
+        )
+        assert append_flow_record(record, ledger_path) is True
+        timestamp = datetime(2026, 7, 13, tzinfo=timezone.utc)
+        for event_type in ("FLOW_DISCOVERED", "FLOW_DOCUMENTED"):
+            event = FlowEvent(
+                flow_id="FLOW-04", event_type=event_type, timestamp=timestamp
+            )
+            assert append_flow_event(event, ledger_path) is True
+
+        coverage = load_flow_coverage(ledger_path, flows_index, issues_ledger)
+
+        assert len(coverage) == 1
+        assert coverage[0].flow_id == "FLOW-04"
+        assert coverage[0].doc_status == "DOCUMENTED"
+        assert coverage[0].impl_status == "UNCONFIRMED"
+        assert coverage[0].drift_flag == "DOCUMENTED_BUT_NOT_IMPLEMENTED"
+
+    def test_reverse_indexes_latest_issue_flow_reference(self, tmp_path: Path):
+        ledger_path = tmp_path / "specs/_product/flows.jsonl"
+        flows_index = tmp_path / "specs/_product/flows/index.md"
+        issues_ledger = tmp_path / "specs/issues.jsonl"
+        self._write_flows_index(flows_index)
+        issues_ledger.parent.mkdir(parents=True, exist_ok=True)
+        issues_ledger.write_text(
+            "\n".join(
+                (
+                    json.dumps(
+                        {
+                            "issue_id": "ISS-ADH-011",
+                            "flow_refs": ["FLOW-04"],
+                            "created_at": "2026-07-11T00:00:00+00:00",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "issue_id": "ISS-ADH-012",
+                            "flow_refs": ["FLOW-04"],
+                            "created_at": "2026-07-12T00:00:00+00:00",
+                        }
+                    ),
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        coverage = load_flow_coverage(ledger_path, flows_index, issues_ledger)
+
+        assert len(coverage) == 1
+        assert coverage[0].last_referenced_by_issue_id == "ISS-ADH-012"
