@@ -714,6 +714,7 @@ DEVIATE_GITATTRIBUTES_SEED = (
     "# See specs/constitution.md §1 Append-Only Ledger Protocol.\n"
     "specs/issues.jsonl merge=union\n"
     "specs/**/tasks.jsonl merge=union\n"
+    "specs/_product/flows.jsonl merge=union\n"
 )
 
 

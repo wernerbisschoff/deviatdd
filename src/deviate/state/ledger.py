@@ -12,6 +12,7 @@ from pydantic import (
     Field,
     ValidationError as PydanticValidationError,
     field_validator,
+    model_validator,
 )
 
 try:
@@ -341,6 +342,373 @@ class AdhocRecord(BaseModel):
     flow_refs: list[str] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
+
+
+def _validate_flow_id(value: str) -> str:
+    # Canonical source: src/deviate/cli/adhoc.py:19. Import lazily to avoid the
+    # cli.adhoc -> state.ledger module initialization cycle.
+    from deviate.cli.adhoc import _FLOW_REF_PATTERN
+
+    if _FLOW_REF_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"Invalid flow ID format: {value}")
+    return value
+
+
+_LINKED_FLOW_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "FLOW_REFERENCED_BY_ISSUE",
+        "FLOW_INCLUDED_IN_RELEASE",
+        "FLOW_IMPLEMENTATION_EVIDENCE_ADDED",
+        "FLOW_CONFIRMED_IMPLEMENTED",
+    }
+)
+
+
+class FlowRecord(BaseModel):
+    flow_id: str
+    name: str
+    actor: str
+    domain: str
+    source: str
+    status: Literal["Active", "Deprecated"] = "Active"
+    first_discovered_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    model_config = {"extra": "forbid"}
+
+    _flow_id_is_canonical = field_validator("flow_id")(_validate_flow_id)
+
+
+class FlowEvent(BaseModel):
+    flow_id: str
+    event_type: Literal[
+        "FLOW_DISCOVERED",
+        "FLOW_DOCUMENTED",
+        "FLOW_IMPLEMENTATION_EVIDENCE_ADDED",
+        "FLOW_CONFIRMED_IMPLEMENTED",
+        "FLOW_REFERENCED_BY_ISSUE",
+        "FLOW_INCLUDED_IN_RELEASE",
+        "FLOW_DEPRECATED",
+    ]
+    event_issue_id: str | None = None
+    event_release_version: str | None = None
+    evidence_path: str | None = None
+    timestamp: datetime
+
+    model_config = {"extra": "forbid"}
+
+    _flow_id_is_canonical = field_validator("flow_id")(_validate_flow_id)
+
+    @model_validator(mode="after")
+    def _linked_event_has_reference(self) -> "FlowEvent":
+        references = (
+            self.event_issue_id,
+            self.event_release_version,
+            self.evidence_path,
+        )
+        if self.event_type in _LINKED_FLOW_EVENT_TYPES and not any(references):
+            raise ValueError(f"{self.event_type} requires a reference field")
+        return self
+
+
+class FlowCoverage(BaseModel):
+    flow_id: str
+    discovered_status: Literal["DISCOVERED", "UNDISCOVERED"]
+    doc_status: Literal["DOCUMENTED", "UNDOCUMENTED"]
+    impl_status: Literal[
+        "CONFIRMED_IMPLEMENTED", "PARTIALLY_IMPLEMENTED", "UNCONFIRMED"
+    ]
+    drift_flag: Literal[
+        "PROMPT_ONLY_NO_CODE",
+        "DOC_ARTIFACT_ONLY",
+        "DOCUMENTED_BUT_NOT_IMPLEMENTED",
+        "IMPLEMENTED_BUT_UNDOCUMENTED",
+        "ORPHANED_FLOW",
+        "STALE_DRIFT",
+        "OK",
+    ]
+    last_referenced_by_issue_id: str | None = None
+    last_referenced_by_release_version: str | None = None
+    evidence_paths: list[str] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
+
+
+FlowImplementationStatus = Literal[
+    "CONFIRMED_IMPLEMENTED", "PARTIALLY_IMPLEMENTED", "UNCONFIRMED"
+]
+FlowDriftFlag = Literal[
+    "PROMPT_ONLY_NO_CODE",
+    "DOC_ARTIFACT_ONLY",
+    "DOCUMENTED_BUT_NOT_IMPLEMENTED",
+    "IMPLEMENTED_BUT_UNDOCUMENTED",
+    "ORPHANED_FLOW",
+    "STALE_DRIFT",
+    "OK",
+]
+
+
+_FLOW_EVENT_KEY_FIELDS = [
+    "flow_id",
+    "event_type",
+    "event_issue_id",
+    "event_release_version",
+    "evidence_path",
+]
+
+
+def append_flow_record(record: FlowRecord, ledger_path: Path) -> bool:
+    """Append a ``FlowRecord`` identity row to the flows ledger.
+
+    Idempotency is checked on the ``flow_id`` key so that re-seeding the
+    canonical flow index does not produce duplicate identity rows. Mirrors
+    the ``append_issue_record`` pattern at ``src/deviate/state/ledger.py:242``.
+    """
+    return _append_record(
+        record_json=record.model_dump_json(),
+        record_id=record.flow_id,
+        id_field="flow_id",
+        ledger_path=ledger_path,
+    )
+
+
+def append_flow_event(event: FlowEvent, ledger_path: Path) -> bool:
+    """Append a ``FlowEvent`` row to the flows ledger.
+
+    Idempotency is enforced on the
+    ``(flow_id, event_type, event_issue_id, event_release_version, evidence_path)``
+    compound key — when two events share all five fields the earlier
+    timestamp is preserved and no new row is written. Mirrors
+    ``_append_with_compound_key`` at ``src/deviate/state/ledger.py:116``.
+    """
+    return _append_with_compound_key(
+        record_json=event.model_dump_json(),
+        key_fields=_FLOW_EVENT_KEY_FIELDS,
+        ledger_path=ledger_path,
+    )
+
+
+def _parse_flows_index(flows_index: Path) -> list[FlowRecord]:
+    """Parse the canonical ``flows/index.md`` table into identity rows.
+
+    The index table is the canonical source of truth for flow identity
+    (per ``specs/_product/flows/index.md:5-8``). Each row carrying a
+    ``FLOW-`` prefix is converted to a ``FlowRecord``. Malformed rows
+    are skipped silently — the index is human-authored and may be
+    sparsely populated.
+    """
+    if not flows_index.exists():
+        return []
+    records: list[FlowRecord] = []
+    for raw_line in flows_index.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or "Flow ID" in line or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.split("|") if cell.strip()]
+        if len(cells) < 6 or not cells[0].startswith("FLOW-"):
+            continue
+        try:
+            records.append(
+                FlowRecord(
+                    flow_id=cells[0],
+                    name=cells[1],
+                    actor=cells[2],
+                    domain=cells[3],
+                    status=cells[4]
+                    if cells[4] in {"Active", "Deprecated"}
+                    else "Active",
+                    source=cells[5].strip("`"),
+                )
+            )
+        except PydanticValidationError:
+            continue
+    return records
+
+
+def _iter_flow_ledger_rows(
+    ledger_path: Path,
+) -> tuple[list[FlowRecord], list[FlowEvent]]:
+    """Read the flows ledger and split rows into identity + event buckets.
+
+    Rows are discriminated by the presence of an ``event_type`` field:
+    ``FlowEvent`` rows carry it, ``FlowRecord`` rows do not. Malformed
+    rows are skipped via the lenient ``_read_ledger`` parser.
+    """
+    identity_rows: list[FlowRecord] = []
+    event_rows: list[FlowEvent] = []
+    for data in _read_ledger(ledger_path):
+        if "event_type" in data:
+            try:
+                event_rows.append(FlowEvent.model_validate(data))
+            except PydanticValidationError:
+                continue
+        else:
+            try:
+                identity_rows.append(FlowRecord.model_validate(data))
+            except PydanticValidationError:
+                continue
+    return identity_rows, event_rows
+
+
+def _derive_impl_status(events: list[FlowEvent]) -> FlowImplementationStatus:
+    has_confirmed = any(e.event_type == "FLOW_CONFIRMED_IMPLEMENTED" for e in events)
+    if has_confirmed:
+        return "CONFIRMED_IMPLEMENTED"
+    has_evidence = any(
+        e.event_type == "FLOW_IMPLEMENTATION_EVIDENCE_ADDED" for e in events
+    )
+    if has_evidence:
+        return "PARTIALLY_IMPLEMENTED"
+    return "UNCONFIRMED"
+
+
+def _derive_drift_flag(
+    *,
+    discovered: bool,
+    documented: bool,
+    impl_status: FlowImplementationStatus,
+    referenced_by_issue: bool,
+    referenced_by_release: bool,
+) -> FlowDriftFlag:
+    if (
+        referenced_by_issue
+        and not discovered
+        and not documented
+        and impl_status == "UNCONFIRMED"
+    ):
+        return "PROMPT_ONLY_NO_CODE"
+    state = (discovered, documented, impl_status)
+    drift_by_state: dict[tuple[bool, bool, FlowImplementationStatus], FlowDriftFlag] = {
+        (False, False, "UNCONFIRMED"): "DOC_ARTIFACT_ONLY",
+        (True, False, "UNCONFIRMED"): "PROMPT_ONLY_NO_CODE",
+        (True, True, "UNCONFIRMED"): "DOCUMENTED_BUT_NOT_IMPLEMENTED",
+        (False, True, "UNCONFIRMED"): "DOCUMENTED_BUT_NOT_IMPLEMENTED",
+        (False, False, "PARTIALLY_IMPLEMENTED"): "IMPLEMENTED_BUT_UNDOCUMENTED",
+        (False, False, "CONFIRMED_IMPLEMENTED"): "IMPLEMENTED_BUT_UNDOCUMENTED",
+        (True, False, "PARTIALLY_IMPLEMENTED"): "IMPLEMENTED_BUT_UNDOCUMENTED",
+        (True, False, "CONFIRMED_IMPLEMENTED"): "IMPLEMENTED_BUT_UNDOCUMENTED",
+    }
+    if state in drift_by_state:
+        return drift_by_state[state]
+    if (
+        impl_status == "CONFIRMED_IMPLEMENTED"
+        and documented
+        and not referenced_by_release
+    ):
+        return "STALE_DRIFT"
+    return "OK"
+
+
+def _latest_issue_reference(flow_id: str, issues_ledger: Path) -> str | None:
+    """Return the most recent ``IssueRecord.flow_refs`` mention of *flow_id*.
+
+    The reverse index is derived by replaying ``specs/issues.jsonl``;
+    ``flow_refs: [FLOW-XX]`` rows in the issue ledger drive the
+    ``last_referenced_by_issue_id`` field on the coverage row.
+    """
+    latest_issue_id: str | None = None
+    latest_timestamp = datetime.min.replace(tzinfo=timezone.utc)
+    for data in _read_ledger(issues_ledger):
+        flow_refs = data.get("flow_refs") or []
+        if flow_id not in flow_refs:
+            continue
+        issue_id = data.get("issue_id")
+        if not issue_id:
+            continue
+        timestamp = _parse_timestamp(data.get("created_at") or data.get("timestamp"))
+        if timestamp >= latest_timestamp:
+            latest_timestamp = timestamp
+            latest_issue_id = issue_id
+    return latest_issue_id
+
+
+def _group_flow_events(events: list[FlowEvent]) -> dict[str, list[FlowEvent]]:
+    grouped: dict[str, list[FlowEvent]] = {}
+    for event in events:
+        grouped.setdefault(event.flow_id, []).append(event)
+    return grouped
+
+
+def _last_release_reference(events: list[FlowEvent]) -> str | None:
+    return next(
+        (
+            event.event_release_version
+            for event in reversed(events)
+            if event.event_type == "FLOW_INCLUDED_IN_RELEASE"
+            and event.event_release_version
+        ),
+        None,
+    )
+
+
+def _implementation_evidence_paths(events: list[FlowEvent]) -> list[str]:
+    return [
+        event.evidence_path
+        for event in events
+        if event.event_type == "FLOW_IMPLEMENTATION_EVIDENCE_ADDED"
+        and event.evidence_path
+    ]
+
+
+def load_flow_coverage(
+    ledger_path: Path, flows_index: Path, issues_ledger: Path
+) -> list[FlowCoverage]:
+    """Derive ``FlowCoverage`` rows for every flow in the canonical index.
+
+    The canonical flow set is ``specs/_product/flows/index.md`` (per the
+    spec: *derivation is canonical-set-driven*). The flows ledger layers
+    on top with event-sourced state (``FLOW_DISCOVERED``,
+    ``FLOW_DOCUMENTED``, ``FLOW_CONFIRMED_IMPLEMENTED``, etc.) and the
+    issues ledger is reverse-indexed to populate
+    ``last_referenced_by_issue_id``. Rows are returned in index order.
+    """
+    canonical = _parse_flows_index(flows_index)
+    canonical_index_ids = {r.flow_id for r in canonical}
+    identity_rows, event_rows = _iter_flow_ledger_rows(ledger_path)
+    events_by_flow = _group_flow_events(event_rows)
+    for identity in identity_rows:
+        # Identity rows in the ledger are the fallback when the index
+        # is empty — the canonical set drives the iteration but each
+        # row in the ledger represents a real flow. Ledger-only rows
+        # (absent from the canonical index) are emitted as
+        # ORPHANED_FLOW per the spec edge case "Flow present in
+        # flows.jsonl but absent from index.md".
+        if identity.flow_id not in canonical_index_ids:
+            canonical.append(identity)
+    coverage: list[FlowCoverage] = []
+    for identity in canonical:
+        events = events_by_flow.get(identity.flow_id, [])
+        discovered = any(e.event_type == "FLOW_DISCOVERED" for e in events)
+        documented = any(e.event_type == "FLOW_DOCUMENTED" for e in events)
+        impl_status = _derive_impl_status(events)
+        last_issue = _latest_issue_reference(identity.flow_id, issues_ledger)
+        last_release = _last_release_reference(events)
+        evidence_paths = _implementation_evidence_paths(events)
+        in_canonical_index = identity.flow_id in canonical_index_ids
+        if not in_canonical_index:
+            drift_flag: FlowDriftFlag = "ORPHANED_FLOW"
+        else:
+            drift_flag = _derive_drift_flag(
+                discovered=discovered,
+                documented=documented,
+                impl_status=impl_status,
+                referenced_by_issue=last_issue is not None,
+                referenced_by_release=last_release is not None,
+            )
+        coverage.append(
+            FlowCoverage(
+                flow_id=identity.flow_id,
+                discovered_status="DISCOVERED" if discovered else "UNDISCOVERED",
+                doc_status="DOCUMENTED" if documented else "UNDOCUMENTED",
+                impl_status=impl_status,
+                drift_flag=drift_flag,
+                last_referenced_by_issue_id=last_issue,
+                last_referenced_by_release_version=last_release,
+                evidence_paths=evidence_paths,
+            )
+        )
+    return coverage
 
 
 def _parse_timestamp(value: object) -> datetime:
