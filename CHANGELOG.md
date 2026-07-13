@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Fixed
 - **`deviate micro run`: GREEN phase failures with empty rationale now surface the agent's last 50 stdout lines in the FAILED message.** Previously, when a GREEN agent returned a `status: ERROR/FAILURE/FAIL` manifest with empty rationale, the orchestrator surfaced `GREEN phase failed for {tid}: unknown` with no diagnostic context. The `_invoke_agent` second tuple slot now carries the agent's captured tail (last 50 raw stdout lines) through to the GREEN failure path so the operator can see what the agent actually said. Same retry cap (2 attempts) preserved. (`src/deviate/cli/micro.py`, `tests/test_micro/test_run.py::TestRunGreenDiagnostic`.)
+- **`/deviate-merge` (v2.1.0) now gates the squash-merge commit on a post-staging git status check.**
+  The execution flow gained a new step 4 between ledger staging (`deviate merge --stage-only`) and the
+  final `deviate merge --message` commit: `git status --porcelain` must be empty AND
+  `git diff --cached --quiet` must succeed, otherwise the prompt halts with
+  `Failure_State: Unstaged_Files_Post_Merge`. The diagnostic is **dual-channel** so the operator sees
+  it regardless of how the framework renders failure states: `git status --porcelain` is printed
+  to stderr verbatim AND embedded inside the `Failure_State` message body
+  (`Failure_State: Unstaged_Files_Post_Merge — porcelain non-empty after squash + ledger staging:
+  <porcelain dump>`). The prompt no longer silently `git add`s stray files or `--amend`s anything
+  in this window — the operator decides whether to investigate, drop, or commit strays. Closes the
+  gap where a partial failure between `git merge --squash` and the final commit could leave
+  feature-branch files in the index but not in any commit.
+  (`src/deviate/prompts/commands/deviate-merge.md`.)
 
 ### Changed
 - **`/deviate-architecture` (v1.1.0) now mandates `libref` verification for every architectural claim.**
