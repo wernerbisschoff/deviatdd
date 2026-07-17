@@ -1369,6 +1369,31 @@ def _pr_run(
 # ---------------------------------------------------------------------------
 
 
+PLAN_DIGEST_MAX_BYTES = 16 * 1024
+
+
+def _build_plan_digest(plan_path: Path) -> str:
+    """Return bounded PLAN context while keeping both strategy and conclusions."""
+    if not plan_path.exists():
+        return ""
+
+    content = plan_path.read_text(encoding="utf-8")
+    encoded = content.encode("utf-8")
+    if len(encoded) <= PLAN_DIGEST_MAX_BYTES:
+        return content
+
+    marker = (
+        f"\n\n<!-- PLAN_DIGEST_TRUNCATED: read the full plan at {plan_path} -->\n\n"
+    )
+    marker_bytes = marker.encode("utf-8")
+    remaining = PLAN_DIGEST_MAX_BYTES - len(marker_bytes)
+    head_size = remaining // 2
+    tail_size = remaining - head_size
+    head = encoded[:head_size].decode("utf-8", errors="ignore")
+    tail = encoded[-tail_size:].decode("utf-8", errors="ignore")
+    return f"{head}{marker}{tail}"
+
+
 def _invoke_agent_phase(
     phase: str,
     contract: dict[str, str],
@@ -1684,9 +1709,7 @@ def _meso_run(
             _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
             _plan_post(force=force, issue_id=issue_id)
         plan_md = Path(contract["plan_path"])
-        contract["plan_content"] = (
-            plan_md.read_text(encoding="utf-8") if plan_md.exists() else ""
-        )
+        contract["plan_digest"] = _build_plan_digest(plan_md)
 
         # ── TASKS phase ──────────────────────────────────────────────
         with _phase_callout("TASKS", issue_id, issue_title or ""):

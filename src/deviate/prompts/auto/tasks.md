@@ -22,7 +22,7 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 
 2. **Workstation Mandate**: Group files that share a logical capability into the same task. Maximize signal-to-noise.
 
-3. **Flow Reference Propagation Rule**: Read `## Product Layer Anchors` from `{plan_content}` (or fall back to the issue's `flow_refs` field if plan.md lacks it). Copy `**Flow References**` verbatim onto every emitted task as `**Flow References**: [FLOW-XX, ...]`. If `flow_refs` is empty, emit `**Flow References**: []` (enabling/infrastructure tasks) and continue — do NOT halt. This is the structural fix that prevents Product-layer context from being lost between meso and micro layers. Every downstream micro phase (red, green, refactor, yellow, judge) reads this field to anchor implementation to user-visible flows.
+3. **Flow Reference Propagation Rule**: Read `## Product Layer Anchors` from the `<plan_digest>` block below (or read the full plan from `<plan_path>` when the digest carries `PLAN_DIGEST_TRUNCATED`; fall back to the issue's `flow_refs` field if plan.md lacks it). Copy `**Flow References**` verbatim onto every emitted task as `**Flow References**: [FLOW-XX, ...]`. If `flow_refs` is empty, emit `**Flow References**: []` (enabling/infrastructure tasks) and continue — do NOT halt. This is the structural fix that prevents Product-layer context from being lost between meso and micro layers. Every downstream micro phase (red, green, refactor, yellow, judge) reads this field to anchor implementation to user-visible flows.
 
 **STDOUT OUTPUT MANDATE**: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section below. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write file content to `<tasks_target>` only (not to stdout). The caller parses your stdout as raw YAML.
 
@@ -43,12 +43,12 @@ The CLI orchestrator has run `deviate tasks pre` and resolved the contract. Avai
 </step>
 
 <step id="context_loading">
-Read `{spec_path}` in full for user stories, acceptance criteria, and project structure. Read the plan below for the implementation strategy, workstation mapping, and risk assessment. Extract `## Product Layer Anchors → **Flow References**` from the plan content for per-task propagation. If `design_path` or `data_model_path` are present, read those too.
+Read `<spec_path>` in full for user stories, acceptance criteria, and project structure. Use the bounded plan digest below for the implementation strategy, workstation mapping, and risk assessment. If it contains `PLAN_DIGEST_TRUNCATED`, read the full plan at `<plan_path>`. Extract `## Product Layer Anchors → **Flow References**` from the plan. If `design_path` or `data_model_path` are present, read those too.
 </step>
 
-<plan_content>
-{plan_content}
-</plan_content>
+<plan_digest>
+{plan_digest}
+</plan_digest>
 
 <step id="workstation_mapping">
 Map all files touched by each user story from spec.md's system topology mapping. Group related files into workstation clusters. Derive phases from logical groupings.
