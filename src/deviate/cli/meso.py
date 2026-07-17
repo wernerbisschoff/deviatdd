@@ -714,6 +714,7 @@ def _plan_pre(
     issue_id: str | None = None,
     force: bool = False,
     dry_run: bool = False,
+    skip_auto_claim: bool = False,
 ) -> None:
     """Emit a plan-pre contract.
 
@@ -724,7 +725,7 @@ def _plan_pre(
     *Inside a linked worktree* — emit the JSON contract for the agent.
     """
     # ── Auto-claim + setup (not in linked worktree) ────────────────────
-    if not _is_linked_worktree():
+    if not skip_auto_claim and not _is_linked_worktree():
         rid = issue_id if issue_id is not None else _discover_unclaimed()
         _claim_and_setup(rid, force, dry_run)
         raise typer.Exit(code=0)
@@ -1529,6 +1530,7 @@ def _meso_run(
     issue_id: str | None = None,
     dry_run: bool = False,
     force: bool = False,
+    no_setup: bool = False,
 ) -> str | None:
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
@@ -1590,9 +1592,19 @@ def _meso_run(
             issue_title=issue_title,
             epic_slug=epic_slug,
             issue_slug=issue_slug,
-            steps=("SPECIFY", "PLAN", "TASKS"),
+            steps=("PLAN", "TASKS") if no_setup else ("SPECIFY", "PLAN", "TASKS"),
         ).render()
     )
+
+    if no_setup:
+        console.print(
+            "[bold][yellow]WARN[/] --no-setup: skipping SPECIFY (no worktree, "
+            "no ledger claim).\n"
+            "PLAN + TASKS will run in [bold]$CWD[/]; post-hook commits will "
+            "land plan.md / tasks.md on the\n"
+            "branch currently checked out. This bypasses the project's Git "
+            "Isolation Principle (every task loop runs on a clean branch/worktree)."
+        )
 
     # ── Dry-run mode ─────────────────────────────────────────────────
     if dry_run:
@@ -1608,8 +1620,11 @@ def _meso_run(
         return None  # dry-run: no worktree to drain
 
     # ── Setup step: create worktree and claim issue ──────────────────
-    setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
-    worktree_path = Path(setup_result["worktree_path"])
+    if no_setup:
+        worktree_path = Path.cwd().resolve()
+    else:
+        setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
+        worktree_path = Path(setup_result["worktree_path"])
 
     # ── PLAN phase — advance session (in original repo) ──────────────
     dot_dir = _resolve_dot_deviate()
@@ -1621,7 +1636,7 @@ def _meso_run(
     session.save(session_path)
 
     # Sync .deviate/ to worktree so downstream functions find the session
-    if dot_dir.exists():
+    if dot_dir.exists() and not no_setup:
         shutil.copytree(
             str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
         )
@@ -1663,7 +1678,9 @@ def _meso_run(
     with ctx:
         # ── PLAN phase ───────────────────────────────────────────────
         with _phase_callout("PLAN", issue_id, issue_title or ""):
-            _silence_stdout(_plan_pre, force=force, dry_run=False)
+            _silence_stdout(
+                _plan_pre, force=force, dry_run=False, skip_auto_claim=no_setup
+            )
             _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
             _plan_post(force=force, issue_id=issue_id)
         plan_md = Path(contract["plan_path"])
@@ -1718,9 +1735,20 @@ def meso_run_command(
         "--quiet/--verbose",
         help="Suppress non-essential output (default: verbose)",
     ),
+    no_setup: bool = typer.Option(
+        False,
+        "--no-setup",
+        help=(
+            "Skip the SPECIFY step (worktree + ledger claim). PLAN and TASKS run "
+            "in the current directory; _plan_post / _tasks_post will commit to "
+            "the currently checked-out branch. Bypasses Git Isolation Principle."
+        ),
+    ),
 ) -> None:
     """Run the meso automated pipeline (setup → plan → tasks)"""
-    _meso_run(issue_id=issue, dry_run=dry_run, force=force, quiet=quiet)
+    _meso_run(
+        issue_id=issue, dry_run=dry_run, force=force, quiet=quiet, no_setup=no_setup
+    )
 
 
 # ---------------------------------------------------------------------------

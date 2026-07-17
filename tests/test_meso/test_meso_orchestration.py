@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import subprocess
 from contextlib import chdir, redirect_stdout
 from datetime import datetime, timezone
@@ -552,4 +553,201 @@ class TestMesoRunStdoutSuppression:
         )
         assert '"tasks_target"' not in stdout, (
             "_tasks_pre's JSON contract leaked into _meso_run output:\n" + stdout
+        )
+
+
+class TestMesoRunNoSetup:
+    """``_meso_run`` must honor ``--no-setup`` (skip SPECIFY worktree +
+    ledger claim) while preserving PLAN + TASKS execution and the default
+    (no ``--no-setup``) flow's SPECIFY invocation.
+    """
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_no_setup_skips_specify_pre(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        # If ``_specify_pre`` is ever invoked under ``no_setup=True`` the
+        # assertion sentinel fires immediately — proving the bypass works.
+        mock_specify_pre.side_effect = AssertionError(
+            "_specify_pre must not be called when no_setup=True"
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001", no_setup=True)
+
+            loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+            assert loaded.current_phase == "IDLE", (
+                f"Expected IDLE, got {loaded.current_phase}"
+            )
+
+        mock_specify_pre.assert_not_called()
+        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
+        mock_tasks_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_default_invokes_specify_pre(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """Backwards-compat: omitting ``no_setup`` MUST still drive SPECIFY.
+
+        The pre-create of a real git worktree + ``.deviate`` sync keeps the
+        downstream ``_plan_pre`` contract-mode dispatch working when both
+        SPECIFY helpers are short-circuited by mocks.
+        """
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        shutil.copytree(
+            str(tmp_git_repo / ".deviate"),
+            str(worktree_path / ".deviate"),
+            dirs_exist_ok=True,
+        )
+
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001")
+
+        mock_specify_pre.assert_called_once()
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_no_setup_banner_omits_specify(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """``PipelineBanner.steps`` must drop ``SPECIFY`` under ``no_setup``.
+
+        Asserts only on the banner text — the rest of the pipeline is just
+        stubbed to keep the two runs cheap and isolated.
+        """
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        shutil.copytree(
+            str(tmp_git_repo / ".deviate"),
+            str(worktree_path / ".deviate"),
+            dirs_exist_ok=True,
+        )
+
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        # ── Run 1: no_setup=True → banner must NOT mention SPECIFY ──
+        buf_no_setup = io.StringIO()
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                with redirect_stdout(buf_no_setup):
+                    _meso_run(issue_id="ISS-001-001", no_setup=True)
+        no_setup_output = buf_no_setup.getvalue()
+        # The WARN banner mentions SPECIFY ("skipping SPECIFY"), so a naive
+        # ``"SPECIFY" not in output`` check would fail on the warning text.
+        # The banner's steps are joined by ``  ▶  `` — that arrow pattern
+        # only appears in the rendered PipelineBanner, never in the WARN.
+        assert "SPECIFY  ▶" not in no_setup_output, (
+            "SPECIFY must not appear in PipelineBanner steps when "
+            f"no_setup=True:\n{no_setup_output}"
+        )
+
+        # ── Run 2: no_setup=False → banner MUST mention SPECIFY ──
+        buf_default = io.StringIO()
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                with redirect_stdout(buf_default):
+                    _meso_run(issue_id="ISS-001-001", no_setup=False)
+        default_output = buf_default.getvalue()
+        assert "SPECIFY  ▶" in default_output, (
+            "SPECIFY must appear in PipelineBanner steps when "
+            f"no_setup=False:\n{default_output}"
         )

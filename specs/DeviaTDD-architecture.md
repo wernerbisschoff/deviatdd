@@ -319,7 +319,11 @@ newly added per-issue phase (CLI registered as `deviate plan`, implemented in
 `src/deviate/cli/meso.py:_plan_pre` / `_plan_post`). The `deviate meso run`
 pipeline executes SPECIFY (claim + worktree) → PLAN → TASKS → IDLE in a
 single invocation. The legacy SPECIFY → TASKS transition still exists for
-backward compatibility but routes through the new merged path.
+backward compatibility but routes through the new merged path. The SPECIFY
+step can be bypassed with `--no-setup` (skip worktree + ledger claim); the
+banner then renders `PLAN ▶ TASKS` and the pipeline runs in the current
+working directory on whatever branch is checked out, bypassing the Git
+Isolation Principle.
 ```
 
 **Micro layer TDD cycle** (per task, dispatched by `deviate micro run <task-id>` or `deviate micro run --all`):

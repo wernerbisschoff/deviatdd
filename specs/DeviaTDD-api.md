@@ -803,6 +803,15 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     no commits, no session transitions)
   * `--force` (Bypass `blocked_by` dependency check)
   * `--quiet/--verbose` (Default: `--quiet`)
+  * `--no-setup` *(optional, advanced)* — Skip the SPECIFY step entirely (no worktree
+    created, no ledger claim written). The pipeline runs in the current directory,
+    so `_plan_post` and `_tasks_post` will commit `plan.md` / `tasks.md` to whatever
+    branch is currently checked out. The pipeline renders `PLAN ▶ TASKS` in the
+    `PipelineBanner` (the `SPECIFY` step is dropped) and prints a yellow `[bold]WARN[/]`
+    note above the banner calling out the Git Isolation Principle bypass. Intended for
+    ephemeral runs where the operator has already prepared a branch manually; the
+    default `deviate meso run` flow remains the canonical entry point that respects
+    the worktree-per-issue model.
 * **Error Recovery:** Agent non-zero exit (`AgentSubprocessError`) or `manifest.status != "PASS"`
   aborts with `<PHASE>_FAILED`. Re-running the pipeline re-processes plan.md and tasks.md
   (no phase-skip logic); commits are skipped when there are no changes. The
