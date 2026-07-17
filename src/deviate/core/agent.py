@@ -6,7 +6,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ValidationError
@@ -27,6 +27,10 @@ class HandoverManifest(BaseModel):
     expected_failure_node: str | None = None
     rationale: str | None = None
     next_phase: str | None = None
+    next_action: Optional[
+        Literal["revert_before", "revert_to_red", "continue_refactor", "skip_refactor"]
+    ] = None
+    files: list[str] | None = None
 
     model_config = {"extra": "allow"}
 

@@ -75,3 +75,9 @@ The CLI orchestrator runs `deviate specify post` after your response to validate
 | Pre-script exits non-zero | Surface error. Re-run with --force only with justification. |
 </edge_case_handling>
 
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

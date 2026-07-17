@@ -10,6 +10,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.state.ledger import FlowEvent, FlowRecord, IssueRecord
 
 runner = CliRunner()
 
@@ -368,3 +369,175 @@ class TestTasksList:
 
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "[]"
+
+
+class TestInspectFlowsCoverage:
+    @staticmethod
+    def _write_flows_index(path: Path, flow_ids: list[str]) -> Path:
+        index = path / "specs" / "_product" / "flows" / "index.md"
+        index.parent.mkdir(parents=True, exist_ok=True)
+        rows = [
+            "| Flow ID | Name | Actor | Domain | Status | Source |",
+            "|---------|------|-------|--------|--------|--------|",
+        ]
+        for flow_id in flow_ids:
+            rows.append(
+                f"| {flow_id} | Flow {flow_id} | Developer | Agent Integration "
+                "| Active | specs/_product/flows/flows-streaming.md |"
+            )
+        index.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        return index
+
+    @staticmethod
+    def _seed_flow_ledger(
+        path: Path, records: list[FlowRecord], events: list[FlowEvent]
+    ) -> Path:
+        ledger = path / "specs" / "_product" / "flows.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with ledger.open("w", encoding="utf-8") as stream:
+            for entry in [*records, *events]:
+                stream.write(entry.model_dump_json() + "\n")
+        return ledger
+
+    @staticmethod
+    def _flow(flow_id: str) -> FlowRecord:
+        return FlowRecord(
+            flow_id=flow_id,
+            name=f"Flow {flow_id}",
+            actor="Developer",
+            domain="Agent Integration",
+            source="specs/_product/flows/flows-streaming.md",
+        )
+
+    @staticmethod
+    def _event(flow_id: str, event_type: str) -> FlowEvent:
+        return FlowEvent(
+            flow_id=flow_id,
+            event_type=event_type,
+            timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+        )
+
+    def test_coverage_index_missing_fails_with_recommendation(
+        self, tmp_path: Path
+    ) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "coverage", "--json"])
+
+        assert result.exit_code == 2, result.output
+        assert "FLOWS_INDEX_MISSING" in result.stderr
+        assert "/deviate-flows" in result.stderr
+
+    def test_coverage_missing_ledger_emits_no_flows_ledger(
+        self, tmp_path: Path
+    ) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-04"])
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "coverage", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == "[]"
+        assert "NO_FLOWS_LEDGER" in result.stderr
+        assert "deviate explore post" in result.stderr
+
+    def test_coverage_banner_renders_at_default_terminal_width(
+        self, tmp_path: Path
+    ) -> None:
+        # Regression: STATE 2 banner must contain "deviate explore post" as a
+        # contiguous substring in raw stderr at the default CliRunner width
+        # (80 cols), without any whitespace normalization. Earlier the banner
+        # soft-wrapped with a `\n` mid-phrase, and a `" ".join(...)` mask in
+        # the assertion hid the production bug from CI / non-tty operators.
+        self._write_flows_index(tmp_path, ["FLOW-04"])
+        runner = CliRunner()  # default terminal_width=80
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "coverage", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert "NO_FLOWS_LEDGER" in result.stderr
+        assert "deviate explore post" in result.stderr
+        assert "explore post to seed" in result.stderr
+
+    def test_coverage_golden_path_with_seeded_ledger(self, tmp_path: Path) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-04"])
+        flow = self._flow("FLOW-04")
+        self._seed_flow_ledger(
+            tmp_path,
+            [flow],
+            [
+                self._event("FLOW-04", "FLOW_DISCOVERED"),
+                self._event("FLOW-04", "FLOW_DOCUMENTED"),
+            ],
+        )
+        issues = tmp_path / "specs" / "issues.jsonl"
+        issues.parent.mkdir(parents=True, exist_ok=True)
+        issue = IssueRecord(
+            issue_id="ISS-ADH-012",
+            type="feature",
+            title="Stream agent progress",
+            source_file="specs/epic/issues/iss-adh-012.md",
+            timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+            flow_refs=["FLOW-04"],
+        )
+        issues.write_text(issue.model_dump_json() + "\n", encoding="utf-8")
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "coverage", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert "FLOW-04" in result.stdout
+        assert "DOCUMENTED_BUT_NOT_IMPLEMENTED" in result.stdout
+
+    def test_coverage_release_filter_narrows_rows(self, tmp_path: Path) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-04", "FLOW-05"])
+        self._seed_flow_ledger(
+            tmp_path,
+            [self._flow("FLOW-04"), self._flow("FLOW-05")],
+            [
+                self._event("FLOW-04", "FLOW_DISCOVERED"),
+                self._event("FLOW-04", "FLOW_DOCUMENTED"),
+                self._event("FLOW-05", "FLOW_DISCOVERED"),
+            ],
+        )
+        release = tmp_path / "specs" / "_product" / "release-next.md"
+        release.write_text(
+            "# Release Next\n\n"
+            "## Included Flows\n\n"
+            "| Flow ID | Name |\n"
+            "|---------|------|\n"
+            "| FLOW-04 | Flow FLOW-04 |\n",
+            encoding="utf-8",
+        )
+
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli,
+                [
+                    "inspect",
+                    "flows",
+                    "coverage",
+                    "--release",
+                    "specs/_product/release-next.md",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "FLOW-04" in result.stdout
+        assert "FLOW-05" not in result.stdout
+
+    def test_coverage_table_highlights_drift_flags_yellow(self, tmp_path: Path) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-04"])
+        self._seed_flow_ledger(
+            tmp_path,
+            [self._flow("FLOW-04")],
+            [
+                self._event("FLOW-04", "FLOW_DISCOVERED"),
+                self._event("FLOW-04", "FLOW_DOCUMENTED"),
+            ],
+        )
+
+        with chdir(tmp_path), patch("deviate.cli.inspect.console._width", 200):
+            result = runner.invoke(cli, ["inspect", "flows", "coverage"])
+
+        assert result.exit_code == 0, result.output
+        assert "drift flag" in result.stdout.lower()
+        assert "DOCUMENTED_BUT_NOT_IMPLEMENTED" in result.stdout

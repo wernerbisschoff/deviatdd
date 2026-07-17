@@ -86,6 +86,27 @@ class TestHandoverManifestModel:
         assert manifest.phase == "RED"
         assert manifest.status == "FAIL"
 
+    def test_handover_manifest_files_defaults_to_none(self):
+        from deviate.core.agent import HandoverManifest
+
+        manifest = HandoverManifest(phase="GREEN", status="PASS")
+        assert manifest.files is None
+
+    def test_handover_manifest_files_round_trips(self):
+        from deviate.core.agent import HandoverManifest
+
+        manifest = HandoverManifest(
+            phase="GREEN",
+            status="PASS",
+            task_id="TSK-006-09",
+            files=["src/watcher.py", "src/main.py"],
+        )
+        assert manifest.files == ["src/watcher.py", "src/main.py"]
+        dumped = manifest.model_dump()
+        assert dumped["files"] == ["src/watcher.py", "src/main.py"]
+        reloaded = HandoverManifest.model_validate(dumped)
+        assert reloaded.files == ["src/watcher.py", "src/main.py"]
+
 
 class TestAgentBackendInvocation:
     def test_agent_successful_invocation(self):

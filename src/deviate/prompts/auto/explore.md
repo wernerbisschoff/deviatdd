@@ -101,3 +101,9 @@ The CLI orchestrator runs `deviate explore post` after your response to validate
 | Agent attempts to write/modify implementation code | Halt with IMPLEMENTATION_DRIFT_DETECTED. |
 </edge_case_handling>
 
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

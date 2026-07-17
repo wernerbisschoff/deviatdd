@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import time
+import logging
 import sys
 import warnings
 from collections.abc import Callable
@@ -28,7 +29,13 @@ from deviate.core.agent import (
 )
 from deviate.core.convention import format_commit_message
 from deviate.core.profile import resolve_profile
-from deviate.core.run_logger import RunLogger, get_run_logger, set_run_logger
+from deviate.core.run_logger import (
+    RunLogger,
+    TaskLogger,
+    log_event,
+    set_run_logger,
+    set_task_logger,
+)
 from deviate.core.treesitter import (
     detect_duplicate_blocks,
     estimate_cyclomatic_complexity,
@@ -85,9 +92,13 @@ def _log(msg: str) -> None:
 
 
 def _log_run(event: str, **kwargs: object) -> None:
-    logger = get_run_logger()
-    if logger is not None:
-        logger.log(event, **kwargs)
+    """Write to every active sink (run + task loggers).
+
+    Per-task transcripts land in ``.deviate/logs/<issue>/<task>.log``
+    while a chronological copy of every event continues into the
+    per-run file under ``.deviate/logs/run_<UTC>.log``.
+    """
+    log_event(event, **kwargs)
 
 
 _TASK_DESC_MAX = 60
@@ -448,7 +459,11 @@ def _invoke_agent(
                 phase=phase,
                 raw_output="\n".join(raw_lines),
             )
-        return manifest, ""
+        # Last 50 non-blank stdout lines from the agent invocation, used
+        # by the phase runner as a fallback diagnostic when the
+        # manifest's `rationale` is empty (the prior "unknown" symptom).
+        tail_lines = [line for line in raw_lines if line.strip()][-50:]
+        return manifest, "\n".join(tail_lines)
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
@@ -527,11 +542,12 @@ def _summarize_timeout_context(
             pass
         return (
             "[Previous GREEN attempt timed out \u2014 summarization also timed out. "
-            "Check prompts.log for partial output.]"
+            "Check .deviate/logs/ (run_*.log and per-task logs) for partial output.]"
         )
     except FileNotFoundError:
         return (
-            f"[Previous GREEN attempt timed out. Partial output (last {len(truncated)} chars):\n"
+            f"[Previous GREEN attempt timed out. Partial output "
+            f"(last {len(truncated)} chars):\n"
             f"{truncated[-500:]}]"
         )
 
@@ -624,6 +640,8 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
 _TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
 _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
+_TASK_BULLET_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
+_JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^\s+-\s+\*\*Judge Feedback\*\*:\s*(.*)")
 
 
 def _find_all_pending_tasks(
@@ -947,7 +965,7 @@ def _run_red_phase(
     prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
     red_model = resolve_model_for_phase("RED", root)
-    manifest, _ = _invoke_agent(
+    manifest, agent_tail = _invoke_agent(
         prompt,
         c,
         backend_name=backend,
@@ -961,8 +979,11 @@ def _run_red_phase(
             f"RED phase agent error for {tid}: agent returned no manifest"
         )
     if manifest.status.upper() in ("FAILURE", "ERROR"):
+        rationale = manifest.rationale or "unknown"
+        tail = agent_tail or "(no agent output captured)"
         raise PhaseFailedError(
-            f"RED phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            f"RED phase failed for {tid}: {rationale}\n"
+            f"  agent_output_tail (last 50 non-blank stdout lines):\n{tail}"
         )
 
     issue_id = task.get("issue_id", "")
@@ -1027,12 +1048,16 @@ def _run_green_phase(
     _emit_phase_callout(c, "GREEN", task, PhaseMarker.IN_PROGRESS)
     if _verbose:
         c.print(f"  [bold green]GREEN →[/] {_task_label(task)}")
-
-    backend = agent or "pi"
     root = Path.cwd()
+    backend = agent or "pi"
+
     prompt = _build_auto_prompt("green", task, root)
     if session.train_feedback:
         prompt += f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
+    else:
+        persisted = _read_judge_feedback_from_tasks_md(root, task)
+        if persisted:
+            prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root)
     manifest, timeout_ctx = _invoke_agent(
@@ -1057,8 +1082,11 @@ def _run_green_phase(
             f"GREEN phase agent error for {tid}: agent returned no manifest"
         )
     if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
+        rationale = manifest.rationale or "unknown"
+        tail = timeout_ctx or "(no agent output captured)"
         raise PhaseFailedError(
-            f"GREEN phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            f"GREEN phase failed for {tid}: {rationale}\n"
+            f"  agent_output_tail (last 50 non-blank stdout lines):\n{tail}"
         )
 
     session = session.force_transition_to("GREEN")
@@ -1069,7 +1097,7 @@ def _run_green_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    test_result = _run_test_cmd(root)
+    test_result = _run_test_cmd(root, task)
     if test_result.returncode != 0:
         failure_output = test_result.stdout or ""
         if test_result.stderr:
@@ -1176,6 +1204,35 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int |
     return None
 
 
+def _read_judge_feedback_from_tasks_md(root: Path, task: dict) -> str:
+    """Read persisted Judge Feedback bullets for the exact task block."""
+    target = task.get("id", "")
+    if not target:
+        return ""
+    tasks_md = _resolve_tasks_md(root, task)
+    if tasks_md is None:
+        return ""
+    try:
+        lines = tasks_md.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    feedback: list[str] = []
+    in_target = False
+    for line in lines:
+        head = _TASK_BULLET_HEAD_RE.match(line)
+        if head is not None:
+            if in_target:
+                break
+            if head.group(1) == target:
+                in_target = True
+            continue
+        if in_target:
+            match = _JUDGE_FEEDBACK_BULLET_RE.match(line)
+            if match is not None:
+                feedback.append(f"- **Judge Feedback**: {match.group(1).rstrip()}")
+    return "\n".join(feedback)
+
+
 def _resolve_red_boundary_sha(root: Path) -> str:
     session_path = root / ".deviate" / "session.json"
     if session_path.exists():
@@ -1248,7 +1305,65 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         capture_output=True,
         env=_git_env(),
     )
+
+    # Remove untracked files and directories created during GREEN so they
+    # don't pollute the next RED attempt (pytest collection, test writer
+    # edits). Uses `-fd` (force + directories) WITHOUT `-x` to preserve
+    # gitignored state such as `.deviate/`, `.mise/`, `__pycache__/`,
+    # and `.worktrees/`.
+    subprocess.run(
+        ["git", "clean", "-fd"],
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
     return red_sha
+
+
+# Defensive regex matching the RED-phase commit subject built by
+# _commit_phase. The pre-RED anchor is usually `red_commit_sha^`, but if
+# the parent doesn't look like a RED-phase commit (e.g. the user amended
+# the boundary, ran a micro layer on top of an E2E/direct commit, or the
+# repo's history is malformed), log a warning so the operator knows the
+# resolution is on best-effort grounds.
+_PRE_RED_SHA_PARENT_RE = re.compile(r"^(?:.+ )?test\([^)]+\): RED phase(?:\s|$)")
+
+
+def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
+    """Return the SHA to reset to for ``next_action="revert_before"``.
+
+    The pre-RED anchor is ``red_commit_sha^`` — the commit just before the
+    task's RED phase landed. When ``red_sha^`` does not look like a
+    RED-phase commit (defensive regex check on its subject), log a
+    ``PRE_RED_AMBIGUOUS`` warning so the operator knows the resolution is
+    best-effort, but still return the parent so the rollback can proceed.
+    """
+    parent = subprocess.run(
+        ["git", "rev-parse", f"{red_sha}^"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    if not parent:
+        return ""
+    subject = subprocess.run(
+        ["git", "log", "-1", "--format=%s", parent],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    if not _PRE_RED_SHA_PARENT_RE.match(subject):
+        logging.getLogger(__name__).warning(
+            "PRE_RED_AMBIGUOUS: red_commit_sha %s's parent (%s) has "
+            "subject %r; expected a RED-phase commit. Falling back to "
+            "red_sha^ anyway.",
+            red_sha[:7],
+            parent[:7],
+            subject,
+        )
+    return parent
 
 
 def _format_violations_as_feedback(
@@ -1288,6 +1403,185 @@ def _format_violations_as_feedback(
             body = (body + " " if body else "") + f"Recommendation: {recommendation}"
         lines.append(f"- {head}: {body}".rstrip())
     return "\n".join(lines)
+
+
+# ---- Judge next_action routing ---------------------------------------------
+#
+# JUDGE decides, via HandoverManifest.next_action, how the runner should
+# route the task on compliance outcome. Four values:
+#
+#   revert_before     — discard this task's GREEN *and* its RED; restart
+#                       from pre-RED so RED can re-author the failing test.
+#                       Used when the test itself is wrong.
+#   revert_to_red     — discard GREEN, keep RED, advance red_commit_sha
+#                       past the feedback commit so a second rollback
+#                       preserves the new GREEN attempt's history. (Default
+#                       on COMPLIANCE_VIOLATION when next_action is omitted
+#                       — preserves the prior behavior that this module is
+#                       fixing regression on.)
+#   continue_refactor — GREEN already correct; skip JUDGEs verdict-loop
+#                       and route directly to REFACTOR.
+#   skip_refactor     — GREEN already correct and refactor not wanted;
+#                       mark the task COMPLETED and move on.
+#
+# The runner honors the manifest verbatim. There is no interactive prompt:
+# operators can override externally via a CLI flag (future work), not via
+# a runtime question.
+_JUDGE_ACTIONS = frozenset(
+    {"revert_before", "revert_to_red", "continue_refactor", "skip_refactor"}
+)
+
+
+def _coerce_judge_action(manifest: HandoverManifest, verdict: str) -> str | None:
+    """Return the manifest's ``next_action`` if valid; default to
+    ``revert_to_red`` on violation when the field is absent; ``None`` on
+    pass when the field is absent.
+    """
+    next_action = getattr(manifest, "next_action", None)
+    if next_action in _JUDGE_ACTIONS:
+        return next_action
+    if next_action is not None and next_action != "":
+        # Manifest declared an unknown action. Log + fall back: an action
+        # the runner doesn't understand must not stall the task.
+        _log(
+            f"JUDGE_UNKNOWN_ACTION ignored: {next_action!r}; defaulting "
+            f"verdict={verdict!r}"
+        )
+        next_action = None
+    if verdict.upper() == "COMPLIANCE_VIOLATION":
+        return "revert_to_red"
+    return None
+
+
+def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]:
+    """Return ``(feedback_text, feedback_source)`` from a judge manifest.
+
+    Used by both rejection routes (``revert_to_red`` and ``revert_before``)
+    so they share the same feedback source cascade.
+    """
+    train_feedback_fb = getattr(manifest, "train_feedback", None) or ""
+    rationale_fb = getattr(manifest, "rationale", None) or ""
+    summary_fb = (
+        getattr(manifest, "summary", None)
+        or (manifest.model_extra or {}).get("summary", "")
+        or ""
+    )
+    violations_fb = _format_violations_as_feedback(
+        getattr(manifest, "violations", None)
+        or (manifest.model_extra or {}).get("violations", [])
+        or []
+    )
+    if train_feedback_fb:
+        return train_feedback_fb, "train_feedback"
+    if violations_fb:
+        return violations_fb, "violations"
+    if rationale_fb:
+        return rationale_fb, "rationale"
+    if summary_fb:
+        return summary_fb, "summary"
+    return "", ""
+
+
+def _commit_judge_feedback_and_advance(
+    root: Path,
+    task: dict,
+    feedback: str,
+    feedback_source: str,
+    c: Console,
+    session: SessionState,
+    session_path: Path,
+) -> SessionState:
+    """Persist judge feedback (tasks.md when available) and advance the
+    RED boundary by committing a feedback-commit to git.
+
+    The RED-boundary advance is unconditional even when ``tasks.md`` is
+    unavailable: a rejection *must* move the boundary or the next GREEN
+    attempt starts from the same baseline. The fix here decouples the
+    commit from the tasks.md write.
+    """
+    tid = task.get("id", "?")
+    feedback_preview = feedback.replace("\n", " ")[:200]
+
+    # 1) Update tasks.md if available (operator-visible persistence).
+    tasks_md = _resolve_tasks_md(root, task)
+    if tasks_md is not None:
+        added_lines = _append_judge_feedback(tasks_md, tid, feedback)
+        if added_lines is None:
+            c.print(
+                f"  [yellow]TASKS_MD_NO_MATCH[/] {tid}: "
+                f"no task line in {tasks_md} matches this id \u2014 "
+                f"feedback NOT persisted to tasks.md"
+            )
+            _log_run(
+                "TASKS_MD_NO_MATCH",
+                task_id=tid,
+                tasks_md=str(tasks_md),
+                feedback=feedback,
+            )
+        else:
+            plural = "s" if added_lines != 1 else ""
+            c.print(
+                f"  [cyan]TASKS_MD_FEEDBACK[/] {tid} \u2192 {tasks_md}: "
+                f"{added_lines} feedback line{plural} appended"
+            )
+            c.print(f"    [dim]line: - **Judge Feedback**: {feedback_preview}[/]")
+            _log_run(
+                "TASKS_MD_FEEDBACK",
+                task_id=tid,
+                tasks_md=str(tasks_md),
+                lines_added=added_lines,
+                feedback=feedback,
+            )
+    else:
+        c.print(f"  [dim]TASKS_MD_SKIP[/] {tid}: no tasks.md resolved for issue")
+        _log_run("TASKS_MD_SKIP", task_id=tid, reason="no_tasks_md_resolved")
+
+    # 2) Commit a feedback marker regardless of (1) so the RED boundary
+    # advances. The commit message carries the feedback source for
+    # post-mortem triage.
+    subprocess.run(
+        ["git", "add", "-A"],
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
+    judge_msg = format_commit_message(
+        f"docs({tid}): add judge feedback for retry",
+        root,
+    )
+    commit_result = subprocess.run(
+        ["git", "commit", "-m", judge_msg, "--allow-empty"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+        timeout=30,
+    )
+    if commit_result.returncode != 0:
+        message = (
+            f"JUDGE feedback commit failed for {tid}: {commit_result.stderr.strip()}"
+        )
+        c.print(
+            f"  [red]FEEDBACK_COMMIT_FAILED[/] {tid}: {commit_result.stderr.strip()}"
+        )
+        _log_run(
+            "FEEDBACK_COMMIT_FAILED",
+            task_id=tid,
+            feedback_source=feedback_source,
+            stderr=commit_result.stderr.strip(),
+        )
+        raise PhaseFailedError(message)
+    fb_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    if fb_head:
+        session.red_commit_sha = fb_head
+        session.save(session_path)
+    return session
 
 
 def _run_judge_phase(
@@ -1348,164 +1642,128 @@ def _run_judge_phase(
             f"JUDGE phase agent error for {tid}: agent returned no manifest"
         )
     verdict = getattr(manifest, "verdict", "")
-    if verdict.upper() == "COMPLIANCE_VIOLATION":
-        # Resolve feedback BEFORE the user-facing print so the operator sees
-        # the same content GREEN will receive. Source precedence:
-        #   train_feedback > violations (built) > rationale > summary > fallback
-        # The "summary" branch bridges the schema gap between the auto prompt
-        # (uses summary:) and the manual skill (uses rationale:). The
-        # "violations" branch extracts actionable text from the structured
-        # list both schemas populate on failure.
-        train_feedback_fb = getattr(manifest, "train_feedback", None) or ""
-        rationale_fb = manifest.rationale or ""
-        summary_fb = (
-            getattr(manifest, "summary", None)
-            or (manifest.model_extra or {}).get("summary", "")
-            or ""
-        )
-        violations_fb = _format_violations_as_feedback(
-            (
-                getattr(manifest, "violations", None)
-                or (manifest.model_extra or {}).get("violations", [])
-                or []
-            )
-        )
-        if train_feedback_fb:
-            feedback = train_feedback_fb
-            feedback_source = "train_feedback"
-        elif violations_fb:
-            feedback = violations_fb
-            feedback_source = "violations"
-        elif rationale_fb:
-            feedback = rationale_fb
-            feedback_source = "rationale"
-        elif summary_fb:
-            feedback = summary_fb
-            feedback_source = "summary"
-        else:
-            # No actionable feedback at all — agent failed its contract.
-            # Loud-abort so the operator can intervene instead of looping
-            # GREEN against a generic message until TRAIN_EXHAUSTED.
+    action = _coerce_judge_action(manifest, verdict)
+
+    # ---- Violation routes ----------------------------------------------
+    if action in {"revert_to_red", "revert_before"}:
+        # Both rejection routes resolve feedback through the same cascade
+        # and emit the same user-visible rejection log + advance the RED
+        # boundary via a feedback commit. They differ in WHERE the
+        # rollback anchor sits (red_commit_sha vs red_commit_sha^) and
+        # in WHICH phase the runner hands control to next.
+        feedback, feedback_source = _judge_feedback_from_manifest(manifest)
+        if not feedback:
             c.print(
                 f"  [red]JUDGE_AGENT_NO_FEEDBACK[/] {tid}: judge returned "
-                f"COMPLIANCE_VIOLATION but populated no rationale, "
-                f"train_feedback, summary, or violations"
+                f"{action} but populated no rationale, train_feedback, "
+                f"summary, or violations"
             )
             _log_run(
                 "JUDGE_AGENT_NO_FEEDBACK",
                 task_id=tid,
                 verdict=verdict,
+                action=action,
                 manifest=manifest.model_dump_json(),
             )
             raise PhaseFailedError(
                 f"JUDGE_AGENT_NO_FEEDBACK for {tid}: judge returned "
-                f"COMPLIANCE_VIOLATION with no actionable feedback"
+                f"{action} with no actionable feedback"
             )
         feedback_preview = feedback.replace("\n", " ")[:200]
-
         c.print(
-            f"  [red]JUDGE_REJECTED[/] {tid} (source={feedback_source}): "
-            f"{feedback_preview}"
+            f"  [red]JUDGE_REJECTED[/] {tid} (action={action}, "
+            f"source={feedback_source}): {feedback_preview}"
         )
         _log_run(
             "JUDGE_REJECTED",
             task_id=tid,
+            action=action,
             feedback_source=feedback_source,
             feedback=feedback,
         )
-
         session.save(session_path)
+
+        # Rollback to the anchor that the action names.
         try:
+            if action == "revert_before":
+                pre_red = (
+                    _resolve_pre_red_sha(root, session.red_commit_sha)
+                    if session.red_commit_sha
+                    else ""
+                )
+                if pre_red:
+                    subprocess.run(
+                        ["git", "reset", "--hard", pre_red],
+                        cwd=root,
+                        capture_output=True,
+                        env=_git_env(),
+                    )
+                    subprocess.run(
+                        ["git", "clean", "-fd"],
+                        cwd=root,
+                        capture_output=True,
+                        env=_git_env(),
+                    )
+                else:
+                    # No pre-RED anchor known — fall back to the standard
+                    # rollback-to-red_sha so the runner is never stuck.
+                    _execute_rollback(root, feedback)
+                # No boundary advance: pre-RED no longer has a RED
+                # boundary in this task, so RED will land a fresh one.
+                session.red_commit_sha = ""
+                session.pending_judge_action = "revert_before"
+                session.train_feedback = feedback
+                session.judge_rejected = True
+                session = session.force_transition_to("RED")
+                _log_run(
+                    "PHASE_DECISION",
+                    task_id=tid,
+                    phase="JUDGE",
+                    decision="rejected",
+                    reroute="RED",
+                    action=action,
+                )
+                session.save(session_path)
+                return session
+
+            # revert_to_red: rollback to RED then advance the boundary.
             _execute_rollback(root, feedback)
         except Exception as e:
             c.print(
-                f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with train feedback"
+                f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with "
+                f"train feedback"
             )
 
-        tasks_md = _resolve_tasks_md(root, task)
-        if tasks_md is not None:
-            added_lines = _append_judge_feedback(tasks_md, tid, feedback)
-            if added_lines is None:
-                c.print(
-                    f"  [yellow]TASKS_MD_NO_MATCH[/] {tid}: "
-                    f"no task line in {tasks_md} matches this id \u2014 "
-                    f"feedback NOT persisted to tasks.md"
-                )
-                _log_run(
-                    "TASKS_MD_NO_MATCH",
-                    task_id=tid,
-                    tasks_md=str(tasks_md),
-                    feedback=feedback,
-                )
-            else:
-                plural = "s" if added_lines != 1 else ""
-                c.print(
-                    f"  [cyan]TASKS_MD_FEEDBACK[/] {tid} \u2192 {tasks_md}: "
-                    f"{added_lines} feedback line{plural} appended"
-                )
-                c.print(f"    [dim]line: - **Judge Feedback**: {feedback_preview}[/]")
-                _log_run(
-                    "TASKS_MD_FEEDBACK",
-                    task_id=tid,
-                    tasks_md=str(tasks_md),
-                    lines_added=added_lines,
-                    feedback=feedback,
-                )
-                subprocess.run(
-                    ["git", "add", "-A"],
-                    cwd=root,
-                    capture_output=True,
-                    env=_git_env(),
-                )
-                judge_msg = format_commit_message(
-                    f"docs({tid}): add judge feedback for GREEN retry", root
-                )
-                subprocess.run(
-                    [
-                        "git",
-                        "commit",
-                        "-m",
-                        judge_msg,
-                    ],
-                    cwd=root,
-                    capture_output=True,
-                    env=_git_env(),
-                )
-                # Advance the red boundary so the next rollback (on a
-                # second judge rejection) preserves this feedback commit
-                # and only kills the subsequent GREEN commit.
-                fb_head = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                ).stdout.strip()
-                if fb_head:
-                    session.red_commit_sha = fb_head
-                    session.save(session_path)
-        else:
-            c.print(f"  [dim]TASKS_MD_SKIP[/] {tid}: no tasks.md resolved for issue")
-            _log_run(
-                "TASKS_MD_SKIP",
-                task_id=tid,
-                reason="no_tasks_md_resolved",
-            )
-
+        # Unconditional RED-boundary advance. The regressed behavior was
+        # that this happened only when tasks.md existed; the fix decouples
+        # the commit from the file write so the boundary always advances.
+        session = _commit_judge_feedback_and_advance(
+            root, task, feedback, feedback_source, c, session, session_path
+        )
+        session.pending_judge_action = "revert_to_red"
+        session.train_feedback = feedback
+        session.judge_rejected = True
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
             phase="JUDGE",
             decision="rejected",
             reroute="GREEN",
+            action=action,
         )
         session = session.force_transition_to("GREEN")
-        session.train_feedback = feedback
-        session.judge_rejected = True
         session.save(session_path)
         return session
 
-    _log_run("PHASE_DECISION", task_id=tid, phase="JUDGE", decision="passed")
+    # ---- Forward routes (verdict=COMPLIANCE_PASS, JUDGE decides the polish) -
+    #
+    # On a pass the runner honors the action:
+    #   action=None              → legacy behavior: phase = JUDGE, hand to
+    #                              _finish_tdd_cycle (which decides refactor)
+    #   action=continue_refactor → pending_judge_action=continue_refactor;
+    #                              _finish_tdd_cycle enters REFACTOR
+    #                              regardless of no_refactor.
+    #   action=skip_refactor     → phase = IDLE, mark COMPLETED, move on.
     refactor_note = (
         getattr(manifest, "train_feedback", None)
         or (manifest.model_extra or {}).get("train_feedback", "")
@@ -1517,8 +1775,55 @@ def _run_judge_phase(
         _log_run(
             "JUDGE_REFACTOR_NOTE",
             task_id=tid,
+            action=action or "",
             note=refactor_note,
         )
+
+    if action == "continue_refactor":
+        session.pending_judge_action = "continue_refactor"
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="passed",
+            reroute="REFACTOR",
+            action=action,
+        )
+        session = session.force_transition_to("JUDGE")
+        session.train_feedback = ""
+        session.judge_rejected = False
+        session.save(session_path)
+        _append_status_transition(task, "JUDGE", ledger_path)
+        return session
+
+    if action == "skip_refactor":
+        session.pending_judge_action = "skip_refactor"
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="passed",
+            reroute="NEXT",
+            action=action,
+        )
+        session = session.force_transition_to("IDLE")
+        session.train_feedback = ""
+        session.judge_rejected = False
+        session.save(session_path)
+        try:
+            _append_status_transition(task, "COMPLETED", ledger_path)
+        except Exception as e:  # pragma: no cover - ledger robustness
+            c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+        return session
+
+    # Legacy pass path: no action declared, hand to _finish_tdd_cycle.
+    _log_run(
+        "PHASE_DECISION",
+        task_id=tid,
+        phase="JUDGE",
+        decision="passed",
+        reroute="GREEN",
+    )
     session = session.force_transition_to("JUDGE")
     session.train_feedback = ""
     session.judge_rejected = False
@@ -1555,7 +1860,7 @@ def _run_refactor_phase(
     prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
     refactor_model = resolve_model_for_phase("REFACTOR", root)
-    manifest, _ = _invoke_agent(
+    manifest, agent_tail = _invoke_agent(
         prompt,
         c,
         backend_name=backend,
@@ -1569,8 +1874,11 @@ def _run_refactor_phase(
             f"REFACTOR phase agent error for {tid}: agent returned no manifest"
         )
     if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
+        rationale = manifest.rationale or "unknown"
+        tail = agent_tail or "(no agent output captured)"
         raise PhaseFailedError(
-            f"REFACTOR phase failed for {tid}: {manifest.rationale or 'unknown'}"
+            f"REFACTOR phase failed for {tid}: {rationale}\n"
+            f"  agent_output_tail (last 50 non-blank stdout lines):\n{tail}"
         )
 
     issue_id = task.get("issue_id", "")
@@ -1619,9 +1927,39 @@ def _finish_tdd_cycle(
     agent: str | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
-    if not no_refactor:
+    pending = session.pending_judge_action
+
+    # JUDGE verdict-driven routing overrides the CLI's no_refactor flag:
+    #   continue_refactor → enter REFACTOR regardless of no_refactor.
+    #   skip_refactor     → mark COMPLETED and stop, regardless of
+    #                       no_refactor (the CLI flag says nothing
+    #                       about future tasks; the judge verdict does).
+    if pending == "skip_refactor":
+        try:
+            _append_status_transition(task, "COMPLETED", ledger_path)
+        except Exception as e:
+            c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+        c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
         _log_run(
-            "PHASE_DECISION", task_id=tid, phase="CYCLE", decision="proceed_to_refactor"
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="CYCLE",
+            decision="skip_refactor",
+        )
+        session.pending_judge_action = ""
+        session = session.force_transition_to("IDLE")
+        session.train_feedback = ""
+        session.judge_rejected = False
+        session.save(session_path)
+        return session
+
+    if pending == "continue_refactor" or not no_refactor:
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="CYCLE",
+            decision="proceed_to_refactor",
+            reason=pending or "no_refactor_flag_false",
         )
         _maybe_push_event(
             monitor,
@@ -1633,13 +1971,22 @@ def _finish_tdd_cycle(
         session = _run_refactor_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-    else:
+        if pending:
+            # Consume the pending action so subsequent cycles see clean state.
+            session.pending_judge_action = ""
+            session.save(session_path)
+        return session
+
+    # no_refactor (CLI flag) with no JUDGE override.
+    try:
         _append_status_transition(task, "COMPLETED", ledger_path)
-        c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
-        session = session.force_transition_to("IDLE")
-        session.train_feedback = ""
-        session.judge_rejected = False
-        session.save(session_path)
+    except Exception as e:
+        c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+    c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
+    session = session.force_transition_to("IDLE")
+    session.train_feedback = ""
+    session.judge_rejected = False
+    session.save(session_path)
     return session
 
 
@@ -1863,7 +2210,7 @@ def _run_execute_phase(
             prompt += f"\n\n<train_feedback>\n{train_feedback}\n</train_feedback>\n"
 
         agent_output_callback = _make_agent_output_callback(monitor, tid, "EXECUTE")
-        manifest, _ = _invoke_agent(
+        manifest, agent_tail = _invoke_agent(
             prompt,
             c,
             backend_name=backend,
@@ -1877,8 +2224,11 @@ def _run_execute_phase(
                 f"EXECUTE phase agent error for {tid}: agent returned no manifest"
             )
         if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
+            rationale = manifest.rationale or "unknown"
+            tail = agent_tail or "(no agent output captured)"
             raise PhaseFailedError(
-                f"EXECUTE phase failed for {tid}: {manifest.rationale or 'unknown'}"
+                f"EXECUTE phase failed for {tid}: {rationale}\n"
+                f"  agent_output_tail (last 50 non-blank stdout lines):\n{tail}"
             )
 
         issue_id = task.get("issue_id", "")
@@ -1925,78 +2275,95 @@ def _run_execute_phase(
             )
 
         verdict = getattr(judge_manifest, "verdict", "")
-        if verdict.upper() == "COMPLIANCE_VIOLATION":
-            tf = getattr(judge_manifest, "train_feedback", None) or ""
-            rationale_fb = judge_manifest.rationale or ""
-            summary_fb = (
-                getattr(judge_manifest, "summary", None)
-                or (judge_manifest.model_extra or {}).get("summary", "")
-                or ""
-            )
-            violations_fb = _format_violations_as_feedback(
-                (
-                    getattr(judge_manifest, "violations", None)
-                    or (judge_manifest.model_extra or {}).get("violations", [])
-                    or []
-                )
-            )
-            if tf:
-                feedback = tf
-                feedback_source = "train_feedback"
-            elif violations_fb:
-                feedback = violations_fb
-                feedback_source = "violations"
-            elif rationale_fb:
-                feedback = rationale_fb
-                feedback_source = "rationale"
-            elif summary_fb:
-                feedback = summary_fb
-                feedback_source = "summary"
-            else:
+        judge_action = _coerce_judge_action(judge_manifest, verdict)
+
+        # EXECUTE has no RED boundary — pre_execute_sha is the only
+        # anchor, so the four-action routing collapses: any of the two
+        # rollback actions maps to the same rollback-to-pre_execute_sha
+        # flow. Forward routes (None / continue_refactor / skip_refactor)
+        # fall through to the pass branch.
+        is_rollback_route = judge_action in {"revert_before", "revert_to_red"} or (
+            verdict.upper() == "COMPLIANCE_VIOLATION"
+            and judge_action not in {"continue_refactor", "skip_refactor"}
+        )
+        if is_rollback_route:
+            feedback, feedback_source = _judge_feedback_from_manifest(judge_manifest)
+            if not feedback:
                 c.print(
                     f"  [red]JUDGE_AGENT_NO_FEEDBACK[/] {tid}: judge returned "
-                    f"COMPLIANCE_VIOLATION but populated no rationale, "
+                    f"{judge_action} but populated no rationale, "
                     f"train_feedback, summary, or violations"
                 )
                 _log_run(
                     "JUDGE_AGENT_NO_FEEDBACK",
                     task_id=tid,
                     verdict=verdict,
+                    action=judge_action,
                     manifest=judge_manifest.model_dump_json(),
                 )
                 raise PhaseFailedError(
                     f"JUDGE_AGENT_NO_FEEDBACK for {tid}: judge returned "
-                    f"COMPLIANCE_VIOLATION with no actionable feedback"
+                    f"{judge_action} with no actionable feedback"
                 )
             feedback_preview = feedback.replace("\n", " ")[:200]
-
             c.print(
-                f"  [red]JUDGE_REJECTED[/] {tid} (source={feedback_source}): "
-                f"{feedback_preview}"
+                f"  [red]JUDGE_REJECTED[/] {tid} (action={judge_action}, "
+                f"source={feedback_source}): {feedback_preview}"
             )
             _log_run(
                 "JUDGE_REJECTED",
                 task_id=tid,
+                action=judge_action,
                 feedback_source=feedback_source,
                 feedback=feedback,
             )
-
             try:
                 _execute_rollback(root, feedback)
             except Exception as e:
-                c.print(f"  [yellow]ROLLBACK_FAILED[/] {e} — proceeding with retry")
-
+                c.print(
+                    f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with retry"
+                )
+            session = _commit_judge_feedback_and_advance(
+                root, task, feedback, feedback_source, c, session, session_path
+            )
             if attempt < max_judge_attempts - 1:
                 train_feedback = feedback
                 c.print(
                     f"  [yellow]RETRY EXECUTE ({attempt + 2}/{max_judge_attempts})[/]"
                 )
+                _log_run(
+                    "PHASE_DECISION",
+                    task_id=tid,
+                    phase="JUDGE",
+                    decision="rejected",
+                    reroute="EXECUTE",
+                    action=judge_action,
+                )
                 continue
+            _log_run(
+                "PHASE_DECISION",
+                task_id=tid,
+                phase="JUDGE",
+                decision="rejected",
+                reroute="EXECUTE",
+                action=judge_action,
+                terminal=True,
+            )
             raise PhaseFailedError(
                 f"EXECUTE phase failed for {tid} "
                 f"after {max_judge_attempts} JUDGE attempts: {feedback}"
             )
 
+        # Pass branch: forward routes (no action, continue_refactor,
+        # skip_refactor). EXECUTE has no REFACTOR; advance out of the loop.
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="passed",
+            reroute="COMPLETE",
+            action=judge_action or "",
+        )
         break
 
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
@@ -2099,47 +2466,68 @@ def _execute_task_with_retry(
     ledger_file: Path,
     c: Console,
     monitor: OrchestrationMonitor,
+    root: Path,
     no_judge: bool = False,
     no_refactor: bool = False,
     agent: str | None = None,
 ) -> bool:
     tid = task.get("id", "?")
+    issue_id = task.get("issue_id", "")
     mode = task.get("execution_mode", "TDD")
-    _log_run(
-        "TASK_DISPATCH", task_id=tid, mode=mode, description=task.get("description", "")
-    )
-    monitor.push_event(
-        "task_started", task_id=tid, description=task.get("description", "")
-    )
-    for attempt in range(2):
+    task_logger: TaskLogger | None = None
+    if issue_id and tid != "?":
         try:
-            _dispatch_task(
-                task,
-                ledger_file,
-                c,
-                no_judge=no_judge,
-                no_refactor=no_refactor,
-                agent=agent,
-                batch_mode=True,
-                monitor=monitor,
-            )
-            _log_run("TASK_COMPLETE", task_id=tid, attempt=attempt + 1)
-            monitor.push_event(
-                "task_completed",
+            task_logger = TaskLogger(root, issue_id=issue_id, task_id=tid)
+        except ValueError:
+            # Defensive: never let logging break dispatch.
+            task_logger = None
+    if task_logger is not None:
+        set_task_logger(task_logger)
+    try:
+        for attempt in range(2):
+            _log_run(
+                "TASK_DISPATCH",
                 task_id=tid,
-                phase=monitor.get_task_phase(tid),
-                status="completed",
+                mode=mode,
+                description=task.get("description", ""),
             )
-            return True
-        except Exception as exc:
-            if attempt == 1:
-                c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
-                _log_run("TASK_FAILED", task_id=tid, error=str(exc))
-                monitor.push_event("task_failed", task_id=tid, error_reason=str(exc))
-                _append_status_transition(task, "FAILED", ledger_file)
-                return False
-            c.print(f"  [yellow]RETRY[/] {tid} (attempt {attempt + 2})")
-            _log_run("TASK_RETRY", task_id=tid, attempt=attempt + 2)
+            monitor.push_event(
+                "task_started", task_id=tid, description=task.get("description", "")
+            )
+            try:
+                _dispatch_task(
+                    task,
+                    ledger_file,
+                    c,
+                    no_judge=no_judge,
+                    no_refactor=no_refactor,
+                    agent=agent,
+                    batch_mode=True,
+                    monitor=monitor,
+                )
+                _log_run("TASK_COMPLETE", task_id=tid, attempt=attempt + 1)
+                monitor.push_event(
+                    "task_completed",
+                    task_id=tid,
+                    phase=monitor.get_task_phase(tid),
+                    status="completed",
+                )
+                return True
+            except Exception as exc:
+                if attempt == 1:
+                    c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
+                    _log_run("TASK_FAILED", task_id=tid, error=str(exc))
+                    monitor.push_event(
+                        "task_failed", task_id=tid, error_reason=str(exc)
+                    )
+                    _append_status_transition(task, "FAILED", ledger_file)
+                    return False
+                c.print(f"  [yellow]RETRY[/] {tid} (attempt {attempt + 2})")
+                _log_run("TASK_RETRY", task_id=tid, attempt=attempt + 2)
+    finally:
+        if task_logger is not None:
+            set_task_logger(None)
+            task_logger.close()
 
 
 def _run_all(
@@ -2213,6 +2601,7 @@ def _run_all(
                     ledger_file,
                     c,
                     monitor,
+                    root,
                     no_judge=no_judge,
                     no_refactor=no_refactor,
                     agent=agent,
@@ -2472,10 +2861,11 @@ def red_pre(
     task_data, ledger_path = _resolve_task_context(task, root)
 
     spec_dir = str(ledger_path.parent)
+    test_commands = _test_command_candidates(root, task_data)
 
     contract = {
         "task_id": task_data.get("id", ""),
-        "test_command": "mise run test",
+        "test_command": test_commands[0][0] if test_commands else "",
         "lint_command": "mise run lint",
         "spec_dir": spec_dir,
     }
@@ -2483,12 +2873,160 @@ def red_pre(
     raise typer.Exit(code=0)
 
 
-def _run_test_cmd(root: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["mise", "run", "test"],
-        cwd=root,
-        capture_output=True,
-        text=True,
+def _normalise_test_command(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().strip("`").strip()
+
+
+def _task_verification_command(root: Path, task: dict | None) -> str:
+    if task:
+        command = _normalise_test_command(task.get("verification"))
+        if command:
+            return command
+        task_id = task.get("id", "")
+        issue_id = task.get("issue_id", "")
+        tasks_md = _find_tasks_md_for_issue(root, issue_id) if issue_id else None
+        if tasks_md is not None and task_id:
+            capture = False
+            for line in tasks_md.read_text(encoding="utf-8").splitlines():
+                if _TASK_LINE_RE.match(line) and task_id in line:
+                    capture = True
+                elif capture and _TASK_LINE_RE.match(line):
+                    break
+                if capture:
+                    match = re.match(
+                        r"^\s*-\s+\*{0,2}Verification\*{0,2}:\s*(.+)$",
+                        line,
+                    )
+                    if match:
+                        return _normalise_test_command(match.group(1))
+    return ""
+
+
+def _constitution_test_command(root: Path) -> str:
+    path = root / "specs" / "constitution.md"
+    if not path.exists():
+        return ""
+    from deviate.core.constitution import extract_commands
+
+    commands = extract_commands(path)
+    return _normalise_test_command(
+        commands.get("test_command") or commands.get("python_test_command")
+    )
+
+
+def _mise_has_test_task(root: Path) -> bool:
+    import tomllib
+
+    path = root / "mise.toml"
+    if not path.exists():
+        return False
+    try:
+        config = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    tasks = config.get("tasks")
+    return isinstance(tasks, dict) and "test" in tasks
+
+
+_IGNORED_TEST_DISCOVERY_DIRS = frozenset(
+    {".git", ".venv", "__pycache__", "node_modules", "dist", "build"}
+)
+_MANIFEST_TEST_COMMANDS = {
+    "pyproject.toml": "pytest",
+    "mix.exs": "mix test",
+    "package.json": "npm test",
+    "Cargo.toml": "cargo test",
+    "go.mod": "go test ./...",
+}
+
+
+def _manifest_test_commands(root: Path) -> list[tuple[str, Path]]:
+    commands: list[tuple[str, Path]] = []
+    for name, command in _MANIFEST_TEST_COMMANDS.items():
+        for manifest in sorted(root.rglob(name)):
+            if any(part in _IGNORED_TEST_DISCOVERY_DIRS for part in manifest.parts):
+                continue
+            commands.append((command, manifest.parent))
+    return sorted(commands, key=lambda item: str(item[1]))
+
+
+def _test_command_candidates(
+    root: Path, task: dict | None = None
+) -> list[tuple[str, Path]]:
+    task_command = _task_verification_command(root, task)
+    if task_command:
+        return [(task_command, root)]
+    constitution_command = _constitution_test_command(root)
+    if constitution_command in {
+        "true",
+        "echo 'No test framework'",
+        'echo "No test framework"',
+    }:
+        constitution_command = ""
+    if _mise_has_test_task(root):
+        candidates = [("mise run test", root)]
+        if constitution_command:
+            candidates.append((constitution_command, root))
+        return candidates
+    if constitution_command:
+        return [(constitution_command, root)]
+    manifests = _manifest_test_commands(root)
+    if manifests:
+        return manifests
+    if _find_test_files(root):
+        return [("pytest", root)]
+    return []
+
+
+def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProcess:
+    args = (
+        ["mise", "run", "test"] if command == "mise run test" else ["sh", "-c", command]
+    )
+    try:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    except OSError as exc:
+        return subprocess.CompletedProcess(args, 127, "", str(exc))
+
+
+def _mise_test_invocation_failed(proc: subprocess.CompletedProcess) -> bool:
+    """Return whether mise itself could not resolve the ``test`` task."""
+    stderr = (proc.stderr or "").lower()
+    return proc.returncode != 0 and any(
+        marker in stderr
+        for marker in ("unknown command", "unknown task", "task not found")
+    )
+
+
+def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedProcess:
+    """Run configured tests via ``sh -c`` to preserve shell syntax.
+
+    Constitution commands may contain pipes, redirects, expansions, or quoted whitespace.
+    """
+    candidates = _test_command_candidates(root, task)
+    if not candidates:
+        return subprocess.CompletedProcess(
+            ["deviate", "test"],
+            127,
+            "",
+            "No test command configured and no test project detected",
+        )
+    if candidates[0][0] == "mise run test":
+        first = _execute_test_command(*candidates[0])
+        if first.returncode == 0 or not _mise_test_invocation_failed(first):
+            return first
+        candidates = candidates[1:]
+        if not candidates:
+            return first
+    results = [_execute_test_command(command, cwd) for command, cwd in candidates]
+    if len(results) == 1:
+        return results[0]
+    return subprocess.CompletedProcess(
+        results[0].args,
+        next((r.returncode for r in results if r.returncode != 0), 0),
+        "\n".join(r.stdout or "" for r in results),
+        "\n".join(r.stderr or "" for r in results),
     )
 
 
@@ -2498,6 +3036,49 @@ def _run_format_cmd(root: Path) -> subprocess.CompletedProcess:
         cwd=root,
         capture_output=True,
         text=True,
+    )
+
+
+_SOURCE_TRACK_PREFIXES: tuple[str, ...] = ("src/", "lib/", "app/")
+
+
+def _changed_source_paths(root: Path) -> list[str]:
+    """Return repo-relative paths of production-code changes since HEAD.
+
+    Captures three categories of working-tree activity:
+
+    - Staged modifications/additions (``git diff --name-only --cached``)
+    - Unstaged modifications against tracked files (``git diff --name-only``)
+    - Untracked, non-ignored files (``git ls-files --others --exclude-standard``)
+
+    The result is filtered to the conventional production-code roots
+    (``src/``, ``lib/``, ``app/``); test files, spec files, and config
+    are intentionally excluded. Used by the GREEN/REFACTOR/EXECUTE phase
+    guards to catch a stub ``status: PASS`` manifest emitted by an
+    agent that didn't actually write any production code.
+    """
+    paths: set[str] = set()
+    for args in (
+        ("diff", "--name-only", "--cached"),
+        ("diff", "--name-only"),
+        ("ls-files", "--others", "--exclude-standard"),
+    ):
+        result = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        if result.returncode != 0 or not result.stdout:
+            continue
+        paths.update(
+            line.strip() for line in result.stdout.splitlines() if line.strip()
+        )
+    return sorted(
+        path
+        for path in paths
+        if any(path.startswith(p) for p in _SOURCE_TRACK_PREFIXES)
     )
 
 

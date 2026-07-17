@@ -88,3 +88,9 @@ The CLI orchestrator runs `deviate shard post` after your response to validate s
 | Horizontal slice detected | Re-cluster with adjacent FRs until ≥2 layers. |
 </edge_case_handling>
 
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

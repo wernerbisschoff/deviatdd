@@ -1,16 +1,12 @@
 <macro_layer_model>
 
-NOTE: This differs from ``macro-skill.md`` — the ``-auto`` variants reference the CLI orchestrator,
-while ``-skill`` variants reference the pre/post scripts directly, because skill prompts are invoked
-by the agent directly (agent runs pre/post) while auto prompts are orchestrated by the CLI.
-
 This phase operates inside the **MACRO LAYER** — feature scoping, architectural analysis, and requirement definition.
 
 <shared_disciplines>
 
 <item>
 <title>Feature Bucket Allocation</title>
-Each macro phase operates within a pre-allocated feature bucket. For **research**, **PRD**, and **shard**, the bucket is `specs/{NNN}-{FEATURE_SLUG}/` (a numbered epic directory created by `allocate_feature_bucket()`). For **explore**, the bucket is `specs/explore/` (a staging directory, NOT a numbered epic — the CLI orchestrator creates it via `deviate explore pre`). Do NOT re-derive paths from the problem statement.
+Each macro phase operates within a pre-allocated feature bucket. For **research**, **PRD**, and **shard**, the bucket is `specs/{NNN}-{FEATURE_SLUG}/` (a numbered epic directory). For **explore**, the bucket is `specs/explore/` (a staging directory, NOT a numbered epic). The bucket is allocated by the lifecycle entry step — either the CLI orchestrator's `deviate <phase> pre` (auto mode) or the operator running `deviate <phase> pre "<problem-statement>" --slug "<slug>"` directly (manual mode). Either path calls `allocate_feature_bucket()`; do NOT re-derive paths from the problem statement.
 </item>
 
 <item>
@@ -21,16 +17,6 @@ Prior to any synthesis, read and verify the constitution from `constitution_path
 <item>
 <title>Output File Mandate</title>
 Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
-</item>
-
-<item>
-<title>Contract Context</title>
-The CLI orchestrator has run the pre-script and resolved the contract. Available context includes: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`. The orchestrator runs the post-script after your response to validate and commit.
-</item>
-
-<item>
-<title>HITL Gate Handoff</title>
-After the orchestrator validates your output, terminate. Do NOT auto-advance to the next phase. The phase terminates at a HITL (Human In The Loop) gate — the human decides when to proceed.
 </item>
 
 <item>
@@ -51,9 +37,3 @@ Macro phases are the Product-layer intake valve. **explore** MUST read `specs/_p
 </shared_disciplines>
 
 </macro_layer_model>
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>

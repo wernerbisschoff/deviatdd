@@ -118,6 +118,103 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     supported agent (24 flat `.md` files total, split across the four
     dirs)
 
+#### `deviatdd` Skill (Project-Local Single Skill)
+
+* **Source:** `src/deviate/prompts/skills/deviatdd/SKILL.md`
+  (package resource, loaded via `importlib.resources`).
+* **Installer:** new `_install_deviatdd_skill(workdir, agents)` +
+  `_get_agent_skill_dir(workdir, agent)` + `_resolve_skill_source()` in
+  `src/deviate/cli/__init__.py`, called from `setup()` after
+  `_install_commands_to_agents(...)`. Idempotent (content-equality skip
+  mirrors `install_command`'s contract).
+* **Install targets (all five `active_agents`):** the skill is written
+  to `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for every agent
+  platform that `setup` provisions commands for, regardless of whether
+  each platform documents a project-local skills convention. Mirrors
+  `_install_commands_to_agents`'s write-everywhere policy — every
+  operator using `--agent <platform>` gets the skill at the canonical
+  skills directory for their platform, ready to be picked up if/when
+  that platform ships a discovery convention.
+  * `claude` -> `<workdir>/.claude/skills/deviatdd/SKILL.md`
+    (verified — same form as user-level `~/.claude/skills/<name>/SKILL.md`).
+  * `opencode` -> `<workdir>/.opencode/skills/deviatdd/SKILL.md`
+    (no documented project-local skills convention; file on disk for
+    forward-compat).
+  * `factory` -> `<workdir>/.factory/skills/deviatdd/SKILL.md`
+    (same as opencode).
+  * `pi` -> `<workdir>/.pi/skills/deviatdd/SKILL.md`
+    (verified — `pi@latest` docs at
+    `packages/coding-agent/docs/skills.md` list `.pi/skills/` as a
+    project-local skill discovery path).
+  * `omp` -> `<workdir>/.omp/skills/deviatdd/SKILL.md`
+    (libref documents omp skills at user-level
+    `~/.omp/agent/managed-skills/<name>/SKILL.md` and via a
+    settings-driven `skills` array; operators can register the
+    project-local file via OMP's settings).
+* **Scope:** Micro-layer only. The skill orchestrates `deviate micro
+  run --all`, triages every error class micro can surface, and runs
+  a four-step safety-gated `git reset --hard && git clean -fd`
+  clean-slate retry (ledger sanity -> workspace inventory -> typed
+  user confirmation -> reset; matches `_execute_rollback`'s
+  `git clean -fd` contract — `without -x`, so `.deviate/`, `.mise/`,
+  `.venv/` survive). Meso orchestration is out of scope — operators
+  use `/deviate-meso`, `/deviate-plan`, `/deviate-tasks`. A Dispatch
+  section points the agent to those canonical slash commands when a
+  failure escapes micro's scope; the skill never invokes them inline.
+* **`## Troubleshooting failed runs` (skill v1.1.0):** before guessing
+  at a fix, the skill directs the agent to the two complementary
+  `.deviate/logs/` sinks wired through
+  `src/deviate/core/run_logger.py::_LogRegistry.dispatch`:
+  * `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log` — per-task transcript;
+    append-mode history across retries of one task. Created only
+    inside `_execute_task_with_retry` when both `issue_id` and a
+    known `task_id` resolve; tasks missing either never get a
+    per-task file.
+  * `.deviate/logs/run_<UTC>.log` — per-run chronological log;
+    one file per invocation, always written.
+  Each event line is `[<UTC iso>] <EVENT>\n  <kwarg>: <value>\n`
+  (multi-line values are indented four-space under a `key:` header).
+  The authoritative event inventory is the set of
+  `_log_run("<NAME>", ...)` calls in `src/deviate/cli/micro.py`.
+  Canonical events for triage: `TASK_FAILED` (carries `error=`;
+  post-cycle failure — read first), `PHASE_START`, `PHASE_DECISION`
+  (NOT necessarily terminal — emitted for both intermediate JUDGE
+  routing decisions and the final CYCLE outcome; interpret via
+  `decision=` / `reroute=` / `action=` plus `phase=`), `PHASE_SKIP`,
+  `INVOKE_AGENT` (names `backend=` and `model=`), `AGENT_RESULT`
+  (carries `status=`, `verdict=`, full `manifest=`; the manifest
+  contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
+  (full stdout in a single `raw_output=` field; stderr is NOT
+  captured), `AGENT_TIMEOUT` (carries `error=` and
+  `partial_stderr=`), `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`,
+  `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`,
+  `JUDGE_REFACTOR_NOTE` (carries `note=`, the refactor hint),
+  `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`, `TASKS_MD_SKIP`,
+  `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE` (carries
+  `uncommitted_count=` and `files=`, the dirty files the hook
+  refused — NOT `returncode=` / `stderr=`).
+  Skill frontmatter version is `1.1.0`. The drift-check test
+  `test_deviatdd_skill_troubleshooting_section_matches_logger` parses
+  `micro.py` for `_log_run("<NAME>", ...)` calls and asserts every
+  backticked event name in the Troubleshooting section is a real
+  emitted event — guards against invented event names. Per-event
+  field schemas are documented in `micro.py`, not duplicated here.
+* **`.gitignore` exclusions:** `_ensure_root_gitignore` adds
+  `*/skills/deviatdd/` to the entries tuple alongside
+  `*/commands/deviate-*.md` and `*/prompts/deviate-*.md`. The
+  single-level wildcard covers all five agent platforms
+  (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`) with one
+  pattern. The single-level prefix (`*/`, not `**/`) is critical: it
+  scopes the pattern to the project root, never matching the
+  source-of-truth at `src/deviate/prompts/skills/deviatdd/` (three
+  directories deep).
+* **Tests:** `TestInstallDeviatddSkill` (8 tests) in
+  `tests/test_cli/test_init.py` covers install-to-all-five-agents,
+  idempotence, gitignore entry presence + idempotence, safety-gate
+  fragments in the SKILL.md body, well-formed frontmatter, and the
+  dispatch table's canonical slash-command references.
+
+
 #### `deviate constitution`
 
 * **Source:** `src/deviate/cli/constitution.py`
@@ -147,8 +244,8 @@ The Product layer ships as **agent skills** (no dedicated CLI subcommands) — t
 
 | Command | Source skill | Artifact committed | Notes |
 |---------|--------------|--------------------|-------|
-| `/deviate-flows` | `src/deviate/prompts/commands/deviate-flows.md` (FLOW-01) | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Conversational; the agent must surface clarifying questions when actor, job-to-be-done, or trigger is ambiguous. FLOW-NN IDs use `^FLOW-\d{2,}$`. |
-| `/deviate-architecture` | `src/deviate/prompts/commands/deviate-architecture.md` (FLOW-02) | `specs/_product/architecture.md` (includes `## Architectural Decision Records` when qualifying decisions exist) + `specs/_product/domain-model.md` | **Precondition:** at least one flow file under `specs/_product/flows/` must exist; otherwise the skill must surface `[red]FLOWS_MISSING[/]` and recommend `/deviate-flows` first. ADRs are one-paragraph entries appended inline when a decision is hard to reverse, surprising without context, and the result of a real tradeoff. |
+| `/deviate-flows` | `src/deviate/prompts/commands/deviate-flows.md` (FLOW-01) | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Conversational; the agent must surface clarifying questions when actor, job-to-be-done, or trigger is ambiguous. FLOW-NN IDs use `^FLOW-\d{2,}$`. **Commit protocol (v1.4.0):** Phase A drafts every flow file + index row to disk as the conversation progresses (no commit). Phase B fires exactly one `stage_and_commit` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes"), passing every session-authored flow file plus `index.md` in `files=`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit. Silence is not sign-off. |
+| `/deviate-architecture` | `src/deviate/prompts/commands/deviate-architecture.md` (FLOW-02) | `specs/_product/architecture.md` (includes `## Architectural Decision Records` when qualifying decisions exist) + `specs/_product/domain-model.md` | **Precondition:** at least one flow file under `specs/_product/flows/` must exist; otherwise the skill must surface `[red]FLOWS_MISSING[/]` and recommend `/deviate-flows` first. ADRs are one-paragraph entries appended inline when a decision is hard to reverse, surprising without context, and the result of a real tradeoff. **Commit protocol (v1.3.0):** Phase A drafts `specs/_product/architecture.md` and `specs/_product/domain-model.md` to disk as the conversation progresses and stages them via `deviate.core.commit.stage_files` so the user can `git diff --cached` while iterating — no commit fires mid-conversation. Phase B fires exactly one `stage_and_commit` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes" — silence is not sign-off), passing every session-authored architecture and domain-model file in `files=`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit and surface the discrepancy (no auto-unstage). The skill no longer calls `commit_artifact(path, msg)` — that helper emits one commit per path and would reproduce the v1.2.0 split-across-N-commits regression. `git add -A` and `git commit --only` are also forbidden. The classification banner (`Local` / `Context-Bridging` / `Context-Creating`) rides in the commit body. Never pass `no_verify=True`; if a pre-commit hook fails, surface stderr verbatim and stop — do not retry with `--no-verify`. |
 | `/deviate-release` | `src/deviate/prompts/commands/deviate-release.md` (FLOW-03) | `specs/_product/release-next.md` (overrides previous) | **Precondition:** both `specs/_product/architecture.md` and at least one flow file must exist; otherwise `[red]ARCH_OR_FLOWS_MISSING[/]`. The release goal (free-text user input) drives the Included Flows / Included Work / Acceptance tables. |
 
 **Downstream consumption:** `deviate-shard` and `deviate-adhoc` SKILL.md bodies read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context. Each sharded or adhoc issue emits a `flow_refs: [FLOW-XX, ...]` field in its YAML frontmatter and in the `IssueRecord.flow_refs` ledger entry (validated against `^FLOW-\d{2,}$`), so vertical slices stay traceable back to the flow that motivated them. `deviate adhoc pre` accepts a `--flow-ref FLOW-01,FLOW-02` CLI override to set the flow refs explicitly when the agent's natural-language inference is ambiguous.
@@ -371,11 +468,45 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Creates a GitHub PR via `gh pr create`. If `--merge` is passed, also
   merges immediately and marks the issue as COMPLETED in `issues.jsonl`. If `--auto-merge`,
   enables auto-merge on the PR.
+---
+
+#### `deviate merge --issue <id> [--stage-only] [-m <msg> ...] [--delete-branch] [--delete-worktree]`
+
+* **Source:** `src/deviate/cli/meso.py` (`_merge_run`)
+* **Description:** Marks an issue COMPLETED in the ledger with a full Pydantic-validated
+  `IssueRecord`.  Two-phase squash-merge flow used by the `/deviate-merge` slash command:
+
+  - `--stage-only` writes the COMPLETED transition to `specs/issues.jsonl` and `git add`-s
+    it, but does NOT commit.  The caller is expected to fold this into a squash-merge
+    commit.  When called a second time (e.g. after the user has already staged the
+    ledger), the transition write is idempotent — `LEDGER_IDEMPOTENT` is printed and
+    the function proceeds to the commit step instead of short-circuiting.
+  - `-m <subject> -m <body> ...` performs the combined commit: `git add -A` picks up
+    the staged feature changes, the first `-m` is routed through `format_commit_message`
+    (applying the project's emoji convention), and remaining `-m` values are passed
+    verbatim as body paragraphs.
+  - `--delete-branch` removes the local feature branch
+    (`feat/{bucket}/{slug}` derived from the issue's `source_file`), tags the
+    pre-squash branch tip with `archive/{ISSUE_ID}/{YYYY-MM-DD}` (UTC date) so
+    the full commit history survives the squash, pushes the tag to `origin`,
+    then `git push origin --delete <branch>`-es the remote branch. Before
+    running `git branch -D` the CLI inspects `git worktree list --porcelain`
+    and removes any worktree that holds the branch — so an active pre-squash
+    worktree does not block cleanup. Tag push and remote branch delete are
+    best-effort: if `origin` is not configured they are skipped silently; if
+    the remote is unreachable they print `PUSH_WARN` and local cleanup still
+    proceeds. The archive tag is always created locally first, even when no
+    remote is configured, because losing the squash-merged history is not
+    recoverable from `main` alone.
+  - `--delete-worktree` removes the worktree at `cwd` if the current directory is itself
+    a linked worktree for the issue.
+
+  The function is fully idempotent: re-running with no staged work prints
+  `LEDGER_UNCHANGED` and exits cleanly without leaving stray commits.
 
 ---
 
 ### 4. Micro Layer: TDD Sandbox (Manual Phase Commands)
-
 All micro-layer commands follow the `pre`/`post` subcommand pattern. Every `pre` subcommand
 accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the environment.
 `post` runs validation, ledger updates, and git commits.
@@ -514,14 +645,27 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`,
     `_execute_rollback()` runs `git reset --hard <red_sha>` against the
     RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of
-    the RED phase), the session is `force_transition_to("GREEN")`, and the
+    the RED phase), followed by `git clean -fd` to remove untracked files
+    and directories created during the failed GREEN attempt (preserving
+    gitignored state such as `.deviate/` by omitting `-x`); the runner
+    commits a feedback marker unconditionally and advances
+    `session.red_commit_sha` past it so a second rejection can roll back
+    only the subsequent GREEN, the session is
+    `force_transition_to("GREEN")`, and the
     previous attempt's feedback is injected as `<train_feedback>` into the next
     GREEN prompt via `_build_auto_prompt("green", ...) +
     "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from
+  When session feedback is unavailable, auto GREEN reads the matching task's persisted `**Judge Feedback**` bullets from `tasks.md` as `<persisted_judge_feedback>`. Session `train_feedback` remains authoritative when present, preventing duplicate or stale feedback; the reader is scoped to the exact task block.
     GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts
     with `PhaseFailedError`. The feedback source precedence is `train_feedback`
     on the manifest → `_extract_judge_feedback(...)` from `tasks.md` → verbatim
     verdict / rationale.
+  * **JUDGE `next_action` routing:** The runner honors `HandoverManifest.next_action`
+    verbatim. See the **JUDGE `next_action` Routing Table** in this document for
+    the four supported values (`revert_before`, `revert_to_red`,
+    `continue_refactor`, `skip_refactor`), the rollback anchors and
+    boundary-advance rules per route, and the runner fallbacks when the field
+    is absent (default: `revert_to_red` on violation, legacy behavior on pass).
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
     `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
@@ -545,6 +689,42 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     `graphite = true`, after each successful task the runner invokes
     `gt create -m "feat({TSK}): {description}"` to spin up a stacked branch for
     the next task.
+  * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
+    `PhaseFailedError` due to a manifest with `status ∈ {FAILURE, ERROR, FAIL}`
+    and empty rationale (the prior `: unknown` symptom), the message includes
+    the agent's captured stdout tail — the last 50 lines emitted by the agent
+    during the failed invocation, propagated through `_invoke_agent`'s second
+    tuple slot. Other phase callsites ignore that slot via `manifest, _ = ...`,
+    so the change is local to `_run_green_phase`. Retry cap (2 attempts) and
+    halt-on-first-failure semantics are unchanged; this is purely an
+    observability improvement for the previously opaque "unknown" failure.
+  * **GREEN Stub-PASS Guard (REMOVED):** An earlier revision of this spec
+    described a guard that rejected ``status: PASS`` manifests with zero
+    observed source changes. That implementation was rolled back:
+    deciding whether a task is done is JUDGE's job (the JUDGE prompt's
+    edge case table emits ``COMPLIANCE_PASS`` with note ``NO_DIFF`` for
+    empty diffs), not GREEN's. GREEN's only invariant is "make tests
+    pass"; a feature that already works (e.g. landed in a prior
+    session, a docs/rename task) is a legitimate zero-change PASS. The
+    field that remains is ``HandoverManifest.files: list[str] | None``
+    — declared optionally by the agent and recorded for operator
+    cross-check only.
+  * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
+    ``PhaseFailedError`` because the agent emitted
+    ``status ∈ {FAILURE, ERROR, FAIL}`` and the manifest's ``rationale``
+    is empty (the prior ``: unknown`` symptom) the message includes
+    the agent's captured stdout tail — the last 50 non-blank lines
+    emitted during the failed invocation, propagated through
+    ``_invoke_agent``'s second tuple slot on the success path. The
+    tail is also surfaced when ``rationale`` is non-empty (the section
+    is appended unconditionally to make operator log-grepping
+    uniform across phases). Every call to ``_invoke_agent`` returns
+    ``(manifest, agent_tail_str)``: the timeout branch returns the
+    subprocess partial stdout; the success branch returns the last
+    50 non-blank lines from the streaming collector
+    (``micro.py::_invoke_agent`` lines ~417-455). RED, REFACTOR, and
+    EXECUTE sites adopt the same convention so the four ``or 'unknown'``
+    fallbacks all carry the same diagnostic surface.
   * **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
     `src/deviate/ui/monitor.py`) wired to a `RunBoard`
     (`src/deviate/ui/pipeline.py`) with `total_tasks` set to the pending count.
@@ -682,6 +862,17 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   `--type` and `--status`. The `--json` flag emits the parsed record array.
 * **Common Flags:** `--json`, `--quiet`
 
+#### `deviate inspect flows coverage [--release <release.md>]`
+
+* **Source:** `src/deviate/cli/inspect.py` (`flows_coverage_command`)
+* **Description:** Read-only query surface that joins three inputs — `specs/_product/flows/index.md` (the flows catalog), `specs/_product/flows.jsonl` (the append-only events ledger seeded by `deviate explore post`), and `specs/issues.jsonl` (for issue linkage) — via `load_flow_coverage()` (`src/deviate/state/ledger.py`) to emit one `FlowCoverage` row per `FLOW-NN` with a populated `drift_flag` drawn from the seven-value taxonomy (`OK`, `STALE_DRIFT`, `ORPHANED_FLOW`, `PROMPT_ONLY_NO_CODE`, `DOC_ARTIFACT_ONLY`, `DOCUMENTED_BUT_NOT_IMPLEMENTED`, `IMPLEMENTED_BUT_UNDOCUMENTED`). Renders a Rich `Table` (Flow ID, Title, Drift Flag, Last Event) — these are STATE 3 surface rows, not banners. The command distinguishes two missing-input states with different remediation, and operators must read the banner to know which case they are in:
+  * **STATE 1 — configuration error:** `specs/_product/flows/index.md` is absent. The command emits a `[red]FLOWS_INDEX_MISSING[/]` banner on stderr and exits with code `2`. Remediation: run `/deviate-flows` to populate the catalog before any ledger can be meaningful. The catalog is a hard prerequisite.
+  * **STATE 2 — normal first-run:** `flows/index.md` exists but `specs/_product/flows.jsonl` has not yet been seeded (typical on a fresh checkout before the first `deviate explore post` has run). The command emits a `[yellow]NO_FLOWS_LEDGER[/]` banner on stderr, exits with code `0`, and renders an empty Rich table. Remediation: run `deviate explore post` (or any explore cycle) to seed the ledger; "no rows" is the correct answer, not an error.
+  * **STATE 3 — live drift:** the ledger is present and the catalog has entries. Every cataloged `FLOW-NN` shows up as a normal table row whose `drift_flag` column carries one of the seven taxonomy values above. No banner — drift surfaces row-by-row.
+* **Input Parameters:**
+  * `--release <release.md>` (Path to the active release-next Markdown file. When supplied, parses the `Included Flows` table (rows beginning with `| FLOW-`) and narrows the rendered coverage to only those `FLOW-NN` IDs explicitly listed for the release. Header markers and rows with an empty first cell are skipped silently — so the operator sees "what is still incomplete for THIS release" instead of "what is incomplete globally.")
+* **Common Flags:** `--json`, `--quiet`
+
 ---
 
 ### 7. Code Review & Quality Gates
@@ -774,7 +965,10 @@ is currenty aspirational — the rules serve as guidance for agent implementers.
 ├── config.toml               # Test parameters, target models, execution config
 ├── session.json              # State tracker (current_phase, active_issue_id, last_command)
 ├── .gitignore                # Excludes session.json from version control
-└── prompts.log               # Append-only raw agent stdout log (CLI-managed)
+└── logs/                     # Structured run/task logs (CLI-managed; not user-edited)
+    ├── run_<UTC>.log         # Per-run chronological event log — every task in the run
+    └── <ISSUE_ID>/           # Per-issue directory, one file per task
+        └── <TASK_ID>.log     # Per-task transcript: full prompt + agent stdout
 specs/
 ├── constitution.md           # Absolute project invariants and architectural constraints
 ├── issues.jsonl              # Global append-only issue registry
@@ -946,6 +1140,41 @@ All state transitions are append-only. No existing line is ever modified or over
 - Canonical state: Issues derived bottom-up (latest entry per `issue_id`); tasks derived
   sequentially (latest entry per `(id, status)` compound key)
 
+
+
+#### SessionState (Pydantic -- `src/deviate/state/config.py`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `current_phase` | Literal | `IDLE`, `RED`, `GREEN`, `JUDGE`, `REFACTOR` (see `_VALID_PHASES`) |
+| `active_issue_id` | `str` (optional) | Issue the session is bound to (`--issue` selection survives across `--all` runs) |
+| `last_command` | `str` | Last CLI command the user invoked (for resume/messaging) |
+| `train_feedback` | `str` | Last failure feedback injected as `<train_feedback>` into the next GREEN prompt |
+| `judge_rejected` | `bool` | `True` while the JUDGE verdict on the current cycle is a rejection |
+| `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_before`, `revert_to_red`, `continue_refactor`, `skip_refactor`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off |
+| `red_commit_sha` | `str` | SHA of the task's RED commit; anchors `_execute_rollback` (set at end of RED phase) and advances past each feedback commit on `revert_to_red` rejections |
+| `timestamp` | `datetime` | Auto-set on each transition (`force_transition_to`/`transition_to` rebuilds) |
+
+
+#### JUDGE `next_action` Routing Table
+
+`HandoverManifest.next_action` (`src/deviate/core/agent.py`) carries the JUDGE agent's
+decision on how to route the runner. Four values, each honored verbatim by
+`_run_judge_phase` and the EXECUTE equivalent inside `_run_execute_phase`:
+
+| `next_action` | Required verdict | Runner behavior |
+|---|---|---|
+| `revert_before` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). Clear `session.red_commit_sha` so RED re-anchors. Transition to RED with the feedback in `train_feedback`. Used when the test itself is wrong. |
+| `revert_to_red` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit. Transition to GREEN with feedback in `train_feedback`. The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. |
+| `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. |
+| `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. |
+
+Unknown `next_action` values are logged (`JUDGE_UNKNOWN_ACTION`) and the runner falls
+back to the legacy verdict-based default (rollback on violation, continue on pass).
+
+There is no interactive prompt; the manifest is the source of truth. A future `--judge-action`
+CLI flag (operator escape hatch) can override the manifest per-invocation.
+
 ---
 
 ### 4. Model Routing & Cache Strategy (Guidance, Not Enforced)
@@ -977,8 +1206,8 @@ The `AgentBackend` class (`src/deviate/core/agent.py`) supports `opencode`, `cla
 verbatim). RPC mode (`pi --mode rpc --no-session`) is opt-in via `agent.pi_rpc = true` in
 `.deviate/config.toml` and streams JSONL events so `pi.session_stats`
 (`tokens.input`/`output`/`cacheRead`/`cacheWrite`) can be appended to the
-`AGENT_RESULT` event in `.deviate/prompts.log` for cost observability. See
-DeviaTDD-architecture.md §10 for the full Pi customization contract.
+`AGENT_RESULT` event in `.deviate/logs/run_<UTC>.log` (and the per-task
+`.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`) for cost observability. See
 
 ### 5. DeepSeek V4 Pricing Reference (June 2026)
 

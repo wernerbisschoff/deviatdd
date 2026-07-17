@@ -78,6 +78,31 @@ CRITICAL INVARIANTS:
    release was emitted into chat but never written to disk, leaving
    `/deviate-explore` (the recommended next step) without a guiding
    compass file to read.
+10. **Flow Coverage Grounding (three states)**: Coverage is consulted
+    only after the State 1 gate (invariant 1) passes. Three states
+    apply: **State 1 — config error** — if
+    `specs/_product/flows/index.md` is absent, REFUSE with
+    `[red]FLOWS_INDEX_MISSING[/]` recommending `/deviate-flows` BEFORE
+    writing release-next.md (already enforced by invariant 1;
+    coverage is not consulted). **State 2 — normal first-run
+    (warn-and-proceed)** — when `flows/index.md` exists but
+    `specs/_product/flows.jsonl` is absent, surface
+    `[yellow]NO_FLOWS_LEDGER[/]` recommending `deviate explore post`
+    (or `deviate inspect flows coverage` for a dry-run view); DO NOT
+    block release writing — flows.jsonl is seed-by-explore, and a
+    release may legitimately be authored before explore has run on a
+    fresh feature, so the Included Work / Deferred Epics tables
+    proceed with reduced coverage evidence. **State 3 — real
+    coverage** — when `flows.jsonl` is seeded, cross-reference each
+    Included Work row's `Flow Refs` against the coverage rows; a
+    flow with `drift_flag == OK` and a non-empty
+    `last_referenced_by_issue_id` does NOT need new Included Work
+    entries, while a flow with
+    `drift_flag == DOCUMENTED_BUT_NOT_IMPLEMENTED` (or worse —
+    `ORPHANED_FLOW`, `STALE_DRIFT`) SHOULD appear in Included Work
+    with its backing issue IDs; if the user's goal references a
+    flow with `drift_flag != OK`, surface a `[yellow]WARN[/]` banner
+    listing the drift before writing.
 
 
 </system_instructions>
@@ -92,7 +117,14 @@ if either is missing.
 ## 2. Read Catalogs
 Load the full flow catalog from `specs/_product/flows/index.md` and the
 component→flow map from `specs/_product/architecture.md`. Build a unified
-flow-to-component lookup.
+flow-to-component lookup. Coverage grounding follows the three-state
+contract in invariant 10: invoke `load_flow_coverage()` from
+`deviate.state.ledger` only when `specs/_product/flows.jsonl`
+exists; when absent, note the State 2 gap and use
+`deviate inspect flows coverage --json` as a dry-run view. The
+coverage rows, when present, surface which FLOW-NN IDs are
+`DOCUMENTED_BUT_NOT_IMPLEMENTED` / `ORPHANED_FLOW` / `STALE_DRIFT` /
+`OK`.
 
 ## 3. Accept Release Goal
 The user supplies a release-goal description. If absent, prompt for one with
@@ -109,6 +141,12 @@ Derive from the goal:
   `Flow Refs` column.
 - **Deferred Epics section** — epics the user explicitly defers (default
   `N/A`).
+
+For each row, prefer grounding in the coverage state: a flow with
+`drift_flag == OK` and a non-empty `last_referenced_by_issue_id` does
+NOT need new Included Work entries; a flow with
+`drift_flag == DOCUMENTED_BUT_NOT_IMPLEMENTED` SHOULD appear in
+Included Work with its backing issue IDs.
 - **Acceptance Criteria section** — concrete, testable statements.
 
 ## 5. Override or Create

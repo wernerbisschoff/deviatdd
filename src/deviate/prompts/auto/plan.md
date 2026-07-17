@@ -125,3 +125,9 @@ next_phase: "TASKS"
 | `specs/_product/` directory absent | Emit `- **Flow References**: []` under `## Product Layer Anchors` and add `PRODUCT_LAYER_ABSENT` row to Risk Assessment. Do NOT halt. |
 
 </edge_case_handling>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

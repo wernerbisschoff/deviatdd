@@ -2,7 +2,7 @@
 name: deviate-architecture
 description: Author the cross-epic architecture contract — produce specs/_product/architecture.md (with ADRs) and domain-model.md (requires flows to exist first).
 category: deviatdd-product-layer
-version: 1.2.0
+version: 1.3.0
 aliases:
   - architecture
   - /deviate-architecture
@@ -89,24 +89,63 @@ CRITICAL INVARIANTS:
     streaming` after the architecture had been written. Architecture
     authored without libref grounding is rejected by the JUDGE phase
     under the same anti-fabrication rule that governs code.
-11. **Persist and Commit**: After writing `specs/_product/architecture.md`
-    and mirroring changes in `specs/_product/domain-model.md`, this skill
-    MUST persist both files to disk and create git commits via the
-    canonical helper `deviate.core.commit.commit_artifact`. Conventional
-    Commits subjects per `specs/constitution.md:71-75`:
+11. **Draft on Disk, Commit Only on Sign-Off (Phase A / Phase B)**:
+    This skill splits into two phases. Phase A (draft) writes
+    `specs/_product/architecture.md` and `specs/_product/domain-model.md`
+    to disk as the conversation progresses so the user can review
+    intermediate state; Phase B (commit) fires exactly once after the
+    user explicitly approves the final state. Auto-committing per
+    iteration would produce a chain of one-commit-per-edit commits
+    for what is conceptually a single architectural change — the
+    protocol collapses the work into one commit at sign-off, the
+    same model `/deviate-flows` v1.4.0 enforces.
 
-    - `docs(architecture): <one-line summary of the change classification>`
-    - `docs(architecture): sync domain model with architecture.md`
+    **Phase A — Draft.** Write `specs/_product/architecture.md` and
+    `specs/_product/domain-model.md` to disk via the `write` tool as
+    the conversation progresses. Stage the session-owned files via
+    `deviate.core.commit.stage_files` so the user can `git diff
+    --cached` while reviewing. Do NOT call `commit_artifact`, do NOT
+    run `git add -A`, do NOT fire any commit. The working tree
+    stays dirty-but-staged-but-uncommitted so the user can iterate
+    on the architecture without polluting the log with one-commit-per-
+    revision noise. The FLOW-04 lesson still applies: chat-only output
+    is not enough; the files MUST land on disk so downstream
+    `/deviate-release` can read them through its `ARCH_OR_FLOWS_MISSING`
+    precondition gate.
 
-    The classification banner (`Local` / `Context-Bridging` /
-    `Context-Creating`) MUST appear in either the subject or the body of
-    the first commit. The skill MUST NOT pass `no_verify=True` per
-    `AGENTS.md` §Commit Authority. If a pre-commit hook fails, surface
-    the failure verbatim and stop — do not retry with `--no-verify`.
+    **Phase B — Sign-off and one commit.** When the user signals they
+    are happy with the full set of changes ("commit", "looks good",
+    "done", "ship it", "approve", "lgtm", "yes", or any unambiguous
+    affirmative — silence is not sign-off), the skill MUST:
+    1. Render a final summary of every change to
+       `specs/_product/architecture.md` and
+       `specs/_product/domain-model.md` made this session.
+    2. Run `git diff --cached --name-only`; if any cached path is
+       outside the session-owned file set, halt and surface the
+       staged list (do NOT auto-unstage).
+    3. Invoke `deviate.core.commit.stage_and_commit` EXACTLY ONCE
+       with `files=` listing every session-authored architecture
+       and domain-model file. Pass a Conventional Commits subject
+       (`docs(architecture): <one-line summary>` or, when both
+       files changed, a single
+       `docs(architecture): <summary> and sync domain model`).
+       Embed the classification banner
+       (`Local` / `Context-Bridging` / `Context-Creating`) in the
+       commit body. Do NOT call `commit_artifact(path, msg)` —
+       that helper commits one path per call and would emit one
+       commit per file. Do NOT use `git add -A` or
+       `git commit --only`.
+    4. Never pass `no_verify=True`; if a pre-commit hook fails,
+       surface stderr verbatim and stop — do not retry with
+       `--no-verify`.
+
     This invariant is grounded in the prior session's bug where the
-    FLOW-04 architecture was emitted into chat but never written to
-    disk, which then blocked `/deviate-release` via its
-    `ARCH_OR_FLOWS_MISSING` precondition gate.
+    FLOW-04 architecture was emitted into chat but never written
+    to disk, which then blocked `/deviate-release` via its
+    `ARCH_OR_FLOWS_MISSING` precondition gate. Auto-committing per
+    iteration is the same class of failure mode in slow motion:
+    each iteration is conceptually one architectural change, and
+    the log should reflect that.
 
 
 
@@ -174,17 +213,48 @@ Mirror entity and relationship changes in `specs/_product/domain-model.md`.
 Create the file if absent. This step is a data-only mirror — the file
 write happens in step 7 below.
 
-## 7. Persist and Commit
-Both `specs/_product/architecture.md` and `specs/_product/domain-model.md`
-MUST be written to disk via the `write` tool. After both writes succeed,
-create git commits using `deviate.core.commit.commit_artifact` with the
-Conventional Commits subjects `docs(architecture): <summary>` and
-`docs(architecture): sync domain model with architecture.md`. Embed the
-classification banner (`Local` / `Context-Bridging` / `Context-Creating`)
-in the commit body. Never pass `no_verify=True`. The conversational
-output of this skill MUST NOT be considered complete until both files
-are on disk and committed — downstream `/deviate-release` reads them from
-disk to satisfy its precondition gate.
+## 7. Persist, Stage, and Confirm Sign-Off
+This step runs in two phases that mirror invariant 11. Do not skip the
+Phase B gate — auto-committing per iteration produces a chain of
+one-commit-per-edit commits for what is conceptually a single
+architectural change.
+
+**7a. Phase A — Persist and stage (no commit).** Write both
+`specs/_product/architecture.md` and `specs/_product/domain-model.md`
+to disk via the `write` tool. After both writes succeed, stage the
+session-owned files via `deviate.core.commit.stage_files` so the user
+can review with `git diff --cached`. Do NOT call `commit_artifact`,
+do NOT run `git add -A`, do NOT fire any commit. The working tree
+stays dirty-but-staged-but-uncommitted so the user can iterate on the
+architecture without polluting the log with one-commit-per-revision
+noise. If the file write fails, halt and surface the write error
+verbatim — do not commit a partial tree.
+
+**7b. Phase B — Sign-off gate.** Surface a final summary of every
+change to `specs/_product/architecture.md` and
+`specs/_product/domain-model.md` made this session and request
+explicit user approval before committing. Recognized sign-off
+phrases: "commit", "looks good", "done", "ship it", "approve",
+"lgtm", "yes", or any unambiguous affirmative. Silence is NOT
+sign-off — if the user asks for revisions, return to step 5.
+
+**7c. Phase B — Atomic commit (exactly once).** On explicit user
+sign-off, run `git diff --cached --name-only`; if any cached path is
+outside the session-owned file set, halt and surface the staged list
+(do NOT auto-unstage). Then invoke
+`deviate.core.commit.stage_and_commit` EXACTLY ONCE with `files=`
+listing every session-authored architecture and domain-model file.
+Pass a Conventional Commits subject
+(`docs(architecture): <one-line summary>` or, when both files
+changed, `docs(architecture): <summary> and sync domain model`).
+Embed the classification banner
+(`Local` / `Context-Bridging` / `Context-Creating`) in the commit
+body. Never pass `no_verify=True`; if a pre-commit hook fails,
+surface stderr verbatim and stop — do not retry with `--no-verify`.
+The conversational output of this skill MUST NOT be considered
+complete until both files are on disk and committed — downstream
+`/deviate-release` reads them from disk to satisfy its precondition
+gate.
 
 ## 8. Flow Traceability Audit
 Cross-check: every component in `architecture.md` references at least one
@@ -211,7 +281,7 @@ Inform the user that downstream `deviate shard` invocations will now emit
 | Component or ADR carries no `libref` source anchor | Halt write with `[yellow]UNVERIFIED_CLAIM[/]`; run `libref query` and ground the claim before yield |
 | `libref` package missing for a referenced library | Run `libref add <git-url>` first; only fall back to `web_search` if `libref add` fails |
 | File write to `specs/_product/architecture.md` or `domain-model.md` fails | Halt and surface the write error verbatim; do not commit a partial tree |
-| `commit_artifact` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; do not commit until the user remediates the underlying violation |
+| `stage_and_commit` reports a pre-commit hook failure during Phase B | Surface hook stderr verbatim; do not pass `no_verify=True`; halt the session and surface the failure so the user can fix the lint or format violation and re-trigger sign-off |
 | Git working tree dirty from prior work | Stash or revert before persisting; never co-mingle unrelated changes in the architecture commit |
 
 </edge_case_handling>

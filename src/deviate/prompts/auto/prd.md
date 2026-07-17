@@ -106,3 +106,9 @@ The CLI orchestrator runs `deviate prd post` after your response to validate `pr
 | Ambiguity found in upstream data | Trigger AMBIGUITY_INTERROGATION state, suppress PRD generation, emit only DECISION_READINESS + CLARIFICATION_LOG. |
 </edge_case_handling>
 
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

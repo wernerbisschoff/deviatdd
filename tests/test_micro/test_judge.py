@@ -1480,3 +1480,268 @@ class TestJudgeRefactorNoteOnPass:
         assert "Security & Governance" in prompt, (
             "Auto judge prompt must include Security & Governance dimension"
         )
+
+
+class TestExecuteRollbackUntrackedCleanup:
+    """``_execute_rollback()`` must remove untracked files and directories.
+
+    Regression: prior to this change, ``_execute_rollback()`` ran
+    ``git checkout .deviate/`` + ``git reset --hard <red_sha>`` but never
+    touched untracked artifacts. When a failed GREEN attempt left behind
+    scratch files (``*.pyc``, build outputs, helper scripts), those files
+    persisted into the next RED attempt and could be picked up by pytest
+    collection, produce false positives, or interfere with the test writer
+    agent's edits.
+
+    The fix: after the ``git reset --hard``, run ``git clean -fd`` (force
+    + directories, **without** ``-x`` so gitignored state like
+    ``.deviate/``, ``.mise/``, ``__pycache__/`` is preserved).
+    """
+
+    def _setup_repo_with_red_boundary(
+        self,
+        tmp_git_repo: Path,
+        *,
+        with_green_commit: bool = False,
+    ) -> tuple[str, str]:
+        """Build a RED boundary SHA in ``tmp_git_repo`` and return (red_sha, green_sha_or_empty).
+
+        Creates a tracked ``red.py`` file and commits it as the RED
+        boundary. Optionally adds a second commit (``green.py``) so the
+        rollback has history to discard. Writes ``.deviate/session.json``
+        with ``red_commit_sha`` so ``_resolve_red_boundary_sha()`` returns
+        the precise boundary (instead of falling back to ``HEAD~1``).
+        In production ``.deviate/`` is gitignored, so ``git clean -fd``
+        (without ``-x``) preserves the audit trail. The fixture mirrors
+        that by writing a ``.gitignore`` ignoring ``.deviate/`` *before*
+        the RED boundary commit, so the safety invariant is exercised.
+        """
+        # Mirror the project `.gitignore`: `.deviate/` is gitignored so
+        # `git clean -fd` (without `-x`) skips it. This must be committed
+        # to take effect, so it's the very first tracked content.
+        (tmp_git_repo / ".gitignore").write_text(".deviate/\n")
+        subprocess.run(
+            ["git", "add", ".gitignore"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "chore: initial .gitignore"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        red_file = tmp_git_repo / "red.py"
+        red_file.write_text("# RED: failing test\n")
+        subprocess.run(
+            ["git", "add", "red.py"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "RED: add failing test"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        red_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        green_sha = ""
+        if with_green_commit:
+            green_file = tmp_git_repo / "green.py"
+            green_file.write_text("# GREEN: implementation\n")
+            subprocess.run(
+                ["git", "add", "green.py"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "GREEN: implementation"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            green_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+        # Persist session.json with red_commit_sha so _resolve_red_boundary_sha
+        # returns the precise boundary (not HEAD~1, which fails when the
+        # GREEN commit doesn't exist).
+        deviate_dir = tmp_git_repo / ".deviate"
+        deviate_dir.mkdir(parents=True, exist_ok=True)
+        session_payload = {
+            "current_phase": "JUDGE",
+            "active_issue_id": None,
+            "last_command": "",
+            "train_feedback": "",
+            "judge_rejected": False,
+            "red_commit_sha": red_sha,
+            "timestamp": "2026-07-13T00:00:00Z",
+        }
+        (deviate_dir / "session.json").write_text(
+            json.dumps(session_payload), encoding="utf-8"
+        )
+
+        return red_sha, green_sha
+
+    def test_rollback_removes_untracked_files(self, tmp_git_repo: Path) -> None:
+        """Untracked files left by a failed GREEN are wiped on rollback.
+
+        Scenario: RED committed ``red.py``. GREEN committed ``green.py`` and
+        also left behind an untracked ``scratch.py`` (simulating a build
+        artifact or scratch file the agent created). After rollback:
+        ``scratch.py`` must NOT exist, ``green.py`` must be gone (reset to
+        red_sha), and ``red.py`` must still be present.
+        """
+        from deviate.cli.micro import _execute_rollback
+
+        red_sha, _green_sha = self._setup_repo_with_red_boundary(
+            tmp_git_repo, with_green_commit=True
+        )
+
+        # GREEN leaves behind an untracked artifact
+        scratch = tmp_git_repo / "scratch.py"
+        scratch.write_text("# scratch\n")
+        assert scratch.exists(), "Pre-condition: scratch.py must exist before rollback"
+
+        # Pre-condition: HEAD is ahead of red_sha
+        head_before = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert head_before != red_sha, (
+            "Pre-condition: HEAD must differ from red_sha so reset is meaningful"
+        )
+
+        red_sha_returned = _execute_rollback(
+            tmp_git_repo, reason="violation: stray file"
+        )
+
+        assert red_sha_returned == red_sha
+
+        # Untracked artifact must be gone
+        assert not scratch.exists(), (
+            f"_execute_rollback must remove untracked files (scratch.py still exists at {scratch})"
+        )
+
+        # Tracked history must be reset to red_sha
+        head_after = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert head_after == red_sha, (
+            f"_execute_rollback must reset HEAD to red_sha; got {head_after}"
+        )
+
+        # RED file must still be present (preserved by the reset)
+        assert (tmp_git_repo / "red.py").exists(), (
+            "_execute_rollback must preserve the RED boundary's tracked files"
+        )
+        # GREEN file must be gone (reset discards tracked commits)
+        assert not (tmp_git_repo / "green.py").exists(), (
+            "_execute_rollback must discard tracked commits made during GREEN"
+        )
+
+    def test_rollback_removes_untracked_directories(self, tmp_git_repo: Path) -> None:
+        """Untracked DIRECTORIES (with contents) are wiped by ``git clean -fd``.
+
+        The ``-d`` flag is what enables this — without it, ``git clean -f``
+        would skip directories and leave their contents behind.
+        """
+        from deviate.cli.micro import _execute_rollback
+
+        red_sha, _green_sha = self._setup_repo_with_red_boundary(
+            tmp_git_repo, with_green_commit=True
+        )
+
+        # GREEN leaves behind an untracked artifact directory
+        scratch_dir = tmp_git_repo / "scratch_dir"
+        scratch_dir.mkdir()
+        (scratch_dir / "inner.py").write_text("# inner\n")
+        assert (scratch_dir / "inner.py").exists(), (
+            "Pre-condition: scratch_dir/inner.py must exist before rollback"
+        )
+
+        _execute_rollback(tmp_git_repo, reason="violation: stray directory")
+
+        assert not scratch_dir.exists(), (
+            f"_execute_rollback must remove untracked directories (scratch_dir still exists at {scratch_dir})"
+        )
+        assert not (scratch_dir / "inner.py").exists(), (
+            "Contents of untracked directories must be removed"
+        )
+
+        # Tracked history must still be reset to red_sha
+        head_after = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert head_after == red_sha
+
+    def test_rollback_preserves_gitignored_dotdeviate(self, tmp_git_repo: Path) -> None:
+        """``git clean -fd`` (without ``-x``) must preserve gitignored state.
+
+        ``.deviate/`` is gitignored (per the project ``.gitignore``). The
+        rollback calls ``append_rollback_snapshot`` which writes to
+        ``.deviate/rollback.jsonl``. After rollback:
+          * ``.deviate/`` directory must still exist (we wrote to it).
+          * ``.deviate/session.json`` (the file we authored) must still
+            exist — it's gitignored, NOT a tracked file, so the
+            ``git checkout .deviate/`` step is a no-op for it and the
+            ``git clean -fd`` step (no ``-x``) must skip it.
+          * ``.deviate/rollback.jsonl`` (created by the rollback itself)
+            must still exist for the audit trail to be intact.
+        """
+        from deviate.cli.micro import _execute_rollback
+
+        red_sha, _green_sha = self._setup_repo_with_red_boundary(
+            tmp_git_repo, with_green_commit=False
+        )
+
+        # Sanity: setup wrote .deviate/session.json (gitignored)
+        deviate_dir = tmp_git_repo / ".deviate"
+        assert (deviate_dir / "session.json").exists()
+
+        _execute_rollback(tmp_git_repo, reason="violation: audit-trail safety")
+
+        # The gitignored .deviate/ directory must survive — `git clean -fd`
+        # without `-x` does not touch gitignored paths.
+        assert deviate_dir.exists(), (
+            ".deviate/ must survive rollback (gitignored, `git clean -fd` without `-x` skips it)"
+        )
+        assert (deviate_dir / "session.json").exists(), (
+            ".deviate/session.json must survive rollback"
+        )
+        # The rollback ledger entry itself must persist
+        assert (deviate_dir / "rollback.jsonl").exists(), (
+            ".deviate/rollback.jsonl (audit trail) must persist across rollback"
+        )

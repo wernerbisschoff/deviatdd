@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from deviate.core.commands import discover_commands, install_command, resolve_command
+from deviate.core.commands import (
+    discover_commands,
+    install_command,
+    resolve_command,
+)
+
+_SOURCE_COMMANDS_ROOT = (
+    Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "commands"
+)
 
 
 class TestDiscoverCommands:
@@ -184,6 +192,148 @@ class TestShardCommandIssueIdFormat:
         """The rule must explicitly show the flat counter pattern."""
         text = self._command_text()
         assert "ISS-003" in text or "ISS-004" in text
+
+
+class TestDeviateFlowsCommitAtSignOff:
+    """``/deviate-flows`` v1.4.0 contract: draft-on-disk, commit-only-on-sign-off,
+    one ``stage_and_commit`` call with the explicit flow/index file list.
+
+    Regression contract for the v1.3.0 → v1.4.0 protocol change. These four
+    guards describe user-visible behavior; they intentionally avoid parsing
+    python code blocks or asserting prose phrasing beyond the contract.
+    """
+
+    @staticmethod
+    def _command_text() -> str:
+        return resolve_command(
+            "deviate-flows", commands_root=_SOURCE_COMMANDS_ROOT
+        ).read_text(encoding="utf-8")
+
+    def test_drafts_remain_uncommitted_during_conversation(self):
+        """Phase A writes flow files + index rows to disk but does NOT
+        commit them mid-conversation. The skill must defer all commits
+        until explicit sign-off.
+        """
+        text = self._command_text()
+        # The invariant must describe a Phase A draft step and forbid
+        # any commit during it.
+        assert "Phase A" in text and "Draft" in text
+        assert "No commit fires during Phase A" in text or (
+            "no commit fires during phase a" in text.lower()
+        )
+
+    def test_explicit_user_sign_off_required(self):
+        """Committing requires explicit user approval. Recognized signals
+        are listed in the prompt; silence is not sign-off.
+        """
+        text = self._command_text()
+        for signal in ("commit", "looks good", "done", "ship it", "approve", "lgtm"):
+            assert signal in text, f"Sign-off signal {signal!r} missing from prompt"
+        # Negative guard: silence / topic change must not count.
+        assert (
+            "Silence is not sign-off" in text
+            or "silence is not sign-off" in text.lower()
+        )
+
+    def test_one_stage_and_commit_with_explicit_flow_index_list(self):
+        """The single end-of-session commit MUST be invoked via
+        ``stage_and_commit`` exactly once, with ``files=`` covering every
+        session-authored flow file plus ``index.md``. Calling the older
+        ``commit_artifact(path, msg)`` helper (one commit per path) or
+        ``git add -A`` (sweeps unrelated work) is forbidden.
+        """
+        text = self._command_text()
+        assert "stage_and_commit" in text
+        assert "EXACTLY ONCE" in text or "exactly once" in text.lower()
+        assert "files=" in text
+        assert "flows-<domain>.md" in text
+        assert "index.md" in text
+        assert "git add -A" in text  # must mention to forbid it
+        # commit_artifact is mentioned only as a "do NOT" warning.
+        assert "commit_artifact" in text
+
+    def test_old_two_commits_wording_is_gone(self):
+        """Guard against the v1.3.0 ambiguity regressing. The old prompt
+        said ``create a single git commit (or two commits, one per file)``
+        — that wording must never return.
+        """
+        text = self._command_text()
+        assert "or two commits, one per file" not in text
+        assert "create a single git commit (or two commits" not in text
+
+
+class TestDeviateArchitectureCommitAtSignOff:
+    """``/deviate-architecture`` v1.3.0 contract: draft-on-disk, commit-only-on-sign-off,
+    one ``stage_and_commit`` call with the explicit architecture/domain-model file list.
+
+    Regression contract for the v1.2.0 → v1.3.0 protocol change. The v1.2.0
+    prompt auto-committed each file via ``commit_artifact(path, msg)`` after
+    every write, producing one-commit-per-edit chains across what should be
+    a single architectural change. These guards describe user-visible behavior;
+    they intentionally avoid parsing python code blocks or asserting prose
+    phrasing beyond the contract.
+    """
+
+    @staticmethod
+    def _command_text() -> str:
+        return resolve_command(
+            "deviate-architecture", commands_root=_SOURCE_COMMANDS_ROOT
+        ).read_text(encoding="utf-8")
+
+    def test_drafts_remain_uncommitted_during_conversation(self):
+        """Phase A writes architecture and domain-model files to disk but does
+        NOT commit them mid-conversation. The skill must defer all commits
+        until explicit sign-off.
+        """
+        text = self._command_text()
+        # The invariant must describe a Phase A draft step and forbid any
+        # commit during it.
+        assert "Phase A" in text and "Draft" in text
+        assert "No commit fires" in text or "do NOT fire any commit" in text
+
+    def test_explicit_user_sign_off_required(self):
+        """Committing requires explicit user approval. Recognized signals are
+        listed in the prompt; silence is not sign-off.
+        """
+        text = self._command_text()
+        for signal in ("commit", "looks good", "done", "ship it", "approve", "lgtm"):
+            assert signal in text, f"Sign-off signal {signal!r} missing from prompt"
+        # Negative guard: silence / topic change must not count.
+        assert (
+            "Silence is NOT sign-off" in text
+            or "silence is not sign-off" in text.lower()
+        )
+
+    def test_one_stage_and_commit_with_explicit_file_list(self):
+        """The single end-of-session commit MUST be invoked via
+        ``stage_and_commit`` exactly once, with ``files=`` covering every
+        session-authored architecture and domain-model file. Calling the
+        older ``commit_artifact(path, msg)`` helper (one commit per path)
+        or ``git add -A`` (sweeps unrelated work) is forbidden.
+        """
+        text = self._command_text()
+        assert "stage_and_commit" in text
+        assert "EXACTLY ONCE" in text or "exactly once" in text.lower()
+        assert "files=" in text
+        assert "architecture.md" in text
+        assert "domain-model.md" in text
+        assert "git add -A" in text  # must mention to forbid it
+        # commit_artifact is mentioned only as a "do NOT" warning.
+        assert "commit_artifact" in text
+
+    def test_old_two_commits_wording_is_gone(self):
+        """Guard against the v1.2.0 wording regressing. The old prompt said
+        ``create git commits using deviate.core.commit.commit_artifact`` and
+        emitted two commit subjects ``docs(architecture): <summary>`` and
+        ``docs(architecture): sync domain model with architecture.md`` — that
+        per-file commit pattern must never return.
+        """
+        text = self._command_text()
+        # The old per-file commit-orchestration prose must be gone.
+        assert (
+            "create git commits using `deviate.core.commit.commit_artifact`" not in text
+        )
+        assert "sync domain model with architecture.md" not in text
 
 
 class TestPlatformFrontmatter:

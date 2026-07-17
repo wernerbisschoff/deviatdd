@@ -53,12 +53,15 @@ def _resolve_core_dir() -> Path | None:
 
 
 def compose_command_body(raw: str, core_dir: Path) -> str | None:
-    """Compose a command body by prepending core.md and layer-command.md.
+    """Compose a command body by prepending core.md, layer-shared.md, and lifecycle-manual.md.
 
     Returns the full composed text (frontmatter + prefix + original body),
     or *None* if *raw* has no valid YAML frontmatter.
 
-    The *core_dir* must contain ``core.md`` and ``{layer}-command.md`` files.
+    The *core_dir* must contain ``core.md``, ``{layer}-shared.md`` (shared
+    with auto-mode composition in :mod:`deviate.prompts.assembly`), and
+    ``lifecycle-manual.md`` (the manual-mode counterpart to
+    ``lifecycle-auto.md``).
     """
     fm_match = _YAML_FM_RE.match(raw)
     if not fm_match:
@@ -75,9 +78,17 @@ def compose_command_body(raw: str, core_dir: Path) -> str | None:
     layer_match = _LAYER_RE.search(frontmatter)
     if layer_match:
         layer = layer_match.group(1).strip()
-        layer_content = _read_text(core_dir / f"{layer}-command.md")
+        layer_content = _read_text(core_dir / f"{layer}-shared.md")
         if layer_content:
             parts.append(layer_content)
+
+    # Manual-mode lifecycle block (Pre/Post Script + HITL handoff) —
+    # counterpart to lifecycle-auto.md used by load_template() in
+    # deviate.prompts.assembly. Auto and manual share layer-shared.md;
+    # only the lifecycle block differs.
+    lifecycle = _read_text(core_dir / "lifecycle-manual.md")
+    if lifecycle:
+        parts.append(lifecycle)
 
     prefix = "\n\n".join(parts) if parts else None
     if prefix:

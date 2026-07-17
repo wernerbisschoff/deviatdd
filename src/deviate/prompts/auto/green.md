@@ -34,6 +34,16 @@ Forbidden:
 - Run `git add`, `git commit`, `git checkout`, `git branch`, `git status`
 - Write to `specs/**/tasks.jsonl` or `.deviate/session.json`
 
+
+**Handover contract — files (recommended):** When the implementation
+touches any files under `src/`, `lib/`, or `app/`, list every path you
+created or modified in the optional ``files:`` field of the YAML
+manifest. The orchestrator does NOT reject bare PASS manifests (a
+feature may already work; JUDGE decides completion against
+``spec.md``), so emitting ``status: PASS`` with an empty ``files:``
+list is a legitimate outcome. ``files:`` is recorded for operator
+cross-check, not used as evidence of work — evidence is the post-agent
+``git diff``.
 **If you modify tests: the pipeline will retry, and on the second attempt the
 task will fail permanently.**
 </green_lines>
@@ -66,6 +76,12 @@ task will fail permanently.**
 3. Validate against `<spec_content>` and `<data_model_content>` above
 </step>
 
+<step id="feedback_ingestion">
+1. If the prompt contains a `<train_feedback>` block, treat it as the **authoritative, current** instruction from the orchestrator. Implement against it directly — it reflects the live retry signal.
+2. If `<train_feedback>` is absent and the prompt contains a `<persisted_judge_feedback>` block, treat that as the source of truth. Each line inside is a verbatim `**Judge Feedback**` bullet persisted under this task in `tasks.md` by a previous JUDGE run; resolve every bullet before declaring GREEN done.
+3. If both are present, `<train_feedback>` wins — `<persisted_judge_feedback>` is stale history and must be ignored (the orchestrator only ever surfaces one at a time).
+</step>
+
 <step id="implementation">
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
 2. Write ONLY production code — leave all `tests/` files untouched
@@ -95,6 +111,11 @@ Target_Artifact: `path/to/source_file.ext`
 phase: GREEN
 status: "PASS"
 task_id: "{TASK_ID}"
+# Optional `files:` list — recommended when the implementation touched
+# src/, lib/, or app/. Recorded for operator cross-check; not used as
+# evidence of work (JUDGE reviews the git diff).
+files:
+  - "src/<path/you/created_or_modified.ext>"
 ```
 </handover_manifest>
 </step>
@@ -114,6 +135,10 @@ Target_Artifact: `path/to/source_file.ext`
 phase: GREEN
 status: "PASS"
 task_id: "{TASK_ID}"
+# Optional `files:` — include when implementation touched src/lib/app.
+# Recorded for cross-check; not enforced.
+files:
+  - "src/<path/you/created_or_modified.ext>"
 ```
 </handover_manifest>
 
@@ -133,5 +158,7 @@ Use `status: "ERROR"` only for tool failures or unforeseen problems.
 | Test file not found | Read RED handover manifest for test file path; if missing, search for test files matching the task_id |
 | Post-script returns COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
+| `<persisted_judge_feedback>` block present | Treat every `**Judge Feedback**` bullet as a required fix; do not silently re-trigger the failing path |
+| Both `<train_feedback>` and `<persisted_judge_feedback>` present | Use `<train_feedback>` exclusively; the persisted block is stale history from a prior JUDGE run and must be ignored |
 
 </edge_case_handling>

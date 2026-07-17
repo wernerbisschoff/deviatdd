@@ -1852,9 +1852,10 @@ def _merge_run(
         console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
         raise typer.Exit(code=1)
 
-    if record.status == "COMPLETED":
-        console.print(f"[yellow]ALREADY_COMPLETED[/] {issue_id}")
-    else:
+    # Ensure the ledger has the COMPLETED transition (idempotent — handles
+    # both the first --stage-only call and the subsequent --message call
+    # which sees the already-COMPLETED record).
+    if record.status != "COMPLETED":
         completed = record.model_copy(
             update={
                 "status": "COMPLETED",
@@ -1869,55 +1870,66 @@ def _merge_run(
                 f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
             )
 
-        # Commit the ledger change
-        repo_root = Path.cwd()
+    # Stage the ledger file (idempotent — safe to re-run).
+    repo_root = Path.cwd()
+    try:
+        subprocess.run(
+            ["git", "add", str(ledger_path)],
+            cwd=repo_root,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        if "nothing to commit" in stderr:
+            console.print("[yellow]LEDGER_UNCHANGED[/]")
+        else:
+            console.print(f"[yellow]STAGE_WARN[/] {stderr}")
+        raise typer.Exit(code=1)
+
+    # Commit (only when not --stage-only). Pulled out of the COMPLETED
+    # branch above so --stage-only followed by --message produces a single
+    # combined commit regardless of the ALREADY_COMPLETED state.
+    if not stage_only:
         try:
-            subprocess.run(
-                ["git", "add", str(ledger_path)],
-                cwd=repo_root,
-                env=_git_env(),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            if not stage_only:
-                if message:
-                    # Custom message: combined commit (feature + ledger)
-                    subprocess.run(
-                        ["git", "add", "-A"],
-                        cwd=repo_root,
-                        env=_git_env(),
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    subject = format_commit_message(message[0], repo_root)
-                    cmd: list[str] = ["git", "commit", "-m", subject]
-                    for body in message[1:]:
-                        cmd.extend(["-m", body])
-                else:
-                    subject = format_commit_message(
-                        f"chore({issue_id}): mark COMPLETED in ledger", repo_root
-                    )
-                    cmd = ["git", "commit", "-m", subject]
+            if message:
+                # Custom message: combined commit (feature + ledger).
                 subprocess.run(
-                    cmd,
+                    ["git", "add", "-A"],
                     cwd=repo_root,
                     env=_git_env(),
                     check=True,
                     capture_output=True,
                     text=True,
                 )
-                console.print("[green]COMMITTED[/]")
+                subject = format_commit_message(message[0], repo_root)
+                cmd: list[str] = ["git", "commit", "-m", subject]
+                for body in message[1:]:
+                    cmd.extend(["-m", body])
             else:
-                console.print("[green]LEDGER_STAGED[/]")
+                subject = format_commit_message(
+                    f"chore({issue_id}): mark COMPLETED in ledger", repo_root
+                )
+                cmd = ["git", "commit", "-m", subject]
+            subprocess.run(
+                cmd,
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            console.print("[green]COMMITTED[/]")
         except subprocess.CalledProcessError as e:
             stderr = (e.stderr or "").strip()
             if "nothing to commit" in stderr:
                 console.print("[yellow]LEDGER_UNCHANGED[/]")
             else:
                 console.print(f"[yellow]COMMIT_WARN[/] {stderr}")
-    # Optional cleanup (skip in stage-only mode)
+    else:
+        console.print("[green]LEDGER_STAGED[/]")
     if not stage_only:
         if delete_worktree:
             worktree_path = Path.cwd()
@@ -1932,6 +1944,132 @@ def _merge_run(
                 f"feat/{_resolve_bucket_dir(record.source_file)}"
                 f"/{_source_stem(record.source_file)}"
             )
+            archive_tag = (
+                f"archive/{issue_id}/{datetime.now(timezone.utc).date().isoformat()}"
+            )
+            # If the branch is checked out in a worktree, remove that
+            # worktree first so ``git branch -D`` does not fail with
+            # "branch ... used by worktree".
+            try:
+                wt_list = subprocess.run(
+                    ["git", "worktree", "list", "--porcelain"],
+                    cwd=Path.cwd(),
+                    env=_git_env(),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+                wt_path_str: str | None = None
+                for block in wt_list.split("\n\n"):
+                    if f"branch refs/heads/{branch_name}" in block:
+                        for line in block.splitlines():
+                            if line.startswith("worktree "):
+                                wt_path_str = line.split(" ", 1)[1]
+                                break
+                        break
+                if wt_path_str and Path(wt_path_str).exists():
+                    subprocess.run(
+                        ["git", "worktree", "remove", "--force", wt_path_str],
+                        cwd=Path.cwd(),
+                        env=_git_env(),
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    console.print(f"[green]WORKTREE_REMOVED[/] {wt_path_str}")
+            except subprocess.CalledProcessError:
+                # ``git worktree list`` failed — fall through and try to
+                # delete the branch anyway.
+                pass
+            # Tag the pre-squash branch tip before deletion so the full
+            # commit history stays recoverable. ``git merge --squash``
+            # collapses every feature commit into one main commit — the
+            # archive tag is the only link back to the per-commit graph.
+            try:
+                subprocess.run(
+                    ["git", "tag", archive_tag, branch_name],
+                    cwd=Path.cwd(),
+                    env=_git_env(),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                console.print(f"[green]ARCHIVE_TAG[/] {archive_tag}")
+            except subprocess.CalledProcessError as e:
+                console.print(
+                    f"[yellow]ARCHIVE_TAG_SKIP[/] {branch_name}: "
+                    f"{(e.stderr or '').strip()}"
+                )
+            # Best-effort: push the tag and delete the remote branch.
+            # Skip silently when ``origin`` is not configured; surface
+            # ``PUSH_WARN`` and continue when the remote is unreachable
+            # or returns an error so local cleanup still proceeds.
+            try:
+                remote_check = subprocess.run(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd=Path.cwd(),
+                    env=_git_env(),
+                    capture_output=True,
+                    text=True,
+                )
+                if remote_check.returncode == 0:
+                    try:
+                        subprocess.run(
+                            ["git", "push", "origin", archive_tag],
+                            cwd=Path.cwd(),
+                            env=_git_env(),
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                        )
+                        console.print(
+                            f"[green]ARCHIVE_PUSHED[/] {archive_tag} -> origin"
+                        )
+                    except subprocess.CalledProcessError as e:
+                        console.print(
+                            f"[yellow]PUSH_WARN[/] tag push failed: "
+                            f"{(e.stderr or '').strip()}"
+                        )
+                    try:
+                        subprocess.run(
+                            [
+                                "git",
+                                "push",
+                                "origin",
+                                "--delete",
+                                branch_name,
+                            ],
+                            cwd=Path.cwd(),
+                            env=_git_env(),
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                        )
+                        console.print(
+                            f"[green]REMOTE_BRANCH_DELETED[/] origin/{branch_name}"
+                        )
+                    except subprocess.CalledProcessError as e:
+                        stderr = (e.stderr or "").strip()
+                        # "remote ref does not exist" / "could not find" on an
+                        # already-gone branch is the expected post-merge state
+                        # — not a warning.
+                        if (
+                            "not found" in stderr
+                            or "does not exist" in stderr
+                            or "could not find" in stderr
+                        ):
+                            console.print(
+                                f"[yellow]REMOTE_BRANCH_SKIP[/] "
+                                f"origin/{branch_name} already gone"
+                            )
+                        else:
+                            console.print(
+                                f"[yellow]PUSH_WARN[/] remote branch delete "
+                                f"failed: {stderr}"
+                            )
+            except Exception:
+                # ``git remote get-url`` itself failed — skip remote ops.
+                pass
             try:
                 subprocess.run(
                     ["git", "branch", "-D", branch_name],
@@ -1944,7 +2082,6 @@ def _merge_run(
                 console.print(f"[green]BRANCH_DELETED[/] {branch_name}")
             except subprocess.CalledProcessError:
                 console.print(f"[yellow]BRANCH_SKIP[/] {branch_name} not found locally")
-
         session.active_issue_id = None
         session.current_phase = "IDLE"
         _save_session(session, session_path, "IDLE")

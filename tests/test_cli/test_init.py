@@ -1,3 +1,4 @@
+import importlib.resources
 import subprocess
 import tomllib
 from contextlib import chdir
@@ -1228,6 +1229,347 @@ class TestInitPiBackend:
                 assert not skill_file.is_symlink(), (
                     f"Skill file unexpectedly a symlink: {skill_file}"
                 )
+
+
+class TestInstallDeviatddSkill:
+    """Tests for the project-local ``deviatdd`` skill provisioned by
+    ``deviate setup``.
+
+    The skill is the ONLY skill — there are no siblings. It is installed
+    to ``<workdir>/.<agent>/skills/deviatdd/SKILL.md`` for every active
+    agent platform (``claude``, ``opencode``, ``factory``, ``pi``,
+    ``omp``) — write-everywhere, regardless of whether each platform
+    documents a project-local skills convention. Mirrors the
+    ``_install_commands_to_agents`` write-everywhere policy.
+
+    Auto-discovery status per platform (informational, does not gate
+    the install): Claude and Pi document the convention and auto-
+    discover; OpenCode and Factory have no documented convention
+    (file on disk for forward-compat); OMP documents only user-level
+    skills (operators register via OMP's settings.skills array).
+
+    The project-root ``.gitignore`` excludes the skill install dir
+    via a single ``*/skills/deviatdd/`` wildcard — mirrors the
+    existing ``*/commands/deviate-*.md`` and ``*/prompts/deviate-*.md``
+    single-level patterns.
+    """
+
+    def test_setup_installs_deviatdd_skill_for_claude_and_pi(
+        self, tmp_path: Path
+    ) -> None:
+        """``deviate setup`` writes the deviatdd skill to BOTH
+        ``.claude/skills/deviatdd/SKILL.md`` and
+        ``.pi/skills/deviatdd/SKILL.md`` regardless of which ``--agent``
+        was selected (skill is platform-agnostic and the install is
+        unconditional)."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert result.exit_code == 0, result.output
+
+        claude_skill = tmp_path / ".claude" / "skills" / "deviatdd" / "SKILL.md"
+        pi_skill = tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md"
+
+        assert claude_skill.is_file(), f"Claude skill not installed: {claude_skill}"
+        assert pi_skill.is_file(), f"Pi skill not installed: {pi_skill}"
+        assert claude_skill.read_text() == pi_skill.read_text(), (
+            "Claude and Pi skill copies diverged — installer must "
+            "emit identical content for both platforms"
+        )
+
+        # Both install log lines must appear.
+        assert ".claude/skills/deviatdd/SKILL.md" in result.output
+        assert ".pi/skills/deviatdd/SKILL.md" in result.output
+
+    def test_setup_installs_deviatdd_skill_for_all_five_active_agents(
+        self, tmp_path: Path
+    ) -> None:
+        """All five ``active_agents`` (``claude``, ``opencode``,
+        ``factory``, ``pi``, ``omp``) get the deviatdd skill installed
+        at ``<workdir>/.<agent>/skills/deviatdd/SKILL.md`` regardless of
+        whether each platform's documented skills convention auto-
+        discovers from that path. Mirrors
+        ``_install_commands_to_agents``'s write-everywhere policy.
+
+        Content must be byte-identical across all five destinations --
+        the skill body is single-source-of-truth at
+        ``src/deviate/prompts/skills/deviatdd/SKILL.md``.
+        """
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+        bodies: dict[str, str] = {}
+        for agent in ("claude", "opencode", "factory", "pi", "omp"):
+            skill_path = tmp_path / f".{agent}" / "skills" / "deviatdd" / "SKILL.md"
+            assert skill_path.is_file(), (
+                f"{agent} should have a project-local skill installed at "
+                f"{skill_path} (write-everywhere policy)"
+            )
+            assert f".{agent}/skills/deviatdd/SKILL.md" in result.output, (
+                f"Missing INSTALL log for {agent}; got:\n{result.output}"
+            )
+            bodies[agent] = skill_path.read_text()
+
+        # All five copies must be byte-identical.
+        first_agent, first_body = next(iter(bodies.items()))
+        for agent, body in bodies.items():
+            assert body == first_body, (
+                f"Skill copy for {agent} differs from {first_agent} -- "
+                f"the installer must emit identical content for every "
+                f"agent platform"
+            )
+
+    def test_setup_deviatdd_skill_idempotent(self, tmp_path: Path) -> None:
+        """Re-running setup with identical content produces SKIP log
+        lines and does not rewrite the files (mirror the existing
+        ``install_command`` contract)."""
+        with chdir(tmp_path):
+            first = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert first.exit_code == 0, first.output
+
+            second = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert second.exit_code == 0, second.output
+
+        # Both targets SKIP on the second run.
+        assert "SKIP .claude/skills/deviatdd/SKILL.md" in second.output
+        assert "SKIP .pi/skills/deviatdd/SKILL.md" in second.output
+
+    def test_setup_deviatdd_skill_gitignore_entries(self, tmp_path: Path) -> None:
+        """Root ``.gitignore`` excludes the project-local skill install
+        dir via a single ``*/skills/deviatdd/`` wildcard — mirrors
+        the existing ``*/commands/deviate-*.md`` and
+        ``*/prompts/deviate-*.md`` single-level patterns. The five
+        directory-specific entries (``.claude/``, ``.opencode/``,
+        ``.factory/``, ``.pi/``, ``.omp/``) are covered by the
+        wildcard, not enumerated separately. Single-level prefix
+        (not ``**/``) is critical: it scopes the pattern to the
+        project root and guarantees the source-of-truth at
+        ``src/deviate/prompts/skills/deviatdd/`` (three directories
+        deep) is never silently matched."""
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+
+        gi = (tmp_path / ".gitignore").read_text()
+        # Single `*/skills/deviatdd/` wildcard covers all five
+        # agent platforms (claude, opencode, factory, pi, omp) —
+        # mirrors the existing `*/commands/` and `*/prompts/`
+        # single-level patterns in `_ensure_root_gitignore`.
+        assert "*/skills/deviatdd/" in gi, (
+            f"Expected '*/skills/deviatdd/' in root .gitignore; got:\n{gi}"
+        )
+
+        # The five old per-platform entries must NOT be present —
+        # the wildcard replaced them. This pins the refactor and
+        # prevents regressions to the directory-specific form.
+        for agent in ("claude", "opencode", "factory", "pi", "omp"):
+            old_entry = f".{agent}/skills/deviatdd/"
+            assert old_entry not in gi, (
+                f"{old_entry!r} should be replaced by the "
+                f"'*/skills/deviatdd/' wildcard; got:\n{gi}"
+            )
+
+    def test_setup_deviatdd_skill_gitignore_idempotent(self, tmp_path: Path) -> None:
+        """Re-running setup does NOT duplicate the gitignore entries."""
+        with chdir(tmp_path):
+            runner.invoke(cli, ["setup", "--agent", "opencode"])
+            runner.invoke(cli, ["setup", "--agent", "opencode"])
+
+        gi = (tmp_path / ".gitignore").read_text()
+        assert gi.count("*/skills/deviatdd/") == 1, (
+            f"'*/skills/deviatdd/' duplicated in root .gitignore:\n{gi}"
+        )
+
+    def test_deviatdd_skill_body_contains_safety_gate(self) -> None:
+        """The SKILL.md body contains the four-step safety gate as
+        literal strings — proves the destructive-op safety scaffold
+        AGENTS.md requires is actually present in the shipped skill."""
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+
+        for needle in (
+            "git status --porcelain",
+            "git reset --hard",
+            "git clean -fd",
+        ):
+            assert needle in body, (
+                f"Safety-gate fragment {needle!r} missing from SKILL.md — "
+                f"AGENTS.md forbids destructive ops without confirmation"
+            )
+
+        # Confirmation keyword: must include at least one of the
+        # unambiguous affirmation tokens.
+        confirmation_keywords = ("yes", "do it", "reset", "ship it", "confirm")
+        assert any(kw in body.lower() for kw in confirmation_keywords), (
+            "Confirmation gate missing — at least one of "
+            f"{confirmation_keywords!r} must appear in SKILL.md"
+        )
+
+    def test_deviatdd_skill_dispatch_table_references_canonical_slash_commands(
+        self,
+    ) -> None:
+        """The Dispatch section lists the canonical slash commands
+        by name with one-line descriptions — proves the dispatcher
+        pattern (skill points to slash commands, doesn't act inline)
+        is actually populated."""
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+
+        for cmd in (
+            "/deviate-meso",
+            "/deviate-plan",
+            "/deviate-tasks",
+            "/deviate-red",
+            "/deviate-green",
+            "/deviate-refactor",
+            "/deviate-judge",
+            "/deviate-merge",
+            "/deviate-pr",
+            "/deviate-execute",
+            "/deviate-hotfix",
+            "/deviate-prune",
+            "/deviate-inspect",
+        ):
+            assert cmd in body, (
+                f"Dispatcher missing reference to {cmd} - every "
+                f"canonical slash command the skill can delegate to "
+                f"must be listed by name"
+            )
+
+    def test_deviatdd_skill_frontmatter_well_formed(self) -> None:
+        """The SKILL.md frontmatter declares name, description,
+        category, and version — the canonical Agent Skills schema."""
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+        assert body.lstrip().startswith("---"), "Missing YAML frontmatter"
+
+        fm = yaml.safe_load(body.split("---", 2)[1])
+        assert isinstance(fm, dict), "Frontmatter did not parse to a dict"
+
+        assert fm.get("name") == "deviatdd", f"name mismatch: got {fm.get('name')!r}"
+        description = fm.get("description")
+        assert isinstance(description, str) and description, (
+            "description must be a non-empty string"
+        )
+        assert "\n" not in description, "description must be single-line"
+        assert fm.get("category") == "deviatdd-tooling", (
+            f"category mismatch: got {fm.get('category')!r}"
+        )
+        assert fm.get("version") == "1.1.0", (
+            f"version mismatch: got {fm.get('version')!r}"
+        )
+
+    def test_deviatdd_skill_troubleshooting_section_matches_logger(
+        self,
+    ) -> None:
+        """The Troubleshooting section in SKILL.md must document the
+        ACTUAL event inventory emitted by ``_log_run`` calls in
+        ``src/deviate/cli/micro.py`` — not invented names. This test
+        parses the source for ``_log_run("<NAME>", ...)`` calls,
+        extracts the event names, then verifies each documented event
+        in the SKILL.md Troubleshooting section is a real emitted
+        event (and conversely that a few canonical events are
+        mentioned, so the section does not silently shrink to nothing).
+
+        Catches regressions where the logger implementation drifts
+        but the SKILL.md keeps the stale inventory.
+        """
+        import re
+
+        from pathlib import Path as _Path
+
+        # Derive repo root from this test file's location:
+        # tests/test_cli/test_init.py -> ../../  is the repo root.
+        repo_root = _Path(__file__).resolve().parents[2]
+        micro_path = repo_root / "src" / "deviate" / "cli" / "micro.py"
+        micro_src = micro_path.read_text(encoding="utf-8")
+        emitted_events = set(re.findall(r'_log_run\(\s*"([A-Z_]+)"', micro_src))
+        # Must include the canonical events the SKILL documents.
+        for canonical in (
+            "RUN_START",
+            "TASK_DISPATCH",
+            "TASK_FAILED",
+            "PHASE_START",
+            "PHASE_DECISION",
+            "PHASE_SKIP",
+            "INVOKE_AGENT",
+            "AGENT_RESULT",
+            "AGENT_RAW_OUTPUT",
+            "AGENT_TIMEOUT",
+            "AGENT_ERROR",
+            "AGENT_NOT_AVAILABLE",
+            "JUDGE_REJECTED",
+            "FEEDBACK_COMMIT_FAILED",
+            "POST_CMD_FAILURE",
+        ):
+            assert canonical in emitted_events, (
+                f"micro.py does not emit {canonical}; "
+                f"test inventory drifted from source"
+            )
+
+        # 2. Load the SKILL.md Troubleshooting section.
+        skill_body = _resolve_skill_source()
+        assert skill_body is not None
+        match = re.search(
+            r"## Troubleshooting failed runs(.*?)(?=^## |\Z)",
+            skill_body,
+            re.DOTALL | re.MULTILINE,
+        )
+        assert match, "Troubleshooting section not found in SKILL.md"
+        section = match.group(1)
+
+        # 3. Every event name mentioned in backticks in the section
+        #    must be a real emitted event (catches invented names like
+        #    PHASE_FAILED or <AGENT_ID>/<TASK_ID>).
+        mentioned = set(re.findall(r"`([A-Z_]{4,})`", section))
+        # Filter out non-event tokens (Phase names like RED/GREEN/JUDGE
+        # are valid phase values but not log events; words like UTC,
+        # ISO, MODEL are not events).
+        non_event_tokens = {
+            "UTC",
+            "ISO",
+            "RED",
+            "GREEN",
+            "JUDGE",
+            "REFACTOR",
+            "EXECUTE",
+            "CYCLE",
+        }
+        mentioned -= non_event_tokens
+        invented = mentioned - emitted_events
+        assert not invented, (
+            f"SKILL.md Troubleshooting section mentions invented "
+            f"log events {sorted(invented)}; only emit events that "
+            f"_log_run actually fires: {sorted(emitted_events)}"
+        )
+
+        # 4. Sanity: the section must mention a representative sample
+        #    so it does not silently degrade to a stub.
+        for required in (
+            "INVOKE_AGENT",
+            "AGENT_RESULT",
+            "AGENT_RAW_OUTPUT",
+            "TASK_FAILED",
+            "PHASE_DECISION",
+        ):
+            assert required in section, (
+                f"Troubleshooting section must mention {required}; "
+                f"the section has lost its diagnostic content"
+            )
+
+
+def _resolve_skill_source() -> str | None:
+    """Helper: load the deviatdd SKILL.md body from package resources.
+    Mirrors ``deviate.cli._resolve_skill_source`` so tests can assert
+    on the source-of-truth content (frontmatter, safety gate, dispatch
+    table) without depending on the installer output."""
+    try:
+        path = importlib.resources.files("deviate.prompts.skills.deviatdd").joinpath(
+            "SKILL.md"
+        )
+        return path.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, TypeError):
+        return None
 
 
 def test_version():

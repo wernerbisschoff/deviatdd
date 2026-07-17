@@ -107,9 +107,7 @@ status: "PASS"
 task_id: "{TASK_ID}"
 next_phase: "IDLE"
 files:
-  - path: path/to/source_file.ext
-    action: modified
-    purpose: <REFACTOR_PURPOSE>
+  - "path/to/source_file.ext"
 refactoring:
   smells_addressed:
     - "<SMELL_1>"

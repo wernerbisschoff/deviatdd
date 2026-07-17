@@ -34,7 +34,7 @@ Prefer sociable (integration) tests that exercise real component orchestration. 
 
 <item>
 <title>Verification-is-Done</title>
-A task is ONLY finished when its `Verification` command passes and the post-script commits successfully. Verification is deterministic and scoped — run the specific test file, not the entire suite.
+A task is ONLY finished when its `Verification` command passes. Verification is deterministic and scoped — run the specific test file, not the entire suite.
 </item>
 
 <item>
@@ -43,18 +43,8 @@ Any test that invokes git operations MUST operate on an isolated temporary direc
 </item>
 
 <item>
-<title>Post-Script Protocol</title>
-Every micro phase ends with `deviate <phase> post`. This is MANDATORY — do NOT use `git add` / `git commit` directly. The post-script stages files, runs pre-commit hooks (lint, format-check, tests), updates the task ledger, and commits. Allocate a timeout of at least 180s (3 minutes) for post-script execution.
-</item>
-
-<item>
-<title>Handover Manifest YAML</title>
-After post-script success, emit a handover manifest as a YAML code block. ALL string values MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted. Output NOTHING outside the YAML block — no explanations, no commentary.
-</item>
-
-<item>
-<title>Offline Documentation Guidance</title>
-When implementing, use `libref query <library> <topic>` to look up library APIs and framework conventions. The `libref` CLI provides offline, version-pinned documentation — prefer it over web fetching. If `libref` is unavailable, fall back to training data or web fetch.
+<title>YAML Quoting Rule</title>
+ALL string values in the handover manifest YAML MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
 </item>
 
 <item>

@@ -36,16 +36,29 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
                                                        │
                                                        ▼
 [ MICRO LAYER: TDD Loop ] ──> Red ──> Green ──> Judge/Train ──> Refactor
-                                │  ▲                       ▲
-                                ▼  │                       │
-                                                         │
-              ┌──────────────────────────────────────────┘
-              │  Green → Judge → Green loop (TRAIN):
-              │  JUDGE_REJECTED → git reset --hard <red_sha>
-              │  → force_transition_to("GREEN") → re-run
-              │  GREEN with <train_feedback> injected
-              │  (up to max_train_attempts = 3)
-
+                                │  ▲    ▲                  ▲     │
+                                ▼  │    │                  │     │
+                                   │    │  next_action on   │     │
+                                   │    │  HandoverManifest │     │
+                                   │    │  (4-way routing)  │     │
+                                   │    │                  │     │
+              ┌────────────────────┘    └──────────────────┘     │
+              │  Green → Judge → Green loop (TRAIN):             │
+              │  JUDGE_REJECTED → git reset --hard <red_sha>      │
+              │  + git clean -fd + feedback commit + advance      │
+              │  session.red_commit_sha → force_transition       │
+              │  ("GREEN") → re-run GREEN with <train_feedback>  │
+              │  injected (up to max_train_attempts = 3)         │
+              │                                                   │
+              │  next_action=revert_before → reset to            │
+              │  red_commit_sha^, clear red_commit_sha,           │
+              │  force_transition("RED") → re-author RED         │
+              │  next_action=continue_refactor → no rollback,    │
+              │  pending_judge_action → _finish_tdd_cycle         │
+              │  enters REFACTOR regardless of --no-refactor      │
+              │  next_action=skip_refactor → no rollback,         │
+              │  pending_judge_action → _finish_tdd_cycle         │
+              │  marks COMPLETED and stops                       │
 [ MICRO ALTERNATE ]      /deviate-execute (direct: boilerplate, config, trivial)
                           → skips TDD cycle; runs its own JUDGE pass
 ```
@@ -130,8 +143,21 @@ to build codebase comprehension and surface hidden trade-offs.
   worktree branch. The `pre` subcommand validates PR metadata; the `run` subcommand executes
   `gh pr create` and optionally merges upon completion. PR titles are generated in
   conventional-commit format for squash-merge compatibility.
-* **Context Sync (Removed):** The `deviate context` command was evaluated and removed.
-  Reasoning: every phase/prompt already injects the constitution and relevant specs, making
+* **Merge (`deviate merge` + `/deviate-merge` skill):** Final meso-layer gate that performs
+  the squash-merge into `main` and writes a full Pydantic-validated `IssueRecord` (not a
+  bare transition). The CLI is intentionally two-phase: `--stage-only` writes the COMPLETED
+  transition to `specs/issues.jsonl` and stages it; `-m <subject> -m <body>` then commits
+  the feature changes + ledger in a single atomic commit. The transition write is idempotent
+  so re-running `--stage-only` before `--message` is safe. `--delete-branch` owns the full
+  post-merge lifecycle in a single call: tags the pre-squash branch tip with
+  `archive/{ISSUE_ID}/{YYYY-MM-DD}` (preserving the per-commit graph that
+  `git merge --squash` collapses into a single main commit), pushes the tag to `origin`,
+  `git push origin --delete <branch>`-es the remote, removes any active worktree that holds
+  the branch, and runs `git branch -D`. Tag push and remote branch delete are best-effort:
+  no `origin` → silent skip; unreachable remote → `PUSH_WARN` and local cleanup proceeds,
+  so a transient network blip never strands work on disk. Invariant: exactly one commit on
+  `main` per issue, containing both the feature code and the COMPLETED ledger entry; the
+  archive tag is the only path back to the pre-squash per-commit history.
   redundant context injection into CLAUDE.md/AGENTS.md unnecessary. Mutating CLAUDE.md
   mid-cycle would invalidate LLM KV caches, defeating the cache optimization strategy.
   The `/deviate-context` skill was deleted in commit `b7057e2`.
@@ -198,13 +224,13 @@ to invoke, but model selection is delegated to the calling environment.
 E2E tests are elevated to explicit phases in the state machine, executed at two specific boundaries:
 * **Issue Gate (Meso-to-Micro):** When an individual issue's micro-tasks are successfully greened, refactored, and judged, an E2E pass validates that the localized issue changes did not fracture the broader system flow.
 * **Feature Branch Gate (Micro-to-Idle):** Before the feature branch merges back into `main`, the orchestrator sweeps the entire system's E2E suite to guarantee holistic compliance.
-
-#### Phase Descriptions
-
-* **RED (The Contract):**
-    * **Action:** The agent writes a unit/integration test.
-    * **Verification:** The Python runner executes `pytest --json-report`. It parses the JSON to verify the failure is due to missing implementation (`AssertionError`, `NotImplementedError`) and not a syntax crash.
-    * **State Lock:** `git add . && git commit -m "test: [TASK-ID] Red phase complete"`.
+    * **The Train (Green → Judge → Green loop):** On `COMPLIANCE_VIOLATION` or test failure, the CLI safely resets without destroying task progress. The JUDGE phase honors `HandoverManifest.next_action` (see [specs/DeviaTDD-api.md](./DeviaTDD-api.md) for the routing table). The four routes:
+        1. **`revert_before`** — discard this task's GREEN **and** its RED. `_resolve_pre_red_sha()` derives the SHA from `red_commit_sha^` (defended by a subject-match regex on the parent's commit message; logs `PRE_RED_AMBIGUOUS` when the parent isn't a RED-phase convention). `git reset --hard <pre_red>` + `git clean -fd`. `session.red_commit_sha` is cleared (the boundary was discarded) and `pending_judge_action = "revert_before"`. `force_transition_to("RED")` so the task retries from scratch.
+        2. **`revert_to_red`** — discard GREEN, preserve RED. `_execute_rollback(root, reason)` (`src/deviate/cli/micro.py`) runs `git reset --hard <red_sha>` + `git checkout -- .deviate/` + `git clean -fd` (line 1262/1319), persisting a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`. The runner then unconditionally appends a feedback commit (`_commit_judge_feedback_and_advance`) and advances `session.red_commit_sha` to that commit so a second rollback only kills the subsequent GREEN. `force_transition_to("GREEN")` and re-runs GREEN with `<train_feedback>` injected. **Default on `COMPLIANCE_VIOLATION` when `next_action` is absent.**
+        3. **`continue_refactor`** — JUDGE passed. No rollback. `pending_judge_action = "continue_refactor"`; `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`.
+        4. **`skip_refactor`** — JUDGE passed, refactor not wanted. No rollback. `pending_judge_action = "skip_refactor"`; `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`.
+        After up to `max_train_attempts = 3` rollbacks the loop raises `PhaseFailedError` and marks the task `FAILED`. The runner honors the manifest verbatim — no interactive prompt. The legacy single-commit fallback (`verdict == COMPLIANCE_VIOLATION` without `next_action`) maps to `revert_to_red`.
+  If the session loses `train_feedback`, auto GREEN falls back to the exact task's persisted `**Judge Feedback**` bullets in `tasks.md`, wrapped as `<persisted_judge_feedback>`. When both sources exist, session feedback wins and the persisted history is not injected twice.
 * **GREEN (The Execution):**
     * **Action:** The agent iterates on production code to pass the test.
     * **Timeout Guard:** The runner enforces a hard timeout (e.g., `--timeout=10`) to kill infinite loops.
@@ -213,10 +239,11 @@ E2E tests are elevated to explicit phases in the state machine, executed at two 
     * **The Judge:** The CLI evaluates `git diff HEAD~1 HEAD` (only the implementation) against `spec.md` for invariant/security violations. Uses `_detect_phase_changes()` and `_find_protected_modules()` from `spec.md` `Module:` declarations. This judge operates in a clean, zero-shared-history session to break recursive subjectivity. A `deviate-judge` skill (loaded from `_SKILL_NAMES["JUDGE"]`) guides the agent through supplementary compliance evaluation.
     * **The Train (Green → Judge → Green loop):** On `COMPLIANCE_VIOLATION` or test failure, the CLI safely resets without destroying task progress:
         1. Derive current task states from `tasks.jsonl` into memory. Resolve the RED-boundary SHA from `session.red_commit_sha`.
-        2. Rollback via `git reset --hard <red_sha>` (line 1181 of `src/deviate/cli/micro.py`). The RED boundary is the precise commit SHA captured at the end of the RED phase; resetting to it discards the suspect GREEN implementation so the next GREEN attempt starts from a known-good test.
+        2. Rollback via `git reset --hard <red_sha>` followed by `git clean -fd` (line 1246 / 1258 of `src/deviate/cli/micro.py`). The RED boundary is the precise commit SHA captured at the end of the RED phase; resetting to it discards the suspect GREEN implementation, and `git clean -fd` (without `-x`) removes untracked artifacts the failed GREEN may have left behind while preserving gitignored state such as `.deviate/`.
         3. Persist a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`.
         4. `force_transition_to("GREEN")` returns the session to GREEN, populating `session.train_feedback` with the previous failure output (extracted from the JUDGE manifest's `train_feedback` / `violations` / `rationale` / `summary` fields in that priority order).
         5. The `_run_tdd_cycle()` loop re-runs GREEN, appending `<train_feedback>` to the prompt. The cycle retries up to **`max_train_attempts = 3`** times before raising `PhaseFailedError` and marking the task `FAILED`. The JUDGE → GREEN → JUDGE → … iteration is the Green → Judge → Green loop.
+  If the session loses `train_feedback`, auto GREEN falls back to the exact task's persisted `**Judge Feedback**` bullets in `tasks.md`, wrapped as `<persisted_judge_feedback>`. When both sources exist, session feedback wins and the persisted history is not injected twice.
 * **REFACTOR (The Polish Gate):**
     * **Action:** If the Judge accepts the work, the workspace unlocks for an isolated run to polish readability.
     * **Regression Gate:** Post-refactor, the CLI re-runs the test suite. If the tests fail (agent broke code), the CLI safely discards the refactor (`git reset --hard`) and successfully completes the task using the verified Green commit.
@@ -240,8 +267,7 @@ E2E tests are elevated to explicit phases in the state machine, executed at two 
 
 ### 3.5 Evaluation-Driven Development (EDD)
 * **How it is fulfilled:** Realized via the Compliance Gate and the **Green → Judge → Green loop**.
-* **Mechanisms:** This architecture shifts validation from basic functional checks to prompt optimization and alignment validation. If the execution agent attempts to bend architectural constraints, the isolated Judge evaluates the `git diff` against code-level invariants. When `COMPLIANCE_VIOLATION` fires, the TRAIN protocol executes: `_execute_rollback()` runs `git reset --hard <red_sha>` against the precise RED-boundary SHA stored in `session.red_commit_sha` (set at the end of the RED phase), discarding the suspect GREEN implementation and any post-RED state. The session is then `force_transition_to("GREEN")` and a `RollbackSnapshot` is appended to the task ledger. The previous failure output is injected as `<train_feedback>` into the next GREEN prompt. `_run_tdd_cycle()` allows up to **`max_train_attempts = 3`** retries (re-running GREEN with refreshed feedback) before raising `PhaseFailedError` and marking the task `FAILED`. The agent's context window is treated as an iteratively trained parameter optimized for perfect execution compliance.
-
+* **Mechanisms:** This architecture shifts validation from basic functional checks to prompt optimization and alignment validation. If the execution agent attempts to bend architectural constraints, the isolated Judge evaluates the `git diff` against code-level invariants. When `COMPLIANCE_VIOLATION` fires, the TRAIN protocol executes: `_execute_rollback()` runs `git reset --hard <red_sha>` against the precise RED-boundary SHA stored in `session.red_commit_sha` (set at the end of the RED phase), discarding the suspect GREEN implementation and any post-RED state, then `git clean -fd` (without `-x`) wipes untracked artifacts left behind by the failed GREEN attempt while preserving gitignored state such as `.deviate/`. The session is then `force_transition_to("GREEN")` and a `RollbackSnapshot` is appended to the task ledger. The previous failure output is injected as `<train_feedback>` into the next GREEN prompt. `_run_tdd_cycle()` allows up to **`max_train_attempts = 3`** retries (re-running GREEN with refreshed feedback) before raising `PhaseFailedError` and marking the task `FAILED`. The agent's context window is treated as an iteratively trained parameter optimized for perfect execution compliance.
 ---
 
 ## 4. Core State Machine Engine
@@ -334,13 +360,17 @@ backward compatibility but routes through the new merged path.
 NOTES:
 - The **Green → Judge → Green loop** is the JUDGE → GREEN arrow at the top of
   the GREEN box: on `JUDGE_REJECTED` (or test failure), `_execute_rollback()`
-  runs `git reset --hard <red_sha>` against `session.red_commit_sha` and
-  `force_transition_to("GREEN")` sends the session back to GREEN with
-  `<train_feedback>` injected. Up to `max_train_attempts = 3` retries;
-  exhaustion raises `PhaseFailedError`.
-- TRAIN rollback uses `git reset --hard <red_sha>` (precise RED-boundary
-  SHA) — never `git revert`, because resetting to the verified-good RED
-  boundary discards the suspect GREEN cleanly.
+  runs `git reset --hard <red_sha>` against `session.red_commit_sha` followed
+  by `git clean -fd` (no `-x`, so gitignored state such as `.deviate/` is
+  preserved) and `force_transition_to("GREEN")` sends the session back to
+  GREEN with `<train_feedback>` injected. Up to `max_train_attempts = 3`
+  retries; exhaustion raises `PhaseFailedError`.
+- TRAIN rollback uses `git reset --hard <red_sha>` followed by `git clean -fd`
+  (precise RED-boundary SHA + untracked cleanup) — never `git revert`, because
+  resetting to the verified-good RED boundary discards the suspect GREEN
+  cleanly, and `git clean -fd` (without `-x`) removes untracked artifacts
+  that the failed GREEN may have left behind while preserving gitignored
+  state such as `.deviate/`.
 ```
 
 ---
@@ -354,9 +384,9 @@ Agents are bound into specialized operational scopes by context restrictions. Op
 The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optional — repositories that only ship single features can skip it and route `/deviate-shard` and `/deviate-adhoc` directly to the Macro layer.
 
 * **`/deviate-flows` (FLOW-01, `deviatdd-product-layer`):** Conversational flow authoring. Reads `specs/_product/flows/flows-product.md` as the seed catalog; converses with the user to identify actor, domain, job-to-be-done, trigger, and success state; writes a new `flows-<domain>.md` under `specs/_product/flows/`; appends a row to `specs/_product/flows/index.md` (Flow ID, Name, Actor, Domain, Status, Source).
-    * *System Directives:* Extend the seed (never regenerate); preserve the FLOW-NN ID format `^FLOW-\d{2,}$`; every flow block must carry a `## FLOW-NN <Name>` header; the agent must ask clarifying questions when the actor, job, or trigger is ambiguous before writing the flow file.
+    * *System Directives:* Extend the seed (never regenerate); preserve the FLOW-NN ID format `^FLOW-\d{2,}$`; every flow block must carry a `## FLOW-NN <Name>` header; the agent must ask clarifying questions when the actor, job, or trigger is ambiguous before writing the flow file. **Commit protocol (v1.4.0):** Phase A drafts every flow file + index row to disk as the conversation progresses (no commit). Phase B fires exactly one `stage_and_commit` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes"), passing every session-authored flow file plus `index.md` in `files=`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit. Silence is not sign-off. The skill MUST NOT call `commit_artifact(path, msg)` (one commit per call) or `git add -A`.
 * **`/deviate-architecture` (FLOW-02, `deviatdd-product-layer`):** Cross-epic architecture authoring. **Precondition:** at least one flow file must already exist under `specs/_product/flows/` (FLOW-02 Preconditions Gate); if absent, the skill must surface `[red]FLOWS_MISSING[/]` and recommend `/deviate-flows` first.
-    * *System Directives:* Produce or maintain `specs/_product/architecture.md` and the supporting `specs/_product/domain-model.md`; classify the requested change as Local (epic-bounded), Context-Bridging (spans two epics), or Context-Creating (defines a new product surface); route local changes to the Meso layer.
+    * *System Directives:* Produce or maintain `specs/_product/architecture.md` and the supporting `specs/_product/domain-model.md`; classify the requested change as Local (epic-bounded), Context-Bridging (spans two epics), or Context-Creating (defines a new product surface); route local changes to the Meso layer. **Commit protocol (v1.3.0):** Phase A drafts `specs/_product/architecture.md` and `specs/_product/domain-model.md` to disk as the conversation progresses and stages them via `deviate.core.commit.stage_files` so the user can `git diff --cached` while iterating — no commit fires mid-conversation. Phase B fires exactly one `stage_and_commit` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes" — silence is not sign-off), passing every session-authored architecture and domain-model file in `files=`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit and surface the discrepancy (no auto-unstage). The skill no longer calls `commit_artifact(path, msg)` — that helper emits one commit per path and would reproduce the v1.2.0 split-across-N-commits regression. `git add -A` and `git commit --only` are also forbidden. The classification banner (`Local` / `Context-Bridging` / `Context-Creating`) rides in the commit body. Never pass `no_verify=True`; if a pre-commit hook fails, surface stderr verbatim and stop — do not retry with `--no-verify`.
 * **`/deviate-release` (FLOW-03, `deviatdd-product-layer`):** Release planning. **Precondition:** both `specs/_product/architecture.md` and at least one flow file under `specs/_product/flows/` must exist (FLOW-03 Preconditions Gate); if either is absent, surface `[red]ARCH_OR_FLOWS_MISSING[/]`.
     * *System Directives:* Accept a release-goal description from the user; compile the next coherent product release from the existing flows and architecture; write or override `specs/_product/release-next.md` (Included Flows table, Included Work table, Acceptance Criteria). Downstream `/deviate-explore` and other prompts treat `specs/_product/release-next.md` as the guiding compass when deciding what the next epic should be.
 * **Downstream consumption:** `deviate-shard` and `deviate-adhoc` SKILL.md bodies read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context. Each sharded issue emits a `flow_refs: [FLOW-XX, ...]` field in its YAML frontmatter (and in the `IssueRecord.flow_refs` ledger entry), so vertical slices stay traceable back to the flow that motivated them.
@@ -535,13 +565,13 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 1. **The Git Isolation Principle:** Every isolated task loop must be executed on a clean git branch or worktree environment. Commits are made automatically at each phase boundary via `_commit_phase()` in `micro.py` (`test: [{scope}]: RED phase`, `feat: [{scope}]: GREEN phase`, `refactor({scope}): REFACTOR phase`). Worktrees are created via `deviate specify pre` using `create_worktree()` and removed via `remove_worktree()`.
 
-2. **The Scope Audit Law:** When entering or running the `GREEN` execution phase, the system checks for unauthorized changes to test, spec, and config directories. Protected files are reverted via `git restore <filepath>`. The JUDGE phase (`deviate judge pre`) additionally performs compliance verification by detecting changes to protected modules declared in `spec.md` `Module:` lines.
+2. **The Scope Audit Law:** When entering or running the `GREEN` execution phase, the system checks for unauthorized changes to test, spec, and config directories. Protected files are reverted via `git restore <filepath>`. The JUDGE phase (`deviate judge pre`) additionally performs compliance verification by detecting changes to protected modules declared in `spec.md` `Module:` lines. Complements the GREEN stub-PASS guard in `_run_green_phase` (see `DeviaTDD-api.md` § GREEN Stub-PASS Guard): scope rejects writes the agent shouldn't have made; the stub-PASS guard rejects passes the agent shouldn't have emitted.
 
 3. **Append-Only Ledger Protocol (issues.jsonl + tasks.jsonl):** All state transitions are append-only. The global `specs/issues.jsonl` serves as the authoritative issue registry. Issue-scoped micro-task ledgers live at `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`. Agents cannot edit any status fields directly — only the CLI may append events via `append_issue_transition()` and `append_task_transition()`. No existing line is ever modified or overwritten. Canonical state is derived by parsing each ledger using compound-key idempotency (bottom-up for `issues.jsonl`; `(id, status)` compound key for `tasks.jsonl`). Ad-hoc issues bypass macro planning and route directly to isolated execution workspaces.
 
 4. **Deterministic Test Failure Check:** For a `RED` phase to be valid (`deviate red post`), `_classify_pytest_outcome()` must return `ASSERTION_FAILURE`. Return codes of `PASS` or `SYNTAX_ERROR` (SyntaxError, IndentationError, TabError, ImportError, ModuleNotFoundError) are rejected. Current implementation uses string-based parsing of `pytest -v` output; `pytest --json-report` migration is specified but not yet implemented.
 
-5. **Memory Preservation via Train Gates (Green → Judge → Green loop):** The JUDGE phase implements Train rollback on compliance violations: `_execute_rollback()` runs `git reset --hard <red_sha>` (the RED-boundary SHA captured at the end of the RED phase and stored in `session.red_commit_sha`); this discards the suspect GREEN implementation so the next attempt starts from a verified-good test. `_execute_rollback()` then persists a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`. The session is `force_transition_to("GREEN")` and the next GREEN attempt receives the previous failure output as…
+5. **Memory Preservation via Train Gates (Green → Judge → Green loop) with 4-way routing:** The JUDGE phase implements Train rollback on compliance violations. The rollback is gated by `HandoverManifest.next_action` (see [specs/DeviaTDD-api.md](./DeviaTDD-api.md) for the routing table): `revert_to_red` (default on violation) preserves RED and advances `session.red_commit_sha` past a feedback commit so a second rejection only kills the subsequent GREEN. `revert_before` extends the rollback to past RED (`red_commit_sha^`, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` when the parent isn't a RED-phase convention), clears the boundary, and reissues the task from RED via `force_transition_to("RED")`. The pass routes (`continue_refactor`, `skip_refactor`) skip the rollback and route control to `_finish_tdd_cycle` via `session.pending_judge_action` (consumed there), overriding the `--no-refactor` CLI flag. `_execute_rollback()` runs `git reset --hard <red_sha>` followed by `git clean -fd` (without `-x`) to remove untracked artifacts the failed GREEN attempt may have left behind; this discards the suspect GREEN implementation and clears any untracked residue so the next attempt starts from a verified-good test. `_execute_rollback()` persists a `RollbackSnapshot` (branch, current SHA, red SHA, reason) to the task ledger via `append_rollback_snapshot()`. The session is `force_transition_to("GREEN")` and the next GREEN attempt re-runs with `<train_feedback>` injected. Up to `max_train_attempts = 3` rollbacks before the loop raises `PhaseFailedError` and marks the task `FAILED`.
 
 6. **The Elastic Governance Rule:** The `deviate micro run` command (and the
    top-level `deviate run` orchestrator, which forwards the flag) supports
@@ -707,9 +737,112 @@ standard `AgentBackend.invoke()` contract with three customisations:
    `tokens.input`, `tokens.output`, `tokens.cacheRead`, `tokens.cacheWrite`. RPC mode
    is **opt-in** via `agent.pi_rpc = true` in `.deviate/config.toml`; default behavior
    is print mode (single-shot, exits after the first assistant turn). When RPC mode is
-   active, the `AGENT_RESULT` event in `.deviate/prompts.log` is enriched with a
-   `pi.session_stats` JSON sub-object — capturing the cache-hit ratio for cost
+   active, the `AGENT_RESULT` event in
+   `.deviate/logs/run_<UTC>.log` (and the per-task
+   `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`) is enriched with a
    observability across repeated phase invocations within the same session.
+
+### 10.2.5 Project-Local `deviatdd` Skill (Single Skill, Write-Everywhere)
+
+In addition to the 25 `deviate-*` slash commands under
+`<workdir>/.<agent>/commands/` and `<workdir>/.pi/prompts/`, `deviate setup`
+provisions exactly **one** project-local skill named `deviatdd` at
+`<workdir>/.<agent>/skills/deviatdd/SKILL.md` for every agent platform
+in `active_agents` (`claude`, `opencode`, `factory`, `pi`, `omp`).
+This mirrors `_install_commands_to_agents`'s write-everywhere policy:
+the skill body is identical across platforms, only the destination
+directory differs, and the write is unconditional — every operator
+using `--agent <platform>` gets the skill at the canonical skills
+directory for their platform.
+
+**Auto-discovery status per platform (informational, does not gate the
+write):**
+
+- `claude` — verified. Same form as the user-level
+  `~/.claude/skills/<name>/SKILL.md` Agent Skills convention.
+- `pi` — verified. `pi@latest` docs at
+  `packages/coding-agent/docs/skills.md` list `.pi/skills/` as a
+  project-local skill discovery path.
+- `opencode` / `factory` — no documented project-local skills
+  convention. The file is on disk at
+  `<workdir>/.{opencode,factory}/skills/deviatdd/SKILL.md` for
+  forward-compat if/when those platforms ship a convention.
+- `omp` — libref documents omp skills at user-level
+  `~/.omp/agent/managed-skills/<name>/SKILL.md` and via a
+  settings-driven `skills` array. Operators register the
+  project-local file via OMP's `skills` array in settings.
+
+**Source of truth:** `src/deviate/prompts/skills/deviatdd/SKILL.md`
+(package resource, loaded via `importlib.resources`).
+
+**Installer:** `_install_deviatdd_skill(workdir, agents)` in
+`src/deviate/cli/__init__.py`, called from `setup()` after
+`_install_commands_to_agents`. Idempotent (content-equality skip
+mirrors `install_command`'s contract). The skill has no siblings —
+there is no `discover_skills()` abstraction.
+
+**Scope:** Micro-layer only. The skill orchestrates `deviate micro run
+--all`, triages every error class micro can surface, and runs a
+four-step safety-gated `git reset --hard && git clean -fd` clean-slate
+retry (ledger sanity → workspace inventory → typed user confirmation →
+reset, matching `_execute_rollback`'s `git clean -fd` contract so
+`.deviate/`, `.mise/`, `.venv/` survive). Meso orchestration is out of
+scope — operators use `/deviate-meso`, `/deviate-plan`, `/deviate-tasks`
+for that. A Dispatch section in SKILL.md points the agent to those
+canonical slash commands when a failure escapes micro's scope; the
+skill never invokes them inline. **v1.1.0 added a
+`## Troubleshooting failed runs` section** documenting the two
+`.deviate/logs/` sinks wired through
+`src/deviate/core/run_logger.py::_LogRegistry.dispatch`:
+`.deviate/logs/<ISSUE_ID>/<TASK_ID>.log` (per-task transcript;
+append-mode history across retries; created only inside
+`_execute_task_with_retry` when both `issue_id` and a known
+`task_id` resolve — tasks missing either never get a per-task file)
+and `.deviate/logs/run_<UTC>.log` (per-run chronological log; one
+file per invocation, always written). Each line is `[<UTC iso>]
+<EVENT>\n  <kwarg>: <value>\n` (multi-line values indented four-space
+under a `key:` header). The authoritative event inventory is the set
+of `_log_run("<NAME>", ...)` calls in `src/deviate/cli/micro.py`.
+Canonical events for triage: `TASK_FAILED` (carries `error=`;
+post-cycle failure — read first), `PHASE_START`, `PHASE_DECISION`
+(NOT necessarily terminal — emitted for both intermediate JUDGE
+routing decisions and the final CYCLE outcome; interpret via
+`decision=` / `reroute=` / `action=` plus `phase=`), `PHASE_SKIP`,
+`INVOKE_AGENT` (names `backend=` and `model=`), `AGENT_RESULT`
+(carries `status=`, `verdict=`, full `manifest=`; the manifest
+contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
+(full stdout in a single `raw_output=` field; stderr is NOT
+captured), `AGENT_TIMEOUT` (carries `error=` and `partial_stderr=`),
+`AGENT_ERROR`, `AGENT_NOT_AVAILABLE`, `JUDGE_REJECTED`,
+`JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE` (carries `note=`,
+the refactor hint), `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`,
+`TASKS_MD_SKIP`, `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE`
+(carries `uncommitted_count=` and `files=`, the dirty files the
+hook refused — NOT `returncode=` / `stderr=`). Skill frontmatter
+version is `1.1.0`; the `description` field was updated to include
+"troubleshoot from logs". The drift-check test
+`test_deviatdd_skill_troubleshooting_section_matches_logger` parses
+`micro.py` for `_log_run("<NAME>", ...)` calls and asserts every
+backticked event name in the Troubleshooting section is a real
+emitted event — guards against invented event names. Per-event
+field schemas live in `micro.py` itself, not duplicated here.
+
+**`.gitignore` exclusions:** `_ensure_root_gitignore` adds
+`*/skills/deviatdd/` to the entries tuple alongside
+`*/commands/deviate-*.md` and `*/prompts/deviate-*.md`. The
+single-level wildcard covers all five agent platforms (`.claude/`,
+`.opencode/`, `.factory/`, `.pi/`, `.omp/`) with one pattern. The
+single-level prefix (`*/`, not `**/`) is critical: it scopes the
+pattern to the project root, never matching the deviatdd project's
+own source at `src/deviate/prompts/skills/deviatdd/` (three
+directories deep).
+
+**Tests:** `TestInstallDeviatddSkill` (8 tests) in
+`tests/test_cli/test_init.py` covers install-to-all-five-agents,
+idempotence, gitignore entry presence + idempotence, the safety-gate
+fragments in the SKILL.md body, well-formed frontmatter, and the
+dispatch table's canonical slash-command references.
+
 
 ### 10.3 Pi Sandbox Boundary
 
