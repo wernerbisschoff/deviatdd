@@ -135,6 +135,14 @@ to build codebase comprehension and surface hidden trade-offs.
   typed as `tdd`, `direct`, or `e2e`, and includes file locations, mock boundaries, and
   fixture requirements. An agent MAY append a terminal `type: "e2e"` task for issues
   modifying user-facing behavior, but it is no longer mandatory.
+  * **Plan digest data flow:** After PLAN commits `plan.md`, the meso orchestrator builds
+    a 16 KiB UTF-8 digest (`_build_plan_digest` in `src/deviate/cli/meso.py`). The digest
+    keeps the head + tail of the plan and inserts a `PLAN_DIGEST_TRUNCATED` marker when
+    the source plan exceeds 16 KiB. The auto prompt `src/deviate/prompts/auto/tasks.md`
+    exposes the digest as a `<plan_digest>` literal block (a leading template with
+    `{plan_digest}` would re-inject the payload) plus a `<plan_path>` pointer the agent
+    uses as a fallback when the marker is present. This bounds the per-phase prompt
+    size so a runaway plan cannot stall the TASKS agent (Gloss 009).
   * **Granularity:** Target 4-8 tasks per issue. Each task must be a complete functional unit
     implementable in a single TDD cycle (15-60 min). Avoid "create one file" granularity —
     group related functions into a cohesive unit. Enforce bounds: minimum 1 task per issue,
@@ -677,15 +685,40 @@ Failed RED/GREEN cycles are scoped to a single task. A failed task loses only th
 
 ## 10. Backend Architecture
 
-The `AgentBackend` class (`src/deviate/core/agent.py`) provides a uniform subprocess
-contract (stdin prompt → stdout response → YAML handover manifest extraction) for every
-user-facing backend. Pi (`@earendil-works/pi-coding-agent` v0.80.2, CLI binary `pi`) is
-integrated as a first-class backend alongside `opencode`, `claude`, and `droid`, with
-the customisations documented below.
+### 10.0 Agent Dispatch Resilience (v2.9.x)
 
-### 10.1 Backend Selection Matrix
+`AgentBackend.invoke()` adds four dispatch contracts (in order) before
+handing the manifest to the rest of the pipeline:
 
-| Backend | CLI Command | Command Strategy | Model Selection | Notes |
+1. **Prompt cap** — `_truncate_prompt` caps every backend prompt at
+   `MAX_PROMPT_CHARS = 80,000`, preserving the head + tail and inserting
+   a `PROMPT_TRUNCATED` marker. Catches the Gloss 009 failure mode
+   where unbounded `plan_content` pushed the TASKS prompt past the
+   agent's effective working window.
+2. **Streaming stall watchdog** — the streaming path polls
+   `time.monotonic()` between chunks and raises
+   `AgentTimeoutError(STALL_DETECTED)` once no output has arrived for
+   `STREAM_STALL_TIMEOUT_SECONDS = 60` (≤ 120 by spec). Periodic
+   stdout keeps the watchdog warm, so healthy agents are unaffected.
+3. **Manifest retry-with-context** — `MalformedHandoverManifestError`
+   and `EmptyOutputError` trigger one extra `subprocess.Popen` whose
+   prompt embeds the previous parse error and an explicit
+   `strict YAML block delimited by ```yaml ... ``` only` directive.
+   `AgentSubprocessError` is NOT retried as a manifest failure — it
+   is logged and propagated to the micro layer.
+4. **YAML hint widening** — `_yaml_error_hint` matches three more
+   patterns: backslash-escaped quotes inside double-quoted scalars,
+   unbalanced `"` counts, and mis-indented `|` block scalars. The
+   original "double-quote your strings" hint is preserved as a
+   fallback.
+5. **Schema recovery** — missing `phase` / `status` fields are filled
+   with `UNKNOWN`, the recovered manifest is annotated with
+   `parse_errors`, and `HandoverManifest.is_success` returns `False`
+   so the existing `manifest.status.upper() in (...)` gates cannot
+   pass a recovered manifest. `HandoverManifest` is imported by
+   `scripts/verify_install.py` (the post-install smoke verifier)
+   which checks the new constants and the recovery behaviour.
+
 | :--- | :--- | :--- | :--- | :--- |
 | `opencode` | `opencode run` | Commands copied into `.opencode/commands/` (flat `.md`) | `--model <id>` flag | Default backend |
 | `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |

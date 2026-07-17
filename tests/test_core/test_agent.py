@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -184,6 +185,22 @@ class TestAgentBackendInvocation:
         cmd_str = " ".join(args[0]) if isinstance(args[0], list) else str(args[0])
         assert "claude" in cmd_str
 
+    def test_agent_caps_oversized_prompt_preserving_head_and_tail(self):
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+        prompt = "HEAD_SENTINEL\n" + ("x" * 100_000) + "\nTAIL_SENTINEL"
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            AgentBackend().invoke(prompt)
+
+        dispatched = mock_proc.communicate.call_args.kwargs["input"].decode("utf-8")
+        assert len(dispatched) <= 80_000
+        assert dispatched.startswith("HEAD_SENTINEL\n")
+        assert dispatched.endswith("\nTAIL_SENTINEL")
+        assert "PROMPT_TRUNCATED" in dispatched
+
 
 class TestStubAgentBackend:
     def test_stub_backend_registered_in_commands(self):
@@ -291,6 +308,133 @@ class TestAgentBackendErrors:
             "timed out" in str(exc_info.value).lower()
             or "timeout" in str(exc_info.value).lower()
         )
+
+    def test_streaming_agent_detects_stdout_stall(self):
+        from deviate.core.agent import AgentTimeoutError
+
+        release = threading.Event()
+
+        class BlockingPipe:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release.wait()
+                raise StopIteration
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BlockingPipe()
+        mock_proc.stderr = iter(())
+        mock_proc.kill.side_effect = release.set
+        ticks = iter((0.0, 0.0, 0.051))
+
+        with (
+            patch("deviate.core.agent.STREAM_STALL_TIMEOUT_SECONDS", 0.05),
+            patch(
+                "deviate.core.agent.time.monotonic",
+                side_effect=lambda: next(ticks, 0.051),
+            ),
+            pytest.raises(AgentTimeoutError, match="STALL_DETECTED"),
+        ):
+            AgentBackend()._invoke_streaming(
+                mock_proc,
+                ["pi", "-p"],
+                "prompt",
+                timeout_secs=10,
+                backend_name="pi",
+                output_callback=lambda _line: None,
+            )
+
+    def test_streaming_agent_output_completes_without_stall(self):
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter((b"phase: RED\n", b"status: PASS\n"))
+        mock_proc.stderr = iter(())
+        mock_proc.returncode = 0
+
+        with patch("deviate.core.agent.STREAM_STALL_TIMEOUT_SECONDS", 0.05):
+            stdout, _stderr = AgentBackend()._invoke_streaming(
+                mock_proc,
+                ["pi", "-p"],
+                "prompt",
+                timeout_secs=10,
+                backend_name="pi",
+                output_callback=lambda _line: None,
+            )
+
+        assert stdout == "phase: RED\nstatus: PASS"
+
+    @pytest.mark.parametrize(
+        ("yaml_body", "expected_hint"),
+        [
+            (
+                'phase: "JUDGE"\nstatus: "PASS"\ndetail: "embedder == \\"mini\\""\n',
+                "Avoid backslash-escaped quotes",
+            ),
+            (
+                'phase: "JUDGE"\nstatus: "PASS"\ndetail: "unterminated\n',
+                "Unbalanced double quotes",
+            ),
+            (
+                'phase: "JUDGE"\nstatus: "PASS"\ndetail: |\nunindented detail\n',
+                "Indent block scalar content",
+            ),
+        ],
+    )
+    def test_yaml_error_hint_identifies_malformed_scalar(
+        self, yaml_body: str, expected_hint: str
+    ):
+        output = f"```yaml\n{yaml_body}```"
+
+        hint = AgentBackend._yaml_error_hint(output)
+
+        assert expected_hint in hint
+
+    def test_agent_retries_malformed_manifest_with_error_context(self):
+        malformed = MagicMock(spec=subprocess.Popen)
+        malformed.communicate.return_value = (b"```yaml\nphase: [\n```", b"")
+        malformed.returncode = 0
+        valid = MagicMock(spec=subprocess.Popen)
+        valid.communicate.return_value = (b"phase: JUDGE\nstatus: PASS\n", b"")
+        valid.returncode = 0
+
+        with patch("subprocess.Popen", side_effect=(malformed, valid)) as mock_popen:
+            manifest = AgentBackend().invoke("ORIGINAL_PROMPT")
+
+        assert manifest.status == "PASS"
+        assert mock_popen.call_count == 2
+        retry_prompt = valid.communicate.call_args.kwargs["input"].decode("utf-8")
+        assert "Failed to parse YAML handover manifest" in retry_prompt
+        assert "strict YAML" in retry_prompt
+        assert "ORIGINAL_PROMPT" in retry_prompt
+
+    def test_agent_does_not_manifest_retry_subprocess_failure(self):
+        from deviate.core.agent import AgentSubprocessError
+
+        failed = MagicMock(spec=subprocess.Popen)
+        failed.communicate.return_value = (b"", b"backend crashed")
+        failed.returncode = 2
+
+        with (
+            patch("subprocess.Popen", return_value=failed) as mock_popen,
+            pytest.raises(AgentSubprocessError, match="backend crashed"),
+        ):
+            AgentBackend().invoke("ORIGINAL_PROMPT")
+
+        assert mock_popen.call_count == 1
+
+    def test_missing_phase_and_status_recover_as_unknown(self):
+        manifest = AgentBackend.parse_output(
+            "task_id: TSK-001-01\nrationale: implementation interrupted\n",
+            "pi",
+        )
+
+        assert manifest.phase == "UNKNOWN"
+        assert manifest.status == "UNKNOWN"
+        assert any("phase" in error for error in manifest.parse_errors)
+        assert any("status" in error for error in manifest.parse_errors)
+        assert manifest.is_success is False
 
     def test_agent_malformed_yaml(self):
         from deviate.core.agent import AgentBackend, MalformedHandoverManifestError

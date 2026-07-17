@@ -15,12 +15,33 @@ from deviate.state.config import AgentConfig
 
 OutputCallback = Callable[[str], None]
 
+
+MAX_PROMPT_CHARS = 80_000
+STREAM_STALL_TIMEOUT_SECONDS = 60
+_PROMPT_TRUNCATED_MARKER = (
+    "\n\n<!-- PROMPT_TRUNCATED: original was {original_chars} chars -->\n\n"
+)
+
+
+def _truncate_prompt(prompt: str) -> str:
+    """Cap *prompt* to ``MAX_PROMPT_CHARS`` while preserving head and tail."""
+    if len(prompt) <= MAX_PROMPT_CHARS:
+        return prompt
+    marker = _PROMPT_TRUNCATED_MARKER.format(original_chars=len(prompt))
+    remaining = MAX_PROMPT_CHARS - len(marker)
+    if remaining <= 0:
+        return marker[:MAX_PROMPT_CHARS]
+    head_size = remaining // 2
+    tail_size = remaining - head_size
+    return f"{prompt[:head_size]}{marker}{prompt[-tail_size:]}"
+
+
 BackendName = Literal["opencode", "claude", "droid", "pi", "omp", "stub"]
 
 
 class HandoverManifest(BaseModel):
-    phase: str
-    status: str
+    phase: str = "UNKNOWN"
+    status: str = "UNKNOWN"
     task_id: str | None = None
     test_file: str | None = None
     verification_command: str | None = None
@@ -31,8 +52,17 @@ class HandoverManifest(BaseModel):
         Literal["revert_before", "revert_to_red", "continue_refactor", "skip_refactor"]
     ] = None
     files: list[str] | None = None
+    parse_errors: list[str] = []
 
     model_config = {"extra": "allow"}
+
+    @property
+    def is_success(self) -> bool:
+        return (
+            self.status.upper() in {"PASS", "SUCCESS"}
+            and self.phase.upper() != "UNKNOWN"
+            and not self.parse_errors
+        )
 
 
 class AgentTimeoutError(Exception):
@@ -162,7 +192,6 @@ class AgentBackend:
         m = _YAML_MAPPING_START_RE.search(text)
         if m:
             return text[m.start() :].strip()
-
         cleaned = _strip_md_for_yaml(text)
         if cleaned:
             try:
@@ -171,29 +200,23 @@ class AgentBackend:
                 return ""
             return cleaned
 
-        return ""
-
     @staticmethod
     def _yaml_error_hint(text: str) -> str:
-        has_yaml_fence = bool(re.search(r"```\s*yaml", text, re.IGNORECASE))
-        has_yaml_content = bool(_YAML_MAPPING_START_RE.search(text))
-        has_handover_marker = bool(re.search(r"<handover_manifest>", text))
-        if has_handover_marker and not has_yaml_fence:
+        if '\\""' in text or '\\\\"' in text:
             return (
-                " Found <handover_manifest> tag but could not extract YAML —"
-                " ensure the YAML content follows the tag,"
-                " optionally inside a ```yaml block."
+                " Avoid backslash-escaped quotes inside double-quoted YAML"
+                " scalars — use single quotes or a YAML block scalar (|)"
+                " instead."
             )
-        if not has_yaml_fence and has_yaml_content:
+        if text.count('"') % 2 == 1:
             return (
-                " Expected ```yaml block, found inline YAML —"
-                " wrap in ```yaml for reliability, or ensure"
-                " no explanatory text precedes the YAML content."
+                " Unbalanced double quotes detected. Ensure every value"
+                ' wrapped in "..." has a matching closing quote.'
             )
-        if not has_yaml_fence:
+        if re.search(r"^\s*\w+:\s*\|[^\n]*\n[^\s|]", text, re.MULTILINE):
             return (
-                " No YAML handover manifest detected in agent output."
-                " The agent must emit a YAML manifest (plain or in a ```yaml block)."
+                " Indent block scalar content (|) so every continuation"
+                " line is indented at least one space deeper than its key."
             )
         if re.search(r"(?<!\"):\s+\w", text):
             return " Check that all YAML string values are double-quoted."
@@ -232,12 +255,26 @@ class AgentBackend:
                 f" The manifest must be a key: value mapping.{hint}"
             )
 
+        required_fields = ("phase", "status")
+        missing = [name for name in required_fields if not data.get(name)]
         try:
-            return HandoverManifest(**data)
+            manifest = HandoverManifest(**data)
         except ValidationError as e:
-            raise MalformedHandoverManifestError(
-                f"Handover manifest failed schema validation: {e}"
-            )
+            parse_errors = [
+                f"{'.'.join(str(p) for p in err.get('loc', ()))}: {err.get('msg', '')}"
+                for err in e.errors()
+            ]
+            recovered = dict(data)
+            recovered["parse_errors"] = parse_errors
+            recovered["phase"] = recovered.get("phase") or "UNKNOWN"
+            recovered["status"] = recovered.get("status") or "UNKNOWN"
+            return HandoverManifest(**recovered)
+        if missing:
+            manifest.parse_errors = [
+                f"{name}: field missing or empty" for name in missing
+            ]
+            return manifest
+        return manifest
 
     def _invoke_blocking(
         self,
@@ -282,30 +319,28 @@ class AgentBackend:
         backend_name: str,
         output_callback: OutputCallback,
     ) -> tuple[str, str]:
-        proc.stdin.write(prompt.encode("utf-8"))
-        proc.stdin.close()
+        try:
+            proc.stdin.write(prompt.encode("utf-8"))
+            proc.stdin.close()
+        except (BrokenPipeError, ValueError):
+            # Subprocess died before the prompt drained; the for-loop below
+            # will surface the return code.
+            pass
 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
         stdout_done = False
+        stall_reason: str | None = None
+        stall_partial: tuple[str, str] | None = None
 
         def read_stdout() -> None:
             nonlocal stdout_done
             try:
-                # The for-loop's `__next__` is the only call that can raise a
-                # pipe I/O error (ValueError on closed file, OSError on
-                # broken pipe). Decoding + output_callback happen *inside*
-                # the loop body and their exceptions propagate normally so
-                # they aren't masked by our pipe-error recovery.
                 for raw_line in proc.stdout:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stdout_lines.append(line)
                     output_callback(line)
             except (ValueError, OSError):
-                # Pipe can race with proc.kill()/close() during the timeout
-                # branch. The thread still terminates correctly; we mark
-                # stdout_done in finally so the caller doesn't raise a false
-                # AgentTimeoutError when the subprocess exited cleanly.
                 pass
             finally:
                 stdout_done = True
@@ -316,13 +351,64 @@ class AgentBackend:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stderr_lines.append(line)
             except (ValueError, OSError, RuntimeError):
-                # Stderr pipe can race with proc.kill()/close() during the
-                # timeout branch above, and CPython 3.13's daemon-thread
-                # `_active` race surfaces as a KeyError on _delete (visible
-                # as "Exception ignored in thread ... read_stderr"). The
-                # thread still terminates correctly; the manifest comes from
-                # stdout, so losing residual stderr is harmless.
                 pass
+
+        threads = [
+            threading.Thread(target=read_stdout),
+            threading.Thread(target=read_stderr),
+        ]
+        for t in threads:
+            t.start()
+
+        stall_deadline = time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
+        while True:
+            if stdout_done and not any(t.is_alive() for t in threads):
+                break
+            if time.monotonic() >= stall_deadline:
+                stall_reason = (
+                    f"STALL_DETECTED: no agent output for "
+                    f"{STREAM_STALL_TIMEOUT_SECONDS}s"
+                )
+                stall_partial = (
+                    "\n".join(stdout_lines),
+                    "\n".join(stderr_lines),
+                )
+                break
+            time.sleep(0.05)
+
+        if stall_reason is not None:
+            proc.kill()
+            for t in threads:
+                t.join(timeout=5)
+            raise AgentTimeoutError(
+                stall_reason,
+                partial_stdout=(stall_partial or ("", ""))[0],
+                partial_stderr=(stall_partial or ("", ""))[1],
+            )
+
+        for t in threads:
+            t.join(timeout=timeout_secs)
+
+        if not stdout_done or any(t.is_alive() for t in threads):
+            proc.kill()
+            for t in threads:
+                t.join(timeout=5)
+            raise AgentTimeoutError(
+                f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
+                partial_stdout="\n".join(stdout_lines),
+                partial_stderr="\n".join(stderr_lines),
+            )
+
+        proc.wait()
+        stdout = "\n".join(stdout_lines)
+        stderr = "\n".join(stderr_lines)
+
+        if proc.returncode != 0:
+            raise AgentSubprocessError(
+                message=stderr or f"Agent exited with code {proc.returncode}",
+                exit_code=proc.returncode,
+            )
+        return stdout, stderr
 
         threads = [
             threading.Thread(target=read_stdout),
@@ -419,6 +505,7 @@ class AgentBackend:
     ) -> HandoverManifest:
         backend_name: BackendName = backend or self.config.backend
         use_rpc = backend_name == "pi" and self.config.pi_rpc
+        prompt = _truncate_prompt(prompt)
 
         if use_rpc:
             cmd = list(PI_RPC_COMMAND)
@@ -478,7 +565,31 @@ class AgentBackend:
                 use_rpc,
             )
 
-        return self.parse_output(stdout, backend_name)
+        try:
+            return self.parse_output(stdout, backend_name)
+        except (MalformedHandoverManifestError, EmptyOutputError) as exc:
+            strict_prompt = (
+                prompt
+                + "\n\n<!-- Previous attempt produced an unparseable manifest:\n"
+                + str(exc)
+                + "\nRe-emit a strict YAML block delimited by ```yaml ... ``` only. -->"
+            )
+            strict_prompt = _truncate_prompt(strict_prompt)
+            retry_proc = subprocess.Popen(cmd, **popen_kwargs)
+            try:
+                stdout, stderr = self._dispatch_invocation(
+                    retry_proc,
+                    cmd,
+                    strict_prompt,
+                    effective_timeout,
+                    backend_name,
+                    output_callback,
+                    use_rpc,
+                )
+            except AgentTimeoutError:
+                proc.kill()
+                raise
+            return self.parse_output(stdout, backend_name)
 
     def _dispatch_invocation(
         self,

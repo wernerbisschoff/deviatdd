@@ -441,6 +441,12 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
   decomposes the spec into `tasks.md` (the *what/why/how* document) and the CLI writes the
   corresponding rows to `tasks.jsonl` (the *append-only event ledger*). See §3 for the
   `tasks.md` vs `tasks.jsonl` distinction.
+* **Plan digest contract:** The TASKS phase receives `plan_digest` (bounded 16 KiB UTF-8
+  preview of `plan.md`) alongside `plan_path`. The digest preserves the head + tail of the
+  plan, inserts the `PLAN_DIGEST_TRUNCATED` marker when the source plan exceeded 16 KiB,
+  and is rendered inside the auto prompt as `<plan_digest>` (literal XML tag; do not
+  re-inject as `{plan_digest}`). The agent reads the full plan from `<plan_path>` whenever
+  the marker is present.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate tasks post [--force] [--issue-id]`
@@ -677,79 +683,66 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   (`_execute_task_with_retry`, `for attempt in range(2)`) before being marked
   `FAILED` in the issue-scoped `tasks.jsonl`. The pipeline **halts on the first
   failure** (`any_failed = True; break`) and exits with code `1`. If no
-  `active_issue_id` is set and the branch cannot resolve an issue, no tasks are
-  dispatched. Implements `_run_all` from `src/deviate/cli/micro.py`.
-  * **Train Retry Loop (per task):** Inside each task's TDD cycle,
-    `_run_tdd_cycle` allows up to **3 train attempts** (`max_train_attempts = 3`)
-    when GREEN tests fail or JUDGE returns `COMPLIANCE_VIOLATION`. Each train
-    attempt injects `<train_feedback>` from the previous attempt's failure
-    output back into the GREEN prompt and re-runs GREEN. Exhaustion raises
-    `PhaseFailedError`.
-  * **Graphite Integration:** If `.deviate/config.toml` contains
-    `graphite = true`, after each successful task the runner invokes
-    `gt create -m "feat({TSK}): {description}"` to spin up a stacked branch for
-    the next task.
-  * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
-    `PhaseFailedError` due to a manifest with `status ∈ {FAILURE, ERROR, FAIL}`
-    and empty rationale (the prior `: unknown` symptom), the message includes
-    the agent's captured stdout tail — the last 50 lines emitted by the agent
-    during the failed invocation, propagated through `_invoke_agent`'s second
-    tuple slot. Other phase callsites ignore that slot via `manifest, _ = ...`,
-    so the change is local to `_run_green_phase`. Retry cap (2 attempts) and
-    halt-on-first-failure semantics are unchanged; this is purely an
-    observability improvement for the previously opaque "unknown" failure.
-  * **GREEN Stub-PASS Guard (REMOVED):** An earlier revision of this spec
-    described a guard that rejected ``status: PASS`` manifests with zero
-    observed source changes. That implementation was rolled back:
-    deciding whether a task is done is JUDGE's job (the JUDGE prompt's
-    edge case table emits ``COMPLIANCE_PASS`` with note ``NO_DIFF`` for
-    empty diffs), not GREEN's. GREEN's only invariant is "make tests
-    pass"; a feature that already works (e.g. landed in a prior
-    session, a docs/rename task) is a legitimate zero-change PASS. The
-    field that remains is ``HandoverManifest.files: list[str] | None``
-    — declared optionally by the agent and recorded for operator
-    cross-check only.
-  * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
-    ``PhaseFailedError`` because the agent emitted
-    ``status ∈ {FAILURE, ERROR, FAIL}`` and the manifest's ``rationale``
-    is empty (the prior ``: unknown`` symptom) the message includes
-    the agent's captured stdout tail — the last 50 non-blank lines
-    emitted during the failed invocation, propagated through
-    ``_invoke_agent``'s second tuple slot on the success path. The
-    tail is also surfaced when ``rationale`` is non-empty (the section
-    is appended unconditionally to make operator log-grepping
-    uniform across phases). Every call to ``_invoke_agent`` returns
-    ``(manifest, agent_tail_str)``: the timeout branch returns the
-    subprocess partial stdout; the success branch returns the last
-    50 non-blank lines from the streaming collector
-    (``micro.py::_invoke_agent`` lines ~417-455). RED, REFACTOR, and
-    EXECUTE sites adopt the same convention so the four ``or 'unknown'``
-    fallbacks all carry the same diagnostic surface.
-  * **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
-    `src/deviate/ui/monitor.py`) wired to a `RunBoard`
-    (`src/deviate/ui/pipeline.py`) with `total_tasks` set to the pending count.
-    The RunBoard renders as a multi-column Rich `Table` whose rows are updated
-    in place via the monitor's event stream (`task_started` / `phase_change` /
-    `task_completed` / `task_failed`). Output structure:
-    * **Run header panel** — `RUN <issue_id> N pending task(s)` in a framed panel.
-    * **Per-phase callouts** — Each `RED` / `GREEN` / `JUDGE` / `REFACTOR` /
-      `EXECUTE` phase emits a `PhaseCallout` (rounded `╭─╮` panel) with the
-      phase tag, task ID, status marker (`◐` in-progress, `●` completed,
-      `✗` failed), and elapsed time. The original token-bearing line
-      (`RED →`, `GREEN →`, etc.) is preserved alongside for backwards-compat
-      with existing tooling.
-    * **Train retry indicator** — On each `_run_tdd_cycle` retry, a
-      `TrainIndicator` renders the current attempt against the maximum
-      (`● 1/3 ─▶─ ◐ 2/3 ─▶─ ○ 3/3`). The literal `TRAIN` token is preserved.
-    * **Final RunBoard snapshot** — A full re-render of the board reflecting the
-      post-run state of every task (markers + per-row error reasons).
-    * **Pipeline summary** — A `PipelineSummary` panel with totals
-      (`Total tasks`, `Completed`, `Failed`, `Duration`, `Status`).
-    In `--json` mode the same monitor emits JSONL events
-    (`task_started`, `phase_change`, `task_completed`, `task_failed`,
-    `pipeline_halted`, `pipeline_complete`); the rich board panels are
-    suppressed in JSON mode. Agent output is forwarded to the monitor via a
-    streaming callback.
+* **Train Retry Loop (per task):** Inside each task's TDD cycle,
+  `_run_tdd_cycle` runs RED → GREEN → JUDGE → REFACTOR with up to
+  ``max_train_attempts = 3`` GREEN retries driven by JUDGE feedback.
+  The loop never invokes the agent twice in a row for the same
+  phase; on the final failure it surfaces the captured manifest's
+  ``rationale`` (with an attached agent-stdout tail when
+  ``rationale`` is empty) and marks the task FAILED.
+* **Agent Backend Hardening (v2.9.x):** `AgentBackend` enforces four
+  dispatch contracts. (1) **Prompt cap** — every prompt is capped at
+  `MAX_PROMPT_CHARS = 80,000` by `_truncate_prompt`; oversized
+  prompts preserve head + tail and are marked with a
+  `PROMPT_TRUNCATED` comment so the agent knows the payload was
+  sliced. (2) **Streaming stall watchdog** — the streaming dispatch
+  path (`_invoke_streaming`) raises `AgentTimeoutError` with
+  `STALL_DETECTED` once no agent output has arrived for
+  `STREAM_STALL_TIMEOUT_SECONDS = 60`; periodic stdout keeps the
+  watchdog warm. (3) **Manifest retry-with-context** — a malformed
+  or empty manifest triggers one additional `subprocess.Popen`
+  whose prompt includes the previous parse error and an explicit
+  `strict YAML block delimited by ```yaml ... ``` only` directive.
+  Subprocess failures (`AgentSubprocessError`) are NOT retried as
+  manifest failures. (4) **YAML hint widening** — the parser's hint
+  engine now detects backslash-escaped quotes inside double-quoted
+  scalars, unbalanced `"` counts, and mis-indented ``|`` block
+  scalars. (5) **Schema recovery** — missing `phase` / `status`
+  fields surface as `UNKNOWN` instead of raising
+  `MalformedHandoverManifestError`; recovered manifests carry a
+  populated `parse_errors` list and
+  `HandoverManifest.is_success` returns `False` so existing
+  `manifest.status.upper() in (...)` success gates keep rejecting them.
+* **GREEN Stub-PASS Guard (REMOVED):** An earlier revision of this spec
+  described a guard that rejected ``status: PASS`` manifests with zero
+  observed source changes. That implementation was rolled back:
+  deciding whether a task is done is JUDGE's job (the JUDGE prompt's
+  edge case table emits ``COMPLIANCE_PASS`` with note ``NO_DIFF`` for
+  empty diffs), not GREEN's. GREEN's only invariant is "make tests
+  pass"; a feature that already works (e.g. landed in a prior
+  session, a docs/rename task) is a legitimate zero-change PASS. The
+  field that remains is ``HandoverManifest.files: list[str] | None``
+  — declared optionally by the agent and recorded for operator
+  cross-check only.
+* **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
+  ``PhaseFailedError`` because the agent emitted
+  ``status ∈ {FAILURE, ERROR, FAIL}`` and the manifest's ``rationale``
+  is empty (the prior ``: unknown`` symptom) the message includes
+  the agent's captured stdout tail — the last 50 non-blank lines
+  emitted during the failed invocation, propagated through
+  ``_invoke_agent``'s second tuple slot on the success path. The
+  tail is also surfaced when ``rationale`` is non-empty (the section
+  is appended unconditionally to make operator log-grepping
+  uniform across phases). Every call to ``_invoke_agent`` returns
+  ``(manifest, agent_tail_str)``: the timeout branch returns the
+  subprocess partial stdout; the success branch returns the last
+  50 non-blank lines from the streaming collector
+  (``micro.py::_invoke_agent`` lines ~417-455). RED, REFACTOR, and
+  EXECUTE sites adopt the same convention so the four ``or 'unknown'``
+  fallbacks all carry the same diagnostic surface.
+* **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
+  `src/deviate/ui/monitor.py`) wired to a `RunBoard`
+  (`src/deviate/ui/pipeline.py`) with `total_tasks` set to the pending count.
 * **Input Parameters:**
   * `[task-id]` (Positional: `TSK-NNN-NN` format; omit to auto-select the first
     PENDING task for the active issue; mutually exclusive with `--all`)

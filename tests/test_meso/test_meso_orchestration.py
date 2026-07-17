@@ -14,6 +14,7 @@ from tests.conftest import _git_env
 
 from deviate.cli.meso import (
     _build_slim_prompt,
+    _build_plan_digest,
     _discover_claimable_issue,
     _meso_discover_and_sequence,
     _meso_run,
@@ -426,6 +427,19 @@ class TestBuildSlimPrompt:
         result = _build_slim_prompt("tasks", contract)
         assert isinstance(result, str)
         assert len(result) > 0
+
+    def test_plan_digest_is_bounded_to_16_kib(self, tmp_path: Path) -> None:
+        plan_path = tmp_path / "plan.md"
+        plan_path.write_text(
+            "# Plan\n" + "essential implementation detail\n" * 2_000,
+            encoding="utf-8",
+        )
+
+        digest = _build_plan_digest(plan_path)
+
+        assert len(digest.encode("utf-8")) <= 16 * 1024
+        assert digest.startswith("# Plan\n")
+        assert "PLAN_DIGEST_TRUNCATED" in digest
 
 
 class TestMesoDiscoverAndSequence:
