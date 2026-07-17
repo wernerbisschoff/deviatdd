@@ -157,11 +157,8 @@ phase: "GREEN"
 task_id: "{TASK_ID}"
 feature_slug: "{FEATURE_SLUG}"
 files:
-  - path: "path/to/source_file.ext"
-    action: "created|modified"
-    purpose: "{IMPLEMENTATION_PURPOSE}"
-  - path: "path/to/test_file.ext"
-    action: "modified|unchanged"
+  - "path/to/source_file.ext"
+  - "path/to/test_file.ext"
 status: "PASS"
 verification_command: "{VERIFICATION_COMMAND}"
 next_phase: "/deviate-refactor"
@@ -182,16 +179,12 @@ phase: GREEN
 task_id: "{TASK_ID}"
 feature_slug: "{FEATURE_SLUG}"
 files:
-  - path: "path/to/source_file.ext"
-    action: "created|modified"
-    purpose: "{IMPLEMENTATION_PURPOSE}"
-  - path: "path/to/test_file.ext"
-    action: "modified|unchanged"
+  - "path/to/source_file.ext"
+  - "path/to/test_file.ext"
 status: "PASS"
 verification_command: "{VERIFICATION_COMMAND}"
 next_phase: "/deviate-refactor"
-
-
+```
 </output_format_schemas>
 
 <edge_case_handling>

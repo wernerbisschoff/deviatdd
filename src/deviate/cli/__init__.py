@@ -606,6 +606,106 @@ def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
             )
 
 
+def _resolve_skill_source() -> str | None:
+    """Load the deviatdd SKILL.md body from package resources.
+
+    Source of truth: ``src/deviate/prompts/skills/deviatdd/SKILL.md``.
+    Returns ``None`` when the resource is missing (defensive — package
+    install bug or partial checkout). The installer then becomes a no-op.
+    """
+    try:
+        path = importlib.resources.files("deviate.prompts.skills.deviatdd").joinpath(
+            "SKILL.md"
+        )
+        return path.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, TypeError):
+        fallback = Path("src/deviate/prompts/skills/deviatdd") / "SKILL.md"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
+        return None
+
+
+def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
+    """Return the project-local skills directory for *agent*.
+
+    Mirrors ``_install_commands_to_agents``'s "write everywhere" pattern:
+    every agent platform that ``deviate setup`` provisions commands
+    for also receives the ``deviatdd`` skill at
+    ``<workdir>/.<agent>/skills/deviatdd/SKILL.md``. The skill body is
+    identical across platforms — only the destination directory differs.
+
+    Auto-discovery status per platform:
+
+    - ``claude`` — verified. Same form as user-level
+      ``~/.claude/skills/<name>/SKILL.md`` per the Agent Skills spec.
+    - ``pi`` — verified. ``pi@latest`` docs at
+      ``packages/coding-agent/docs/skills.md`` list ``.pi/skills/`` as
+      a project-local skill discovery path.
+    - ``opencode`` / ``factory`` — no documented project-local skills
+      convention; the file is still written so the skill is on disk if
+      those platforms add support. Operators using these backends can
+      invoke ``/deviatdd`` via the slash-command path
+      ``<workdir>/.opencode/commands/deviatdd.md`` (symlink not
+      provided; copy manually if your platform doesn't pick up
+      ``skills/``).
+    - ``omp`` — libref (``oh-my-pi@latest``) documents skills at
+      user-level ``~/.omp/agent/managed-skills/<name>/SKILL.md`` and
+      via a settings-driven ``skills`` array, with no project-local
+      auto-discovery. The file is still written to
+      ``<workdir>/.omp/skills/deviatdd/SKILL.md`` for consistency with
+      the other four platforms; operators can register it via
+      OMP's ``skills`` array in settings or copy it to the user-level
+      path.
+    - ``droid`` — normalized to ``factory`` at the command-install
+      layer; not iterated separately here.
+
+    Returns ``None`` only for unknown agent names not in the
+    ``active_agents`` set.
+    """
+    if agent in ("claude", "opencode", "factory", "pi", "omp"):
+        return workdir / f".{agent}" / "skills"
+    return None
+
+
+def _install_deviatdd_skill(workdir: Path, agents: list[str]) -> None:
+    """Provision the single ``deviatdd`` skill into every active agent's
+    project-local ``skills/deviatdd/SKILL.md`` directory.
+
+    Mirrors ``_install_commands_to_agents``'s write-everywhere policy:
+    every agent platform that ``setup`` provisions commands for also
+    receives the skill, regardless of whether that platform's documented
+    skills convention auto-discovers from the install path. The skill
+    body is identical across platforms — only the destination directory
+    differs.
+
+    Auto-discovery status per platform (informational, does not gate the
+    write): ``claude`` and ``pi`` document a project-local skills
+    convention and auto-discover; ``opencode`` and ``factory`` have no
+    documented convention (file is on disk for forward-compat);
+    ``omp`` documents only user-level skills — operators can register
+    the project-local file via OMP's ``skills`` array in settings.
+
+    Idempotent — content-equality skip mirrors ``install_command``'s
+    contract. Single-skill install: there is no discovery abstraction
+    because the deviatdd skill has no siblings (the 25 ``deviate-*``
+    items remain as commands/prompts under
+    ``_install_commands_to_agents``).
+    """
+    body = _resolve_skill_source()
+    if body is None:
+        console.print("  [yellow]SKIP[/] deviatdd skill source missing")
+        return
+    for agent in agents:
+        target_dir = _get_agent_skill_dir(workdir, agent)
+        target = target_dir / "deviatdd" / "SKILL.md"
+        if target.exists() and target.read_text(encoding="utf-8") == body:
+            console.print(f"  [yellow]SKIP[/] {target.relative_to(workdir)}")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+        console.print(f"  [green]INSTALL[/] {target.relative_to(workdir)}")
+
+
 def _ensure_gitignore(workdir: Path) -> None:
     dot_dir = workdir / ".deviate"
     dot_dir.mkdir(parents=True, exist_ok=True)
@@ -613,7 +713,6 @@ def _ensure_gitignore(workdir: Path) -> None:
     entries = [
         "session.json",
         "artifacts/",
-        "prompts.log",
         "reports/",
         "rollback.jsonl",
         "logs/",
@@ -698,6 +797,7 @@ def setup(
     # scope.
     active_agents = ("claude", "opencode", "factory", "pi", "omp")
     _install_commands_to_agents(workdir, list(active_agents))
+    _install_deviatdd_skill(workdir, list(active_agents))
 
     _ensure_gitignore(workdir)
     _ensure_root_gitignore(workdir)
@@ -763,28 +863,45 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
 
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
-    commands across all agent platforms.
-    Two command families are installed and must not be committed:
+    artifacts across all agent platforms.
+    Three artifact families are installed and must not be committed:
 
-    - ``deviate-*`` — the core DeviaTDD command library
+    - ``deviate-*`` commands under ``<agent>/commands/`` and
+      ``<agent>/prompts/`` — the core DeviaTDD command library.
+    - The single ``deviatdd`` skill under ``<agent>/skills/deviatdd/``
+      for every active agent platform (write-everywhere; mirrors the
+      ``_install_commands_to_agents`` policy). The skill is installed
+      for all five ``active_agents`` (``claude``, ``opencode``,
+      ``factory``, ``pi``, ``omp``) regardless of which platforms
+      document a project-local skills convention.
 
-    The patterns are scoped with ``*/commands/`` and ``*/prompts/`` so they
-    only match a SINGLE directory level before the agent subdir — this is
-    deliberately tight because the project itself stores command sources
-    three levels deep at ``src/deviate/prompts/commands/deviate-*.md``
-    (plus spec files like ``specs/plans/deviate-content.md``). A broader
-    ``**/deviate-*.md`` pattern would silently ignore those source-of-truth
-    files and break ``deviate setup`` in the deviatdd repo itself. The
-    patterns cover every supported agent (``.claude/commands/``,
+    The command patterns are scoped with ``*/commands/`` and
+    ``*/prompts/`` so they only match a SINGLE directory level before
+    the agent subdir — this is deliberately tight because the project
+    itself stores command sources three levels deep at
+    ``src/deviate/prompts/commands/deviate-*.md`` (plus spec files like
+    ``specs/plans/deviate-content.md``). A broader ``**/deviate-*.md``
+    pattern would silently ignore those source-of-truth files and break
+    ``deviate setup`` in the deviatdd repo itself. The command patterns
+    cover every supported agent (``.claude/commands/``,
     ``.opencode/commands/``, ``.factory/commands/``, ``.pi/prompts/``,
     ``.omp/prompts/``) and any future agent that follows the same
     ``<dir>/commands/`` or ``<dir>/prompts/`` flat-file convention.
+
+    ``*/skills/deviatdd/`` mirrors the existing ``*/commands/`` and
+    ``*/prompts/`` single-level wildcards - covers all five agent
+    platforms (``.claude/``, ``.opencode/``, ``.factory/``, ``.pi/``,
+    ``.omp/``) with one pattern. The single-level prefix (``*/`` not
+    ``**/``) keeps it scoped to the project root, never matching the
+    source-of-truth at ``src/deviate/prompts/skills/deviatdd/`` (three
+    directories deep).
     """
-    gitignore_path = workdir / ".gitignore"
     entries = (
         "*/commands/deviate-*.md",
         "*/prompts/deviate-*.md",
+        "*/skills/deviatdd/",
     )
+    gitignore_path = workdir / ".gitignore"
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
         existing_lines = content.splitlines()
@@ -796,14 +913,10 @@ def _ensure_root_gitignore(workdir: Path) -> None:
             merged.append("")
         merged.extend(missing)
         gitignore_path.write_text("\n".join(merged) + "\n", encoding="utf-8")
-        console.print(
-            f"  [green]UPDATE[/] .gitignore added {len(missing)} agent entries"
-        )
+        console.print(f"  [green]UPDATE[/] .gitignore added {len(missing)} entries")
     else:
         gitignore_path.write_text("\n".join(entries) + "\n", encoding="utf-8")
-        console.print(
-            f"  [green]CREATE[/] .gitignore with {len(entries)} agent entries"
-        )
+        console.print(f"  [green]CREATE[/] .gitignore with {len(entries)} entries")
 
 
 # Command panels — keep "Run by you (start here)" at the top so first-timers

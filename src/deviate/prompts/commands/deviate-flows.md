@@ -2,7 +2,7 @@
 name: deviate-flows
 description: Author customer flows — discover user-visible flows, write concise flows-<domain>.md files, and maintain the flows catalog at specs/_product/flows/index.md.
 category: deviatdd-product-layer
-version: 1.3.0
+version: 1.4.0
 aliases:
   - flows
   - /deviate-flows
@@ -90,34 +90,41 @@ CRITICAL INVARIANTS:
      bloat (~150 lines per flow) was the bug; keep each flow scannable
      in a single screen.
 
-9. **Persist and Commit**: After authoring the new `flows-<domain>.md`
-   file and appending the `index.md` row, this skill MUST persist both
-   writes to disk (the conversational output is not enough — see the
-   FLOW-04 lesson where `deviate-architecture` correctly refused to
-   run `/deviate-release` because the architecture had only been
-   emitted into chat). The skill MUST then create a single git commit
-   containing both files using the canonical helper:
+9. **Commit at Sign-Off (end-of-session atomic commit)**:
+   This skill splits into two phases. Phase A (draft) writes every
+   flow file and `index.md` row to disk as it goes so the user can
+   see progress; Phase B (commit) fires exactly once after the user
+   explicitly approves the final state. The full protocol:
 
-   ```python
-   from pathlib import Path
-   from deviate.core.commit import commit_artifact
+   **Phase A — Draft.** For each new flow, write the
+   `flows-<domain>.md` block and append the matching row to
+   `specs/_product/flows/index.md` immediately via the `write` tool.
+   No commit fires during Phase A — the working tree stays dirty but
+   uncommitted so the user can review with `git diff`. The FLOW-04
+   lesson applies: chat-only output is not enough; the files MUST
+   land on disk.
 
-   commit_artifact(
-       Path("specs/_product/flows/flows-<domain>.md"),
-       "docs(flows): add FLOW-<NN> <Name> (<domain>)",
-   )
-   commit_artifact(
-       Path("specs/_product/flows/index.md"),
-       "docs(flows): index FLOW-<NN>",
-   )
-   ```
-
-   Commit message MUST follow Conventional Commits per
-   `specs/constitution.md:71-75`. The skill MUST NOT pass
-   `no_verify=True` — pre-commit hooks run lint + format-check and are
-   non-bypassable per `AGENTS.md` §Commit Authority. If a hook fails,
-   surface the failure verbatim and stop; do not silently drop the
-   `--no-verify` flag.
+   **Phase B — Sign-off and one commit.** When the user signals
+   they are happy with the full set of changes ("commit",
+   "looks good", "done", "ship it", "approve", "lgtm", "yes", or
+   any unambiguous affirmative — silence is not sign-off), the
+   skill MUST:
+   1. Render a final summary of every `flows-<domain>.md` written
+      this session plus the appended `index.md` rows.
+   2. Run `git diff --cached --name-only`; if any cached path is
+      outside the session-owned file set, halt and surface the
+      staged list (do NOT auto-unstage).
+   3. Invoke `deviate.core.commit.stage_and_commit` EXACTLY ONCE
+      with `files=` listing every session-authored flow file plus
+      `specs/_product/flows/index.md`. Pass a Conventional Commits
+      subject (`docs(flows): add FLOW-NN[, FLOW-MM, ...] and update
+      index`, or `docs(flows): update index` when no flow files
+      were added). Do NOT call `commit_artifact(path, msg)` here —
+      that helper commits one path per call and would emit one
+      commit per file. Do NOT use `git add -A` or
+      `git commit --only`.
+   4. Never pass `no_verify=True`; if a pre-commit hook fails,
+      surface stderr verbatim and stop.
 
 </system_instructions>
 
@@ -166,19 +173,23 @@ Append a row to `specs/_product/flows/index.md` (create the file with a
 header row if absent). Source column carries the relative path of the new
 flow file.
 
-## 5. Persist and Commit
-Both the new flow file and the appended index row MUST be written to
-disk. After both writes succeed, create a single git commit (or two
-commits, one per file) using `deviate.core.commit.commit_artifact` with
-the conventional commit subject `docs(flows): add FLOW-<NN> <Name>`
-and `docs(flows): index FLOW-<NN>`. Never pass `no_verify=True`; if
-hooks fail, surface and stop. Conversational output alone does not
-satisfy this skill — the files MUST land on disk and under version
-control before the skill yields.
+## 5. Confirm Sign-Off (Phase B gate)
+Surface a final summary of every flow written this session and
+request explicit user approval before committing. Silence is not
+sign-off; if the user asks for revisions, return to step 3. See
+invariant 9 for the full Phase B protocol.
 
-## 6. Cross-Layer Signal
-Inform the user that the new `FLOW-NN` ID is now available for downstream
-`deviate shard` invocations to reference via `flow_refs: [FLOW-NN]`.
+## 6. Atomic Commit (Phase B, exactly once)
+Per invariant 9, invoke `stage_and_commit` exactly once with the
+session-owned file list. Do not call `commit_artifact`, do not
+run `git add -A`, do not pass `--no-verify`.
+
+## 7. Cross-Layer Signal
+Inform the user that the new `FLOW-NN` ID(s) are now available for
+downstream `deviate shard` invocations to reference via
+`flow_refs: [FLOW-NN]`.
+
+
 
 </execution_sequence>
 
@@ -251,8 +262,7 @@ Inform the user that the new `FLOW-NN` ID is now available for downstream
 | Index file is malformed (not a markdown table) | Append the new row as a markdown table; preserve the existing malformed header verbatim |
 | Cross-layer file referenced | Refuse and route to the appropriate skill (`deviate-architecture` or `deviate-release`) |
 | Generated flow block exceeds the line/word budgets in invariant 8 | Tighten prose before writing; downstream `/prd` and `/shard` will fail to parse bloated sections |
-| `commit_artifact` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; do not commit until the user remediated the underlying lint or format violation |
-| Git working tree is dirty from prior work | Stash or revert before persisting the new flow; never co-mingle unrelated changes in the flow commit |
+| `stage_and_commit` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; halt the session and surface the failure so the user can fix the lint or format violation and re-trigger sign-off |
 
 </edge_case_handling>
 

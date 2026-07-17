@@ -145,9 +145,7 @@ task_id: "{TASK_ID}"
 spec_dir: "{SPEC_DIR}"
 status: "PASS"
 files:
-  - path: "path/to/source_file.ext"
-    action: "modified"
-    purpose: "<REFACTOR_PURPOSE>"
+  - "path/to/source_file.ext"
 refactoring:
   smells_addressed:
     - "<SMELL_1>"

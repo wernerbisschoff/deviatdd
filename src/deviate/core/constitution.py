@@ -54,6 +54,7 @@ def validate_constitution(path: Path) -> bool:
 
 _COMMAND_KEYS: dict[str, str] = {
     "TEST_COMMAND": "test_command",
+    "PYTHON_TEST_COMMAND": "python_test_command",
     "LINT_COMMAND": "lint_command",
     "TYPE_CHECK_COMMAND": "type_check_command",
 }

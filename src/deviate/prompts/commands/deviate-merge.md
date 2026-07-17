@@ -2,7 +2,7 @@
 name: deviate-merge
 description: Squash-merge a feature branch into main with a conventional-commit message, then update the ledger with a full IssueRecord.
 category: deviatdd-meso-layer
-version: 2.1.0
+version: 2.2.0
 aliases:
   - merge
   - /deviate-merge
@@ -146,33 +146,43 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    ```
 
 4. **Verify staging captured everything** — `git merge --squash` plus
-   `deviate merge --stage-only` should leave the index non-empty and the
-   working tree clean (everything in the index is staged, nothing
-   unstaged or untracked). Run:
+   `deviate merge --stage-only` should leave the **index** non-empty and the
+   **working tree** clean (no unstaged changes, no untracked files).
+   ``git status --porcelain`` shows staged changes too, so a successful
+   squash-merge naturally produces non-empty porcelain output — that is NOT a
+   failure.  Use the three-command check below to distinguish staged-only
+   from genuinely-unstaged strays:
+
    ```bash
-   git status --porcelain
+   # Staged tree must contain something (the squash + ledger)
+   if git diff --cached --quiet; then
+     halt "Failure_State: Nothing_To_Stage"
+   fi
+   # Working tree must have NO unstaged changes
+   if ! git diff --quiet; then
+     halt "Failure_State: Unstaged_Files_Post_Merge"   # embed `git status --porcelain` body
+   fi
+   # No untracked files should remain either
+   if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+     halt "Failure_State: Untracked_Files_Post_Merge"  # embed `git status --porcelain` body
+   fi
    ```
-   If the porcelain output is non-empty **or** the staged tree is empty
-   (`git diff --cached --quiet` exits 1 with no diff), halt with
-   `Failure_State: Unstaged_Files_Post_Merge` before the final commit
-   runs. The diagnostic is **dual-channel** so the operator sees it
-   regardless of how the framework renders failure states:
 
-   1. **stderr** — `git status --porcelain` output is printed to stderr verbatim
-      (line-for-line, no truncation, no reformatting) before halting.
+   The diagnostic is **dual-channel** so the operator sees it regardless of
+   how the framework renders failure states:
+
+   1. **stderr** — ``git status --porcelain`` output is printed to stderr
+      verbatim (line-for-line, no truncation, no reformatting) before halting.
    2. **`Failure_State` message body** — the same porcelain dump is embedded
-      inside the Failure_State string itself, prefixed with a one-line cause
-      (e.g. `Failure_State: Unstaged_Files_Post_Merge — porcelain non-empty
-      after squash + ledger staging: <full porcelain output here>`). This
-      guarantees the dump reaches the operator even if the framework only
-      renders the label.
-
-   Do NOT silently `git add` stray files and do NOT `--amend` anything —
+      inside the ``Failure_State`` string itself, prefixed with a one-line
+      cause. This guarantees the dump reaches the operator even if the
+      framework only renders the label.
+   Do NOT silently ``git add`` stray files and do NOT ``--amend`` anything —
    the operator decides whether to investigate, drop, or commit strays.
+
 5. **Commit everything together** — a single commit containing both the feature
    changes and the ledger update. The ``deviate merge --message`` CLI applies
    the project's commit convention (emoji prefix if configured, no-op otherwise):
-
    ```bash
    deviate merge --issue {ISSUE_ID} \
      -m "{commit_type}({ISSUE_ID}): {description}" \
@@ -193,16 +203,52 @@ If the user chooses **Edit commit message**, collect the revised message and re-
 <step id="cleanup">
 
 The ledger is already up-to-date from step 3 — the issue is now COMPLETED.
-Run ``deviate merge`` again with cleanup flags; it will see ``ALREADY_COMPLETED``,
-skip the write, and only handle branch/worktree deletion + session reset:
+Run ``deviate merge`` again with cleanup flags.  The CLI is idempotent on the
+ledger transition (it prints ``LEDGER_IDEMPOTENT`` if the COMPLETED line is
+already present) and owns the full branch / worktree / remote lifecycle when
+``--delete-branch`` is passed.
 
 ```bash
 deviate merge --issue {ISSUE_ID} --delete-branch [--delete-worktree]
 ```
 
-This resets the session to IDLE and cleans up the local feature branch.
+``--delete-branch`` triggers the full post-merge lifecycle in this order:
+
+1. **Archive tag** — creates ``archive/{ISSUE_ID}/{YYYY-MM-DD}`` pointing at
+   the branch tip (UTC date). The pre-squash commit history is preserved on
+   the tag because ``git merge --squash`` collapses every feature commit into
+   one main commit; the tag is the only way back to the per-commit graph.
+   Prints ``ARCHIVE_TAG`` on success, ``ARCHIVE_TAG_SKIP`` if the branch is
+   already gone.
+2. **Tag push (best-effort)** — ``git push origin <tag>``. Skipped silently
+   when ``origin`` is not configured; surfaces ``PUSH_WARN`` and continues
+   when the remote is unreachable.
+3. **Worktree cleanup** — if the branch is still checked out in a worktree
+   (e.g. the pre-squash worktree at ``.worktrees/feat-*``), the worktree is
+   ``git worktree remove --force``-ed first so ``git branch -D`` does not
+   fail with ``branch … used by worktree``. ``--delete-worktree`` adds an
+   independent removal of the worktree at ``cwd`` (useful when ``cwd`` is a
+   linked worktree for the issue itself).
+4. **Remote branch delete (best-effort)** — ``git push origin --delete
+   <branch>``. Skipped silently when ``origin`` is not configured; surfaces
+   ``PUSH_WARN`` and continues when the remote is unreachable. Prints
+   ``REMOTE_BRANCH_DELETED`` on success and ``REMOTE_BRANCH_SKIP`` if origin
+   reports the branch is already gone (the expected post-merge state).
+5. **Local branch delete** — ``git branch -D <branch>``. ``--delete-branch``
+   implicitly handles this; pairing with ``--delete-worktree`` runs the
+   worktree cleanup first.
+
+Tag push and remote branch delete are **best-effort by design** — the user
+asked for ``--delete-branch`` to also remove the worktree and the branch
+locally and on origin, so the local cleanup completes even when the remote
+is briefly unreachable. Surface ``PUSH_WARN`` from each step so the operator
+can retry manually.
+
+Session is reset to IDLE once cleanup completes (whether or not the remote
+operations succeeded).
 
 </step>
+
 </execution_sequence>
 
 <edge_cases>
@@ -212,9 +258,7 @@ This resets the session to IDLE and cleans up the local feature branch.
 | Detached HEAD | Fail with `Failure_State: Detached_HEAD` |
 | Dirty working tree | Fail with `Failure_State: Working_Tree_Not_Clean` |
 | On main, no branch specified | Fail with `Failure_State: No_Feature_Branch_Specified` |
-| No commits to merge (`git merge --squash` outputs "Already up to date") | Checkout main + pull, then run `deviate merge --issue {ISSUE_ID} --delete-branch` — it will write the COMPLETED record, commit it, and clean up |
-| Unstaged files after squash + ledger staging (post-step 3 porcelain non-empty, or staged tree empty) | Fail with `Failure_State: Unstaged_Files_Post_Merge`. Dual-channel diagnostic: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` message body (`Failure_State: Unstaged_Files_Post_Merge — porcelain non-empty after squash + ledger staging: <porcelain dump>`) so the operator sees it regardless of how the framework renders failures. Do NOT silently `git add` or `--amend` — operator decides whether to investigate, drop, or commit strays |
-| Merge conflict during `git merge --squash` | Surface the conflict to the user, halt — do NOT force-resolve or skip. |
+| Unstaged files after squash + ledger staging (`git diff --quiet` reports changes; staged tree empty via `git diff --cached --quiet`; untracked files via `git ls-files --others --exclude-standard`) | Fail with `Failure_State: Unstaged_Files_Post_Merge`, `Nothing_To_Stage`, or `Untracked_Files_Post_Merge` respectively. Dual-channel diagnostic: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` message body so the operator sees it regardless of how the framework renders failures. Do NOT silently `git add` or `--amend` — operator decides whether to investigate, drop, or commit strays |
 | Issue not found in ledger | Proceed with merge anyway (the branch may have been created outside DeviaTDD). Pass `deviate merge --issue {ISSUE_ID}` — it will fail cleanly with `ISSUE_NOT_FOUND` |
 | Issue already COMPLETED | The ledger step is idempotent — `deviate merge` exits cleanly with `ALREADY_COMPLETED` |
 | `git push` fails (diverged / rejected) | Halt, surface the reason. Do NOT update ledger until push succeeds |

@@ -251,6 +251,26 @@ hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --
 dev = "go run ."
 clean = "go clean"
 """
+    if project_type == "unknown":
+        return """# Mise configuration for an unclassified project
+# Scaffolded by /deviate-init — DeviaTDD scaffolding
+
+[tasks.test]
+run = "pytest"
+description = "Run the default Python test command"
+
+[tasks.lint]
+run = "ruff check && ruff format --check"
+description = "Run the default Python lint checks"
+
+[tasks.format]
+run = "ruff format"
+description = "Format Python sources"
+
+[tasks.format-check]
+run = "ruff format --check"
+description = "Check Python formatting"
+"""
     _fail_with(f"Unknown project type: {project_type}")
 
 
@@ -367,7 +387,7 @@ def pre() -> None:
 
     artifacts_created = []
 
-    if not has_mise_toml and project_type != "unknown":
+    if not has_mise_toml:
         mise_content = _generate_mise_toml(project_type, repo_root)
         (repo_root / "mise.toml").write_text(mise_content, encoding="utf-8")
         has_mise_toml = True

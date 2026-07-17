@@ -189,3 +189,9 @@ next_phase: "IDLE"
 | plan.md lacks `## Product Layer Anchors` section | Fall back to issue frontmatter `flow_refs` from `{spec_path}`. If absent, emit `**Flow References**: []` per task and continue. |
 | `specs/_product/` absent | Emit `**Flow References**: []` per task. Do NOT halt — enabling/infrastructure tasks do not require flow anchors. |
 </edge_case_handling>
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

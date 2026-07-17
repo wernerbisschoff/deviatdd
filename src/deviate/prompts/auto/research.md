@@ -109,3 +109,9 @@ The CLI orchestrator runs `deviate research post` after your response to validat
 | HITL Gate 1 emitted but no human approval | Wait. Do not auto-advance. |
 </edge_case_handling>
 
+
+<context>
+<user_input>
+$ARGUMENTS
+</user_input>
+</context>

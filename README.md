@@ -1,6 +1,5 @@
-
 <p align="center">
-<img src="deviatdd.png" alt="DeviaTDD logo" width="240"/>
+<img src="deviatdd.svg" alt="DeviaTDD logo" width="240"/>
 </p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

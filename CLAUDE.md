@@ -67,7 +67,7 @@ Per-phase overrides: `.deviate/config.toml` → `[models]` → `default` + phase
 
 ### Append-Only Ledger Protocol
 
-`specs/issues.jsonl` and `specs/**/tasks.jsonl` are append-only. Canonical state is derived by sequential parsing.
+`specs/issues.jsonl`, `specs/**/tasks.jsonl`, and `specs/_product/flows.jsonl` are append-only. Canonical state is derived by sequential ledger parsing.
 
 ### Git Isolation Principle
 

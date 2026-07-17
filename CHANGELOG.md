@@ -7,11 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+
 - **Isolated coding-eval harness (`scripts/coding_eval.py`) and `bench-coding-mini` mise task.** New script generates HumanEval+ completions on LM Studio-hosted chat models (one model at a time, loaded/unloaded via the v1 REST API) and grades each by running the model's completion through evalplus's `untrusted_check` (multiprocessing sandbox, no Docker required). Emits a per-cell results jsonl with reasoning-token accounting plus a final markdown summary table — replaces the throughput-only view from `scripts/benchmark_lmstudio.py` with actual pass-rate signal. Default candidate set is the three non-truncated models from the throughput benchmark (`qwen3-coder-30b-a3b-instruct`, `qwen3.5-4b`, `qwen/qwen3.5-9b`) plus the two `qwopus` MTP coder variants so we can answer whether their slowness buys any quality. `bench-coding-mini` runs the 12-problem mini slice through all candidates (~1.5–2h); pass `--problems full` for the 164-problem overnight sweep. Per-cell files (`<out>.<model>.<level>.jsonl` + `.samples.jsonl`) carry the row-level data; the top-level `<out>.jsonl` is an append-only index of `__summary__` records pointing at each cell. Dev deps added: `evalplus>=0.3.1`, `pytest-timeout>=2.4`. First run surfaced and fixed two bugs: per-cell `out_path` was clobbering prior cells (now per-cell files), and the 180s chat-completion timeout was too short for cold-start first-call on 9B-class models (now 600s, matching the load timeout).
 - **Flow Ledger Canonical Source of Truth — `specs/_product/flows.jsonl` append-only ledger + Flow Coverage Report in `deviate explore post`.** New `FlowRecord` / `FlowEvent` / `FlowCoverage` Pydantic models in `src/deviate/state/ledger.py` following the append-only ledger protocol (`model_config={"extra": "forbid"}`, `^FLOW-\d{2,}$` regex validation). `load_flow_coverage` derives drift-flag taxonomy by reverse-indexing `specs/issues.jsonl` `flow_refs` fields. `deviate explore post` renders a Rich-formatted Flow Coverage Report table (six columns: `flow_id | actor/job/trigger | documented? | implementation evidence? | last referenced by issue/release? | drift flag`). `.gitattributes` merge=union rule for `specs/_product/flows.jsonl`. Constitution v0.7.0 enumerates `flows.jsonl` alongside `issues.jsonl`/`tasks.jsonl` in §1 Append-Only Ledger Protocol.
-
-### Fixed
-- **`deviate micro run`: GREEN phase failures with empty rationale now surface the agent's last 50 stdout lines in the FAILED message.** Previously, when a GREEN agent returned a `status: ERROR/FAILURE/FAIL` manifest with empty rationale, the orchestrator surfaced `GREEN phase failed for {tid}: unknown` with no diagnostic context. The `_invoke_agent` second tuple slot now carries the agent's captured tail (last 50 raw stdout lines) through to the GREEN failure path so the operator can see what the agent actually said. Same retry cap (2 attempts) preserved. (`src/deviate/cli/micro.py`, `tests/test_micro/test_run.py::TestRunGreenDiagnostic`.)
+- **`deviate inspect flows coverage [--release PATH] [--json]` — read-only query grounding `/deviate-release` Included Work / Deferred Epics.** New subcommand under `deviate inspect` (mirroring the `issues_app` / `tasks_app` Typer sub-app pattern) calls `load_flow_coverage(ledger_path, flows_index, issues_ledger)` from `src/deviate/state/ledger.py` to derive per-FLOW-NN coverage rows (documented / implemented / drift flag / last-referenced-by) from `specs/_product/flows.jsonl` + `specs/_product/flows/index.md` + reverse-indexed `flow_refs` from `specs/issues.jsonl`, rendered as a Rich table that surfaces the seven drift flags. `--release <release-next.md>` parses the Included Flows Markdown table conservatively (rows starting with `| FLOW-`) and filters the FlowCoverage rows to only those flow_ids so operators see "what's incomplete for THIS release" rather than globally. When the ledger has not yet been seeded by `deviate explore post`, the command emits `[yellow]NO_FLOWS_LEDGER[/]` to stderr and exits 0 with an empty JSON `[]`, keeping `inspect` strictly read-only per the append-only ledger contract. The `/deviate-release` skill body (v1.2.0) now invokes `load_flow_coverage` as part of its Included Work / Deferred Epics grounding so release composition is anchored in real coverage state, not prose. (`src/deviate/cli/inspect.py`, `tests/test_cli/test_inspect.py`, `src/deviate/prompts/commands/deviate-release.md`.)
+- **Per-task structured logs under `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`.** New `TaskLogger` in `src/deviate/core/run_logger.py` writes every `INVOKE_AGENT` / `AGENT_RESULT` / `AGENT_RAW_OUTPUT` / `PHASE_*` event for one task into its own append-mode log file, complementing the existing chronological per-run log at `.deviate/logs/run_<UTC>.log`. `set_task_logger` / `set_run_logger` now route through a small registry so `_log_run` fans out to both sinks. Wired in `_execute_task_with_retry` so every dispatched task (single or `--all`) gets a per-task transcript that survives re-runs and is human-scannable. The summary agent's fallback message and the `.deviate/.gitignore` template were updated to reference the new `.deviate/logs/` location instead of the long-gone `.deviate/prompts.log`.
+ - **Auto GREEN now consumes persisted JUDGE feedback from `tasks.md` when session feedback is unavailable.** Session `train_feedback` remains authoritative, with exact task scoping and no duplicate injection.
+- **`_execute_rollback()` now runs `git clean -fd` after `git reset --hard`.** Previously, a failed GREEN attempt could leave behind untracked artifacts (scratch files, build outputs, helper scripts) that persisted into the next RED attempt — pytest collection could pick them up, the test writer agent could trip over them, and stale `__pycache__` could shadow fresh test imports. After the `git reset --hard <red_sha>` discards the suspect GREEN commits, `_execute_rollback()` now runs `git clean -fd` (force + directories, **without** `-x`) to wipe untracked files and directories while preserving gitignored state (`.deviate/`, `.mise/`, `__pycache__/`, `.worktrees/`) so the audit trail in `.deviate/rollback.jsonl` and session state in `.deviate/session.json` survive the rollback. New integration tests in `tests/test_micro/test_judge.py::TestExecuteRollbackUntrackedCleanup` exercise the untracked-file, untracked-directory, and gitignore-preservation invariants against a real `tmp_git_repo` (with `.gitignore` mirroring production). (`src/deviate/cli/micro.py::_execute_rollback`, `tests/test_micro/test_judge.py::TestExecuteRollbackUntrackedCleanup`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.)
+- **`deviate micro run`: GREEN phase failures with empty rationale now surface the agent's last 50 stdout lines in the FAILED message.**
+- **GREEN Stub-PASS Guard was reverted; deciding whether a task is done is JUDGE's job.**
+  An earlier revision of `6463060` (and follow-ups) tried to reject `status: PASS`
+  manifests with zero observed source changes. The implementation was rolled back:
+  the JUDGE prompt's edge case table emits `COMPLIANCE_PASS` with note `NO_DIFF`
+  for empty diffs, so a zero-change PASS routes to REFACTOR or the next task
+  instead of looping GREEN against a stub-PASS guard. GREEN's invariant is "make
+  tests pass"; a feature that already works (e.g. landed in a prior session, a
+  docs/rename task) is a legitimate PASS. `HandoverManifest.files: list[str] | None`
+  remains on the schema as an optional operator cross-check signal — not evidence.
+  `src/deviate/prompts/auto/green.md` was rewritten: `files:` is recommended, not
+  required. See `DeviaTDD-api.md` § GREEN Stub-PASS Guard (REMOVED).
 - **`/deviate-merge` (v2.1.0) now gates the squash-merge commit on a post-staging git status check.**
   The execution flow gained a new step 4 between ledger staging (`deviate merge --stage-only`) and the
   final `deviate merge --message` commit: `git status --porcelain` must be empty AND
@@ -25,8 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gap where a partial failure between `git merge --squash` and the final commit could leave
   feature-branch files in the index but not in any commit.
   (`src/deviate/prompts/commands/deviate-merge.md`.)
+### Fixed
+- **`deviate merge` (CLI) no longer short-circuits on `ALREADY_COMPLETED` when `--stage-only` is followed by `--message`.**  Previously, after the squash-merge skill's `--stage-only` step wrote the COMPLETED transition to `specs/issues.jsonl`, the subsequent `--message` invocation loaded the now-COMPLETED record, printed `ALREADY_COMPLETED`, and skipped the entire `git commit` block — the staged feature changes + ledger were left dangling in the index with no commit produced. The fix restructures `_merge_run` (`src/deviate/cli/meso.py`) so the ledger write is idempotent (skipped if already COMPLETED) but the staging + commit block always runs when `not stage_only`. Re-running `--stage-only` before `--message` is now a no-op rather than a destructive skip.
+- **`deviate merge --delete-branch` now removes the active worktree before running `git branch -D`.** The standard DeviaTDD flow leaves a worktree at the pre-squash tip until cleanup runs, so `--delete-branch` previously crashed with `cannot delete branch ... used by worktree at <path>`. The CLI now inspects `git worktree list --porcelain` for the target branch and runs `git worktree remove --force <path>` before deleting the branch. The pre-existing `remove_worktree` helper in `src/deviate/core/worktree.py` already had this logic but was not wired into the merge flow.
+- **`/deviate-merge` skill porcelain check now distinguishes staged from unstaged changes.** The v2.1.0 staging check used `git status --porcelain` alone and treated ANY non-empty porcelain as `Failure_State: Unstaged_Files_Post_Merge` — but a successful squash-merge naturally produces non-empty porcelain (the staged feature changes), so every merge halted spuriously. The check is now a three-command gate: `git diff --cached --quiet` (Nothing_To_Stage), `git diff --quiet` (Unstaged_Files_Post_Merge), `git ls-files --others --exclude-standard` (Untracked_Files_Post_Merge). Each failure embeds the full `git status --porcelain` dump in the `Failure_State` body and prints it to stderr (dual-channel diagnostic) so the operator sees it regardless of how the framework renders failures. (`src/deviate/prompts/commands/deviate-merge.md` + new regression tests in `tests/test_cli/test_merge.py`.)
 
 ### Changed
+- **Prompt-template alignment: layer preambles now share one core file between auto and manual modes.** The 9 near-identical files under `src/deviate/prompts/core/` (`{macro,meso,micro}-{auto,command,skill}.md`) collapsed to 5: `core.md` (universal invariants), `{macro,meso,micro}-shared.md` (layer disciplines, the same source for both modes), and `lifecycle-{auto,manual}.md` (the only thing that varies between CLI-orchestrated and slash-command execution). The three `*-skill.md` files were dead code — nothing in `src/deviate/` loaded them; deleted. `_LAYER_MAP` in `src/deviate/prompts/assembly.py` now points to `*-shared.md`; `compose_command_body` in `src/deviate/core/commands.py` resolves the same shared file plus `lifecycle-manual.md`. The `<context><user_input>$ARGUMENTS</user_input></context>` input marker moved from the macro/meso layer preambles into each per-phase auto file (the 7 macro/meso files: explore, research, prd, shard, specify, plan, tasks), matching the manual-mode pattern that already embedded it in every `commands/deviate-*.md`. Micro auto phases (red, green, refactor, judge, execute) take task injection via `{task_content}`/`{spec_content}` placeholders, not `$ARGUMENTS`, so they correctly remain context-block-free. Behavior is unchanged: all 33 prompt-assembly tests and all 43 command-install/integration tests pass against the new structure; the `deviate setup` install pipeline rewrites existing command files idempotently.
+- **`/deviate-architecture` (v1.3.0) now requires explicit user sign-off before committing.** Previously the skill auto-committed `specs/_product/architecture.md` and `specs/_product/domain-model.md` via `commit_artifact` immediately after each write, producing a chain of one-commit-per-edit commits across what is conceptually a single architectural change. The v1.3.0 protocol mirrors `/deviate-flows` v1.4.0: **Phase A (draft)** writes the files to disk and stages them via `deviate.core.commit.stage_files` so the user can `git diff --cached` while iterating — no commit fires mid-conversation; **Phase B (sign-off)** fires exactly once via `deviate.core.commit.stage_and_commit` after the user signals sign-off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes" — silence is not sign-off), passing every session-authored architecture and domain-model file in `files=`. The pre-commit `git diff --cached --name-only` audit confirms the staged set is a subset of the session-owned files; any extras halt the commit and surface the discrepancy (no auto-unstage). `commit_artifact`, `git add -A`, and `git commit --only` remain forbidden. The classification banner (`Local` / `Context-Bridging` / `Context-Creating`) rides in the commit body. `--no-verify` is never passed; pre-commit hook failures surface verbatim and stop the skill. (`src/deviate/prompts/commands/deviate-architecture.md`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `tests/test_core/test_commands.py::TestDeviateArchitectureCommitAtSignOff`.)
 - **`scripts/coding_eval.py`: default reasoning levels dropped `on` for all models; `--level` is now an opt-in CLI flag.** Empirically `qwen/qwen3.5-9b` at `reasoning_effort=high` burns the entire `max_tokens` budget on the reasoning stream and returns empty visible content (verified live: at `max_tokens=4096` the model emits 4095 reasoning tokens + 0 visible and times out at 600s on a single problem). There is no `max_tokens` value at which this produces a usable signal for HumanEval-sized prompts, so the default sweep no longer tries it. To compare with reasoning enabled on a different model, pass `--level on` (repeatable, defaults still apply per-model when the flag is absent). The internal `off → none` mapping for LM Studio's accepted `reasoning_effort` values is preserved; `_LEVEL_TO_LMS` still has `{'none': 'none', 'off': 'none', 'on': 'high'}` so `--level on` remains a valid path when explicitly requested.
 - **`/deviate-architecture` (v1.1.0) now mandates `libref` verification for every architectural claim.**
   Added CRITICAL INVARIANT 10 (Offline Documentation Mandate): the architecture
@@ -63,6 +83,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to disk — blocking `/deviate-release` via its `ARCH_OR_FLOWS_MISSING`
   precondition gate and leaving `/deviate-explore` without a release file
   to read. (`src/deviate/prompts/commands/deviate-{flows,architecture,release}.md`.)
+- **`/deviate-flows` (v1.4.0) commits at sign-off instead of after every flow write.**
+  Previously the skill committed after each `flows-<domain>.md` write
+  (one commit per flow + one for the index row), which split a single
+  authoring session across N commits and gave the user no chance to
+  review the final shape before anything landed in git. The protocol
+  is now split into two phases: **Phase A** writes each flow file +
+  matching `index.md` row to disk immediately as the conversation
+  progresses (no commit); the working tree stays dirty so the user can
+  review with `git diff`. **Phase B** fires exactly once after the user
+  signals explicit approval ("commit", "looks good", "done", "ship it",
+  "approve", "lgtm", "yes" — silence is not sign-off), invoking
+  `deviate.core.commit.stage_and_commit` with the explicit list of
+  every session-authored flow file plus `specs/_product/flows/index.md`.
+  A pre-commit audit of `git diff --cached --name-only` confirms the
+  staged set is a subset of the session-owned files; any extras halt
+  the commit and surface the discrepancy (no auto-unstage). The skill
+  no longer calls `commit_artifact(path, msg)` (which would emit one
+  commit per path) and forbids `git add -A` (which would sweep
+  unrelated work). Commit subject follows Conventional Commits:
+  `docs(flows): add FLOW-NN[, FLOW-MM, ...] and update index`.
+  (`src/deviate/prompts/commands/deviate-flows.md`,
+  `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`,
+  `tests/test_core/test_commands.py::TestDeviateFlowsCommitAtSignOff`.)
 - **`deviate run` is now a full-pipeline orchestrator; per-task dispatch moved to `deviate micro run`.**
   The top-level `deviate run` command now does both `deviate meso run` and
   then runs `deviate micro run --all` inside the worktree the meso step just
@@ -168,6 +211,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — so users on those platforms had to re-run `deviate setup` inside
   every worktree. Added `.pi` and `.omp` to `_AGENT_DIRS` and updated
   the docstring; added a regression test pinning the sync list.
+- JUDGE train rollback no longer leaves tasks stuck on the same RED commit.
+  `_run_judge_phase` rejection branch now unconditionally commits a feedback
+  marker and advances `session.red_commit_sha` past it (the regressed behavior
+  only did so when `tasks.md` existed). The runner also honors
+  `HandoverManifest.next_action` (new optional field on the manifest contract):
+  `revert_to_red` (default on `COMPLIANCE_VIOLATION`) preserves RED and rolls
+  back GREEN; `revert_before` rolls back to `red_commit_sha^` so RED re-runs
+  from scratch; `continue_refactor` and `skip_refactor` route a passing GREEN
+  straight to REFACTOR or mark the task COMPLETED, respectively. The runner
+  has no interactive prompt — operators can override externally
+  via a future `--judge-action` flag. `_finish_tdd_cycle` honors
+  `session.pending_judge_action` to override `--no-refactor`. The EXECUTE
+  phase's inner JUDGE branch mirrors the same routing with `pre_execute_sha`
+  as the rollback anchor. Defensive `_resolve_pre_red_sha` matches
+  `red_commit_sha^`'s commit subject against the RED-phase regex and logs
+  `PRE_RED_AMBIGUOUS` when it doesn't match. Specs updated
+  (`specs/DeviaTDD-api.md` SessionState + `next_action` Routing Table;
+  `specs/DeviaTDD-architecture.md` §3 + §8 rule 5). Regression test
+  `test_judge_feedback_preserved_across_rejection_rounds` now also asserts
+  a feedback commit exists past RED; six new tests cover the four actions
+  and the helper.
 ### Added
 - PyPI-ready `pyproject.toml` metadata: `readme`, `license = "MIT"` (SPDX),
   `authors`, `keywords`, `classifiers` (incl. `License :: OSI Approved :: MIT
@@ -389,6 +453,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/test_ui/test_pipeline.py` pin the visual contract. Spec
   alignment: `specs/DeviaTDD-api.md` §5.2 (`deviate run --all`) and §5.3
   (`deviate meso run`) document the new output structure.
+- **`deviate merge --delete-branch` now owns the full post-merge lifecycle** — archive tag, remote tag push, worktree cleanup, remote branch delete, and local branch delete in one call. Before deleting the feature branch, the CLI creates a local `archive/<ISSUE_ID>/<YYYY-MM-DD>` tag pointing at the pre-squash branch tip (UTC date) so the per-commit graph survives `git merge --squash` — the tag is the only path back to the per-commit history once `main` collapses the feature commits into one. Tag push (`git push origin <tag>`) and remote branch delete (`git push origin --delete <branch>`) are best-effort: missing `origin` is silently skipped (no `PUSH_WARN` — it's not an error condition), an unreachable remote surfaces `PUSH_WARN` and the lifecycle still completes locally so a transient network blip never strands work on disk; `REMOTE_BRANCH_DELETED` / `REMOTE_BRANCH_SKIP` reflect origin's acknowledgement (`skip` when origin reports the branch is already gone — the expected post-merge state). The `merge_repo` fixture (`tests/test_cli/test_merge.py`) gained four regression tests pinning each contract: tag-points-at-pre-squash-tip, end-to-end push to a bare origin (tag + remote branch both gone), `PUSH_WARN` + complete local cleanup when origin is unreachable, and silent-skip when origin is unconfigured. Skill (`src/deviate/prompts/commands/deviate-merge.md`) v2.1.0 → v2.2.0 documents the new five-step cleanup order. Specs (`specs/DeviaTDD-api.md` §3 `--delete-branch`, `specs/DeviaTDD-architecture.md` §2.2 Merge) reflect the new lifecycle.
 
 ### Fixed
 - `resolve_issue_record` and `_deduplicate_issues` now treat `COMPLETED`
