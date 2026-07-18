@@ -607,22 +607,30 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_micro_green_phase_mechanical_failure_does_not_escalate_to_hitl(
+    def test_micro_green_mechanical_failure_routes_to_judge_not_failed(
         self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
     ):
-        """GREEN receiving a RED test that cannot be satisfied via the
-        library/API surface declared in scope emits ``status: FAILURE`` +
-        a concrete mechanical ``rationale:`` — NOT ``error_kind:
-        contract_drift`` and NOT a structured escalation (the runner's
-        narrow ``_is_hitl_escalation`` check stays defensive, GREEN
-        doesn't opine on drift/HITL routing).
+        """GREEN mechanical FAILURE (RED test unsatisfiable via library/API
+        surface declared in scope) is routed through JUDGE for a scope/test
+        decision, NOT short-circuited to FAILED.
 
-        Pins the layer separation: GREEN says "I can't make this test
-        pass within my mechanical scope" — JUDGE owns scope review and
-        surfaces slice-scope conflicts to the operator. A GREEN that
-        fabricates a structured escalation dict bypasses the layer and
-        routes through the wrong branch.
+        Pins layer discipline: GREEN says "I can't make this test pass
+        within my mechanical scope" via ``status: FAILURE`` + concrete
+        ``rationale:``; JUDGE owns the decision of whether the test is
+        wrong (``revert_before`` — re-run RED) or the slice scope is
+        wrong (``revert_to_red`` — re-run GREEN with the rationale as
+        feedback). The runner does NOT try to satisfy the test itself,
+        does NOT promote loose-string ``error_kind`` to HITL escalation,
+        and does NOT mark the task FAILED on first mechanical FAILURE.
+
+        Companion to ``test_green_auto_prompt_has_no_drift_instruction_language``
+        (prompt content) and ``test_judge_auto_prompt_handles_mechanical_failure``
+        (JUDGE prompt content). Runner-routing + prompt-content =
+        three-axis pin.
         """
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         mechanical_rationale = (
             "RED test at tests/embedder_swap_test.rs:307-379 invokes "
             "`gloss index .` as a subprocess; CLI dispatch at "
@@ -631,23 +639,54 @@ class TestMicroOrchestration:
             "is reachable from outside the CLI but cannot satisfy this "
             "test as written."
         )
+        call_log: list[str] = []
 
-        def _fail_green_mechanically(*args, **kwargs):
+        def _route_via_judge(*args, **kwargs):
             phase = kwargs.get("phase", "")
             tid = kwargs.get("task_id", "TSK-004-15")
+            call_log.append(phase)
             if phase == "GREEN":
+                if call_log.count("GREEN") == 1:
+                    return (
+                        HandoverManifest.model_construct(
+                            phase="GREEN",
+                            status="FAILURE",
+                            task_id=tid,
+                            rationale=mechanical_rationale,
+                            error_kind="contract_drift",
+                        ),
+                        "",
+                    )
+                return (
+                    HandoverManifest(
+                        phase="GREEN",
+                        status="SUCCESS",
+                        task_id=tid,
+                        files=["src/index/vector.rs"],
+                    ),
+                    "",
+                )
+            if phase == "JUDGE":
+                judge_count = call_log.count("JUDGE")
+                if judge_count == 1:
+                    return (
+                        HandoverManifest.model_construct(
+                            phase="JUDGE",
+                            status="SUCCESS",
+                            verdict="COMPLIANCE_VIOLATION",
+                            task_id=tid,
+                            next_action="revert_before",
+                            train_feedback=mechanical_rationale,
+                        ),
+                        "",
+                    )
                 return (
                     HandoverManifest.model_construct(
-                        phase="GREEN",
-                        status="FAILURE",
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_PASS",
                         task_id=tid,
-                        rationale=mechanical_rationale,
-                        # Even if the agent loosely tags the kind (as the
-                        # TSK-013-01 agent did), the runner must NOT
-                        # promote this to a HITL escalation — the
-                        # narrow check looks for structured dict keys
-                        # only.
-                        error_kind="contract_drift",
+                        rationale="GREEN implementation now satisfies spec",
                     ),
                     "",
                 )
@@ -656,7 +695,7 @@ class TestMicroOrchestration:
                 "",
             )
 
-        mock_agent.side_effect = _fail_green_mechanically
+        mock_agent.side_effect = _route_via_judge
 
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -667,7 +706,7 @@ class TestMicroOrchestration:
             task = _make_task_record(
                 task_id="TSK-004-15",
                 issue_id="ISS-001-004",
-                description="Green mechanical failure stays GREEN",
+                description="Green mechanical failure routes to judge",
                 status="PENDING",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
@@ -675,50 +714,44 @@ class TestMicroOrchestration:
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-15"])
 
-            # Task fails (not escalates) — exit non-zero, no HITL banner.
             assert "HITL_REQUIRED" not in result.output, (
                 f"Mechanical FAILURE must NOT escalate to HITL: {result.output}"
             )
-            assert result.exit_code != 0, (
-                f"Expected non-zero exit on mechanical FAILURE, "
-                f"got {result.exit_code}: {result.output}"
+            assert "JUDGE" in call_log, (
+                f"JUDGE must run after GREEN mechanical FAILURE — "
+                f"the runner routed straight to FAILED. "
+                f"call_log={call_log}"
             )
-
-            # The mechanical rationale must surface verbatim in the
-            # raised PhaseFailedError — proves the runner used
-            # manifest.rationale, not the "unknown" fallback. The
-            # exception is the canonical surface for non-banner failures
-            # in ``micro run <task_id>`` mode (no _execute_task_with_retry
-            # wrapper that would re-print to stdout).
-            from deviate.cli.micro import HitlEscalationError, PhaseFailedError
-
-            assert isinstance(result.exception, PhaseFailedError), (
-                f"Expected PhaseFailedError, got "
-                f"{type(result.exception).__name__}: {result.exception}"
+            # One RED + two GREEN (fail + retry) + two JUDGE
+            # (revert_before + pass) + one REFACTOR = 6.
+            assert mock_agent.call_count == 6, (
+                f"Expected RED+GREEN+JUDGE+GREEN+JUDGE+REFACTOR "
+                f"(6 calls), got {mock_agent.call_count}: "
+                f"phases={call_log}"
             )
-            assert not isinstance(result.exception, HitlEscalationError), (
-                f"Mechanical FAILURE must NOT escalate to "
-                f"HitlEscalationError — that bypasses layer discipline: "
-                f"{result.exception}"
+            judge_prompts = [
+                call.args[0]
+                for call in mock_agent.call_args_list
+                if call.kwargs.get("phase") == "JUDGE"
+            ]
+            assert judge_prompts, "JUDGE was never invoked"
+            judge_prompt = judge_prompts[0]
+            assert "<failure_kind>mechanical</failure_kind>" in judge_prompt, (
+                f"JUDGE prompt must contain the <failure_kind>"
+                f"mechanical</failure_kind> discriminator so JUDGE "
+                f"branches into review-and-route mode. "
+                f"Prompt excerpt: {judge_prompt[:500]}"
             )
-            exc_msg = str(result.exception)
-            assert "tests/embedder_swap_test.rs:307-379" in exc_msg, (
-                f"Expected mechanical rationale (test path) in exception: {exc_msg}"
+            assert mechanical_rationale in judge_prompt, (
+                f"JUDGE prompt must contain the mechanical "
+                f"rationale: {judge_prompt[:1000]}"
             )
-            assert "not_implemented" in exc_msg, (
-                f"Expected concrete CLI-dispatch detail in exception: {exc_msg}"
-            )
-            assert "unknown" not in exc_msg.split("agent_output_tail")[0], (
-                f"Rationale fallback 'unknown' must NOT appear before "
-                f"agent_output_tail — the runner should use the "
-                f"manifest's mechanical rationale: {exc_msg}"
+            assert result.exit_code == 0, (
+                f"Expected exit 0 after JUDGE routes revert_before + "
+                f"GREEN retry succeeds, got {result.exit_code}: "
+                f"{result.output}"
             )
             statuses = _read_statuses(ledger_path)
-            # Single-task `micro run <task_id>` mode does not write
-            # ``FAILED`` to the ledger (that's `_execute_task_with_retry`'s
-            # job in `--all` mode); the canonical failure surface is the
-            # raised exception, asserted above. What we MUST verify in
-            # either path is that the runner did NOT write HITL_PENDING.
             assert "HITL_PENDING" not in statuses, (
                 f"Mechanical FAILURE must NOT write HITL_PENDING — "
                 f"layer discipline: {statuses}"
@@ -807,9 +840,9 @@ def test_green_auto_prompt_has_no_drift_instruction_language() -> None:
     from importlib import resources
 
     green_prompt = (
-        resources.files("deviate.prompts.auto").joinpath("green.md").read_text(
-            encoding="utf-8"
-        )
+        resources.files("deviate.prompts.auto")
+        .joinpath("green.md")
+        .read_text(encoding="utf-8")
     )
 
     forbidden_phrases = (
@@ -843,6 +876,66 @@ def test_green_auto_prompt_has_no_drift_instruction_language() -> None:
     assert "status: FAILURE" in green_prompt, (
         "GREEN prompt must instruct the agent to emit 'status: FAILURE' for "
         "RED tests that cannot be satisfied within mechanical scope."
+    )
+
+
+def test_judge_auto_prompt_handles_mechanical_failure() -> None:
+    """Pin the JUDGE prompt's handling of GREEN mechanical-failure escalation.
+
+    Companion to ``test_micro_green_mechanical_failure_routes_to_judge_not_failed``
+    (runner routing) and ``test_green_auto_prompt_has_no_drift_instruction_language``
+    (GREEN prompt content). The runner sets ``session.failure_kind="mechanical"``
+    and injects the ``<failure_kind>mechanical</failure_kind>`` block into the
+    JUDGE prompt; the JUDGE prompt must contain the review-and-route rule so
+    JUDGE emits verdict + ``next_action`` (revert_before / revert_to_red /
+    skip_refactor) instead of attempting to satisfy the test itself.
+
+    Three-axis pin (runner-routing + GREEN prompt content + JUDGE prompt
+    content) on the layer separation: GREEN surfaces mechanical FAILURE,
+    JUDGE owns the routing decision.
+    """
+    from importlib import resources
+
+    judge_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("judge.md")
+        .read_text(encoding="utf-8")
+    )
+
+    # The discriminator block MUST be mentioned in the prompt so the agent
+    # branches into review-and-route mode.
+    assert "<failure_kind>mechanical</failure_kind>" in judge_prompt, (
+        "JUDGE prompt must mention the <failure_kind>mechanical"
+        "</failure_kind> discriminator block so the agent knows to branch "
+        "into review-and-route mode instead of attempting to satisfy the "
+        "test. The runner injects this block when "
+        "session.failure_kind == 'mechanical' (see src/deviate/cli/micro.py"
+        "::_run_judge_phase)."
+    )
+
+    # The action language MUST be present: revert_before (test wrong),
+    # revert_to_red (scope wrong), skip_refactor (operator intervenes).
+    required_actions = ("revert_before", "revert_to_red", "skip_refactor")
+    for action in required_actions:
+        assert action in judge_prompt, (
+            f"JUDGE prompt must reference `{action}` in the "
+            f"<failure_kind>mechanical</failure_kind> rule so the agent "
+            f"knows it can emit next_action={action!r}. Without this, "
+            f"JUDGE has no routing vocabulary for mechanical failures."
+        )
+
+    # The prompt must instruct JUDGE NOT to attempt to satisfy the test
+    # itself — that's GREEN's role, and the mechanical failure is
+    # precisely because GREEN couldn't satisfy it.
+    assert (
+        "Do NOT attempt to satisfy the test" in judge_prompt
+        or "do NOT attempt to satisfy the test" in judge_prompt
+    ), (
+        "JUDGE prompt must explicitly instruct the agent not to attempt "
+        "to satisfy the test when <failure_kind>mechanical</failure_kind> "
+        "is present. The mechanical failure is GREEN's signal that the "
+        "test is unsatisfiable in the current scope; JUDGE's job is to "
+        "route, not to retry."
     )
 
 
