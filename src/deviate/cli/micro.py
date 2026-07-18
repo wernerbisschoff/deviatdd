@@ -1099,15 +1099,42 @@ def _run_green_phase(
                 f"GREEN phase escalated to HITL for {tid}: "
                 f"agent returned structured contract_drift/hitl_options"
             )
-        rationale = manifest.rationale or "unknown"
+        rationale = manifest.rationale or ""
         tail = timeout_ctx or "(no agent output captured)"
+        if rationale:
+            # Mechanical FAILURE: GREEN cannot satisfy the RED test via the
+            # library/API surface declared in scope. Route to JUDGE so it
+            # can pick `revert_before` (test is wrong → re-run RED) vs
+            # `revert_to_red` (slice/scope is wrong → re-run GREEN with
+            # feedback) instead of short-circuiting to FAILED. The
+            # `failure_kind="mechanical"` discriminator tells the JUDGE
+            # prompt to emit verdict+next_action rather than treat the
+            # rationale as instructions to retry the implementation.
+            c.print(
+                f"  [yellow]GREEN_MECHANICAL_FAILURE[/] {tid} — "
+                f"routing to JUDGE for scope/test decision"
+            )
+            session.train_feedback = rationale
+            session.failure_kind = "mechanical"
+            session = session.force_transition_to("GREEN")
+            session.save(session_path)
+            _log_run(
+                "GREEN_MECHANICAL_FAILURE",
+                task_id=tid,
+                rationale_preview=rationale.replace("\n", " ")[:200],
+                reroute="JUDGE",
+            )
+            return session
+        # Empty rationale — agent emitted FAILURE but no info for JUDGE.
+        # Preserve prior "unknown" symptom + agent_output_tail dump.
         raise PhaseFailedError(
-            f"GREEN phase failed for {tid}: {rationale}\n"
+            f"GREEN phase failed for {tid}: unknown\n"
             f"  agent_output_tail (last 50 non-blank stdout lines):\n{tail}"
         )
 
     session = session.force_transition_to("GREEN")
     session.train_feedback = ""
+    session.failure_kind = ""
     session.judge_rejected = False
     session.save(session_path)
 
@@ -1476,8 +1503,16 @@ def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]
     Used by both rejection routes (``revert_to_red`` and ``revert_before``)
     so they share the same feedback source cascade.
     """
-    train_feedback_fb = getattr(manifest, "train_feedback", None) or ""
-    rationale_fb = getattr(manifest, "rationale", None) or ""
+    train_feedback_fb = (
+        getattr(manifest, "train_feedback", None)
+        or (manifest.model_extra or {}).get("train_feedback", "")
+        or ""
+    )
+    rationale_fb = (
+        getattr(manifest, "rationale", None)
+        or (manifest.model_extra or {}).get("rationale", "")
+        or ""
+    )
     summary_fb = (
         getattr(manifest, "summary", None)
         or (manifest.model_extra or {}).get("summary", "")
@@ -1611,11 +1646,6 @@ def _run_judge_phase(
     monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
-    _log_run("PHASE_START", task_id=tid, phase="JUDGE")
-    _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
-    if _verbose:
-        c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)}")
-
     backend = agent or "pi"
     root = Path.cwd()
 
@@ -1638,10 +1668,23 @@ def _run_judge_phase(
         text=True,
         env=_git_env(),
     ).stdout
+
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
     if session.train_feedback:
         prompt += f"\n\n<test_feedback>\n{session.train_feedback}\n</test_feedback>\n"
+    if session.failure_kind == "mechanical":
+        prompt += (
+            "\n\n<failure_kind>mechanical</failure_kind>\n\n"
+            "GREEN emitted `status: FAILURE` with a mechanical rationale — no "
+            "production code was written. Do NOT attempt to satisfy the test "
+            "yourself; review the rationale and emit `verdict: COMPLIANCE_VIOLATION` "
+            "+ `next_action: revert_before` (the RED test is wrong — re-run RED) or "
+            "`next_action: revert_to_red` (the slice/scope is wrong — re-run GREEN "
+            "with the rationale as feedback) or `next_action: skip_refactor` "
+            "(the operator should intervene at the meso layer, e.g. widen the "
+            "slice scope).\n"
+        )
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root)

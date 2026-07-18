@@ -254,6 +254,7 @@ class SessionState(BaseModel):
     active_issue_id: Optional[str] = None
     last_command: str = ""
     train_feedback: str = ""
+    failure_kind: Literal["", "mechanical"] = ""
     judge_rejected: bool = False
     pending_judge_action: str = ""
     red_commit_sha: str = ""
@@ -283,6 +284,7 @@ class SessionState(BaseModel):
             last_command=self.last_command,
             red_commit_sha=self.red_commit_sha,
             train_feedback=self.train_feedback,
+            failure_kind=self.failure_kind,
             judge_rejected=self.judge_rejected,
             pending_judge_action=self.pending_judge_action,
             timestamp=datetime.now(timezone.utc),
