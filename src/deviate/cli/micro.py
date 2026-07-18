@@ -1082,6 +1082,23 @@ def _run_green_phase(
             f"GREEN phase agent error for {tid}: agent returned no manifest"
         )
     if manifest.status.upper() in ("FAILURE", "ERROR", "FAIL"):
+        if _is_hitl_escalation(manifest):
+            _log_run(
+                "GREEN_HITL_ESCALATION",
+                task_id=tid,
+                manifest=manifest.model_dump_json(),
+            )
+            _render_hitl_banner(manifest, c, tid, "GREEN")
+            try:
+                record = TaskRecord.model_validate(task)
+                record.status = "HITL_PENDING"
+                append_task_transition(record, ledger_path)
+            except Exception as e:
+                c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+            raise HitlEscalationError(
+                f"GREEN phase escalated to HITL for {tid}: "
+                f"agent returned structured contract_drift/hitl_options"
+            )
         rationale = manifest.rationale or "unknown"
         tail = timeout_ctx or "(no agent output captured)"
         raise PhaseFailedError(
@@ -2379,6 +2396,65 @@ class PhaseFailedError(Exception):
     pass
 
 
+class HitlEscalationError(PhaseFailedError):
+    """Raised when an agent manifest carries structured HITL escalation.
+
+    Agents that detect a structural impossibility (spec contradiction,
+    toolchain contract mismatch, missing prerequisite owned by a
+    different slice) populate ``status: ERROR`` together with one of
+    ``contract_drift``, ``escalates_to``, or ``hitl_options``. Retrying
+    them burns stall budget on a deterministic non-answer — surface
+    them as HITL instead.
+
+    Subclasses ``PhaseFailedError`` so existing catch sites still match;
+    the retry loop distinguishes via ``isinstance``.
+    """
+
+    pass
+
+
+_HITL_ESCALATION_KEYS = frozenset({"contract_drift", "escalates_to", "hitl_options"})
+
+
+def _is_hitl_escalation(manifest) -> bool:
+    """True when the manifest signals a structured HITL escalation."""
+    if manifest is None:
+        return False
+    if manifest.status.upper() not in ("FAILURE", "ERROR", "FAIL"):
+        return False
+    extra = getattr(manifest, "model_extra", None) or {}
+    return any(key in extra for key in _HITL_ESCALATION_KEYS)
+
+
+def _render_hitl_banner(manifest, c: Console, tid: str, phase: str) -> None:
+    """Print a clean HITL banner so the operator sees the escalation."""
+    extra = getattr(manifest, "model_extra", None) or {}
+    drift = extra.get("contract_drift")
+    options = extra.get("hitl_options") or {}
+    escalates_to = extra.get("escalates_to")
+    recommended = options.get("recommended") if isinstance(options, dict) else None
+    reason = extra.get("reason")
+    summary = extra.get("summary")
+    if summary is None and isinstance(drift, dict):
+        summary = drift.get("symptom")
+    from rich.panel import Panel as _Panel
+    from rich.text import Text as _Text
+
+    body = _Text()
+    body.append(f"phase: {phase}", style="bold")
+    body.append("\n")
+    body.append(f"task_id: {tid}\n")
+    if reason:
+        body.append(f"reason: {reason}\n")
+    if summary:
+        body.append(f"summary: {summary}\n")
+    if escalates_to:
+        body.append(f"escalates_to: {escalates_to}\n")
+    if recommended:
+        body.append(f"recommended: {recommended}", style="bold green")
+    c.print(_Panel(body, border_style="yellow", title="HITL_REQUIRED"))
+
+
 class RedPhaseError(Exception):
     pass
 
@@ -2513,6 +2589,22 @@ def _execute_task_with_retry(
                     status="completed",
                 )
                 return True
+            except HitlEscalationError as exc:
+                # Structured HITL escalation — deterministic non-answer.
+                # Don't retry; mark HITL_PENDING and halt the chain.
+                c.print(f"  [yellow]HITL_PENDING[/] {tid}: {exc}")
+                _log_run(
+                    "TASK_HITL_PENDING",
+                    task_id=tid,
+                    error=str(exc),
+                )
+                monitor.push_event(
+                    "task_hitl_pending",
+                    task_id=tid,
+                    error_reason=str(exc),
+                )
+                _append_status_transition(task, "HITL_PENDING", ledger_file)
+                return False
             except Exception as exc:
                 if attempt == 1:
                     c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")

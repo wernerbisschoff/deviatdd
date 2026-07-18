@@ -17,7 +17,7 @@ OutputCallback = Callable[[str], None]
 
 
 MAX_PROMPT_CHARS = 80_000
-STREAM_STALL_TIMEOUT_SECONDS = 60
+STREAM_STALL_TIMEOUT_SECONDS = 900
 _PROMPT_TRUNCATED_MARKER = (
     "\n\n<!-- PROMPT_TRUNCATED: original was {original_chars} chars -->\n\n"
 )
@@ -340,6 +340,10 @@ class AgentBackend:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stdout_lines.append(line)
                     output_callback(line)
+                    with stall_lock:
+                        stall_deadline[0] = (
+                            time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
+                        )
             except (ValueError, OSError):
                 pass
             finally:
@@ -350,9 +354,15 @@ class AgentBackend:
                 for raw_line in proc.stderr:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stderr_lines.append(line)
+                    with stall_lock:
+                        stall_deadline[0] = (
+                            time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
+                        )
             except (ValueError, OSError, RuntimeError):
                 pass
 
+        stall_lock = threading.Lock()
+        stall_deadline = [time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS]
         threads = [
             threading.Thread(target=read_stdout),
             threading.Thread(target=read_stderr),
@@ -360,11 +370,14 @@ class AgentBackend:
         for t in threads:
             t.start()
 
-        stall_deadline = time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
+        def stall_deadline_remaining() -> float:
+            with stall_lock:
+                return stall_deadline[0] - time.monotonic()
+
         while True:
             if stdout_done and not any(t.is_alive() for t in threads):
                 break
-            if time.monotonic() >= stall_deadline:
+            if stall_deadline_remaining() <= 0:
                 stall_reason = (
                     f"STALL_DETECTED: no agent output for "
                     f"{STREAM_STALL_TIMEOUT_SECONDS}s"

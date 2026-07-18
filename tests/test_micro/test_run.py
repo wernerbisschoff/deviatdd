@@ -54,8 +54,15 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
 
 
 class TestRunCommand:
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_dispatches_tdd_task_to_rgr(self, mock_agent, tmp_path: Path):
+    def test_run_dispatches_tdd_task_to_rgr(
+        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -107,8 +114,15 @@ class TestRunCommand:
                 f"Expected immediate task to reach COMPLETED: {result.output}"
             )
 
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_all_iterates_mixed_modes(self, mock_agent, tmp_path: Path):
+    def test_run_all_iterates_mixed_modes(
+        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -140,8 +154,15 @@ class TestRunCommand:
                 f"Expected all tasks to reach COMPLETED: {result.output}"
             )
 
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_accepts_legacy_TNNN_format(self, mock_agent, tmp_path: Path):
+    def test_run_accepts_legacy_TNNN_format(
+        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
