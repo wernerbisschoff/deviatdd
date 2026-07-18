@@ -55,11 +55,15 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
 
 
 class TestMicroOrchestration:
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_single_task_full_cycle(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
     ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -147,9 +151,15 @@ class TestMicroOrchestration:
                 f"JUDGE phase should be skipped with --no-judge: {result.output}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_no_refactor_flag(self, mock_agent, mock_verify, tmp_git_repo: Path):
+    def test_micro_no_refactor_flag(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -174,9 +184,15 @@ class TestMicroOrchestration:
                 f"REFACTOR phase should be skipped with --no-refactor: {result.output}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_agent_flag(self, mock_agent, mock_verify, tmp_git_repo: Path):
+    def test_micro_agent_flag(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -203,11 +219,15 @@ class TestMicroOrchestration:
                 f"Expected task to complete with --agent: {result.output}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_ledger_updates_on_each_phase(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
     ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -242,11 +262,15 @@ class TestMicroOrchestration:
                 "COMPLETED status is now written directly by _run_refactor_phase"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_all_processes_all_pending(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
     ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -311,10 +335,11 @@ class TestMicroOrchestration:
                 f"Expected at least one FAILED status: {statuses}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_judge_rejection_triggers_green_retry(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
     ):
         """JUDGE_REJECTED must not skip GREEN on TRAIN retry.
 
@@ -324,6 +349,9 @@ class TestMicroOrchestration:
         Now _run_green_phase checks session.train_feedback and runs
         regardless of the ledger when feedback is present.
         """
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         call_log: list[str] = []
 
         def _judge_reject_once(*args, **kwargs):
@@ -469,6 +497,181 @@ class TestMicroOrchestration:
             assert result.exit_code != 0, (
                 f"Expected non-zero exit on empty-feedback rejection, got {result.exit_code}"
             )
+
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_green_phase_escalates_to_hitl_on_contract_drift(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+    ):
+        """GREEN manifest carrying ``contract_drift``+``hitl_options`` is
+        a structured escalation — must halt the chain via HITL_PENDING,
+        not waste stall budget on a retry that produces the same verdict.
+
+        Regression test for the runner bug where a single GREEN manifest
+        with ``status: ERROR`` + ``contract_drift`` was retried twice,
+        each time burning 900 s of stall budget before a duplicate
+        PhaseFailedError. The runner must short-circuit on first
+        detection and surface the agent's hitl_options to the operator.
+        """
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        def _escalate_once(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-004-13")
+            if phase == "GREEN":
+                return (
+                    HandoverManifest.model_construct(
+                        phase="GREEN",
+                        status="ERROR",
+                        task_id=tid,
+                        reason="contract_drift",
+                        summary=(
+                            "spec:64 forbids the gloss index CLI surface, "
+                            "but spec:22 mandates exercising it"
+                        ),
+                        contract_drift={
+                            "symptom": "spec contradiction at spec:22/64",
+                            "side_a": "spec:22 (Hard Inclusion: test calls gloss index)",
+                            "side_b": "spec:64 (Defensive Exclusion: no CLI)",
+                        },
+                        hitl_options={
+                            "recommended": "trim_red_test",
+                            "trim_red_test": {
+                                "patch": "drop the subprocess `gloss index` step",
+                                "trade_off": "defers CLI to ISS-011",
+                            },
+                        },
+                        escalates_to="orchestrator (decide RED retry vs HITL amendment)",
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(
+                    phase=phase,
+                    status="SUCCESS",
+                    task_id=tid,
+                ),
+                "",
+            )
+
+        mock_agent.side_effect = _escalate_once
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-13",
+                issue_id="ISS-001-004",
+                description="Hitl escalation on green",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-13"])
+
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit on HITL escalation, "
+                f"got {result.exit_code}: {result.output}"
+            )
+            assert "HITL_REQUIRED" in result.output, (
+                f"Expected HITL_REQUIRED banner: {result.output}"
+            )
+            assert "TRAIN_EXHAUSTED" not in result.output, (
+                f"HITL must short-circuit; TRAIN_EXHAUSTED is the wrong path: "
+                f"{result.output}"
+            )
+            # RED runs once (success) + GREEN runs once (escalation) = 2 agent
+            # calls. The HITL branch must NOT trigger a retry, so we
+            # must NOT see TSK-004-13 invoked more than twice.
+            assert mock_agent.call_count == 2, (
+                f"HITL escalation must skip retry; expected RED+GREEN only "
+                f"(2 calls), got {mock_agent.call_count}"
+            )
+
+            statuses = _read_statuses(ledger_path)
+            assert "HITL_PENDING" in statuses, (
+                f"Expected HITL_PENDING in ledger: {statuses}"
+            )
+            assert "FAILED" not in statuses, (
+                f"HITL is distinct from FAILED — the new state machine must "
+                f"not collapse them: {statuses}"
+            )
+
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_micro_green_train_feedback_still_retries_then_exhausts(
+        self,
+        mock_agent,
+        mock_verify,
+        mock_commit,
+        mock_run_format,
+        mock_run_test,
+        tmp_git_repo: Path,
+    ):
+        """Regression guard: when GREEN's ``_run_test_cmd`` returns non-zero
+        (training failure), the existing TRAIN retry loop must still run —
+        NOT be redirected to the HITL branch. The new branch only fires on
+        ``status: ERROR`` with ``contract_drift`` / ``hitl_options`` /
+        ``escalates_to`` populated; bare test-failure train_feedback is
+        out of scope.
+        """
+        # Drive GREEN's `test_result.returncode != 0` branch on first
+        # invocation, then succeed afterwards so the cycle can settle.
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+        ]
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-14",
+                issue_id="ISS-001-004",
+                description="Train feedback still drives train_exhausted",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-14"])
+
+            assert "HITL_REQUIRED" not in result.output, (
+                f"Bare train_feedback must NOT escalate to HITL: {result.output}"
+            )
+            assert "TRAIN" in result.output, (
+                f"Expected TRAIN retry on bare train_feedback path: {result.output}"
+            )
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit after retry exhaustion: {result.output}"
+            )
+
+
+def _read_statuses(ledger_path: Path) -> list[str]:
+    lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")
+    return [json.loads(line).get("status") for line in lines if line]
 
 
 class TestYellowHandoffContract:

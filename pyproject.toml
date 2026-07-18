@@ -1,6 +1,6 @@
 [project]
 name = "deviatdd"
-version = "2.9.0"
+version = "2.9.1"
 description = "DeviaTDD CLI — agent orchestration framework"
 readme = "README.md"
 license = "MIT"
