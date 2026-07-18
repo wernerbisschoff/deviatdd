@@ -63,7 +63,7 @@ task will fail permanently.**
 <traceability_and_compliance_mandates>
 1. **Contract Validation & Upstream Ingestion**: Extract the target `{TASK_ID}`, functional requirements (`FR-[ID]`), and acceptance criteria (`AC-[ID]`) from the preceding RED phase handover manifest context block. Validate these structural goals directly against `<spec_content>` and `<data_model_content>` above.
 2. **Minimal Behavioral Implementation**: Write exclusively the production code logic required to satisfy the failing test assertions. Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
-3. **Contract Drift Detection**: If you detect that a test assertion generated during the previous Red phase directly violates or breaks structural schemas declared in `<spec_content>` or `<data_model_content>`, halt execution immediately and report an API signature conflict.
+3. **Scope Boundary (mechanical)**: GREEN implements ONLY production code under `src/`, `lib/`, or `app/` to make the RED test pass via the library/API surface declared in scope. If the RED test cannot be satisfied within that mechanical scope (the test exercises a CLI surface that is out of scope, requires a tool that the slice does not own, or depends on a fixture not in the workspace), set `status: FAILURE` with a concrete `rationale:` stating exactly which test path cannot be satisfied and why. Do not opine on spec scope, drift, or HITL routing — JUDGE owns those decisions.
 4. **Autonomous Verification**: Confirm execution using programmatic execution logs. Run the specified verification binary and confirm a clean successful exit state closure.
 5. **Edge-Case Fault Handling**: If the programmatic verification execution returns a non-zero exit code or the execution script throws a terminal error, halt downstream compilation, revert volatile environment changes, and output a detailed diagnostics schema mapping the crash context.
 </traceability_and_compliance_mandates>
@@ -142,8 +142,7 @@ files:
 ```
 </handover_manifest>
 
-Use `status: "ERROR"` only for tool failures or unforeseen problems.
-</output_format_schemas>
+Use `status: "ERROR"` strictly for tool failures (test_command crashed, lint binary missing, subprocess IO error). Use `status: FAILURE` when you cannot make the RED test pass within mechanical scope (see Mandate 3). The runner distinguishes these: `ERROR` routes through defensive checks; `FAILURE` is treated as a normal phase outcome for JUDGE review.
 
 <edge_case_handling>
 
@@ -154,8 +153,7 @@ Use `status: "ERROR"` only for tool failures or unforeseen problems.
 | Tests fail after implementation | Fix implementation iteratively until all tests pass |
 | Tests involve git operations | Ensure test isolation via `create_temp_dir` + `git init` — run tests in temp dir, not the project repo |
 | Lint fails | Fix lint issues, re-run tests and lint until both pass |
-| Contract drift detected | Halt and report API signature conflict with `spec.md` or `data-model.md` |
-| Test file not found | Read RED handover manifest for test file path; if missing, search for test files matching the task_id |
+| RED test cannot be satisfied within mechanical scope (CLI surface out of scope, required tool not in workspace, fixture missing) | Set `status: FAILURE` with `rationale:` naming the exact test path and why it cannot be satisfied via library/API alone. Do not classify as drift or escalate to HITL — JUDGE owns scope review and will surface the issue to the operator. |
 | Post-script returns COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
 | `<persisted_judge_feedback>` block present | Treat every `**Judge Feedback**` bullet as a required fix; do not silently re-trigger the failing path |
