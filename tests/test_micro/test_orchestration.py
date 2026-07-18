@@ -605,6 +605,126 @@ class TestMicroOrchestration:
             )
 
     @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_green_phase_mechanical_failure_does_not_escalate_to_hitl(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+    ):
+        """GREEN receiving a RED test that cannot be satisfied via the
+        library/API surface declared in scope emits ``status: FAILURE`` +
+        a concrete mechanical ``rationale:`` — NOT ``error_kind:
+        contract_drift`` and NOT a structured escalation (the runner's
+        narrow ``_is_hitl_escalation`` check stays defensive, GREEN
+        doesn't opine on drift/HITL routing).
+
+        Pins the layer separation: GREEN says "I can't make this test
+        pass within my mechanical scope" — JUDGE owns scope review and
+        surfaces slice-scope conflicts to the operator. A GREEN that
+        fabricates a structured escalation dict bypasses the layer and
+        routes through the wrong branch.
+        """
+        mechanical_rationale = (
+            "RED test at tests/embedder_swap_test.rs:307-379 invokes "
+            "`gloss index .` as a subprocess; CLI dispatch at "
+            "src/cli/mod.rs:651 routes Commands::Index(_) to "
+            "not_implemented('index'). Library API `Index::update_file` "
+            "is reachable from outside the CLI but cannot satisfy this "
+            "test as written."
+        )
+
+        def _fail_green_mechanically(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-004-15")
+            if phase == "GREEN":
+                return (
+                    HandoverManifest.model_construct(
+                        phase="GREEN",
+                        status="FAILURE",
+                        task_id=tid,
+                        rationale=mechanical_rationale,
+                        # Even if the agent loosely tags the kind (as the
+                        # TSK-013-01 agent did), the runner must NOT
+                        # promote this to a HITL escalation — the
+                        # narrow check looks for structured dict keys
+                        # only.
+                        error_kind="contract_drift",
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _fail_green_mechanically
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-15",
+                issue_id="ISS-001-004",
+                description="Green mechanical failure stays GREEN",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-15"])
+
+            # Task fails (not escalates) — exit non-zero, no HITL banner.
+            assert "HITL_REQUIRED" not in result.output, (
+                f"Mechanical FAILURE must NOT escalate to HITL: {result.output}"
+            )
+            assert result.exit_code != 0, (
+                f"Expected non-zero exit on mechanical FAILURE, "
+                f"got {result.exit_code}: {result.output}"
+            )
+
+            # The mechanical rationale must surface verbatim in the
+            # raised PhaseFailedError — proves the runner used
+            # manifest.rationale, not the "unknown" fallback. The
+            # exception is the canonical surface for non-banner failures
+            # in ``micro run <task_id>`` mode (no _execute_task_with_retry
+            # wrapper that would re-print to stdout).
+            from deviate.cli.micro import HitlEscalationError, PhaseFailedError
+
+            assert isinstance(result.exception, PhaseFailedError), (
+                f"Expected PhaseFailedError, got "
+                f"{type(result.exception).__name__}: {result.exception}"
+            )
+            assert not isinstance(result.exception, HitlEscalationError), (
+                f"Mechanical FAILURE must NOT escalate to "
+                f"HitlEscalationError — that bypasses layer discipline: "
+                f"{result.exception}"
+            )
+            exc_msg = str(result.exception)
+            assert "tests/embedder_swap_test.rs:307-379" in exc_msg, (
+                f"Expected mechanical rationale (test path) in exception: {exc_msg}"
+            )
+            assert "not_implemented" in exc_msg, (
+                f"Expected concrete CLI-dispatch detail in exception: {exc_msg}"
+            )
+            assert "unknown" not in exc_msg.split("agent_output_tail")[0], (
+                f"Rationale fallback 'unknown' must NOT appear before "
+                f"agent_output_tail — the runner should use the "
+                f"manifest's mechanical rationale: {exc_msg}"
+            )
+            statuses = _read_statuses(ledger_path)
+            # Single-task `micro run <task_id>` mode does not write
+            # ``FAILED`` to the ledger (that's `_execute_task_with_retry`'s
+            # job in `--all` mode); the canonical failure surface is the
+            # raised exception, asserted above. What we MUST verify in
+            # either path is that the runner did NOT write HITL_PENDING.
+            assert "HITL_PENDING" not in statuses, (
+                f"Mechanical FAILURE must NOT write HITL_PENDING — "
+                f"layer discipline: {statuses}"
+            )
+
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._verify_clean_worktree")
@@ -672,6 +792,58 @@ class TestMicroOrchestration:
 def _read_statuses(ledger_path: Path) -> list[str]:
     lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")
     return [json.loads(line).get("status") for line in lines if line]
+
+
+def test_green_auto_prompt_has_no_drift_instruction_language() -> None:
+    """Pin the GREEN prompt's layer-discipline content.
+
+    Sibling to ``test_micro_green_phase_mechanical_failure_does_not_escalate_to_hitl``
+    which pins the *runner*'s narrow ``_is_hitl_escalation``. This test pins the
+    *prompt* so a future edit cannot re-add "Halt and report API signature
+    conflict" or similar GREEN drift-judgment instructions without CI failure.
+    Together: runner-narrowness + prompt-content = two-axis pin on layer
+    separation (GREEN does not opine on drift/HITL routing).
+    """
+    from importlib import resources
+
+    green_prompt = (
+        resources.files("deviate.prompts.auto").joinpath("green.md").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    forbidden_phrases = (
+        # Original Mandate 3 (replaced by mechanical scope-boundary language).
+        "Contract Drift Detection",
+        # Original edge_case row (removed; now mechanical FAILURE).
+        "Contract drift detected",
+        # Original action language (replaced with mechanical FAILURE guidance).
+        "Halt and report API signature conflict",
+        # Original action language in the edge_case_handling table.
+        "halt and report",
+        # Mandate 3 rename target — pin that the new mandate is "Scope Boundary",
+        # not "Drift Detection" or any drift-themed title.
+        "drift detection",
+    )
+    for phrase in forbidden_phrases:
+        assert phrase not in green_prompt, (
+            f"GREEN auto prompt must NOT contain {phrase!r} — GREEN does not "
+            f"opine on drift/HITL routing; that is JUDGE's job. See "
+            f"specs/DeviaTDD-api.md § GREEN Phase Layer Discipline."
+        )
+
+    # Positive pin: the new mechanical scope-boundary language must be present
+    # so a future edit that just deletes the forbidden phrases (instead of
+    # replacing them with the mechanical alternative) also fails.
+    assert "Scope Boundary" in green_prompt, (
+        "GREEN prompt must contain the 'Scope Boundary' mandate that replaced "
+        "the drift-detection language. If you removed the drift language, "
+        "you must add the mechanical scope-boundary replacement in the same edit."
+    )
+    assert "status: FAILURE" in green_prompt, (
+        "GREEN prompt must instruct the agent to emit 'status: FAILURE' for "
+        "RED tests that cannot be satisfied within mechanical scope."
+    )
 
 
 class TestYellowHandoffContract:
