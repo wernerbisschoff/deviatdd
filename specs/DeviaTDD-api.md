@@ -602,6 +602,16 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ### 5. Automated Pipeline Orchestration
 
+When Herdr launches DeviaTDD with `HERDR_ENV=1`, `HERDR_SOCKET_PATH`, and
+`HERDR_PANE_ID`, the three run entry points (`deviate run`, `deviate meso run`,
+and `deviate micro run`) report their lifecycle directly over the Herdr Unix
+socket. The console-script boundary sends a `pane.report_agent` envelope with source
+`herdr:deviate`, agent `omp`, and state `working` on entry. A zero exit reports
+`idle`; a non-zero exit or uncaught exception reports `blocked`. Delivery is
+best-effort: a missing/unavailable socket never changes the command's behavior
+or exit code. The top-level orchestrator reports one lifecycle; its in-process
+meso and micro calls do not emit nested reports.
+
 #### `deviate run` (Full-Pipeline Orchestrator)
 
 * **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)
