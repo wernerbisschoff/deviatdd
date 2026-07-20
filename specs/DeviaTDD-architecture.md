@@ -195,6 +195,19 @@ dispatcher that used to live as top-level `deviate run`) resolves a task by its
 chains `deviate meso run` with `deviate micro run --all` inside the created worktree;
 see `DeviaTDD-api.md` §5 for the orchestration contract.:
 
+The console-script boundary is also the native Herdr observation boundary.
+`src/deviate/main.py::app` identifies only `deviate run`, `deviate meso run`,
+and `deviate micro run`, then applies
+`src/deviate/core/herdr.py::with_herdr_status` around Typer dispatch. This sends
+the wrapper-compatible `pane.report_agent` envelope over `HERDR_SOCKET_PATH`
+when the Herdr environment is complete, including for parse and validation
+failures that occur before a command callback starts. Active invocations report
+`working`; zero exits report `idle`; non-zero exits and uncaught exceptions
+report `blocked`. Reporting is best-effort and preserves the original return
+value, exception, and exit code. Because only the outer console-script dispatch
+is instrumented, the top-level command's in-process `_meso_run` and `_run_all`
+calls do not produce nested sources racing to update the same pane.
+
 - **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle via `_run_tdd_cycle()`.
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
   `_run_execute_phase()`, which marks the task COMPLETED without test generation.
