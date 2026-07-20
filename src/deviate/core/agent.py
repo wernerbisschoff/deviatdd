@@ -164,6 +164,22 @@ _YAML_HANDOVER_MARKER_RE = re.compile(
 )
 
 
+def _looks_like_manifest(yaml_text: str) -> bool:
+    """Return True iff *yaml_text* parses to a dict with at least 2 keys.
+
+    Used by `_extract_yaml_block` to reject prose-with-stray-mapping output
+    that would otherwise be silently recovered into an UNKNOWN manifest by
+    the schema-recovery path. Single-key dicts (``Status: complete``) look
+    like prose, not manifests; multi-key dicts may be partial manifests
+    that should flow through schema recovery.
+    """
+    try:
+        parsed = yaml.safe_load(yaml_text)
+    except yaml.YAMLError:
+        return False
+    return isinstance(parsed, dict) and len(parsed) >= 2
+
+
 def _strip_md_for_yaml(text: str) -> str:
     """Strip markdown artifacts that confuse YAML parsing in bare output."""
     text = re.sub(r"^<handover_manifest>\s*$", "", text, flags=re.MULTILINE)
@@ -191,13 +207,11 @@ class AgentBackend:
 
         m = _YAML_MAPPING_START_RE.search(text)
         if m:
-            return text[m.start() :].strip()
+            candidate = text[m.start() :].strip()
+            if _looks_like_manifest(candidate):
+                return candidate
         cleaned = _strip_md_for_yaml(text)
-        if cleaned:
-            try:
-                yaml.safe_load(cleaned)
-            except yaml.YAMLError:
-                return ""
+        if cleaned and _looks_like_manifest(cleaned):
             return cleaned
 
     @staticmethod
