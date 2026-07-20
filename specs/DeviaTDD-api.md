@@ -713,6 +713,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   populated `parse_errors` list and
   `HandoverManifest.is_success` returns `False` so existing
   `manifest.status.upper() in (...)` success gates keep rejecting them.
+  (6) **Stricter mapping fallback** — the `_YAML_MAPPING_START_RE` fallback (`src/deviate/core/agent.py`) routes the candidate text through a `_looks_like_manifest` helper that requires `yaml.safe_load(candidate)` to return a `dict` with at least 2 keys before accepting. Single-key dicts (e.g. a stray `Status: complete` line in a JUDGE verdict with a verification matrix) look like prose, not manifests; the fallback now rejects them and the parser raises `MalformedHandoverManifestError` with the existing "No YAML handover manifest detected in agent output" hint. Multi-key partial dicts still flow through to schema recovery unchanged, so the existing `test_missing_phase_and_status_recover_as_unknown` contract is preserved.
 * **GREEN Stub-PASS Guard (REMOVED):** An earlier revision of this spec
   described a guard that rejected ``status: PASS`` manifests with zero
   observed source changes. That implementation was rolled back:
