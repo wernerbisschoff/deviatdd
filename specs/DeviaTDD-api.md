@@ -1174,6 +1174,20 @@ decision on how to route the runner. Four values, each honored verbatim by
 | `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. |
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. |
 
+**Feedback-commit timeout:** The `revert_to_red` step's "append a feedback
+commit past RED" runs `_commit_judge_feedback_and_advance`
+(`src/deviate/cli/micro.py`), which executes a `git commit` that inherits
+the active repository's configured pre-commit hooks (resolved via
+`core.hooksPath` and `.git/hooks/`). The orchestrator bounds this commit
+with `JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS = 300` (defined in
+`src/deviate/core/_shared.py`). Observed hook chains on some projects
+can exceed 30s; the constant gives them room to complete while still
+detecting a genuine hang. A `subprocess.TimeoutExpired` handler wraps
+the commit and raises `PhaseFailedError` so a stuck hook chain surfaces
+as a documented phase failure rather than a raw traceback. Operators
+diagnose a timeout by inspecting the active repository's configured
+Git hooks.
+
 Unknown `next_action` values are logged (`JUDGE_UNKNOWN_ACTION`) and the runner falls
 back to the legacy verdict-based default (rollback on violation, continue on pass).
 

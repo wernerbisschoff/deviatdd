@@ -3,6 +3,13 @@ from __future__ import annotations
 import os
 
 
+# Orchestrator's `git commit` that writes JUDGE feedback runs through
+# the project's pre-commit hook chain. Observed hook chains on some
+# projects can exceed 30s. 300s gives legitimate hooks room to complete
+# while still detecting a genuine hang.
+JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS: int = 300
+
+
 def git_env() -> dict[str, str]:
     """Return os.environ with GIT_* and GH_* stripped.
 

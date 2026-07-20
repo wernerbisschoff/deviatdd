@@ -16,6 +16,7 @@ import typer
 import yaml
 from rich.console import Console
 
+from deviate.core._shared import JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS
 from deviate.core.agent import (
     BACKEND_COMMANDS,
     AgentBackend,
@@ -1601,14 +1602,34 @@ def _commit_judge_feedback_and_advance(
         f"docs({tid}): add judge feedback for retry",
         root,
     )
-    commit_result = subprocess.run(
-        ["git", "commit", "-m", judge_msg, "--allow-empty"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-        timeout=30,
-    )
+    try:
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", judge_msg, "--allow-empty"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            timeout=JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        message = (
+            f"JUDGE feedback commit timed out for {tid} after "
+            f"{JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS}s — pre-commit hook "
+            f"chain exceeded the deadline. Inspect the active "
+            f"repository's configured Git hooks "
+            f"(core.hooksPath / .git/hooks/)."
+        )
+        c.print(
+            f"  [red]FEEDBACK_COMMIT_TIMEOUT[/] {tid}: deadline "
+            f"{JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS}s exceeded"
+        )
+        _log_run(
+            "FEEDBACK_COMMIT_TIMEOUT",
+            task_id=tid,
+            feedback_source=feedback_source,
+            timeout_seconds=JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS,
+        )
+        raise PhaseFailedError(message) from exc
     if commit_result.returncode != 0:
         message = (
             f"JUDGE feedback commit failed for {tid}: {commit_result.stderr.strip()}"

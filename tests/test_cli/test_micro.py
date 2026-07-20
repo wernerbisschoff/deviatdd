@@ -2007,16 +2007,13 @@ class TestJudgeTrainRollback:
         """The orchestrator's ``git commit`` that writes JUDGE feedback
         (the ``docs(<tid>): add judge feedback for retry`` commit) must
         pass a ``timeout=`` kwarg of at least 300 seconds so that
-        pre-commit hook chains (``cargo test`` + ``cargo clippy`` +
-        ``cargo fmt`` on Rust projects; ``pytest`` + ``ruff`` + ``mypy``
-        on Python projects) can complete. The previous 30s deadline
-        caused silent ``FEEDBACK_COMMIT_FAILED`` on the ``gloss`` slice
-        (see ``specs/_product/release-next.md`` ISS-009 / TSK-009-03).
+        repository pre-commit hooks — which on some projects run
+        validation suites that can exceed 30s — have room to complete.
 
-        Regression test: a future tightening of this value back to 30s
-        (or to anything below 300) must fail this test. Standing rule
-        ``Never --no-verify`` (AGENTS.md "Commit Authority") is preserved
-        — the longer timeout allows legitimate hook chains to complete.
+        Regression test: a future tightening of this value back below
+        300s must fail this test. The orchestrator must bound every
+        ``git commit`` invocation — ``subprocess.run`` without an
+        explicit timeout hangs indefinitely on a stuck hook chain.
         """
         from rich.console import Console
         from deviate.cli.micro import _commit_judge_feedback_and_advance
@@ -2070,9 +2067,89 @@ class TestJudgeTrainRollback:
             "the operation even when pre-commit hooks run)"
         )
         assert timeout_kwarg >= 300, (
-            f"JUDGE feedback commit timeout must be >= 300s to "
-            f"accommodate pre-commit hook chains on Rust projects; "
-            f"got {timeout_kwarg}s. Standing rule: never --no-verify."
+            f"JUDGE feedback commit timeout must be >= 300s; got "
+            f"{timeout_kwarg}s. The orchestrator must bound every "
+            f"``git commit`` invocation so a stuck hook chain surfaces "
+            f"as a documented phase failure rather than a hang."
+        )
+
+    @patch("deviate.cli.micro.subprocess.run")
+    def test_commit_judge_feedback_and_advance_raises_phase_failed_on_timeout(
+        self,
+        mock_subprocess: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_commit_judge_feedback_and_advance`` must surface a real
+        ``PhaseFailedError`` with a clear timeout diagnostic when the
+        underlying ``git commit`` exceeds
+        ``JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS``. Without this handler,
+        a slow pre-commit hook chain produces a raw
+        ``subprocess.TimeoutExpired`` traceback instead of the documented
+        phase failure, leaving the operator to diagnose the cause from
+        an unhandled exception.
+        """
+        from rich.console import Console
+        from deviate.cli.micro import _commit_judge_feedback_and_advance
+        from deviate.core._shared import JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        def _fake_subprocess_run(cmd, *args, **kwargs):
+            if cmd[:2] == ["git", "commit"]:
+                raise subprocess.TimeoutExpired(
+                    cmd=cmd, timeout=JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS
+                )
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+
+        with patch("deviate.cli.micro._log_run") as mock_log_run:
+            mock_subprocess.side_effect = _fake_subprocess_run
+
+            c = Console()
+            session = SessionState.load(session_path)
+
+            with pytest.raises(PhaseFailedError) as excinfo:
+                _commit_judge_feedback_and_advance(
+                    root=root,
+                    task=task,
+                    feedback="timeout path probe",
+                    feedback_source="test_judge_unit",
+                    c=c,
+                    session=session,
+                    session_path=session_path,
+                )
+
+        msg = str(excinfo.value).lower()
+        assert "timed out" in msg
+        assert str(JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS) in str(excinfo.value)
+        # Cause chain: the PhaseFailedError must carry the original
+        # TimeoutExpired in __cause__ (the reason for `from exc`).
+        assert isinstance(excinfo.value.__cause__, subprocess.TimeoutExpired)
+        assert excinfo.value.__cause__.timeout == JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS
+        # Observability: the FEEDBACK_COMMIT_TIMEOUT event must fire so
+        # the operator can grep logs for timeout-class failures. Without
+        # this assertion the branch could silently lose its log event
+        # while the test stays green.
+        timeout_events = [
+            call_args
+            for call_args in mock_log_run.call_args_list
+            if call_args.args and call_args.args[0] == "FEEDBACK_COMMIT_TIMEOUT"
+        ]
+        assert len(timeout_events) == 1, (
+            "expected exactly one FEEDBACK_COMMIT_TIMEOUT log event; "
+            f"got {[ca.args[0] for ca in mock_log_run.call_args_list if ca.args]}"
+        )
+        timeout_kwargs = timeout_events[0].kwargs
+        assert timeout_kwargs.get("timeout_seconds") == (
+            JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS
         )
 
 
