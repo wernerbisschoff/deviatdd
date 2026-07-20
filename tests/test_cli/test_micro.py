@@ -1997,6 +1997,84 @@ class TestJudgeTrainRollback:
             f"got {[ca.args[0][:2] for ca in mock_subprocess.call_args_list]}"
         )
 
+    @patch("deviate.cli.micro.subprocess.run")
+    def test_judge_feedback_commit_timeout_is_at_least_300_seconds(
+        self,
+        mock_subprocess: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The orchestrator's ``git commit`` that writes JUDGE feedback
+        (the ``docs(<tid>): add judge feedback for retry`` commit) must
+        pass a ``timeout=`` kwarg of at least 300 seconds so that
+        pre-commit hook chains (``cargo test`` + ``cargo clippy`` +
+        ``cargo fmt`` on Rust projects; ``pytest`` + ``ruff`` + ``mypy``
+        on Python projects) can complete. The previous 30s deadline
+        caused silent ``FEEDBACK_COMMIT_FAILED`` on the ``gloss`` slice
+        (see ``specs/_product/release-next.md`` ISS-009 / TSK-009-03).
+
+        Regression test: a future tightening of this value back to 30s
+        (or to anything below 300) must fail this test. Standing rule
+        ``Never --no-verify`` (AGENTS.md "Commit Authority") is preserved
+        — the longer timeout allows legitimate hook chains to complete.
+        """
+        from rich.console import Console
+        from deviate.cli.micro import _commit_judge_feedback_and_advance
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        # Mirror the convention-module git-log probe side effect from
+        # the existing feedback-failure test so the commit path runs to
+        # completion and we can inspect its `timeout=` kwarg.
+        def _fake_subprocess_run(cmd, *args, **kwargs):
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+
+        mock_subprocess.side_effect = _fake_subprocess_run
+
+        c = Console()
+        session = SessionState.load(session_path)
+
+        _commit_judge_feedback_and_advance(
+            root=root,
+            task=task,
+            feedback="timeout regression probe",
+            feedback_source="test_judge_unit",
+            c=c,
+            session=session,
+            session_path=session_path,
+        )
+
+        # Locate the JUDGE feedback `git commit` invocation and inspect
+        # the timeout kwarg. Per the implementation in micro.py the
+        # command is `["git", "commit", "-m", <msg>, "--allow-empty"]`.
+        commit_calls = [
+            call_args
+            for call_args in mock_subprocess.call_args_list
+            if call_args.args and call_args.args[0][:2] == ["git", "commit"]
+        ]
+        assert len(commit_calls) == 1, (
+            "expected exactly one ``git commit`` invocation; "
+            f"got {[ca.args[0][:2] for ca in mock_subprocess.call_args_list]}"
+        )
+        timeout_kwarg = commit_calls[0].kwargs.get("timeout")
+        assert timeout_kwarg is not None, (
+            "git commit must declare a timeout (orchestrator must bound "
+            "the operation even when pre-commit hooks run)"
+        )
+        assert timeout_kwarg >= 300, (
+            f"JUDGE feedback commit timeout must be >= 300s to "
+            f"accommodate pre-commit hook chains on Rust projects; "
+            f"got {timeout_kwarg}s. Standing rule: never --no-verify."
+        )
+
 
 class TestFindTaskRecord:
     """_find_task_record returns the latest (last) matching record."""
