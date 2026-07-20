@@ -453,6 +453,32 @@ class TestAgentBackendErrors:
             or "malformed" in str(exc_info.value).lower()
         )
 
+    def test_prose_with_word_prefix_does_not_match_mapping_fallback(self):
+        # Regression: a `word:` line in prose (e.g. a JUDGE verdict with a
+        # verification matrix and a `Status:` line but no fenced YAML block)
+        # must NOT be accepted as a manifest via the `_YAML_MAPPING_START_RE`
+        # fallback. Previously the fallback grabbed prose to EOF and
+        # `safe_load` returned a `str`, surfacing the misleading "manifest
+        # is not a mapping (got str)" error.
+        from deviate.core.agent import AgentBackend, MalformedHandoverManifestError
+
+        prose_output = (
+            "## Final Verdict\n"
+            "**COMPLIANCE_PASS** — TSK-009-05 GREEN is compliant.\n"
+            "| Spec item | Where in implementation | Verified by |\n"
+            "|-----------|------------------------|-------------|\n"
+            "| FR-016    | initialize_response     | unit test  |\n"
+            "Status: complete\n"
+        )
+        with pytest.raises(MalformedHandoverManifestError) as exc_info:
+            AgentBackend.parse_output(prose_output, "omp")
+        msg = str(exc_info.value).lower()
+        # Operator-grep invariant: the message must NOT claim YAML was found.
+        assert "got str" not in msg
+        assert "not a mapping" not in msg
+        # The hint should explicitly say no YAML was detected.
+        assert "no yaml" in msg or "no fenced" in msg
+
     def test_agent_nonzero_exit(self):
         from deviate.core.agent import AgentBackend, AgentSubprocessError
 
