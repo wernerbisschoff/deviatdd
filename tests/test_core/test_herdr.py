@@ -154,8 +154,11 @@ def test_with_herdr_status_reports_exception_type_without_error_details() -> Non
     assert pause.call_count == 1
 
 
-def test_with_herdr_status_emits_pause_before_terminal_idle() -> None:
-    """Operator must still see the final output before Herdr sees terminal state."""
+def test_with_herdr_status_emits_terminal_state_before_pause() -> None:
+    """Operator must still see the final output, and Herdr must see the
+    terminal ``idle`` emit on the wire while its ``(source, agent)``
+    authority is still valid — i.e. BEFORE ``pause_for_close`` blocks.
+    """
 
     @with_herdr_status("micro run")
     def succeeds() -> int:
@@ -175,10 +178,10 @@ def test_with_herdr_status_emits_pause_before_terminal_idle() -> None:
     ):
         assert succeeds() == 42
 
-    assert events == ["report:working", "pause", "report:idle"]
+    assert events == ["report:working", "report:idle", "pause"]
 
 
-def test_with_herdr_status_emits_pause_before_terminal_blocked() -> None:
+def test_with_herdr_status_emits_terminal_state_before_pause_on_blocked() -> None:
     @with_herdr_status("meso run")
     def fails() -> None:
         raise typer.Exit(code=3)
@@ -198,7 +201,7 @@ def test_with_herdr_status_emits_pause_before_terminal_blocked() -> None:
         with pytest.raises(typer.Exit):
             fails()
 
-    assert events == ["report:working", "pause", "report:blocked"]
+    assert events == ["report:working", "report:blocked", "pause"]
 
 
 def test_pause_for_close_is_skipped_without_herdr_env(monkeypatch) -> None:
