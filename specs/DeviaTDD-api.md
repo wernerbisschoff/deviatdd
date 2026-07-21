@@ -626,6 +626,17 @@ Reporting is best-effort: a missing/unavailable socket never changes the
 command's behavior or exit code. The top-level orchestrator reports one
 lifecycle; its in-process meso and micro calls do not emit nested reports.
 
+On the `blocked` exit path, `with_herdr_status` emits a second
+`report_state("idle", None)` AFTER `pause_for_close()` so the visible
+pane clears the stale `blocked` badge once the operator has acknowledged
+the output by pressing Enter / EOF / Ctrl-C. The post-pause emit lands
+because Herdr clears the authority on process-exit detection, not on
+stdin activity, so the authority is still live. The exit-0 path already
+emits `idle` before the pause and skips the cleanup to avoid a redundant
+duplicate. If the post-pause emit fails (e.g. Herdr has already cleared
+the authority in a degenerate race), the pane stays at its pre-pause
+state — same degraded behavior as a failed terminal emit, no worse.
+
 #### `deviate run` (Full-Pipeline Orchestrator)
 
 * **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)

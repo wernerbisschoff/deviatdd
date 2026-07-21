@@ -220,7 +220,16 @@ child-OMP retry cycles is to send ``pane.release_agent`` before each retry.
 Reporting is best-effort and preserves the original return value, exception,
 and exit code. Because only the outer console-script dispatch is instrumented,
 the top-level command's in-process `_meso_run` and `_run_all` calls do not
-produce nested sources racing to update the same pane.
+produce nested sources racing to update the same pane. On the `blocked`
+exit path, `with_herdr_status` emits a second `report_state("idle", None)`
+AFTER `pause_for_close()` so the visible pane clears the stale `blocked`
+badge once the operator has acknowledged the output by pressing Enter /
+EOF / Ctrl-C; the exit-0 path skips the cleanup to avoid a redundant
+duplicate. The post-pause emit lands because Herdr clears the authority
+on process-exit detection, not on stdin activity, so the authority is
+still live; if the emit fails in a degenerate race, the pane stays at
+its pre-pause state — same degraded behavior as a failed terminal emit,
+no worse.
 
 - **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle via `_run_tdd_cycle()`.
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via

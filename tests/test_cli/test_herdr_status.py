@@ -73,6 +73,7 @@ def test_top_level_run_reports_blocked_and_preserves_nonzero_exit() -> None:
     assert _reports(report) == [
         ("working", "deviate run"),
         ("blocked", "deviate run: blocked (exit 9)"),
+        ("idle", None),
     ]
 
 
@@ -84,6 +85,7 @@ def test_usage_error_reports_working_then_blocked() -> None:
     assert _reports(report) == [
         ("working", "deviate micro run"),
         ("blocked", "deviate micro run: blocked (exit 2)"),
+        ("idle", None),
     ]
 
 

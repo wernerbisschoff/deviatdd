@@ -116,6 +116,7 @@ def test_with_herdr_status_reports_blocked_for_nonzero_exit() -> None:
     assert report.call_args_list == [
         call("working", "deviate meso run"),
         call("blocked", "deviate meso run: blocked (exit 7)"),
+        call("idle", None),
     ]
     assert pause.call_count == 1
 
@@ -129,7 +130,6 @@ def test_with_herdr_status_reports_idle_for_explicit_zero_exit() -> None:
         with patch("deviate.core.herdr.pause_for_close") as pause:
             with pytest.raises(typer.Exit):
                 exits_cleanly()
-
     assert report.call_args_list == [
         call("working", "deviate micro run"),
         call("idle", None),
@@ -150,6 +150,7 @@ def test_with_herdr_status_reports_exception_type_without_error_details() -> Non
     assert report.call_args_list == [
         call("working", "deviate run"),
         call("blocked", "deviate run: blocked (ValueError)"),
+        call("idle", None),
     ]
     assert pause.call_count == 1
 
@@ -181,7 +182,15 @@ def test_with_herdr_status_emits_terminal_state_before_pause() -> None:
     assert events == ["report:working", "report:idle", "pause"]
 
 
-def test_with_herdr_status_emits_terminal_state_before_pause_on_blocked() -> None:
+def test_with_herdr_status_emits_blocked_before_pause_on_blocked() -> None:
+    """On a non-zero exit, ``with_herdr_status`` must emit ``blocked`` BEFORE
+    the pause so Herdr sees the terminal transition while its authority
+    is still live. A second ``idle`` is emitted AFTER the pause (see
+    ``test_with_herdr_status_emits_idle_after_pause_on_blocked``); the
+    ordering between ``blocked`` and ``pause`` is the only invariant
+    this test guards.
+    """
+
     @with_herdr_status("meso run")
     def fails() -> None:
         raise typer.Exit(code=3)
@@ -201,7 +210,45 @@ def test_with_herdr_status_emits_terminal_state_before_pause_on_blocked() -> Non
         with pytest.raises(typer.Exit):
             fails()
 
-    assert events == ["report:working", "report:blocked", "pause"]
+    # ``blocked`` must come before ``pause``; a final ``idle`` cleanup
+    # emit lands after the pause and is asserted by the dedicated test.
+    assert events.index("report:blocked") < events.index("pause")
+
+
+def test_with_herdr_status_emits_idle_after_pause_on_blocked() -> None:
+    """After the operator acknowledges by pressing Enter / EOF / Ctrl-C,
+    ``with_herdr_status`` must transition the visible pane to ``idle`` so
+    a non-zero exit does not leave a stale ``blocked`` badge after the
+    process has finished. The terminal ``blocked`` emit is preserved
+    (so the operator sees the failure while reading the output); the
+    post-pause ``idle`` is the cleanup emit that clears the badge.
+    """
+
+    @with_herdr_status("meso run")
+    def fails() -> None:
+        raise typer.Exit(code=3)
+
+    events: list[str] = []
+
+    def record_state(state: str, message: str | None) -> None:
+        events.append(f"report:{state}")
+
+    def record_pause() -> None:
+        events.append("pause")
+
+    with (
+        patch("deviate.core.herdr.report_state", side_effect=record_state),
+        patch("deviate.core.herdr.pause_for_close", side_effect=record_pause),
+    ):
+        with pytest.raises(typer.Exit):
+            fails()
+
+    assert events == [
+        "report:working",
+        "report:blocked",
+        "pause",
+        "report:idle",
+    ]
 
 
 def test_pause_for_close_is_skipped_without_herdr_env(monkeypatch) -> None:
