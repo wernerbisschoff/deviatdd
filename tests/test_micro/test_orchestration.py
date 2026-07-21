@@ -758,6 +758,175 @@ class TestMicroOrchestration:
             )
 
     @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_green_test_defect_failure_routes_to_judge(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+    ):
+        """GREEN ``failure_kind: test_defect`` (RED test asserts behavior the
+        spec does not require) routes through JUDGE so JUDGE can emit
+        ``revert_before`` and re-run RED.
+
+        Distinct from the mechanical case: GREEN surfaces this via the new
+        ``failure_kind`` discriminator on the manifest, and JUDGE is steered
+        toward a pre-decided ``revert_before`` (no ``revert_to_red`` /
+        ``skip_refactor`` branch — test defect has one sensible outcome).
+
+        Pins layer discipline: GREEN surfaces test defects via
+        ``failure_kind: test_defect`` + ``status: FAILURE`` + concrete
+        ``rationale:``; JUDGE owns the routing decision (here, route to RED).
+        The runner does NOT try to satisfy the test itself, does NOT escalate
+        to HITL, and does NOT mark the task FAILED.
+
+        Companion to ``test_judge_auto_prompt_handles_test_defect_failure``
+        (JUDGE prompt content).
+        """
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        test_defect_rationale = (
+            "RED test at tests/embedder_test.py:42 asserts that "
+            "`embedder.embed()` returns sorted vectors by magnitude, but "
+            "FR-007 in spec.md only requires deterministic ordering by "
+            "input hash. The test encodes a sort criterion that is not in "
+            "scope."
+        )
+        call_log: list[str] = []
+
+        def _route_via_judge(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-004-16")
+            call_log.append(phase)
+            if phase == "GREEN":
+                if call_log.count("GREEN") == 1:
+                    return (
+                        HandoverManifest.model_construct(
+                            phase="GREEN",
+                            status="FAILURE",
+                            task_id=tid,
+                            rationale=test_defect_rationale,
+                            failure_kind="test_defect",
+                        ),
+                        "",
+                    )
+                # Second GREEN run after RED has re-authored the test —
+                # succeed with a minimal implementation.
+                return (
+                    HandoverManifest(
+                        phase="GREEN",
+                        status="SUCCESS",
+                        task_id=tid,
+                        files=["src/embedder/core.py"],
+                    ),
+                    "",
+                )
+            if phase == "JUDGE":
+                judge_count = call_log.count("JUDGE")
+                if judge_count == 1:
+                    # JUDGE sees test_defect discriminator; routes to RED.
+                    return (
+                        HandoverManifest.model_construct(
+                            phase="JUDGE",
+                            status="SUCCESS",
+                            verdict="COMPLIANCE_VIOLATION",
+                            task_id=tid,
+                            next_action="revert_before",
+                            train_feedback=test_defect_rationale,
+                        ),
+                        "",
+                    )
+                # Second JUDGE pass after RED + GREEN succeed.
+                return (
+                    HandoverManifest.model_construct(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_PASS",
+                        task_id=tid,
+                        rationale="GREEN implementation now satisfies spec",
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _route_via_judge
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-16",
+                issue_id="ISS-001-004",
+                description="Green test_defect failure routes to judge",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-16"])
+
+            assert "HITL_REQUIRED" not in result.output, (
+                f"Test-defect FAILURE must NOT escalate to HITL: {result.output}"
+            )
+            assert "JUDGE" in call_log, (
+                f"JUDGE must run after GREEN test_defect FAILURE — "
+                f"the runner routed straight to FAILED. "
+                f"call_log={call_log}"
+            )
+            judge_prompts = [
+                call.args[0]
+                for call in mock_agent.call_args_list
+                if call.kwargs.get("phase") == "JUDGE"
+            ]
+            assert judge_prompts, "JUDGE was never invoked"
+            judge_prompt = judge_prompts[0]
+            assert "<failure_kind>test_defect</failure_kind>" in judge_prompt, (
+                f"JUDGE prompt must contain the <failure_kind>"
+                f"test_defect</failure_kind> discriminator so JUDGE "
+                f"branches into review-and-route mode. "
+                f"Prompt excerpt: {judge_prompt[:500]}"
+            )
+            assert test_defect_rationale in judge_prompt, (
+                f"JUDGE prompt must contain the test_defect "
+                f"rationale: {judge_prompt[:1000]}"
+            )
+            # The runner injects <failure_kind>test_defect</failure_kind>
+            # exactly once (template also references it once in the
+            # edge-case table); the runner must NOT inject the mechanical
+            # block when failure_kind == 'test_defect'.
+            assert (
+                judge_prompt.count("<failure_kind>test_defect</failure_kind>") == 2
+            ), (
+                f"JUDGE prompt must reference <failure_kind>test_defect"
+                f"</failure_kind> exactly twice: once in the prompt's "
+                f"edge-case table and once in the runner's injected "
+                f"block. count="
+                f"{judge_prompt.count('<failure_kind>test_defect</failure_kind>')}"
+            )
+            assert judge_prompt.count("<failure_kind>mechanical</failure_kind>") == 1, (
+                f"JUDGE prompt must reference <failure_kind>mechanical"
+                f"</failure_kind> exactly once (edge-case table only); "
+                f"the runner must NOT inject the mechanical block when "
+                f"failure_kind == 'test_defect'. count="
+                f"{judge_prompt.count('<failure_kind>mechanical</failure_kind>')}"
+            )
+            assert result.exit_code == 0, (
+                f"Expected exit 0 after JUDGE routes revert_before + "
+                f"GREEN retry succeeds, got {result.exit_code}: "
+                f"{result.output}"
+            )
+            statuses = _read_statuses(ledger_path)
+            assert "HITL_PENDING" not in statuses, (
+                f"Test-defect FAILURE must NOT write HITL_PENDING — "
+                f"layer discipline: {statuses}"
+            )
+
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._verify_clean_worktree")
@@ -879,6 +1048,51 @@ def test_green_auto_prompt_has_no_drift_instruction_language() -> None:
     )
 
 
+def test_green_auto_prompt_documents_test_defect_failure() -> None:
+    """Pin the GREEN prompt's documentation of the test_defect failure class.
+
+    Companion to ``test_micro_green_test_defect_failure_routes_to_judge``
+    (runner routing) and ``test_judge_auto_prompt_handles_test_defect_failure``
+    (JUDGE prompt content). GREEN surfaces test defects via
+    ``failure_kind: test_defect``; the GREEN prompt must document the
+    discriminator alongside the existing ``mechanical`` failure class so a
+    future edit cannot silently drop it without CI failure.
+
+    Three-axis pin (runner-routing + GREEN prompt content + JUDGE prompt
+    content) on the layer separation: GREEN surfaces test defects, JUDGE
+    owns the routing decision.
+    """
+    from importlib import resources
+
+    green_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("green.md")
+        .read_text(encoding="utf-8")
+    )
+
+    # The discriminator MUST appear in the mandate section.
+    assert "failure_kind: test_defect" in green_prompt, (
+        "GREEN prompt must document `failure_kind: test_defect` so agents "
+        "know to emit it on the manifest when the RED test is wrong. "
+        "Without this, agents default to `failure_kind: mechanical` (or omit "
+        "the field) and JUDGE routes to scope review instead of test review."
+    )
+
+    # The discriminator MUST appear in the edge-case table too — the
+    # mandate + table are the two places a GREEN agent looks up the
+    # failure-shape contract.
+    assert green_prompt.count("failure_kind: test_defect") >= 2, (
+        "GREEN prompt must document `failure_kind: test_defect` in both "
+        "the mandate section and the edge-case table so an agent reading "
+        "either path gets the same answer. "
+        f"count={green_prompt.count('failure_kind: test_defect')}"
+    )
+    assert "status: FAILURE" in green_prompt, (
+        "GREEN prompt must instruct the agent to emit 'status: FAILURE' for "
+        "RED tests that cannot be satisfied within mechanical scope."
+    )
+
+
 def test_judge_auto_prompt_handles_mechanical_failure() -> None:
     """Pin the JUDGE prompt's handling of GREEN mechanical-failure escalation.
 
@@ -936,6 +1150,67 @@ def test_judge_auto_prompt_handles_mechanical_failure() -> None:
         "is present. The mechanical failure is GREEN's signal that the "
         "test is unsatisfiable in the current scope; JUDGE's job is to "
         "route, not to retry."
+    )
+
+
+def test_judge_auto_prompt_handles_test_defect_failure() -> None:
+    """Pin the JUDGE prompt's handling of GREEN test-defect escalation.
+
+    Companion to ``test_micro_green_test_defect_failure_routes_to_judge``
+    (runner routing). The runner sets ``session.failure_kind="test_defect"``
+    and injects the ``<failure_kind>test_defect</failure_kind>`` block into
+    the JUDGE prompt; the JUDGE prompt must contain the review-and-route
+    rule so JUDGE emits ``verdict: COMPLIANCE_VIOLATION`` +
+    ``next_action: revert_before`` (re-run RED with GREEN's rationale)
+    instead of attempting to satisfy the test itself.
+
+    Distinct from the mechanical case: test defect has a single sensible
+    outcome (``revert_before`` only), so the prompt must NOT advertise
+    ``revert_to_red`` / ``skip_refactor`` as options in the test_defect
+    rule. ``revert_before`` is referenced in both rules — the discriminator
+    pins on the test_defect-specific wording ("wrong abstraction") to
+    distinguish.
+    """
+    from importlib import resources
+
+    judge_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("judge.md")
+        .read_text(encoding="utf-8")
+    )
+
+    # The discriminator block MUST be mentioned in the prompt so the agent
+    # branches into review-and-route mode.
+    assert "<failure_kind>test_defect</failure_kind>" in judge_prompt, (
+        "JUDGE prompt must mention the <failure_kind>test_defect"
+        "</failure_kind> discriminator block so the agent knows to branch "
+        "into review-and-route mode instead of attempting to satisfy the "
+        "test. The runner injects this block when "
+        "session.failure_kind == 'test_defect' (see src/deviate/cli/micro.py"
+        "::_run_judge_phase)."
+    )
+
+    # The action language MUST be present: revert_before (re-run RED).
+    # Test defect has only one sensible outcome; revert_to_red and
+    # skip_refactor should NOT appear in the test_defect rule's context.
+    assert "next_action: revert_before" in judge_prompt, (
+        "JUDGE prompt must reference `revert_before` in the "
+        "<failure_kind>test_defect</failure_kind> rule so the agent knows "
+        "to emit next_action='revert_before' (re-run RED). Without this, "
+        "JUDGE has no routing vocabulary for test defects."
+    )
+
+    # The prompt must instruct JUDGE NOT to attempt to satisfy the test
+    # itself — that's GREEN's role, and the test_defect failure is
+    # precisely because the test (not the implementation) is wrong.
+    assert (
+        "Do NOT attempt to satisfy the test" in judge_prompt
+        or "do NOT attempt to satisfy the test" in judge_prompt
+    ), (
+        "JUDGE prompt must explicitly instruct the agent not to attempt "
+        "to satisfy the test when <failure_kind>test_defect</failure_kind> "
+        "is present. The test defect is GREEN's signal that the RED test "
+        "is wrong; JUDGE's job is to route to RED, not to retry."
     )
 
 

@@ -254,7 +254,7 @@ class SessionState(BaseModel):
     active_issue_id: Optional[str] = None
     last_command: str = ""
     train_feedback: str = ""
-    failure_kind: Literal["", "mechanical"] = ""
+    failure_kind: Literal["", "mechanical", "test_defect"] = ""
     judge_rejected: bool = False
     pending_judge_action: str = ""
     red_commit_sha: str = ""
