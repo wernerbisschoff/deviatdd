@@ -73,9 +73,15 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
 
     Native lifecycle reporting therefore emits exactly one initial
     ``working`` and one terminal ``idle``/``blocked`` per DeviaTDD
-    invocation. ``pause_for_close`` runs inside ``wrapped`` BEFORE the
-    terminal emit, so the operator can read the final output and the
-    pane stays alive in Herdr's UI until the operator presses Enter.
+    invocation. The terminal ``report_state`` call fires BEFORE
+    ``pause_for_close`` so the socket send happens while Herdr's
+    authority for ``(source, agent)`` is still live — emitting after
+    the pause risks the operator pressing Enter / Ctrl-C / EOF at the
+    moment Herdr is processing the exit, which would leave the pane
+    stuck in ``working`` until the next session identity lands. The
+    pause itself keeps the pane alive in Herdr's UI while the operator
+    reads the final output and any failure detail before the process
+    actually exits.
     """
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
@@ -87,7 +93,6 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
                 result = func(*args, **kwargs)
             except BaseException as exc:
                 exit_code = _exit_code(exc)
-                pause_for_close()
                 if exit_code == 0:
                     report_state("idle", None)
                 else:
@@ -97,9 +102,10 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
                         else type(exc).__name__
                     )
                     report_state("blocked", f"{label}: blocked ({reason})")
+                pause_for_close()
                 raise
-            pause_for_close()
             report_state("idle", None)
+            pause_for_close()
             return result
 
         return wrapped
@@ -120,9 +126,14 @@ def pause_for_close() -> None:
     report (``idle`` or ``blocked``) and any failure output remain
     visible. Without this pause, the pane collapses to the shell prompt
     the instant the process exits, and any errors scroll off before the
-    operator can react. ``wrapped`` calls this *before* the terminal
-    emit so the operator still gets to read the output before Herdr sees
-    the terminal state.
+    operator can react. ``wrapped`` calls this *after* the terminal
+    emit so Herdr observes the ``idle``/``blocked`` transition on the
+    wire while its authority is still valid; the prompt then gives the
+    operator time to read whatever the terminal state points at.
+    If the socket send during ``report_state`` failed silently
+    (see :func:`report_state`'s bare ``except BaseException``), the
+    pane may stay in ``working`` after the pause exits — that is the
+    correct degraded behavior, not a bug to suppress.
     """
     try:
         if os.environ.get("HERDR_ENV") != "1":
