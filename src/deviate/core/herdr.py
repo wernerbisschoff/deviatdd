@@ -71,29 +71,13 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
     starting a new ``agent_session_id`` (not yet implemented natively;
     ``pane.release_agent`` before each retry is the documented mitigation).
 
-    Native lifecycle reporting emits one initial ``working`` and one
-    terminal ``idle``/``blocked`` per DeviaTDD invocation. The terminal
-    emit fires BEFORE ``pause_for_close`` so the socket send happens
-    while Herdr's authority for ``(source, agent)`` is still live —
-    emitting after the pause risks the operator pressing Enter / Ctrl-C
-    / EOF at the moment Herdr is processing the exit, which would leave
-    the pane stuck in ``working`` until the next session identity
-    lands. The pause itself keeps the pane alive in Herdr's UI while
-    the operator reads the final output and any failure detail before
-    the process actually exits.
-
-    On the ``blocked`` exit path, a second ``report_state("idle", None)``
-    is emitted AFTER the pause: the operator has acknowledged the
-    output by pressing Enter / EOF / Ctrl-C, so the visible pane should
-    clear the stale ``blocked`` badge before the process exits. The
-    post-pause emit lands because Herdr clears the authority on
-    process-exit detection, not on stdin activity, so the authority is
-    still live here. ``report_state``'s ``except BaseException`` keeps
-    a failed post-pause emit from altering the command's behavior; the
-    pane stays at its pre-pause state — same degraded behavior as a
-    failed terminal emit, no worse. The exit-0 path already emits
-    ``idle`` before the pause, so it skips the cleanup to avoid a
-    redundant duplicate.
+    Native lifecycle reporting emits one initial ``working`` and one terminal
+    ``idle``/``blocked`` per DeviaTDD invocation. The terminal emit fires
+    immediately BEFORE ``pause_for_close`` so ``working`` remains visible
+    throughout the process and the final state is sent at the close boundary,
+    while Herdr's authority for ``(source, agent)`` is still live. A failed run
+    then clears its visible ``blocked`` badge with ``idle`` after the operator
+    acknowledges the prompt.
     """
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
@@ -105,8 +89,7 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
                 result = func(*args, **kwargs)
             except BaseException as exc:
                 exit_code = _exit_code(exc)
-                is_blocked = exit_code != 0
-                if is_blocked:
+                if exit_code != 0:
                     reason = (
                         f"exit {exit_code}"
                         if exit_code is not None
@@ -116,20 +99,7 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
                 else:
                     report_state("idle", None)
                 pause_for_close()
-                if is_blocked:
-                    # After the operator acknowledges by pressing Enter /
-                    # EOF / Ctrl-C, transition the visible pane to
-                    # ``idle`` so a non-zero exit does not leave a stale
-                    # ``blocked`` badge after the process has finished.
-                    # The authority is still live here (Herdr clears it
-                    # on process-exit detection, not stdin activity), so
-                    # the emit lands; if Herdr has already cleared the
-                    # authority, ``report_state``'s ``except BaseException``
-                    # keeps us safe and the pane stays at its pre-pause
-                    # state — same degraded behavior as a failed
-                    # terminal emit, no worse. The exit-0 branch above
-                    # already emits ``idle``; skipping the cleanup here
-                    # avoids a redundant duplicate.
+                if exit_code != 0:
                     report_state("idle", None)
                 raise
             report_state("idle", None)
@@ -150,18 +120,12 @@ def pause_for_close() -> None:
     (Herdr reads pane state, not stdout) and uses ``stdin.readline()``
     directly so it does not interact with zsh's ``zle`` line editor.
 
-    The intent is to keep the Herdr-tracked pane alive while the final
-    report (``idle`` or ``blocked``) and any failure output remain
-    visible. Without this pause, the pane collapses to the shell prompt
-    the instant the process exits, and any errors scroll off before the
-    operator can react. ``wrapped`` calls this *after* the terminal
-    emit so Herdr observes the ``idle``/``blocked`` transition on the
-    wire while its authority is still valid; the prompt then gives the
-    operator time to read whatever the terminal state points at.
-    If the socket send during ``report_state`` failed silently
-    (see :func:`report_state`'s bare ``except BaseException``), the
-    pane may stay in ``working`` after the pause exits — that is the
-    correct degraded behavior, not a bug to suppress.
+    The intent is to keep the Herdr-tracked pane in ``working`` while the
+    command runs, then expose its final ``idle`` or ``blocked`` report at the
+    close prompt. ``wrapped`` sends that terminal report immediately before
+    this pause, while Herdr's lifecycle authority is still valid. After a
+    failed run is acknowledged, it sends ``idle`` to clear the visible blocked
+    badge before process exit.
     """
     try:
         if os.environ.get("HERDR_ENV") != "1":

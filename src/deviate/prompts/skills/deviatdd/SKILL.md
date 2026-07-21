@@ -21,6 +21,9 @@ inline.
 - A micro run is mid-flight and stuck on a single task.
 - The micro queue drained but the next task is in a wedged state.
 
+- Before executing a long-running task, preview resolution with `deviate micro run <TASK_ID> --dry-run`.
+- Inspect one issue or task directly with `deviate inspect issues show <ISS-ID> --json` or `deviate inspect tasks show <TSK-ID> --json`.
+
 ## Troubleshooting failed runs
 
 Before guessing at a fix, read the logs. `deviate micro run` writes

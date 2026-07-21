@@ -79,6 +79,11 @@ _YAML_FENCE_CLOSE_RE = re.compile(r"^```+\s*$")
 _MANIFEST_HEADER_RE = re.compile(r"^##\s*\[(?:HANDOVER_MANIFEST|MINIMAL_HANDOVER)\]")
 _DEVIATE_MICRO_HEADER_RE = re.compile(r"^# DeviaTDD Micro")
 _HANDOVER_XML_RE = re.compile(r"^</?handover_manifest>\s*$")
+_AGENT_PHASE_STATUS_RE = re.compile(
+    r"^Status:\s+(?:GREEN_STATE_ACHIEVED|TEST_WRITTEN_FAILING|TASK_COMPLETE)"
+    r"(?:\s+\([^)]*\))?\s*$",
+    re.IGNORECASE,
+)
 
 # Mise prefixes each task's stdout with "[<task-name>] ". Ruff and pytest
 # emit "Finished in Nms" timing lines. Both are operational noise that
@@ -340,6 +345,8 @@ def _make_output_handler(c: Console, verbose: bool = False) -> Callable[[str], N
                 if _DEVIATE_MICRO_HEADER_RE.match(stripped):
                     return
                 if _HANDOVER_XML_RE.match(stripped):
+                    return
+                if _AGENT_PHASE_STATUS_RE.match(stripped):
                     return
                 if _MISE_TASK_PREFIX_RE.match(stripped):
                     return
@@ -642,7 +649,7 @@ _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
 _TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
 _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 _TASK_BULLET_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
-_JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^\s+-\s+\*\*Judge Feedback\*\*:\s*(.*)")
+_JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^  - \*\*Judge Feedback\*\*:\s*(.*)")
 
 
 def _find_all_pending_tasks(
@@ -1037,7 +1044,9 @@ def _run_green_phase(
     monitor: OrchestrationMonitor | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
-    if _phase_already_done(ledger_path, task.get("id", ""), "GREEN"):
+    green_already_done = _phase_already_done(ledger_path, task.get("id", ""), "GREEN")
+    is_feedback_retry = green_already_done and bool(session.train_feedback)
+    if green_already_done:
         if not session.train_feedback:
             c.print(f"  [dim]GREEN already done for {_task_label(task)}, skipping[/]")
             return session
@@ -1174,12 +1183,18 @@ def _run_green_phase(
     except Exception as e:
         raise PhaseFailedError(f"GREEN phase ledger update failed for {tid}: {e}")
 
-    _commit_phase(
+    committed = _commit_phase(
         f"feat({scope}): GREEN phase - implementation",
         root,
         no_verify=True,
         phase="green",
     )
+    if is_feedback_retry and not committed:
+        raise PhaseFailedError(
+            f"GREEN_STATE_DRIFT {tid}: ledger already records GREEN and JUDGE "
+            "requested changes, but the retry produced no implementation commit. "
+            "Verify the existing implementation and reconcile the task ledger."
+        )
 
     try:
         _verify_clean_worktree(root, "GREEN", tid)
@@ -1231,30 +1246,49 @@ def _resolve_tasks_md(root: Path, task: dict) -> Path | None:
     return _find_tasks_md_for_issue(root, issue_id)
 
 
-def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int | None:
-    """Append judge feedback under the matching task line in tasks.md.
+_MAX_JUDGE_FEEDBACK = 3
 
-    Returns the number of feedback lines inserted, or ``None`` if no
-    matching task line was found (so callers can surface a "no tasks.md
-    update" log line and skip the bookkeeping commit).
-    """
-    content = tasks_md.read_text(encoding="utf-8")
-    lines = content.splitlines()
-    new_lines: list[str] = []
-    inserted = False
-    feedback_lines = feedback.strip().splitlines() or [""]
-    for line in lines:
-        new_lines.append(line)
-        if not inserted and task_id in line and line.strip().startswith("-"):
-            indent = "  "
-            for fb_line in feedback_lines:
-                new_lines.append(f"{indent}- **Judge Feedback**: {fb_line}")
-                indent = "    "
-            inserted = True
-    if inserted:
-        tasks_md.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-        return len(feedback_lines)
-    return None
+
+def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int | None:
+    """Store bounded, deduplicated feedback rounds under one task."""
+    lines = tasks_md.read_text(encoding="utf-8").splitlines()
+    target_index = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if task_id in line and line.startswith("- ")
+        ),
+        None,
+    )
+    if target_index is None:
+        return None
+    end = next(
+        (
+            i
+            for i in range(target_index + 1, len(lines))
+            if _TASK_BULLET_HEAD_RE.match(lines[i])
+        ),
+        len(lines),
+    )
+    history = [
+        match.group(1).rstrip()
+        for line in lines[target_index + 1 : end]
+        if (match := _JUDGE_FEEDBACK_BULLET_RE.match(line))
+    ]
+    candidate = feedback.strip() or ""
+    history = [item for item in history if item != candidate]
+    history.append(candidate)
+    history = history[-_MAX_JUDGE_FEEDBACK:]
+    retained = [
+        line
+        for line in lines[target_index + 1 : end]
+        if not _JUDGE_FEEDBACK_BULLET_RE.match(line)
+    ]
+    replacement = [f"  - **Judge Feedback**: {item}" for item in history]
+    updated = lines[: target_index + 1] + retained + replacement + lines[end:]
+    tasks_md.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    return len(candidate.splitlines()) or 1
+    return len(replacement)
 
 
 def _read_judge_feedback_from_tasks_md(root: Path, task: dict) -> str:

@@ -418,3 +418,34 @@ class TestGreenDiagnosticSurface:
                 _run_green_phase(
                     task, ledger_path, session, session_path, Console(quiet=True)
                 )
+
+    def test_green_retry_without_commit_reports_state_drift(self, tmp_git_repo: Path):
+        root = tmp_git_repo
+        with chdir(root):
+            session, session_path, ledger_path, task = self._setup_session_and_task(
+                root
+            )
+            session.train_feedback = "Judge requires a production change."
+            success = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            )
+            manifest = HandoverManifest(
+                phase="GREEN", status="PASS", task_id="TSK-006-09"
+            )
+            with (
+                patch("deviate.cli.micro._phase_already_done", return_value=True),
+                patch("deviate.cli.micro._log_run"),
+                patch(
+                    "deviate.cli.micro._make_agent_output_callback", return_value=None
+                ),
+                patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+                patch("deviate.cli.micro._invoke_agent", return_value=(manifest, "")),
+                patch("deviate.cli.micro._run_test_cmd", return_value=success),
+                patch("deviate.cli.micro._run_format_cmd", return_value=success),
+                patch("deviate.cli.micro.append_task_transition"),
+                patch("deviate.cli.micro._commit_phase", return_value=False),
+                pytest.raises(PhaseFailedError, match="GREEN_STATE_DRIFT"),
+            ):
+                _run_green_phase(
+                    task, ledger_path, session, session_path, Console(quiet=True)
+                )

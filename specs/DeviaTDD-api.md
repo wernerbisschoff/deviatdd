@@ -765,6 +765,7 @@ state — same degraded behavior as a failed terminal emit, no worse.
   field that remains is ``HandoverManifest.files: list[str] | None``
   — declared optionally by the agent and recorded for operator
   cross-check only.
+* **GREEN Retry State-Drift Guard:** A first-pass zero-change GREEN remains valid and proceeds to JUDGE for `NO_DIFF` classification. On a JUDGE-directed retry, however, if the ledger already records GREEN, `train_feedback` is present, and `_commit_phase()` reports no new commit, `_run_green_phase()` raises `PhaseFailedError` with `GREEN_STATE_DRIFT`. This prevents JUDGE from evaluating feedback-only diffs and requires the operator to verify the existing implementation and reconcile the append-only task ledger.
 * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
   ``PhaseFailedError`` because the agent emitted
   ``status ∈ {FAILURE, ERROR, FAIL}`` and the manifest's ``rationale``
@@ -895,6 +896,16 @@ state — same degraded behavior as a failed terminal emit, no worse.
   issue-scoped ledgers. The issue-scoped task ledger query surface is intentionally
   minimal — task work is normally dispatched via `deviate run` and `deviate run --all`.
 
+
+#### `deviate inspect tasks show <TSK-ID>`
+
+* **Source:** `src/deviate/cli/inspect.py` (`tasks_show_command`)
+* **Description:** Looks up one task by ID in the root `tasks.jsonl` ledger and emits a single JSON object with `--json`, or a readable record without it. Unknown IDs fail with a parameter error.
+
+#### `deviate inspect issues show <ISS-ID>`
+
+* **Source:** `src/deviate/cli/inspect.py` (`issues_show_command`)
+* **Description:** Looks up one issue by ID in `specs/issues.jsonl` and emits a single JSON object with `--json`, or a readable record without it. Unknown IDs fail with a parameter error.
 #### `deviate issues list [--type <type>] [--status <status>]`
 
 * **Source:** `src/deviate/cli/inspect.py` (`issues_list_command`)
