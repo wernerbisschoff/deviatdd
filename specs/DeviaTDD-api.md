@@ -292,8 +292,7 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate research pre [<epic>]`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Validates that `explore.md` exists and constitution passes, then transitions
-  session to RESEARCH and emits the JSON contract (design_target, data_model_target, etc.).
+* **Description:** Validates that `specs/explore/<slug>.md` exists and the constitution passes, **moves** the explore artifact into the new numbered epic directory at `specs/{NNN}-<slug>/explore.md`, then transitions session to RESEARCH and emits the JSON contract (`explore_md_path` now pointing at the moved location, plus `design_target`, `data_model_target`, etc.). `specs/explore/<slug>.md` is removed on success — there is no orphan staging copy.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate research post`
@@ -306,8 +305,7 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate prd pre [--dry-run]`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Discovers the active epic slug, validates `design.md` and `data-model.md`
-  exist, transitions session to PRD (or dry-run), and emits JSON contract.
+* **Description:** Discovers the active epic slug, validates that `explore.md`, `design.md`, and `data-model.md` all exist inside the numbered epic directory (the explore.md artifact must have been moved here by `deviate research pre` — `specs/explore/<slug>.md` is no longer the canonical location), transitions session to PRD (or dry-run), and emits a JSON contract that includes `explore_md_path` pointing at `specs/{NNN}-<slug>/explore.md`.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate prd post <manifest>`

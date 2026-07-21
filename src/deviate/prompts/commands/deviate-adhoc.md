@@ -35,8 +35,9 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 2. **Constitutional Pre-Flight**: Check `specs/constitution.md`. If present, extract constraints that govern this task. If absent, note the gap and proceed — ad-hoc issues are exempt from constitutional requirements but should respect them if available.
 
-2.5. **Existing Explore Check**: Check if `specs/explore/` contains an explore.md matching the problem description:
-    - Derive a kebab-case slug from the user's description. Check for `specs/explore/<slug>.md`.
+2.5. **Existing Explore Check**: Check whether an explore.md already exists for this problem description in either the post-research location (numbered epic dir) or the pre-research staging location:
+    - Derive a kebab-case slug from the user's description. **First**, check for `specs/{NNN}-<slug>/explore.md` (the post-research location — `deviate research pre` moves explore.md into the numbered epic dir). If found, read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/{NNN}-<slug>/explore.md"`.
+    - If not found in the numbered dir, **fall back** to `specs/explore/<slug>.md` (the pre-research staging location). If found, consume it the same way and note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md (pre-research staging)"`.
     - If found: read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md"`.
     - If not found: proceed to step 3 (Lightweight Discovery Pass) as normal.
 

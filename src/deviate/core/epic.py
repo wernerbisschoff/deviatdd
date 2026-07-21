@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 
@@ -11,17 +12,30 @@ def _discover_all(specs_root: Path | None = None) -> list[str]:
     root = _resolve_specs_root(specs_root)
     if not root.exists():
         return []
-    return sorted(
+    result = sorted(
         d.name
         for d in root.iterdir()
         if d.is_dir()
         and not d.name.startswith(".")
         and (
-            (d / "explore.md").exists()  # Old format: specs/<slug>/explore.md
+            (
+                d / "explore.md"
+            ).exists()  # Any dir holding explore.md (legacy slug dir or post-research numbered bucket)
             or _extract_prefix_num(d.name)
             > 0  # New format: specs/NNN-slug/ (numbered bucket)
         )
     )
+    # Surface the asymmetry: a numbered dir without explore.md is a
+    # broken or pre-move state. The `prd pre` halt is the hard gate;
+    # this warn is informational so operators can spot it.
+    for name in result:
+        if _extract_prefix_num(name) > 0 and not (root / name / "explore.md").exists():
+            warnings.warn(
+                f"epic dir {name} is numbered but missing explore.md; "
+                f"this is a broken or pre-move state",
+                stacklevel=2,
+            )
+    return result
 
 
 def discover_epic(specs_root: Path | None = None) -> str:
