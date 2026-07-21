@@ -674,3 +674,161 @@ def test_porcelain_filter_detects_actual_unstaged_changes(tmp_path: Path) -> Non
     unstaged = _git_status_unstaged(repo)
     assert len(unstaged) == 1
     assert " M tracked.txt" in unstaged[0]
+
+
+# ---------------------------------------------------------------------------
+# CONTRIBUTING.md / .commit-convention.md convention detection.
+#
+# These regression tests pin the contract that ``deviate merge --message`` reads
+# the project convention file (CONTRIBUTING.md or .commit-convention.md) and
+# routes the subject through ``format_commit_message``.  Without this pin, a
+# future refactor of the helper could silently drop the emoji prefix and no
+# merge-side test would notice.
+#
+# **Cost note**: Unlike the rest of ``test_merge.py`` (which stage via the
+# CLI's ``--stage-only`` path against a pre-prepared index), these two tests
+# drive a full ``git merge --squash`` from a feature branch + a real
+# ``deviate merge --stage-only`` + a real ``deviate merge --message`` cycle so
+# we can assert on the resulting ``git log -1`` subject end-to-end.  Each test
+# takes ~0.3s in isolation.  The pair is bounded at <1s in the suite and
+# cannot be replaced with a pure ``format_commit_message`` unit test because
+# the regression we are guarding against is a *missed wiring* in
+# ``_merge_run``, not in the helper itself.
+# ---------------------------------------------------------------------------
+
+
+def _merge_repo_with_convention(merge_repo: Path, contributing_text: str) -> Path:
+    """Write a CONTRIBUTING.md on top of ``merge_repo`` and re-seed the seed
+    commit so the file is part of main's history (the merge CLI runs from
+    main, and ``git merge --squash`` brings the branch's diff onto main).
+    """
+    repo = merge_repo
+    (repo / "CONTRIBUTING.md").write_text(contributing_text, encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "CONTRIBUTING.md"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "docs: add CONTRIBUTING.md"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    return repo
+
+
+def test_merge_honors_contributing_md_emoji_prefix(merge_repo: Path) -> None:
+    """``CONTRIBUTING.md`` declaring an emoji convention must cause
+    ``deviate merge --message`` to prefix the HEAD subject with the matching
+    gitmoji.  Pins that the merge CLI reads CONTRIBUTING.md (via
+    ``format_commit_message`` -> ``detect_uses_emojis`` ->
+    ``_read_convention_file``) rather than relying on the no-op default.
+    """
+    repo = _merge_repo_with_convention(
+        merge_repo,
+        "# Contributing\n\n"
+        "Use gitmoji on every commit, e.g. ✨ for features, 🐛 for fixes.\n",
+    )
+    runner = CliRunner()
+
+    with chdir(repo):
+        subprocess.run(
+            ["git", "merge", "--squash", "feat/test-bucket/iss-test-001"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        stage = runner.invoke(cli, ["merge", "--issue", "ISS-TEST-001", "--stage-only"])
+        assert stage.exit_code == 0, stage.output
+
+        commit = runner.invoke(
+            cli,
+            [
+                "merge",
+                "--issue",
+                "ISS-TEST-001",
+                "-m",
+                "feat(ISS-TEST-001): squash merge test feature",
+                "-m",
+                "Body paragraph 1",
+                "-m",
+                "Closes ISS-TEST-001",
+            ],
+        )
+        assert commit.exit_code == 0, commit.output
+        assert "COMMITTED" in commit.output, commit.output
+
+        log = subprocess.run(
+            ["git", "log", "-1", "--format=%s%n---%n%b"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    # Subject is prefixed with the feat gitmoji (✨) and unchanged otherwise.
+    assert log.startswith("\u2728 feat(ISS-TEST-001): squash merge test feature"), log
+    # Body paragraphs are not rewritten — only the subject gets the prefix.
+    assert "Body paragraph 1" in log
+    assert "Closes ISS-TEST-001" in log
+
+
+def test_merge_no_emoji_prefix_when_contributing_md_has_no_emoji(
+    merge_repo: Path,
+) -> None:
+    """When ``CONTRIBUTING.md`` exists but contains no emoji, the merge CLI
+    must NOT prepend a prefix.  This locks the no-op path: the convention
+    detector falls through to ``_git_log_has_emojis``, which also returns
+    False on this clean repo, so the subject passes through unchanged.
+    """
+    repo = _merge_repo_with_convention(
+        merge_repo,
+        "# Contributing\n\n"
+        "Use the conventional-commit format: <type>(<scope>): <description>.\n"
+        "Body lines wrap at 72 characters.\n",
+    )
+    runner = CliRunner()
+
+    with chdir(repo):
+        subprocess.run(
+            ["git", "merge", "--squash", "feat/test-bucket/iss-test-001"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        stage = runner.invoke(cli, ["merge", "--issue", "ISS-TEST-001", "--stage-only"])
+        assert stage.exit_code == 0, stage.output
+
+        commit = runner.invoke(
+            cli,
+            [
+                "merge",
+                "--issue",
+                "ISS-TEST-001",
+                "-m",
+                "feat(ISS-TEST-001): squash merge test feature",
+                "-m",
+                "Body paragraph 1",
+            ],
+        )
+        assert commit.exit_code == 0, commit.output
+        assert "COMMITTED" in commit.output, commit.output
+
+        log = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.rstrip("\n")
+
+    # No emoji prefix — the detector returned False.
+    assert log == "feat(ISS-TEST-001): squash merge test feature", log

@@ -489,8 +489,12 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
     the function proceeds to the commit step instead of short-circuiting.
   - `-m <subject> -m <body> ...` performs the combined commit: `git add -A` picks up
     the staged feature changes, the first `-m` is routed through `format_commit_message`
-    (applying the project's emoji convention), and remaining `-m` values are passed
-    verbatim as body paragraphs.
+    (which detects the project's emoji convention from `CONTRIBUTING.md` /
+    `.commit-convention.md` / git history and prepends the matching gitmoji), and
+    remaining `-m` values are passed verbatim as body paragraphs. The `/deviate-merge`
+    skill mandates reading the convention file before drafting the subject (see
+    `commit_message_generation` Step 0) so the operator can confirm or override the
+    detected convention in the confirmation step.
   - `--delete-branch` removes the local feature branch
     (`feat/{bucket}/{slug}` derived from the issue's `source_file`), tags the
     pre-squash branch tip with `archive/{ISSUE_ID}/{YYYY-MM-DD}` (UTC date) so
