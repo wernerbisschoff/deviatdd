@@ -27,6 +27,32 @@ tasks_app = typer.Typer(no_args_is_help=True)
 flows_app = typer.Typer(no_args_is_help=True)
 inspect_app.add_typer(issues_app, name="issues")
 inspect_app.add_typer(tasks_app, name="tasks")
+
+
+@issues_app.command("show")
+def issues_show_command(
+    target_id: str = typer.Argument(..., help="Issue ID to inspect"),
+    json_flag: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    issue = next(
+        (item for item in _issues_list() if item.get("issue_id") == target_id), None
+    )
+    if issue is None:
+        raise typer.BadParameter(f"Unknown issue ID: {target_id}")
+    typer.echo(json.dumps(issue) if json_flag else str(issue))
+
+
+@tasks_app.command("show")
+def tasks_show_command(
+    target_id: str = typer.Argument(..., help="Task ID to inspect"),
+    json_flag: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    task = next((item for item in _tasks_list() if item.get("id") == target_id), None)
+    if task is None:
+        raise typer.BadParameter(f"Unknown task ID: {target_id}")
+    typer.echo(json.dumps(task) if json_flag else str(task))
+
+
 inspect_app.add_typer(flows_app, name="flows")
 
 console = Console()

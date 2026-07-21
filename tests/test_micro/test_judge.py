@@ -630,10 +630,7 @@ class TestJudgeFeedbackLogging:
     """
 
     def test_append_judge_feedback_returns_line_count(self, tmp_path: Path) -> None:
-        """``_append_judge_feedback`` returns the number of inserted lines.
-
-        Multi-line feedback splits into one feedback-line per source line.
-        """
+        """One feedback round is one bullet; return count preserves source lines."""
         from deviate.cli.micro import _append_judge_feedback
 
         tasks_md = tmp_path / "tasks.md"
@@ -654,8 +651,10 @@ class TestJudgeFeedbackLogging:
 
         assert added == 2, f"Expected 2 lines inserted, got {added}"
         content = tasks_md.read_text(encoding="utf-8")
-        assert "**Judge Feedback**: First line of feedback" in content
-        assert "**Judge Feedback**: Second line of feedback" in content
+        assert (
+            "**Judge Feedback**: First line of feedback\nSecond line of feedback"
+            in content
+        )
 
     def test_append_judge_feedback_returns_none_when_no_match(
         self, tmp_path: Path
@@ -675,6 +674,32 @@ class TestJudgeFeedbackLogging:
         assert tasks_md.read_text(encoding="utf-8") == original, (
             "File should be unchanged when no task line matches"
         )
+
+    def test_feedback_is_bounded_deduplicated_and_task_scoped(
+        self, tmp_path: Path
+    ) -> None:
+        from deviate.cli.micro import _append_judge_feedback
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "- TSK-011-05: Sample task\n"
+            "  - detail: sibling\n"
+            "    nested detail line\n"
+            "- TSK-011-06: Other task\n"
+            "  - **Judge Feedback**: untouched\n",
+            encoding="utf-8",
+        )
+        for feedback in ["one", "two", "three", "four", "four"]:
+            _append_judge_feedback(tasks_md, "TSK-011-05", feedback)
+
+        lines = tasks_md.read_text(encoding="utf-8").splitlines()
+        assert "one" not in "\n".join(lines)
+        assert "two" in "\n".join(lines)
+        assert "three" in "\n".join(lines)
+        assert lines.count("  - **Judge Feedback**: four") == 1
+        assert "sibling" in "\n".join(lines)
+        assert "nested" in "\n".join(lines)
+        assert "untouched" in "\n".join(lines)
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")

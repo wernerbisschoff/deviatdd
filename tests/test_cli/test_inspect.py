@@ -541,3 +541,35 @@ class TestInspectFlowsCoverage:
         assert result.exit_code == 0, result.output
         assert "drift flag" in result.stdout.lower()
         assert "DOCUMENTED_BUT_NOT_IMPLEMENTED" in result.stdout
+
+
+class TestInspectById:
+    def test_issues_show_accepts_issue_id(self, tmp_path: Path) -> None:
+        _seed_issues_jsonl(tmp_path, [_make_issue("ISS-013", status="BACKLOG")])
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["inspect", "issues", "show", "ISS-013", "--json"]
+            )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["issue_id"] == "ISS-013"
+
+    def test_tasks_show_accepts_task_id(self, tmp_path: Path) -> None:
+        (tmp_path / "tasks.jsonl").write_text(
+            json.dumps(
+                {
+                    "id": "TSK-013-02",
+                    "issue_id": "ISS-013",
+                    "description": "Target",
+                    "status": "PENDING",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["inspect", "tasks", "show", "TSK-013-02", "--json"]
+            )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["id"] == "TSK-013-02"

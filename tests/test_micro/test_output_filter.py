@@ -52,6 +52,27 @@ class TestMiseNoiseFilter:
             assert line in out, f"{line!r} should have been kept"
 
 
+class TestAgentStatusFilter:
+    """Agent-declared phase states are internal; orchestration owns status UI."""
+
+    def test_phase_status_lines_filtered_in_normal_mode(self) -> None:
+        statuses = [
+            "Status: GREEN_STATE_ACHIEVED",
+            "Status: GREEN_STATE_ACHIEVED (mechanical boundary)",
+            "Status: TASK_COMPLETE",
+        ]
+
+        out = _handler_output(verbose=False, lines=statuses)
+
+        for line in statuses:
+            assert line not in out
+
+    def test_phase_status_lines_visible_in_verbose_mode(self) -> None:
+        status = "Status: GREEN_STATE_ACHIEVED"
+
+        assert status in _handler_output(verbose=True, lines=[status])
+
+
 class TestMiseRegexPatterns:
     """Direct coverage of the noise regexes."""
 
