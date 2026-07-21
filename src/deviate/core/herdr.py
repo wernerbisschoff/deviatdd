@@ -5,6 +5,7 @@ import json
 import os
 import secrets
 import socket
+import sys
 import time
 from collections.abc import Callable
 from typing import Literal, ParamSpec, TypeVar
@@ -57,7 +58,25 @@ def report_state(state: AgentState, message: str | None = None) -> None:
 
 
 def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Report a run callback as working, then idle or blocked on termination."""
+    """Report a run callback as working, then idle or blocked on termination.
+
+    Herdr's daemon stores one lifecycle authority per ``(source, agent)``
+    pair per terminal and clears that authority on child process-exit
+    detection (see Herdr's ``process_exit_clears_matching_full_lifecycle_hook_authority``
+    test). After clearing, repeated ``pane.report_agent`` envelopes from
+    the same pair are suppressed until a fresh session identity
+    (``agent_session_id``) is supplied. Practical consequence: if a child
+    OMP process exits while DeviaTDD is still busy retrying, Herdr clears
+    DeviaTDD's ``working`` state and DeviaTDD cannot re-assert it without
+    starting a new ``agent_session_id`` (not yet implemented natively;
+    ``pane.release_agent`` before each retry is the documented mitigation).
+
+    Native lifecycle reporting therefore emits exactly one initial
+    ``working`` and one terminal ``idle``/``blocked`` per DeviaTDD
+    invocation. ``pause_for_close`` runs inside ``wrapped`` BEFORE the
+    terminal emit, so the operator can read the final output and the
+    pane stays alive in Herdr's UI until the operator presses Enter.
+    """
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
@@ -68,6 +87,7 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
                 result = func(*args, **kwargs)
             except BaseException as exc:
                 exit_code = _exit_code(exc)
+                pause_for_close()
                 if exit_code == 0:
                     report_state("idle", None)
                 else:
@@ -78,12 +98,51 @@ def with_herdr_status(command: str) -> Callable[[Callable[P, R]], Callable[P, R]
                     )
                     report_state("blocked", f"{label}: blocked ({reason})")
                 raise
+            pause_for_close()
             report_state("idle", None)
             return result
 
         return wrapped
 
     return decorate
+
+
+def pause_for_close() -> None:
+    """Block on stdin until the operator presses Enter.
+
+    Skipped unless ``HERDR_ENV == "1"``, ``HERDR_DEVIATE_NO_PAUSE != "1"``,
+    ``sys.stdin.isatty()``, and ``TERM != "dumb"``. EOF and Ctrl-D/Ctrl-C
+    return silently without hanging. Writes the prompt to ``sys.stderr``
+    (Herdr reads pane state, not stdout) and uses ``stdin.readline()``
+    directly so it does not interact with zsh's ``zle`` line editor.
+
+    The intent is to keep the Herdr-tracked pane alive while the final
+    report (``idle`` or ``blocked``) and any failure output remain
+    visible. Without this pause, the pane collapses to the shell prompt
+    the instant the process exits, and any errors scroll off before the
+    operator can react. ``wrapped`` calls this *before* the terminal
+    emit so the operator still gets to read the output before Herdr sees
+    the terminal state.
+    """
+    try:
+        if os.environ.get("HERDR_ENV") != "1":
+            return
+        if os.environ.get("HERDR_DEVIATE_NO_PAUSE") == "1":
+            return
+        if os.environ.get("TERM") == "dumb":
+            return
+        stdin = sys.stdin
+        if stdin is None or not stdin.isatty():
+            return
+        sys.stderr.write("\nPress Enter to close this pane (Ctrl-D / EOF to skip)... ")
+        sys.stderr.flush()
+        try:
+            stdin.readline()
+        except (EOFError, KeyboardInterrupt):
+            return
+    except BaseException:
+        # Pause is observational and must never alter command behavior.
+        return
 
 
 def _exit_code(exc: BaseException) -> int | None:
