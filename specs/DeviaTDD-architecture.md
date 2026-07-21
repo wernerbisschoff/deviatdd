@@ -168,7 +168,7 @@ to build codebase comprehension and surface hidden trade-offs.
   `git push origin --delete <branch>`-es the remote, removes any active worktree that holds
   the branch, and runs `git branch -D`. Tag push and remote branch delete are best-effort:
   no `origin` → silent skip; unreachable remote → `PUSH_WARN` and local cleanup proceeds,
-  so a transient network blip never strands work on disk. Invariant: exactly one commit on
+  so a transient network blip never strands work on disk. The squash-merge commit is formatted through the project's convention-aware helper (`format_commit_message` in `src/deviate/core/convention.py`), which detects emoji usage from `CONTRIBUTING.md` / `.commit-convention.md` / git history and prepends the matching gitmoji (e.g. `✨ feat(ISS-001): ...`) — the same rule that applies to `deviate plan post` and `deviate tasks post` commits, so the squash-merge subject lands on `main` in the project's house style without the agent having to remember. The `/deviate-merge` skill enforces this contract: a new mandatory Step 0 in `commit_message_generation` reads the convention file before drafting the title, and explicitly forbids bypassing `deviate merge --message` with a direct `git commit` (which would drop the prefix). Invariant: exactly one commit on
   `main` per issue, containing both the feature code and the COMPLETED ledger entry; the
   archive tag is the only path back to the pre-squash per-commit history.
   redundant context injection into CLAUDE.md/AGENTS.md unnecessary. Mutating CLAUDE.md

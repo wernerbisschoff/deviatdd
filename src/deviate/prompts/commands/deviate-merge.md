@@ -2,7 +2,7 @@
 name: deviate-merge
 description: Squash-merge a feature branch into main with a conventional-commit message, then update the ledger with a full IssueRecord.
 category: deviatdd-meso-layer
-version: 2.2.0
+version: 2.3.0
 aliases:
   - merge
   - /deviate-merge
@@ -69,8 +69,20 @@ jq -R 'fromjson?' specs/issues.jsonl 2>/dev/null \
 </step>
 
 <step id="commit_message_generation">
-
 Generate a conventional-commit title and multi-paragraph description synthesised from the branch history.
+
+**Step 0 — Honour the repository's commit convention** (mandatory before drafting the title):
+
+1. **Read the project convention file first** so the commit matches what the project actually uses:
+   ```bash
+   test -f CONTRIBUTING.md && head -120 CONTRIBUTING.md
+   test -f .commit-convention.md && cat .commit-convention.md
+   ```
+2. **Confirm the convention in your head**:
+   - **Emoji prefix?** Look for any gitmoji-style character (e.g. `✨ feat:`, `🐛 fix:`) in either file. If found, the project expects an emoji prefix on every commit; the ``deviate merge --message`` CLI will apply it automatically (see Step A). If neither file exists or neither contains emoji, default to no prefix — but state that conclusion explicitly in the confirmation step so the operator can override.
+   - **Types** allowed: `feat`, `fix`, `test`, `refactor`, `docs`, `chore` (the DeviaTDD constitution set; honour it unless CONTRIBUTING.md overrides).
+   - **Scope** is the issue ID (e.g. `ISS-001`) unless CONTRIBUTING.md says otherwise.
+3. **Do NOT bypass the CLI** by calling `git commit` directly with your own subject — that drops the emoji prefix on emoji-convention repos. Always go through ``deviate merge --message`` (Step 5 below) so the CLI's ``format_commit_message`` helper applies the prefix from CONTRIBUTING.md.
 
 **Step A — Title format** (consistent with `deviate pr`):
 
@@ -78,7 +90,7 @@ Generate a conventional-commit title and multi-paragraph description synthesised
 {type}({ISSUE_ID}): {description}
 ```
 
-The ``deviate merge --message`` CLI applies the project's commit convention (emoji prefix if configured, no-op otherwise), so do NOT pre-pend an emoji here.
+The ``deviate merge --message`` CLI applies the project's emoji convention (read from CONTRIBUTING.md / .commit-convention.md / git history by ``format_commit_message``), so do NOT pre-pend an emoji here — the CLI will. If neither CONTRIBUTING.md nor `.commit-convention.md` declares an emoji convention and git history has no emoji either, the CLI leaves the subject unchanged.
 
 - **type**: `feature → feat`, `bug → fix`, `chore → chore`, `refactor → refactor`, `docs → docs`, default → `feat`
 - **description**: the ledger issue title with any bracketed prefix (e.g. `[FR-NNN]`) stripped. If no ledger title is available, synthesise from commit history.
