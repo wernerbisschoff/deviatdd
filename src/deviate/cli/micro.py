@@ -1461,27 +1461,46 @@ def _format_violations_as_feedback(
 # ---- Judge next_action routing ---------------------------------------------
 #
 # JUDGE decides, via HandoverManifest.next_action, how the runner should
-# route the task on compliance outcome. Four values:
+# route the task on compliance outcome. Five values:
 #
-#   revert_before     — discard this task's GREEN *and* its RED; restart
-#                       from pre-RED so RED can re-author the failing test.
-#                       Used when the test itself is wrong.
-#   revert_to_red     — discard GREEN, keep RED, advance red_commit_sha
-#                       past the feedback commit so a second rollback
-#                       preserves the new GREEN attempt's history. (Default
-#                       on COMPLIANCE_VIOLATION when next_action is omitted
-#                       — preserves the prior behavior that this module is
-#                       fixing regression on.)
-#   continue_refactor — GREEN already correct; skip JUDGEs verdict-loop
-#                       and route directly to REFACTOR.
-#   skip_refactor     — GREEN already correct and refactor not wanted;
-#                       mark the task COMPLETED and move on.
+#   revert_before              — discard this task's GREEN *and* its RED; restart
+#                                from pre-RED so RED can re-author the failing test.
+#                                Used when the test itself is wrong.
+#   revert_to_red              — discard GREEN, keep RED, advance red_commit_sha
+#                                past the feedback commit so a second rollback
+#                                preserves the new GREEN attempt's history. (Default
+#                                on COMPLIANCE_VIOLATION when next_action is omitted
+#                                — preserves the prior behavior that this module is
+#                                fixing regression on.)
+#   continue_refactor          — GREEN already correct; skip JUDGEs verdict-loop
+#                                and route directly to REFACTOR. Distinct from
+#                                `proceed_to_refactor_no_diff` below: signals a
+#                                *substantive* refactor pass (GREEN produced a
+#                                non-empty diff that REFACTOR will polish).
+#   skip_refactor              — GREEN already correct and refactor not wanted;
+#                                mark the task COMPLETED and move on.
+#   proceed_to_refactor_no_diff — A forward (COMPLIANCE_PASS) route parallel to
+#                                `continue_refactor`, but for the case where
+#                                GREEN had nothing to do (e.g. a RED-only
+#                                deliverable slice, or a mechanical GREEN FAILURE
+#                                the judge ruled in-scope but unsatisfiable). The
+#                                diff is empty — REFACTOR still runs because its
+#                                commit + ledger transition are the only path to
+#                                mark the task COMPLETED. Forces entry into
+#                                REFACTOR regardless of the `--no-refactor` CLI
+#                                flag, exactly like `continue_refactor`.
 #
 # The runner honors the manifest verbatim. There is no interactive prompt:
 # operators can override externally via a CLI flag (future work), not via
 # a runtime question.
 _JUDGE_ACTIONS = frozenset(
-    {"revert_before", "revert_to_red", "continue_refactor", "skip_refactor"}
+    {
+        "revert_before",
+        "revert_to_red",
+        "continue_refactor",
+        "skip_refactor",
+        "proceed_to_refactor_no_diff",
+    }
 )
 
 
@@ -1859,12 +1878,24 @@ def _run_judge_phase(
     # ---- Forward routes (verdict=COMPLIANCE_PASS, JUDGE decides the polish) -
     #
     # On a pass the runner honors the action:
-    #   action=None              → legacy behavior: phase = JUDGE, hand to
-    #                              _finish_tdd_cycle (which decides refactor)
-    #   action=continue_refactor → pending_judge_action=continue_refactor;
-    #                              _finish_tdd_cycle enters REFACTOR
-    #                              regardless of no_refactor.
-    #   action=skip_refactor     → phase = IDLE, mark COMPLETED, move on.
+    #   action=None                       → legacy behavior: phase = JUDGE,
+    #                                       hand to _finish_tdd_cycle (which
+    #                                       decides refactor)
+    #   action=continue_refactor          → pending_judge_action=continue_refactor;
+    #                                       _finish_tdd_cycle enters REFACTOR
+    #                                       regardless of no_refactor.
+    #   action=skip_refactor              → phase = IDLE, mark COMPLETED, move on.
+    #   action=proceed_to_refactor_no_diff → pending_judge_action=proceed_to_refactor_no_diff;
+    #                                       _finish_tdd_cycle enters REFACTOR
+    #                                       regardless of no_refactor. Used when
+    #                                       GREEN had nothing to do (e.g. a
+    #                                       RED-only deliverable slice that
+    #                                       produced an empty diff). Same hand-off
+    #                                       shape as `continue_refactor`, but with
+    #                                       a distinct action so the runner and
+    #                                       logs can distinguish a substantive
+    #                                       refactor pass from a no-op green
+    #                                       sign-off.
     refactor_note = (
         getattr(manifest, "train_feedback", None)
         or (manifest.model_extra or {}).get("train_feedback", "")
@@ -1879,9 +1910,31 @@ def _run_judge_phase(
             action=action or "",
             note=refactor_note,
         )
-
     if action == "continue_refactor":
         session.pending_judge_action = "continue_refactor"
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="passed",
+            reroute="REFACTOR",
+            action=action,
+        )
+        session = session.force_transition_to("JUDGE")
+        session.train_feedback = ""
+        session.judge_rejected = False
+        session.save(session_path)
+        _append_status_transition(task, "JUDGE", ledger_path)
+        return session
+
+    if action == "proceed_to_refactor_no_diff":
+        # Used when GREEN had nothing to do (e.g. a RED-only deliverable
+        # slice that produced an empty diff). Same hand-off shape as
+        # `continue_refactor`: enter REFACTOR and let `_finish_tdd_cycle`
+        # mark the task COMPLETED after REFACTOR's no-op commit. Distinct
+        # pending_judge_action so the runner + logs differentiate a
+        # substantive refactor pass from a no-op green sign-off.
+        session.pending_judge_action = "proceed_to_refactor_no_diff"
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
@@ -2031,10 +2084,16 @@ def _finish_tdd_cycle(
     pending = session.pending_judge_action
 
     # JUDGE verdict-driven routing overrides the CLI's no_refactor flag:
-    #   continue_refactor → enter REFACTOR regardless of no_refactor.
-    #   skip_refactor     → mark COMPLETED and stop, regardless of
-    #                       no_refactor (the CLI flag says nothing
-    #                       about future tasks; the judge verdict does).
+    #   continue_refactor             → enter REFACTOR regardless of no_refactor.
+    #   proceed_to_refactor_no_diff   → enter REFACTOR regardless of no_refactor
+    #                                  (used when GREEN had nothing to do;
+    #                                  REFACTOR's no-op commit + COMPLETED
+    #                                  transition is the only way to terminate
+    #                                  a slice whose git diff is empty).
+    #   skip_refactor                 → mark COMPLETED and stop, regardless
+    #                                  of no_refactor (the CLI flag says
+    #                                  nothing about future tasks; the judge
+    #                                  verdict does).
     if pending == "skip_refactor":
         try:
             _append_status_transition(task, "COMPLETED", ledger_path)
@@ -2054,7 +2113,11 @@ def _finish_tdd_cycle(
         session.save(session_path)
         return session
 
-    if pending == "continue_refactor" or not no_refactor:
+    if (
+        pending == "continue_refactor"
+        or pending == "proceed_to_refactor_no_diff"
+        or not no_refactor
+    ):
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
@@ -2147,7 +2210,6 @@ def _run_tdd_cycle(
         session = _run_green_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-
         green_tests_failed = bool(
             session.train_feedback and session.current_phase == "GREEN"
         )
@@ -2202,7 +2264,18 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-
+        # Forward-route exit: JUDGE picked continue_refactor /
+        # proceed_to_refactor_no_diff / skip_refactor. The runner must leave
+        # the TRAIN retry loop without re-running GREEN — the forward-route
+        # verdict is the cycle's exit signal (clears train_feedback, sets
+        # pending_judge_action, and JUDGE has already cleaned up state).
+        if session.pending_judge_action in {
+            "continue_refactor",
+            "proceed_to_refactor_no_diff",
+            "skip_refactor",
+        }:
+            judge_passed = True
+            break
         if session.judge_rejected or session.train_feedback or green_tests_failed:
             train_attempts += 1
             if train_attempts >= max_train_attempts:
@@ -2214,7 +2287,6 @@ def _run_tdd_cycle(
                     f"JUDGE phase rejected {task.get('id', '?')} "
                     f"after {max_train_attempts} train attempts"
                 )
-            if session.train_feedback:
                 c.print(
                     TrainIndicator.render(
                         attempt=train_attempts,

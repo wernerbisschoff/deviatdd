@@ -908,11 +908,13 @@ class TestMicroOrchestration:
                 f"block. count="
                 f"{judge_prompt.count('<failure_kind>test_defect</failure_kind>')}"
             )
-            assert judge_prompt.count("<failure_kind>mechanical</failure_kind>") == 1, (
+            assert judge_prompt.count("<failure_kind>mechanical</failure_kind>") == 2, (
                 f"JUDGE prompt must reference <failure_kind>mechanical"
-                f"</failure_kind> exactly once (edge-case table only); "
-                f"the runner must NOT inject the mechanical block when "
-                f"failure_kind == 'test_defect'. count="
+                f"</failure_kind> exactly twice (two sub-rows in the edge-case table: "
+                f"RED-only-PASS-case via `proceed_to_refactor_no_diff` and "
+                f"otherwise-VIOLATION-case via `revert_before`/`revert_to_red`/"
+                f"`skip_refactor`); the runner does NOT inject the mechanical block "
+                f"when `failure_kind == 'test_defect'`. count="
                 f"{judge_prompt.count('<failure_kind>mechanical</failure_kind>')}"
             )
             assert result.exit_code == 0, (
@@ -924,6 +926,165 @@ class TestMicroOrchestration:
             assert "HITL_PENDING" not in statuses, (
                 f"Test-defect FAILURE must NOT write HITL_PENDING — "
                 f"layer discipline: {statuses}"
+            )
+
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_green_mechanical_failure_with_no_diff_routes_to_refactor(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+    ):
+        """GREEN mechanical FAILURE on a RED-only slice + JUDGE COMPLIANCE_PASS +
+        ``next_action: proceed_to_refactor_no_diff`` routes through REFACTOR and
+        completes the task — no GREEN retry, no rejection cascade.
+
+        Companion to ``test_judge_auto_prompt_documents_proceed_to_refactor_no_diff``
+        (JUDGE prompt content). Pins the runner's empty-diff sign-off contract
+        end-to-end: GREEN FAILURE → runner routes to JUDGE → JUDGE returns
+        ``verdict: COMPLIANCE_PASS`` + ``next_action: proceed_to_refactor_no_diff``
+        → ``_run_judge_phase`` sets ``pending_judge_action`` and forces
+        transition to JUDGE → ``_finish_tdd_cycle`` enters REFACTOR regardless
+        of ``--no-refactor`` → task COMPLETED.
+
+        This is the regression guard for the TSK-009-07 symptom in the original
+        trace: GREEN mechanical FAILURE on a RED-only slice looped GREEN↔JUDGE
+        indefinitely because ``next_action`` defaulted to ``revert_to_red`` and
+        re-running GREEN hit the same out-of-scope failure. With this fix, the
+        runner honors the JUDGE-supplied ``proceed_to_refactor_no_diff`` and
+        routes straight to REFACTOR's no-op commit + COMPLETED transition.
+        """
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        no_diff_rationale = (
+            "TSK-009-07 is a RED-only deliverable slice (KCH fabrication "
+            "fixture + downstream MCP integration test). Production code "
+            "path is nil — there is nothing for GREEN to write."
+        )
+        call_log: list[str] = []
+
+        def _route_via_judge(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-009-07")
+            call_log.append(phase)
+            if phase == "GREEN":
+                # Single GREEN invocation — emits mechanical FAILURE.
+                # The runner does NOT retry GREEN once JUDGE rules with
+                # `proceed_to_refactor_no_diff`; control passes to REFACTOR.
+                return (
+                    HandoverManifest.model_construct(
+                        phase="GREEN",
+                        status="FAILURE",
+                        task_id=tid,
+                        rationale=no_diff_rationale,
+                        failure_kind="mechanical",
+                    ),
+                    "",
+                )
+            if phase == "JUDGE":
+                # Single JUDGE invocation — sees the mechanical discriminator
+                # plus the empty-diff rationale, decides COMPLIANCE_PASS is
+                # the right verdict for an intrinsically RED-only slice, and
+                # emits the new forward-route action.
+                return (
+                    HandoverManifest.model_construct(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_PASS",
+                        task_id=tid,
+                        next_action="proceed_to_refactor_no_diff",
+                        summary=no_diff_rationale,
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _route_via_judge
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-009-07",
+                issue_id="ISS-003-009",
+                description="RED-only slice; proceed_to_refactor_no_diff sign-off",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "009-no-op-green" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-009-07"])
+
+            assert "HITL_REQUIRED" not in result.output, (
+                f"Mechanical GREEN FAILURE with no production code expected "
+                f"must NOT escalate to HITL: {result.output}"
+            )
+            # GREEN fails once, JUDGE passes, REFACTOR runs (the loop is
+            # sealed by the forward route — no GREEN retry, no rejection
+            # cascade). RED is the first call, then GREEN, JUDGE, REFACTOR.
+            assert mock_agent.call_count == 4, (
+                f"Expected RED+GREEN+JUDGE+REFACTOR (4 calls) for the empty-"
+                f"diff sign-off; got {mock_agent.call_count}: phases={call_log}"
+            )
+            # GREEN must have emitted FAILURE exactly once (no retry).
+            assert call_log.count("GREEN") == 1, (
+                f"GREEN must emit FAILURE exactly once and not retry when "
+                f"JUDGE routes `proceed_to_refactor_no_diff`; GREEN calls: "
+                f"{call_log.count('GREEN')}"
+            )
+            # JUDGE must have run exactly once and emitted the forward route.
+            assert call_log.count("JUDGE") == 1, (
+                f"JUDGE must run exactly once: {call_log}"
+            )
+            # REFACTOR must run exactly once (the no-op commit + COMPLETED
+            # transition that terminates the slice).
+            assert call_log.count("REFACTOR") == 1, (
+                f"REFACTOR must run exactly once when "
+                f"`next_action: proceed_to_refactor_no_diff` is honored: "
+                f"{call_log}"
+            )
+            judge_prompts = [
+                call.args[0]
+                for call in mock_agent.call_args_list
+                if call.kwargs.get("phase") == "JUDGE"
+            ]
+            assert judge_prompts, "JUDGE was never invoked"
+            judge_prompt = judge_prompts[0]
+            # The mechanical discriminator block must be in the JUDGE prompt
+            # so the agent branches into review-and-route mode (rather than
+            # trying to satisfy the test itself).
+            assert "<failure_kind>mechanical</failure_kind>" in judge_prompt, (
+                f"JUDGE prompt must contain the mechanical discriminator so "
+                f"the agent knows to emit a routing verdict instead of "
+                f"attempting to satisfy the empty-diff test. "
+                f"Prompt excerpt: {judge_prompt[:500]}"
+            )
+            assert no_diff_rationale in judge_prompt, (
+                f"JUDGE prompt must contain the GREEN rationale so the "
+                f"agent can confirm the slice is intrinsically RED-only: "
+                f"{judge_prompt[:1000]}"
+            )
+            # Task must end COMPLETED (REFACTOR wrote the terminal transition).
+            assert result.exit_code == 0, (
+                f"Expected exit 0 after proceed_to_refactor_no_diff routes "
+                f"the empty-diff slice through REFACTOR → COMPLETED; got "
+                f"exit_code={result.exit_code}: {result.output}"
+            )
+            statuses = _read_statuses(ledger_path)
+            assert "COMPLETED" in statuses, (
+                f"Task ledger must record a COMPLETED transition for the "
+                f"empty-diff sign-off route; statuses: {statuses}"
+            )
+            assert "FAILED" not in statuses, (
+                f"Empty-diff sign-off route must NOT write FAILED — the "
+                f"GREEN FAILURE was the in-scope signal, not a rejection: "
+                f"{statuses}"
             )
 
     @patch("deviate.cli.micro._run_test_cmd")
@@ -1211,6 +1372,77 @@ def test_judge_auto_prompt_handles_test_defect_failure() -> None:
         "to satisfy the test when <failure_kind>test_defect</failure_kind> "
         "is present. The test defect is GREEN's signal that the RED test "
         "is wrong; JUDGE's job is to route to RED, not to retry."
+    )
+
+
+def test_judge_auto_prompt_documents_proceed_to_refactor_no_diff() -> None:
+    """Pin the JUDGE prompt's documentation of `next_action: proceed_to_refactor_no_diff`.
+
+    Companion to ``test_micro_green_mechanical_failure_with_no_diff_routes_to_refactor``
+    (runner routing). The JUDGE prompt must mention ``proceed_to_refactor_no_diff``
+    in a row that is reachable under the ``<failure_kind>mechanical</failure_kind>``
+    discriminator so JUDGE can emit it on a ``COMPLIANCE_PASS`` verdict when the
+    slice is intrinsically RED-only. Single-axis pin (no exact-count re-pinning
+    of the existing mechanical/test_defect row counts).
+
+    The action belongs to the mechanical-row vocabulary (failure_kind stays
+    ``mechanical``; the discriminator surface is unchanged) because the runner
+    only injects one of two discriminator blocks per task — widening the Literal
+    to a third ``failure_kind`` value would force exact-count re-pinning on
+    four existing tests for what is semantically the same outcome as
+    ``mechanical`` (GREEN had nothing to do).
+    """
+    from importlib import resources
+
+    judge_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("judge.md")
+        .read_text(encoding="utf-8")
+    )
+
+    # The action MUST appear in the JUDGE prompt's edge-case table so the
+    # agent can emit it when the GREEN-empty rationale is valid in scope but
+    # the diff is intrinsically nil.
+    assert "next_action: proceed_to_refactor_no_diff" in judge_prompt, (
+        "JUDGE prompt must document `next_action: proceed_to_refactor_no_diff` "
+        "so the agent emits it on a COMPLIANCE_PASS verdict when the slice is "
+        "intrinsically RED-only (fixture file, migration script, generated "
+        "types, doc-only slice). The runner honors the action verbatim "
+        "(src/deviate/cli/micro.py::_run_judge_phase) and routes the task "
+        "through REFACTOR's no-op commit + COMPLETED transition."
+    )
+
+    # The action MUST be linked to the mechanical failure_kind in the prompt
+    # so the agent knows to pick `proceed_to_refactor_no_diff` (COMPLIANCE_PASS
+    # forward route) alongside `revert_before` / `revert_to_red` / `skip_refactor`
+    # (COMPLIANCE_VIOLATION rejection routes) under the same discriminator.
+    # Look for `proceed_to_refactor_no_diff` within the prompt and confirm it
+    # appears in a context that ALSO references `<failure_kind>mechanical`.
+    needle = "proceed_to_refactor_no_diff"
+    idx = judge_prompt.find(needle)
+    assert idx != -1, (
+        f"JUDGE prompt must reference `{needle}` somewhere in its edge-case "
+        f"table for the mechanical discriminator. prompt head: {judge_prompt[:500]!r}"
+    )
+    # The mechanical row context window — scan backward 4000 chars (table
+    # row width in our prompts is well under that). The discriminator block
+    # reference may be in the table cell of the same row.
+    window_before = judge_prompt[max(0, idx - 4000) : idx]
+    assert "<failure_kind>mechanical</failure_kind>" in window_before, (
+        f"The `proceed_to_refactor_no_diff` reference must appear in a context "
+        f"that also references `<failure_kind>mechanical</failure_kind>`, so "
+        f"JUDGE knows to emit the action under that discriminator. "
+        f"window_before: {window_before[-500:]!r}"
+    )
+
+    # The action MUST be tied to a COMPLIANCE_PASS verdict (not VIOLATION) so
+    # the runner dispatches the forward-route branch in _run_judge_phase and
+    # does not enter the rejection cascade.
+    verdict_window = judge_prompt[max(0, idx - 200) : min(len(judge_prompt), idx + 400)]
+    assert "COMPLIANCE_PASS" in verdict_window, (
+        f"`proceed_to_refactor_no_diff` must be tied to a COMPLIANCE_PASS "
+        f"verdict in the JUDGE prompt (it's a forward route, not a "
+        f"rejection). window: {verdict_window!r}"
     )
 
 
