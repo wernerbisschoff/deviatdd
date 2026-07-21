@@ -1,6 +1,6 @@
 from __future__ import annotations
-
 import json
+import shutil
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -332,16 +332,17 @@ def research_pre(
             "no explore slug provided and no explore.md found in specs/explore/",
         )
 
-    # Resolve explore.md — try specs/explore/<slug>.md first, fall back to old format
-    explore_path = specs_root / "explore" / f"{resolved_slug}.md"
-    if not explore_path.exists():
-        # Fallback: old format specs/<slug>/explore.md
-        alt = specs_root / resolved_slug / "explore.md"
-        if alt.exists():
-            explore_path = alt
-
-    if not explore_path.exists():
-        _halt("RESEARCH", f"explore.md not found at specs/explore/{resolved_slug}.md")
+    # Resolve the explore artifact at the canonical staging location
+    # `specs/explore/<slug>.md`. The pre-script moves the file into the new
+    # epic directory after the numbered bucket is allocated, so this path
+    # is only ever consulted at the staging location — legacy fallback was
+    # retired in the explore.md-move refactor.
+    source_explore_path = specs_root / "explore" / f"{resolved_slug}.md"
+    if not source_explore_path.exists():
+        _halt(
+            "RESEARCH",
+            f"explore.md not found at specs/explore/{resolved_slug}.md",
+        )
 
     _validate_constitution("RESEARCH")
 
@@ -352,9 +353,21 @@ def research_pre(
     epic_slug = bucket.name
     feature_dir = specs_root / epic_slug
 
+    # Move the explore artifact into the new epic directory so every
+    # research/PRD/shard artifact (design.md, data-model.md, prd.md,
+    # issues/*) lives alongside the upstream explore.md inside the
+    # numbered epic bucket. This makes the epic dir a complete, portable
+    # record of the work and is the contract the research/PRD prompts
+    # already assume.
+    moved_explore_path = feature_dir / "explore.md"
+    shutil.move(str(source_explore_path), str(moved_explore_path))
+    console.print(
+        f"[green]EXPLORE_MOVED[/] {source_explore_path} → {moved_explore_path}"
+    )
+
     issues_ledger = str(specs_root / "issues.jsonl")
-    explore_md_abs = str(explore_path.resolve())
-    explore_md_rel = str(explore_path)
+    explore_md_abs = str(moved_explore_path.resolve())
+    explore_md_rel = str(moved_explore_path)
     design_target_abs = str((feature_dir / "design.md").resolve())
     data_model_target_abs = str((feature_dir / "data-model.md").resolve())
 
@@ -378,7 +391,7 @@ def research_pre(
         issues_ledger=issues_ledger,
         issue_id="",
         feature_bucket=epic_slug,
-        explore_path=str(explore_path),
+        explore_path=str(moved_explore_path),
         epic_slug=epic_slug,
     )
 
@@ -499,6 +512,16 @@ def prd_pre(
     if missing:
         paths = "\n  - ".join(str(specs_root / epic_slug / a) for a in missing)
         _halt("PRD", f"missing upstream artifacts\n  - {paths}")
+    # Explore.md is the empirical input the PRD LLM consumes (per
+    # deviate-prd.md step upstream_artifact_analysis). After the
+    # research_pre move refactor it lives inside the epic dir; missing
+    # it means the epic was not promoted through research correctly.
+    explore_path = epic_dir / "explore.md"
+    if not explore_path.exists():
+        _halt(
+            "PRD",
+            f"missing upstream artifact: explore.md (expected at {explore_path})",
+        )
 
     design_path = epic_dir / "design.md"
     pending = _check_pending_hitl_decisions(design_path)
@@ -531,6 +554,7 @@ def prd_pre(
         data_model_path=str(epic_dir / "data-model.md"),
         plan_target=str(artifacts_dir / "manifest_prd.json"),
         issue_id=session.active_issue_id or "",
+        explore_md_path=str(explore_path),
     )
 
 

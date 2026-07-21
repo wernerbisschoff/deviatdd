@@ -86,7 +86,7 @@ Version: 0.7.0
 - [ ] Lint passing (ruff check with no violations)
 - [ ] Judge phase passed (git diff validated against `spec.md` invariants)
 - [ ] E2E tests passing (if applicable; bats for CLI integration)
-- [ ] Documentation updated (`spec.md` and `design.md` reflect final implementation)
+- [ ] Documentation updated (`spec.md` and `design.md` reflect final implementation; `explore.md` lives inside the numbered epic directory at `specs/{NNN}-<slug>/explore.md` after `deviate research pre`, alongside the design and data-model artifacts)
 - [ ] CHANGELOG.md updated under `[Unreleased]` for user-visible changes (new commands/flags, behavior changes, user-affecting bug fixes, breaking changes, new user-visible dependencies); docs-only, test-only, CI/tooling, and behavior-preserving refactors are exempt
 - [ ] No governance violations (constitution rules upheld, no HITL gates bypassed)
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)

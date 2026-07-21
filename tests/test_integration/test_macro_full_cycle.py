@@ -15,6 +15,14 @@ def scaffold_artifacts(workspace: Path, *names: str) -> None:
     spec_dir = workspace / "specs" / "001-deviate-cli-python"
     for name in names:
         (spec_dir / name).write_text(f"# {name}\n")
+    # `deviate research pre` now reads `specs/explore/<slug>.md` and moves
+    # it into the epic dir, so tests that simulate a full macro cycle
+    # must place `explore.md` at the staging location too (the previous
+    # legacy format was `specs/<slug>/explore.md` inside the epic dir).
+    if "explore.md" in names:
+        staging = workspace / "specs" / "explore" / "001-deviate-cli-python.md"
+        staging.parent.mkdir(parents=True, exist_ok=True)
+        staging.write_text("# explore.md\n")
 
 
 class TestMacroFullCycle:

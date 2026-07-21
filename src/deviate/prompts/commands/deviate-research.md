@@ -73,18 +73,21 @@ Run the pre-script to verify the prerequisite phase, allocate the numbered epic 
 deviate research pre --slug "<explore-slug>"
 ```
 
-Pass the explore slug derived during the explore phase (e.g. `offline-context-docs`). If you do not know the explore slug, omit `--slug` and the command will auto-discover the latest explore.md from `specs/explore/`. The pre-script reads `specs/explore/<explore-slug>.md`, allocates a numbered epic bucket at `specs/NNN-<explore-slug>/`, and emits the contract with paths pointing to the new epic directory.
+Pass the explore slug derived during the explore phase (e.g. `offline-context-docs`). If you do not know the explore slug, omit `--slug` and the command will auto-discover the latest explore.md from `specs/explore/`. The pre-script reads `specs/explore/<explore-slug>.md`, **moves** that file into the new numbered epic bucket at `specs/NNN-<explore-slug>/explore.md`, and emits the contract with all paths pointing to the new epic directory.
 
-The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir` (the new numbered epic dir), `specs_directory`, `explore_md_path` (still pointing to `specs/explore/<slug>.md`), `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, `is_greenfield` (boolean).
 
+
+The contract on stdout contains: `repo_root`, `git_branch`, `feature_slug`, `feature_dir` (the new numbered epic dir), `specs_directory`, `explore_md_path` (pointing at `specs/NNN-<slug>/explore.md` after the move), `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `constitution_test_command`, `constitution_lint_command`, `epic_id`, `is_greenfield` (boolean).
 If the pre-script exits non-zero or emits a `STATUS: …` failure token:
 - `STATUS: EXPLORE_NOT_FOUND` — surface verbatim; instruct the human to run `/deviate-explore` first.
 - Any other failure — surface verbatim; halt.
 
 If `is_greenfield=true` and `constitution_path` is empty: proceed normally — the project has no constitution yet. The orchestrator bootstraps one in step `constitution_bootstrap`.
 
-**Note**: The numbered epic bucket was pre-allocated by `deviate research pre`. If scope sizing routes to adhoc, the numbered dir stays as an untracked artifact (no commits were made) and can be cleaned up with `git clean -fd specs/NNN-*/`. The explore.md remains in `specs/explore/` for adhoc reuse.
+
+**Note**: The numbered epic bucket was pre-allocated by `deviate research pre`, and `explore.md` was moved from `specs/explore/<slug>.md` into `specs/NNN-<slug>/explore.md`. If scope sizing routes to adhoc, the numbered dir stays as an untracked artifact (no commits were made) and can be cleaned up with `git clean -fd specs/NNN-*/`. Adhoc reuse is handled via `deviate-adhoc.md` step 2.5, which checks the numbered epic dir first and falls back to `specs/explore/<slug>.md`.
 </step>
+
 
 <step id="target_resolution">
 The subject is already in `<user_input>`. Read its contents and treat them as the authoritative problem statement (it should match the `<user_input>` passed to `/deviate-explore`). If `<user_input>` is empty or unpopulated, trigger `MISSING_PROBLEM_STATEMENT` and halt.
