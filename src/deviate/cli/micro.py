@@ -1103,25 +1103,33 @@ def _run_green_phase(
         rationale = manifest.rationale or ""
         tail = timeout_ctx or "(no agent output captured)"
         if rationale:
-            # Mechanical FAILURE: GREEN cannot satisfy the RED test via the
-            # library/API surface declared in scope. Route to JUDGE so it
-            # can pick `revert_before` (test is wrong → re-run RED) vs
-            # `revert_to_red` (slice/scope is wrong → re-run GREEN with
-            # feedback) instead of short-circuiting to FAILED. The
-            # `failure_kind="mechanical"` discriminator tells the JUDGE
-            # prompt to emit verdict+next_action rather than treat the
-            # rationale as instructions to retry the implementation.
+            # GREEN FAILURE with rationale: route to JUDGE for routing decision.
+            # The `failure_kind` discriminator tells the JUDGE prompt which
+            # outcome class to emit:
+            #   - "mechanical" — RED test cannot be satisfied via the
+            #     library/API surface declared in scope. JUDGE picks between
+            #     `revert_before` (test wrong → re-run RED),
+            #     `revert_to_red` (slice/scope wrong → re-run GREEN with
+            #     feedback), and `skip_refactor` (operator widen scope).
+            #   - "test_defect" — GREEN judged the RED test itself wrong
+            #     (asserts behavior the spec doesn't require, exercises a
+            #     surface that's the wrong abstraction, etc.). Pre-decided
+            #     routing: `revert_before` (re-run RED). GREEN surfaces this
+            #     via `failure_kind: test_defect` in its manifest; we
+            #     default to "mechanical" if unset so prior behavior holds.
+            failure_kind = manifest.failure_kind or "mechanical"
             c.print(
-                f"  [yellow]GREEN_MECHANICAL_FAILURE[/] {tid} — "
+                f"  [yellow]GREEN_{failure_kind.upper()}_FAILURE[/] {tid} \u2014 "
                 f"routing to JUDGE for scope/test decision"
             )
             session.train_feedback = rationale
-            session.failure_kind = "mechanical"
+            session.failure_kind = failure_kind
             session = session.force_transition_to("GREEN")
             session.save(session_path)
             _log_run(
-                "GREEN_MECHANICAL_FAILURE",
+                "GREEN_FAILURE",
                 task_id=tid,
+                failure_kind=failure_kind,
                 rationale_preview=rationale.replace("\n", " ")[:200],
                 reroute="JUDGE",
             )
@@ -1705,6 +1713,18 @@ def _run_judge_phase(
             "with the rationale as feedback) or `next_action: skip_refactor` "
             "(the operator should intervene at the meso layer, e.g. widen the "
             "slice scope).\n"
+        )
+    elif session.failure_kind == "test_defect":
+        prompt += (
+            "\n\n<failure_kind>test_defect</failure_kind>\n\n"
+            "GREEN judged the RED test itself wrong (it asserts behavior the "
+            "spec does not require, exercises the wrong abstraction, or "
+            "encodes an assumption that contradicts spec/data-model). No "
+            "production code was written. Do NOT attempt to satisfy the test "
+            "yourself. Emit `verdict: COMPLIANCE_VIOLATION` + "
+            "`next_action: revert_before` — the RED test must be re-authored. "
+            "Populate `train_feedback` with the GREEN rationale so the next "
+            "RED attempt has the full conflict description.\n"
         )
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")

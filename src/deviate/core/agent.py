@@ -47,6 +47,7 @@ class HandoverManifest(BaseModel):
     verification_command: str | None = None
     expected_failure_node: str | None = None
     rationale: str | None = None
+    failure_kind: Literal["mechanical", "test_defect"] | None = None
     next_phase: str | None = None
     next_action: Optional[
         Literal["revert_before", "revert_to_red", "continue_refactor", "skip_refactor"]
