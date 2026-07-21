@@ -461,7 +461,7 @@ wheels = [
 
 [[package]]
 name = "deviatdd"
-version = "2.9.1"
+version = "2.9.2"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

@@ -201,12 +201,21 @@ and `deviate micro run`, then applies
 `src/deviate/core/herdr.py::with_herdr_status` around Typer dispatch. This sends
 the wrapper-compatible `pane.report_agent` envelope over `HERDR_SOCKET_PATH`
 when the Herdr environment is complete, including for parse and validation
-failures that occur before a command callback starts. Active invocations report
-`working`; zero exits report `idle`; non-zero exits and uncaught exceptions
-report `blocked`. Reporting is best-effort and preserves the original return
-value, exception, and exit code. Because only the outer console-script dispatch
-is instrumented, the top-level command's in-process `_meso_run` and `_run_all`
-calls do not produce nested sources racing to update the same pane.
+failures that occur before a command callback starts. Active invocations emit
+`working` on entry, then call `pause_for_close()` (gated on
+`HERDR_ENV=1` ∧ `sys.stdin.isatty()` ∧ `TERM != "dumb"` ∧
+`HERDR_DEVIATE_NO_PAUSE != "1"`), then emit `idle` for a zero exit or
+`blocked` for a non-zero exit / uncaught exception. Herdr's daemon stores one
+lifecycle authority per ``(source, agent)`` pair per terminal and clears it
+on child process-exit (see Herdr's
+``process_exit_clears_matching_full_lifecycle_hook_authority`` test); DeviaTDD
+cannot re-assert ``working`` after a child OMP cycle completes without
+starting a fresh ``agent_session_id``. The documented mitigation for long
+child-OMP retry cycles is to send ``pane.release_agent`` before each retry.
+Reporting is best-effort and preserves the original return value, exception,
+and exit code. Because only the outer console-script dispatch is instrumented,
+the top-level command's in-process `_meso_run` and `_run_all` calls do not
+produce nested sources racing to update the same pane.
 
 - **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle via `_run_tdd_cycle()`.
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
