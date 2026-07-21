@@ -50,7 +50,13 @@ class HandoverManifest(BaseModel):
     failure_kind: Literal["mechanical", "test_defect"] | None = None
     next_phase: str | None = None
     next_action: Optional[
-        Literal["revert_before", "revert_to_red", "continue_refactor", "skip_refactor"]
+        Literal[
+            "revert_before",
+            "revert_to_red",
+            "continue_refactor",
+            "skip_refactor",
+            "proceed_to_refactor_no_diff",
+        ]
     ] = None
     files: list[str] | None = None
     parse_errors: list[str] = []

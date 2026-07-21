@@ -692,10 +692,11 @@ lifecycle; its in-process meso and micro calls do not emit nested reports.
     verdict / rationale.
   * **JUDGE `next_action` routing:** The runner honors `HandoverManifest.next_action`
     verbatim. See the **JUDGE `next_action` Routing Table** in this document for
-    the four supported values (`revert_before`, `revert_to_red`,
-    `continue_refactor`, `skip_refactor`), the rollback anchors and
-    boundary-advance rules per route, and the runner fallbacks when the field
-    is absent (default: `revert_to_red` on violation, legacy behavior on pass).
+    the five supported values (`revert_before`, `revert_to_red`,
+    `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`), the
+    rollback anchors and boundary-advance rules per route, and the runner
+    fallbacks when the field is absent (default: `revert_to_red` on violation,
+    legacy behavior on pass).
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
     `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
@@ -1176,20 +1177,21 @@ All state transitions are append-only. No existing line is ever modified or over
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `current_phase` | Literal | `IDLE`, `RED`, `GREEN`, `JUDGE`, `REFACTOR` (see `_VALID_PHASES`) |
+| `current_phase` | `str` (default `"IDLE"`) | Current phase in the TDD cycle; one of `IDLE`, `RED`, `GREEN`, `JUDGE`, `REFACTOR` (see `_VALID_PHASES`) |
 | `active_issue_id` | `str` (optional) | Issue the session is bound to (`--issue` selection survives across `--all` runs) |
-| `last_command` | `str` | Last CLI command the user invoked (for resume/messaging) |
-| `train_feedback` | `str` | Last failure feedback injected as `<train_feedback>` into the next GREEN prompt |
-| `judge_rejected` | `bool` | `True` while the JUDGE verdict on the current cycle is a rejection |
-| `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_before`, `revert_to_red`, `continue_refactor`, `skip_refactor`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off |
-| `red_commit_sha` | `str` | SHA of the task's RED commit; anchors `_execute_rollback` (set at end of RED phase) and advances past each feedback commit on `revert_to_red` rejections |
-| `timestamp` | `datetime` | Auto-set on each transition (`force_transition_to`/`transition_to` rebuilds) |
+| `last_command` | `str` (default `""`) | Last CLI command the user invoked (for resume/messaging) |
+| `train_feedback` | `str` (default `""`) | Last failure feedback injected as `<train_feedback>` into the next GREEN prompt |
+| `failure_kind` | `Literal["", "mechanical", "test_defect"]` (default `""`) | Discriminator set by GREEN on failure-class routing; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong) |
+| `judge_rejected` | `bool` (default `False`) | `True` while the JUDGE verdict on the current cycle is a rejection |
+| `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_before`, `revert_to_red`, `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off |
+| `red_commit_sha` | `str` (default `""`) | SHA of the task's RED commit; anchors `_execute_rollback` (set at end of RED phase) and advances past each feedback commit on `revert_to_red` rejections |
+| `timestamp` | `datetime` (auto-set on each transition via `force_transition_to`/`transition_to`) | Wall-clock record of last phase change |
 
 
 #### JUDGE `next_action` Routing Table
 
 `HandoverManifest.next_action` (`src/deviate/core/agent.py`) carries the JUDGE agent's
-decision on how to route the runner. Four values, each honored verbatim by
+decision on how to route the runner. Five values, each honored verbatim by
 `_run_judge_phase` and the EXECUTE equivalent inside `_run_execute_phase`:
 
 | `next_action` | Required verdict | Runner behavior |
@@ -1198,6 +1200,9 @@ decision on how to route the runner. Four values, each honored verbatim by
 | `revert_to_red` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit. Transition to GREEN with feedback in `train_feedback`. The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. |
 | `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. |
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. |
+| `proceed_to_refactor_no_diff` | `COMPLIANCE_PASS` (or any) | Forward route for the empty-diff sign-off case. Set `pending_judge_action="proceed_to_refactor_no_diff"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. REFACTOR's commit + COMPLETED transition is the only way to terminate a slice whose git diff is empty (RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose production-code scope is intrinsically nil). Distinct from `continue_refactor` (signals a substantive refactor pass on a non-empty diff). |
+
+**Empty-diff sign-off:** `proceed_to_refactor_no_diff` (`src/deviate/cli/micro.py::_run_judge_phase`) is the forward-route escape for slices whose production-code scope is intrinsically nil — RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose `failure_kind: mechanical` rationale asserts "no production code expected." The runner honors the action verbatim; the JUDGE-side responsibility is to emit it on a `COMPLIANCE_PASS` verdict when the in-scope rationale is valid but the diff cannot grow. The action lands the task at REFACTOR's no-op commit + COMPLETED transition in one step; the GREEN-empty branch never enters the rejection cascade.
 
 **Feedback-commit timeout:** The `revert_to_red` step's "append a feedback
 commit past RED" runs `_commit_judge_feedback_and_advance`
