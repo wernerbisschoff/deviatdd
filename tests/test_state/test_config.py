@@ -194,6 +194,21 @@ class TestSessionState:
         restored = SessionState.model_validate(data)
         assert restored == session
 
+    def test_pending_judge_feedback_round_trip(self):
+        session = SessionState(
+            current_phase="JUDGE",
+            active_issue_id="ISS-002",
+            pending_judge_feedback={
+                "task_id": "TSK-002-05",
+                "feedback": "Create the missing Credo check.",
+                "feedback_source": "train_feedback",
+            },
+        )
+
+        restored = SessionState.model_validate_json(session.model_dump_json())
+
+        assert restored.pending_judge_feedback == session.pending_judge_feedback
+
     def test_transition_idle_to_specify_is_allowed(self):
         session = SessionState(current_phase="IDLE")
         result = session.transition_to("SPECIFY")

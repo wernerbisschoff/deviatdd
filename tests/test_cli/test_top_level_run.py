@@ -138,6 +138,44 @@ def test_top_level_run_chains_meso_then_micro(tmp_git_repo: Path) -> None:
     )
 
 
+def test_top_level_run_preserves_pending_judge_feedback(tmp_git_repo: Path) -> None:
+    worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
+    worktree_path.mkdir(parents=True)
+    dot_dir = worktree_path / ".deviate"
+    dot_dir.mkdir()
+    from deviate.state.config import SessionState
+
+    pending = {
+        "task_id": "TSK-002-05",
+        "feedback": "Create the missing Credo check.",
+        "feedback_source": "train_feedback",
+    }
+    SessionState(
+        current_phase="JUDGE",
+        active_issue_id="ISS-002",
+        train_feedback=pending["feedback"],
+        judge_rejected=True,
+        pending_judge_action="revert_to_red",
+        pending_judge_feedback=pending,
+        red_commit_sha="red-sha",
+    ).save(dot_dir / "session.json")
+
+    with chdir(tmp_git_repo):
+        with (
+            patch("deviate.cli._meso_run", return_value=str(worktree_path)),
+            patch("deviate.cli._run_all"),
+        ):
+            result = runner.invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    restored = SessionState.load(dot_dir / "session.json")
+    assert restored.pending_judge_feedback == pending
+    assert restored.pending_judge_action == "revert_to_red"
+    assert restored.judge_rejected is True
+    assert restored.red_commit_sha == "red-sha"
+    assert restored.last_command == "run --all"
+
+
 def test_top_level_run_exits_when_meso_returns_no_worktree(tmp_git_repo: Path) -> None:
     """If ``_meso_run`` returns no worktree path (e.g. dry-run consumed
     the return value), the orchestrator must surface RUN_NO_WORKTREE

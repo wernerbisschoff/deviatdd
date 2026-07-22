@@ -765,6 +765,7 @@ state — same degraded behavior as a failed terminal emit, no worse.
   cross-check only.
 * **JUDGE Failed-GREEN Worktree Visibility:** When GREEN leaves production changes uncommitted because its test command failed, JUDGE evaluates both the committed RED-parent-to-HEAD diff and the current staged, unstaged, and untracked worktree diff. Untracked files are rendered with `git diff --no-index /dev/null <path>`. This preserves the implementation for compliance assessment instead of presenting JUDGE with a false RED-only view.
 * **GREEN Rollback Retry Context:** After `revert_to_red`, the next GREEN prompt includes a `<rollback_context>` block stating that rollback discarded prior committed, uncommitted, and untracked GREEN artifacts. GREEN must verify referenced artifacts on disk and recreate missing files before reporting success.
+* **Resumable JUDGE Feedback Commit:** Before attempting the hook-enabled feedback-marker commit, the runner persists the exact task id, feedback text, and feedback source in `SessionState.pending_judge_feedback`. A failed or timed-out hook leaves `red_commit_sha` unchanged and retains this payload. The next explicit task run or `--all` drain selects the task even when its latest ledger status is `FAILED`, retries the same marker commit without rerunning JUDGE, clears the payload only after success, advances `red_commit_sha`, and resumes GREEN with the original feedback.
 * **GREEN Retry State-Drift Guard:** A first-pass zero-change GREEN remains valid and proceeds to JUDGE for `NO_DIFF` classification. On a JUDGE-directed retry, however, if the ledger already records GREEN, `train_feedback` is present, and `_commit_phase()` reports no new commit, `_run_green_phase()` raises `PhaseFailedError` with `GREEN_STATE_DRIFT`. This prevents JUDGE from evaluating feedback-only diffs and requires the operator to verify the existing implementation and reconcile the append-only task ledger.
 * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
   ``PhaseFailedError`` because the agent emitted
@@ -929,6 +930,18 @@ state — same degraded behavior as a failed terminal emit, no worse.
 * **Input Parameters:**
   * `--release <release.md>` (Path to the active release-next Markdown file. When supplied, parses the `Included Flows` table (rows beginning with `| FLOW-`) and narrows the rendered coverage to only those `FLOW-NN` IDs explicitly listed for the release. Header markers and rows with an empty first cell are skipped silently — so the operator sees "what is still incomplete for THIS release" instead of "what is incomplete globally.")
 * **Common Flags:** `--json`, `--quiet`
+
+#### `deviate inspect flows candidates [--include-released]`
+
+* **Source:** `src/deviate/cli/inspect.py` (`flows_candidates_command`)
+* **Description:** Read-only release-readiness view that lists `FlowCoverage` rows with `impl_status == "CONFIRMED_IMPLEMENTED"` — i.e. flows whose `FLOW_CONFIRMED_IMPLEMENTED` event has been written to `specs/_product/flows.jsonl` (by `/deviate-merge`) and which have not yet been tagged by a `FLOW_INCLUDED_IN_RELEASE` event. Backed by `select_release_candidate_flows()` in `src/deviate/state/ledger.py`. Order: most recent issue-reference timestamp first, `flow_id` ascending as the tiebreaker, unreferenced flows last. The command mirrors the State 1 / State 2 / State 3 contract used by `flows coverage`:
+  * **STATE 1 — configuration error:** `specs/_product/flows/index.md` is absent. The command emits a `[red]FLOWS_INDEX_MISSING[/]` banner on stderr and exits with code `2`.
+  * **STATE 2 — normal first-run:** `flows/index.md` exists but `specs/_product/flows.jsonl` has not yet been seeded. The command emits a `[yellow]NO_FLOWS_LEDGER[/]` banner on stderr, exits with code `0`, and emits an empty JSON array (or `NO_CANDIDATE_FLOWS` for the human-readable table). An empty result is the correct answer, not an error — `/deviate-release` treats it as a recommendation list and continues.
+  * **STATE 3 — live readiness:** the ledger is present. Renders one Rich table row per confirmed flow (Flow ID, Implementation, Last Issue, Drift Flag) or a JSON array of `FlowCoverage` records under `--json`.
+* **Input Parameters:**
+  * `--include-released` — relax the `FLOW_INCLUDED_IN_RELEASE` filter so flows already shipped in a prior release also surface. Use only when the operator explicitly wants to re-list a flow (e.g. "re-list FLOW-04 that was in 1.0"); the release prompt documents this as a deliberate override.
+* **Common Flags:** `--json`, `--quiet`
+* **Read by:** `/deviate-release` step 2.5 as a recommendation list for the Included Flows table. The release prompt's goal-first invariant is preserved: the user/agent composes the Included Flows table; the candidate list is a default-fill suggestion, not an auto-populate.
 
 ---
 
@@ -1196,6 +1209,23 @@ All state transitions are append-only. No existing line is ever modified or over
   locking on platforms that support it
 - Canonical state: Issues derived bottom-up (latest entry per `issue_id`); tasks derived
   sequentially (latest entry per `(id, status)` compound key)
+
+
+#### Flow Ledger Helpers (Pydantic + runtime -- `src/deviate/state/ledger.py`)
+
+Append-only event-sourced flow ledger (`specs/_product/flows.jsonl`).
+The Pydantic models `FlowRecord` (identity row), `FlowEvent` (event row
+with seven typed event kinds), and `FlowCoverage` (derived per-flow
+drift row) are documented in `specs/DeviaTDD-architecture.md` §Flow
+Ledger. The two runtime helpers below are the new contract surface
+introduced for `/deviate-merge` flow confirmation and `/deviate-release`
+candidate selection:
+
+| Function | Purpose | Used by |
+|---|---|---|
+| `_confirm_implemented_flows(*, issue_id, issues_ledger, flows_ledger) -> FlowConfirmationResult` | Pure ledger op: reads the issue's `flow_refs`, validates each token against the canonical `^FLOW-\d{2,}$` regex, and appends one `FLOW_CONFIRMED_IMPLEMENTED` event per ref via `append_flow_event`. Idempotent on `(flow_id, event_type, event_issue_id, evidence_path=None)`. Returns `FlowConfirmationResult(flow_ids, appended_count, skipped_refs)`: `flow_ids` lists every syntactically valid ref (so idempotent re-runs still report the flow as confirmed), `appended_count` separates new writes from no-ops, `skipped_refs` carries malformed tokens. | `deviate merge` (`src/deviate/cli/meso.py::_merge_run`). |
+| `select_release_candidate_flows(*, flows_ledger, flows_index, issues_ledger, exclude_released=True) -> list[FlowCoverage]` | Returns `FlowCoverage` rows whose `impl_status == "CONFIRMED_IMPLEMENTED"`. When `exclude_released=True` (default), rows with any prior `FLOW_INCLUDED_IN_RELEASE` event are filtered out. Returns `[]` (not an error) when `flows_ledger` does not exist — the State 2 first-run condition. Order: most recent issue-reference timestamp desc, `flow_id` ascending as the tiebreaker, unreferenced flows last. | `deviate inspect flows candidates` (`src/deviate/cli/inspect.py::flows_candidates_command`) and `/deviate-release` step 2.5. |
+
 
 
 

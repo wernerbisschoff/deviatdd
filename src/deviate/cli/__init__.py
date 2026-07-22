@@ -1175,11 +1175,7 @@ def run_command(
         session_path = dot_dir / "session.json"
         if session_path.exists():
             session = SessionState.load(session_path)
-            session = SessionState(
-                current_phase=session.current_phase,
-                active_issue_id=session.active_issue_id,
-                last_command="run --all",
-            )
+            session.last_command = "run --all"
             session.save(session_path)
         _run_all(
             root,
