@@ -261,6 +261,55 @@ class TestGreenAutoPromptFeedback:
         assert _PREFIX_COLLISION_FEEDBACK not in prompt
         assert _NEIGHBOR_TASK_FEEDBACK not in prompt
 
+    def test_auto_green_feedback_retry_declares_rollback_clean_slate(
+        self, tmp_path: Path
+    ) -> None:
+        feedback = "Create lib/guildwright/credo/check/render_only_tui.ex."
+        task, ledger_path = _write_feedback_specs(tmp_path, feedback)
+        session = SessionState(
+            current_phase="GREEN",
+            train_feedback=feedback,
+            judge_rejected=True,
+            pending_judge_action="revert_to_red",
+        )
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session.save(session_path)
+        captured_prompts: list[str] = []
+
+        def capture_agent_prompt(prompt: str, *args, **kwargs):
+            captured_prompts.append(prompt)
+            return (
+                HandoverManifest(phase="GREEN", status="SUCCESS", task_id=task["id"]),
+                "",
+            )
+
+        success = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with (
+            chdir(tmp_path),
+            patch("deviate.cli.micro._phase_already_done", return_value=True),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._invoke_agent", side_effect=capture_agent_prompt),
+            patch("deviate.cli.micro._run_test_cmd", return_value=success),
+            patch("deviate.cli.micro._run_format_cmd", return_value=success),
+            patch("deviate.cli.micro.append_task_transition"),
+            patch("deviate.cli.micro._commit_phase", return_value=True),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+        ):
+            _run_green_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+
+        prompt = captured_prompts[0]
+        assert "rollback discarded" in prompt.lower()
+        assert "verify" in prompt.lower()
+        assert "on disk" in prompt.lower()
+        assert "recreate" in prompt.lower()
+
 
 class TestGreenDiagnosticSurface:
     """Diagnostics surface for GREEN phase failures.

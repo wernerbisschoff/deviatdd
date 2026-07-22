@@ -1062,6 +1062,15 @@ def _run_green_phase(
     backend = agent or "pi"
 
     prompt = _build_auto_prompt("green", task, root)
+    if session.judge_rejected and session.pending_judge_action == "revert_to_red":
+        prompt += (
+            "\n\n<rollback_context>\n"
+            "JUDGE rollback discarded the prior GREEN implementation, including "
+            "uncommitted and untracked files. Treat this as a clean-slate GREEN "
+            "attempt: verify every referenced artifact exists on disk and recreate "
+            "anything missing before reporting success.\n"
+            "</rollback_context>\n"
+        )
     if session.train_feedback:
         prompt += f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
     else:
@@ -1743,13 +1752,42 @@ def _run_judge_phase(
         diff_base = f"{session.red_commit_sha}^"
     else:
         diff_base = "HEAD~1"
-    diff = subprocess.run(
+    committed_diff = subprocess.run(
         ["git", "diff", f"{diff_base}..HEAD"],
         cwd=root,
         capture_output=True,
         text=True,
         env=_git_env(),
     ).stdout
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout
+    dirty_parts: list[str] = []
+    if status.strip():
+        worktree_diff = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+        dirty_parts.append(worktree_diff)
+        for status_line in status.splitlines():
+            if status_line.startswith("?? "):
+                path = status_line[3:]
+                untracked_diff = subprocess.run(
+                    ["git", "diff", "--no-index", "/dev/null", path],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                ).stdout
+                dirty_parts.append(untracked_diff)
+    diff = "\n".join(part for part in [committed_diff, *dirty_parts] if part)
 
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
