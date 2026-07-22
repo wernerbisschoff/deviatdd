@@ -3193,6 +3193,122 @@ class TestExecutePhaseJudgeRouting:
         )
 
 
+class TestJudgeFeedbackCommitResume:
+    def test_failed_feedback_commit_resumes_without_rerunning_judge(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import (
+            _commit_judge_feedback_and_advance,
+            _resume_pending_judge_feedback,
+        )
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        dot_dir = root / ".deviate"
+        dot_dir.mkdir(exist_ok=True)
+        session_path = dot_dir / "session.json"
+        session = SessionState(
+            current_phase="JUDGE",
+            active_issue_id="ISS-002",
+            red_commit_sha=subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+                check=True,
+            ).stdout.strip(),
+        )
+        session.save(session_path)
+        task = {
+            "id": "TSK-002-05",
+            "issue_id": "ISS-002",
+            "description": "Resume Judge feedback commit",
+            "execution_mode": "TDD",
+            "status": "GREEN",
+        }
+        original_red_sha = session.red_commit_sha
+        real_run = subprocess.run
+        commit_attempts = 0
+
+        def fail_first_commit(cmd, *args, **kwargs):
+            nonlocal commit_attempts
+            if cmd[:2] == ["git", "commit"]:
+                commit_attempts += 1
+                if commit_attempts == 1:
+                    return subprocess.CompletedProcess(
+                        cmd, 1, "", "hook declined feedback commit"
+                    )
+            return real_run(cmd, *args, **kwargs)
+
+        with patch("deviate.cli.micro.subprocess.run", side_effect=fail_first_commit):
+            with pytest.raises(PhaseFailedError):
+                _commit_judge_feedback_and_advance(
+                    root,
+                    task,
+                    "Create the missing Credo check.",
+                    "train_feedback",
+                    Console(),
+                    session,
+                    session_path,
+                )
+
+            failed = SessionState.load(session_path)
+            assert failed.red_commit_sha == original_red_sha
+            assert failed.pending_judge_feedback == {
+                "task_id": "TSK-002-05",
+                "feedback": "Create the missing Credo check.",
+                "feedback_source": "train_feedback",
+            }
+
+            resumed = _resume_pending_judge_feedback(
+                root, task, Console(), failed, session_path
+            )
+
+        assert commit_attempts == 2
+        assert resumed.pending_judge_feedback is None
+        assert resumed.train_feedback == "Create the missing Credo check."
+        assert resumed.pending_judge_action == "revert_to_red"
+        assert resumed.current_phase == "GREEN"
+        assert resumed.red_commit_sha != original_red_sha
+
+    def test_pending_feedback_selects_latest_failed_task_for_run_all(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _resolve_pending_feedback_task
+
+        ledger = tmp_git_repo / "specs" / "issue" / "tasks.jsonl"
+        ledger.parent.mkdir(parents=True)
+        task = TaskRecord(
+            id="TSK-002-05",
+            issue_id="ISS-002",
+            description="Resume failed Judge feedback",
+            execution_mode="TDD",
+            status="FAILED",
+        )
+        append_task_transition(task, ledger)
+        session = SessionState(
+            active_issue_id="ISS-002",
+            pending_judge_feedback={
+                "task_id": "TSK-002-05",
+                "feedback": "Create the missing Credo check.",
+                "feedback_source": "train_feedback",
+            },
+        )
+
+        result = _resolve_pending_feedback_task(tmp_git_repo, session, "ISS-002")
+
+        assert result is not None
+        recovered, recovered_ledger = result
+        assert recovered["status"] == "FAILED"
+        assert recovered["id"] == "TSK-002-05"
+        assert recovered_ledger == ledger
+
+
 class TestExecuteTaskRetryJudgeFeedbackCommitBound:
     """Regression: a failed JUDGE feedback commit must not spin the outer
     ``_execute_task_with_retry`` indefinitely.

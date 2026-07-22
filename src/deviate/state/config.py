@@ -258,6 +258,7 @@ class SessionState(BaseModel):
     judge_rejected: bool = False
     pending_judge_action: str = ""
     red_commit_sha: str = ""
+    pending_judge_feedback: Optional[dict[str, str]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("current_phase")
@@ -274,6 +275,11 @@ class SessionState(BaseModel):
             active_issue_id=self.active_issue_id,
             last_command=self.last_command,
             red_commit_sha=self.red_commit_sha,
+            train_feedback=self.train_feedback,
+            failure_kind=self.failure_kind,
+            judge_rejected=self.judge_rejected,
+            pending_judge_action=self.pending_judge_action,
+            pending_judge_feedback=self.pending_judge_feedback,
             timestamp=datetime.now(timezone.utc),
         )
 
@@ -287,6 +293,7 @@ class SessionState(BaseModel):
             failure_kind=self.failure_kind,
             judge_rejected=self.judge_rejected,
             pending_judge_action=self.pending_judge_action,
+            pending_judge_feedback=self.pending_judge_feedback,
             timestamp=datetime.now(timezone.utc),
         )
 

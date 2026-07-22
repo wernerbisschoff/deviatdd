@@ -1614,25 +1614,23 @@ def _commit_judge_feedback_and_advance(
     session: SessionState,
     session_path: Path,
 ) -> SessionState:
-    """Persist judge feedback (tasks.md when available) and advance the
-    RED boundary by committing a feedback-commit to git.
-
-    The RED-boundary advance is unconditional even when ``tasks.md`` is
-    unavailable: a rejection *must* move the boundary or the next GREEN
-    attempt starts from the same baseline. The fix here decouples the
-    commit from the tasks.md write.
-    """
+    """Persist JUDGE feedback and advance the committed RED boundary."""
     tid = task.get("id", "?")
+    session.pending_judge_feedback = {
+        "task_id": str(tid),
+        "feedback": feedback,
+        "feedback_source": feedback_source,
+    }
+    session.save(session_path)
     feedback_preview = feedback.replace("\n", " ")[:200]
 
-    # 1) Update tasks.md if available (operator-visible persistence).
     tasks_md = _resolve_tasks_md(root, task)
     if tasks_md is not None:
         added_lines = _append_judge_feedback(tasks_md, tid, feedback)
         if added_lines is None:
             c.print(
                 f"  [yellow]TASKS_MD_NO_MATCH[/] {tid}: "
-                f"no task line in {tasks_md} matches this id \u2014 "
+                f"no task line in {tasks_md} matches this id — "
                 f"feedback NOT persisted to tasks.md"
             )
             _log_run(
@@ -1644,7 +1642,7 @@ def _commit_judge_feedback_and_advance(
         else:
             plural = "s" if added_lines != 1 else ""
             c.print(
-                f"  [cyan]TASKS_MD_FEEDBACK[/] {tid} \u2192 {tasks_md}: "
+                f"  [cyan]TASKS_MD_FEEDBACK[/] {tid} → {tasks_md}: "
                 f"{added_lines} feedback line{plural} appended"
             )
             c.print(f"    [dim]line: - **Judge Feedback**: {feedback_preview}[/]")
@@ -1659,9 +1657,6 @@ def _commit_judge_feedback_and_advance(
         c.print(f"  [dim]TASKS_MD_SKIP[/] {tid}: no tasks.md resolved for issue")
         _log_run("TASKS_MD_SKIP", task_id=tid, reason="no_tasks_md_resolved")
 
-    # 2) Commit a feedback marker regardless of (1) so the RED boundary
-    # advances. The commit message carries the feedback source for
-    # post-mortem triage.
     subprocess.run(
         ["git", "add", "-A"],
         cwd=root,
@@ -1714,6 +1709,7 @@ def _commit_judge_feedback_and_advance(
             stderr=commit_result.stderr.strip(),
         )
         raise PhaseFailedError(message)
+
     fb_head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=root,
@@ -1723,7 +1719,36 @@ def _commit_judge_feedback_and_advance(
     ).stdout.strip()
     if fb_head:
         session.red_commit_sha = fb_head
-        session.save(session_path)
+    session.pending_judge_feedback = None
+    session.save(session_path)
+    return session
+
+
+def _resume_pending_judge_feedback(
+    root: Path,
+    task: dict,
+    c: Console,
+    session: SessionState,
+    session_path: Path,
+) -> SessionState:
+    pending = session.pending_judge_feedback
+    if not pending or pending.get("task_id") != task.get("id"):
+        return session
+
+    session = _commit_judge_feedback_and_advance(
+        root,
+        task,
+        pending["feedback"],
+        pending["feedback_source"],
+        c,
+        session,
+        session_path,
+    )
+    session.pending_judge_action = "revert_to_red"
+    session.train_feedback = pending["feedback"]
+    session.judge_rejected = True
+    session = session.force_transition_to("GREEN")
+    session.save(session_path)
     return session
 
 
@@ -2265,15 +2290,16 @@ def _run_tdd_cycle(
         )
         return
 
-    _maybe_push_event(
-        monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
-    )
-    session = _run_red_phase(
-        task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
-    )
     train_attempts = 0
     max_train_attempts = 3
     judge_passed = no_judge
+    if start_phase != "GREEN":
+        _maybe_push_event(
+            monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
+        )
+        session = _run_red_phase(
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+        )
 
     while not judge_passed:
         _maybe_push_event(
@@ -2730,12 +2756,10 @@ def _run_single(
     no_refactor: bool = False,
     agent: str | None = None,
 ) -> None:
-    result = _resolve_task_context(task_id, root)
-    task, ledger_file = result
+    task, ledger_file = _resolve_task_context(task_id, root)
     status = task.get("status", "PENDING")
 
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
+    session_path = root / ".deviate" / "session.json"
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
@@ -2749,9 +2773,15 @@ def _run_single(
         c.print(f"[yellow]TASK_ALREADY_DONE[/] {task_id} is already completed")
         raise typer.Exit(code=0)
 
-    start_phase = (
-        session.current_phase if session.current_phase not in ("IDLE", "RED") else None
-    )
+    if session.pending_judge_feedback:
+        session = _resume_pending_judge_feedback(root, task, c, session, session_path)
+        start_phase = "GREEN"
+    else:
+        start_phase = (
+            session.current_phase
+            if session.current_phase not in ("IDLE", "RED")
+            else None
+        )
 
     _dispatch_task(
         task,
@@ -2776,6 +2806,17 @@ def _execute_task_with_retry(
     agent: str | None = None,
 ) -> bool:
     tid = task.get("id", "?")
+    session_path = root / ".deviate" / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    start_phase: str | None = None
+    if (
+        session.pending_judge_feedback
+        and session.pending_judge_feedback.get("task_id") == tid
+    ):
+        session = _resume_pending_judge_feedback(root, task, c, session, session_path)
+        start_phase = "GREEN"
     issue_id = task.get("issue_id", "")
     mode = task.get("execution_mode", "TDD")
     task_logger: TaskLogger | None = None
@@ -2808,6 +2849,7 @@ def _execute_task_with_retry(
                     agent=agent,
                     batch_mode=True,
                     monitor=monitor,
+                    start_phase=start_phase,
                 )
                 _log_run("TASK_COMPLETE", task_id=tid, attempt=attempt + 1)
                 monitor.push_event(
@@ -2850,6 +2892,21 @@ def _execute_task_with_retry(
             task_logger.close()
 
 
+def _resolve_pending_feedback_task(
+    root: Path, session: SessionState, issue_id: str | None
+) -> tuple[dict, Path] | None:
+    pending = session.pending_judge_feedback
+    if not pending:
+        return None
+    result = _find_task_record(root, pending.get("task_id", ""))
+    if result is None:
+        return None
+    task, ledger_path = result
+    if issue_id is not None and task.get("issue_id") != issue_id:
+        return None
+    return task, ledger_path
+
+
 def _run_all(
     root: Path,
     c: Console,
@@ -2870,7 +2927,12 @@ def _run_all(
     if not issue_id:
         issue_id = _resolve_issue_id_from_branch(root) or issue_id
 
+    recovery = _resolve_pending_feedback_task(root, session, issue_id)
     pending = _find_all_pending_tasks(root, issue_id=issue_id)
+    if recovery is not None and all(
+        task.get("id") != recovery[0].get("id") for task, _ in pending
+    ):
+        pending.insert(0, recovery)
     if not pending:
         msg = "No PENDING tasks found"
         if issue_id:
@@ -4133,44 +4195,25 @@ def run_command(
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
 ) -> None:
-    """Use `deviate micro run --all` to drain the queue.
-
-    Runs the next pending task by default. Routes each task by
-    execution_mode to the TDD cycle (red → green → judge → refactor)
-    or the execute phase.
-
-    Invoked directly via ``deviate micro run [task-id]`` and indirectly
-    by the top-level ``deviate run`` orchestrator after ``meso run``
-    creates the per-issue worktree.
-    """
+    """Use `deviate micro run --all` to drain the queue."""
     global _verbose
     _verbose = verbose
 
     root = _resolve_workspace_root()
     session_path = root / ".deviate" / "session.json"
-
-    _log(f"workspace root: {root}")
-    _log(f"session path: {session_path}")
-
     agent = _resolve_agent_config(root, agent)
 
     if session_path.exists():
         session = SessionState.load(session_path)
-        _log(f"session: phase={session.current_phase}, issue={session.active_issue_id}")
         cmd_parts = ["micro", "run"]
         if task_id:
             cmd_parts.append(task_id)
         if all_tasks:
             cmd_parts.append("--all")
-        session = SessionState(
-            current_phase=session.current_phase,
-            active_issue_id=session.active_issue_id,
-            last_command=" ".join(cmd_parts),
-        )
+        session.last_command = " ".join(cmd_parts)
         session.save(session_path)
 
     if dry_run:
-        _log("dry-run mode — resolving tasks without execution")
         if all_tasks:
             pending = _find_all_pending_tasks(root)
             if not pending:
@@ -4182,8 +4225,7 @@ def run_command(
                 )
         else:
             try:
-                result = _resolve_task_context(task_id, root)
-                task, path = result
+                task, path = _resolve_task_context(task_id, root)
                 console.print(
                     f"  {task.get('id')}: {task.get('status')} "
                     f"— {task.get('description', '')[:60]}"
@@ -4195,14 +4237,12 @@ def run_command(
         raise typer.Exit(code=0)
 
     skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
-
     run_logger = RunLogger(root)
     _log_run(
         "RUN_START",
         command=f"deviate micro run {task_id or ''} {'--all' if all_tasks else ''}".strip(),
     )
     set_run_logger(run_logger)
-
     try:
         if all_tasks:
             _run_all(
