@@ -544,6 +544,86 @@ class TestJudgePromptDiffSection:
             f"got diff base {diff_args[2]!r}"
         )
 
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_diff_includes_dirty_green_implementation_after_test_failure(
+        self,
+        mock_cwd: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """JUDGE must assess uncommitted GREEN work retained after tests fail."""
+        from deviate.cli.micro import _run_judge_phase
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+
+        mock_cwd.return_value = tmp_git_repo
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_agent.return_value = (
+            HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
+            "",
+        )
+
+        red_test = tmp_git_repo / "test_feature.py"
+        red_test.write_text("def test_feature():\n    assert feature() == 1\n")
+        subprocess.run(["git", "add", str(red_test)], cwd=tmp_git_repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-002-05): RED phase - failing test"],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        red_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        implementation = tmp_git_repo / "feature.py"
+        implementation.write_text("def feature():\n    return 1\n")
+
+        task = {
+            "id": "TSK-002-05",
+            "issue_id": "ISS-002",
+            "description": "Assess dirty GREEN implementation",
+            "status": "GREEN",
+            "execution_mode": "TDD",
+        }
+        session = SessionState(
+            current_phase="GREEN",
+            red_commit_sha=red_sha,
+            train_feedback="The test suite failed after GREEN implementation.",
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True)
+
+        _run_judge_phase(
+            task,
+            tmp_git_repo / "tasks.jsonl",
+            session,
+            session_path,
+            Console(),
+        )
+
+        prompt = mock_agent.call_args.args[0]
+        assert "feature.py" in prompt
+        assert "+def feature():" in prompt
+        assert "+    return 1" in prompt
+
     @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
