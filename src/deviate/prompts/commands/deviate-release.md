@@ -126,6 +126,31 @@ coverage rows, when present, surface which FLOW-NN IDs are
 `DOCUMENTED_BUT_NOT_IMPLEMENTED` / `ORPHANED_FLOW` / `STALE_DRIFT` /
 `OK`.
 
+## 2.5. Consult Release Candidates
+Invoke `select_release_candidate_flows()` from `deviate.state.ledger`
+(equivalently: `deviate inspect flows candidates --json`) to surface
+flows that have been confirmed by `/deviate-merge` and are not yet
+tagged for a prior release.  Treat the result as a **recommendation
+list**, not an auto-fill:
+
+1. Surface the candidate IDs to the user before composing the
+   Included Flows table: `[yellow]CANDIDATE_FLOWS[/] FLOW-XX, FLOW-YY`
+   (or `[yellow]NO_CANDIDATE_FLOWS[/]` when the helper returns an
+   empty list — that is the legitimate State 2 first-run condition,
+   not an error).
+2. The Included Flows table remains the user's call: include any
+   subset, in any order, plus additional flows the candidates view
+   missed.  The goal-first invariant (invariant 2) is preserved.
+3. When the user-supplied goal names a flow that the candidates view
+   does not include, surface a `[yellow]WARN[/]` banner naming the
+   drift and recommending `/deviate-merge` to confirm the flow
+   (or `/deviate-flows` if the flow itself is missing from the
+   catalog).
+4. Do not pass `--include-released` by default.  When the user
+   explicitly opts in (e.g. "re-list a flow that was in 1.0"), pass
+   the flag once and document the override in the release file's
+   Constraints section.
+
 ## 3. Accept Release Goal
 The user supplies a release-goal description. If absent, prompt for one with
 focus questions (what user-facing capability, what business outcome, what

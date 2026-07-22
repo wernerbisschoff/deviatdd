@@ -543,6 +543,235 @@ class TestInspectFlowsCoverage:
         assert "DOCUMENTED_BUT_NOT_IMPLEMENTED" in result.stdout
 
 
+class TestInspectFlowsCandidates:
+    """Pin the ``deviate inspect flows candidates`` subcommand contract.
+
+    Backed by ``select_release_candidate_flows`` in state.ledger.
+    Mirrors the State 1 / State 2 / State 3 contract used by
+    ``flows coverage``: missing index fails with a recommendation,
+    missing ledger warns but returns empty, and seeded ledgers
+    surface the CONFIRMED_IMPLEMENTED flow set ordered by recent
+    issue reference.
+    """
+
+    @staticmethod
+    def _write_flows_index(path: Path, flow_ids: list[str]) -> Path:
+        index = path / "specs" / "_product" / "flows" / "index.md"
+        index.parent.mkdir(parents=True, exist_ok=True)
+        rows = [
+            "| Flow ID | Name | Actor | Domain | Status | Source |",
+            "|---------|------|-------|--------|--------|--------|",
+        ]
+        for flow_id in flow_ids:
+            rows.append(
+                f"| {flow_id} | Flow {flow_id} | Developer | "
+                f"Agent Integration | Active | "
+                f"specs/_product/flows/flows-streaming.md |"
+            )
+        index.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        return index
+
+    @staticmethod
+    def _seed_issues_with_flow_refs(
+        path: Path, items: list[tuple[str, list[str], datetime]]
+    ) -> None:
+        ledger = path / "specs" / "issues.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with ledger.open("w", encoding="utf-8") as stream:
+            for issue_id, flow_refs, ts in items:
+                record = IssueRecord(
+                    issue_id=issue_id,
+                    type="feature",
+                    title=f"Issue {issue_id}",
+                    status="COMPLETED",
+                    source_file=f"specs/test/{issue_id}.md",
+                    flow_refs=flow_refs,
+                    timestamp=ts,
+                    created_at=ts,
+                )
+                stream.write(record.model_dump_json() + "\n")
+
+    def test_candidates_index_missing_fails_with_recommendation(
+        self, tmp_path: Path
+    ) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "candidates", "--json"])
+        assert result.exit_code == 2, result.output
+        assert "FLOWS_INDEX_MISSING" in result.stderr
+
+    def test_candidates_missing_ledger_emits_no_flows_ledger(
+        self, tmp_path: Path
+    ) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-01"])
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "candidates", "--json"])
+        assert result.exit_code == 0, result.output
+        assert "NO_FLOWS_LEDGER" in result.stderr
+        assert result.stdout.strip() == "[]"
+
+    def test_candidates_returns_confirmed_not_yet_released(
+        self, tmp_path: Path
+    ) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-01", "FLOW-02"])
+        # FLOW-01 + FLOW-02 confirmed; FLOW-02 tagged for release.
+        flows_ledger = tmp_path / "specs" / "_product" / "flows.jsonl"
+        flows_ledger.parent.mkdir(parents=True, exist_ok=True)
+        with flows_ledger.open("w", encoding="utf-8") as f:
+            for fid, name in [
+                ("FLOW-01", "Flow 01"),
+                ("FLOW-02", "Flow 02"),
+            ]:
+                f.write(
+                    FlowRecord(
+                        flow_id=fid,
+                        name=name,
+                        actor="Developer",
+                        domain="Agent Integration",
+                        source="specs/_product/flows/flows-streaming.md",
+                    ).model_dump_json()
+                    + "\n"
+                )
+            for fid in ("FLOW-01", "FLOW-02"):
+                f.write(
+                    FlowEvent(
+                        flow_id=fid,
+                        event_type="FLOW_DISCOVERED",
+                        timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+                    ).model_dump_json()
+                    + "\n"
+                )
+                f.write(
+                    FlowEvent(
+                        flow_id=fid,
+                        event_type="FLOW_CONFIRMED_IMPLEMENTED",
+                        event_issue_id=f"ISS-{fid[-1]}",
+                        timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+                    ).model_dump_json()
+                    + "\n"
+                )
+            f.write(
+                FlowEvent(
+                    flow_id="FLOW-02",
+                    event_type="FLOW_INCLUDED_IN_RELEASE",
+                    event_release_version="1.0.0",
+                    timestamp=datetime(2026, 7, 14, tzinfo=timezone.utc),
+                ).model_dump_json()
+                + "\n"
+            )
+        self._seed_issues_with_flow_refs(
+            tmp_path,
+            [
+                ("ISS-1", ["FLOW-01"], datetime(2026, 7, 1, tzinfo=timezone.utc)),
+                ("ISS-2", ["FLOW-02"], datetime(2026, 7, 2, tzinfo=timezone.utc)),
+            ],
+        )
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "candidates", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        # Only FLOW-01 is confirmed and not yet released.
+        assert [row["flow_id"] for row in payload] == ["FLOW-01"]
+
+    def test_candidates_include_released_returns_all_confirmed(
+        self, tmp_path: Path
+    ) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-01", "FLOW-02"])
+        flows_ledger = tmp_path / "specs" / "_product" / "flows.jsonl"
+        flows_ledger.parent.mkdir(parents=True, exist_ok=True)
+        with flows_ledger.open("w", encoding="utf-8") as f:
+            for fid in ("FLOW-01", "FLOW-02"):
+                f.write(
+                    FlowRecord(
+                        flow_id=fid,
+                        name=fid,
+                        actor="Developer",
+                        domain="Agent Integration",
+                        source="specs/_product/flows/flows-streaming.md",
+                    ).model_dump_json()
+                    + "\n"
+                )
+                f.write(
+                    FlowEvent(
+                        flow_id=fid,
+                        event_type="FLOW_DISCOVERED",
+                        timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+                    ).model_dump_json()
+                    + "\n"
+                )
+                f.write(
+                    FlowEvent(
+                        flow_id=fid,
+                        event_type="FLOW_CONFIRMED_IMPLEMENTED",
+                        event_issue_id=f"ISS-{fid[-1]}",
+                        timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+                    ).model_dump_json()
+                    + "\n"
+                )
+            f.write(
+                FlowEvent(
+                    flow_id="FLOW-02",
+                    event_type="FLOW_INCLUDED_IN_RELEASE",
+                    event_release_version="1.0.0",
+                    timestamp=datetime(2026, 7, 14, tzinfo=timezone.utc),
+                ).model_dump_json()
+                + "\n"
+            )
+        self._seed_issues_with_flow_refs(
+            tmp_path,
+            [
+                ("ISS-1", ["FLOW-01"], datetime(2026, 7, 1, tzinfo=timezone.utc)),
+                ("ISS-2", ["FLOW-02"], datetime(2026, 7, 2, tzinfo=timezone.utc)),
+            ],
+        )
+
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli,
+                [
+                    "inspect",
+                    "flows",
+                    "candidates",
+                    "--include-released",
+                    "--json",
+                ],
+            )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        # Both confirmed flows surface when the filter is relaxed.
+        assert {row["flow_id"] for row in payload} == {"FLOW-01", "FLOW-02"}
+
+    def test_candidates_empty_when_no_confirmed(self, tmp_path: Path) -> None:
+        self._write_flows_index(tmp_path, ["FLOW-01"])
+        flows_ledger = tmp_path / "specs" / "_product" / "flows.jsonl"
+        flows_ledger.parent.mkdir(parents=True, exist_ok=True)
+        with flows_ledger.open("w", encoding="utf-8") as f:
+            f.write(
+                FlowRecord(
+                    flow_id="FLOW-01",
+                    name="Flow 01",
+                    actor="Developer",
+                    domain="Agent Integration",
+                    source="specs/_product/flows/flows-streaming.md",
+                ).model_dump_json()
+                + "\n"
+            )
+            # Only a DISCOVERED event — no confirmation yet.
+            f.write(
+                FlowEvent(
+                    flow_id="FLOW-01",
+                    event_type="FLOW_DISCOVERED",
+                    timestamp=datetime(2026, 7, 13, tzinfo=timezone.utc),
+                ).model_dump_json()
+                + "\n"
+            )
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "flows", "candidates", "--json"])
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == "[]"
+
+
 class TestInspectById:
     def test_issues_show_accepts_issue_id(self, tmp_path: Path) -> None:
         _seed_issues_jsonl(tmp_path, [_make_issue("ISS-013", status="BACKLOG")])

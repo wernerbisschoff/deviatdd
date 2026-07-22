@@ -48,8 +48,10 @@ from deviate.state.config import (
 )
 from deviate.core.treesitter import extract_file_structure
 from deviate.state.ledger import (
+    FlowConfirmationResult,
     IssueRecord,
     TaskRecord,
+    _confirm_implemented_flows,
     append_issue_transition,
     append_task_record,
     resolve_issue_record,
@@ -1930,7 +1932,46 @@ def _merge_run(
                 f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
             )
 
-    # Stage the ledger file (idempotent — safe to re-run).
+    # ── Flow confirmation: append FLOW_CONFIRMED_IMPLEMENTED events
+    # for every flow_ref on the issue, then stage the flows ledger
+    # alongside the issues ledger.  The helper is a pure ledger op
+    # (no git) and is idempotent on
+    # (flow_id, event_type, event_issue_id, evidence_path=None), so
+    # re-running merge (or --stage-only followed by --message)
+    # produces no duplicate events.  Skip-banner policy:
+    #   * No flow_refs on the issue: emit NO_FLOW_REFS, no ledger write.
+    #   * Skipped_refs (malformed tokens): ORPHANED_FLOW_REF_SKIPPED.
+    #   * Idempotent re-runs: emit per-flow CONFIRMED banner on the
+    #     first call and LEDGER_IDEMPOTENT on subsequent calls.
+    flows_ledger_path = _resolve_specs_root() / "_product" / "flows.jsonl"
+    flows_ledger_existed_before = flows_ledger_path.exists()
+    confirmation: FlowConfirmationResult = _confirm_implemented_flows(
+        issue_id=issue_id,
+        issues_ledger=ledger_path,
+        flows_ledger=flows_ledger_path,
+    )
+    if not confirmation.flow_ids:
+        if record.flow_refs:
+            # Issue carried flow_refs but the helper skipped all of
+            # them (e.g. malformed tokens).  Surface so the operator
+            # can correct the issue frontmatter.
+            for ref in confirmation.skipped_refs:
+                console.print(f"[yellow]ORPHANED_FLOW_REF_SKIPPED[/] {ref}")
+        else:
+            console.print(
+                f"[yellow]NO_FLOW_REFS[/] {issue_id} — no flow confirmations emitted"
+            )
+    else:
+        for ref in confirmation.flow_ids:
+            console.print(f"[green]CONFIRMED[/] {ref}")
+        if confirmation.appended_count < len(confirmation.flow_ids):
+            console.print(
+                f"[yellow]LEDGER_IDEMPOTENT[/] "
+                f"{len(confirmation.flow_ids) - confirmation.appended_count} "
+                f"flow event(s) already recorded for {issue_id}"
+            )
+
+    # Stage the issues ledger.
     repo_root = Path.cwd()
     try:
         subprocess.run(
@@ -1948,6 +1989,29 @@ def _merge_run(
         else:
             console.print(f"[yellow]STAGE_WARN[/] {stderr}")
         raise typer.Exit(code=1)
+
+    # Stage the flows ledger if the helper created or appended to it.
+    if flows_ledger_path.exists() and (
+        not flows_ledger_existed_before or confirmation.appended_count > 0
+    ):
+        try:
+            subprocess.run(
+                ["git", "add", str(flows_ledger_path)],
+                cwd=repo_root,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            if "nothing to commit" in stderr:
+                console.print("[yellow]FLOWS_LEDGER_UNCHANGED[/]")
+            else:
+                console.print(f"[yellow]FLOWS_STAGE_WARN[/] {stderr}")
+            # Non-fatal: the issues ledger already staged.  Continue
+            # so the operator can fix the flows ledger path on a
+            # follow-up commit.
 
     # Commit (only when not --stage-only). Pulled out of the COMPLETED
     # branch above so --stage-only followed by --message produces a single
