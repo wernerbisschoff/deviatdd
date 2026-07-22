@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flows Product</title>
+<meta name="generator" content="deviate specs_html">
+<meta name="source-md" content="flows-product.md">
+<style>
+/* DeviaTDD spec stylesheet — bundled into rendered spec HTML.
+   Goal: dense, scannable, monospace-friendly reading for PRD/plan/flows.
+   No external fonts, no JS — must work offline via file://. */
+
+:root {
+    --fg: #1d1f21;
+    --fg-muted: #6a737d;
+    --bg: #ffffff;
+    --bg-alt: #f7f7f8;
+    --bg-token: #eef2ff;
+    --border: #e1e4e8;
+    --accent: #2563eb;
+    --accent-fr: #7c3aed;
+    --accent-ac: #0891b2;
+    --code-bg: #f6f8fa;
+    --code-fg: #24292e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.55;
+    max-width: 920px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+}
+
+header.spec-meta {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+    color: var(--fg-muted);
+    font-size: 0.9rem;
+}
+
+header.spec-meta h1 { margin-top: 0; color: var(--fg); }
+
+h1, h2, h3, h4 {
+    line-height: 1.25;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+h1 { font-size: 1.9rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h2 { font-size: 1.4rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; color: var(--fg-muted); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code {
+    font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+    font-size: 0.92em;
+}
+
+pre {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.45;
+    border: 1px solid var(--border);
+}
+pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 0.88em;
+}
+
+table {
+    border-collapse: collapse;
+    margin: 1rem 0;
+    width: 100%;
+    font-size: 0.92rem;
+}
+th, td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: var(--bg-alt); font-weight: 600; }
+tbody tr:nth-child(even) { background: var(--bg-alt); }
+
+blockquote {
+    margin: 1rem 0;
+    padding: 0.25rem 1rem;
+    border-left: 4px solid var(--accent);
+    color: var(--fg-muted);
+    background: var(--bg-alt);
+}
+
+ul, ol { padding-left: 1.5rem; }
+li { margin: 0.25rem 0; }
+
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+/* FR-/AC-token highlighting — anchors the spec contract semantically */
+code.fr, code.ac, code.flow-ref {
+    background: var(--bg-token);
+    font-weight: 600;
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+}
+code.fr   { color: var(--accent-fr); }
+code.ac   { color: var(--accent-ac); }
+code.flow-ref { color: var(--accent); }
+
+/* Gherkin keywords (Given/When/Then) get subtle emphasis */
+.gherkin-keyword { font-weight: 600; color: var(--accent); }
+
+</style>
+</head>
+<body>
+<header class="spec-meta">
+<p><strong>Source</strong>: <code>flows-product.md</code></p>
+</header>
+<h2><code class="flow-ref">FLOW-01</code> Flows</h2>
+<ul>
+<li>Actor: Developer</li>
+<li>Domain: Software Engineering</li>
+<li>Status: Active</li>
+</ul>
+<h3>Problem / job to be done</h3>
+<ul>
+<li>Creation of AI assisted user flows (like this one)</li>
+</ul>
+<h3>Trigger</h3>
+<ul>
+<li>User runs /deviate-flows in their agent of choice</li>
+</ul>
+<h3>Preconditions</h3>
+<ul>
+<li>User has an idea of how the product should be used by customers</li>
+</ul>
+<h3>Happy path (primary steps)</h3>
+<ol>
+<li>The user runs the /deviate-flows command/skill.</li>
+<li>The agent converses with the user to determine core customer flows</li>
+<li>The agent outputs a flows.md or flows-<domain>.md in the specs/_product/ dir</li>
+<li>The agent creates/updates the specs/flows/index.md </li>
+<li>The flows are used and referenced by id during lower layers to ensure no context is lost in smaller layers</li>
+<li>The agent asks the user whether to commit the new flow file(s) and any index updates; on confirmation, the agent creates a single git commit for the change.</li>
+</ol>
+<h3>Alternate / error paths</h3>
+<p>TBD</p>
+<h3>Success State</h3>
+<ul>
+<li>A new flows.md or flows-<domain>.md in the specs/_product/ dir of the repo</li>
+<li>The new flows are added to the specs/flows/index.md</li>
+<li>On user confirmation, a single git commit containing the new flow file(s) and any index updates</li>
+</ul>
+<h3>Metrics / Signals</h3>
+<ul>
+<li>Flows get referenced by ID throughout the DeviaTDD workflow, in the Macro, Meso, and Micro layers</li>
+<li>Flows get correctly referenced whether they are in a general flows.md file or in a dedicated flows-<domain>.md file</li>
+<li>All flow IDs added to specs/flows/index.md, with name, actor, domain, status, and source</li>
+</ul>
+<h2><code class="flow-ref">FLOW-02</code> Architecture</h2>
+<ul>
+<li>Actor: Developer</li>
+<li>Domain: Software Engineering</li>
+<li>Status: Active</li>
+</ul>
+<h3>Problem / job to be done</h3>
+<ul>
+<li>Product level architecture that spans across epics</li>
+</ul>
+<h3>Trigger</h3>
+<ul>
+<li>User runs /deviate-architecture in their agent of choice</li>
+</ul>
+<h3>Preconditions</h3>
+<ul>
+<li>User has an idea of how the product should be architected</li>
+<li>User flows exist in specs/flows/</li>
+</ul>
+<h3>Happy path (primary steps)</h3>
+<ol>
+<li>User runs /deviate-architecture command/skill</li>
+<li>The agent converses with the user to determine the architectural design of the product</li>
+<li>The agent maintains or creates cross-epic architecture</li>
+</ol>
+<h3>Alternate / error paths</h3>
+<p>TBD</p>
+<h3>Success State</h3>
+<ul>
+<li>A new architecture.md is written in specs/_product/, or an existing one is updated</li>
+<li>A new domain_model.md is written in specs/_product/, or an existing one is updated</li>
+</ul>
+<h3>Metrics / Signals</h3>
+<ul>
+<li>Product level architecture only</li>
+<li>Respects the constition if exists</li>
+<li>Classification of requested change as Local/Context-Bridging/Context-Creating</li>
+</ul>
+<h2><code class="flow-ref">FLOW-03</code> Release</h2>
+<ul>
+<li>Actor: Developer</li>
+<li>Domain: Software Engineering</li>
+<li>Status: Active</li>
+</ul>
+<h3>Problem / job to be done</h3>
+<ul>
+<li>Definition of next coherent release as a slice of flows and epics that makes sense for users and for the business</li>
+</ul>
+<h3>Trigger</h3>
+<ul>
+<li>User runs /deviate-release in their agent of choice</li>
+</ul>
+<h3>Preconditions</h3>
+<ul>
+<li>Architecture exists</li>
+<li>Flows exist</li>
+</ul>
+<h3>Happy Path (Primary Steps)</h3>
+<ol>
+<li>User runs /deviate-release with a release goal description</li>
+<li>The agent compiles release information from user flows and optionally epics</li>
+<li>The agent writes to specs/_product/release-next.md, overriding the previous release</li>
+<li>Subsequent prompts and phases refer to the release file when deciding what the next epic should be</li>
+</ol>
+<h3>Alternate / Error Paths</h3>
+<p>TBD</p>
+<h3>Success State</h3>
+<ul>
+<li>A new or updated specs/_product/release-next.md </li>
+</ul>
+<h3>Metrics / Signals</h3>
+<ul>
+<li>Downstream /deviate-explore and other prompts reference the release file as a guiding compass</li>
+</ul>
+</body>
+</html>

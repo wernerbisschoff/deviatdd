@@ -33,7 +33,9 @@ from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
 from deviate.cli.walkthrough import walkthrough_app
+from deviate.cli._render import render_app
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
+
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
 from deviate.core.commands import discover_commands, install_command
 from deviate.ui.render import is_interactive
@@ -1077,6 +1079,12 @@ cli.add_typer(
     name="micro",
     rich_help_panel=_AGENT_PANEL,
     help="Micro: drain the task queue (single or --all) inside a worktree",
+)
+cli.add_typer(
+    render_app,
+    name="render",
+    rich_help_panel=_USER_PANEL,
+    help="Render spec markdown to HTML (plan, prd, flows). Auto-renders on post for plan/prd.",
 )
 
 
