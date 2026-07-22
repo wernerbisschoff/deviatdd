@@ -773,3 +773,177 @@ def select_unblocked_candidates(ledger_path: Path) -> list[IssueRecord]:
     try-claim loop in the specify pre command.
     """
     return _get_unblocked_backlog_features(ledger_path)
+
+
+class FlowConfirmationResult(BaseModel):
+    """Outcome of :func:`_confirm_implemented_flows`.
+
+    ``flow_ids`` is the set of refs that were confirmed (already recorded
+    or written on this call).  ``appended_count`` distinguishes new
+    writes from idempotent no-ops, so callers can emit
+    ``[green]CONFIRMED[/]`` vs ``[yellow]LEDGER_IDEMPOTENT[/]`` banners
+    without re-parsing the ledger.  ``skipped_refs`` is the list of
+    flow tokens the helper intentionally did not write: orphans (no
+    matching ``FlowRecord``) and malformed tokens.
+    """
+
+    flow_ids: list[str] = Field(default_factory=list)
+    appended_count: int = 0
+    skipped_refs: list[str] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
+
+
+def _confirm_implemented_flows(
+    *,
+    issue_id: str,
+    issues_ledger: Path,
+    flows_ledger: Path,
+) -> FlowConfirmationResult:
+    """Append ``FLOW_CONFIRMED_IMPLEMENTED`` events for an issue's flow refs.
+
+    Pure ledger operation: reads the issue's ``flow_refs`` from
+    *issues_ledger*, validates each token against the canonical flow ID
+    regex, and writes one ``FlowEvent`` per ref to *flows_ledger* via
+    :func:`append_flow_event`. The compound key
+    ``(flow_id, event_type, event_issue_id, evidence_path=None)`` is
+    the dedup boundary — re-invoking this helper for the same issue
+    produces zero new rows but still reports the flow IDs as confirmed.
+
+    Orphan policy (depends on flows ledger state):
+      * flows ledger missing or has no identity rows (unseeded):
+        every syntactically valid ref is confirmed; ``skipped_refs``
+        remains empty. Confirmation events persist; they will be
+        un-represented in ``load_flow_coverage`` until a matching
+        ``FlowRecord`` or index row exists, but they are not
+        surfaced as orphans.
+      * flows ledger seeded with identity rows: refs without a
+        matching ``FlowRecord`` are reported in ``skipped_refs``.
+        The merge CLI surfaces these as
+        ``ORPHANED_FLOW_REF_SKIPPED`` for the operator; coverage
+        itself derives rows from the canonical set, so event-only
+        orphans are not classified as ``ORPHANED_FLOW`` here.
+      * unknown issue id: returns an empty result, no ledger
+        writes.
+      * malformed token (anything that does not match
+        ``FLOW-\\d{2,}``): appended to ``skipped_refs``.
+
+    Malformed tokens (anything that does not match ``FLOW-\\d{2,}``)
+    are also reported in ``skipped_refs``; they are a bug in the
+    upstream issue record and coverage will never classify them.
+    """
+    result = FlowConfirmationResult()
+    record = resolve_issue_record(issue_id, issues_ledger)
+    if record is None:
+        return result
+    flow_refs = list(record.flow_refs or [])
+    if not flow_refs:
+        return result
+
+    timestamp = datetime.now(timezone.utc)
+    for ref in flow_refs:
+        if not ref or not re.match(r"^FLOW-\d{2,}$", ref):
+            if ref:
+                result.skipped_refs.append(ref)
+            continue
+        # Always confirm syntactically valid refs — orphan diagnostics
+        # are a coverage concern.  ``load_flow_coverage`` iterates the
+        # canonical set (index/identity rows) and only emits
+        # ``ORPHANED_FLOW`` for identity rows that are absent from
+        # the index; it does not classify event-only refs as
+        # orphans, so we do not skip here either.  Skipping at
+        # merge time would also create stale data: the user has
+        # shipped the work, but the ledger would carry no
+        # confirmation event until the index is manually seeded.
+        appended = append_flow_event(
+            FlowEvent(
+                flow_id=ref,
+                event_type="FLOW_CONFIRMED_IMPLEMENTED",
+                event_issue_id=issue_id,
+                event_release_version=None,
+                evidence_path=None,
+                timestamp=timestamp,
+            ),
+            flows_ledger,
+        )
+        result.flow_ids.append(ref)
+        if appended:
+            result.appended_count += 1
+    return result
+
+
+def _issue_timestamps_by_id(issues_ledger: Path) -> dict[str, datetime]:
+    """Build a map of issue_id → most recent timestamp from the ledger.
+
+    The issues ledger is append-only; for each issue_id we keep the
+    latest timestamp seen.  Used to sort release candidates by
+    ``last_referenced_by_issue_id`` without falling back to lexical
+    order.
+    """
+    out: dict[str, datetime] = {}
+    for data in _read_ledger(issues_ledger):
+        issue_id = data.get("issue_id")
+        if not issue_id:
+            continue
+        ts = _parse_timestamp(data.get("created_at") or data.get("timestamp"))
+        if issue_id not in out or ts > out[issue_id]:
+            out[issue_id] = ts
+    return out
+
+
+def select_release_candidate_flows(
+    *,
+    flows_ledger: Path,
+    flows_index: Path,
+    issues_ledger: Path,
+    exclude_released: bool = True,
+) -> list[FlowCoverage]:
+    """Return ``FlowCoverage`` rows whose implementation is confirmed.
+
+    The candidate set is the canonical flow set with
+    ``impl_status == "CONFIRMED_IMPLEMENTED"``. When
+    ``exclude_released`` is true (default), flows with any prior
+    ``FLOW_INCLUDED_IN_RELEASE`` event are excluded so that a release
+    does not re-list what it already shipped.  When false, every
+    confirmed flow is returned regardless of release history.
+
+    Returns an empty list when *flows_ledger* does not exist
+    (first-run state — no confirmed flows possible).  Empty list is
+    also returned when the canonical index is missing so the caller
+    does not need a special-case branch.
+
+    Ordering: flows whose ``last_referenced_by_issue_id`` is the most
+    recent in the issues ledger come first, ties broken by ``flow_id``
+    ascending.  Rows with no issue reference sort last by ``flow_id``.
+    """
+    if not flows_ledger.exists() or not flows_index.exists():
+        return []
+    coverage = load_flow_coverage(flows_ledger, flows_index, issues_ledger)
+    candidates = [row for row in coverage if row.impl_status == "CONFIRMED_IMPLEMENTED"]
+    if exclude_released:
+        _, event_rows = _iter_flow_ledger_rows(flows_ledger)
+        released = {
+            ev.flow_id
+            for ev in event_rows
+            if ev.event_type == "FLOW_INCLUDED_IN_RELEASE"
+        }
+        candidates = [r for r in candidates if r.flow_id not in released]
+
+    issue_ts = _issue_timestamps_by_id(issues_ledger)
+    sentinel_min = datetime.min.replace(tzinfo=timezone.utc)
+
+    # Deterministic ordering:
+    # 1) Stable sort by flow_id ascending (canonical, human-friendly
+    #    tiebreaker).
+    # 2) Split into referenced / unreferenced and stable-sort the
+    #    referenced bucket by issue timestamp descending so the most
+    #    recent reference comes first while preserving the flow_id
+    #    order from step 1.  Unreferenced rows sort last by flow_id.
+    candidates.sort(key=lambda r: r.flow_id)
+    referenced = [r for r in candidates if r.last_referenced_by_issue_id]
+    unreferenced = [r for r in candidates if not r.last_referenced_by_issue_id]
+    referenced.sort(
+        key=lambda r: issue_ts.get(r.last_referenced_by_issue_id or "", sentinel_min),
+        reverse=True,
+    )
+    return referenced + unreferenced

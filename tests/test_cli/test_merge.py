@@ -832,3 +832,240 @@ def test_merge_no_emoji_prefix_when_contributing_md_has_no_emoji(
 
     # No emoji prefix — the detector returned False.
     assert log == "feat(ISS-TEST-001): squash merge test feature", log
+
+
+# ---------------------------------------------------------------------------
+# Flow confirmation wiring
+#
+# These regression tests pin the contract that ``deviate merge`` appends a
+# ``FLOW_CONFIRMED_IMPLEMENTED`` event to ``specs/_product/flows.jsonl`` for
+# every flow_ref on the merged issue and stages the file in the same commit
+# as the issues ledger.  Without this wiring, the flow ledger would stay
+# frozen at ``UNCONFIRMED`` and ``/deviate-release`` would never see any
+# candidate flows — see ``tests/test_core/test_flow_confirmation.py`` for
+# the helper-level contract and ``tests/test_core/test_ledger.py`` for
+# the coverage derivation.
+# ---------------------------------------------------------------------------
+
+
+def _seed_flows_ledger(repo: Path, *flow_ids: str) -> Path:
+    """Create ``specs/_product/flows.jsonl`` with a FlowRecord for each id.
+
+    Returns the ledger path so tests can assert on its contents.
+    """
+    from deviate.state.ledger import FlowRecord
+
+    product_dir = repo / "specs" / "_product"
+    product_dir.mkdir(parents=True, exist_ok=True)
+    flows_ledger = product_dir / "flows.jsonl"
+    with flows_ledger.open("w", encoding="utf-8") as f:
+        for flow_id in flow_ids:
+            record = FlowRecord(
+                flow_id=flow_id,
+                name=f"Test flow {flow_id}",
+                actor="tester",
+                domain="test",
+                source="specs/_product/flows/flows-test.md",
+            )
+            f.write(record.model_dump_json() + "\n")
+    return flows_ledger
+
+
+def _issue_with_flow_refs(
+    repo: Path,
+    issue_id: str,
+    *,
+    flow_refs: list[str],
+) -> None:
+    """Append a SPECIFIED IssueRecord carrying *flow_refs* to the ledger."""
+    ledger = repo / "specs" / "issues.jsonl"
+    record = IssueRecord(
+        issue_id=issue_id,
+        type="feature",
+        title=f"Test feature {issue_id}",
+        status="SPECIFIED",
+        source_file=f"specs/test-bucket/issues/{issue_id.lower()}.md",
+        flow_refs=flow_refs,
+        timestamp=datetime.now(timezone.utc),
+    )
+    with ledger.open("a", encoding="utf-8") as f:
+        f.write(record.model_dump_json() + "\n")
+
+
+def test_merge_appends_confirmed_flow_events(merge_repo: Path) -> None:
+    """``deviate merge`` must append one ``FLOW_CONFIRMED_IMPLEMENTED``
+    event per flow_ref on the issue, with the issue's id as
+    ``event_issue_id`` and ``evidence_path=None`` as the merge marker."""
+    repo = merge_repo
+    flows_ledger = _seed_flows_ledger(repo, "FLOW-01", "FLOW-02")
+    _issue_with_flow_refs(repo, "ISS-TEST-001", flow_refs=["FLOW-01", "FLOW-02"])
+    # Commit the new flows ledger on main so the merge CLI can stage it
+    # via ``git add`` from the main checkout.
+    subprocess.run(
+        ["git", "add", "specs/_product/flows.jsonl"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed flows ledger"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+
+    # The ledger on disk should have zero FLOW_CONFIRMED_IMPLEMENTED rows
+    # before merge.
+    pre = flows_ledger.read_text(encoding="utf-8")
+    assert "FLOW_CONFIRMED_IMPLEMENTED" not in pre
+
+    with chdir(repo):
+        subprocess.run(
+            [
+                "git",
+                "merge",
+                "--squash",
+                "feat/test-bucket/iss-test-001",
+            ],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        runner = CliRunner()
+        stage = runner.invoke(cli, ["merge", "--issue", "ISS-TEST-001", "--stage-only"])
+        assert stage.exit_code == 0, stage.output
+        assert "CONFIRMED" in stage.output
+        assert "FLOW-01" in stage.output
+        assert "FLOW-02" in stage.output
+
+    # The flows ledger now carries the confirmation events.
+    import json as _json
+
+    post = flows_ledger.read_text(encoding="utf-8")
+    confirmations = [
+        _json.loads(line)
+        for line in post.splitlines()
+        if "FLOW_CONFIRMED_IMPLEMENTED" in line
+    ]
+    assert len(confirmations) == 2
+    by_flow = {row["flow_id"]: row for row in confirmations}
+    assert set(by_flow) == {"FLOW-01", "FLOW-02"}
+    for row in by_flow.values():
+        assert row["event_issue_id"] == "ISS-TEST-001"
+        assert row["evidence_path"] is None
+
+    # The flows ledger is staged in the working tree (the merge CLI
+    # ran ``git add`` on it as part of the stage-only pass).
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--", str(flows_ledger)],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    # A staged file appears with the first column ``A`` (added) or ``M``
+    # (modified) and the second column `` `` (no unstaged change).
+    assert status.strip() != "", status
+    assert status.startswith(("A", "M")), status
+
+
+def test_merge_no_flow_refs_emits_no_flow_refs_banner(
+    merge_repo: Path,
+) -> None:
+    """An issue without flow_refs must complete normally and emit
+    the ``NO_FLOW_REFS`` banner; no flows ledger is created."""
+    repo = merge_repo
+    # Confirm the merge_repo fixture did not seed a flows ledger.
+    assert not (repo / "specs" / "_product" / "flows.jsonl").exists()
+
+    with chdir(repo):
+        subprocess.run(
+            [
+                "git",
+                "merge",
+                "--squash",
+                "feat/test-bucket/iss-test-001",
+            ],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        runner = CliRunner()
+        stage = runner.invoke(cli, ["merge", "--issue", "ISS-TEST-001", "--stage-only"])
+        assert stage.exit_code == 0, stage.output
+        assert "NO_FLOW_REFS" in stage.output
+
+    # No flows ledger created.
+    assert not (repo / "specs" / "_product" / "flows.jsonl").exists()
+
+
+def test_merge_repeat_call_is_idempotent_on_flow_ledger(
+    merge_repo: Path,
+) -> None:
+    """Running ``deviate merge`` twice (e.g. --stage-only then --message)
+    must not append duplicate flow events."""
+    repo = merge_repo
+    flows_ledger = _seed_flows_ledger(repo, "FLOW-01")
+    _issue_with_flow_refs(repo, "ISS-TEST-001", flow_refs=["FLOW-01"])
+    subprocess.run(
+        ["git", "add", "specs/_product/flows.jsonl", "specs/issues.jsonl"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed flows ledger + flow ref"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+
+    with chdir(repo):
+        subprocess.run(
+            [
+                "git",
+                "merge",
+                "--squash",
+                "feat/test-bucket/iss-test-001",
+            ],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        runner = CliRunner()
+        first = runner.invoke(cli, ["merge", "--issue", "ISS-TEST-001", "--stage-only"])
+        assert first.exit_code == 0, first.output
+        # The second invocation sees the COMPLETED issue and the
+        # already-appended flow event — both are idempotent.
+        second = runner.invoke(
+            cli,
+            [
+                "merge",
+                "--issue",
+                "ISS-TEST-001",
+                "-m",
+                "feat(ISS-TEST-001): squash merge",
+            ],
+        )
+        assert second.exit_code == 0, second.output
+
+    import json as _json
+
+    rows = [
+        _json.loads(line)
+        for line in flows_ledger.read_text(encoding="utf-8").splitlines()
+    ]
+    confirmations = [
+        r for r in rows if r.get("event_type") == "FLOW_CONFIRMED_IMPLEMENTED"
+    ]
+    # Exactly one confirmation event — the second call deduped.
+    assert len(confirmations) == 1
+    assert confirmations[0]["flow_id"] == "FLOW-01"
