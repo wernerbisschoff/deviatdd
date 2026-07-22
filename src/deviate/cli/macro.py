@@ -22,6 +22,7 @@ from deviate.cli._common import (
 from deviate.core._shared import git_env as _git_env
 from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact, stage_and_commit
+from deviate.core.specs_html import render_and_stage_if_changed
 from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.cli.feature import _derive_slug
@@ -600,15 +601,24 @@ def prd_post(
 
     try:
         epic_num = _extract_epic_num(epic_slug)
-        sha = commit_artifact(
-            prd_path,
-            format_commit_message(f"docs({epic_num}): create prd.md", Path.cwd()),
+        # Render prd.html first if prd.md has pending changes. The
+        # change-detection gate prevents a CSS-only update from producing a
+        # spurious commit with an empty prd.md diff.
+        prd_html = render_and_stage_if_changed(prd_path, repo=Path.cwd())
+        files_to_commit = [prd_path, prd_html] if prd_html else [prd_path]
+        sha = stage_and_commit(
+            message=format_commit_message(
+                f"docs({epic_num}): create prd.md", Path.cwd()
+            ),
+            files=files_to_commit,
             repo=Path.cwd(),
         )
         if sha is None:
             console.print("[yellow]COMMIT_SKIP[/] prd.md — no changes to stage")
         else:
             console.print(f"[green]COMMITTED[/] prd.md at {sha[:8]}")
+            if prd_html is not None:
+                console.print(f"[cyan]HTML_PREVIEW[/] {prd_html}")
     except Exception as e:
         _halt("PRD", f"commit failed - {e}")
 

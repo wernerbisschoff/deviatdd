@@ -28,7 +28,8 @@ from deviate.core.agent import (
     resolve_agent_to_backend,
 )
 from deviate.core._shared import git_env as _git_env
-from deviate.core.commit import commit_artifact
+from deviate.core.commit import commit_artifact, stage_and_commit
+from deviate.core.specs_html import render_and_stage_if_changed
 from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
@@ -853,11 +854,17 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
     epic_num = _extract_epic_num(bucket)
     issue_num = _extract_issue_num(resolved_issue_id)
     try:
-        sha = commit_artifact(
-            plan_md,
-            format_commit_message(
+        # Render plan.html first if plan.md has pending changes. The
+        # change-detection gate (nit #1 from the render review) prevents a
+        # CSS-only update to specs.css from producing a spurious commit
+        # with an empty plan.md diff.
+        plan_html = render_and_stage_if_changed(plan_md, repo=Path.cwd())
+        files_to_commit = [plan_md, plan_html] if plan_html else [plan_md]
+        sha = stage_and_commit(
+            message=format_commit_message(
                 f"docs({epic_num}-{issue_num}): create plan.md", Path.cwd()
             ),
+            files=files_to_commit,
             repo=Path.cwd(),
             no_verify=True,
         )
@@ -865,6 +872,8 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
             console.print("[yellow]COMMIT_SKIP[/] plan.md — no changes to stage")
         else:
             console.print(f"[green]COMMITTED[/] plan.md at {sha[:8]}")
+            if plan_html is not None:
+                console.print(f"[cyan]HTML_PREVIEW[/] {plan_html}")
     except Exception as e:
         console.print(f"[red]COMMIT_FAILED[/] {e}")
         raise typer.Exit(code=1)

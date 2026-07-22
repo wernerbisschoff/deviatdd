@@ -232,15 +232,18 @@ def _extract_panel_command_names(panel_block: str) -> list[str]:
 
 def test_help_user_panel_has_exactly_three_commands():
     """The 'Run by you' panel must contain exactly ``setup``, ``run``,
-    ``meso`` as command rows. If a phase dispatcher or agent-internal
+    ``meso``, ``render`` as command rows. If a phase dispatcher or agent-internal
     command ever leaks into this panel, a first-timer will think it is
     for them — this assertion catches that regression.
+
+    ``render`` was added when spec HTML preview moved out of the post-hook
+    auto-render path (manual command for flows files).
     """
     output = _help_output()
     user_block = _panel_block(output, USER_PANEL)
     user_command_names = set(_extract_panel_command_names(user_block))
-    assert user_command_names == {"setup", "run", "meso"}, (
-        f"User panel must contain exactly {{setup, run, meso}} as "
+    assert user_command_names == {"setup", "run", "meso", "render"}, (
+        f"User panel must contain exactly {{setup, run, meso, render}} as "
         f"command rows; got {sorted(user_command_names)}"
     )
 
