@@ -604,41 +604,6 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ### 5. Automated Pipeline Orchestration
 
-When Herdr launches DeviaTDD with `HERDR_ENV=1`, `HERDR_SOCKET_PATH`, and
-`HERDR_PANE_ID`, the three run entry points (`deviate run`, `deviate meso run`,
-and `deviate micro run`) report their lifecycle directly over the Herdr Unix
-socket. The console-script boundary sends a `pane.report_agent` envelope with
-source `herdr:deviate`, agent `omp`, and state `working` on entry; then calls
-`pause_for_close()`; then emits `idle` for a zero exit or `blocked` for a
-non-zero exit / uncaught exception. `pause_for_close()` blocks on stdin
-until the operator presses Enter so the Herdr-tracked pane stays alive
-while the final report and any failure output remain visible. It is gated
-on `HERDR_ENV=1` ∧ `sys.stdin.isatty()` ∧ `TERM != "dumb"` ∧
-`HERDR_DEVIATE_NO_PAUSE != "1"`, swallows EOF / Ctrl-D / Ctrl-C, and writes
-the prompt to `sys.stderr` so Herdr's pane-content stream is unaffected.
-Set `HERDR_DEVIATE_NO_PAUSE=1` to opt out (e.g. for non-interactive
-launches that accidentally inherit the Herdr environment). Herdr's daemon
-stores one lifecycle authority per `(source, agent)` pair per terminal and
-clears it on child process-exit (see Herdr's
-`process_exit_clears_matching_full_lifecycle_hook_authority` test); DeviaTDD
-cannot re-assert `working` after a child OMP cycle completes without
-starting a fresh `agent_session_id`. The documented mitigation for long
-child-OMP retry cycles is to send `pane.release_agent` before each retry.
-Reporting is best-effort: a missing/unavailable socket never changes the
-command's behavior or exit code. The top-level orchestrator reports one
-lifecycle; its in-process meso and micro calls do not emit nested reports.
-
-On the `blocked` exit path, `with_herdr_status` emits a second
-`report_state("idle", None)` AFTER `pause_for_close()` so the visible
-pane clears the stale `blocked` badge once the operator has acknowledged
-the output by pressing Enter / EOF / Ctrl-C. The post-pause emit lands
-because Herdr clears the authority on process-exit detection, not on
-stdin activity, so the authority is still live. The exit-0 path already
-emits `idle` before the pause and skips the cleanup to avoid a redundant
-duplicate. If the post-pause emit fails (e.g. Herdr has already cleared
-the authority in a degenerate race), the pane stays at its pre-pause
-state — same degraded behavior as a failed terminal emit, no worse.
-
 #### `deviate run` (Full-Pipeline Orchestrator)
 
 * **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)
