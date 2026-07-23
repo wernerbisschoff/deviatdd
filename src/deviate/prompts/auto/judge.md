@@ -82,6 +82,7 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 | Security & Governance | Critical | No hardcoded secrets, no injection, no audit bypass, no gate skip. |
 | Flow Alignment | High | Diff preserves or extends the user-visible flow(s) named in the task's `**Flow References**`. |
 | No Shortcuts | High | No placeholder / stub / deferred logic in production code paths exercised by the AC-NN. |
+| Security Checks | Critical | The `security_checks` field on the manifest is **mandatory** — emitted as `pass | fail | warn` based on the existing flat security scan (secrets, injection, deserialization, path traversal, log leakage) plus any `security_profile.body` content from the task. Absence of the field is a Judge rejection, not a soft warning. |
 
 </evaluation_criteria>
 
@@ -192,6 +193,7 @@ evaluation:
   security_governance: "PASS" | "FAIL"
   flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
+  security_checks: pass | fail | warn
 diff_summary:
   files_changed: 0
   files_modified: 0

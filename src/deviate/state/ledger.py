@@ -58,6 +58,26 @@ def _read_ledger(path: Path) -> list[dict]:
     return records
 
 
+class SecurityProfile(BaseModel):
+    """Optional per-task security profile body.
+
+    Single-field model: ``body`` holds the verbatim markdown body of the
+    ``## Security Profile`` section from ``plan.md``. The JUDGE prompt reads
+    this as supplementary context when populating the ``security_checks``
+    field on the verdict manifest.
+
+    The field is intentionally prose-only — structured fields
+    (``risk_surfaces`` / ``negative_tests`` / ``green_constraints``) are a
+    follow-up concern. The model follows the ledger family pattern
+    (``model_config = {"extra": "forbid"}``) so unknown fields are rejected
+    at validation time.
+    """
+
+    body: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
 class TaskRecord(BaseModel):
     id: str
     issue_id: str
@@ -74,6 +94,7 @@ class TaskRecord(BaseModel):
     execution_mode: Literal["TDD", "DIRECT", "EXECUTE", "E2E", "IMMEDIATE"] = "TDD"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    security_profile: SecurityProfile | None = None
     model_config = {"extra": "forbid"}
 
     @field_validator("id")
