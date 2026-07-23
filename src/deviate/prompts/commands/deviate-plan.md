@@ -119,6 +119,19 @@ Write the plan as `plan.md` in the issue workspace directory (adjacent to the is
 |------|--------|------------|------------|
 | <risk description> | <High/Medium/Low> | <High/Medium/Low> | <mitigation strategy> |
 
+## Security Profile
+
+List the risk surfaces this task touches (auth, secrets, PII, outbound HTTP,
+deserialization, subprocess, file paths, SQL/ORM, eval) and the negative tests
+the planner expects RED to write. Free-form prose is fine — structured parsing
+is a future PR. The body of this section is stored verbatim on the task
+record's `security_profile` field and read by the JUDGE prompt as supplementary
+context when populating the `security_checks` manifest field.
+
+Risk surfaces: <list the surfaces this task touches, e.g. "auth, secrets, subprocess">
+Negative tests: <the negative tests RED must write, e.g. "auth bypass fails, secrets not in logs">
+Constraints: <green-phase constraints, e.g. "no new dependencies without checksum, no hardcoded secrets">
+
 ## Integration Points
 - **<integration point>**: <what connects here and the contract expected>
 

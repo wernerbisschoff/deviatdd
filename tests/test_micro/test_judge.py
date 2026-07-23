@@ -1554,6 +1554,73 @@ class TestJudgeRefactorNoteOnPass:
         )
 
 
+class TestJudgeSecurityChecksField:
+    """The JUDGE prompt must declare `security_checks` as a required manifest field.
+
+    Pins the contract that the JUDGE verdict manifest carries a structured
+    `security_checks: {pass | fail | warn}` field. The vocabulary is locked
+    (`pass | fail | warn`, not `true | false`, not `ok | warn`) so future
+    renames are a deliberate design decision, not prompt drift. The instruction
+    tells the agent that absence of the field is a Judge rejection.
+    """
+
+    def test_judge_prompt_declares_security_checks_as_required_field(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from deviate.cli.micro import _build_auto_prompt
+
+        spec_dir = tmp_path / "specs" / "adhoc" / "issues"
+        spec_dir.mkdir(parents=True)
+        spec_file = spec_dir / "014-judge-security-checks.md"
+        spec_file.write_text("# Stub Spec\n", encoding="utf-8")
+        issues_jsonl = tmp_path / "specs" / "issues.jsonl"
+        issues_jsonl.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-014",
+                    "source_file": "specs/adhoc/issues/014-judge-security-checks.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        task = {
+            "id": "TSK-014-01",
+            "issue_id": "ISS-ADH-014",
+            "description": "Verify security_checks manifest field",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+
+        prompt = _build_auto_prompt("judge", task, tmp_path)
+
+        # The field name is present in the manifest schema.
+        assert "security_checks" in prompt, (
+            "Auto judge prompt must declare `security_checks` as a manifest field"
+        )
+
+        # The vocabulary is exactly `pass | fail | warn`. Pin the literal
+        # delimiter-pipe form so future renames are a deliberate design
+        # decision, not prompt drift.
+        assert "pass | fail | warn" in prompt, (
+            "Auto judge prompt must enumerate `security_checks` allowed "
+            "values as `pass | fail | warn` (not `true | false`, "
+            "not `ok | warn`, not `green | red`)"
+        )
+
+        # The field is mandatory — absence on the manifest is a rejection.
+        assert (
+            ("security_checks" in prompt and "mandatory" in prompt.lower())
+            or "security_checks" in prompt
+            and "required" in prompt.lower()
+        ), (
+            "Auto judge prompt must instruct the agent that `security_checks` "
+            "is mandatory on the manifest; absence is a Judge rejection"
+        )
+
+
 class TestExecuteRollbackUntrackedCleanup:
     """``_execute_rollback()`` must remove untracked files and directories.
 
