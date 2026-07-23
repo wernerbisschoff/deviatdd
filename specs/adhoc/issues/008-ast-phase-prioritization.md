@@ -1,9 +1,10 @@
 ---
-title: "AST/Structural Analysis Integration — JUDGE + PLAN + REVIEW + REFACTOR (Multi-Language)"
-labels: [enhancement, adhoc, vertical-slice]
+title: "REVOKED — ISS-ADH-008 (AST/Structural Analysis) was revoked on 2026-07-23. See CHANGELOG [Unreleased]."
+labels: [enhancement, adhoc, vertical-slice, revoked]
 blocked_by: []
 coordinates_with: []
 issue_id: ISS-ADH-008
+status: REVOKED
 ---
 
 ## System Topology Mapping

@@ -39,34 +39,12 @@ When you run `deviate review pre`, the emitted JSON contract includes:
 | Field | Type | Description |
 |-------|------|-------------|
 | `diff` | string | Raw unified git diff (merge-base vs HEAD) |
-| `structured_diff` | list[dict] | Per-file symbol-level change metadata (ALL changed files) |
-| `structured_diff_markdown` | string | Compact markdown table rendering of structured_diff for LLM prompts |
+
 | `constitution_path` | str/null | Path to `specs/constitution.md` |
 | `prd_path` | str/null | Path to PRD file (epic first, adhoc fallback) |
 | `base_branch` | string | Base branch for merge-base computation |
 
-Each entry in `structured_diff` has:
-```json
-{
-  "file": "src/mod.py",
-  "language": "python",
-  "symbols": [
-    {"kind": "function", "name": "greet", "change": "modified"},
-    {"kind": "function", "name": "add_func", "change": "added"},
-    {"kind": "class", "name": "OldClass", "change": "removed"}
-  ],
-  "net_lines_changed": "+5/-3",
-  "lines_added": 5,
-  "lines_removed": 3,
-  "chunks_changed": 2
-}
-```
-
-Non-source files appear in `structured_diff` with empty `symbols` and `language: "unknown"`.
-
-Change types: `added`, `removed`, `modified`, `renamed`.
-
-Use the structured diff to identify cross-task concerns (interface contract mismatches, dead code across task boundaries, duplicate symbols) that raw text diffs may hide. The `structured_diff_markdown` field provides a pre-rendered compact table.
+Change types are inferred from the raw diff text using `git diff` markers (`+`/`-` lines).
 
 ## Scan Focus — Seven Domains (JUDGE-Aware)
 
@@ -118,7 +96,7 @@ Do NOT re-read `issues.jsonl` or `tasks.jsonl` line-by-line — JUDGE already di
 
 ### 6. PRD Alignment (Light Sniff — Cross-Task Only)
 JUDGE validated per-task spec compliance. Only check:
-- **Aggregate scope creep**: Do the `added` symbols, taken together, extend beyond what the PRD defines? Read `prd_path` and compare against the full set of `added` symbols across the structured diff.
+- **Aggregate scope creep**: Do the `added` symbols, taken together, extend beyond what the PRD defines? Read `prd_path` and compare against the full set of `added` symbols across the diff.
 - **Aggregate missing scope**: Any FR-NN / AC-NN from the PRD that no task implemented?
 - **PRD design drift**: Do the aggregate changes respect the PRD's stated architectural decisions and trade-offs?
 
@@ -126,18 +104,18 @@ Do NOT re-verify individual AC-NN coverage — JUDGE already validated each task
 
 ### 7. Flow Coverage (Light Sniff — Cross-Task Only)
 JUDGE validated per-task flow alignment. Only check what JUDGE couldn't:
-- **Aggregate flow breakage**: Does any `removed` symbol in the structured diff close off a user-visible flow capability when viewed across the combined diff? The structured diff's per-symbol metadata makes this detectable — a symbol removed in one file that serves as a flow entry point (CLI command, API route, public function) potentially breaks continuity.
+- **Aggregate flow breakage**: Does any `removed` symbol in the diff close off a user-visible flow capability when viewed across the combined diff? The diff's per-symbol metadata makes this detectable — a symbol removed in one file that serves as a flow entry point (CLI command, API route, public function) potentially breaks continuity.
 - **Flow-facing interface drift**: Did a modified interface signature change a flow's entry point or output format across task boundaries?
 
-No governance file reads needed. The diff alone answers flow breakage. If the structured diff shows a suspicious removal that looks flow-facing, flag as `[CRITICAL] FLOW_BREAKAGE` with the specific symbol and note "flow governance files not re-read (JUDGE validated per-task) — manual cross-reference advised."
+No governance file reads needed. The diff alone answers flow breakage. If the diff shows a suspicious removal that looks flow-facing, flag as `[CRITICAL] FLOW_BREAKAGE` with the specific symbol and note "flow governance files not re-read (JUDGE validated per-task) — manual cross-reference advised."
 
-The one exception: if the review strategy is **full** AND the structured diff shows a clear `removed` symbol that was the entry point for a named flow, you MAY read `specs/_product/flows/index.md` to confirm the flow is still intact.
+The one exception: if the review strategy is **full** AND the diff shows a clear `removed` symbol that was the entry point for a named flow, you MAY read `specs/_product/flows/index.md` to confirm the flow is still intact.
 
-## Domain-Specific Structured Diff Analysis
+## Domain-Specific Raw Diff Analysis
 
-The structured diff is your primary tool for cross-task signal detection. Each entry's `symbols` array shows per-symbol `change` type (`added`, `removed`, `modified`, `renamed`). Cross-reference symbols across files to find inter-task issues.
+The raw text diff is the single source of truth for cross-task signal detection. Per-symbol change classification (`added`, `removed`, `modified`, `renamed`) is inferred from the diff markers; cross-reference files to find inter-task issues.
 
-For each `structured_diff` entry (and corresponding section in `structured_diff_markdown`), evaluate specific patterns by language:
+For each file in the diff, evaluate specific patterns by language:
 
 **Python**: `added`/`modified` functions without type annotations, `removed` functions with no replacement callers, cross-task interface mismatches in function signatures
 **TypeScript**: `modified` interfaces adding required fields (breaking change), `removed` exports without deprecation, cross-task type contract drift
@@ -178,24 +156,23 @@ Run from the workspace root:
 deviate review pre
 ```
 
-Parse the JSON contract: `diff`, `structured_diff`, `structured_diff_markdown`, `constitution_path`, `prd_path`, `base_branch`.
+Parse the JSON contract: `diff`, `constitution_path`, `prd_path`, `base_branch`.
 
 If `diff` is empty, emit `SKIP: no changes since {base_branch}` and exit.
 
 Determine review strategy from diff size:
-- Count lines in `diff` field and files in `structured_diff`
+- Count lines in `diff` field
 - Choose **full** / **diff_first** / **targeted** per the Role Definition strategy table
 - Note the chosen strategy in your output preamble
 
-If `structured_diff_markdown` is non-empty, evaluate it for cross-task symbol-level issues (interface mismatches, dead code across tasks, duplicate definitions) alongside the raw text `diff`. Non-source files appear in `structured_diff` with empty symbols — note their presence in the review.
 
 Read `constitution_path`, `prd_path`, and any `specs/_product/` flow files **only** if the strategy is `full` or if the structured diff shows cross-task anomalies that need governance context. For `targeted` strategy, skip governance file reads unless the diff strongly suggests a violation.
 
-The review pipeline's JUDGE phase already validated per-task flow alignment. The only cross-task flow question — "does the combined diff break a flow?" — is answered from the structured diff alone in domain 7. Governance file reads for flow confirmation are a **full-strategy-only** optimization, not a requirement.
+The review pipeline's JUDGE phase already validated per-task flow alignment. The only cross-task flow question — "does the combined diff break a flow?" — is answered from the raw diff in domain 7. Governance file reads for flow confirmation are a **full-strategy-only** optimization, not a requirement.
 
 ### STEP 2: SCAN — Seven-Domain Single Pass With Strategy Gating
 
-Single pass over the diff, structured diff, and governance files. For each domain, produce:
+Single pass over the diff and governance files. For each domain, produce:
 
 - **Positive Patterns** — what the code does well (if any)
 - **Critical Issues** — must-fix problems with Severity + Confidence
@@ -372,13 +349,10 @@ No CRITICAL or SUGGESTION items in this review — nothing to apply, nothing to 
 | Condition | Action |
 |-----------|--------|
 | Empty diff (no changes vs base_branch) | Output `SKIP: no changes since {base_branch}` and exit |
-| `structured_diff` is empty or `structured_diff_markdown` absent | Proceed with raw text diff only — note "no structured diff available" |
 | constitution_path is null | Note "no constitution to check" — evaluate remaining 6 domains |
 | prd_path is null | Note "no PRD for traceability context" — skip PRD Alignment domain |
 | External repo (no specs/) | Restrict to Security (cross-task), Clean Code, Pragmatism & Architectural Coherence, Idiomacy — note limited scope |
 | Binary files in diff | Skip binary files, note count in output |
-| Unknown language in structured_diff | Skip language-specific idiomacy checks for that file — use generic analysis |
-| Merge-base not reachable | `structured_diff` will be empty — review proceeds with raw diff only |
 | CLEAN review (all domains pass) | Skip STEP 4 — output CLEAN message and exit; nothing to apply, nothing to commit |
 | SKIP condition met (empty diff) | Skip STEP 4 — exit after SKIP message |
 | No `[CRITICAL]` or `[SUGGESTION]` items in findings | Emit "No CRITICAL or SUGGESTION items in this review — nothing to apply, nothing to commit." and exit before applying or committing |

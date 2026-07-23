@@ -37,13 +37,6 @@ from deviate.core.run_logger import (
     set_run_logger,
     set_task_logger,
 )
-from deviate.core.treesitter import (
-    detect_duplicate_blocks,
-    estimate_cyclomatic_complexity,
-    extract_dead_code,
-    get_language_id,
-    incremental_parse,
-)
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import (
@@ -3759,154 +3752,86 @@ def refactor_pre(
     raise typer.Exit(code=0)
 
 
-def _check_python_return_types(filepath: str) -> list[str]:
-    """Check Python return type annotations against literal return values using tree-sitter."""
-    issues: list[str] = []
-
-    tree = incremental_parse(filepath, None)
-    if tree is None:
-        return issues
-
-    scalar_types = {
-        "str": "string",
-        "int": "integer",
-        "float": "float",
-        "bool": "boolean",
-    }
-    collection_types = {
-        "list": "list",
-        "dict": "dictionary",
-        "tuple": "tuple",
-        "set": "set",
-    }
-    all_known = set(scalar_types) | set(collection_types)
-
-    def _get_return_type_name(func_node: object) -> str | None:
-        for child in func_node.children:
-            if child.type == "type":
-                nodes = [child]
-                while nodes:
-                    curr = nodes.pop(0)
-                    if curr.type == "identifier":
-                        return curr.text.decode("utf-8", errors="replace")
-                    if curr.type == "string":
-                        return curr.text.decode("utf-8", errors="replace").strip("'\"")
-                    nodes.extend(curr.children)
-                break
-        return None
-
-    def _check_return_value(return_node: object, expected: str) -> list[str]:
-        result: list[str] = []
-        for rc in return_node.children:
-            if rc.type in ("return", ","):
-                continue
-            if rc.type in scalar_types.values():
-                if expected in scalar_types and rc.type != scalar_types[expected]:
-                    result.append(f"expected {expected}, got literal {rc.type}")
-            elif rc.type in collection_types.values():
-                for cname, ctype in collection_types.items():
-                    if rc.type == ctype and expected != cname:
-                        result.append(f"expected {expected}, got {cname} literal")
-                        break
-            elif rc.type in ("true", "false"):
-                if expected != "bool":
-                    result.append(f"expected {expected}, got literal bool")
-            break
-        return result
-
-    stack = [tree.root_node]
-    while stack:
-        node = stack.pop()
-        if node.type != "function_definition":
-            for child in node.children:
-                stack.append(child)
-            continue
-
-        ret_type = _get_return_type_name(node)
-        if ret_type is None or ret_type not in all_known:
-            for child in node.children:
-                stack.append(child)
-            continue
-
-        # Walk the function body for return statements
-        body = None
-        for child in node.children:
-            if child.type == "block":
-                body = child
-                break
-        if body is not None:
-            bs = [body]
-            while bs:
-                bn = bs.pop()
-                if bn.type == "return_statement":
-                    issues.extend(_check_return_value(bn, ret_type))
-                elif bn.type in ("function_definition", "class_definition"):
-                    continue
-                for child in bn.children:
-                    bs.append(child)
-
-        for child in node.children:
-            stack.append(child)
-
-    return issues
-
-
 def _check_return_type_mismatch(filepath: str) -> list[str]:
-    """Check return type mismatches and structural issues using tree-sitter.
+    """Check Python return type annotations against literal return values.
 
-    For Python files, checks return type annotations against literal return values.
-    For all supported languages, detects dead code, duplicate blocks, and high cyclomatic complexity.
+    Python-only check using stdlib ``ast``. Returns a list of human-readable
+    issue strings for any function whose annotated return type is a known
+    builtin (``str``, ``int``, ``float``, ``bool``, ``list``, ``dict``,
+    ``tuple``, ``set``) whose body returns a literal of an incompatible type.
+    Non-``.py`` paths return ``[]`` (the orchestrator only ever calls this on
+    ``.py`` files; the language gate is defensive).
     """
     issues: list[str] = []
-
-    lang_id = get_language_id(filepath)
-    if lang_id is None:
+    if not filepath.endswith(".py"):
         return issues
 
-    # Python-specific: return type annotation check
-    if lang_id == "python":
-        issues.extend(_check_python_return_types(filepath))
+    import ast
 
-    dead = extract_dead_code(filepath)
-    dupes = detect_duplicate_blocks(filepath, min_lines=5)
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            source = f.read()
+        tree = ast.parse(source, filename=filepath)
+    except (OSError, SyntaxError):
+        return issues
 
-    for block in dupes:
-        locs = ", ".join(block.locations)
-        issues.append(f"Duplicate block ({block.lines} lines) at {locs}")
+    scalar_types = {"str", "int", "float", "bool"}
+    collection_types = {"list", "dict", "tuple", "set"}
+    all_known = scalar_types | collection_types
 
-    tree = incremental_parse(filepath, None)
-    if tree is not None:
-        has_calls = False
-        func_types = {
-            "function_definition",
-            "function_declaration",
-            "function_item",
-            "method_definition",
-            "method_declaration",
-        }
-        fstack = [tree.root_node]
-        while fstack:
-            node = fstack.pop()
-            if not has_calls and node.type in ("call", "call_expression"):
-                has_calls = True
-            if node.type in func_types:
-                name = "unknown"
-                for child in node.children:
-                    if child.type in ("identifier", "property_identifier", "name"):
-                        name = child.text.decode("utf-8", errors="replace")
-                        break
-                complexity = estimate_cyclomatic_complexity(filepath, node)
-                if complexity >= 10:
-                    issues.append(
-                        f"Complexity warning: '{name}' has cyclomatic complexity {complexity} (threshold: 10)"
-                    )
-            for child in node.children:
-                fstack.append(child)
+    def _return_type_name(func: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+        if func.returns is None:
+            return None
+        ann = func.returns
+        if isinstance(ann, ast.Name):
+            return ann.id
+        if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+            return ann.value
+        return None
 
-        if has_calls and dead:
-            for name in dead:
-                issues.append(f"Dead code: '{name}' is defined but never used")
+    def _literal_category(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Constant):
+            val = node.value
+            if isinstance(val, bool):
+                return "bool"
+            if isinstance(val, (int, float)):
+                return type(val).__name__
+            if isinstance(val, str):
+                return "str"
+            if isinstance(val, (list, tuple)):
+                return "list" if isinstance(val, list) else "tuple"
+            if isinstance(val, dict):
+                return "dict"
+            if isinstance(val, set):
+                return "set"
+            return None
+        if isinstance(node, ast.List):
+            return "list"
+        if isinstance(node, ast.Tuple):
+            return "tuple"
+        if isinstance(node, ast.Dict):
+            return "dict"
+        if isinstance(node, ast.Set):
+            return "set"
+        return None
 
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        ret_type = _return_type_name(node)
+        if ret_type is None or ret_type not in all_known:
+            continue
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Return):
+                continue
+            if sub.value is None:
+                continue
+            got = _literal_category(sub.value)
+            if got is None:
+                continue
+            if got != ret_type:
+                ret_name = f"{node.name} (line {node.lineno})"
+                issues.append(f"{ret_name}: expected {ret_type}, got literal {got}")
     return issues
 
 

@@ -3,11 +3,9 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+from contextlib import chdir
 from pathlib import Path
-
 import pytest
-
-from deviate.prompts.assembly import load_template
 
 
 def _capture_stdout(func, *args, **kwargs) -> str:
@@ -18,16 +16,6 @@ def _capture_stdout(func, *args, **kwargs) -> str:
         except SystemExit:
             pass
     return buf.getvalue()
-
-
-class TestPlanMDFileStructure:
-    """plan.md template must reference the injected file structure appendix."""
-
-    def test_plan_template_references_target_file_structure(self) -> None:
-        content = load_template("plan")
-        assert "## Target File Structure" in content, (
-            "plan.md should contain a ## Target File Structure consumption section"
-        )
 
 
 class TestParseWorkstationPaths:
@@ -96,35 +84,17 @@ Test
         assert paths == ["src/module.py"]
 
 
-class TestPlanPreFileStructure:
-    """_plan_pre contract must include file_structure key with per-file data."""
-
-    REQUIRED_CONTRACT_FIELDS = frozenset(
-        {
-            "issue_id",
-            "spec_path",
-            "plan_target",
-            "worktree_full",
-            "branch_name",
-            "constitution_path",
-            "constitution_test_command",
-            "constitution_lint_command",
-            "timestamp",
-            "status",
-            "phase",
-        }
-    )
+class TestPlanPreContract:
+    """_plan_pre contract still emits the core fields after tree-sitter removal."""
 
     @staticmethod
     def _setup_environment(
         tmp_path: Path,
         issue_id: str = "ISS-TEST-001",
-        session_phase: str = "SPECIFY",
         issue_content: str | None = None,
-        workstation_files: dict[str, str] | None = None,
     ) -> None:
         (tmp_path / ".deviate").mkdir()
-        session = {"current_phase": session_phase, "active_issue_id": issue_id}
+        session = {"current_phase": "SPECIFY", "active_issue_id": issue_id}
         (tmp_path / ".deviate" / "session.json").write_text(json.dumps(session))
 
         (tmp_path / "specs").mkdir()
@@ -169,12 +139,6 @@ Test description
 """
         (issue_dir / f"{issue_id}.md").write_text(issue_content)
 
-        if workstation_files:
-            for wpath, content in workstation_files.items():
-                file_path = tmp_path / wpath
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                file_path.write_text(content)
-
     @staticmethod
     def _extract_contract(output: str) -> dict:
         start = output.index("{")
@@ -201,108 +165,19 @@ Test description
             "deviate.cli.meso.subprocess.run", lambda *a, **kw: MockResult()
         )
 
-        with contextlib.chdir(tmp_path):
+        with chdir(tmp_path):
             output = _capture_stdout(_plan_pre, issue_id=issue_id)
 
         return self._extract_contract(output)
 
-    def test_injects_file_structure_key(self, tmp_path: Path, monkeypatch) -> None:
-        ws_files = {
-            "src/module.py": "class MyClass:\n    pass\n\ndef my_func():\n    pass\n",
-        }
-        self._setup_environment(tmp_path, workstation_files=ws_files)
-        contract = self._invoke_plan_pre(tmp_path, monkeypatch)
-
-        assert "file_structure" in contract, (
-            "Plan pre contract should include a file_structure key"
-        )
-        fs = contract["file_structure"]
-        assert isinstance(fs, dict), "file_structure should be a dict keyed by filepath"
-        assert "src/module.py" in fs, (
-            "Each workstation file should appear in file_structure"
-        )
-        entry = fs["src/module.py"]
-        assert isinstance(entry, dict), "Each file_structure entry should be a dict"
-        assert "language" in entry, "Entry should declare the detected language"
-        assert "symbols" in entry, "Entry should list extracted symbols"
-
-    def test_missing_workstation_file_skipped(self, tmp_path, monkeypatch) -> None:
-        issue_content = """---
-title: "Missing File"
-issue_id: ISS-TEST-001
-labels: [test]
-blocked_by: []
-coordinates_with: []
----
-
-## System Topology Mapping
-- **Primary Architectural Workstations**:
-  - `src/missing.py` — does not exist on disk
-
-## The Problem Contract
-Test
-"""
-        self._setup_environment(tmp_path, issue_content=issue_content)
-        contract = self._invoke_plan_pre(tmp_path, monkeypatch)
-
-        assert "file_structure" in contract
-        fs = contract["file_structure"]
-        assert "src/missing.py" not in fs or fs["src/missing.py"] == {}, (
-            "Non-existent workstation files should be skipped"
-        )
-
-    def test_mixed_languages(self, tmp_path: Path, monkeypatch) -> None:
-        ws_files = {
-            "src/module.py": "class PyClass:\n    pass\n",
-            "src/app.ts": "interface AppProps {\n  name: string;\n}\n",
-            "src/lib.rs": "pub fn helper() -> i32 { 42 }\n",
-        }
-        issue_content = """---
-title: "Multi-Lang"
-issue_id: ISS-TEST-001
-labels: [test]
-blocked_by: []
-coordinates_with: []
----
-
-## System Topology Mapping
-- **Primary Architectural Workstations**:
-  - `src/module.py` — Python module
-  - `src/app.ts` — TypeScript service
-  - `src/lib.rs` — Rust library
-
-## The Problem Contract
-Test
-"""
-        self._setup_environment(
-            tmp_path, issue_content=issue_content, workstation_files=ws_files
-        )
-        contract = self._invoke_plan_pre(tmp_path, monkeypatch)
-
-        assert "file_structure" in contract
-        fs = contract["file_structure"]
-        assert "src/module.py" in fs
-        assert "src/app.ts" in fs
-        assert "src/lib.rs" in fs
-
-    def test_no_topology_section_omits_key(self, tmp_path: Path, monkeypatch) -> None:
-        issue_content = """---
-title: "No Topology"
-issue_id: ISS-TEST-001
-labels: [test]
-blocked_by: []
-coordinates_with: []
----
-
-## The Problem Contract
-Test without any topology mapping section
-"""
-        self._setup_environment(tmp_path, issue_content=issue_content)
+    def test_no_file_structure_key(self, tmp_path: Path, monkeypatch) -> None:
+        """Plan pre contract no longer emits file_structure (tree-sitter removed)."""
+        self._setup_environment(tmp_path)
         contract = self._invoke_plan_pre(tmp_path, monkeypatch)
 
         assert "file_structure" not in contract, (
-            "Contract should omit file_structure when issue has no "
-            "System Topology Mapping section"
+            "Plan pre contract should NOT include file_structure after "
+            "tree-sitter removal"
         )
 
     def test_plan_target_still_present(self, tmp_path: Path, monkeypatch) -> None:

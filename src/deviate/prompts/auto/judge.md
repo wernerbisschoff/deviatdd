@@ -90,10 +90,9 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 ### STEP_1: INGEST_CONTEXT
 
 1. Receive the `git diff` context and `spec.md` invariants appended by the orchestrator.
-2. The optional `## Structured Diff Summary` section provides a concise, language-agnostic view of changed symbols (functions, classes, interfaces, structs). Cross-reference it with the raw `<diff>` for complete context.
-3. Parse `<spec_content>` for functional requirements (FR-NN), acceptance criteria (AC-NN), and data-model contracts.
-4. Load the `git diff` to identify all changed files, added lines, and removed lines.
-5. Read `<task_content>` for the active task's `**Flow References**` field (may be empty for enabling/infrastructure tasks).
+2. Parse `<spec_content>` for functional requirements (FR-NN), acceptance criteria (AC-NN), and data-model contracts.
+3. Load the `git diff` to identify all changed files, added lines, and removed lines.
+4. Read `<task_content>` for the active task's `**Flow References**` field (may be empty for enabling/infrastructure tasks).
 
 ### STEP_2: ANALYZE_DIFF_FOR_CORRECTNESS
 

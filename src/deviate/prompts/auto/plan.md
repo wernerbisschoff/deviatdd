@@ -89,11 +89,6 @@ The CLI orchestrator runs `deviate plan post` after your response to validate pl
 ## Integration Points
 - **<integration point>**: <what connects here and the contract expected>
 
-## Target File Structure
-The following target workstation files have been pre-scanned with structural analysis. Each entry shows the detected language, extracted symbols (functions, classes, interfaces, etc.), and import/include/using blocks.
-
-{file_structure}
-
 ## Constitutional Alignment
 - **Architecture**: <how this aligns with the three-layer architecture>
 - **Testing**: <test framework, approach, and coverage considerations>
