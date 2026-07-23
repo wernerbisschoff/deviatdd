@@ -410,11 +410,9 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
     new worktree. Exits 0 once the worktree is ready.
   * **Inside a linked worktree (contract mode):** Loads the session (accepts `SPECIFY` or
     `PLAN` phases), resolves the spec-enriched issue file by reading
-    `record.source_file` from the ledger, parses workstation file paths from the issue's
-    `## System Topology Mapping` section, and calls `extract_file_structure()` on each
-    existing workstation file (via `deviate/core/treesitter.py`). Emits a JSON contract
-    containing `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`,
-    constitution paths, and the optional `file_structure` appendix.
+    `record.source_file` from the ledger, and parses workstation file paths from the issue's
+    `## System Topology Mapping` section. Emits a JSON contract containing `issue_id`,
+    `spec_path`, `plan_target`, `worktree_full`, `branch_name`, and constitution paths.
 * **Input Parameters:** `--issue <id>` (override auto-discovered), `--force`,
   `--dry-run` (emits the contract with `dry_run: true` but does not skip side effects)
 * **Session:** Force-transitions to `PLAN` with `active_issue_id` set.
@@ -944,9 +942,8 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Output Artifacts:** JSON contract with `diff`, `constitution_path`, `prd_path`,
   `constitution_warning`, `prd_warning`, `base_branch`, `commit_messages`,
   `changed_files`, `changed_files_count`, `timestamp`.
-* **Token Budget:** Contract is lighter than review's — no per-file AST parsing.
-  The skill reads the raw diff and file list; structured diff is available via
-  `deviate review pre` if deeper analysis is needed.
+* **Token Budget:** Contract is lighter than review's — direct file list + diff, no
+  per-file AST parsing. The agent reads the raw diff and file list directly.
 
 ---
 

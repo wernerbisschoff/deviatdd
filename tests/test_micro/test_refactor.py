@@ -181,7 +181,7 @@ class TestRefactorPost:
 
 
 class TestCheckReturnTypeMismatch:
-    """_check_return_type_mismatch uses tree-sitter for multi-language analysis."""
+    """_check_return_type_mismatch uses stdlib ``ast`` for Python-only checks."""
 
     @staticmethod
     def _write_file(tmp_path: Path, filename: str, content: str) -> Path:
@@ -190,7 +190,7 @@ class TestCheckReturnTypeMismatch:
         filepath.write_text(textwrap.dedent(content))
         return filepath
 
-    def test_check_return_type_mismatch_python_uses_treesitter(
+    def test_check_return_type_mismatch_python_uses_stdlib_ast(
         self, tmp_path: Path
     ) -> None:
         from deviate.cli.micro import _check_return_type_mismatch
@@ -205,127 +205,29 @@ class TestCheckReturnTypeMismatch:
         )
         issues = _check_return_type_mismatch(str(p))
         assert len(issues) > 0, f"Expected return-type mismatch issues, got: {issues}"
-
-    def test_dead_code_detected_in_python(self, tmp_path: Path) -> None:
-        from deviate.cli.micro import _check_return_type_mismatch
-
-        p = self._write_file(
-            tmp_path,
-            "mod.py",
-            """
-            def used():
-                return 1
-
-            def unused():
-                return 2
-
-            result = used()
-        """,
-        )
-        issues = _check_return_type_mismatch(str(p))
-        assert any("dead" in i.lower() or "unused" in i.lower() for i in issues), (
-            f"Expected dead code issue for Python, got: {issues}"
+        # Issue must be short (function name + line + type), not a dump of the function body.
+        for issue in issues:
+            assert len(issue) < 100, (
+                f"Issue should be short, got {len(issue)} chars: {issue!r}"
+            )
+        assert any("greet" in issue and "line" in issue for issue in issues), (
+            f"Expected issue to mention function name and line, got: {issues}"
         )
 
-    def test_dead_code_detected_in_javascript(self, tmp_path: Path) -> None:
+    def test_non_python_returns_empty(self, tmp_path: Path) -> None:
         from deviate.cli.micro import _check_return_type_mismatch
 
         p = self._write_file(
             tmp_path,
             "mod.js",
             """
-            function used() {
-                return 1;
-            }
-
-            function unused() {
-                return 2;
-            }
-
-            const result = used();
-        """,
-        )
-        issues = _check_return_type_mismatch(str(p))
-        assert any("dead" in i.lower() or "unused" in i.lower() for i in issues), (
-            f"Expected dead code issue for JS, got: {issues}"
-        )
-
-    def test_dead_code_detected_in_rust(self, tmp_path: Path) -> None:
-        from deviate.cli.micro import _check_return_type_mismatch
-
-        p = self._write_file(
-            tmp_path,
-            "mod.rs",
-            """
-            fn used() -> i32 {
-                1
-            }
-
-            fn unused() -> i32 {
-                2
-            }
-
-            fn main() {
-                let _ = used();
+            function greet() {
+                return 42;
             }
         """,
         )
         issues = _check_return_type_mismatch(str(p))
-        assert any("dead" in i.lower() or "unused" in i.lower() for i in issues), (
-            f"Expected dead code issue for Rust, got: {issues}"
-        )
-
-    def test_duplicate_blocks_detected(self, tmp_path: Path) -> None:
-        from deviate.cli.micro import _check_return_type_mismatch
-
-        p = self._write_file(
-            tmp_path,
-            "mod.py",
-            """
-            def block_a():
-                x = 1
-                y = 2
-                z = x + y
-                return z
-
-            def block_b():
-                a = 1
-                b = 2
-                c = a + b
-                return c
-        """,
-        )
-        issues = _check_return_type_mismatch(str(p))
-        assert any("duplicate" in i.lower() for i in issues), (
-            f"Expected duplicate block issue, got: {issues}"
-        )
-
-    def test_complexity_warning(self, tmp_path: Path) -> None:
-        from deviate.cli.micro import _check_return_type_mismatch
-
-        p = self._write_file(
-            tmp_path,
-            "mod.py",
-            """
-            def complex_func(x):
-                if x > 0:
-                    if x > 1:
-                        if x > 2:
-                            if x > 3:
-                                if x > 4:
-                                    if x > 5:
-                                        if x > 6:
-                                            if x > 7:
-                                                if x > 8:
-                                                    if x > 9:
-                                                        return 1
-                return 0
-        """,
-        )
-        issues = _check_return_type_mismatch(str(p))
-        assert any(
-            "complexity" in i.lower() or "complex" in i.lower() for i in issues
-        ), f"Expected complexity issue, got: {issues}"
+        assert issues == [], f"Expected empty issues for non-Python file, got: {issues}"
 
     def test_non_supported_language_graceful(self, tmp_path: Path) -> None:
         from deviate.cli.micro import _check_return_type_mismatch
@@ -335,7 +237,7 @@ class TestCheckReturnTypeMismatch:
             "mod.rb",
             """
             def foo
-                return 1
+              return 1
             end
         """,
         )
@@ -362,3 +264,19 @@ class TestCheckReturnTypeMismatch:
             raise AssertionError(
                 f"_check_return_type_mismatch crashed on syntax error: {exc}"
             ) from exc
+
+    def test_no_annotations_returns_empty(self, tmp_path: Path) -> None:
+        from deviate.cli.micro import _check_return_type_mismatch
+
+        p = self._write_file(
+            tmp_path,
+            "mod.py",
+            """
+            def greet():
+                return 42
+        """,
+        )
+        issues = _check_return_type_mismatch(str(p))
+        assert issues == [], (
+            f"Expected empty issues for unannotated function, got: {issues}"
+        )

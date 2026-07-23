@@ -121,11 +121,10 @@ to build codebase comprehension and surface hidden trade-offs.
 * **Plan (`deviate plan pre` / `deviate plan post`):** Per-issue localized research phase
   that performs fresh codebase scanning (what exists now, not at epic-explore time),
   analyzes what prior issues implemented (via the `specs/issues.jsonl` ledger), and
-  parses workstation file paths from the issue's `## System Topology Mapping` section
-  (calling `extract_file_structure()` from `deviate/core/treesitter.py` on each
-  existing workstation file). The `pre` subcommand is dual-mode: outside a linked
-  worktree it auto-discovers the next claimable unblocked BACKLOG issue, creates the
-  worktree, claims the issue, force-transitions the session to `PLAN`, and syncs
+  parses workstation file paths from the issue's `## System Topology Mapping` section.
+  The `pre` subcommand is dual-mode: outside a linked worktree it auto-discovers the next
+  claimable unblocked BACKLOG issue, creates the worktree, claims the issue,
+  force-transitions the session to `PLAN`, and syncs
   `.deviate/` into the new worktree; inside a linked worktree it emits a `plan_pre`
   JSON contract for the agent. The `post` subcommand validates `plan.md` is non-empty
   and commits it with a convention-aware message (emoji-prefixed when the project's
@@ -426,8 +425,8 @@ The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optio
 ### 5.1 Meso Layer Phase Prompts
 * **`/deviate-specify` (Deprecated):** Merged into `/deviate-shard`. Shard now produces spec-enriched issue files directly. The legacy skill remains for backward compatibility with a redirect notice.
 * **[HITL Gate 2]:** Human reviews all sharded issue files (with embedded spec content) for completeness, edge cases, scope correctness. Moved from after `/deviate-specify` to after `/deviate-shard`.
-* **`/deviate-plan` Context (via `deviate plan pre`):** Spec-enriched issue file + Current Codebase State + workstation file structures extracted via `deviate/core/treesitter.py` from the `## System Topology Mapping` section of the issue.
-    * *System Directives:* Perform fresh localized research for this specific issue. Read the spec-enriched issue, scan current codebase state (what exists now, not at epic-explore time), analyze what prior issues implemented via the `specs/issues.jsonl` ledger. Identify integration points, dependencies, potential conflicts. Produce `plan.md` with implementation strategy, file mappings, and risk assessment. Contextualize the issue for downstream task decomposition. The plan pre contract includes an optional `file_structure` appendix keyed by workstation path, pre-extracted symbols/imports per file.
+* **`/deviate-plan` Context (via `deviate plan pre`):** Spec-enriched issue file + Current Codebase State + workstation file paths parsed from the `## System Topology Mapping` section of the issue.
+    * *System Directives:* Perform fresh localized research for this specific issue. Read the spec-enriched issue, scan current codebase state (what exists now, not at epic-explore time), analyze what prior issues implemented via the `specs/issues.jsonl` ledger. Identify integration points, dependencies, potential conflicts. Produce `plan.md` with implementation strategy, file mappings, and risk assessment. Contextualize the issue for downstream task decomposition.
 * **`/deviate-tasks` Context (via `deviate tasks pre`):** Spec-enriched issue file + `plan.md` (if available) + Codebase Layout Map + constitution command output.
     * *System Directives:* Decompose the spec-enriched issue directly into discrete task entries written to `tasks.md` (the human-authored decomposition document). The CLI subsequently registers these as rows in `tasks.jsonl` (the append-only event ledger). Each task must include implementation hints (file locations, mock boundaries, fixture requirements) alongside the decomposition. Every entry must be assigned a unique tracking identifier (`TSK-{ISSUE_ID}-{NN}`) and must map cleanly to an acceptance criterion in the issue file. Encode DAG dependencies via `blocked_by` arrays in each task entry. Assign each task an execution type: `tdd` (standard TDD loop), `direct` (boilerplate/config, no RED phase), or `e2e` (end-to-end integration). **An agent MAY append a terminal `type: "e2e"` task** for issues modifying user-facing behavior, but it is no longer mandatory. Target 4-8 tasks per issue; enforce 1-10 bounds. When `plan.md` is available, consume its implementation strategy and risk assessment as input to task granularity decisions.
 

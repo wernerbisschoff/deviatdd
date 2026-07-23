@@ -196,7 +196,6 @@ class TestJudgePromptDiffSection:
             "<diff> block carries the same context."
         )
 
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -215,7 +214,6 @@ class TestJudgePromptDiffSection:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         tmp_path: Path,
     ) -> None:
         from deviate.core.agent import HandoverManifest
@@ -402,7 +400,6 @@ class TestJudgePromptDiffSection:
             "Raw diff text must be embedded in the JUDGE prompt verbatim"
         )
 
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -421,7 +418,6 @@ class TestJudgePromptDiffSection:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         tmp_path: Path,
     ) -> None:
         from deviate.core.agent import HandoverManifest
@@ -441,8 +437,6 @@ class TestJudgePromptDiffSection:
             stdout=("diff --git a/src/mod.py b/src/mod.py\n@@ -1 +1 @@\n-foo\n+bar\n"),
             stderr="",
         )
-
-        mock_extract.return_value = []
 
         mock_agent.return_value = (
             HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS"),
@@ -468,7 +462,6 @@ class TestJudgePromptDiffSection:
             "Expected NO structured diff section when extract_changed_symbols returns empty"
         )
 
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -487,7 +480,6 @@ class TestJudgePromptDiffSection:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         tmp_path: Path,
     ) -> None:
         """JUDGE must diff against RED's parent so failing tests are visible.
@@ -507,7 +499,6 @@ class TestJudgePromptDiffSection:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
 
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -624,7 +615,6 @@ class TestJudgePromptDiffSection:
         assert "+def feature():" in prompt
         assert "+    return 1" in prompt
 
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -643,7 +633,6 @@ class TestJudgePromptDiffSection:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         tmp_path: Path,
     ) -> None:
         """When no RED commit is recorded, fallback to HEAD~1..HEAD.
@@ -662,7 +651,6 @@ class TestJudgePromptDiffSection:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
 
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -783,7 +771,6 @@ class TestJudgeFeedbackLogging:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -802,7 +789,6 @@ class TestJudgeFeedbackLogging:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -828,7 +814,6 @@ class TestJudgeFeedbackLogging:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -875,7 +860,6 @@ class TestJudgeFeedbackLogging:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -894,7 +878,6 @@ class TestJudgeFeedbackLogging:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -918,7 +901,6 @@ class TestJudgeFeedbackLogging:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -1004,7 +986,6 @@ class TestJudgeFeedbackLogging:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -1023,7 +1004,6 @@ class TestJudgeFeedbackLogging:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -1048,7 +1028,6 @@ class TestJudgeFeedbackLogging:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -1094,7 +1073,6 @@ class TestJudgeFeedbackLogging:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -1113,7 +1091,6 @@ class TestJudgeFeedbackLogging:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -1137,7 +1114,6 @@ class TestJudgeFeedbackLogging:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -1192,7 +1168,6 @@ class TestJudgeFeedbackLogging:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -1211,7 +1186,6 @@ class TestJudgeFeedbackLogging:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -1237,7 +1211,6 @@ class TestJudgeFeedbackLogging:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -1343,7 +1316,6 @@ class TestJudgeRefactorNoteOnPass:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -1362,7 +1334,6 @@ class TestJudgeRefactorNoteOnPass:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -1380,7 +1351,6 @@ class TestJudgeRefactorNoteOnPass:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -1434,7 +1404,6 @@ class TestJudgeRefactorNoteOnPass:
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
-    @patch("deviate.cli.micro.extract_changed_symbols", create=True)
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
@@ -1453,7 +1422,6 @@ class TestJudgeRefactorNoteOnPass:
         mock_build: MagicMock,
         mock_agent: MagicMock,
         mock_resolve: MagicMock,
-        mock_extract: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
         tmp_path: Path,
@@ -1477,7 +1445,6 @@ class TestJudgeRefactorNoteOnPass:
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_extract.return_value = []
         mock_subprocess.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
