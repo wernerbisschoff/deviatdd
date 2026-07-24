@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -14,9 +15,8 @@ from deviate.cli.micro import _run_judge_phase, PhaseFailedError
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState, resolve_model_for_phase
 from deviate.state.ledger import TaskRecord, append_task_transition
-from deviate.ui.monitor import OrchestrationMonitor
 from tests.conftest import _git_env
-
+from deviate.ui.monitor import OrchestrationMonitor
 
 runner = CliRunner()
 
@@ -55,6 +55,26 @@ def _setup_session(root: Path, issue_id: str) -> None:
     dot_dir.mkdir(exist_ok=True)
     session = SessionState(active_issue_id=issue_id)
     session.save(dot_dir / "session.json")
+
+
+def _setup_session_with_gate2(
+    root: Path,
+    issue_id: str,
+    approve: Callable[..., Path],
+    epic: str,
+    slug: str,
+) -> None:
+    """Set the active issue AND stamp Gate 2 approval against the
+    canonical issue-scoped plan/tasks artifacts. Tests that intentionally
+    exercise missing-approval paths must call ``_setup_session`` directly.
+    """
+    _setup_session(root, issue_id)
+    approve(
+        root,
+        issue_id=issue_id,
+        plan_path=f"specs/{epic}/{slug}/plan.md",
+        tasks_path=f"specs/{epic}/{slug}/tasks.md",
+    )
 
 
 class TestResolveAgentConfigBackendAlias:
@@ -200,7 +220,7 @@ class TestRunAllMonitorIntegration:
     """OrchestrationMonitor wiring in `deviate run --all`."""
 
     @pytest.fixture
-    def env(self, tmp_git_repo: Path) -> Path:
+    def env(self, tmp_git_repo: Path, approve_gate2: Callable[..., Path]) -> Path:
         tasks = [
             {
                 "id": "TSK-001-01",
@@ -208,10 +228,10 @@ class TestRunAllMonitorIntegration:
                 "description": "Test task 1",
                 "status": "PENDING",
                 "execution_mode": "TDD",
-            },
+            }
         ]
         _setup_issue_ledger(tmp_git_repo, ISSUE_ID, EPIC, SLUG, tasks)
-        _setup_session(tmp_git_repo, ISSUE_ID)
+        _setup_session_with_gate2(tmp_git_repo, ISSUE_ID, approve_gate2, EPIC, SLUG)
         return tmp_git_repo
 
     @patch("deviate.cli.micro._run_format_cmd")
@@ -344,11 +364,13 @@ def _build_e2e_tasks() -> list[dict]:
 
 class TestRunAllMonitorE2E:
     @pytest.fixture
-    def env3(self, tmp_git_repo: Path) -> Path:
+    def env3(self, tmp_git_repo: Path, approve_gate2: Callable[..., Path]) -> Path:
         _setup_issue_ledger(
             tmp_git_repo, E2E_ISSUE_ID, E2E_EPIC, E2E_SLUG, _build_e2e_tasks()
         )
-        _setup_session(tmp_git_repo, E2E_ISSUE_ID)
+        _setup_session_with_gate2(
+            tmp_git_repo, E2E_ISSUE_ID, approve_gate2, E2E_EPIC, E2E_SLUG
+        )
         return tmp_git_repo
 
     @patch("deviate.cli.micro._run_format_cmd")
@@ -2253,7 +2275,7 @@ class TestPhaseModelRouting:
     """AC-ADHOC-005-08: each TDD phase uses its configured model."""
 
     @pytest.fixture
-    def env(self, tmp_git_repo: Path) -> Path:
+    def env(self, tmp_git_repo: Path, approve_gate2: Callable[..., Path]) -> Path:
         tasks = [
             {
                 "id": "TSK-005-01",
@@ -2264,7 +2286,9 @@ class TestPhaseModelRouting:
             },
         ]
         _setup_issue_ledger(tmp_git_repo, ISSUE_005, "adhoc", SLUG_005, tasks)
-        _setup_session(tmp_git_repo, ISSUE_005)
+        _setup_session_with_gate2(
+            tmp_git_repo, ISSUE_005, approve_gate2, "adhoc", SLUG_005
+        )
 
         dot_dir = tmp_git_repo / ".deviate"
         config_path = dot_dir / "config.toml"

@@ -29,8 +29,8 @@ After completion, the `deviate-green` skill should be invoked for the implementa
 </system_instructions>
 
 <traceability_mandates>
-1. **Verbatim Objective Verification**: Extract the target `{TASK_ID}` defined inside the `tasks.md` state array. Trace this element directly back to its upstream declaration inside `specs/{FEATURE_SLUG}/spec.md`.
-2. **Gherkin Acceptance Expansion**: The generated test architecture must translate the functional criteria (`FR-[ID]`) and acceptance bounds (`AC-[ID]`) of the requirement into explicit Given/When/Then scenario blocks within the test runner assertions.
+1. **Verbatim Objective Verification**: Trace `{TASK_ID}` from tasks.md to its assigned `AC-PLAN-NNN` scenarios in plan.md's authoritative Acceptance Contract.
+2. **Gherkin Execution**: Translate only those assigned plan scenarios into failing observable tests. Preserve Source Outline AO and upstream FR/AC lineage; ignore legacy issue/spec Gherkin.
 3. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Implement sociable component orchestration paths over solitary configurations. Restrict mocking structures exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (e.g., system epoch timers, cryptographic entropy paths).
 4. **Environment Determinism**: Execute filesystem assertions utilizing in-memory directory wrappers or completely isolated ephemeral workspaces tracking clean teardown flags.
 </traceability_mandates>

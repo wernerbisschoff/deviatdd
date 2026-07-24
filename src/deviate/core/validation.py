@@ -70,23 +70,69 @@ def extract_section_body(content: str, header: str) -> str | None:
     return None
 
 
-def validate_gherkin_syntax(content: str) -> list[str]:
+_SCENARIO_PATTERN = re.compile(
+    r"\*\*(?P<label>(?:Scenario \d+|AC-\d+-\d+|Scenario AC-PLAN-\d+)):.*?\*\*"
+)
+_GHERKIN_CLAUSE_PATTERN = re.compile(r"\*\*(?:Given|When|Then)\*\*\s*:?")
+
+
+def _validate_scenarios(content: str, pattern: re.Pattern[str]) -> list[str]:
     errors: list[str] = []
-    scenario_pattern = re.compile(r"\*\*(?P<label>(?:Scenario \d+|AC-\d+-\d+)):.*?\*\*")
-    scenarios = list(scenario_pattern.finditer(content))
-    if not scenarios:
-        return errors
+    scenarios = list(pattern.finditer(content))
     for i, match in enumerate(scenarios):
         start = match.end()
         end = scenarios[i + 1].start() if i + 1 < len(scenarios) else len(content)
         body = content[start:end]
-        label = match.group("label")
-        if "**Given**" not in body:
-            errors.append(f"{label}: missing 'Given'")
-        if "**When**" not in body:
-            errors.append(f"{label}: missing 'When'")
-        if "**Then**" not in body:
-            errors.append(f"{label}: missing 'Then'")
+        label = match.group("label").removeprefix("Scenario ")
+        for clause in ("Given", "When", "Then"):
+            if f"**{clause}**" not in body:
+                errors.append(f"{label}: missing '{clause}'")
+    return errors
+
+
+def validate_gherkin_syntax(content: str) -> list[str]:
+    return _validate_scenarios(content, _SCENARIO_PATTERN)
+
+
+def validate_acceptance_outline(content: str) -> list[str]:
+    body = extract_section_body(content, "Acceptance Outline")
+    if body is None:
+        return ["missing required section: Acceptance Outline"]
+    errors: list[str] = []
+    if _GHERKIN_CLAUSE_PATTERN.search(body):
+        errors.append(
+            "GHERKIN_LEAK_DETECTED: Acceptance Outline must not contain "
+            "Given/When/Then clauses"
+        )
+    if not re.search(r"\bAO-\d{3}\b", body):
+        errors.append("Acceptance Outline must contain at least one AO-NNN token")
+    return errors
+
+
+def validate_acceptance_contract(content: str) -> list[str]:
+    body = extract_section_body(content, "Acceptance Contract")
+    if body is None:
+        return ["PLAN_ACCEPTANCE_CONTRACT_MISSING"]
+    contract_pattern = re.compile(
+        r"\*\*(?P<label>Scenario (?P<id>AC-PLAN-\d{3})):.*?\*\*"
+    )
+    errors = _validate_scenarios(body, contract_pattern)
+    scenarios = list(contract_pattern.finditer(body))
+    if not scenarios:
+        return ["Acceptance Contract must contain at least one AC-PLAN-NNN scenario"]
+    for i, match in enumerate(scenarios):
+        start = match.end()
+        end = scenarios[i + 1].start() if i + 1 < len(scenarios) else len(body)
+        scenario_body = body[start:end]
+        if not re.search(r"\*\*Source Outline\*\*:\s*`?AO-\d{3}`?", scenario_body):
+            errors.append(
+                f"{match.group('id')}: missing Source Outline AO-NNN traceability"
+            )
+        scenario_id = match.group("id")
+        if not re.search(r"\*\*Upstream Traceability\*\*:\s*.+", scenario_body):
+            errors.append(f"{scenario_id}: missing Upstream Traceability")
+        if not re.search(r"\*\*Current-Code Evidence\*\*:\s*.+", scenario_body):
+            errors.append(f"{scenario_id}: missing Current-Code Evidence")
     return errors
 
 

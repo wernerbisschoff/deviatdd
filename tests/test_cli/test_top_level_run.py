@@ -1,11 +1,8 @@
-"""Tests for the top-level ``deviate run`` orchestrator.
+"""Tests for the top-level ``deviate run`` meso orchestrator.
 
-The new ``deviate run`` is the canonical "go do the next thing" command:
-it chains ``deviate meso run`` (which claims the next BACKLOG issue and
-creates a per-issue worktree) with ``deviate micro run --all`` (which
-drains every PENDING task inside that worktree). This module pins the
-orchestration contract so the meso-then-micro contract cannot silently
-regress to "run meso only" or "run micro only".
+``deviate run`` claims the next BACKLOG issue and produces ``plan.md`` plus
+``tasks.md``, then stops at HITL Gate 2. The human reviews both artifacts and
+starts implementation explicitly with ``deviate micro run --all``.
 """
 
 import re
@@ -29,151 +26,196 @@ runner = CliRunner()
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def test_top_level_run_help_lists_orchestrator():
-    """``deviate run --help`` documents the full-pipeline orchestrator
-    and surfaces the new flag surface (--issue, --force, --profile,
-    --no-judge, --no-refactor, --agent, --json).
-
-    These flags are forwarded to the underlying `deviate meso run`
-    (--issue, --force) and `deviate micro run --all` (the rest).
-    """
+def test_top_level_run_help_lists_meso_options():
+    """``deviate run`` exposes only issue preparation options."""
     result = runner.invoke(cli, ["run", "--help"])
     assert result.exit_code == 0, result.output
     output = _ANSI_RE.sub("", result.output)
 
-    # Forwarded meso flags
-    assert "--issue" in output, "--issue must be accepted on `deviate run`"
-    assert "--force" in output, "--force must be accepted on `deviate run`"
-
-    # Forwarded micro flags
-    assert "--profile" in output, (
-        "--profile must be accepted on `deviate run` (forwarded to micro)"
-    )
-    assert "--no-judge" in output, (
-        "--no-judge must be accepted on `deviate run` (forwarded to micro)"
-    )
-    assert "--no-refactor" in output, (
-        "--no-refactor must be accepted on `deviate run` (forwarded to micro)"
-    )
-    assert "--agent" in output, (
-        "--agent must be accepted on `deviate run` (forwarded to micro)"
-    )
-    assert "--json" in output, (
-        "--json must be accepted on `deviate run` (forwarded to micro)"
-    )
+    assert "--issue" in output
+    assert "--force" in output
+    for removed in ("--profile", "--no-judge", "--no-refactor", "--agent", "--json"):
+        assert removed not in output
 
 
-def test_top_level_run_help_mentions_micro_run():
-    """``deviate run --help`` must mention ``deviate micro run`` so
-    operators who try to drain a single task or pass ``--all`` at the
-    top level discover the new micro subcommand.
-    """
+def test_top_level_run_help_mentions_gate_2_handoff():
     result = runner.invoke(cli, ["run", "--help"])
-    assert "`deviate micro run`" in result.output, (
-        "Top-level `deviate run --help` must surface the micro subcommand "
-        "so operators find the per-task drain path."
-    )
+    assert "HITL Gate 2" in result.output
+    assert "deviate meso approve" in result.output
+    assert "deviate micro run --all" in result.output
 
 
-def test_top_level_run_chains_meso_then_micro(tmp_git_repo: Path) -> None:
-    """End-to-end: ``deviate run`` must call ``_meso_run`` first, capture
-    the worktree path it returns, then dispatch ``_run_all`` inside that
-    worktree.
-
-    This is the load-bearing orchestration contract. If either side of
-    the chain (meso or micro) is skipped, or the chdir boundary is
-    removed, the orchestrator regresses to half a pipeline and a real
-    user invocation hangs or claims an issue without draining tasks.
-    """
+def test_top_level_run_stops_after_meso_for_hitl_review(tmp_git_repo: Path) -> None:
+    """The top-level command must not cross Gate 2 into micro automatically."""
     worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
     worktree_path.mkdir(parents=True, exist_ok=True)
 
-    call_log: list[str] = []
-
-    def fake_meso_run(*args, **kwargs):
-        call_log.append("_meso_run")
-        # Mirrors the real contract: _meso_run returns the worktree path
-        # on success and exits with SystemExit(1) on hard failure.
-        return str(worktree_path)
-
-    def fake_run_all(*args, **kwargs):
-        call_log.append("_run_all")
-
-    # A no-op pre-flight: top-level `deviate run` runs in the repo root,
-    # so we need .deviate/ + session.json present for the orchestrator's
-    # session-update branch to be a no-op rather than a hard fail.
-    dot_dir = tmp_git_repo / ".deviate"
-    dot_dir.mkdir(exist_ok=True)
-    from deviate.state.config import SessionState
-
-    session = SessionState(current_phase="IDLE")
-    session.save(dot_dir / "session.json")
-
-    # Avoid having the orchestrator try to talk to a real agent backend.
     with chdir(tmp_git_repo):
         with (
-            patch("deviate.cli._meso_run", side_effect=fake_meso_run),
-            patch("deviate.cli._run_all", side_effect=fake_run_all),
+            patch("deviate.cli._meso_run", return_value=str(worktree_path)),
+            patch("deviate.cli._run_all") as mock_run_all,
         ):
             result = runner.invoke(cli, ["run"])
 
-    assert result.exit_code == 0, (
-        f"Expected clean exit from chained orchestrator, got "
-        f"{result.exit_code}: {result.output}"
+    assert result.exit_code == 0, result.output
+    mock_run_all.assert_not_called()
+    assert "AWAITING_HITL_GATE_2" in result.output
+    assert "plan.md" in result.output
+    assert "tasks.md" in result.output
+    assert "deviate micro run --all" in result.output
+
+
+def test_micro_run_requires_gate_2_approval(tmp_git_repo: Path) -> None:
+    from deviate.state.config import SessionState
+
+    dot_dir = tmp_git_repo / ".deviate"
+    dot_dir.mkdir()
+    SessionState(current_phase="IDLE", active_issue_id="ISS-001").save(
+        dot_dir / "session.json"
     )
 
-    # Order: meso MUST run before micro. The orchestrator's contract
-    # is "set up the worktree first, then drain it" — flipping the
-    # order would dispatch `micro run --all` against an empty main
-    # checkout, missing every task the meso step just claimed.
-    assert call_log == ["_meso_run", "_run_all"], (
-        f"Orchestrator must call _meso_run before _run_all; got {call_log}"
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, ["micro", "run", "--all"])
+
+    assert result.exit_code == 1, result.output
+    assert "HITL_GATE_2_APPROVAL_REQUIRED" in result.output
+    assert "deviate meso" in result.output
+    assert "approve" in result.output
+
+
+def test_micro_spec_content_marks_plan_contract_authoritative(tmp_path: Path) -> None:
+    from deviate.cli.micro import _resolve_spec_md
+
+    issue = tmp_path / "specs" / "demo" / "issues" / "issue.md"
+    issue.parent.mkdir(parents=True)
+    issue.write_text("## Acceptance Outline\n- **AO-001**: Valid input succeeds.\n")
+    artifact_dir = tmp_path / "specs" / "demo" / "issue"
+    artifact_dir.mkdir()
+    (artifact_dir / "plan.md").write_text(
+        "## Acceptance Contract\n"
+        "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+        "- **Source Outline**: AO-001\n"
+        "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+        "- **Current-Code Evidence**: src/demo.py:run\n"
+        "- **Given**: configured\n- **When**: run\n- **Then**: success\n"
+    )
+    (tmp_path / "specs" / "issues.jsonl").write_text(
+        '{"issue_id":"ISS-001","type":"feature","title":"Demo",'
+        '"status":"BACKLOG","source_file":"specs/demo/issues/issue.md",'
+        '"timestamp":"2026-01-01T00:00:00Z"}\n'
     )
 
-    # The "MICRO_DRAIN" banner announces the worktree entry — its
-    # absence means the chdir/branch step was skipped.
-    assert "MICRO_DRAIN" in result.output, (
-        f"Expected the MICRO_DRAIN banner that signals the worktree "
-        f"handoff; output was:\n{result.output}"
+    content = _resolve_spec_md(tmp_path, {"issue_id": "ISS-001"})
+
+    assert "<macro_issue_intent>" in content
+    assert '<authoritative_acceptance_contract source="plan.md">' in content
+    assert content.index("## Acceptance Outline") < content.index(
+        "## Acceptance Contract"
     )
 
 
-def test_top_level_run_preserves_pending_judge_feedback(tmp_git_repo: Path) -> None:
+def test_meso_approve_records_issue_bound_gate_2_approval(tmp_git_repo: Path) -> None:
+    from deviate.state.config import SessionState
+
+    dot_dir = tmp_git_repo / ".deviate"
+    dot_dir.mkdir()
+    SessionState(current_phase="IDLE", active_issue_id="ISS-001").save(
+        dot_dir / "session.json"
+    )
+    artifact_dir = tmp_git_repo / "specs" / "demo" / "issue"
+    (tmp_git_repo / "specs").mkdir()
+    (tmp_git_repo / "specs" / "issues.jsonl").write_text(
+        '{"issue_id":"ISS-001","type":"feature","title":"Demo",'
+        '"status":"BACKLOG","source_file":"specs/demo/issues/issue.md",'
+        '"timestamp":"2026-01-01T00:00:00Z"}\n'
+    )
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "plan.md").write_text(
+        "## Acceptance Contract\n"
+        "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+        "- **Source Outline**: AO-001\n"
+        "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+        "- **Current-Code Evidence**: src/demo.py:run\n"
+        "- **Given**: A configured repository\n"
+        "- **When**: The command runs\n"
+        "- **Then**: It succeeds\n"
+    )
+    (artifact_dir / "tasks.md").write_text(
+        "# Implementation Tasks\n\n- TSK-001-01: Implement valid input\n"
+    )
+    with chdir(tmp_git_repo):
+        result = runner.invoke(
+            cli,
+            [
+                "meso",
+                "approve",
+                "--issue",
+                "ISS-001",
+                "--plan",
+                str(artifact_dir / "plan.md"),
+                "--tasks",
+                str(artifact_dir / "tasks.md"),
+            ],
+            input="y\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    session = SessionState.load(dot_dir / "session.json")
+    assert session.hitl_gate_2_approved_issue_id == "ISS-001"
+    assert "HITL_GATE_2_APPROVED" in result.output
+    assert session.hitl_gate_2_plan_sha256
+    assert session.hitl_gate_2_tasks_sha256
+
+
+def test_micro_run_rejects_changed_artifacts_after_approval(tmp_git_repo: Path) -> None:
+    from hashlib import sha256
+
+    from deviate.state.config import SessionState
+
+    dot_dir = tmp_git_repo / ".deviate"
+    dot_dir.mkdir()
+    plan = tmp_git_repo / "plan.md"
+    tasks = tmp_git_repo / "tasks.md"
+    plan.write_text("approved plan\n")
+    tasks.write_text("approved tasks\n")
+    SessionState(
+        current_phase="IDLE",
+        active_issue_id="ISS-001",
+        hitl_gate_2_approved_issue_id="ISS-001",
+        hitl_gate_2_plan_path="plan.md",
+        hitl_gate_2_tasks_path="tasks.md",
+        hitl_gate_2_plan_sha256=sha256(plan.read_bytes()).hexdigest(),
+        hitl_gate_2_tasks_sha256=sha256(tasks.read_bytes()).hexdigest(),
+    ).save(dot_dir / "session.json")
+    tasks.write_text("changed after approval\n")
+
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, ["micro", "run", "--all"])
+
+    assert result.exit_code == 1, result.output
+    assert "HITL_GATE_2_APPROVAL_STALE" in result.output
+
+
+def test_top_level_run_does_not_mutate_worktree_micro_state(
+    tmp_git_repo: Path,
+) -> None:
     worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
     worktree_path.mkdir(parents=True)
     dot_dir = worktree_path / ".deviate"
     dot_dir.mkdir()
     from deviate.state.config import SessionState
 
-    pending = {
-        "task_id": "TSK-002-05",
-        "feedback": "Create the missing Credo check.",
-        "feedback_source": "train_feedback",
-    }
-    SessionState(
-        current_phase="JUDGE",
-        active_issue_id="ISS-002",
-        train_feedback=pending["feedback"],
-        judge_rejected=True,
-        pending_judge_action="revert_to_red",
-        pending_judge_feedback=pending,
-        red_commit_sha="red-sha",
-    ).save(dot_dir / "session.json")
+    SessionState(current_phase="IDLE", active_issue_id="ISS-002").save(
+        dot_dir / "session.json"
+    )
 
     with chdir(tmp_git_repo):
-        with (
-            patch("deviate.cli._meso_run", return_value=str(worktree_path)),
-            patch("deviate.cli._run_all"),
-        ):
+        with patch("deviate.cli._meso_run", return_value=str(worktree_path)):
             result = runner.invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
     restored = SessionState.load(dot_dir / "session.json")
-    assert restored.pending_judge_feedback == pending
-    assert restored.pending_judge_action == "revert_to_red"
-    assert restored.judge_rejected is True
-    assert restored.red_commit_sha == "red-sha"
-    assert restored.last_command == "run --all"
+    assert restored.last_command == ""
 
 
 def test_top_level_run_exits_when_meso_returns_no_worktree(tmp_git_repo: Path) -> None:
@@ -247,77 +289,3 @@ def test_top_level_run_exits_when_worktree_missing(tmp_git_repo: Path) -> None:
         f"Error message should mention the missing path; got: {result.output}"
     )
     mock_run_all.assert_not_called()
-
-
-def test_top_level_run_forwards_profile_to_micro(tmp_git_repo: Path) -> None:
-    """``--profile fast`` must reach ``_run_all`` so the micro drain
-    skips JUDGE and REFACTOR. Without forwarding, an operator who
-    asked for a fast drain would still pay the full TDD cycle.
-    """
-    worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
-    worktree_path.mkdir(parents=True, exist_ok=True)
-
-    dot_dir = tmp_git_repo / ".deviate"
-    dot_dir.mkdir(exist_ok=True)
-    from deviate.state.config import SessionState
-
-    session = SessionState(current_phase="IDLE")
-    session.save(dot_dir / "session.json")
-
-    captured: dict[str, object] = {}
-
-    def fake_meso_run(*args, **kwargs):
-        return str(worktree_path)
-
-    def fake_run_all(*args, **kwargs):
-        captured.update(kwargs)
-
-    with chdir(tmp_git_repo):
-        with (
-            patch("deviate.cli._meso_run", side_effect=fake_meso_run),
-            patch("deviate.cli._run_all", side_effect=fake_run_all),
-        ):
-            result = runner.invoke(cli, ["run", "--profile", "fast"])
-
-    assert result.exit_code == 0, result.output
-
-    # fast → no_judge=True, no_refactor=True (per core/profile.py).
-    assert captured.get("no_judge") is True, (
-        f"`--profile fast` must forward no_judge=True; got {captured}"
-    )
-    assert captured.get("no_refactor") is True, (
-        f"`--profile fast` must forward no_refactor=True; got {captured}"
-    )
-
-
-def test_top_level_run_invalid_profile_rejected(tmp_git_repo: Path) -> None:
-    """An invalid ``--profile`` value must be rejected at the CLI layer
-    (Typer validation), mirroring the ``deviate micro run --profile X``
-    behavior. Without this, the orchestrator would accept any string
-    and silently pass garbage to ``resolve_profile``.
-    """
-    worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
-    worktree_path.mkdir(parents=True, exist_ok=True)
-
-    dot_dir = tmp_git_repo / ".deviate"
-    dot_dir.mkdir(exist_ok=True)
-    from deviate.state.config import SessionState
-
-    session = SessionState(current_phase="IDLE")
-    session.save(dot_dir / "session.json")
-
-    with chdir(tmp_git_repo):
-        with (
-            patch("deviate.cli._meso_run") as mock_meso,
-            patch("deviate.cli._run_all") as mock_micro,
-        ):
-            result = runner.invoke(cli, ["run", "--profile", "invalid"])
-
-    assert result.exit_code != 0, (
-        f"Expected Typer validation failure for --profile invalid; "
-        f"got exit {result.exit_code}: {result.output}"
-    )
-    # Neither meso nor micro should have been called — the validation
-    # failure must short-circuit before any worktree / drain work.
-    mock_meso.assert_not_called()
-    mock_micro.assert_not_called()

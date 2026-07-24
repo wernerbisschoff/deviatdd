@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from deviate.core.validation import (
     extract_section_body,
+    validate_acceptance_contract,
+    validate_acceptance_outline,
     validate_gherkin_syntax,
     validate_sections,
     validate_source_file,
@@ -118,6 +120,74 @@ class TestValidateGherkinSyntax:
         )
         errors = validate_gherkin_syntax(content)
         assert errors == []
+
+
+class TestAcceptanceOwnershipValidation:
+    def test_acceptance_outline_rejects_gherkin_leak(self):
+        content = (
+            "## Acceptance Outline\n"
+            "- **AO-001**: Valid input succeeds.\n"
+            "  - **Given** a configured repository\n"
+            "  - **When** the command runs\n"
+            "  - **Then** it exits successfully\n"
+        )
+
+        assert validate_acceptance_outline(content) == [
+            "GHERKIN_LEAK_DETECTED: Acceptance Outline must not contain "
+            "Given/When/Then clauses"
+        ]
+
+    def test_acceptance_outline_requires_outline_id(self):
+        content = "## Acceptance Outline\n- Valid input succeeds.\n"
+
+        assert validate_acceptance_outline(content) == [
+            "Acceptance Outline must contain at least one AO-NNN token"
+        ]
+
+    def test_acceptance_contract_requires_complete_scenario(self):
+        content = (
+            "## Acceptance Contract\n"
+            "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+            "- **Source Outline**: AO-001\n"
+            "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+            "- **Current-Code Evidence**: src/demo.py:run\n"
+            "- **Given**: A configured repository\n"
+            "- **Then**: The command succeeds\n"
+        )
+
+        errors = validate_acceptance_contract(content)
+
+        assert errors == ["AC-PLAN-001: missing 'When'"]
+
+    def test_acceptance_contract_requires_outline_traceability(self):
+        content = (
+            "## Acceptance Contract\n"
+            "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+            "- **Given**: A configured repository\n"
+            "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+            "- **Current-Code Evidence**: src/demo.py:run\n"
+            "- **When**: The command runs\n"
+            "- **Then**: It succeeds\n"
+        )
+
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing Source Outline AO-NNN traceability"
+        ]
+
+    def test_acceptance_contract_requires_upstream_and_code_evidence(self):
+        content = (
+            "## Acceptance Contract\n"
+            "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+            "- **Source Outline**: AO-001\n"
+            "- **Given**: A configured repository\n"
+            "- **When**: The command runs\n"
+            "- **Then**: It succeeds\n"
+        )
+
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing Upstream Traceability",
+            "AC-PLAN-001: missing Current-Code Evidence",
+        ]
 
 
 class TestValidateSections:

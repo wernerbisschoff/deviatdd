@@ -18,6 +18,14 @@ OutputCallback = Callable[[str], None]
 
 MAX_PROMPT_CHARS = 80_000
 STREAM_STALL_TIMEOUT_SECONDS = 900
+# Smart-stall detector: when stdout byte-rate over the last minute drops
+# below this floor, the agent is treated as stalled (waiting on a hung
+# subprocess, infinite tool loop, etc.) even if it trickles out a few
+# bytes per minute. Empirically tuned for `mix precommit` on this repo,
+# which emits ~100 B/s during compile + test runs but drops to ~0 B/s when
+# the agent subprocess is genuinely stuck. See diagnosis F2.
+STREAM_STALL_MIN_BYTES_PER_SECOND = 50
+STREAM_STALL_WINDOW_SECONDS = 60
 _PROMPT_TRUNCATED_MARKER = (
     "\n\n<!-- PROMPT_TRUNCATED: original was {original_chars} chars -->\n\n"
 )
@@ -354,6 +362,40 @@ class AgentBackend:
         stall_reason: str | None = None
         stall_partial: tuple[str, str] | None = None
 
+        # Two-track stall detector (see diagnosis F2 in the README).
+        # ``stall_lock`` + ``stall_deadline`` reset on any stdout line and
+        # trip after STREAM_STALL_TIMEOUT_SECONDS of total silence. The new
+        # ``byte_samples`` window additionally tracks emit rate over the
+        # last STREAM_STALL_WINDOW_SECONDS — a stuck agent that trickles a
+        # few bytes per minute (e.g. a hung subprocess, an infinite tool
+        # loop) resets the line-timer on every emit but the byte-rate stays
+        # well below the floor for a real working invocation like
+        # ``mix precommit`` (~100 B/s during compile + tests).
+        stall_lock = threading.Lock()
+        stall_deadline = [time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS]
+        byte_samples: list[tuple[float, int]] = []
+
+        def record_bytes(num_bytes: int) -> None:
+            now = time.monotonic()
+            with stall_lock:
+                byte_samples.append((now, num_bytes))
+                cutoff = now - STREAM_STALL_WINDOW_SECONDS
+                while byte_samples and byte_samples[0][0] < cutoff:
+                    byte_samples.pop(0)
+
+        def byte_rate_below_floor() -> bool:
+            with stall_lock:
+                if len(byte_samples) < 3:
+                    return False
+                if not byte_samples:
+                    return False
+                window = byte_samples[-1][0] - byte_samples[0][0]
+                if window <= 0:
+                    return False
+                total = sum(n for _, n in byte_samples)
+                rate = total / window
+                return rate < STREAM_STALL_MIN_BYTES_PER_SECOND
+
         def read_stdout() -> None:
             nonlocal stdout_done
             try:
@@ -361,6 +403,7 @@ class AgentBackend:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stdout_lines.append(line)
                     output_callback(line)
+                    record_bytes(len(raw_line))
                     with stall_lock:
                         stall_deadline[0] = (
                             time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
@@ -375,6 +418,7 @@ class AgentBackend:
                 for raw_line in proc.stderr:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stderr_lines.append(line)
+                    record_bytes(len(raw_line))
                     with stall_lock:
                         stall_deadline[0] = (
                             time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
@@ -382,8 +426,6 @@ class AgentBackend:
             except (ValueError, OSError, RuntimeError):
                 pass
 
-        stall_lock = threading.Lock()
-        stall_deadline = [time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS]
         threads = [
             threading.Thread(target=read_stdout),
             threading.Thread(target=read_stderr),
@@ -408,8 +450,28 @@ class AgentBackend:
                     "\n".join(stderr_lines),
                 )
                 break
+            # Smart-stall gate: only trips when the rolling byte-rate over
+            # the last window drops below the floor AND we have enough
+            # samples to trust the measurement. ``mix precommit`` emits
+            # ~100 B/s; a stuck subprocess emits <10 B/s. Threshold chosen
+            # at 50 B/s to leave room for compile output bursts.
+            if (
+                time.monotonic() - stall_deadline[0] + STREAM_STALL_TIMEOUT_SECONDS
+                > STREAM_STALL_TIMEOUT_SECONDS / 2
+                and byte_rate_below_floor()
+            ):
+                stall_reason = (
+                    f"SMART_STALL_DETECTED: byte-rate dropped below "
+                    f"{STREAM_STALL_MIN_BYTES_PER_SECOND} B/s for "
+                    f"{STREAM_STALL_WINDOW_SECONDS}s while stdout was "
+                    f"still emitting (likely hung subprocess)"
+                )
+                stall_partial = (
+                    "\n".join(stdout_lines),
+                    "\n".join(stderr_lines),
+                )
+                break
             time.sleep(0.05)
-
         if stall_reason is not None:
             proc.kill()
             for t in threads:

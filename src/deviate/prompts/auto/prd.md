@@ -10,7 +10,7 @@ Your job is to ingest a JSON contract emitted by `deviate prd pre`, compile the 
 
 1. **Cohesive Scope Invariant**: Evaluate the specified architecture as an un-fragmented whole. Every functional mechanism, guardrail, or operational exception must have an explicit tracking match in the structural entities.
 
-2. **Downstream Sharding Readiness**: Functional chunks must use `FR-[ID]` tracking tokens. Every `AC-[ID]` must contain strict Gherkin (Given/When/Then) syntax for downstream `/shard` slicing.
+2. **Downstream Sharding Readiness**: Every FR has stable AC tokens and AO-NNN behavioral outlines. PRD MUST NOT emit Given/When/Then; final Gherkin belongs to Plan.
 
 3. **Ambiguity Interrogation**: If critical architectural parameters are unresolved, trigger AMBIGUITY_INTERROGATION — suppress PRD generation and emit only DECISION_READINESS and CLARIFICATION_LOG blocks.
 
@@ -18,7 +18,7 @@ Your job is to ingest a JSON contract emitted by `deviate prd pre`, compile the 
 
 <traceability_mandates>
 1. **Verbatim Objective Verification**: Extract `{EPIC_SLUG}` from the contract. Trace every `FR-[ID]` token back to upstream design decisions in `design.md`.
-2. **Gherkin Acceptance Expansion**: Translate architectural criteria into explicit Given/When/Then scenario blocks within `AC-[ID]` tokens.
+2. **Acceptance Outline Expansion**: Translate architectural criteria into observable `AO-NNN` outcomes traced to AC tokens, without implementation-specific Given/When/Then clauses. Halt with `GHERKIN_LEAK_DETECTED` on leakage.
 3. **Constitutional Compliance**: Every FR and AC must comply with the constitution's architectural principles and testing protocols.
 </traceability_mandates>
 
@@ -38,8 +38,8 @@ Read `design_md_path` and `data_model_md_path` (if they exist), plus `explore_md
 
 <step id="prd_generation">
 Generate the PRD content following the output format schema. Write to `prd_path`.
-- All `FR-[ID]` tokens must be unique and sequential.
-- All `AC-[ID]` tokens must use strict Gherkin syntax.
+- All `FR-[ID]`, `AC-[ID]`, and `AO-[ID]` tokens must be unique and sequential.
+- Acceptance outlines MUST NOT contain bold Given/When/Then clauses.
 - Every path must be relative to `repo_root`.
 - Constitutional constraints must be respected.
 </step>
@@ -87,9 +87,9 @@ The CLI orchestrator runs `deviate prd post` after your response to validate `pr
 - **Inputs/Outputs**
 - **State Transition**
 - **Exception Strategy**
-- **Acceptance Criteria**
-  1. `AC-{NNN}-{ID}-01`: Given/When/Then
-  2. `AC-{NNN}-{ID}-02`: Given/When/Then
+- **Acceptance Outline**
+  1. `AC-{NNN}-{ID}-01` / `AO-{NNN}`: observable happy-path outcome
+  2. `AC-{NNN}-{ID}-02` / `AO-{NNN}`: observable error or boundary outcome
 
 # Non-Functional Engineering Requirements
 # Issue Sharding Strategy

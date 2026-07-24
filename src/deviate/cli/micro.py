@@ -4,6 +4,7 @@ import importlib.resources
 import json
 import os
 import re
+from hashlib import sha256
 import subprocess
 import time
 import logging
@@ -29,6 +30,7 @@ from deviate.core.agent import (
     resolve_agent_to_backend,
 )
 from deviate.core.convention import format_commit_message
+from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.profile import resolve_profile
 from deviate.core.run_logger import (
     RunLogger,
@@ -762,13 +764,8 @@ def _find_tasks_md_for_issue(root: Path, issue_id: str) -> Path | None:
     source_file = _resolve_issue_source_file(root, issue_id)
     if not source_file:
         return None
-    parts = PurePosixPath(source_file)
-    if len(parts.parts) < 3:
-        return None
-    epic = parts.parent.parent.name
-    slug = parts.stem
-    tasks_md = root / "specs" / epic / slug / "tasks.md"
-    if tasks_md.exists():
+    tasks_md = resolve_issue_artifact_path(root, source_file, "tasks.md")
+    if tasks_md is not None and tasks_md.exists():
         return tasks_md
     return None
 
@@ -1224,11 +1221,7 @@ def _run_green_phase(
 
 
 def _resolve_spec_md(root: Path, task: dict) -> str:
-    """Read spec-enriched issue file content for *task*.
-
-    The issue file IS the spec — spec sections are embedded in the issue
-    file markdown.  No separate ``spec.md`` exists.
-    """
+    """Combine macro intent with the authoritative meso acceptance contract."""
     issue_id = task.get("issue_id", "")
     if not issue_id:
         return ""
@@ -1236,9 +1229,19 @@ def _resolve_spec_md(root: Path, task: dict) -> str:
     if not source_file:
         return ""
     issue_path = root / source_file
-    if issue_path.exists():
+    if not issue_path.exists():
+        return ""
+    plan_path = resolve_issue_artifact_path(root, source_file, "plan.md")
+    if not plan_path.is_file():
         return issue_path.read_text(encoding="utf-8")
-    return ""
+    return (
+        "<macro_issue_intent>\n"
+        f"{issue_path.read_text(encoding='utf-8')}\n"
+        "</macro_issue_intent>\n\n"
+        '<authoritative_acceptance_contract source="plan.md">\n'
+        f"{plan_path.read_text(encoding='utf-8')}\n"
+        "</authoritative_acceptance_contract>"
+    )
 
 
 def _resolve_tasks_md(root: Path, task: dict) -> Path | None:
@@ -1365,6 +1368,16 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         text=True,
         env=_git_env(),
     ).stdout.strip()
+
+    # F3 (commit-before-judge rollback safety): capture the agent's work
+    # on a side branch BEFORE any destructive reset so that if the parent
+    # kills the runner mid-rollback (SIGTERM between ``git reset`` and
+    # ``git clean``), the agent's commit survives and is recoverable via
+    # ``git checkout tmp/deviate-agent/<task_id>``. The previous behaviour
+    # wiped the agent's work as soon as ``git reset --hard`` returned.
+    if commit_sha != red_sha:
+        _preserve_agent_work(root, commit_sha, branch, red_sha, reason)
+
     snapshot = RollbackSnapshot(
         phase=phase,
         branch=branch,
@@ -1373,8 +1386,6 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         reason=reason[:500],
     )
     append_rollback_snapshot(snapshot, root / ".deviate")
-
-    # Discard any uncommitted session state
     subprocess.run(
         ["git", "checkout", "--quiet", "--", ".deviate/"],
         cwd=root,
@@ -1407,6 +1418,68 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     )
     return red_sha
+
+
+# F3 (rollback safety): name of the side branch used to capture an agent's
+# work-in-progress before destructive resets. Overwritten on each rollback
+# so the branch always reflects the most recent attempt that was discarded
+# by JUDGE; older snapshots are kept in ``.deviate/rollback.jsonl`` for
+# audit but are otherwise unrecoverable from this branch.
+_AGENT_WORK_BRANCH = "tmp/deviate-agent-work"
+
+
+def _preserve_agent_work(
+    root: Path,
+    commit_sha: str,
+    branch: str,
+    red_sha: str,
+    reason: str,
+) -> None:
+    """Snapshot the agent's commit on a side branch before rollback wipes it.
+
+    Creates (or force-updates) ``tmp/deviate-agent-work`` pointing at the
+    current ``commit_sha`` so a parent SIGTERM between ``git reset`` and
+    ``git clean`` doesn't strand the agent's work. The branch ref is
+    cheap (a few bytes) and lives outside the worktree's normal branch
+    refs so it never collides with operator-facing branches.
+
+    Failure modes:
+    - Branch creation fails (no git, detached HEAD, etc.): logged via
+      ``_log_run``, rollback proceeds. The agent's work is lost in that
+      case — same as before this fix — but the runner does not crash.
+    """
+    try:
+        subprocess.run(
+            [
+                "git",
+                "branch",
+                "-f",
+                _AGENT_WORK_BRANCH,
+                commit_sha,
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=False,
+        )
+        _log_run(
+            "AGENT_WORK_PRESERVED",
+            commit_sha=commit_sha,
+            branch=branch,
+            red_sha=red_sha,
+            recovery_branch=_AGENT_WORK_BRANCH,
+            reason=reason[:200],
+        )
+    except Exception as e:
+        # ``subprocess.run`` with check=False won't raise on non-zero
+        # exit; this guards against the rare case where git is missing
+        # or the worktree is in an unexpected state.
+        _log_run(
+            "AGENT_WORK_PRESERVE_FAILED",
+            error=str(e),
+            commit_sha=commit_sha,
+        )
 
 
 # Defensive regex matching the RED-phase commit subject built by
@@ -4097,6 +4170,34 @@ def _validate_profile(value: str) -> str:
     return value
 
 
+def _require_hitl_gate_2_approval(root: Path, session: SessionState) -> None:
+    issue_id = session.active_issue_id or ""
+    if session.hitl_gate_2_approved_issue_id != issue_id:
+        console.print(
+            "[red]HITL_GATE_2_APPROVAL_REQUIRED[/] review plan.md and tasks.md, "
+            "then run deviate meso approve"
+        )
+        raise typer.Exit(code=1)
+    approved = (
+        (session.hitl_gate_2_plan_path, session.hitl_gate_2_plan_sha256),
+        (session.hitl_gate_2_tasks_path, session.hitl_gate_2_tasks_sha256),
+    )
+    for relative_path, expected_hash in approved:
+        artifact = root / relative_path
+        if not relative_path or not artifact.is_file():
+            console.print(
+                "[red]HITL_GATE_2_APPROVAL_STALE[/] reviewed artifact missing"
+            )
+            raise typer.Exit(code=1)
+        actual_hash = sha256(artifact.read_bytes()).hexdigest()
+        if actual_hash != expected_hash:
+            console.print(
+                f"[red]HITL_GATE_2_APPROVAL_STALE[/] {relative_path} changed "
+                "after approval; re-run deviate meso approve"
+            )
+            raise typer.Exit(code=1)
+
+
 @micro_app.command("run")
 def run_command(
     task_id: str | None = typer.Argument(
@@ -4128,8 +4229,16 @@ def run_command(
     session_path = root / ".deviate" / "session.json"
     agent = _resolve_agent_config(root, agent)
 
+    if not session_path.exists() and not dry_run:
+        console.print(
+            "[red]HITL_GATE_2_APPROVAL_REQUIRED[/] session state is missing; "
+            "run deviate meso approve"
+        )
+        raise typer.Exit(code=1)
     if session_path.exists():
         session = SessionState.load(session_path)
+        if not dry_run:
+            _require_hitl_gate_2_approval(root, session)
         cmd_parts = ["micro", "run"]
         if task_id:
             cmd_parts.append(task_id)

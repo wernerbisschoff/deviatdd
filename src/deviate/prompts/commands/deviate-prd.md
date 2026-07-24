@@ -29,7 +29,7 @@ CRITICAL INSTRUCTION INVARIANTS:
     - Pass 1 (Topological Layout): Map out the relationship matrices between the incoming data inputs and systemic entities.
     - Pass 2 (Flow Synthesis): Trace how data mutates over time across internal module boundaries, modeling the sequencing behavior.
     - Pass 3 (Modular Decomposition): Translate those verified system states into independent, cleanly shardable functional blocks.
-4. **Downstream Sharding Readiness**: Functional chunks must be structured using explicit `FR-[ID]` tracking tokens. Every single Acceptance Criterion (`AC-[ID]`) must contain an isolated, verifiable programmatic test condition structured in strict Gherkin (Given/When/Then) syntax so the downstream `/shard` tool can cluster FRs into complete vertical slices (each issue may carry zero, one, or many FRs) and register them in `specs/issues.jsonl` without structural loss.
+4. **Downstream Sharding Readiness**: Functional chunks must use explicit `FR-[ID]` and `AC-[ID]` tracking tokens. Acceptance content is an implementation-independent outline only. **Named anti-pattern — Gherkin leakage:** PRD content MUST NOT contain bold `**Given**` / `**When**` / `**Then**` clauses; if detected, halt with `GHERKIN_LEAK_DETECTED`. Final Gherkin belongs exclusively to `/deviate-plan` after current-code research.
 5. **Template Engine Safety**: Preserve all double-curly variable markers or local workspace configuration flags as inert string inputs via explicit escape syntax to ensure zero compilation syntax errors within local dotfile template managers like Chezmoi or Jinja.
 
 </system_instructions>
@@ -72,15 +72,14 @@ CRITICAL INSTRUCTION INVARIANTS:
 - **Inputs/Outputs**: [Strictly typed input parameters and outbound response structures]
 - **State Transition**: [STATE_INITIAL ➔ STATE_PROCESSING ➔ STATE_FINALIZED]
 - **Exception Strategy**: [Defensive handling rules, error containment bounds, or system fault classifications when preconditions or type checks break]
-- **Acceptance Criteria (Definition of Done)**:
-  1. `AC-{NNN}-{ID}-01`:
-     - **Given**: [Initial baseline systemic environment/state configuration]
-     - **When**: [The explicit procedural trigger block or method call executes]
-     - **Then**: [The explicit verifiable assertion condition passes cleanly]
-  2. `AC-{NNN}-{ID}-02`:
-     - **Given**: [Alternative configuration or boundary condition inputs]
-     - **When**: [The module executes processing parameters]
-     - **Then**: [The system safely encapsulates faults or returns targeted responses]
+- **Acceptance Outline (Definition of Done)**:
+  > `AC-*` is the stable upstream requirement token; `AO-*` is the macro outline identity refined into one or more `AC-PLAN-*` scenarios during `/deviate-plan`.
+  1. `AC-{NNN}-{ID}-01` / `AO-{NNN}`: [Observable behavioral outcome]
+     - **Happy Path**: [Successful user-visible result]
+     - **Error Category**: [Failure behavior to preserve]
+     - **Boundary Category**: [Important boundary without implementation details]
+  2. `AC-{NNN}-{ID}-02` / `AO-{NNN}`: [Second observable outcome]
+     - **Observable Result**: [What a user or external system can verify]
 - **Downstream Shard Mapping**: [Epic Issue Tracking Token Assignment]
 
 # Non-Functional Engineering Requirements
@@ -155,9 +154,8 @@ If `explore_md_path` does not exist or is empty, halt with EXPLORE_MISSING.
 <step id="prd_generation">
 Generate the PRD content following the `<output_format_schemas>` structure. Write the result to `prd_path` (absolute path from the contract).
 
-Key requirements:
-- All `FR-[ID]` tokens must be unique and sequential
-- All `AC-[ID]` tokens must use strict Gherkin (Given/When/Then) syntax
+- All `FR-[ID]`, `AC-[ID]`, and `AO-[ID]` tokens must be unique and sequential
+- Acceptance outlines MUST NOT contain `**Given**`/`**When**`/`**Then**`; halt with `GHERKIN_LEAK_DETECTED` if any leak is detected
 - Every path must be relative to `repo_root`
 - Constitutional constraints must be respected
 - Document metadata must reference the correct upstream artifacts

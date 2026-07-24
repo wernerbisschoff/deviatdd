@@ -59,7 +59,12 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_single_task_full_cycle(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self,
+        mock_agent,
+        mock_verify,
+        mock_run_test,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -69,7 +74,6 @@ class TestMicroOrchestration:
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
             session.save(dot_dir / "session.json")
-
             task = _make_task_record(
                 task_id="TSK-004-01",
                 issue_id="ISS-001-004",
@@ -78,6 +82,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-01"])
 
@@ -98,7 +103,11 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_session_tracks_active_phase(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self,
+        mock_agent,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -114,6 +123,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             runner.invoke(cli, ["micro", "run", "TSK-004-01"])
 
@@ -126,7 +136,13 @@ class TestMicroOrchestration:
 
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_no_judge_flag(self, mock_agent, mock_verify, tmp_git_repo: Path):
+    def test_micro_no_judge_flag(
+        self,
+        mock_agent,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -141,7 +157,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
-
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
             result = runner.invoke(cli, ["micro", "run", "--no-judge", "TSK-004-03"])
 
             assert result.exit_code == 0, (
@@ -155,7 +171,12 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_no_refactor_flag(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self,
+        mock_agent,
+        mock_verify,
+        mock_run_test,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -174,6 +195,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "--no-refactor", "TSK-004-04"])
 
@@ -188,7 +210,12 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_agent_flag(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self,
+        mock_agent,
+        mock_verify,
+        mock_run_test,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -207,6 +234,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(
                 cli, ["micro", "run", "--agent", "droid", "TSK-004-05"]
@@ -223,7 +251,12 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_ledger_updates_on_each_phase(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self,
+        mock_agent,
+        mock_verify,
+        mock_run_test,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -233,7 +266,6 @@ class TestMicroOrchestration:
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
             session.save(dot_dir / "session.json")
-
             task = _make_task_record(
                 task_id="TSK-004-06",
                 issue_id="ISS-001-004",
@@ -242,6 +274,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             runner.invoke(cli, ["micro", "run", "TSK-004-06"])
 
@@ -266,7 +299,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_all_processes_all_pending(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -291,6 +324,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task_a, task_b)
+            approve_gate2(tmp_git_repo, issue_id=task_a.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "--all"])
 
@@ -302,7 +336,9 @@ class TestMicroOrchestration:
             )
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_micro_all_retry_once_then_abort(self, mock_agent, tmp_git_repo: Path):
+    def test_micro_all_retry_once_then_abort(
+        self, mock_agent, tmp_git_repo: Path, approve_gate2
+    ):
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -323,6 +359,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, failing_task, good_task)
+            approve_gate2(tmp_git_repo, issue_id=failing_task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "--all"])
 
@@ -339,7 +376,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_judge_rejection_triggers_green_retry(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         """JUDGE_REJECTED must not skip GREEN on TRAIN retry.
 
@@ -391,6 +428,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             Path("README.md").write_text("# test\n")
             subprocess.run(
@@ -422,7 +460,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_judge_rejection_with_empty_feedback_aborts(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
     ):
         """JUDGE_REJECTED with no feedback at all must abort, not silently reroute.
 
@@ -471,6 +509,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             Path("README.md").write_text("# test\n")
             subprocess.run(
@@ -502,7 +541,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_green_phase_escalates_to_hitl_on_contract_drift(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         """GREEN manifest carrying ``contract_drift``+``hitl_options`` is
         a structured escalation — must halt the chain via HITL_PENDING,
@@ -573,6 +612,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-13"])
 
@@ -608,7 +648,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_green_mechanical_failure_routes_to_judge_not_failed(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         """GREEN mechanical FAILURE (RED test unsatisfiable via library/API
         surface declared in scope) is routed through JUDGE for a scope/test
@@ -711,6 +751,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-15"])
 
@@ -761,7 +802,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_green_test_defect_failure_routes_to_judge(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         """GREEN ``failure_kind: test_defect`` (RED test asserts behavior the
         spec does not require) routes through JUDGE so JUDGE can emit
@@ -867,6 +908,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-16"])
 
@@ -932,7 +974,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_green_mechanical_failure_with_no_diff_routes_to_refactor(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         """GREEN mechanical FAILURE on a RED-only slice + JUDGE COMPLIANCE_PASS +
         ``next_action: proceed_to_refactor_no_diff`` routes through REFACTOR and
@@ -1018,6 +1060,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "009-no-op-green" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-009-07"])
 
@@ -1100,6 +1143,7 @@ class TestMicroOrchestration:
         mock_run_format,
         mock_run_test,
         tmp_git_repo: Path,
+        approve_gate2,
     ):
         """Regression guard: when GREEN's ``_run_test_cmd`` returns non-zero
         (training failure), the existing TRAIN retry loop must still run —
@@ -1138,6 +1182,7 @@ class TestMicroOrchestration:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-14"])
 
@@ -1451,7 +1496,7 @@ class TestYellowHandoffContract:
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     @patch("deviate.cli.micro._run_test_cmd")
     def test_green_phase_test_failure_captures_train_feedback(
-        self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
     ):
         mock_run_test.side_effect = [
             subprocess.CompletedProcess(
@@ -1481,6 +1526,7 @@ class TestYellowHandoffContract:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             Path("README.md").write_text("# repo\n")
             subprocess.run(
@@ -1504,7 +1550,7 @@ class TestYellowHandoffContract:
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     @patch("deviate.cli.micro._run_test_cmd")
     def test_green_clean_worktree_failure_preserves_commit(
-        self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_run_test, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
     ):
         """When _verify_clean_worktree raises during GREEN, the GREEN commit
         must NOT be destroyed.  The old code did ``git reset --hard`` to the
@@ -1537,6 +1583,7 @@ class TestYellowHandoffContract:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             Path("README.md").write_text("# repo\n")
             subprocess.run(

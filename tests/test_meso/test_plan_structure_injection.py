@@ -186,3 +186,82 @@ Test description
 
         assert "plan_target" in contract
         assert contract["plan_target"].endswith("plan.md")
+
+
+class TestPlanAcceptanceContract:
+    _setup_environment = staticmethod(TestPlanPreContract._setup_environment)
+    _extract_contract = staticmethod(TestPlanPreContract._extract_contract)
+
+    def test_plan_post_rejects_missing_acceptance_contract(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from typer.testing import CliRunner
+
+        from deviate.cli import cli
+
+        self._setup_environment(tmp_path)
+        plan_dir = tmp_path / "specs" / "test" / "ISS-TEST-001"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "plan.md").write_text("## Plan Summary\n- Strategy\n")
+        monkeypatch.setattr(
+            "deviate.cli.meso._is_linked_worktree", lambda cwd=None: True
+        )
+
+        with chdir(tmp_path):
+            result = CliRunner().invoke(cli, ["plan", "post"])
+
+        assert result.exit_code == 1, result.output
+        assert "PLAN_ACCEPTANCE_CONTRACT_MISSING" in result.output
+
+    def test_tasks_pre_rejects_plan_without_acceptance_contract(
+        self, tmp_path: Path
+    ) -> None:
+        from typer.testing import CliRunner
+
+        from deviate.cli import cli
+
+        self._setup_environment(tmp_path)
+        session_path = tmp_path / ".deviate" / "session.json"
+        session = json.loads(session_path.read_text())
+        session["current_phase"] = "TASKS"
+        session_path.write_text(json.dumps(session))
+        plan_dir = tmp_path / "specs" / "test" / "ISS-TEST-001"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "plan.md").write_text("## Plan Summary\n- Strategy\n")
+
+        with chdir(tmp_path):
+            result = CliRunner().invoke(cli, ["tasks", "pre"])
+
+        assert result.exit_code == 0, result.output
+        contract = self._extract_contract(result.output)
+        assert contract["status"] == "PLAN_ACCEPTANCE_CONTRACT_MISSING"
+
+    def test_tasks_pre_accepts_plan_acceptance_contract(self, tmp_path: Path) -> None:
+        from typer.testing import CliRunner
+
+        from deviate.cli import cli
+
+        self._setup_environment(tmp_path)
+        session_path = tmp_path / ".deviate" / "session.json"
+        session = json.loads(session_path.read_text())
+        session["current_phase"] = "TASKS"
+        session_path.write_text(json.dumps(session))
+        plan_dir = tmp_path / "specs" / "test" / "ISS-TEST-001"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "plan.md").write_text(
+            "## Acceptance Contract\n"
+            "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+            "- **Source Outline**: AO-001\n"
+            "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+            "- **Current-Code Evidence**: src/demo.py:run\n"
+            "- **Given**: A configured repository\n"
+            "- **When**: The command runs\n"
+            "- **Then**: It succeeds\n"
+        )
+
+        with chdir(tmp_path):
+            result = CliRunner().invoke(cli, ["tasks", "pre"])
+
+        assert result.exit_code == 0, result.output
+        contract = self._extract_contract(result.output)
+        assert contract["status"] == "READY"

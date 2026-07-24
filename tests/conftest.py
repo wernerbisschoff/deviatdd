@@ -1,10 +1,85 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+
+from deviate.state.config import SessionState
+
+
+def _approve_gate2(
+    repo: Path,
+    issue_id: str = "ISS-001",
+    plan_path: str = "plan.md",
+    tasks_path: str = "tasks.md",
+) -> Path:
+    """Seed ``plan.md`` / ``tasks.md`` and stamp session state so the
+    Gate 2 fail-closed check passes. Returns the repo path for chaining.
+
+    Writes canonical minimal artifacts at the same paths the meso approve
+    command would hash, then ``SessionState.save`` records the exact
+    SHA-256 of the bytes on disk. Tests that exercise the missing or
+    stale-approval branches must NOT call this helper; it exists for
+    tests that intend to actually run the micro TDD cycle.
+    """
+    plan = Path(repo) / plan_path
+    tasks = Path(repo) / tasks_path
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    tasks.parent.mkdir(parents=True, exist_ok=True)
+    if not plan.exists():
+        plan.write_text(
+            "## Acceptance Contract\n\n"
+            f"### AC-PLAN-001: {issue_id} smoke\n"
+            "**Source Outline**: AO-001\n"
+            "**Upstream Traceability**: ISS-001\n"
+            "**Current-Code Evidence**: tests/test_conftest.py\n"
+            "**Given** a seeded repo\n"
+            "**When** the task runs\n"
+            "**Then** the contract is honored\n",
+            encoding="utf-8",
+        )
+    if not tasks.exists():
+        tasks.write_text(
+            "# Tasks\n\n- TSK-001-01 smoke (tdd)\n",
+            encoding="utf-8",
+        )
+    dot_dir = Path(repo) / ".deviate"
+    dot_dir.mkdir(parents=True, exist_ok=True)
+    session = SessionState.load(dot_dir / "session.json")
+    session.active_issue_id = issue_id
+    session.hitl_gate_2_approved_issue_id = issue_id
+    session.hitl_gate_2_plan_path = plan_path
+    session.hitl_gate_2_tasks_path = tasks_path
+    session.hitl_gate_2_plan_sha256 = hashlib.sha256(plan.read_bytes()).hexdigest()
+    session.hitl_gate_2_tasks_sha256 = hashlib.sha256(tasks.read_bytes()).hexdigest()
+    session.save(dot_dir / "session.json")
+    return repo
+
+
+@pytest.fixture
+def approve_gate2() -> Callable[..., Path]:
+    """Factory fixture returning the helper so tests can approve ``tmp_path``
+    and any ``issue_id`` after their own session setup. Usage::
+
+        def test_foo(self, tmp_path, approve_gate2):
+            SessionState(current_phase="IDLE").save(tmp_path / ".deviate/session.json")
+            approve_gate2(tmp_path, issue_id="ISS-007")
+    """
+    return _approve_gate2
+
+
+@pytest.fixture
+def gate2_approved_repo(tmp_git_repo: Path) -> Path:
+    """``tmp_git_repo`` with Gate 2 approval pre-stamped for the default issue.
+
+    Opt in by listing this fixture alongside ``tmp_git_repo``; tests that
+    exercise the missing/stale-approval paths must skip it.
+    """
+    return _approve_gate2(tmp_git_repo)
 
 
 def _git_env() -> dict[str, str]:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from deviate.state.ledger import IssueRecord, resolve_issue_record
 
@@ -44,3 +44,9 @@ def is_issue_completed(issue_id: str, ledger_path: Path | None = None) -> bool:
     if record is None:
         return False
     return record.status == "COMPLETED"
+
+
+def resolve_issue_artifact_path(root: Path, source_file: str, artifact: str) -> Path:
+    """Resolve a per-issue artifact adjacent to the issue workspace directory."""
+    source = PurePosixPath(source_file)
+    return root / "specs" / source.parent.parent.name / source.stem / artifact

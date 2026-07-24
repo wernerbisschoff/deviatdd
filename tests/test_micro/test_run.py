@@ -58,7 +58,7 @@ class TestRunCommand:
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_dispatches_tdd_task_to_rgr(
-        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path
+        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path, approve_gate2
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -78,6 +78,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_path, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-01"])
             assert result.exit_code == 0, (
@@ -88,7 +89,9 @@ class TestRunCommand:
             )
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_dispatches_immediate_task_to_execute(self, mock_agent, tmp_path: Path):
+    def test_run_dispatches_immediate_task_to_execute(
+        self, mock_agent, tmp_path: Path, approve_gate2
+    ):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -104,6 +107,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_path, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-02"])
             assert result.exit_code == 0, (
@@ -118,7 +122,7 @@ class TestRunCommand:
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_all_iterates_mixed_modes(
-        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path
+        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path, approve_gate2
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -145,6 +149,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, tdd_task, imm_task)
+            approve_gate2(tmp_path, issue_id=tdd_task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "--all"])
             assert result.exit_code == 0, (
@@ -158,7 +163,7 @@ class TestRunCommand:
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_accepts_legacy_TNNN_format(
-        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path
+        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path, approve_gate2
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
@@ -178,6 +183,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "001-initial" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_path, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-05"])
             assert result.exit_code == 0, (
@@ -187,12 +193,13 @@ class TestRunCommand:
                 f"Expected TSK-004-05 task to reach COMPLETED: {result.output}"
             )
 
-    def test_run_unknown_task_id_exits_not_found(self, tmp_path: Path):
+    def test_run_unknown_task_id_exits_not_found(self, tmp_path: Path, approve_gate2):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
             session.save(dot_dir / "session.json")
+            approve_gate2(tmp_path, issue_id="ISS-001")
 
             result = runner.invoke(cli, ["micro", "run", "TSK-999-99"])
             assert result.exit_code != 0, (
@@ -201,7 +208,7 @@ class TestRunCommand:
             assert "TASK_NOT_FOUND" in result.output or "NOT_FOUND" in result.output
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_with_profile_fast(self, mock_agent, tmp_path: Path):
+    def test_run_with_profile_fast(self, mock_agent, tmp_path: Path, approve_gate2):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -219,6 +226,7 @@ class TestRunCommand:
                 Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
             )
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_path, issue_id=task.issue_id)
 
             result = runner.invoke(
                 cli, ["micro", "run", "TSK-001-03", "--profile", "fast"]
@@ -234,7 +242,7 @@ class TestRunCommand:
             )
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_with_flag_overrides(self, mock_agent, tmp_path: Path):
+    def test_run_with_flag_overrides(self, mock_agent, tmp_path: Path, approve_gate2):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -252,6 +260,7 @@ class TestRunCommand:
                 Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
             )
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_path, issue_id=task.issue_id)
 
             result = runner.invoke(
                 cli,
@@ -290,7 +299,7 @@ class TestRunCommand:
                 f"Expected 'Invalid value' in output: {result.output}"
             )
 
-    def test_run_skips_already_completed_task(self, tmp_path: Path):
+    def test_run_skips_already_completed_task(self, tmp_path: Path, approve_gate2):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -306,6 +315,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_path, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-06"])
             assert result.exit_code == 0, result.output
@@ -323,7 +333,9 @@ class TestSessionResume:
 
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_run_resumes_from_judge(self, mock_agent, mock_verify, tmp_git_repo: Path):
+    def test_run_resumes_from_judge(
+        self, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
+    ):
         mock_agent.return_value = (self._RESUME_MANIFEST, "")
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -340,6 +352,7 @@ class TestSessionResume:
             )
             ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-005-07"])
 
@@ -356,7 +369,7 @@ class TestSessionResume:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_task_already_done_triggers_for_judge_latest(
-        self, mock_agent, mock_verify, tmp_git_repo: Path
+        self, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
     ):
         mock_agent.return_value = (self._RESUME_MANIFEST, "")
         with chdir(tmp_git_repo):
@@ -374,6 +387,7 @@ class TestSessionResume:
             )
             ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-005-07"])
             assert result.exit_code == 0, result.output
@@ -384,7 +398,7 @@ class TestSessionResume:
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     @patch("deviate.cli.micro._run_test_cmd")
     def test_execute_phase_trusts_agent_no_test_retry(
-        self, mock_run_test, mock_agent, tmp_git_repo: Path
+        self, mock_run_test, mock_agent, tmp_git_repo: Path, approve_gate2
     ):
         """EXECUTE phase trusts the agent's manifest and skips a post-run test gate.
 
@@ -409,6 +423,7 @@ class TestSessionResume:
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             Path("README.md").write_text("# repo\n")
             subprocess.run(

@@ -126,6 +126,22 @@ def post(
     """Stage, commit ad-hoc issue artifacts, and mark record as completed."""
     root = Path.cwd()
 
+    # --- Resolve canonical issue path from record (created during /deviate-adhoc) ---
+    ledger_path = _adhoc_ledger_path()
+    records = _read_adhoc_ledger(ledger_path)
+    found = records.get(issue_id)
+    if found is None:
+        _exit_with_error(f"MANIFEST_NOT_FOUND No record found with issue_id={issue_id}")
+
+    source_file = str(found.get("source_file") or "").strip()
+    if not source_file:
+        candidate = root / "specs" / "adhoc" / "issues" / f"{issue_id}.md"
+    else:
+        candidate = Path(source_file)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+    _validate_no_gherkin_leak(candidate)
+
     # --- Commit step (skip if not a git repo) ---
     if (root / ".git").is_dir():
         subject = f"docs(adhoc): add issue {issue_id}"
@@ -166,13 +182,6 @@ def post(
         console.print("[dim]COMMIT_SKIP[/] not a git repository")
 
     # --- Mark adhoc record as COMPLETED ---
-    ledger_path = _adhoc_ledger_path()
-    records = _read_adhoc_ledger(ledger_path)
-    found = records.get(issue_id)
-
-    if found is None:
-        _exit_with_error(f"MANIFEST_NOT_FOUND No record found with issue_id={issue_id}")
-
     completed = found.copy()
     completed["status"] = "COMPLETED"
     completed["timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -181,3 +190,19 @@ def post(
     console.print(f"[green]COMPLETED[/] {issue_id}")
 
     _emit_contract(status="COMPLETED", issue_id=issue_id)
+
+
+def _validate_no_gherkin_leak(issue_path: Path) -> None:
+    if not issue_path.exists():
+        return
+    content = issue_path.read_text(encoding="utf-8")
+    if not content.strip():
+        return
+    from deviate.core.validation import validate_acceptance_outline
+
+    errors = validate_acceptance_outline(content)
+    if errors:
+        _exit_with_error(
+            f"GHERKIN_LEAK_DETECTED {issue_path.name} invalid acceptance outline: "
+            + "; ".join(errors)
+        )
