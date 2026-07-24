@@ -36,8 +36,8 @@ from deviate.core.repo import find_repo_root
 from deviate.core.validation import (
     ARTIFACT_VALIDATORS,
     extract_section_body,
+    validate_acceptance_outline,
     validate_artifact,
-    validate_gherkin_syntax,
     validate_sections,
     validate_source_file,
     validate_yaml_frontmatter,
@@ -585,9 +585,9 @@ def prd_post(
             f"[yellow]PRD_WARNING[/] missing required sections: {', '.join(missing_sections)}"
         )
 
-    gherkin_errors = validate_gherkin_syntax(prd_content)
-    if gherkin_errors:
-        _halt("PRD", f"invalid Gherkin syntax: {'; '.join(gherkin_errors)}")
+    outline_errors = validate_acceptance_outline(prd_content)
+    if outline_errors:
+        _halt("PRD", f"invalid acceptance outline: {'; '.join(outline_errors)}")
 
     reqs = extract_prd_requirements(prd_path)
     manifest_reqs = manifest_data.get("prd_requirements", [])
@@ -718,6 +718,14 @@ def shard_post(
                     console.print(
                         f"[yellow]SHARD_WARNING[/] invalid YAML frontmatter in {shard_file.name}"
                     )
+                else:
+                    outline_errors = validate_acceptance_outline(shard_content)
+                    if outline_errors:
+                        _halt(
+                            "SHARD",
+                            f"{shard_file.name} invalid acceptance outline: "
+                            f"{'; '.join(outline_errors)}",
+                        )
 
     for issue_data in issues:
         source_file = issue_data.get("source_file", "")

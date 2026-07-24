@@ -10,8 +10,8 @@ This phase runs inside a dedicated git worktree for a single issue. The lifecycl
 </item>
 
 <item>
-<title>Issue/Spec Loading</title>
-Read the spec-enriched issue file at `spec_path`. The issue file contains user stories, Gherkin acceptance criteria, edge cases, performance constraints, and a system topology mapping section.
+<title>Issue Intent and Plan Contract Loading</title>
+Read macro intent from the issue at `spec_path`: stories, AO outlines, scope, edge cases, performance, topology, and flow refs. Plan reads these inputs and authors the Gherkin `## Acceptance Contract`; Tasks treats that plan contract as authoritative and never falls back to issue/spec Gherkin.
 </item>
 
 <item>

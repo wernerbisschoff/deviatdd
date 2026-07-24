@@ -11,10 +11,10 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 - **Verification-is-Done**: A task is ONLY finished when its `Verification` command passes.
 - **IMMEDIATE tasks**: Skip the Red/Green cycle. Execute directly then verify.
 
-**Meso Workflow Position**: Specify → Tasks → TDD (red-green-refactor)
-- **Specify**: Created `spec.md`.
-- **Tasks** (this phase): Write `tasks.md` only. Commit it. STOP.
-- **TDD**: Begins after the tasks artifact is committed.
+**Meso Workflow Position**: Shard/Adhoc → Plan → Tasks → [HITL Gate 2] → TDD
+- **Plan** owns the authoritative `## Acceptance Contract`.
+- **Tasks** maps its `AC-PLAN-NNN` scenarios into tasks and stops for joint human review.
+- **TDD** starts only after `deviate meso approve` records approval for exact plan.md/tasks.md hashes.
 
 ### Phase-Specific Invariants
 
@@ -42,8 +42,7 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 The CLI orchestrator has run `deviate tasks pre` and resolved the contract. Available context: `branch_name`, `worktree_full`, `spec_path`, `plan_path`, `tasks_target`, `design_path`, `data_model_path`. Do NOT run `deviate tasks pre` — the orchestrator handles it.
 </step>
 
-<step id="context_loading">
-Read `<spec_path>` in full for user stories, acceptance criteria, and project structure. Use the bounded plan digest below for the implementation strategy, workstation mapping, and risk assessment. If it contains `PLAN_DIGEST_TRUNCATED`, read the full plan at `<plan_path>`. Extract `## Product Layer Anchors → **Flow References**` from the plan. If `design_path` or `data_model_path` are present, read those too.
+Read `<spec_path>` for macro intent: stories, AO outlines, scope, topology, edge cases, performance, and flow references. Read the bounded plan digest for strategy and the authoritative `## Acceptance Contract`; if truncated, read `<plan_path>`. Ignore any legacy Gherkin in the issue/spec source. If plan.md lacks a complete contract, halt with `PLAN_ACCEPTANCE_CONTRACT_MISSING` or `PLAN_ACCEPTANCE_CONTRACT_INVALID`.
 </step>
 
 <plan_digest>
@@ -62,6 +61,7 @@ For each workstation cluster:
 4. **Validate Structure**: No "testing-only" tasks — tests are the Red phase of every TDD task.
 5. **File Rationale**: Explain WHY each file is touched.
 6. **Flow References**: Copy `**Flow References**: [FLOW-XX, ...]` from the plan's `## Product Layer Anchors` onto the task. If the plan lacks Product-Layer Anchors, fall back to the issue's `flow_refs` from `{spec_path}` frontmatter. If both are empty/absent, emit `**Flow References**: []`.
+7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 </step>
 
 <step id="write_tasks">
@@ -180,9 +180,10 @@ next_phase: "IDLE"
 <edge_case_handling>
 | Condition | Action |
 | :--- | :--- |
-| Pre-script returns SPEC_NOT_FOUND | Halt; /deviate-specify must complete first. |
-| Pre-script returns PLAN_NOT_FOUND | Halt; /deviate-plan must complete and produce plan.md before tasks can run. Surface the missing artifact. |
-| spec.md missing required sections | Halt with Failure_State. Continue with available sections if partial. |
+| Pre-script returns SPEC_NOT_FOUND | Halt; `/deviate-shard` or `/deviate-adhoc` must produce the issue outline source. |
+| Pre-script returns PLAN_NOT_FOUND | Halt; `/deviate-plan` must produce plan.md before tasks can run. |
+| plan.md lacks or has malformed `## Acceptance Contract` | Halt with `PLAN_ACCEPTANCE_CONTRACT_MISSING` or `PLAN_ACCEPTANCE_CONTRACT_INVALID`; never fall back to issue/spec Gherkin. |
+| Issue source lacks user stories or `## Acceptance Outline` | Halt with `INCOMPLETE_ISSUE_OUTLINE`; regenerate the shard/adhoc issue. |
 | Circular dependencies between tasks | Detect and reject; require human resolution. |
 | Post-script rejects output | Fix violations and re-run. |
 | No test command available | Infer from repo conventions (pytest, npm test). Document inference. |

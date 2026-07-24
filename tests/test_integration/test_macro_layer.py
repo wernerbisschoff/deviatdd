@@ -110,7 +110,11 @@ class TestPrdPost:
             bucket_dir = spec_root / "test-prd"
             bucket_dir.mkdir(parents=True)
             prd_content = (
-                "# PRD\nFR-001: Test requirement\nFR-002: Another requirement\n"
+                "# PRD\n"
+                "## Acceptance Outline\n"
+                "- **AO-001**: Test requirement succeeds for valid input.\n"
+                "FR-001: Test requirement\n"
+                "FR-002: Another requirement\n"
             )
             (bucket_dir / "prd.md").write_text(prd_content, encoding="utf-8")
             (spec_root / "constitution.md").write_text(
@@ -131,7 +135,7 @@ class TestPrdPost:
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "PRD"
 
-    def test_prd_post_halts_on_invalid_gherkin(self, tmp_git_repo: Path) -> None:
+    def test_prd_post_halts_on_gherkin_leak(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -143,10 +147,11 @@ class TestPrdPost:
             bucket_dir.mkdir(parents=True)
             prd_content = (
                 "# PRD\n"
-                "**AC-1-01: AC missing the When clause**\n"
-                "\n"
-                "- **Given**: A precondition\n"
-                "- **Then**: An outcome\n"
+                "## Acceptance Outline\n"
+                "- **AO-001**: Valid input succeeds.\n"
+                "  - **Given** a configured repository\n"
+                "  - **When** the command runs\n"
+                "  - **Then** it succeeds\n"
             )
             (bucket_dir / "prd.md").write_text(prd_content, encoding="utf-8")
             (spec_root / "constitution.md").write_text(
@@ -162,7 +167,7 @@ class TestPrdPost:
             result = runner.invoke(cli, ["prd", "post", str(manifest)])
             assert result.exit_code != 0, result.output
             assert "PRD_HALTED" in result.output
-            assert "When" in result.output
+            assert "GHERKIN_LEAK_DETECTED" in result.output
 
     def test_prd_post_rejects_invalid_manifest(self, mock_workspace: Path) -> None:
         spec_root = mock_workspace / "specs"
@@ -230,6 +235,39 @@ class TestShardPost:
             assert loaded.current_phase == "IDLE", (
                 f"expected session reset to IDLE, got {loaded.current_phase}"
             )
+
+    def test_shard_post_rejects_gherkin_leak(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
+            Path(".deviate").mkdir()
+            SessionState(current_phase="SHARD").save(Path(".deviate/session.json"))
+            issue_path = Path("specs/test-shard/issues/001-demo.md")
+            issue_path.parent.mkdir(parents=True)
+            issue_path.write_text(
+                "---\ntitle: Demo\nissue_id: ISS-001\n---\n"
+                "## Acceptance Outline\n- **AO-001**: Demo succeeds.\n"
+                "- **Given** configured\n- **When** run\n- **Then** success\n"
+            )
+            manifest = Path("manifest.json")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "epic_slug": "test-shard",
+                        "issues": [
+                            {
+                                "issue_id": "ISS-001",
+                                "type": "feature",
+                                "title": "Demo",
+                                "source_file": str(issue_path),
+                            }
+                        ],
+                    }
+                )
+            )
+
+            result = runner.invoke(cli, ["shard", "post", str(manifest)])
+
+            assert result.exit_code == 1, result.output
+            assert "GHERKIN_LEAK_DETECTED" in result.output
 
     def test_shard_post_with_zero_issues(self, mock_workspace: Path) -> None:
         spec_root = mock_workspace / "specs"

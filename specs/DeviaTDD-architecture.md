@@ -21,7 +21,7 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
                           ┌──────────────┐
                           │ /deviate-adhoc│  (complexity gate: low/medium only)
                           │ Condensed    │
-                          │ E+P+S→ Issue │  (spec-enriched with Gherkin)
+                          │ E+P+S→ Issue │  (acceptance outline; no Gherkin)
                           └──────┬───────┘
                                  │
                                  ▼
@@ -29,12 +29,12 @@ The architecture operates as a hierarchical lifecycle that shifts from human-dri
                           │ specs/adhoc/ │ → single issue, prd.md, issues.jsonl
                           └──────┘
 
-[ MACRO LAYER: Scoping ]    Explore → Research → PRD → Shard+Specify
-                                                          │
-                                                          ▼
-[ MESO LAYER: Contracts ]    [HITL Gate 2] → Plan → Tasks
-                                                       │
-                                                       ▼
+[ MACRO LAYER: Scoping ]    Explore → Research → PRD → Shard
+                                                         │ acceptance outlines
+                                                         ▼
+[ MESO LAYER: Contracts ]    Plan (final Gherkin) → Tasks → [HITL Gate 2]
+                                                                  │
+                                                                  ▼
 [ MICRO LAYER: TDD Loop ] ──> Red ──> Green ──> Judge/Train ──> Refactor
                                 │  ▲    ▲                  ▲     │
                                 ▼  │    │                  │     │
@@ -87,11 +87,11 @@ To maintain strict operational focus and establish explicit boundaries of respon
 Breaks a business goal down into standard development project containers.
 * **Explore (Cheap Context Gathering):** Fast, inexpensive scan of codebase structure, dependencies, existing patterns, and tech stack. Runs on a cheap model (V4 Flash). Outputs raw factual context to `explore.md` — what exists, not what to do. Initial output lands in `specs/explore/<slug>.md`; `deviate research pre` **moves** that file into the numbered epic directory at `specs/{NNN}-<slug>/explore.md` so every artifact for one feature lives under a single directory.
 * **Research (Architectural Design):** Consumes `explore.md` (at `specs/{NNN}-<slug>/explore.md` after the research pre move) and performs high-level architectural analysis: trade-offs, options matrix, design decisions, and data modeling. Runs on a reasoning model (Qwen thinking or V4 Pro). Outputs `design.md` (architecture and decisions) and `data-model.md` (entity relationships, schemas), both inside the same numbered epic directory.
-* **PRD:** Translates `design.md` into a clear, feature-wide requirement set of immutable user requirements and acceptance criteria.
+* **PRD:** Translates `design.md` into immutable FR/AC tokens plus implementation-independent `AO-NNN` acceptance outlines. Given/When/Then is forbidden here; Plan owns final Gherkin.
 * **Shard:** Breaks down the PRD into standalone technical issue files (GitHub Issues). Each issue must be a **vertical slice** — a complete, testable behavior end-to-end (not a horizontal layer like "add database"). Target 4-8 issues per feature shard. Enforce bounds: minimum 1 issue, maximum 10 issues. A single-issue shard is valid (the option to have used `/deviate-adhoc` has passed by the time shard runs). Each issue must be independently implementable and testable, with clear acceptance criteria. **Slicing rules live entirely in the `deviate-shard` prompt** (Pass 1 flow-anchored clustering, Pass 1.5 hard cap with `SLICE_CAP_EXCEEDED`, Pass 3.5 horizontal-slice merging); the PRD prompt only shapes FRs via flow-segment authoring guidance, never pre-decides groupings.
 * **Adhoc (Fast-Path):** A condensed single-command shortcut (`/deviate-adhoc`) that compresses Explore + Research + PRD + Shard into one operation for low-to-medium complexity tasks. Performs proportional exploration (lightweight file scanning, dependency mapping), synthesizes a condensed PRD entry, and emits a single vertical-slice issue directly into `specs/adhoc/`. Appends to the aggregated `specs/adhoc/prd.md` and registers the issue in the global `specs/issues.jsonl` append-only ledger with an `ADH-{NNN}` identifier. A **Complexity Gate** evaluates the task description before proceeding: high-complexity tasks (multi-module coordination, state management, new architecture) are rejected with a directive to run `/deviate-explore` to initiate a full epic workflow instead. This gate prevents scope-creep and ensures adhoc remains a true fast-path, not a bypass for complex engineering.
 
-* **Active Domain Discipline (HITL gates):** The macro phases that interact with the human (`/deviate-research` Gate 1, `/deviate-prd` Ambiguity Interrogation, `/deviate-shard` Gate 2) actively term-challenge against the upstream glossary, sharpen fuzzy language, stress-test with concrete edge-case scenarios, and update the relevant artifact (`design.md`, `data-model.md`, `prd.md`) inline as terms resolve — not as a passive sign-off step.
+* **Active Domain Discipline (HITL gates):** `/deviate-research` Gate 1 and `/deviate-prd` Ambiguity Interrogation actively challenge terms and edge cases. Gate 2 occurs after Plan + Tasks so the human reviews current acceptance and decomposition together.
 
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
@@ -109,15 +109,8 @@ REVIEW) missed, grouping changes by concern rather than file path, and letting
 the user control depth. It is the more human counterpart to the review, designed
 to build codebase comprehension and surface hidden trade-offs.
 
-* **Shard+Specify (merged):** The `/deviate-shard` skill now produces issue files with full
-  spec-level detail: user stories (US-NNN), Gherkin acceptance criteria (Given/When/Then),
-  edge cases, performance constraints, and scope boundaries. Issues are born as full
-  specifications — no separate `/deviate-specify` step required. The legacy
-  `/deviate-specify` skill is marked deprecated and redirects to the new workflow.
-* **[HITL Gate 2]:** Human reviews all sharded issues for completeness, edge cases, and
-  scope correctness. Moved from after `/deviate-specify` to after `/deviate-shard` to
-  match the new workflow. Catches spec errors at the shard boundary before per-issue
-  planning and task decomposition proceed.
+* **Shard + acceptance outline:** `/deviate-shard` produces vertical issue packets with user stories, `AO-NNN` outcomes, edge cases, performance constraints, and scope boundaries. `GHERKIN_LEAK_DETECTED` rejects Given/When/Then in macro artifacts. Standalone `/deviate-specify` remains deprecated.
+* **[HITL Gate 2]:** Human reviews plan.md and tasks.md together after Tasks. `deviate meso approve` validates canonical active-issue paths and persists SHA-256 hashes of both reviewed files. Micro fails closed when approval is absent or stale.
 * **Plan (`deviate plan pre` / `deviate plan post`):** Per-issue localized research phase
   that performs fresh codebase scanning (what exists now, not at epic-explore time),
   analyzes what prior issues implemented (via the `specs/issues.jsonl` ledger), and
@@ -126,19 +119,8 @@ to build codebase comprehension and surface hidden trade-offs.
   claimable unblocked BACKLOG issue, creates the worktree, claims the issue,
   force-transitions the session to `PLAN`, and syncs
   `.deviate/` into the new worktree; inside a linked worktree it emits a `plan_pre`
-  JSON contract for the agent. The `post` subcommand validates `plan.md` is non-empty
-  and commits it with a convention-aware message (emoji-prefixed when the project's
-  CONTRIBUTING.md or git history indicates emoji usage), then transitions the
-  session to `TASKS`. Addresses the problem that epic-level explore/research artifacts
-  become stale by the time later issues are worked on.
-* **Tasks (`deviate tasks pre` / `deviate tasks post`):** Decomposes the spec-enriched issue
-  (plus `plan.md` when available) into a trackable execution blueprint with implementation
-  hints, stored in `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.md`. The `pre` subcommand
-  resolves the spec-enriched issue for the active work. The `post` subcommand validates and
-  commits tasks.md. Each task entry is assigned a unique `TSK-{ISSUE_ID}-{NN}` identifier,
-  typed as `tdd`, `direct`, or `e2e`, and includes file locations, mock boundaries, and
-  fixture requirements. An agent MAY append a terminal `type: "e2e"` task for issues
-  modifying user-facing behavior, but it is no longer mandatory.
+  JSON contract for the agent. The `post` subcommand validates `plan.md` is non-empty and contains complete `AC-PLAN-NNN` scenarios with AO/upstream/current-code traceability, commits it with a convention-aware message, then transitions to TASKS. This current-code-informed Acceptance Contract is authoritative for Tasks, RED, and JUDGE, addressing stale macro context.
+* **Tasks (`deviate tasks pre` / `deviate tasks post`):** Reads stories, outlines, scope, and constraints from the issue while reading finalized Gherkin and strategy from plan.md. Plan wins over legacy issue/spec Gherkin. Tasks emits a trackable execution blueprint in `specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.md`; post validates and commits it, then stops at Gate 2. Each entry has a unique `TSK-{ISSUE_ID}-{NN}` identifier, type (`tdd`, `direct`, or `e2e`), file locations, mock boundaries, and fixture requirements. A terminal `type: "e2e"` task remains optional for user-facing behavior.
   * **Plan digest data flow:** After PLAN commits `plan.md`, the meso orchestrator builds
     a 16 KiB UTF-8 digest (`_build_plan_digest` in `src/deviate/cli/meso.py`). The digest
     keeps the head + tail of the plan and inserts a `PLAN_DIGEST_TRUNCATED` marker when
@@ -276,7 +258,7 @@ to invoke, but model selection is delegated to the calling environment.
 
 ### 3.1 Spec-Driven Development (SDD)
 * **How it is fulfilled:** Executed directly via the Macro Layer and Meso Layer.
-* **Mechanisms:** The workflow prohibits "vibe coding" or jumping straight into implementation. The framework enforces an artifact-centric approach where a feature must be systematically defined via research, design analysis, Product Requirement Documents (PRDs), and issue sharding. The Macro Layer separates context gathering (`/deviate-explore` — cheap) from architectural reasoning (`/deviate-research` — expensive), then synthesizes requirements (`/deviate-prd`) and decomposes issues (`/deviate-shard`) — shard now produces spec-enriched issue files with full Gherkin acceptance criteria, eliminating the need for a separate `/deviate-specify` step. The Meso Layer adds a per-issue `/deviate-plan` phase for localized research before task decomposition. The CLI commands `deviate tasks pre/post` lock down the execution blueprint (`tasks.md` / `tasks.jsonl`) before a single line of feature code can legally be written.
+* **Mechanisms:** The workflow prohibits "vibe coding" or jumping straight into implementation. The framework enforces an artifact-centric approach where a feature must be systematically defined via research, design analysis, Product Requirement Documents (PRDs), and issue sharding. The Macro Layer separates context gathering (`/deviate-explore` — cheap) from architectural reasoning (`/deviate-research` — expensive), then synthesizes requirements (`/deviate-prd`) and decomposes issues (`/deviate-shard`) — shard now emits vertical issue packets with `AO-NNN` acceptance outlines and rejects Given/When/Then clauses with `GHERKIN_LEAK_DETECTED`, so Plan can own the current-code-informed `AC-PLAN-NNN` Gherkin contract before `/deviate-tasks` decomposes it. The Meso Layer adds a per-issue `/deviate-plan` phase for localized research before task decomposition. The CLI
 
 ### 3.2 Test-Driven Development (TDD)
 * **How it is fulfilled:** Executed via the Micro Layer: Automated Sandbox.
@@ -315,40 +297,30 @@ The execution state transitions follow a strict sequence enforced by `SessionSta
          │                                              prd post
          │                                                    ▼
          │                                              ┌──────────┐
-         │                                              │ SHARD+   │  ← merged with Specify
-         │                                              │ SPECIFY  │
-          │                                              └──────────┘
-          │                                                    │
-          │                                              shard post
-          │                                          (HITL Gate 2)
-          │                                                    ▼
-          │                                              ┌──────────┐
-          │                                              │   PLAN   │  ← per-issue phase
-          │                                              └──────────┘
-          │                                                    │
-          │                                              plan post
-          │                                                    ▼
-          │   ┌────────────┐  tasks post                    ┌──────────┐
-          │   │   TASKS    │ ──────────────────────────> │  (TASKS) │
-          │   └────────────┘                               └──────────┘
-          │         │
-          │         │  pr pre/run
-          │         ▼
-          │   ┌──────────┐
-          └── │ IDLE     │
-              └──────────┘
+         │                                              │  SHARD   │  ← acceptance outlines
+         │                                              └──────────┘
+         │                                                    │
+         │                                              shard post
+         │                                                    ▼
+         │                                              ┌──────────┐
+         │                                              │   PLAN   │  ← final Gherkin
+         │                                              └──────────┘
+         │                                                    │
+         │                                              plan post
+         │                                                    ▼
+         │   ┌────────────┐  tasks post
+         │   │   TASKS    │ ───────────> [HITL Gate 2]
+         │   └────────────┘                  │
+         │                                  │ meso approve (plan/tasks hashes)
+         │                                  ▼
+         │                             micro run --all
+         │                                  │
+         │                                  ▼
+         │   ┌──────────┐  pr pre/run
+         │   │  IDLE    │ <─────────────────────────────┘
+         └── └──────────┘
 
-NOTE: SPECIFY is deprecated as a standalone phase. The merged SHARD+SPECIFY
-phase produces spec-enriched issue files directly during shard. PLAN is a
-newly added per-issue phase (CLI registered as `deviate plan`, implemented in
-`src/deviate/cli/meso.py:_plan_pre` / `_plan_post`). The `deviate meso run`
-pipeline executes SPECIFY (claim + worktree) → PLAN → TASKS → IDLE in a
-single invocation. The legacy SPECIFY → TASKS transition still exists for
-backward compatibility but routes through the new merged path. The SPECIFY
-step can be bypassed with `--no-setup` (skip worktree + ledger claim); the
-banner then renders `PLAN ▶ TASKS` and the pipeline runs in the current
-working directory on whatever branch is checked out, bypassing the Git
-Isolation Principle.
+NOTE: SPECIFY is deprecated as an acceptance-authoring phase. SHARD emits issue outlines; PLAN authors the current-code-informed Gherkin contract; TASKS maps that contract; Gate 2 approves exact plan/tasks hashes. `deviate run` stops after TASKS at `AWAITING_HITL_GATE_2`. The meso pipeline still executes SPECIFY setup (claim + worktree) → PLAN → TASKS, preserving existing worktree and plan-digest behavior. The legacy SPECIFY → TASKS path remains for backward compatibility but routes through the new merged flow. The SPECIFY step can be bypassed with `--no-setup` (skip worktree + ledger claim); the banner then renders `PLAN ▶ TASKS` and the pipeline runs in the current working directory on whatever branch is checked out, bypassing the Git Isolation Principle.
 ```
 
 **Micro layer TDD cycle** (per task, dispatched by `deviate micro run <task-id>` or `deviate micro run --all`):
@@ -423,13 +395,13 @@ The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optio
 * **Active Domain Discipline:** Both `/deviate-flows` and `/deviate-architecture` discovery steps use a structured 7–8 bullet active discipline — one question at a time with a recommended answer, dependency-ordered, read-first, term-challenge against the glossary, sharpen fuzzy language, stress-test with scenarios, and update the artifact (`flows-<domain>.md` or `domain-model.md`) inline as terms resolve. Enforced as a mandatory pass before writing the flow file or architecture entry.
 
 ### 5.1 Meso Layer Phase Prompts
-* **`/deviate-specify` (Deprecated):** Merged into `/deviate-shard`. Shard now produces spec-enriched issue files directly. The legacy skill remains for backward compatibility with a redirect notice.
-* **[HITL Gate 2]:** Human reviews all sharded issue files (with embedded spec content) for completeness, edge cases, scope correctness. Moved from after `/deviate-specify` to after `/deviate-shard`.
-* **`/deviate-plan` Context (via `deviate plan pre`):** Spec-enriched issue file + Current Codebase State + workstation file paths parsed from the `## System Topology Mapping` section of the issue.
-    * *System Directives:* Perform fresh localized research for this specific issue. Read the spec-enriched issue, scan current codebase state (what exists now, not at epic-explore time), analyze what prior issues implemented via the `specs/issues.jsonl` ledger. Identify integration points, dependencies, potential conflicts. Produce `plan.md` with implementation strategy, file mappings, and risk assessment. Contextualize the issue for downstream task decomposition.
-* **`/deviate-tasks` Context (via `deviate tasks pre`):** Spec-enriched issue file + `plan.md` (if available) + Codebase Layout Map + constitution command output.
-    * *System Directives:* Decompose the spec-enriched issue directly into discrete task entries written to `tasks.md` (the human-authored decomposition document). The CLI subsequently registers these as rows in `tasks.jsonl` (the append-only event ledger). Each task must include implementation hints (file locations, mock boundaries, fixture requirements) alongside the decomposition. Every entry must be assigned a unique tracking identifier (`TSK-{ISSUE_ID}-{NN}`) and must map cleanly to an acceptance criterion in the issue file. Encode DAG dependencies via `blocked_by` arrays in each task entry. Assign each task an execution type: `tdd` (standard TDD loop), `direct` (boilerplate/config, no RED phase), or `e2e` (end-to-end integration). **An agent MAY append a terminal `type: "e2e"` task** for issues modifying user-facing behavior, but it is no longer mandatory. Target 4-8 tasks per issue; enforce 1-10 bounds. When `plan.md` is available, consume its implementation strategy and risk assessment as input to task granularity decisions.
+* **`/deviate-specify` (Deprecated):** Merged into `/deviate-shard`. Shard now emits vertical issue packets carrying `AO-NNN` acceptance outlines; Gherkin belongs to Plan. The legacy skill remains for backward compatibility with a redirect notice.
+* **[HITL Gate 2]:** Human reviews `plan.md` (authoritative Gherkin) and `tasks.md` (decomposition) together after Tasks. `deviate meso approve` records SHA-256 hashes of both artifacts against the active issue; Micro fails closed when approval is missing or stale. Moved from after `/deviate-specify` to after `/deviate-tasks` to match the Plan-owned contract.
 
+* **`/deviate-plan` Context (via `deviate plan pre`):** Spec-enriched issue file (intent + outlines) + Current Codebase State + workstation file paths parsed from the `## System Topology Mapping` section of the issue.
+    * *System Directives:* Perform fresh localized research for this specific issue. Read the issue file, scan current codebase state (what exists now, not at epic-explore time), analyze what prior issues implemented via the `specs/issues.jsonl` ledger. Identify integration points, dependencies, potential conflicts. Produce `plan.md` containing the authoritative `## Acceptance Contract` section: every `AO-NNN` from the issue must be reconciled into one or more complete `AC-PLAN-NNN` Given/When/Then scenarios with `Source Outline`, `Upstream Traceability`, and `Current-Code Evidence` blocks. Contextualize the issue for downstream task decomposition.
+* **`/deviate-tasks` Context (via `deviate tasks pre`):** Spec-enriched issue file (stories, scope, constraints) + authoritative `plan.md` Acceptance Contract + Codebase Layout Map + constitution command output.
+    * *System Directives:* Tasks consumes two sources: the issue for intent and scope, `plan.md` for finalized Gherkin. Legacy issue/spec Gherkin is non-authoritative — the Tasks prompt halts with `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`PLAN_ACCEPTANCE_CONTRACT_INVALID` when `plan.md` is absent or malformed, refusing to fall back to the issue's own Gherkin. Decompose the contract into discrete task entries written to `tasks.md` (the human-authored decomposition document). The CLI subsequently registers these as rows in `tasks.jsonl` (the append-only event ledger). Each task must include implementation hints (file locations, mock boundaries, fixture requirements) alongside the decomposition. Every entry must be assigned a unique tracking identifier (`TSK-{ISSUE_ID}-{NN}`) and must map cleanly to an `AC-PLAN-NNN` scenario in the plan contract. Encode DAG dependencies via `blocked_by` arrays in each task entry. Assign each task an execution type: `tdd` (standard TDD loop), `direct` (boilerplate/config, no RED phase), or `e2e` (end-to-end integration). After Tasks commits `tasks.md`, `deviate run` stops at `AWAITING_HITL_GATE_2` until the human approves the plan/tasks pair.
 ### 5.2 Micro Layer Sandbox Prompts (Reference)
 
 The following system prompt templates are stored in `src/deviate/prompts/auto/` as `.md`
@@ -543,14 +515,10 @@ The framework prevents total autonomy drift by enforcing non-bypassable verifica
 [Meso /shard]       ──>  ( GATE 2: Contract Sign-Off )  ──> [/plan → /tasks]
                                   │
                                   ▼
-[Meso /tasks]       ──>  ( GATE 2b: Task Review — opt-in for complex features )
+[Macro /research]   ──> ( GATE 1: Design Approval ) ──> [PRD ──> Shard (acceptance outlines)]
                                   │
                                   ▼
-[Micro Success]     ──>  ( GATE 3: Final Merge Audit )   ──> [Production Deployment]
-
-NOTE: The Product-layer gates (FLOW-01 actor sign-off, FLOW-02 cross-epic contract
-sign-off) are **soft gates** — they are conversational checkpoints inside
-`/deviate-flows` and `/deviate-architecture` and do not block Macro-layer
+[Meso /tasks]       ──>  ( GATE 2: Acceptance & Task Review )  ──> [micro run --all]
 phases. They are listed above to show the full dependency chain; the
 framework's three non-bypassable HITL gates remain Gate 1, Gate 2, and Gate 3.
 ```
@@ -558,17 +526,10 @@ framework's three non-bypassable HITL gates remain Gate 1, Gate 2, and Gate 3.
 * **Gate 1: Blueprint Approval (After `/deviate-research`, Before `/deviate-prd`)**
     * *Trigger:* Triggered when `design.md` and `data-model.md` are generated by the Research phase.
     * *Action:* Human reviews core architectural selections, design decisions, data models, and tech stacks. PRD and Shard execution remain locked until an approval flag is written.
-* **Gate 2: Contract Sign-Off (After `/deviate-shard`, Before `/deviate-plan`) — PRIMARY GATE**
-    * *Trigger:* Triggered when shard produces spec-enriched issue files (with Gherkin AC, user stories, edge cases) for all issues in the feature.
-    * *Rationale:* Spec errors are the most expensive to fix downstream. Task decomposition is cheap to regenerate (~30s). Catch functional contract errors here before they cascade into 25+ task implementations. Moved from after `/deviate-specify` to after `/deviate-shard` as part of the Meso-Layer Restructuring (ADHOC-003).
-    * *Question Budget Rule:* The agent can prompt the user with targeted clarity questions (max 4 per interaction) to resolve functional ambiguity before locking.
-    * *Action:* Human reviews each issue file for completeness, edge cases, scope correctness, and architectural alignment. Approval is required before `/deviate-plan` will execute.
-* **Gate 2b: Task Review (After `/deviate-tasks` — Opt-in)**
-    * *Trigger:* Only for complex features (>7 issues or highly interdependent tasks).
-    * *Action:* Human reviews task granularity, DAG dependencies, and implementation hints. Skipped for standard features.
-* **Gate 3: Final Merge Audit (Micro-to-Idle Boundary)**
-    * *Trigger:* Triggered when all task entries in all issue-scoped `tasks.jsonl` ledgers have reached terminal states (`COMPLETED` or `FAILED`) and all DAG dependencies are satisfied.
-    * *Action:* Human evaluates the full atomic Git commit history, total testing metrics, and approves merging the feature branch into main.
+* **Gate 2: Acceptance & Task Review (After `/deviate-tasks`, Before micro execution) — PRIMARY GATE**
+    * *Trigger:* Triggered when Tasks commits `tasks.md`. Plan has already authored the authoritative `AC-PLAN-NNN` Gherkin contract; Tasks mapped it to execution units.
+    * *Rationale:* Spec errors are the most expensive to fix downstream. Reviewing Plan + Tasks together catches functional contract errors before they cascade into 25+ task implementations. The acceptance contract is now current-code-informed (Plan scanned the codebase before authoring) and decomposed (Tasks mapped each scenario). Moved from after `/deviate-shard` to after `/deviate-tasks` so the human reviews the Gherkin and its task decomposition together.
+    * *Action:* Human reviews `plan.md` and `tasks.md` side by side. `deviate meso approve` records `hitl_gate_2_*_sha256` hashes for both files and the active issue id; Micro fails closed on missing (`HITL_GATE_2_APPROVAL_REQUIRED`) or stale (`HITL_GATE_2_APPROVAL_STALE`) approval.
 
 ---
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from hashlib import sha256
 import shutil
 import subprocess
 import time
@@ -32,8 +33,9 @@ from deviate.core.commit import commit_artifact, stage_and_commit
 from deviate.core.specs_html import render_and_stage_if_changed
 from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands
-from deviate.core.issues import claim_issue
+from deviate.core.issues import claim_issue, resolve_issue_artifact_path
 from deviate.core.repo import gather_git_state
+from deviate.core.validation import validate_acceptance_contract
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
@@ -774,6 +776,15 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
     if not content and not force:
         console.print("[red]PLAN_EMPTY[/] plan.md is empty")
         raise typer.Exit(code=1)
+    acceptance_errors = validate_acceptance_contract(content)
+    if acceptance_errors:
+        status = (
+            "PLAN_ACCEPTANCE_CONTRACT_MISSING"
+            if acceptance_errors == ["PLAN_ACCEPTANCE_CONTRACT_MISSING"]
+            else "PLAN_ACCEPTANCE_CONTRACT_INVALID"
+        )
+        console.print(f"[red]{status}[/] {'; '.join(acceptance_errors)}")
+        raise typer.Exit(code=1)
 
     epic_num = _extract_epic_num(bucket)
     issue_num = _extract_issue_num(resolved_issue_id)
@@ -925,13 +936,27 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
             tasks_target = str(_resolve_specs_root() / bucket / slug / "tasks.md")
             plan_path = str(_resolve_specs_root() / bucket / slug / "plan.md")
 
-    # ── Enforce plan.md prerequisite ─────────────────────────────────
+    # ── Enforce plan.md + acceptance-contract prerequisite ─────────
     if plan_path and not Path(plan_path).exists() and not force:
         status = "PLAN_NOT_FOUND"
         console.print(
             f"[red]PLAN_NOT_FOUND[/] {plan_path} — run deviate plan first "
             "(use --force to bypass)"
         )
+    elif plan_path and Path(plan_path).exists():
+        acceptance_errors = validate_acceptance_contract(
+            Path(plan_path).read_text(encoding="utf-8")
+        )
+        if acceptance_errors:
+            missing = acceptance_errors == ["PLAN_ACCEPTANCE_CONTRACT_MISSING"]
+            status = (
+                "PLAN_ACCEPTANCE_CONTRACT_MISSING"
+                if missing
+                else "PLAN_ACCEPTANCE_CONTRACT_INVALID"
+            )
+            console.print(
+                f"[red]{status}[/] {plan_path}: {'; '.join(acceptance_errors)}"
+            )
     if dry_run:
         console.print("[yellow]DRY_RUN[/] skipping side effects")
 
@@ -1659,6 +1684,78 @@ def _meso_run(
 
 
 meso_app = typer.Typer(no_args_is_help=True)
+
+
+def _artifact_sha256(path: Path) -> str:
+    return sha256(path.read_bytes()).hexdigest()
+
+
+@meso_app.command("approve")
+def meso_approve_command(
+    issue: str = typer.Option(..., "--issue", help="Issue ID being approved"),
+    plan: Path = typer.Option(..., "--plan", help="Reviewed plan.md path"),
+    tasks: Path = typer.Option(..., "--tasks", help="Reviewed tasks.md path"),
+) -> None:
+    """Record HITL Gate 2 approval for exact plan.md and tasks.md contents."""
+    if not plan.is_file() or not tasks.is_file():
+        console.print("[red]HITL_GATE_2_ARTIFACT_MISSING[/]")
+        raise typer.Exit(code=1)
+    acceptance_errors = validate_acceptance_contract(plan.read_text(encoding="utf-8"))
+    if acceptance_errors:
+        console.print(
+            f"[red]PLAN_ACCEPTANCE_CONTRACT_INVALID[/] {'; '.join(acceptance_errors)}"
+        )
+        raise typer.Exit(code=1)
+    if not re.search(r"(?m)^- TSK-\d{3}-\d{2}:", tasks.read_text(encoding="utf-8")):
+        console.print("[red]TASKS_INVALID[/] no TSK-NNN-NN task entries found")
+        raise typer.Exit(code=1)
+    if not typer.confirm(
+        f"Approve plan.md and tasks.md for {issue} and unlock micro execution?"
+    ):
+        console.print("[yellow]HITL_GATE_2_NOT_APPROVED[/]")
+        raise typer.Exit(code=1)
+
+    session_path = _resolve_dot_deviate() / "session.json"
+    session = SessionState.load(session_path)
+    if session.active_issue_id != issue:
+        console.print(
+            f"[red]HITL_GATE_2_ISSUE_MISMATCH[/] active={session.active_issue_id} "
+            f"requested={issue}"
+        )
+        raise typer.Exit(code=1)
+    ledger_path = _resolve_specs_root() / "issues.jsonl"
+    record = resolve_issue_record(issue, ledger_path)
+    if record is None:
+        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue}")
+        raise typer.Exit(code=1)
+    expected_plan = resolve_issue_artifact_path(
+        Path.cwd(), record.source_file, "plan.md"
+    ).resolve()
+    expected_tasks = resolve_issue_artifact_path(
+        Path.cwd(), record.source_file, "tasks.md"
+    ).resolve()
+    if plan.resolve() != expected_plan or tasks.resolve() != expected_tasks:
+        console.print(
+            "[red]HITL_GATE_2_ARTIFACT_MISMATCH[/] approval requires "
+            f"{expected_plan} and {expected_tasks}"
+        )
+        raise typer.Exit(code=1)
+    try:
+        plan_path = plan.resolve().relative_to(Path.cwd().resolve())
+        tasks_path = tasks.resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        console.print(
+            "[red]HITL_GATE_2_ARTIFACT_OUTSIDE_WORKTREE[/] "
+            "plan.md and tasks.md must belong to the active worktree"
+        )
+        raise typer.Exit(code=1) from None
+    session.hitl_gate_2_approved_issue_id = issue
+    session.hitl_gate_2_plan_path = str(plan_path)
+    session.hitl_gate_2_tasks_path = str(tasks_path)
+    session.hitl_gate_2_plan_sha256 = _artifact_sha256(plan)
+    session.hitl_gate_2_tasks_sha256 = _artifact_sha256(tasks)
+    session.save(session_path)
+    console.print(f"[green]HITL_GATE_2_APPROVED[/] {issue}")
 
 
 @meso_app.command("run")

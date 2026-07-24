@@ -371,7 +371,7 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 All meso-layer commands follow the `pre`/`post` subcommand pattern. Every `pre` subcommand
 accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 
-> **Deprecated:** Specify functionality is absorbed into shard. Shard now produces spec-enriched issue files with full Gherkin AC, user stories, and edge cases — no separate specify step. The `/deviate-tasks` skill reads these embedded specs directly. See `deviate shard pre/post` and `deviate plan pre/post` below.
+> **Deprecated:** Standalone Specify no longer owns acceptance criteria. PRD/shard/adhoc emit `AO-NNN` acceptance outlines; `deviate plan` writes the authoritative `AC-PLAN-NNN` Gherkin contract after fresh research.
 
 #### `deviate specify pre [--issue <id>] [--force] [--dry-run]` (Legacy)
 
@@ -402,54 +402,38 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 
 * **Source:** `src/deviate/cli/meso.py` (`_plan_pre`)
-* **Description:** Per-issue localized research phase. Two operating modes:
-  * **Outside a linked worktree (auto-claim):** When `_is_linked_worktree()` returns
-    `False`, the command auto-discovers the next claimable unblocked BACKLOG issue (or
-    uses the provided `--issue`), calls `_specify_pre` to create the worktree and claim
-    the issue, force-transitions the session to `PLAN`, and copies `.deviate/` into the
-    new worktree. Exits 0 once the worktree is ready.
-  * **Inside a linked worktree (contract mode):** Loads the session (accepts `SPECIFY` or
-    `PLAN` phases), resolves the spec-enriched issue file by reading
-    `record.source_file` from the ledger, and parses workstation file paths from the issue's
-    `## System Topology Mapping` section. Emits a JSON contract containing `issue_id`,
-    `spec_path`, `plan_target`, `worktree_full`, `branch_name`, and constitution paths.
-* **Input Parameters:** `--issue <id>` (override auto-discovered), `--force`,
-  `--dry-run` (emits the contract with `dry_run: true` but does not skip side effects)
-* **Session:** Force-transitions to `PLAN` with `active_issue_id` set.
-* **Common Flags:** `--json`, `--quiet`
+* **Description:** Per-issue localized research phase with two operating modes:
+  * **Outside a linked worktree:** auto-discovers or uses `--issue`, creates/claims the worktree through `_specify_pre`, force-transitions to PLAN, and syncs `.deviate/`.
+  * **Inside a linked worktree:** accepts SPECIFY or PLAN, resolves `record.source_file`, parses `## System Topology Mapping`, and emits `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`, and constitution paths.
+* **Acceptance ownership:** The issue supplies stories, scope, topology, `AO-NNN` outlines, edge cases, performance constraints, and flow refs. Plan reconciles each outline into complete `AC-PLAN-NNN` scenarios with Source Outline, upstream traceability, current-code evidence, and Given/When/Then. This contract is authoritative for Tasks, RED, and JUDGE.
+* **Input Parameters:** `--issue`, `--force`, `--dry-run`; common `--json` / `--quiet` wrappers apply.
+* **Session:** force-transitions to PLAN with `active_issue_id` set.
 
 #### `deviate plan post [--force] [--issue-id]`
 
-* **Source:** `src/deviate/cli/meso.py` (`_plan_post`)
-* **Description:** Resolves the active issue from the session (or `--issue-id` override),
-  reads `specs/{epic}/{issue}/plan.md`, validates that the file exists and is non-empty
-  (unless `--force`), commits via `commit_artifact()` with a convention-aware message
-  (`📚 docs({epic}-{issue}): create plan.md` when emoji conventions are detected),
-  and `transition_to("TASKS")`. Skips the commit silently when there are no changes to stage.
+Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract; auto-renders HTML when changed, commits with convention-aware messaging, and transitions to TASKS. Missing/malformed contracts fail as `PLAN_ACCEPTANCE_CONTRACT_MISSING` / invalid contract diagnostics.
 
 #### `deviate tasks pre [--force] [--dry-run]`
 
 * **Source:** `src/deviate/cli/meso.py`
-* **Description:** Loads session (accepts PLAN or TASKS), resolves the spec-enriched issue file
-  (reads embedded `## [USER_STORIES_LEDGER]` and `## [ATDD_ACCEPTANCE_CRITERIA]` sections; falls
-  back to `spec.md` when absent), detects worktree and branch, resolves constitution commands,
-  and emits JSON contract with spec_path, plan_path, tasks_target, worktree info. The agent
-  decomposes the spec into `tasks.md` (the *what/why/how* document) and the CLI writes the
-  corresponding rows to `tasks.jsonl` (the *append-only event ledger*). See §3 for the
-  `tasks.md` vs `tasks.jsonl` distinction.
-* **Plan digest contract:** The TASKS phase receives `plan_digest` (bounded 16 KiB UTF-8
-  preview of `plan.md`) alongside `plan_path`. The digest preserves the head + tail of the
-  plan, inserts the `PLAN_DIGEST_TRUNCATED` marker when the source plan exceeded 16 KiB,
-  and is rendered inside the auto prompt as `<plan_digest>` (literal XML tag; do not
-  re-inject as `{plan_digest}`). The agent reads the full plan from `<plan_path>` whenever
-  the marker is present.
-* **Common Flags:** `--json`, `--quiet`
+* **Two-source input:** `spec_path` supplies macro intent; `plan_path` supplies strategy and authoritative scenarios. Plan wins over legacy issue/spec Gherkin.
+* **Contract:** detects worktree/branch, resolves constitution commands, and emits `spec_path`, `plan_path`, `tasks_target`, worktree metadata, status, and flags.
+* **Plan digest:** TASKS receives a bounded 16 KiB UTF-8 `plan_digest` plus `plan_path`; truncation inserts `PLAN_DIGEST_TRUNCATED`, requiring a full read.
+* **Validation:** reports PLAN_NOT_FOUND, PLAN_ACCEPTANCE_CONTRACT_MISSING, or PLAN_ACCEPTANCE_CONTRACT_INVALID; no Gherkin fallback.
+* **Common Flags:** `--json`, `--quiet`.
 
 #### `deviate tasks post [--force] [--issue-id]`
 
-* **Source:** `src/deviate/cli/meso.py`
-* **Description:** Validates `tasks.md` exists and is non-empty, runs pre-commit hooks,
-  commits, and transitions session to IDLE.
+Validates tasks.md exists and is non-empty, commits it, transitions session to IDLE, and stops at HITL Gate 2. Tasks map work to `AC-PLAN-NNN` scenario IDs.
+
+#### `deviate meso approve --issue <id> --plan <path> --tasks <path>`
+
+* **Description:** Interactive Gate 2 sign-off after the human reviews plan.md and tasks.md together. Validates canonical active-issue artifact paths and contracts, then persists issue ID plus SHA-256 hashes of both files in session state.
+* **Enforcement:** `deviate micro run` fails closed with `HITL_GATE_2_APPROVAL_REQUIRED` when absent and `HITL_GATE_2_APPROVAL_STALE` when either reviewed artifact changed.
+
+#### `deviate run [--issue] [--force]`
+
+Runs setup → Plan → Tasks and stops at `AWAITING_HITL_GATE_2`. The former Micro-related flags (`--profile`, `--no-judge`, `--no-refactor`, `--agent`, `--json`) are removed; use them on `deviate micro run` after approval.
 
 #### `deviate tasks <issue-id>` (Legacy)
 
@@ -602,35 +586,18 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ### 5. Automated Pipeline Orchestration
 
-#### `deviate run` (Full-Pipeline Orchestrator)
+#### `deviate run` (Meso → Gate 2 Handoff)
 
 * **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)
-* **Description:** Canonical "go do the next thing" entry point. Chains the meso
-  pipeline (`deviate meso run`) with the micro drain (`deviate micro run --all`)
-  inside the worktree the meso step just created. Discovers the next unblocked
-  BACKLOG issue, claims it (creating the per-issue worktree), runs SPECIFY →
-  PLAN → TASKS in the worktree, then drains every PENDING task through the TDD
-  cycle (or the direct-execute phase for IMMEDIATE-typed tasks). Internally:
-  1. Calls `_meso_run(issue_id=...)` from `src/deviate/cli/meso.py`, which returns
-     the created worktree path on success (`str(worktree_path)`).
-  2. `chdir`s into that worktree, updates `.deviate/session.json` to record the
-     `run --all` handoff, and calls `_run_all()` from `src/deviate/cli/micro.py`
-     to drain every PENDING task.
-  3. On hard failure (no worktree returned, worktree missing) prints a structured
-     error (`RUN_NO_WORKTREE` / `RUN_WORKTREE_MISSING`) and exits non-zero.
+* **Description:** Canonical "go do the next thing" entry point for the meso layer. Runs `deviate meso run` end-to-end (SPECIFY setup → PLAN → TASKS) and stops at Gate 2 with an `AWAITING_HITL_GATE_2` banner. Micro execution is no longer chained: after the human reviews `plan.md` + `tasks.md` together and runs `deviate meso approve`, dispatch micro via `deviate micro run --all`. Discovers the next unblocked BACKLOG issue, claims it (creating the per-issue worktree), runs the meso pipeline in the worktree, then halts for Gate 2 approval. Internally:
+  1. Calls `_meso_run(issue_id=...)` from `src/deviate/cli/meso.py`, which returns the created worktree path on success (`str(worktree_path)`).
+  2. `chdir`s into that worktree, updates `.deviate/session.json` to record the handoff, and emits the `AWAITING_HITL_GATE_2` banner with `deviate meso approve` instructions.
+  3. Does **not** invoke `_run_all()`; micro runs only after Gate 2 approves exact SHA-256 hashes of `plan.md` and `tasks.md` (`HITL_GATE_2_APPROVAL_REQUIRED`/`STALE` enforce this).
 * **Input Parameters:**
   * `--issue <ISS-NNN-NN>` (Target a specific BACKLOG issue; default: next unblocked)
   * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
-  * `--profile [full|fast|secure]` (Forwarded to the micro drain; resolved via
-    `resolve_profile()` from `src/deviate/core/profile.py`)
-  * `--no-judge`, `--no-refactor` (Composable boolean overrides for the profile;
-    forwarded to the micro drain)
-  * `--agent <name>` (Override agent backend for the micro phase)
-  * `--json` (Forward JSONL monitor events to stdout; suppresses Rich UI)
-* **Exit Codes:** 0 on full success; 1 if meso or micro reports failure.
-* **Replaces:** The old `deviate run <task-id>` and `deviate run --all`
-  task-dispatch surface. The per-task and `--all` dispatches now live at
-  `deviate micro run <task-id>` and `deviate micro run --all` respectively.
+* **Exit Codes:** 0 on meso success; 1 if meso reports failure.
+* **Replaces:** The old task-dispatch surface. The per-task and `--all` dispatches live at `deviate micro run <task-id>` and `deviate micro run --all`; the former `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` flags were removed from `deviate run` and remain available on `deviate micro run`.
 
 #### `deviate micro run [task-id]` / `deviate micro run --all`
 
@@ -1107,30 +1074,20 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-explore` | Context Scanner (Cheap) | `specs/{FEATURE_SLUG}/explore.md` | `deviate feature create`, `deviate explore pre/post` | 6 steps: feature create, constitution validate, bucket allocate, codebase scan, write explore.md, commit |
 | `/deviate-research` | Architect (Expensive) | `specs/{FEATURE_SLUG}/design.md`, `data-model.md` | `deviate research pre/post` | 5 steps: read explore.md, analyze options, produce design.md, produce data-model.md, commit |
 | `/deviate-prd` | Product Owner Proxy | `specs/{FEATURE_SLUG}/prd.md` | `deviate prd pre/post` | 4 steps: read design.md, synthesize requirements, write prd.md, commit |
-| `/deviate-shard` | Decomposition Engine | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}-*.md` | `deviate shard pre/post` | 5 steps: read prd.md, identify vertical slices, validate granularity, create issue stubs (with Gherkin AC, user stories, edge cases), register in ledger |
-| `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation (spec-enriched with Gherkin), ledger registration, commit |
-| **[HITL GATE 2]** | Human Reviewer | --- | --- | Review all sharded issues for completeness and edge cases before `/deviate-plan` proceeds |
-| `/deviate-plan` **← NEW** | Localized Researcher | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/plan.md` | `deviate plan pre/post` (planned) | 4 steps: read spec-enriched issue, scan current codebase, analyze prior issues, produce plan.md with implementation strategy |
-| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume spec-enriched issue + plan.md, decompose into tasks, assign execution modes, encode DAG deps, append terminal E2E task, validate granularity + commit |
-| `/deviate-pr` | Release Engineer | GitHub PR | `deviate pr pre/run` | 3 steps: gather git state, derive PR metadata, create PR via `gh pr create` |
+| `/deviate-shard` | Decomposition Engine | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}-*.md` | `deviate shard pre/post` | 5 steps: read prd.md, identify vertical slices, validate granularity, create issue stubs with `AO-NNN` acceptance outlines (no Gherkin), register in ledger. PRD/Shard/Adhoc halt with `GHERKIN_LEAK_DETECTED` on bold `**Given**`/`**When**`/`**Then**`; final Gherkin belongs to Plan. |
+| `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation (acceptance outline; no Gherkin), ledger registration, commit, Gherkin-leak guard |
+| **[HITL GATE 2]** | Human Reviewer (post-Tasks) | --- | `deviate meso approve` | Review `plan.md` + `tasks.md` together after Tasks commits. `deviate meso approve --issue <id> --plan <path> --tasks <path>` records SHA-256 hashes for both artifacts; Micro fails closed on `HITL_GATE_2_APPROVAL_REQUIRED`/`STALE`. Moved from after Shard to after Tasks so the human reviews the current-code-informed contract and its decomposition together. |
+| `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
+| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes, encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` stops at `AWAITING_HITL_GATE_2`. |
 | `/deviate-walkthrough` | Architectural Walkthrough Guide | (none — conversation only) | `deviate walkthrough pre/post` | 5 steps: gather, sweep, curate, walk (conversational), synthesize |
 
-> **Deprecation Notice:** `/deviate-specify` is deprecated as a standalone step. Shard
-> now produces issues with full spec-level detail (Gherkin AC, user stories, edge cases).
-> The `/deviate-specify` skill remains for backward compatibility but redirects to the
-> new workflow. This is part of the Meso-Layer Restructuring (ADHOC-003).
+> **Deprecation Notice:** `/deviate-specify` is deprecated as a standalone acceptance-authoring step. Shard now emits issues carrying `AO-NNN` acceptance outlines only; Plan authors the current-code-informed Gherkin contract. The `/deviate-specify` skill remains for backward compatibility but redirects to the new workflow (Plan owns Gherkin). This replaces the older "Meso-Layer Restructuring (ADHOC-003)" wording that placed spec detail in Shard.
 
 **Session Continuity Strategy:**
-- **Macro layer** (explore -> research -> prd -> shard+specify): Sequential CLI invocations,
-  each persisting session to `.deviate/session.json`. Phase transitions validated by
-  `SessionState`. Shard now produces spec-enriched issue files (no separate specify step).
-- **Meso layer** (`/deviate-plan` -> `/deviate-tasks`): Single continuous LLM session per issue.
-  The system prompt, tool definitions, issue content, and `constitution.md` form a stable
-  prefix cached after turn 1.
-- **Micro layer** (RED -> GREEN -> JUDGE -> REFACTOR): Task execution reuses
-  the same in-process state via `force_transition_to()`. The `deviate run <task-id>` command
-  dispatches through the full cycle programmatically.
-
+- **Macro layer** (explore -> research -> prd -> shard): Sequential CLI invocations, each persisting session to `.deviate/session.json`. Phase transitions validated by `SessionState`. Shard now emits issue outlines only; final Gherkin lands in Plan.
+- **Meso layer** (`/deviate-plan` -> `/deviate-tasks`): Single continuous LLM session per issue. The system prompt, tool definitions, issue content, and `constitution.md` form a stable prefix cached after turn 1. Tasks now reads the authoritative `plan.md` Acceptance Contract rather than the issue's own Gherkin.
+- **Gate 2 (post-Tasks):** `deviate meso approve` records SHA-256 hashes of `plan.md` + `tasks.md` against the active issue. Micro fails closed when approval is missing or stale.
+- **Micro layer** (RED -> GREEN -> JUDGE -> REFACTOR): Task execution reuses the same in-process state via `force_transition_to()`. Dispatch through `deviate micro run <task-id>` or `deviate micro run --all` after Gate 2 approval.
 ---
 
 ### 3. Issue & Task Status Models

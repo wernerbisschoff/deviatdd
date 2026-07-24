@@ -246,6 +246,34 @@ class TestAdhocPost:
         assert result.exit_code == 0
         assert "COMPLETED" in result.stdout
 
+    def test_post_rejects_gherkin_leak_in_issue(self, tmp_path: Path) -> None:
+        manifest_id = "adhoc-test-002"
+        specs = tmp_path / "specs"
+        issue = specs / "adhoc" / "issues" / "002-demo.md"
+        issue.parent.mkdir(parents=True)
+        issue.write_text(
+            "## Acceptance Outline\n- **AO-002**: Demo succeeds.\n"
+            "- **Given** configured\n- **When** run\n- **Then** success\n"
+        )
+        (specs / "adhoc.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": manifest_id,
+                    "description": "Demo",
+                    "execution_mode": "DIRECT",
+                    "status": "PENDING",
+                    "source_file": "specs/adhoc/issues/002-demo.md",
+                }
+            )
+            + "\n"
+        )
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["adhoc", "post", manifest_id])
+
+        assert result.exit_code == 1, result.output
+        assert "GHERKIN_LEAK_DETECTED" in result.output
+
     def test_post_missing_manifest(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["adhoc", "post", "nonexistent-id"])

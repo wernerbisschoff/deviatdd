@@ -6,11 +6,11 @@ Version: 0.7.0
 
 ## 1. Architectural Principles
 
-- **Four-Layer Architecture**: Product (optional cross-product framing: Flows → Architecture → Release), Macro (feature scoping: Explore → Research → PRD → Shard+Specify), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). The Product layer is skipped in single-feature repos; the remaining three layers have strict phase gates — no layer may be skipped.
+- **Four-Layer Architecture**: Product (optional cross-product framing: Flows → Architecture → Release), Macro (feature scoping: Explore → Research → PRD → Shard), Meso (issue engineering: Plan → Tasks → HITL Gate 2), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Macro PRD/shard/adhoc artifacts carry acceptance outlines; Plan owns the finalized Gherkin Acceptance Contract. The Product layer is skipped in single-feature repos; the remaining three layers have strict phase gates — no layer may be skipped.
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl`, `tasks.jsonl`, and `flows.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing.
 - **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
 - **Micro-Layer Scope**: GREEN phase writes only to `src/` and permitted implementation paths. Any mutation outside this allow-list is flagged by the JUDGE phase as a scope violation.
-- **Human-in-the-Loop (HITL)**: Three mandatory gates (Design Approval after research, Contract Sign-Off after shard, Final Merge Audit after micro) prevent autonomous drift. No gate may be programmatically bypassed.
+- **Human-in-the-Loop (HITL)**: Three mandatory gates (Design Approval after research, Implementation Contract Sign-Off after plan + tasks, Final Merge Audit after micro) prevent autonomous drift. Gate 2 approval is bound to the exact reviewed `plan.md` and `tasks.md` hashes; Micro fails closed without a current approval. No gate may be programmatically bypassed.
 - **Session Continuity**: Micro-layer tasks reuse a single LLM session across RED → GREEN → REFACTOR phases. Model switching mid-task is prohibited.
 - **Model Tiering**: V4 Flash for high-frequency phases (RED, GREEN, REFACTOR, `/explore`); V4 Pro for compliance and planning (JUDGE, `/plan`); Qwen 3.7+ for architecture (`/research`, `/prd`, `/shard`). This tiering is enforced via `.deviate/config.toml` `[models]` section — the `default` key sets the fallback model, and per-phase keys override it.
 - **Config-Driven Model Routing**: Phase→model assignments are declared in `.deviate/config.toml` under `[models]`. The `default` key sets the model for all phases without an explicit entry. Any other key (e.g., `judge`, `plan`, `red`) is treated as a phase name. Resolution order: phase-specific key → `default` key → no model flag (backend-native default). Both `opencode` and `droid` backends support `--model`; `claude` backend ignores model config silently.
@@ -81,14 +81,15 @@ Version: 0.7.0
 
 ## 5. Definition of Done
 
-- [ ] Code implemented (satisfies acceptance criteria from `spec.md`)
+- [ ] Code implemented (satisfies assigned `AC-PLAN-NNN` scenarios from `plan.md`)
 - [ ] Tests passing (pytest with clean exit code 0)
 - [ ] Lint passing (ruff check with no violations)
-- [ ] Judge phase passed (git diff validated against `spec.md` invariants)
+- [ ] Judge phase passed (git diff validated against the authoritative plan acceptance contract)
 - [ ] E2E tests passing (if applicable; bats for CLI integration)
-- [ ] Documentation updated (`spec.md` and `design.md` reflect final implementation; `explore.md` lives inside the numbered epic directory at `specs/{NNN}-<slug>/explore.md` after `deviate research pre`, alongside the design and data-model artifacts)
+- [ ] Documentation updated (`plan.md` Acceptance Contract, `spec.md`, and `design.md` reflect final implementation; `explore.md` lives at `specs/{NNN}-<slug>/explore.md` after `deviate research pre`, alongside design and data-model artifacts)
 - [ ] CHANGELOG.md updated under `[Unreleased]` for user-visible changes (new commands/flags, behavior changes, user-affecting bug fixes, breaking changes, new user-visible dependencies); docs-only, test-only, CI/tooling, and behavior-preserving refactors are exempt
 - [ ] No governance violations (constitution rules upheld, no HITL gates bypassed)
+- [ ] HITL Gate 2 approval matches the exact reviewed `plan.md` and `tasks.md` hashes before Micro execution
 - [ ] Committed with conventional message format (`test:`, `feat:`, `refactor:`, `docs:`)
 
 ## 6. Version History

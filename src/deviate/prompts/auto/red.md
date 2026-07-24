@@ -43,12 +43,13 @@ permanently after 2 attempts.**
 </task_content>
 
 <spec_content>
+The `<authoritative_acceptance_contract source="plan.md">` block is authoritative. The `<macro_issue_intent>` block supplies scope and lineage only; ignore any legacy Gherkin it may contain.
 {spec_content}
 </spec_content>
 
 <traceability_mandates>
-1. **Verbatim Objective Verification**: Extract the target `{TASK_ID}` defined inside the `tasks.md` state array. Trace this element directly back to its upstream declaration inside `specs/{FEATURE_SLUG}/spec.md`.
-2. **Gherkin Acceptance Expansion**: The generated test architecture must translate the functional criteria (`FR-[ID]`) and acceptance bounds (`AC-[ID]`) of the requirement into explicit Given/When/Then scenario blocks within the test runner assertions.
+1. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in tasks.md and the plan acceptance contract.
+2. **Gherkin Execution**: Translate only the assigned `AC-PLAN-NNN` Given/When/Then scenarios into observable failing tests; preserve AO and upstream FR/AC lineage.
 3. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Implement sociable component orchestration paths over solitary configurations. Restrict mocking structures exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (e.g., system epoch timers, cryptographic entropy paths).
 4. **Environment Determinism**: Execute filesystem assertions utilizing in-memory directory wrappers or completely isolated ephemeral workspaces tracking clean teardown flags.
 </traceability_mandates>

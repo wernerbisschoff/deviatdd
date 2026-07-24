@@ -20,7 +20,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 3. **Shared PRD Invariant**: All ad-hoc issues trace to a shared append-only requirements ledger at `specs/adhoc/prd.md`. If the file does not exist, initialize it. Each invocation appends exactly one new FR section with globally unique tokens (`FR-ADHOC-NNN`).
 4. **Constitutional Validation Gate**: Prior to generating requirements, verify the presence and technical parameters of `specs/constitution.md`. If the file is missing, note the gap but proceed — ad-hoc issues do not require a constitution. If present, every requirement must comply.
 5. **Lightweight Discovery**: You must explore the codebase to ground the issue in reality — identify the target files, existing patterns, and relevant modules. This is NOT the full 3-subagent explore phase. Use the codebase-index MCP tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) as the primary discovery path; verify the index is current via `index_status` before depending on it. Reserve `grep`, `glob`, `ls`, and `read` for last-mile regex patterns, dotfiles gitignored from the index, and other cases the index cannot answer.
-6. **Context Packaging Invariant**: The generated issue must programmatically inject: the precise entities it mutates, explicit boundaries of what it must NOT do (Defensive Exclusions), upstream requirement tokens, acceptance criteria in Gherkin syntax, and a copy-pasteable verification command block.
+6. **Context Packaging Invariant**: The generated issue must inject precise entities, Defensive Exclusions, upstream tokens, implementation-independent `AO-NNN` acceptance outlines, and a verification command blueprint. **Named anti-pattern — Gherkin leakage:** macro artifacts MUST NOT contain bold `**Given**` / `**When**` / `**Then**`; halt with `GHERKIN_LEAK_DETECTED` if detected. Final Gherkin belongs to `/deviate-plan`.
 7. **Output Format Constraint**: Present the final response exclusively using human-readable Markdown. Do not wrap output in XML boundaries. Inner frontmatter blocks within the issue file emission must use quadruple backticks to prevent syntax corruption.
 8. **Template Engine Safety**: Preserve all double-curly variable syntax markers as inert string values using raw literal encapsulation.
 9. **Local Issue Registry Invariant**: After generating the issue, register it in `specs/issues.jsonl` via the issues ledger script --type adhoc. The issue is NOT complete until it appears in the ledger.
@@ -71,12 +71,12 @@ CRITICAL INSTRUCTION INVARIANTS:
        - **Inputs/Outputs**: [Typed inputs and expected outputs]
        - **User Stories**:
          1. US-NNN-01: As a [user role], I want [capability] so that [value]
-       - **Acceptance Criteria**:
-         1. AC-ADHOC-NNN-01: Given [state], When [trigger], Then [assertion]
-         2. AC-ADHOC-NNN-02: Given [state], When [trigger], Then [assertion]
+       - **Acceptance Outline**:
+         1. AC-ADHOC-NNN-01 / AO-NNN: [Observable happy-path outcome]
+         2. AC-ADHOC-NNN-02 / AO-NNN: [Observable error or boundary outcome]
        ```
 
-5. **Issue File Generation**: Write the spec-enriched issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md`. The issue must contain `## User Stories Ledger`, `## ATDD Acceptance Criteria`, `## Edge Cases and Boundaries`, and `## Performance Constraints` sections in the same order as the shard canonical format (see `src/deviate/prompts/commands/deviate-shard.md`). The slug is derived from the user's description (kebab-case, max 40 chars). The YAML frontmatter MUST include `flow_refs: [FLOW-XX, ...]` populated from step 3.5 (explicit `--flow-ref` override wins over inferred mapping). Emit `flow_refs: []` for enabling/infrastructure tasks that touch zero Product-layer flows, or when `specs/_product/` is missing, or when no flow match could be inferred.
+5. **Issue File Generation**: Write the issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md`. It must contain `## User Stories Ledger`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
 
 6. **Ledger Registration**: Append exactly ONE newline-delimited JSON record to `specs/issues.jsonl`. The record MUST use this exact `IssueRecord` schema — no extra fields, no alternate names:
 ```json
@@ -106,8 +106,8 @@ Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Use
 ## Requirements Synthesis
 - **FR-ADHOC-NNN**: [One-sentence functional requirement]
 - **US-NNN-01**: As a [user role], I want [capability] so that [value]. *(Ref: FR-ADHOC-NNN)*
-- **AC-ADHOC-NNN-01**: Given [state], When [trigger], Then [assertion]
-- **AC-ADHOC-NNN-02**: Given [state], When [trigger], Then [assertion]
+- **AO-NNN** *(Ref: AC-ADHOC-NNN-01)*: [Observable happy-path outcome]
+- **AO-NNN** *(Ref: AC-ADHOC-NNN-02)*: [Observable error or boundary outcome]
 
 ## Shared PRD Append
 Appended FR-ADHOC-NNN section to `specs/adhoc/prd.md`.
@@ -149,12 +149,13 @@ flow_refs: [FLOW-XX, ...]
 <!-- Canonical format reference: src/deviate/prompts/commands/deviate-shard.md -->
 - **US-NNN-01**: As a [user role], I want [capability] so that [value]. *(Ref: FR-ADHOC-NNN)*
 
-## ATDD Acceptance Criteria
+## Acceptance Outline
 <!-- Canonical format reference: src/deviate/prompts/commands/deviate-shard.md -->
-**Scenario NNN**: [Scenario title]
-**Given** [precondition]
-**When** [trigger action]
-**Then** [expected outcome]
+- **AO-NNN** *(Ref: AC-ADHOC-NNN-01, US-NNN-01)*: [Observable outcome]
+  - **Happy Path**: [Successful result]
+  - **Error Category**: [Failure behavior]
+  - **Boundary Category**: [Important boundary]
+<!-- `**Given**` / `**When**` / `**Then**` are forbidden here. -->
 
 ## Edge Cases and Boundaries
 <!-- Canonical format reference: src/deviate/prompts/commands/deviate-shard.md -->

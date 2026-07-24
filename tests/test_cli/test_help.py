@@ -179,22 +179,23 @@ def test_help_meso_row_pins_literal_invocation():
 
 
 def test_help_run_docstring_promotes_full_pipeline():
-    """The ``run`` row in --help must lead with the full-pipeline
-    invocation so first-timers discover it as the canonical entry point.
+    """The ``run`` row in --help must surface the Gate 2 handoff so
+    first-timers know to use ``deviate meso approve`` after TASKS and
+    then ``deviate micro run --all`` for execution.
 
-    `deviate run` is now an orchestrator that runs ``deviate meso run``
-    followed by ``deviate micro run --all`` in the created worktree;
-    it does not take a task-id argument. The old per-task / ``--all``
-    dispatcher lives at ``deviate micro run`` now.
+    ``deviate run`` is now a meso→Gate 2 handoff: it runs the meso
+    pipeline (SPECIFY setup → PLAN → TASKS) inside the created worktree
+    and then halts at HITL Gate 2. The per-task / ``--all`` dispatcher
+    lives at ``deviate micro run``.
     """
     output = _help_output()
-    assert "Use `deviate run`" in output, (
-        "Expected the literal 'Use `deviate run`' string in --help. "
-        "The 'run' row must lead with the full-pipeline invocation."
+    panel = _panel_block(output, USER_PANEL)
+    assert "Gate 2" in panel or "HITL" in panel, (
+        "Expected the run row to mention Gate 2 so first-timers know "
+        "the command stops for human approval before micro runs."
     )
-    assert "`deviate micro run`" in output, (
-        "Expected the docstring to mention `deviate micro run` so "
-        "operators know where the per-task / --all dispatcher moved."
+    assert "Prepare" in panel and "TASKS" in panel, (
+        "Expected the run row to describe the meso→TASKS handoff."
     )
 
 
