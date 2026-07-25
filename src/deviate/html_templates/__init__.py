@@ -251,6 +251,47 @@ body {
     outline-offset: 2px;
 }
 
+/* --- 5b. Reading-progress bar (top of viewport) ----------------------- */
+/* Pure CSS, scroll-driven. On browsers without animation-timeline the
+   bar shows its track only (no fill animation); modern Chrome / Edge /
+   Firefox 138+ / Safari 26+ animate the gradient fill as the reader
+   scrolls the document. Subtle, accent-driven, respects
+   prefers-reduced-motion (keyframes disabled by the global override).  */
+.reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    z-index: 200;
+    background: var(--ink-4);
+    pointer-events: none;
+}
+.reading-progress::after {
+    content: "";
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg,
+                                var(--accent-flow),
+                                var(--accent-ac),
+                                var(--accent-fr),
+                                var(--accent-go));
+    transform-origin: left center;
+    transform: scaleX(0);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent-flow) 50%, transparent);
+}
+@supports (animation-timeline: scroll(root)) {
+    .reading-progress::after {
+        animation: reading-progress-grow linear forwards;
+        animation-timeline: scroll(root);
+    }
+    @keyframes reading-progress-grow {
+        from { transform: scaleX(0); }
+        to   { transform: scaleX(1); }
+    }
+}
+
 /* --- 6. Headings & section structure ---------------------------------- */
 h1, h2, h3, h4, h5, h6 {
     margin: 2.25rem 0 0.85rem;
