@@ -2874,21 +2874,37 @@ def Console() -> MagicMock:  # noqa: N802
 class TestCommitPhaseConventionFormatting:
     """Verify _commit_phase applies format_commit_message before git commit."""
 
-    def test_commit_phase_prepends_emoji_when_repo_uses_emojis(
-        self, tmp_git_repo: Path
-    ) -> None:
-        """When the repo has emoji commits, _commit_phase formats the message."""
-        from deviate.cli.micro import _commit_phase
+    @staticmethod
+    def _seed_emoji_convention(tmp_git_repo: Path) -> None:
+        """Declare an emoji convention via CONTRIBUTING.md.
 
-        # Seed git history with an emoji commit so detect_uses_emojis returns True
-        seed = tmp_git_repo / "seed.txt"
-        seed.write_text("seed", encoding="utf-8")
-        subprocess.run(["git", "add", "seed.txt"], cwd=tmp_git_repo, env=_git_env())
+        Replaces the older "seed a single emoji commit" approach, which
+        no longer activates ``detect_uses_emojis`` because git history
+        is intentionally not consulted (see ``core/convention.py``).
+        """
+        contributing = tmp_git_repo / "CONTRIBUTING.md"
+        contributing.write_text(
+            "# Contributing\n\nUse gitmoji: \u2728 for features.\n",
+            encoding="utf-8",
+        )
         subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
+            ["git", "add", "CONTRIBUTING.md"],
             cwd=tmp_git_repo,
             env=_git_env(),
         )
+        subprocess.run(
+            ["git", "commit", "-m", "docs: add contributing guide"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+
+    def test_commit_phase_prepends_emoji_when_contributing_md_declares_emojis(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """When CONTRIBUTING.md declares emoji, _commit_phase formats the message."""
+        from deviate.cli.micro import _commit_phase
+
+        self._seed_emoji_convention(tmp_git_repo)
 
         # Create a new file so _commit_phase has something to commit
         new_file = tmp_git_repo / "impl.py"
@@ -2904,13 +2920,50 @@ class TestCommitPhaseConventionFormatting:
             text=True,
             env=_git_env(),
         )
-        assert log.stdout == "✨ feat(T001): add implementation"
+        assert log.stdout == "\u2728 feat(T001): add implementation"
 
     def test_commit_phase_leaves_plain_message_when_no_emoji_convention(
         self, tmp_git_repo: Path
     ) -> None:
-        """When the repo has no emoji commits, _commit_phase passes message as-is."""
+        """Without CONTRIBUTING.md declaring emoji, _commit_phase passes the message as-is."""
         from deviate.cli.micro import _commit_phase
+
+        new_file = tmp_git_repo / "impl.py"
+        new_file.write_text("x = 1\n", encoding="utf-8")
+
+        result = _commit_phase("feat(T001): add implementation", tmp_git_repo)
+
+        assert result is True
+        log = subprocess.run(
+            ["git", "log", "-1", "--pretty=format:%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert log.stdout == "feat(T001): add implementation"
+
+    def test_commit_phase_does_not_prepend_emoji_from_git_history_alone(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """Regression: an emoji in git history alone must NOT trigger prefixing.
+
+        Pins the contract that ``detect_uses_emojis`` is opt-in via
+        CONTRIBUTING.md. Pre-fix, a stray emoji commit anywhere in
+        history would cascade into every future deviate commit
+        (self-perpetuating loop), even when the project never declared
+        the convention.
+        """
+        from deviate.cli.micro import _commit_phase
+
+        seed = tmp_git_repo / "seed.txt"
+        seed.write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "add", "seed.txt"], cwd=tmp_git_repo, env=_git_env())
+        subprocess.run(
+            ["git", "commit", "-m", "\u2728 feat: seed"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
 
         new_file = tmp_git_repo / "impl.py"
         new_file.write_text("x = 1\n", encoding="utf-8")
@@ -2930,17 +2983,10 @@ class TestCommitPhaseConventionFormatting:
     def test_commit_phase_red_phase_test_uses_siren_emoji(
         self, tmp_git_repo: Path
     ) -> None:
-        """RED-phase `test:` commit routed through _commit_phase uses 🚨."""
+        """RED-phase `test:` commit routed through _commit_phase uses \U0001f6a8."""
         from deviate.cli.micro import _commit_phase
 
-        seed = tmp_git_repo / "seed.txt"
-        seed.write_text("seed", encoding="utf-8")
-        subprocess.run(["git", "add", "seed.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        self._seed_emoji_convention(tmp_git_repo)
 
         new_file = tmp_git_repo / "red_test.py"
         new_file.write_text("x = 1\n", encoding="utf-8")
@@ -2960,7 +3006,7 @@ class TestCommitPhaseConventionFormatting:
             text=True,
             env=_git_env(),
         )
-        assert log.stdout == "🚨 test(T001): RED phase - failing test"
+        assert log.stdout == "\U0001f6a8 test(T001): RED phase - failing test"
 
 
 class TestSummarizeTimeoutContextFallback:
