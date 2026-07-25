@@ -289,3 +289,130 @@ def test_top_level_run_exits_when_worktree_missing(tmp_git_repo: Path) -> None:
         f"Error message should mention the missing path; got: {result.output}"
     )
     mock_run_all.assert_not_called()
+
+
+def test_meso_approve_resolves_defaults_from_session_and_ledger(
+    tmp_git_repo: Path,
+) -> None:
+    """Bare ``deviate meso approve`` (no flags) must auto-resolve the active
+    issue from session.json plus the canonical plan.md/tasks.md paths from
+    the ledger's source_file. Without this, the AWAITING_HITL_GATE_2 banner
+    after ``deviate run`` is misleading — users hit 'Missing option --issue'
+    if they paste the bare command from muscle memory.
+    """
+    from deviate.state.config import SessionState
+
+    dot_dir = tmp_git_repo / ".deviate"
+    dot_dir.mkdir()
+    SessionState(current_phase="TASKS", active_issue_id="ISS-002").save(
+        dot_dir / "session.json"
+    )
+
+    artifact_dir = tmp_git_repo / "specs" / "demo" / "issue"
+    (tmp_git_repo / "specs").mkdir()
+    (tmp_git_repo / "specs" / "issues.jsonl").write_text(
+        '{"issue_id":"ISS-002","type":"feature","title":"Bare approve",'
+        '"status":"BACKLOG","source_file":"specs/demo/issues/issue.md",'
+        '"timestamp":"2026-01-01T00:00:00Z"}\n'
+    )
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "plan.md").write_text(
+        "## Acceptance Contract\n"
+        "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+        "- **Source Outline**: AO-001\n"
+        "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+        "- **Current-Code Evidence**: src/demo.py:run\n"
+        "- **Given**: A configured repository\n"
+        "- **When**: The command runs\n"
+        "- **Then**: It succeeds\n"
+    )
+    (artifact_dir / "tasks.md").write_text(
+        "# Implementation Tasks\n\n- TSK-002-01: Implement bare approve path\n"
+    )
+
+    with chdir(tmp_git_repo):
+        # No --issue, --plan, --tasks. Interactive prompt is bypassed via --yes.
+        result = runner.invoke(cli, ["meso", "approve", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert "HITL_GATE_2_APPROVED" in result.output, result.output
+    session = SessionState.load(dot_dir / "session.json")
+    assert session.hitl_gate_2_approved_issue_id == "ISS-002"
+    assert session.hitl_gate_2_plan_path == str(
+        (artifact_dir / "plan.md").resolve().relative_to(tmp_git_repo.resolve())
+    )
+    assert session.hitl_gate_2_tasks_path == str(
+        (artifact_dir / "tasks.md").resolve().relative_to(tmp_git_repo.resolve())
+    )
+    assert session.hitl_gate_2_plan_sha256
+    assert session.hitl_gate_2_tasks_sha256
+
+
+def test_meso_approve_yes_skips_confirmation_prompt(tmp_git_repo: Path) -> None:
+    """``--yes`` must skip the typer.confirm prompt so callers can script
+    approval without piping stdin. Negative input would normally cancel —
+    verify it is ignored entirely when --yes is set.
+    """
+    from deviate.state.config import SessionState
+
+    dot_dir = tmp_git_repo / ".deviate"
+    dot_dir.mkdir()
+    SessionState(current_phase="TASKS", active_issue_id="ISS-003").save(
+        dot_dir / "session.json"
+    )
+
+    artifact_dir = tmp_git_repo / "specs" / "demo" / "issue"
+    (tmp_git_repo / "specs").mkdir()
+    (tmp_git_repo / "specs" / "issues.jsonl").write_text(
+        '{"issue_id":"ISS-003","type":"feature","title":"Yes skip",'
+        '"status":"BACKLOG","source_file":"specs/demo/issues/issue.md",'
+        '"timestamp":"2026-01-01T00:00:00Z"}\n'
+    )
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "plan.md").write_text(
+        "## Acceptance Contract\n"
+        "**Scenario AC-PLAN-001: Valid input succeeds**\n"
+        "- **Source Outline**: AO-001\n"
+        "- **Upstream Traceability**: FR-001-DEMO, AC-001-DEMO-01\n"
+        "- **Current-Code Evidence**: src/demo.py:run\n"
+        "- **Given**: A configured repository\n"
+        "- **When**: The command runs\n"
+        "- **Then**: It succeeds\n"
+    )
+    (artifact_dir / "tasks.md").write_text(
+        "# Implementation Tasks\n\n- TSK-003-01: Skip prompt via --yes\n"
+    )
+
+    with chdir(tmp_git_repo):
+        # Explicitly feed "n" to the prompt — must be ignored when --yes is set.
+        result = runner.invoke(
+            cli,
+            ["meso", "approve", "--issue", "ISS-003", "--yes"],
+            input="n\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "HITL_GATE_2_APPROVED" in result.output, result.output
+    assert "HITL_GATE_2_NOT_APPROVED" not in result.output
+
+
+def test_meso_approve_bare_with_no_active_issue_fails_loudly(
+    tmp_git_repo: Path,
+) -> None:
+    """When neither --issue nor session.json has an active issue, surface a
+    helpful error rather than Typer's generic 'Missing option --issue'.
+    """
+    from deviate.state.config import SessionState
+
+    dot_dir = tmp_git_repo / ".deviate"
+    dot_dir.mkdir()
+    SessionState(current_phase="IDLE").save(dot_dir / "session.json")
+
+    (tmp_git_repo / "specs").mkdir()
+    (tmp_git_repo / "specs" / "issues.jsonl").write_text("")
+
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, ["meso", "approve", "--yes"])
+
+    assert result.exit_code == 1, result.output
+    assert "HITL_GATE_2_NO_ACTIVE_ISSUE" in result.output, result.output

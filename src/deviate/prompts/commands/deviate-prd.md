@@ -192,6 +192,19 @@ Write an execution manifest JSON to `plan_target` (absolute path from the contra
 ```
 </step>
 
+<step id="html_artifact">
+**HTML Artifact — Author the human-review page.** After writing `prd.md`, the PRD's HTML counterpart must exist for HITL review. The HTML body is authored by you (the agent), NOT auto-translated from markdown.
+
+Run the CLI to emit an empty starter scaffold next to the markdown source:
+```bash
+deviate html prd
+```
+
+Open the resulting `prd.html` and author its body from `prd.md`: structure the value proposition, in-scope boundaries, FR tables, decision readiness, and clarification log into the HTML page. The starter only contains section anchors and `TODO` placeholders — fill them in from the markdown content. Use HTML's full surface (diagrams, structured tables, callout blocks) where it expresses the contract more clearly than markdown.
+
+The HTML file is NOT committed by the post-script. Add it to the same commit via your host agent's git tooling, alongside `prd.md`.
+</step>
+
 <step id="post_script">
 CRITICAL INVARIANT: Do NOT run `git add` or `git commit` at any point before this step. The post-script is the sole commit authority; intervening commits will produce duplicate commits.
 

@@ -31,7 +31,7 @@ from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
 from deviate.cli.walkthrough import walkthrough_app
-from deviate.cli._render import render_app
+from deviate.cli._html import html_app
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
 
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
@@ -1078,10 +1078,10 @@ cli.add_typer(
     help="Micro: drain the task queue (single or --all) inside a worktree",
 )
 cli.add_typer(
-    render_app,
-    name="render",
+    html_app,
+    name="html",
     rich_help_panel=_USER_PANEL,
-    help="Render spec markdown to HTML (plan, prd, flows). Auto-renders on post for plan/prd.",
+    help="Write per-phase HTML starter scaffolds (plan, prd, flows, architecture, domain-model). The agent authors the body from the corresponding .md file.",
 )
 
 
@@ -1100,9 +1100,13 @@ def run_command(
 ) -> None:
     """Prepare the next issue through PLAN and TASKS, then stop at HITL Gate 2.
 
-    Review the generated ``plan.md`` and ``tasks.md``, record approval with
-    ``deviate meso approve``, then start implementation explicitly with
-    ``deviate micro run --all`` inside the created worktree.
+    Review the generated ``plan.md`` and ``tasks.md``, then run
+    ``deviate meso approve`` — all flags (``--issue``, ``--plan``,
+    ``--tasks``) auto-resolve from ``.deviate/session.json`` and the
+    ledger, so a bare ``deviate meso approve`` is enough. Use ``--yes``
+    to skip the interactive confirmation prompt. After approval, kick off
+    implementation with ``deviate micro run --all`` inside the created
+    worktree.
     """
     worktree_path_str = _meso_run(issue_id=issue, force=force)
     if not worktree_path_str:
@@ -1123,6 +1127,8 @@ def run_command(
     console.print("[bold yellow]AWAITING_HITL_GATE_2[/]")
     console.print(f"Review plan.md and tasks.md in {worktree_path}")
     console.print(
-        "Then run `deviate meso approve --issue <ISSUE_ID> --plan <plan.md> "
-        "--tasks <tasks.md>` followed by `deviate micro run --all`."
+        "Then run `deviate meso approve` — `--issue`, `--plan`, and "
+        "`--tasks` auto-resolve from .deviate/session.json and the ledger. "
+        "Add `--yes` to skip the confirmation prompt. "
+        "Follow with `deviate micro run --all`."
     )

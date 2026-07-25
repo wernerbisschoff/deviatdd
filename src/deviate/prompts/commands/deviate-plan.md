@@ -64,8 +64,13 @@ CRITICAL INSTRUCTION INVARIANTS:
 
 7. **Acceptance Contract Finalization**: Reconcile every `AO-NNN` against the current codebase evidence gathered above. Emit one or more `AC-PLAN-NNN` scenarios per outline. Every scenario MUST cite `**Source Outline**: AO-NNN`, relevant upstream FR/AC tokens, and current-code evidence, then provide complete bold `**Given**`, `**When**`, and `**Then**` clauses. This `## Acceptance Contract` is the sole authoritative source for Tasks, RED, and JUDGE. If an outline is invalidated or refined, record that decision explicitly rather than preserving contradictory issue-level behavior.
 8. **Generate `plan.md`**: Write the planning document to the issue workspace using the schema below. `deviate plan post` rejects a missing or malformed Acceptance Contract.
-
-9. **Commit `plan.md`**: Run ``deviate plan post``. It validates and commits the plan, then advances to TASKS.
+9. **HTML Artifact — Author the human-review page.** Run the CLI to emit an empty starter scaffold next to the markdown source:
+   ```bash
+   deviate html plan
+   ```
+   The CLI autodetects the active issue from the current `feat/<bucket>/<slug>` branch (or accepts `--issue ISS-NNN-NN`); pass `--force` to overwrite an existing HTML file. Open the resulting `plan.html` and author its body from `plan.md`: structure the plan summary, acceptance contract (with full Given/When/Then scenarios), workstation mapping, implementation strategy, data flow, risk assessment, security profile, and constitutional alignment into the HTML page. The starter only contains section anchors and `TODO` placeholders — fill them in from the markdown content. Use HTML's full surface (matrix tables, diagrams, callout blocks) where it expresses the contract more clearly than markdown.
+   The HTML file is NOT committed by `deviate plan post` (the post-script is markdown-only now). Add it to the same commit via your host agent's git tooling, alongside `plan.md`.
+10. **Commit `plan.md`** + `plan.html`: Run ``deviate plan post``. It validates and commits the plan, then advances to TASKS.
 
 </execution_sequence>
 

@@ -153,3 +153,45 @@ def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
         context=contract,
         constitution_path=constitution_path,
     )
+
+
+# ---------------------------------------------------------------------------
+# Branch → issue resolution (shared by micro, html, future commands)
+# ---------------------------------------------------------------------------
+
+_BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
+
+
+def resolve_issue_id_from_branch(root: Path) -> str | None:
+    """Derive ``issue_id`` from the active git branch via ``issues.jsonl``.
+
+    Returns ``None`` on detached HEAD, non-``feat/`` branches, missing
+    ledger, or no matching record. The branch name must match
+    ``feat/<bucket>/<slug>``; the bucket/slug pair is then resolved to
+    an ``ISS-NNN-NN`` via the append-only ledger.
+    """
+    try:
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    m = _BRANCH_SLUG_RE.match(branch)
+    if not m:
+        return None
+    bucket, slug = m.group(1), m.group(2)
+    target = f"{bucket}/issues/{slug}.md"
+    ledger_path = root / "specs" / "issues.jsonl"
+    if not ledger_path.exists():
+        return None
+    from deviate.state.ledger import _read_ledger
+
+    for rec in _read_ledger(ledger_path):
+        src = rec.get("source_file", "")
+        if src.endswith(target):
+            return rec.get("issue_id")
+    return None
