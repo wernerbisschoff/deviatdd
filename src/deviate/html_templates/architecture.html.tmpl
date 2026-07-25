@@ -168,34 +168,59 @@
   <h2>Component Diagram</h2>
   <div class="callout callout-ready">
     <span class="callout-title">Why HTML beats markdown here</span>
-    Diagrams need to <em>render</em>, not just sit between fences. The terminal can
-    render <code>mermaid</code> blocks when the rendering pipeline supports it, or
-    the agent can swap in a real SVG. <strong>Empty space below is intentional</strong> &mdash;
-    the diagram belongs where the reader expects it.
+    Diagrams need to <em>render</em>, not just sit between fences. The HTML
+    scaffold is offline-first — no JavaScript, no CDN — so any code-block
+    diagram format renders as plain text. Author the diagram as
+    <strong>inline SVG</strong> and it stays portable, diff-friendly, and accessible.
   </div>
 
   <div class="diagram-slot" aria-label="[TODO] Component diagram">
     <span class="label">Component Diagram Slot</span>
-    Embed ONE of:<br>
-    &nbsp;&nbsp;&middot; <code>&lt;pre class="mermaid"&gt; ... &lt;/pre&gt;</code> block<br>
-    &nbsp;&nbsp;&middot; inline SVG with arrows for C1 &rarr; C2 &rarr; C3<br>
-    &nbsp;&nbsp;&middot; ASCII art in <code>&lt;pre&gt;</code> for terminal-rendered output
+    Replace this placeholder with an <code>&lt;svg viewBox="..."&gt;</code> block.
+    Use <code>&lt;rect&gt;</code> for nodes, <code>&lt;line&gt;</code> or <code>&lt;path&gt;</code>
+    for edges, and a <code>&lt;defs&gt;&lt;marker&gt;</code> for arrowheads.
   </div>
 
   <!-- COMPONENT-DIAGRAM COMPONENT -->
   <!--
-       Drop a mermaid block here. Example:
+       Replace the example below with your real graph. The pattern:
+         <svg viewBox="...">                              ← scalable canvas
+         <defs><marker id="arrow">...</marker></defs>    ← arrowhead glyph
+         <g> per node holding <rect> + <text>
+         <line> / <path> for edges with marker-end="url(#arrow)"
 
-       <pre class="mermaid">
-       flowchart LR
-           C1[deviate CLI] --&gt; C2[Subprocess Adapter]
-           C2 --&gt; C3[JSONL Framing]
-           C3 --&gt; C4[Command Sender]
-           C3 --&gt; C5[Event Adapter]
-           C5 --&gt; C6[TUI Renderer]
-       </pre>
+       <svg viewBox="0 0 720 280" role="img" aria-labelledby="cd-title" xmlns="http://www.w3.org/2000/svg">
+         <title id="cd-title">Component Diagram</title>
+         <defs>
+           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                   markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+           </marker>
+           <style>
+             .cd-rect { fill: var(--ink-3); stroke: var(--accent-flow); stroke-width: 1.5; }
+             .cd-text { fill: var(--fg-0); font-family: var(--font-body); font-size: 14px; text-anchor: middle; dominant-baseline: middle; }
+             .cd-edge { fill: none; stroke: var(--accent-flow); stroke-width: 1.5; color: var(--accent-flow); }
+           </style>
+         </defs>
+         <g id="cd-c1">
+           <rect class="cd-rect" x="40" y="100" width="160" height="60" rx="8"/>
+           <text class="cd-text" x="120" y="130">C1 — caller</text>
+         </g>
+         <g id="cd-c2">
+           <rect class="cd-rect" x="280" y="100" width="160" height="60" rx="8"/>
+           <text class="cd-text" x="360" y="130">C2 — boundary</text>
+         </g>
+         <g id="cd-c3">
+           <rect class="cd-rect" x="520" y="100" width="160" height="60" rx="8"/>
+           <text class="cd-text" x="600" y="130">C3 — handler</text>
+         </g>
+         <line class="cd-edge" x1="200" y1="130" x2="280" y2="130" marker-end="url(#arrow)"/>
+         <line class="cd-edge" x1="440" y1="130" x2="520" y2="130" marker-end="url(#arrow)"/>
+       </svg>
+       <figcaption>Replace the three nodes and two edges with your real components.</figcaption>
   -->
 </section>
+
 
 <section id="adrs">
   <h2>Architectural Decision Records <span class="chip chip-draft">context&middot;decision&middot;rationale</span></h2>
