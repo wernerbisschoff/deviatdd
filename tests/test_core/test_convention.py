@@ -86,22 +86,38 @@ class TestDetectUsesEmojis:
         )
         assert detect_uses_emojis(tmp_git_repo) is True
 
-    def test_returns_true_when_git_history_has_emojis(self, tmp_git_repo: Path) -> None:
-        """Recent commit subjects with emoji prefixes trigger detection."""
+    def test_returns_false_when_only_git_history_has_emojis(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """Git history with emoji commits must NOT trigger detection.
+
+        Regression pin: the prior implementation fell back to
+        ``_git_log_has_emojis`` when ``CONTRIBUTING.md`` was silent on
+        emoji, which made the convention self-perpetuating — any single
+        accidental emoji commit locked in emoji forever, regardless of
+        what the project actually documented. ``detect_uses_emojis`` is
+        now strictly opt-in via the convention file; history is never
+        consulted.
+        """
         file_path = tmp_git_repo / "file.txt"
         file_path.write_text("content", encoding="utf-8")
         subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
         subprocess.run(
-            ["git", "commit", "-m", "✨ feat: initial feature"],
+            ["git", "commit", "-m", "\u2728 feat: initial feature"],
             cwd=tmp_git_repo,
             env=_git_env(),
         )
-        assert detect_uses_emojis(tmp_git_repo) is True
+        assert detect_uses_emojis(tmp_git_repo) is False
 
     def test_returns_false_when_contributing_md_has_no_emojis(
         self, tmp_git_repo: Path
     ) -> None:
-        """A CONTRIBUTING.md without emoji characters falls through to history."""
+        """A CONTRIBUTING.md without emoji characters means no convention.
+
+        Without an emoji convention declared in CONTRIBUTING.md (or
+        .commit-convention.md), ``detect_uses_emojis`` returns False
+        regardless of what is in git history.
+        """
         contributing = tmp_git_repo / "CONTRIBUTING.md"
         contributing.write_text(
             "# Contributing\n\nUse conventional commits.\n",
@@ -124,39 +140,48 @@ class TestDetectUsesEmojis:
 
 
 class TestFormatCommitMessage:
-    def test_prepends_emoji_when_repo_uses_emojis(self, tmp_git_repo: Path) -> None:
-        """When the repo uses emoji commits, the correct emoji is prepended."""
-        # Seed git history with an emoji commit
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
+    @staticmethod
+    def _seed_emoji_convention(tmp_git_repo: Path) -> None:
+        """Write a CONTRIBUTING.md that declares an emoji convention.
+
+        Replaces the prior pattern of seeding git history with a single
+        emoji commit. The convention file is now the sole source of
+        truth for ``detect_uses_emojis``; git history is not consulted.
+        """
+        contributing = tmp_git_repo / "CONTRIBUTING.md"
+        contributing.write_text(
+            "# Contributing\n\n"
+            "Use gitmoji: \u2728 for features, \U0001f41b for fixes.\n",
+            encoding="utf-8",
+        )
         subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
+            ["git", "add", "CONTRIBUTING.md"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "docs: add contributing guide"],
             cwd=tmp_git_repo,
             env=_git_env(),
         )
 
+    def test_prepends_emoji_when_repo_uses_emojis(self, tmp_git_repo: Path) -> None:
+        """When CONTRIBUTING.md declares emoji, the correct emoji is prepended."""
+        self._seed_emoji_convention(tmp_git_repo)
+
         result = format_commit_message("feat(T001): add feature", tmp_git_repo)
-        assert result == "✨ feat(T001): add feature"
+        assert result == "\u2728 feat(T001): add feature"
 
     def test_returns_plain_message_when_repo_has_no_emojis(
         self, tmp_git_repo: Path
     ) -> None:
-        """When the repo does not use emoji commits, message is unchanged."""
+        """Without an emoji convention declared, the message is unchanged."""
         result = format_commit_message("feat(T001): add feature", tmp_git_repo)
         assert result == "feat(T001): add feature"
 
     def test_maps_all_standard_types(self, tmp_git_repo: Path) -> None:
-        """Every type in TYPE_EMOJI_MAP is correctly prepended when repo uses emojis."""
-        # Seed with emoji commit
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        """Every type in TYPE_EMOJI_MAP is correctly prepended when emoji convention is set."""
+        self._seed_emoji_convention(tmp_git_repo)
 
         for commit_type, emoji in TYPE_EMOJI_MAP.items():
             msg = f"{commit_type}: some work"
@@ -165,92 +190,50 @@ class TestFormatCommitMessage:
 
     def test_unknown_type_returns_unchanged(self, tmp_git_repo: Path) -> None:
         """A message with an unknown type is returned as-is even with emoji detection."""
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        self._seed_emoji_convention(tmp_git_repo)
 
         result = format_commit_message("custom: some work", tmp_git_repo)
         assert result == "custom: some work"
 
     def test_red_phase_test_uses_siren_emoji(self, tmp_git_repo: Path) -> None:
-        """`test:` commit during RED phase uses 🚨 to flag the failing test."""
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        """`test:` commit during RED phase uses \U0001f6a8 to flag the failing test."""
+        self._seed_emoji_convention(tmp_git_repo)
 
         result = format_commit_message(
             "test(T001): RED phase - failing test", tmp_git_repo, phase="red"
         )
-        assert result == "🚨 test(T001): RED phase - failing test"
+        assert result == "\U0001f6a8 test(T001): RED phase - failing test"
 
     def test_green_phase_test_uses_check_emoji(self, tmp_git_repo: Path) -> None:
-        """`test:` commit during GREEN phase uses ✅ to flag the passing test."""
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        """`test:` commit during GREEN phase uses \u2705 to flag the passing test."""
+        self._seed_emoji_convention(tmp_git_repo)
 
         result = format_commit_message(
             "test(T001): GREEN phase - implementation", tmp_git_repo, phase="green"
         )
-        assert result == "✅ test(T001): GREEN phase - implementation"
+        assert result == "\u2705 test(T001): GREEN phase - implementation"
 
     def test_test_type_without_phase_keeps_default_check_emoji(
         self, tmp_git_repo: Path
     ) -> None:
-        """`test:` commit without phase falls back to TYPE_EMOJI_MAP default (✅)."""
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        """`test:` commit without phase falls back to TYPE_EMOJI_MAP default (\u2705)."""
+        self._seed_emoji_convention(tmp_git_repo)
 
         result = format_commit_message("test(T001): add coverage", tmp_git_repo)
-        assert result == "✅ test(T001): add coverage"
+        assert result == "\u2705 test(T001): add coverage"
 
     def test_non_test_type_ignores_phase(self, tmp_git_repo: Path) -> None:
         """The phase parameter only affects `test:` commits; other types unchanged."""
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        self._seed_emoji_convention(tmp_git_repo)
 
         result = format_commit_message(
             "feat(T001): implementation", tmp_git_repo, phase="red"
         )
-        assert result == "✨ feat(T001): implementation"
+        assert result == "\u2728 feat(T001): implementation"
 
     def test_unknown_phase_falls_back_to_default(self, tmp_git_repo: Path) -> None:
         """An unknown phase value (e.g. 'refactor') falls back to TYPE_EMOJI_MAP."""
-        file_path = tmp_git_repo / "file.txt"
-        file_path.write_text("content", encoding="utf-8")
-        subprocess.run(["git", "add", "file.txt"], cwd=tmp_git_repo, env=_git_env())
-        subprocess.run(
-            ["git", "commit", "-m", "✨ feat: seed"],
-            cwd=tmp_git_repo,
-            env=_git_env(),
-        )
+        self._seed_emoji_convention(tmp_git_repo)
 
         result = format_commit_message(
             "test(T001): some work", tmp_git_repo, phase="refactor"

@@ -477,8 +477,8 @@ Runs setup → Plan → Tasks and stops at `AWAITING_HITL_GATE_2`. The former Mi
     the function proceeds to the commit step instead of short-circuiting.
   - `-m <subject> -m <body> ...` performs the combined commit: `git add -A` picks up
     the staged feature changes, the first `-m` is routed through `format_commit_message`
-    (which detects the project's emoji convention from `CONTRIBUTING.md` /
-    `.commit-convention.md` / git history and prepends the matching gitmoji), and
+    (which detects the project's emoji convention from
+    ``CONTRIBUTING.md`` / ``.commit-convention.md`` and prepends the matching gitmoji),
     remaining `-m` values are passed verbatim as body paragraphs. The `/deviate-merge`
     skill mandates reading the convention file before drafting the subject (see
     `commit_message_generation` Step 0) so the operator can confirm or override the
@@ -521,9 +521,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Description:** Runs `pytest -v` on all test files. Validates the test fails explicitly
   (ASSERTION_FAILURE, not PASS or SYNTAX_ERROR). Appends RED status transition to task
   ledger, forces session to RED, commits with `test({scope}): RED phase - failing test`.
-  Commit messages are convention-aware: when the project uses emoji prefixes (detected via
-  CONTRIBUTING.md or git history), the appropriate emoji is prepended automatically. RED
-  phase `test:` commits are prefixed with 🚨 to flag the failing test (see
+  Commit messages are convention-aware: when the project declares an emoji convention in
+  ``CONTRIBUTING.md`` / ``.commit-convention.md``, the appropriate gitmoji is prepended
+  automatically. RED phase `test:` commits are prefixed with 🚨 to flag the failing test (see
   `format_commit_message(..., phase="red")` in `core/convention.py`); GREEN phase `test:`
   commits use ✅. `feat:` commits always use ✨ regardless of phase.
 
