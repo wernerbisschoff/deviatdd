@@ -11,10 +11,10 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 - **Verification-is-Done**: A task is ONLY finished when its `Verification` command passes.
 - **IMMEDIATE tasks**: Skip the Red/Green cycle. Execute directly then verify.
 
-**Meso Workflow Position**: Shard/Adhoc → Plan → Tasks → [HITL Gate 2] → TDD
+**Meso Workflow Position**: Shard/Adhoc → Plan → Tasks → TDD
 - **Plan** owns the authoritative `## Acceptance Contract`.
-- **Tasks** maps its `AC-PLAN-NNN` scenarios into tasks and stops for joint human review.
-- **TDD** starts only after `deviate meso approve` records approval for exact plan.md/tasks.md hashes.
+- **Tasks** maps its `AC-PLAN-NNN` scenarios into tasks and commits `tasks.md`.
+- **TDD** starts immediately after Tasks commits — no human-approval step.
 
 ### Phase-Specific Invariants
 

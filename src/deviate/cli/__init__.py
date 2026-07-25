@@ -968,7 +968,7 @@ cli.add_typer(
     shard_app,
     name="shard",
     rich_help_panel=_AGENT_PANEL,
-    help="Macro: shard feature into issues (Gate 2)",
+    help="Macro: shard feature into issues",
 )
 cli.add_typer(
     macro_app,
@@ -1061,8 +1061,8 @@ cli.command(name="pr", rich_help_panel=_AGENT_PANEL)(pr)
 cli.command(name="merge", rich_help_panel=_AGENT_PANEL)(merge)
 # `meso run`, `micro run`, and `run` are three distinct entry points:
 #   - `meso run`         — user-facing; SPECIFY → PLAN → TASKS pipeline.
-#   - `micro run`        — drains a Gate-2-approved task queue.
-#   - `run` (this)       — prepares meso artifacts and stops at Gate 2.
+#   - `micro run`        — drains the task queue.
+#   - `run` (this)       — chains meso into micro end-to-end (no Gate 2).
 # `micro run` itself is surfaced as the `micro` Typer group so future
 # micro-layer helpers (e.g. `micro run --task <id>`) can ride along.
 cli.add_typer(
@@ -1098,15 +1098,16 @@ def run_command(
         help="Bypass pre-flight guards (e.g. blocked_by dependencies)",
     ),
 ) -> None:
-    """Prepare the next issue through PLAN and TASKS, then stop at HITL Gate 2.
+    """Prepare the next issue end-to-end and run it.
 
-    Review the generated ``plan.md`` and ``tasks.md``, then run
-    ``deviate meso approve`` — all flags (``--issue``, ``--plan``,
-    ``--tasks``) auto-resolve from ``.deviate/session.json`` and the
-    ledger, so a bare ``deviate meso approve`` is enough. Use ``--yes``
-    to skip the interactive confirmation prompt. After approval, kick off
-    implementation with ``deviate micro run --all`` inside the created
-    worktree.
+    Runs the meso pipeline (SPECIFY setup → PLAN → TASKS) inside the created
+    worktree, then immediately chains into ``deviate micro run --all`` to drain
+    the task queue. There is no human-approval step between meso and micro —
+    the system auto-advances.
+
+    The per-task / ``--all`` dispatcher can also be invoked directly via
+    ``deviate micro run`` if you only want to drain pending tasks without
+    re-running meso.
     """
     worktree_path_str = _meso_run(issue_id=issue, force=force)
     if not worktree_path_str:
@@ -1124,11 +1125,6 @@ def run_command(
         console.print(f"[red]RUN_WORKTREE_MISSING[/] {worktree_path} does not exist")
         raise typer.Exit(code=1)
 
-    console.print("[bold yellow]AWAITING_HITL_GATE_2[/]")
-    console.print(f"Review plan.md and tasks.md in {worktree_path}")
-    console.print(
-        "Then run `deviate meso approve` — `--issue`, `--plan`, and "
-        "`--tasks` auto-resolve from .deviate/session.json and the ledger. "
-        "Add `--yes` to skip the confirmation prompt. "
-        "Follow with `deviate micro run --all`."
-    )
+    # Chain into micro: drain the task queue in the worktree the meso step just
+    # prepared. There is no approval step between meso and micro.
+    _run_all(worktree_path, console)

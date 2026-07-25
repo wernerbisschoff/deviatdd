@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import subprocess
 from collections.abc import Callable
@@ -17,14 +16,15 @@ def _approve_gate2(
     plan_path: str = "plan.md",
     tasks_path: str = "tasks.md",
 ) -> Path:
-    """Seed ``plan.md`` / ``tasks.md`` and stamp session state so the
-    Gate 2 fail-closed check passes. Returns the repo path for chaining.
+    """Seed ``plan.md`` / ``tasks.md`` and stamp the active issue on the session.
 
-    Writes canonical minimal artifacts at the same paths the meso approve
-    command would hash, then ``SessionState.save`` records the exact
-    SHA-256 of the bytes on disk. Tests that exercise the missing or
-    stale-approval branches must NOT call this helper; it exists for
-    tests that intend to actually run the micro TDD cycle.
+    This fixture used to also record ``hitl_gate_2_*`` SHA-256 hashes so the
+    Gate 2 fail-closed check would pass. That hard gate has been removed —
+    the system never blocks on human approval — so this helper now only
+    seeds the canonical artifacts and the active issue. Tests that exercise
+    the legacy approval-stamping path must NOT call this helper; it exists
+    for tests that want the minimum session state needed to drive the micro
+    TDD cycle (active issue + the files RED/GREEN/JUDGE will read).
     """
     plan = Path(repo) / plan_path
     tasks = Path(repo) / tasks_path
@@ -51,11 +51,6 @@ def _approve_gate2(
     dot_dir.mkdir(parents=True, exist_ok=True)
     session = SessionState.load(dot_dir / "session.json")
     session.active_issue_id = issue_id
-    session.hitl_gate_2_approved_issue_id = issue_id
-    session.hitl_gate_2_plan_path = plan_path
-    session.hitl_gate_2_tasks_path = tasks_path
-    session.hitl_gate_2_plan_sha256 = hashlib.sha256(plan.read_bytes()).hexdigest()
-    session.hitl_gate_2_tasks_sha256 = hashlib.sha256(tasks.read_bytes()).hexdigest()
     session.save(dot_dir / "session.json")
     return repo
 
@@ -74,10 +69,12 @@ def approve_gate2() -> Callable[..., Path]:
 
 @pytest.fixture
 def gate2_approved_repo(tmp_git_repo: Path) -> Path:
-    """``tmp_git_repo`` with Gate 2 approval pre-stamped for the default issue.
+    """``tmp_git_repo`` with the canonical plan.md / tasks.md seeded and the
+    active issue stamped on the session. The fixture name is retained for
+    backward compatibility with the existing test suite, but it no longer
+    stamps Gate 2 approval (the hard gate was removed).
 
-    Opt in by listing this fixture alongside ``tmp_git_repo``; tests that
-    exercise the missing/stale-approval paths must skip it.
+    Opt in by listing this fixture alongside ``tmp_git_repo``.
     """
     return _approve_gate2(tmp_git_repo)
 

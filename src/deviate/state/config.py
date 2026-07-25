@@ -259,11 +259,6 @@ class SessionState(BaseModel):
     pending_judge_action: str = ""
     red_commit_sha: str = ""
     pending_judge_feedback: Optional[dict[str, str]] = None
-    hitl_gate_2_approved_issue_id: str = ""
-    hitl_gate_2_plan_path: str = ""
-    hitl_gate_2_tasks_path: str = ""
-    hitl_gate_2_plan_sha256: str = ""
-    hitl_gate_2_tasks_sha256: str = ""
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("current_phase")
@@ -285,12 +280,6 @@ class SessionState(BaseModel):
             judge_rejected=self.judge_rejected,
             pending_judge_action=self.pending_judge_action,
             pending_judge_feedback=self.pending_judge_feedback,
-            hitl_gate_2_approved_issue_id=self.hitl_gate_2_approved_issue_id,
-            hitl_gate_2_plan_path=self.hitl_gate_2_plan_path,
-            hitl_gate_2_tasks_path=self.hitl_gate_2_tasks_path,
-            hitl_gate_2_plan_sha256=self.hitl_gate_2_plan_sha256,
-            hitl_gate_2_tasks_sha256=self.hitl_gate_2_tasks_sha256,
-            timestamp=datetime.now(timezone.utc),
         )
 
     def force_transition_to(self, phase: str) -> SessionState:
@@ -304,12 +293,6 @@ class SessionState(BaseModel):
             judge_rejected=self.judge_rejected,
             pending_judge_action=self.pending_judge_action,
             pending_judge_feedback=self.pending_judge_feedback,
-            hitl_gate_2_approved_issue_id=self.hitl_gate_2_approved_issue_id,
-            hitl_gate_2_plan_path=self.hitl_gate_2_plan_path,
-            hitl_gate_2_tasks_path=self.hitl_gate_2_tasks_path,
-            hitl_gate_2_plan_sha256=self.hitl_gate_2_plan_sha256,
-            hitl_gate_2_tasks_sha256=self.hitl_gate_2_tasks_sha256,
-            timestamp=datetime.now(timezone.utc),
         )
 
     def save(self, path: Path) -> None:

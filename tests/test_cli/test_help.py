@@ -179,23 +179,26 @@ def test_help_meso_row_pins_literal_invocation():
 
 
 def test_help_run_docstring_promotes_full_pipeline():
-    """The ``run`` row in --help must surface the Gate 2 handoff so
-    first-timers know to use ``deviate meso approve`` after TASKS and
-    then ``deviate micro run --all`` for execution.
+    """The ``run`` row in --help must describe the meso→micro chain without
+    mentioning the removed HITL Gate 2 handoff.
 
-    ``deviate run`` is now a meso→Gate 2 handoff: it runs the meso
-    pipeline (SPECIFY setup → PLAN → TASKS) inside the created worktree
-    and then halts at HITL Gate 2. The per-task / ``--all`` dispatcher
-    lives at ``deviate micro run``.
-    """
+    ``deviate run`` chains the meso pipeline (SPECIFY setup → PLAN → TASKS) into
+    micro execution; the per-task / ``--all`` dispatcher lives at ``deviate micro run``.
+    There is no human-approval step between meso and micro — the system auto-advances."""
     output = _help_output()
     panel = _panel_block(output, USER_PANEL)
-    assert "Gate 2" in panel or "HITL" in panel, (
-        "Expected the run row to mention Gate 2 so first-timers know "
-        "the command stops for human approval before micro runs."
+    assert "Gate 2" not in panel, (
+        "Expected the run row to NOT mention Gate 2 — the hard gate was removed."
     )
-    assert "Prepare" in panel and "TASKS" in panel, (
-        "Expected the run row to describe the meso→TASKS handoff."
+    assert "HITL" not in panel, (
+        "Expected the run row to NOT mention HITL — the hard gate was removed."
+    )
+    assert "deviate meso approve" not in panel, (
+        "Expected the run row to NOT mention 'meso approve' — the command is removed."
+    )
+    assert "Prepare" in panel, "Expected the run row to describe what 'run' prepares."
+    assert "end-to-end" in panel or "chain" in panel, (
+        "Expected the run row to describe the meso→micro chain."
     )
 
 

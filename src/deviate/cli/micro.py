@@ -4,7 +4,7 @@ import importlib.resources
 import json
 import os
 import re
-from hashlib import sha256
+
 import subprocess
 import time
 import logging
@@ -4170,34 +4170,6 @@ def _validate_profile(value: str) -> str:
     return value
 
 
-def _require_hitl_gate_2_approval(root: Path, session: SessionState) -> None:
-    issue_id = session.active_issue_id or ""
-    if session.hitl_gate_2_approved_issue_id != issue_id:
-        console.print(
-            "[red]HITL_GATE_2_APPROVAL_REQUIRED[/] review plan.md and tasks.md, "
-            "then run deviate meso approve"
-        )
-        raise typer.Exit(code=1)
-    approved = (
-        (session.hitl_gate_2_plan_path, session.hitl_gate_2_plan_sha256),
-        (session.hitl_gate_2_tasks_path, session.hitl_gate_2_tasks_sha256),
-    )
-    for relative_path, expected_hash in approved:
-        artifact = root / relative_path
-        if not relative_path or not artifact.is_file():
-            console.print(
-                "[red]HITL_GATE_2_APPROVAL_STALE[/] reviewed artifact missing"
-            )
-            raise typer.Exit(code=1)
-        actual_hash = sha256(artifact.read_bytes()).hexdigest()
-        if actual_hash != expected_hash:
-            console.print(
-                f"[red]HITL_GATE_2_APPROVAL_STALE[/] {relative_path} changed "
-                "after approval; re-run deviate meso approve"
-            )
-            raise typer.Exit(code=1)
-
-
 @micro_app.command("run")
 def run_command(
     task_id: str | None = typer.Argument(
@@ -4229,16 +4201,18 @@ def run_command(
     session_path = root / ".deviate" / "session.json"
     agent = _resolve_agent_config(root, agent)
 
-    if not session_path.exists() and not dry_run:
-        console.print(
-            "[red]HITL_GATE_2_APPROVAL_REQUIRED[/] session state is missing; "
-            "run deviate meso approve"
-        )
-        raise typer.Exit(code=1)
+    # Note: HITL Gate 2 (plan/tasks approval) has been removed. Micro runs
+    # as soon as it is invoked; session.json is still loaded for last_command
+    # bookkeeping but is no longer a precondition.
     if session_path.exists():
         session = SessionState.load(session_path)
-        if not dry_run:
-            _require_hitl_gate_2_approval(root, session)
+        cmd_parts = ["micro", "run"]
+        if task_id:
+            cmd_parts.append(task_id)
+        if all_tasks:
+            cmd_parts.append("--all")
+        session.last_command = " ".join(cmd_parts)
+        session.save(session_path)
         cmd_parts = ["micro", "run"]
         if task_id:
             cmd_parts.append(task_id)
