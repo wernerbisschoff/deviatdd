@@ -193,12 +193,8 @@ request explicit user approval before committing. Silence is not
 sign-off; if the user asks for revisions, return to step 3. See
 invariant 9 for the full Phase B protocol.
 
-## 6. HTML Artifact — Author the human-review page
-Run the CLI to emit an empty starter scaffold next to the flows index:
-```bash
-deviate html flows
-```
-Open `specs/_product/flows/index.html` and author its body from `index.md`: structure the flow catalog, per-flow detail (actor / trigger / happy path / failure modes / outcomes / trace), flow diagrams, and coverage map. The starter contains section anchors and `TODO` placeholders — fill them in. **Do NOT auto-translate the markdown.** Use HTML's full surface (sequence diagrams, clickable coverage matrices, visual hierarchy) where it expresses the catalog more clearly than markdown.
+## 6. HTML Artifact — optional, on-demand
+When the user wants an ADHD-friendly HTML review surface for the flows catalog, run `/deviate-html flows` to author `specs/_product/flows/index.html` next to `index.md`. This command is **not** auto-invoked by `/deviate-flows`; the user decides when to ship the HTML counterpart. Skip this step entirely unless the user asks. See `src/deviate/prompts/commands/deviate-html.md` for the authoring protocol.
 
 ## 7. Atomic Commit (Phase B, exactly once)
 Stage the full session-owned file set (`flows-<domain>.md`, `index.md`, `index.html`) via the host

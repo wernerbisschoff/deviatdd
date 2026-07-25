@@ -274,14 +274,7 @@ output of this skill MUST NOT be considered complete until both
 files are on disk and committed — downstream `/deviate-release`
 reads them from disk to satisfy its precondition gate.
 
-**7d. HTML Artifacts — Author the human-review pages.** After both `architecture.md` and `domain-model.md` are committed, emit empty starter scaffolds next to each:
-```bash
-deviate html architecture
-deviate html domain-model   # only if domain-model.md was updated
-```
-Open each `.html` file and author its body from the corresponding `.md`. The starter contains section anchors and `TODO` placeholders — fill them in. Use HTML's full surface (component diagrams, ER diagrams, decision log tables) where it expresses the architecture more clearly than markdown. **Do NOT auto-translate the markdown** — the whole point of the starter scaffold is that the agent authors HTML directly so the page can express things markdown cannot.
-
-The HTML files are NOT committed by the session's existing git tooling yet — add them to the same atomic commit as the markdown via your host agent's git tooling, alongside `architecture.md` and (if changed) `domain-model.md`.
+**7d. HTML Artifacts — optional, on-demand.** When the user wants ADHD-friendly HTML review pages for this architecture, run `/deviate-html architecture` and (only if `domain-model.md` was updated this session) `/deviate-html domain-model`. These commands are **not** auto-invoked by `/deviate-architecture`; the user decides when to ship the HTML counterparts. Skip this step entirely unless the user asks. If authored, the HTML pages land in the same atomic commit as the markdown per `/deviate-html`'s STEP_5 — that protocol owns the atomic-commit coupling; do not duplicate the commit hint here.
 
 ## 8. Flow Traceability Audit
 Cross-check: every component in `architecture.md` references at least one
