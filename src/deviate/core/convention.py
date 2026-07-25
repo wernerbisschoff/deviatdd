@@ -1,18 +1,20 @@
 """Commit convention detection.
 
-Detects whether a repository uses emoji-prefixed conventional commits
-(by checking CONTRIBUTING.md / .commit-convention.md for emoji content,
-then falling back to sampling recent git history) and provides a
-formatter that prepends the correct emoji to commit messages.
+Detects whether a repository uses emoji-prefixed conventional commits by
+checking ``CONTRIBUTING.md`` / ``.commit-convention.md`` for emoji
+content, and provides a formatter that prepends the correct emoji to
+commit messages. The convention file is the source of truth; if it is
+silent on emoji (or absent), ``detect_uses_emojis`` returns ``False``
+and ``format_commit_message`` is a no-op. Git history is intentionally
+NOT consulted: a self-perpetuating "look at the last emoji commit and
+keep emitting emoji" loop is a bug, not a feature.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
-from deviate.core._shared import git_env as _git_env
 
 # Default type → emoji mapping (gitmoji conventional-commit standard).
 TYPE_EMOJI_MAP: dict[str, str] = {
@@ -73,37 +75,21 @@ def _file_has_emojis(content: str) -> bool:
     return bool(_EMOJI_RANGE_RE.search(content))
 
 
-def _git_log_has_emojis(repo: Path, n: int = 10) -> bool:
-    """Sample the last *n* commit subjects for emoji presence."""
-    try:
-        result = subprocess.run(
-            ["git", "log", f"-{n}", "--pretty=format:%s"],
-            cwd=repo,
-            env=_git_env(),
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode != 0:
-            return False
-        return _file_has_emojis(result.stdout)
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-
-
 def detect_uses_emojis(repo: Path) -> bool:
     """Determine whether a repository uses emoji-prefixed commits.
 
-    Detection order:
-    1. CONTRIBUTING.md / .commit-convention.md — if the file contains
-       Unicode emoji characters, the project uses them.
-    2. Git history — sample the last 10 commit subjects.
-    3. Default: False (no emoji prefix).
+    Returns ``True`` only when ``CONTRIBUTING.md`` or
+    ``.commit-convention.md`` exists in the repository root AND contains
+    at least one Unicode emoji character. The file is the source of
+    truth; if it is silent on the matter (or absent), the repository is
+    treated as not using emoji prefixes. Git history is intentionally
+    NOT consulted — a self-perpetuating emoji convention that drifts
+    away from what the project actually documents is a bug.
     """
     convention_content = _read_convention_file(repo)
-    if convention_content is not None and _file_has_emojis(convention_content):
-        return True
-    return _git_log_has_emojis(repo)
+    if convention_content is None:
+        return False
+    return _file_has_emojis(convention_content)
 
 
 def _extract_type(message: str) -> str | None:
@@ -115,10 +101,9 @@ def _extract_type(message: str) -> str | None:
 def format_commit_message(message: str, repo: Path, phase: str | None = None) -> str:
     """Prepend the appropriate emoji to a conventional-commit message.
 
-    If the repository uses emoji prefixes (detected via CONTRIBUTING.md
-    or git history) and the message starts with a known type, the
-    corresponding emoji is prepended.  Otherwise the message is returned
-    unchanged.
+    If the repository declares an emoji convention in
+    ``CONTRIBUTING.md`` / ``.commit-convention.md`` and the message
+    starts with a known type, the corresponding emoji is prepended.
 
     The optional ``phase`` argument selects a per-phase emoji override for
     ``test:`` commits during the red-green TDD cycle:
