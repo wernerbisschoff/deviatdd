@@ -6,32 +6,35 @@
 <meta name="generator" content="deviate html scaffold">
 <meta name="source-md" content="<<SOURCE_MD>>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
 <<CSS>>
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+
 <div class="layout">
 
 <aside class="sidebar" aria-label="Table of contents">
   <h2>Contents</h2>
   <ol class="toc" id="toc">
     <!--
-    <li><a href="#flow-catalog">1. Flow Catalog</a></li>
-    <li><a href="#flow-detail">2. Flow Detail</a></li>
-    <li><a href="#flow-diagram">3. Flow Diagram</a></li>
-    <li><a href="#coverage-map">4. Coverage Map</a></li>
+    <li><a href="#flow-catalog">Flow Catalog</a></li>
+    <li><a href="#flow-detail">Flow Detail</a></li>
+    <li><a href="#flow-diagram">Flow Diagram</a></li>
+    <li><a href="#coverage-map">Coverage Map</a></li>
     -->
   </ol>
   <div class="toc-progress">
-    Progress: <strong><span id="progress-count">0</span> / 4</span> sections authored
+    Progress: <strong><span id="progress-count">0</span> / 4</strong> sections authored
     <span class="toc-progress-dots" aria-hidden="true">
       <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
     </span>
   </div>
 </aside>
 
-<main class="main">
+<main class="main" id="main" tabindex="-1">
 
 <header class="spec-meta">
   <span class="phase-tag">Phase: flows</span>
@@ -48,7 +51,7 @@
 </header>
 
 <section id="flow-catalog">
-  <h2>1. Flow Catalog <span class="chip chip-todo">grid</span></h2>
+  <h2>Flow Catalog <span class="chip chip-todo">grid</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">Card grid</span>
     One card per <code class="flow-ref">FLOW-NN</code>. The grid below is the visual catalog &mdash;
@@ -80,7 +83,7 @@
 </section>
 
 <section id="flow-detail">
-  <h2>2. Flow Detail <span class="chip chip-todo">per-flow card</span></h2>
+  <h2>Flow Detail <span class="chip chip-todo">per-flow card</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">One card per flow</span>
     Each <code>&lt;article class="flow-card"&gt;</code> has 8 fields, in order:
@@ -139,7 +142,7 @@
         </dd>
       </dl>
     </article>
-    -->
+  -->
 
   <div class="component-block" aria-label="[TODO] Flow detail cards">
     <span class="component-label">[TODO] Flow Detail</span>
@@ -149,7 +152,7 @@
 </section>
 
 <section id="flow-diagram">
-  <h2>3. Flow Diagram <span class="chip chip-draft">visual</span></h2>
+  <h2>Flow Diagram <span class="chip chip-draft">visual</span></h2>
 
   <div class="callout callout-note">
     <span class="callout-title">Visual order of operations</span>
@@ -176,16 +179,16 @@
            A-&gt;&gt;U: clarifying questions
            U--&gt;&gt;A: answers
            A-&gt;&gt;S: writes flows.md + updates index.md
-           S--&gt;&gt;A: write confirmation
+           S--&gt;A: write confirmation
            A-&gt;&gt;U: asks for commit confirmation
-           U--&gt;&gt;A: confirms
+           U--&gt;A: confirms
            A-&gt;&gt;S: single commit on confirmed
        </pre>
   -->
 </section>
 
 <section id="coverage-map">
-  <h2>4. Coverage Map <span class="chip chip-draft">bidirectional</span></h2>
+  <h2>Coverage Map <span class="chip chip-draft">bidirectional</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">Two axes</span>
     <strong>FR &rarr; FLOW</strong> shows which flow realizes each requirement.
@@ -193,7 +196,7 @@
     This is how a reviewer answers &ldquo;is this FR covered?&rdquo; in one query.
   </div>
 
-  <h3 id="coverage-fr-to-flow">4.1 FR &rarr; Flow</h3>
+  <h3 id="coverage-fr-to-flow">FR &rarr; Flow</h3>
   <table>
     <thead>
       <tr><th>FR Token</th><th>Implemented By</th><th>Realization Status</th></tr>
@@ -215,7 +218,7 @@
     </tbody>
   </table>
 
-  <h3 id="coverage-flow-to-fr">4.2 Flow &rarr; FR + AC</h3>
+  <h3 id="coverage-flow-to-fr">Flow &rarr; FR + AC</h3>
   <table>
     <thead>
       <tr><th>Flow Token</th><th>Realized FRs</th><th>Covered ACs</th></tr>
@@ -232,7 +235,7 @@
     </tbody>
   </table>
 
-  <h3 id="coverage-drift">4.3 Drift Signals</h3>
+  <h3 id="coverage-drift">Drift Signals</h3>
   <p>If a flow appears in <code><<SOURCE_MD>></code> but not here, or vice versa,
      the catalog is wrong. Use the table below as the registry of truth.</p>
 

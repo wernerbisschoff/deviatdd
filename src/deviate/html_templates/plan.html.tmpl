@@ -6,26 +6,29 @@
 <meta name="generator" content="deviate html scaffold">
 <meta name="source-md" content="<<SOURCE_MD>>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
 <<CSS>>
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+
 <div class="layout">
 
 <aside class="sidebar" aria-label="Table of contents">
   <h2>Contents</h2>
   <ol class="toc" id="toc">
     <!--
-    <li><a href="#plan-summary">1. Plan Summary</a></li>
-    <li><a href="#acceptance-contract">2. Acceptance Contract</a></li>
-    <li><a href="#workstation-mapping">3. Workstation Mapping</a></li>
-    <li><a href="#implementation-strategy">4. Implementation Strategy</a></li>
-    <li><a href="#data-flow-analysis">5. Data Flow Analysis</a></li>
-    <li><a href="#risk-assessment">6. Risk Assessment</a></li>
-    <li><a href="#security-profile">7. Security Profile</a></li>
-    <li><a href="#integration-points">8. Integration Points</a></li>
-    <li><a href="#constitutional-alignment">9. Constitutional Alignment</a></li>
+    <li><a href="#plan-summary">Plan Summary</a></li>
+    <li><a href="#acceptance-contract">Acceptance Contract</a></li>
+    <li><a href="#workstation-mapping">Workstation Mapping</a></li>
+    <li><a href="#implementation-strategy">Implementation Strategy</a></li>
+    <li><a href="#data-flow-analysis">Data Flow Analysis</a></li>
+    <li><a href="#risk-assessment">Risk Assessment</a></li>
+    <li><a href="#security-profile">Security Profile</a></li>
+    <li><a href="#integration-points">Integration Points</a></li>
+    <li><a href="#constitutional-alignment">Constitutional Alignment</a></li>
     -->
   </ol>
   <div class="toc-progress">
@@ -38,7 +41,7 @@
   </div>
 </aside>
 
-<main class="main">
+<main class="main" id="main" tabindex="-1">
 
 <header class="spec-meta">
   <span class="phase-tag">Phase: plan</span>
@@ -54,7 +57,7 @@
 </header>
 
 <section id="plan-summary">
-  <h2>1. Plan Summary <span class="chip chip-draft">elevator</span></h2>
+  <h2>Plan Summary <span class="chip chip-draft">elevator</span></h2>
   <dl class="kv">
     <!--
     <dt>Issue</dt>
@@ -80,7 +83,7 @@
 </section>
 
 <section id="acceptance-contract">
-  <h2>2. Acceptance Contract <span class="chip chip-todo">AC-PLAN-NNN</span></h2>
+  <h2>Acceptance Contract <span class="chip chip-todo">AC-PLAN-NNN</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">Token format</span>
     Each AC MUST carry a stable <code class="ac">AC-PLAN-NNN</code> tag
@@ -117,7 +120,7 @@
 </section>
 
 <section id="workstation-mapping">
-  <h2>3. Workstation Mapping</h2>
+  <h2>Workstation Mapping</h2>
   <div class="callout callout-note">
     <span class="callout-title">Per-file contract</span>
     One row per file the change touches. Three required fields:
@@ -148,7 +151,7 @@
 </section>
 
 <section id="implementation-strategy">
-  <h2>4. Implementation Strategy</h2>
+  <h2>Implementation Strategy</h2>
   <div class="callout callout-note">
     <span class="callout-title">Steps, not prose</span>
     Numbered phases. Each phase lists <em>files touched</em> and a single
@@ -174,7 +177,7 @@
 </section>
 
 <section id="data-flow-analysis">
-  <h2>5. Data Flow Analysis</h2>
+  <h2>Data Flow Analysis</h2>
   <p>Trace the data layer-to-layer. A reader who skips the rest of the plan can
      understand the change from this section alone.</p>
 
@@ -191,7 +194,7 @@
 </section>
 
 <section id="risk-assessment">
-  <h2>6. Risk Assessment <span class="chip chip-draft">impact &times; likelihood</span></h2>
+  <h2>Risk Assessment <span class="chip chip-draft">impact &times; likelihood</span></h2>
 
   <table>
     <thead>
@@ -221,7 +224,7 @@
 </section>
 
 <section id="security-profile">
-  <h2>7. Security Profile <span class="chip chip-todo">threat model</span></h2>
+  <h2>Security Profile <span class="chip chip-todo">threat model</span></h2>
   <div class="callout callout-warn">
     <span class="callout-title">Risk surface checklist</span>
     Every plan touches at least one surface. Mark <em>none</em> explicitly when
@@ -262,7 +265,7 @@
 </section>
 
 <section id="integration-points">
-  <h2>8. Integration Points</h2>
+  <h2>Integration Points</h2>
   <p>Cross-module touch points. One bullet per boundary crossed.</p>
   <ul>
     <!--
@@ -271,13 +274,12 @@
     <li><strong><code>src/deviate/state/ledger.py</code> &harr; <code>src/deviate/cli/macro.py</code></strong>: <code>explore_post</code> imports the new <code>FlowRecord</code> / <code>FlowEvent</code> / <code>append_flow_record</code> / <code>append_flow_event</code> / <code>load_flow_coverage</code> symbols.</li>
     <li><strong><code>src/deviate/cli/macro.py</code> &harr; <code>specs/_product/flows/index.md</code></strong>: new <code>_parse_flows_index</code> consumes the markdown table format with <code>|</code>-delimited columns; header re-order breaks the seed step &mdash; log <code>FLOWS_INDEX_PARSE_FAILED</code> and halt.</li>
     -->
-
     <li><em>TODO</em></li>
   </ul>
 </section>
 
 <section id="constitutional-alignment">
-  <h2>9. Constitutional Alignment <span class="chip chip-draft">§1&ndash;§6</span></h2>
+  <h2>Constitutional Alignment <span class="chip chip-draft">§1&ndash;§6</span></h2>
   <p>One row per constitutional section affected. <strong>Empty rows are
      a fail</strong> &mdash; explicit &ldquo;no change&rdquo; belongs in the cell.</p>
 

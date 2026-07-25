@@ -6,27 +6,30 @@
 <meta name="generator" content="deviate html scaffold">
 <meta name="source-md" content="<<SOURCE_MD>>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
 <<CSS>>
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+
 <div class="layout">
 
 <aside class="sidebar" aria-label="Table of contents">
   <h2>Contents</h2>
   <ol class="toc" id="toc">
     <!--
-    <li><a href="#entity-definitions">1. Entity Definitions</a></li>
-    <li><a href="#relationship-graph">2. Relationship Graph</a></li>
-    <li><a href="#schema-tables">3. Schema Tables</a></li>
-    <li><a href="#state-transitions">4. State Transitions</a></li>
-    <li><a href="#data-flow">5. Data Flow</a></li>
-    <li><a href="#source-registry">6. Source Registry</a></li>
+    <li><a href="#entity-definitions">Entity Definitions</a></li>
+    <li><a href="#relationship-graph">Relationship Graph</a></li>
+    <li><a href="#schema-tables">Schema Tables</a></li>
+    <li><a href="#state-transitions">State Transitions</a></li>
+    <li><a href="#data-flow">Data Flow</a></li>
+    <li><a href="#source-registry">Source Registry</a></li>
     -->
   </ol>
   <div class="toc-progress">
-    Progress: <strong><span id="progress-count">0</span> / 6</span> sections authored
+    Progress: <strong><span id="progress-count">0</span> / 6</strong> sections authored
     <span class="toc-progress-dots" aria-hidden="true">
       <span class="dot"></span><span class="dot"></span><span class="dot"></span>
       <span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -34,7 +37,7 @@
   </div>
 </aside>
 
-<main class="main">
+<main class="main" id="main" tabindex="-1">
 
 <header class="spec-meta">
   <span class="phase-tag">Phase: domain-model</span>
@@ -51,7 +54,7 @@
 </header>
 
 <section id="entity-definitions">
-  <h2>1. Entity Definitions <span class="chip chip-todo">one card per entity</span></h2>
+  <h2>Entity Definitions <span class="chip chip-todo">one card per entity</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">Per-entity card</span>
     For each entity: name, source-of-truth file (the source of canonical
@@ -87,7 +90,7 @@
         </dd>
       </dl>
     </article>
-    -->
+  -->
 
   <div class="component-block" aria-label="[TODO] Entity definitions">
     <span class="component-label">[TODO] Entity Definitions</span>
@@ -98,7 +101,7 @@
 </section>
 
 <section id="relationship-graph">
-  <h2>2. Relationship Graph <span class="chip chip-draft">ER diagram</span></h2>
+  <h2>Relationship Graph <span class="chip chip-draft">ER diagram</span></h2>
 
   <div class="callout callout-ready">
     <span class="callout-title">Visual relationships only</span>
@@ -130,7 +133,7 @@
        </pre>
   -->
 
-  <h3 id="relationship-table">2.1 Cardinality Matrix</h3>
+  <h3 id="relationship-table">Cardinality Matrix</h3>
   <p>Use this table alongside the diagram &mdash; greppable backup.</p>
   <table>
     <thead>
@@ -157,7 +160,7 @@
 </section>
 
 <section id="schema-tables">
-  <h2>3. Schema Tables <span class="chip chip-draft">concrete schema</span></h2>
+  <h2>Schema Tables <span class="chip chip-draft">concrete schema</span></h2>
 
   <div class="callout callout-note">
     <span class="callout-title">Schema language</span>
@@ -174,14 +177,14 @@
     <article class="schema-card" id="schema-agent-runtime">
       <h3><code>{{TABLE_NAME}}</code>: AgentRuntime</h3>
       <pre><code>class AgentRuntime(BaseModel):
-    model_config = {{"extra": "forbid"}}
+    model_config = {"extra": "forbid"}
 
     id: Literal["pi", "omp"]
     mode: Literal["rpc"] = "rpc"
     state: Literal["spawning", "streaming", "disconnected", "closed"] = "spawning"
     pid: int | None = None</code></pre>
     </article>
-    -->
+  -->
 
   <div class="component-block" aria-label="[TODO] Schema tables">
     <span class="component-label">[TODO] Schema Tables</span>
@@ -192,7 +195,7 @@
 </section>
 
 <section id="state-transitions">
-  <h2>4. State Transitions <span class="chip chip-todo">state machine</span></h2>
+  <h2>State Transitions <span class="chip chip-todo">state machine</span></h2>
 
   <div class="callout callout-note">
     <span class="callout-title">State machine shape</span>
@@ -208,7 +211,7 @@
     <article class="state-machine" id="sm-agent-runtime">
       <h3><code>{{ENTITY_NAME}}</code> State Machine</h3>
       <dl class="kv">
-        <dt>States</dt><dd><span class="state-pill initial">spawning</span> <span class="state-pill">streaming</span> <span class="state-pill">disconnected</span> <span class="state-pill terminal">closed</span></dd>
+        <dt>States</dt><dd><span class="state-pill initial">spawning</span> <span class="state-pill">streaming</span> <span class="state-pill disconnected">disconnected</span> <span class="state-pill terminal">closed</span></dd>
         <dt>Initial State</dt><dd><span class="state-pill initial">spawning</span></dd>
         <dt>Terminal States</dt><dd><span class="state-pill terminal">closed</span></dd>
         <dt>Transitions</dt>
@@ -226,7 +229,7 @@
         </dd>
       </dl>
     </article>
-    -->
+  -->
 
   <div class="component-block" aria-label="[TODO] State machines">
     <span class="component-label">[TODO] State Machines</span>
@@ -234,7 +237,7 @@
     Diagrammatic representation preferred.
   </div>
 
-  <h3 id="state-diagram">4.1 Master State Diagram</h3>
+  <h3 id="state-diagram">Master State Diagram</h3>
   <div class="diagram-slot" aria-label="[TODO] Master state diagram">
     <span class="label">State Diagram Slot</span>
     <code>&lt;pre class="mermaid"&gt;stateDiagram-v2 ...&lt;/pre&gt;</code> or inline SVG.
@@ -243,7 +246,7 @@
 </section>
 
 <section id="data-flow">
-  <h2>5. Data Flow</h2>
+  <h2>Data Flow</h2>
 
   <div class="callout callout-note">
     <span class="callout-title">Directional narrative</span>
@@ -273,7 +276,7 @@
 </section>
 
 <section id="source-registry">
-  <h2>6. Source Registry</h2>
+  <h2>Source Registry</h2>
 
   <p>Citations for facts that did not originate in this document. One row per source.</p>
   <table>

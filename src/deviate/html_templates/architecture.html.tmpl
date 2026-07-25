@@ -6,11 +6,14 @@
 <meta name="generator" content="deviate html scaffold">
 <meta name="source-md" content="<<SOURCE_MD>>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
 <<CSS>>
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+
 <div class="layout">
 
 <aside class="sidebar" aria-label="Table of contents">
@@ -20,13 +23,13 @@
          The agent can hand-curate entries (delete sections that don't apply,
          reorder for narrative, etc.). -->
     <!--
-    <li><a href="#recommended-architecture">1. Recommended Architecture</a></li>
-    <li><a href="#options-matrix">2. Options Matrix</a></li>
-    <li><a href="#rejected-options">3. Rejected Options</a></li>
-    <li><a href="#design-trade-offs">4. Design Trade-Offs</a></li>
-    <li><a href="#component-diagram">5. Component Diagram</a></li>
-    <li><a href="#adrs">6. Architectural Decision Records</a></li>
-    <li><a href="#source-registry">7. Source Registry</a></li>
+    <li><a href="#recommended-architecture">Recommended Architecture</a></li>
+    <li><a href="#options-matrix">Options Matrix</a></li>
+    <li><a href="#rejected-options">Rejected Options</a></li>
+    <li><a href="#design-trade-offs">Design Trade-Offs</a></li>
+    <li><a href="#component-diagram">Component Diagram</a></li>
+    <li><a href="#adrs">Architectural Decision Records</a></li>
+    <li><a href="#source-registry">Source Registry</a></li>
     -->
   </ol>
   <div class="toc-progress">
@@ -39,7 +42,7 @@
   </div>
 </aside>
 
-<main class="main">
+<main class="main" id="main" tabindex="-1">
 
 <header class="spec-meta">
   <span class="phase-tag">Phase: architecture</span>
@@ -55,7 +58,7 @@
 </header>
 
 <section id="recommended-architecture">
-  <h2>1. Recommended Architecture <span class="chip chip-draft">draft</span></h2>
+  <h2>Recommended Architecture <span class="chip chip-draft">draft</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">Why this section</span>
     Lead with the chosen architecture in 3&ndash;5 short paragraphs (one per major
@@ -81,7 +84,7 @@
 </section>
 
 <section id="options-matrix">
-  <h2>2. Options Matrix</h2>
+  <h2>Options Matrix</h2>
   <div class="callout callout-note">
     <span class="callout-title">How to fill</span>
     One row per option that was seriously considered (including the recommended one).
@@ -127,7 +130,7 @@
 </section>
 
 <section id="rejected-options">
-  <h2>3. Rejected Options <span class="chip chip-draft">rationale</span></h2>
+  <h2>Rejected Options <span class="chip chip-draft">rationale</span></h2>
   <p>One bullet per rejected option. <strong>Two sentences max</strong> per bullet &mdash;
      option name, reason it was rejected, what it lost to.</p>
   <ul>
@@ -139,7 +142,7 @@
 </section>
 
 <section id="design-trade-offs">
-  <h2>4. Design Trade-Offs</h2>
+  <h2>Design Trade-Offs</h2>
   <p>One row per decision where two reasonable answers exist. The point is
      to leave a trail of <em>why this side</em> for the next maintainer.</p>
 
@@ -161,7 +164,7 @@
 </section>
 
 <section id="component-diagram">
-  <h2>5. Component Diagram</h2>
+  <h2>Component Diagram</h2>
   <div class="callout callout-ready">
     <span class="callout-title">Why HTML beats markdown here</span>
     Diagrams need to <em>render</em>, not just sit between fences. The terminal can
@@ -194,7 +197,7 @@
 </section>
 
 <section id="adrs">
-  <h2>6. Architectural Decision Records <span class="chip chip-draft">context&middot;decision&middot;rationale</span></h2>
+  <h2>Architectural Decision Records <span class="chip chip-draft">context&middot;decision&middot;rationale</span></h2>
 
   <div class="callout callout-note">
     <span class="callout-title">ADR shape</span>
@@ -225,7 +228,7 @@
 </section>
 
 <section id="source-registry">
-  <h2>7. Source Registry</h2>
+  <h2>Source Registry</h2>
   <div class="callout callout-note">
     <span class="callout-title">Why a registry</span>
     Every fact in this document that came from somewhere <em>other than the

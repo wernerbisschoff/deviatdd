@@ -6,25 +6,28 @@
 <meta name="generator" content="deviate html scaffold">
 <meta name="source-md" content="<<SOURCE_MD>>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
 <<CSS>>
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+
 <div class="layout">
 
 <aside class="sidebar" aria-label="Table of contents">
   <h2>Contents</h2>
   <ol class="toc" id="toc">
     <!--
-    <li><a href="#core-value-proposition">1. Core Value Proposition</a></li>
-    <li><a href="#in-scope-boundaries">2. In-Scope Boundaries</a></li>
-    <li><a href="#out-of-scope-boundaries">3. Out-of-Scope Boundaries</a></li>
-    <li><a href="#architectural-constraints">4. Architectural Constraints</a></li>
-    <li><a href="#functional-flow">5. Functional Flow &amp; Sequence</a></li>
-    <li><a href="#functional-requirements">6. Functional Requirements</a></li>
-    <li><a href="#decision-readiness">7. Decision Readiness</a></li>
-    <li><a href="#clarification-log">8. Clarification Log</a></li>
+    <li><a href="#core-value-proposition">Core Value Proposition</a></li>
+    <li><a href="#in-scope-boundaries">In-Scope Boundaries</a></li>
+    <li><a href="#out-of-scope-boundaries">Out-of-Scope Boundaries</a></li>
+    <li><a href="#architectural-constraints">Architectural Constraints</a></li>
+    <li><a href="#functional-flow">Functional Flow &amp; Sequence</a></li>
+    <li><a href="#functional-requirements">Functional Requirements</a></li>
+    <li><a href="#decision-readiness">Decision Readiness</a></li>
+    <li><a href="#clarification-log">Clarification Log</a></li>
     -->
   </ol>
   <div class="toc-progress">
@@ -37,7 +40,7 @@
   </div>
 </aside>
 
-<main class="main">
+<main class="main" id="main" tabindex="-1">
 
 <header class="spec-meta">
   <span class="phase-tag">Phase: prd</span>
@@ -53,7 +56,7 @@
 </header>
 
 <section id="core-value-proposition">
-  <h2>1. Core Value Proposition <span class="chip chip-draft">elevator pitch</span></h2>
+  <h2>Core Value Proposition <span class="chip chip-draft">elevator pitch</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">Shape it like this</span>
     One sentence: <em>who</em> gets <em>what value</em> in <em>what situation</em>.
@@ -67,7 +70,7 @@
 </section>
 
 <section id="in-scope-boundaries">
-  <h2>2. In-Scope Boundaries</h2>
+  <h2>In-Scope Boundaries</h2>
   <p>What this PRD <strong>will deliver</strong>. One bullet per shippable thing.</p>
   <ul>
     <!--
@@ -78,7 +81,7 @@
 </section>
 
 <section id="out-of-scope-boundaries">
-  <h2>3. Out-of-Scope Boundaries</h2>
+  <h2>Out-of-Scope Boundaries</h2>
   <p>What this PRD <strong>will not deliver</strong>. One bullet per exclusion.</p>
   <div class="callout callout-warn">
     <span class="callout-title">Rule</span>
@@ -94,9 +97,9 @@
 </section>
 
 <section id="architectural-constraints">
-  <h2>4. Architectural Constraints</h2>
+  <h2>Architectural Constraints</h2>
 
-  <h3 id="data-models-and-invariants">4.1 Data Models &amp; Invariants</h3>
+  <h3 id="data-models-and-invariants">Data Models &amp; Invariants</h3>
   <div class="callout callout-note">
     <span class="callout-title">What to write</span>
     Each invariant in two forms: a short name and an executable form.
@@ -110,7 +113,7 @@
     &nbsp;&nbsp;<strong>Executable form</strong>: <em>code or property</em>
   </div>
 
-  <h3 id="performance-and-scalability">4.2 Performance / Scalability Thresholds</h3>
+  <h3 id="performance-and-scalability">Performance / Scalability Thresholds</h3>
   <div class="callout callout-note">
     <span class="callout-title">Quantify, don&rsquo;t describe</span>
     Every threshold has a number (latency, throughput, memory, p99) and an
@@ -125,7 +128,7 @@
     <dt><em>TODO threshold</em></dt><dd><em>number + enforcement point</em></dd>
   </dl>
 
-  <h3 id="security-and-compliance">4.3 Security &amp; Compliance Invariants</h3>
+  <h3 id="security-and-compliance">Security &amp; Compliance Invariants</h3>
   <ul>
     <!--
     <li><strong>No secrets in code</strong> &mdash; nothing in <code>src/</code> or committed config may carry a real secret.</li>
@@ -137,7 +140,7 @@
 </section>
 
 <section id="functional-flow">
-  <h2>5. Functional Flow &amp; Sequence</h2>
+  <h2>Functional Flow &amp; Sequence</h2>
   <p>How a real user walks through this PRD end-to-end. Reference <code>FLOW-XX</code>
      tokens; pick up sequence details from the Flow Catalog.</p>
 
@@ -156,7 +159,7 @@
 </section>
 
 <section id="functional-requirements">
-  <h2>6. Functional Requirements <span class="chip chip-todo">fill every FR</span></h2>
+  <h2>Functional Requirements <span class="chip chip-todo">fill every FR</span></h2>
   <div class="callout callout-note">
     <span class="callout-title">FR/AC token contract</span>
     Every FR MUST be tagged <code class="fr">FR-NNN-{{ID}}</code> and every AC
@@ -214,7 +217,7 @@
 </section>
 
 <section id="decision-readiness">
-  <h2>7. Decision Readiness <span class="chip chip-todo">gate check</span></h2>
+  <h2>Decision Readiness <span class="chip chip-todo">gate check</span></h2>
   <p>PRD closes only when every box below is checkable. The HITL gate refuses
      to release a PRD with unchecked items.</p>
 
@@ -226,7 +229,7 @@
     <li><input type="checkbox" disabled> Every AC names its traceability target (<code class="fr">FR-NNN</code>, <code>FLOW-XX</code>, or test path)</li>
   </ul>
 
-  <h3 id="blocking-decisions">7.1 Blocking Decisions</h3>
+  <h3 id="blocking-decisions">Blocking Decisions</h3>
   <div class="callout callout-warn">
     <span class="callout-title">What lands here</span>
     Open questions so important that the PRD cannot ship without an answer.
@@ -244,7 +247,7 @@
 </section>
 
 <section id="clarification-log">
-  <h2>8. Clarification Log <span class="chip chip-draft">audit trail</span></h2>
+  <h2>Clarification Log <span class="chip chip-draft">audit trail</span></h2>
   <p>Append-only. Each row is one question asked and answered during PRD authoring.
      <strong>Do not edit past entries</strong> &mdash; supersede with a new row.</p>
 
