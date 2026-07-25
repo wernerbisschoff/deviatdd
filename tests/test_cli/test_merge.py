@@ -693,8 +693,9 @@ def test_porcelain_filter_detects_actual_unstaged_changes(tmp_path: Path) -> Non
 # takes ~0.3s in isolation.  The pair is bounded at <1s in the suite and
 # cannot be replaced with a pure ``format_commit_message`` unit test because
 # the regression we are guarding against is a *missed wiring* in
-# ``_merge_run``, not in the helper itself.
-# ---------------------------------------------------------------------------
+# ``_merge_run``, not in the helper itself.  These tests assume the
+# stricter detector (CONTRIBUTING.md only, no git-history fallback);
+# see ``tests/test_core/test_convention.py`` for the detector contract.
 
 
 def _merge_repo_with_convention(merge_repo: Path, contributing_text: str) -> Path:
@@ -783,9 +784,10 @@ def test_merge_no_emoji_prefix_when_contributing_md_has_no_emoji(
     merge_repo: Path,
 ) -> None:
     """When ``CONTRIBUTING.md`` exists but contains no emoji, the merge CLI
-    must NOT prepend a prefix.  This locks the no-op path: the convention
-    detector falls through to ``_git_log_has_emojis``, which also returns
-    False on this clean repo, so the subject passes through unchanged.
+    must NOT prepend a prefix.  This locks the no-op path: the
+    convention detector reads ``CONTRIBUTING.md`` / ``.commit-convention.md``
+    only and falls back to ``False`` (no emoji) when neither file
+    declares one. Git history is intentionally NOT consulted.
     """
     repo = _merge_repo_with_convention(
         merge_repo,
