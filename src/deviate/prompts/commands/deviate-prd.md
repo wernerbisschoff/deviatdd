@@ -193,16 +193,7 @@ Write an execution manifest JSON to `plan_target` (absolute path from the contra
 </step>
 
 <step id="html_artifact">
-**HTML Artifact — Author the human-review page.** After writing `prd.md`, the PRD's HTML counterpart must exist for HITL review. The HTML body is authored by you (the agent), NOT auto-translated from markdown.
-
-Run the CLI to emit an empty starter scaffold next to the markdown source:
-```bash
-deviate html prd
-```
-
-Open the resulting `prd.html` and author its body from `prd.md`: structure the value proposition, in-scope boundaries, FR tables, decision readiness, and clarification log into the HTML page. The starter only contains section anchors and `TODO` placeholders — fill them in from the markdown content. Use HTML's full surface (diagrams, structured tables, callout blocks) where it expresses the contract more clearly than markdown.
-
-The HTML file is NOT committed by the post-script. Add it to the same commit via your host agent's git tooling, alongside `prd.md`.
+**HTML Artifact — optional, on-demand.** When you (or the user) want an ADHD-friendly HTML review surface for this PRD, run `/deviate-html prd` to author `prd.html` next to `prd.md`. This command is **not** auto-invoked by `/deviate-prd`; the user decides when to ship the HTML counterpart (typically end-of-session). Skip this step entirely unless the user asks for the HTML version. See `src/deviate/prompts/commands/deviate-html.md` for the authoring protocol.
 </step>
 
 <step id="post_script">

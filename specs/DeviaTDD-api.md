@@ -28,9 +28,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   project-specific test/lint/format/setup/dev commands, ensures a symlink
   relationship between `CLAUDE.md` and `AGENTS.md` (via
   `_linkify_governance_files`), applies governance blocks to the canonical
-  file, and installs the DeviaTDD prompt commands. Currently 25 `deviate-*`
+  file, and installs the DeviaTDD prompt commands. Currently 24 `deviate-*`
   slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
-  — 26 flat `.md` files total — are installed to `.{agent}/commands/` (or
+  — 25 flat `.md` files total in the Factory install; 24 in every other agent
   `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land in all agent
   directories — `.claude/commands/`, `.opencode/commands/`,
   `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/` — in a single invocation, regardless of which agent was passed
@@ -114,9 +114,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `AGENTS.md` — Symlink to `CLAUDE.md` (or vice-versa if only `AGENTS.md`
     existed pre-setup). Created by `_linkify_governance_files`; idempotent.
   * `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
-    `.pi/prompts/` — DeviaTDD prompt commands installed for every
-    supported agent (24 flat `.md` files total, split across the four
-    dirs)
+    supported agent (24 `deviate-*` + 1 standalone `tools-mcp-servers`
+    for Factory = 25 flat `.md` files total in that one directory)
 
 #### `deviatdd` Skill (Project-Local Single Skill)
 
@@ -1036,7 +1035,7 @@ src/deviate/
 │   │   ├── red.md, green.md, judge.md, refactor.md
 │   │   └── plan.md (planned)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 23 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage} (23)
+│   └── commands/             # 24 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, html, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage} (24)
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
     └── ledger.py             # IssueRecord, TaskRecord, append_issue_transition, append_task_transition
 ```
@@ -1089,6 +1088,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
 | `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes, encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` stops at `AWAITING_HITL_GATE_2`. |
 | `/deviate-walkthrough` | Architectural Walkthrough Guide | (none — conversation only) | `deviate walkthrough pre/post` | 5 steps: gather, sweep, curate, walk (conversational), synthesize |
+| `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC/FLOW/ADR tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-flows`, `/deviate-architecture`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
 
 > **Deprecation Notice:** `/deviate-specify` is deprecated as a standalone acceptance-authoring step. Shard now emits issues carrying `AO-NNN` acceptance outlines only; Plan authors the current-code-informed Gherkin contract. The `/deviate-specify` skill remains for backward compatibility but redirects to the new workflow (Plan owns Gherkin). This replaces the older "Meso-Layer Restructuring (ADHOC-003)" wording that placed spec detail in Shard.
 
@@ -1231,6 +1231,7 @@ The architecture defines a model routing strategy in `specs/constitution.md` see
 | `/deviate-walkthrough` | V4 Flash | Single invocation | One-shot |
 | `/deviate-adhoc` | V4 Flash | Single invocation | One-shot |
 | EXECUTE / E2E / HOTFIX | V4 Flash | Single invocation | One-shot |
+| `/deviate-html` | V4 Pro | Single invocation | One-shot — default per `deviate-html.md` Tier Classification; per-phase fallback applies (`/deviate-html architecture` / `domain-model` / `flows` may use Qwen thinking for diagrammatic reasoning; `/deviate-html prd` may use Qwen thinking for structured spec rendering) |
 
 The `AgentBackend` class (`src/deviate/core/agent.py`) supports `opencode`, `claude`,
 `droid`, and `pi` backends with configurable timeout. Output is parsed as YAML

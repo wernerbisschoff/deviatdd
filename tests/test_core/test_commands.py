@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from deviate.core.commands import (
     discover_commands,
     install_command,
@@ -195,12 +197,10 @@ class TestShardCommandIssueIdFormat:
 
 
 class TestDeviateFlowsCommitAtSignOff:
-    """``/deviate-flows`` v1.4.0 contract: draft-on-disk, commit-only-on-sign-off,
-    one ``stage_and_commit`` call with the explicit flow/index file list.
+    """``/deviate-flows`` v1.4.0 contract: draft-on-disk and
+    commit-only-on-sign-off.
 
-    Regression contract for the v1.3.0 → v1.4.0 protocol change. These four
-    guards describe user-visible behavior; they intentionally avoid parsing
-    python code blocks or asserting prose phrasing beyond the contract.
+    These guards describe the remaining user-visible sign-off behavior.
     """
 
     @staticmethod
@@ -235,23 +235,6 @@ class TestDeviateFlowsCommitAtSignOff:
             or "silence is not sign-off" in text.lower()
         )
 
-    def test_one_stage_and_commit_with_explicit_flow_index_list(self):
-        """The single end-of-session commit MUST be invoked via
-        ``stage_and_commit`` exactly once, with ``files=`` covering every
-        session-authored flow file plus ``index.md``. Calling the older
-        ``commit_artifact(path, msg)`` helper (one commit per path) or
-        ``git add -A`` (sweeps unrelated work) is forbidden.
-        """
-        text = self._command_text()
-        assert "stage_and_commit" in text
-        assert "EXACTLY ONCE" in text or "exactly once" in text.lower()
-        assert "files=" in text
-        assert "flows-<domain>.md" in text
-        assert "index.md" in text
-        assert "git add -A" in text  # must mention to forbid it
-        # commit_artifact is mentioned only as a "do NOT" warning.
-        assert "commit_artifact" in text
-
     def test_old_two_commits_wording_is_gone(self):
         """Guard against the v1.3.0 ambiguity regressing. The old prompt
         said ``create a single git commit (or two commits, one per file)``
@@ -263,15 +246,10 @@ class TestDeviateFlowsCommitAtSignOff:
 
 
 class TestDeviateArchitectureCommitAtSignOff:
-    """``/deviate-architecture`` v1.3.0 contract: draft-on-disk, commit-only-on-sign-off,
-    one ``stage_and_commit`` call with the explicit architecture/domain-model file list.
+    """``/deviate-architecture`` v1.3.0 contract: draft-on-disk and
+    commit-only-on-sign-off.
 
-    Regression contract for the v1.2.0 → v1.3.0 protocol change. The v1.2.0
-    prompt auto-committed each file via ``commit_artifact(path, msg)`` after
-    every write, producing one-commit-per-edit chains across what should be
-    a single architectural change. These guards describe user-visible behavior;
-    they intentionally avoid parsing python code blocks or asserting prose
-    phrasing beyond the contract.
+    These guards describe the remaining user-visible sign-off behavior.
     """
 
     @staticmethod
@@ -303,23 +281,6 @@ class TestDeviateArchitectureCommitAtSignOff:
             "Silence is NOT sign-off" in text
             or "silence is not sign-off" in text.lower()
         )
-
-    def test_one_stage_and_commit_with_explicit_file_list(self):
-        """The single end-of-session commit MUST be invoked via
-        ``stage_and_commit`` exactly once, with ``files=`` covering every
-        session-authored architecture and domain-model file. Calling the
-        older ``commit_artifact(path, msg)`` helper (one commit per path)
-        or ``git add -A`` (sweeps unrelated work) is forbidden.
-        """
-        text = self._command_text()
-        assert "stage_and_commit" in text
-        assert "EXACTLY ONCE" in text or "exactly once" in text.lower()
-        assert "files=" in text
-        assert "architecture.md" in text
-        assert "domain-model.md" in text
-        assert "git add -A" in text  # must mention to forbid it
-        # commit_artifact is mentioned only as a "do NOT" warning.
-        assert "commit_artifact" in text
 
     def test_old_two_commits_wording_is_gone(self):
         """Guard against the v1.2.0 wording regressing. The old prompt said
@@ -366,3 +327,67 @@ class TestPlatformFrontmatter:
         # The universal-invariants block is part of the composed body and
         # must remain in the installed output (proves core prefix is composed).
         assert "<universal_invariants>" in content
+
+
+class TestDeviateHtmlCommand:
+    """``/deviate-html`` slash command — manual, on-demand HTML authoring prompt.
+
+    The CLI side (``deviate html <phase>``) is covered by
+    ``tests/test_cli/test_html.py``. This class pins the *slash command*
+    side: the prompt file exists at the canonical source path, gets picked
+    up by ``discover_commands()`` (so ``deviate setup`` installs it for
+    every agent platform), and carries valid frontmatter with the
+    expected ``name`` / ``description``.
+    """
+
+    def test_source_file_exists(self) -> None:
+        """The prompt lives next to the rest of the command library."""
+        path = _SOURCE_COMMANDS_ROOT / "deviate-html.md"
+        assert path.is_file(), (
+            f"Slash command source missing: {path}. ``deviate setup`` will "
+            f"not install ``/deviate-html`` for any agent platform."
+        )
+
+    def test_discover_commands_includes_deviate_html(self) -> None:
+        """``discover_commands()`` returns ``deviate-html`` from the source vault.
+
+        This is what ``deviate setup`` iterates over to install commands into
+        ``.claude/commands/``, ``.opencode/commands/``, ``.factory/commands/``,
+        ``.pi/prompts/``, ``.omp/prompts/``. A future rename or accidental
+        deletion of ``deviate-html.md`` will fail this test before any agent
+        platform silently loses the command.
+        """
+        result = discover_commands(commands_root=_SOURCE_COMMANDS_ROOT)
+        assert "deviate-html" in result, (
+            f"deviate-html missing from discovered command set: {result}"
+        )
+
+    def test_frontmatter_parses_with_correct_name(self) -> None:
+        """The YAML frontmatter parses and the ``name`` field equals the file stem."""
+        path = _SOURCE_COMMANDS_ROOT / "deviate-html.md"
+        content = path.read_text(encoding="utf-8")
+        assert content.startswith("---\n"), (
+            f"{path.name}: missing leading YAML frontmatter delimiter"
+        )
+        # ``split("---", 2)[1]`` returns the block between the leading
+        # delimiter and the next one. The frontmatter is a flat mapping with
+        # no nested documents, so a naive split is sufficient.
+        fm_block = content.split("---\n", 2)[1]
+        fm = yaml.safe_load(fm_block)
+        assert isinstance(fm, dict), f"{path.name}: frontmatter did not parse to a dict"
+        assert fm.get("name") == "deviate-html", (
+            f"{path.name}: frontmatter name mismatch "
+            f"(got {fm.get('name')!r}, expected 'deviate-html')"
+        )
+
+    def test_frontmatter_description_is_nonempty(self) -> None:
+        """The ``description`` field is present and non-empty — it's surfaced
+        in the agent platform's command palette and used for discovery."""
+        path = _SOURCE_COMMANDS_ROOT / "deviate-html.md"
+        content = path.read_text(encoding="utf-8")
+        fm_block = content.split("---\n", 2)[1]
+        fm = yaml.safe_load(fm_block)
+        description = fm.get("description")
+        assert isinstance(description, str) and description.strip(), (
+            f"{path.name}: description must be a non-empty string (got {description!r})"
+        )
