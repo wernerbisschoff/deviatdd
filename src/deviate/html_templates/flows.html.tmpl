@@ -164,28 +164,63 @@
 
   <div class="diagram-slot" aria-label="[TODO] Flow sequence diagram">
     <span class="label">Sequence Diagram Slot</span>
-    Options:
-    <br>&nbsp;&nbsp;&middot; <code>&lt;pre class="mermaid"&gt;sequenceDiagram ...&lt;/pre&gt;</code>
-    <br>&nbsp;&nbsp;&middot; inline SVG with arrows
-    <br>&nbsp;&nbsp;&middot; numbered boxes in HTML for terminal-render fidelity
+    Replace this placeholder with an <code>&lt;svg viewBox="..."&gt;</code> block.
+    Lifelines = dashed vertical lines, message arrows = horizontal lines with
+    arrowheads, actor names = boxed labels at the top. The scaffold is
+    offline-first &mdash; no JavaScript runtime, so code-block diagram formats
+    render as plain text.
   </div>
 
-  <!-- DIAGRAM COMPONENT
-       <pre class="mermaid">
-       sequenceDiagram
-           participant U as User
-           participant A as Agent (/deviate-flows)
-           participant S as Specs
-           U-&gt;&gt;A: invokes /deviate-flows
-           A-&gt;&gt;U: clarifying questions
-           U--&gt;&gt;A: answers
-           A-&gt;&gt;S: writes flows.md + updates index.md
-           S--&gt;A: write confirmation
-           A-&gt;&gt;U: asks for commit confirmation
-           U--&gt;A: confirms
-           A-&gt;&gt;S: single commit on confirmed
-       </pre>
+  <!-- DIAGRAM COMPONENT -->
+  <!--
+       Sequence-diagram pattern (lifelines + message arrows):
+
+       <svg viewBox="0 0 720 360" role="img" aria-labelledby="flowseq-title" xmlns="http://www.w3.org/2000/svg">
+         <title id="flowseq-title">Flow Sequence</title>
+         <defs>
+           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                   markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+           </marker>
+           <style>
+             .fs-line { stroke: var(--accent-flow); stroke-width: 1.5; fill: none; color: var(--accent-flow); }
+             .fs-lifeline { stroke: var(--ink-5); stroke-width: 1; stroke-dasharray: 4 4; }
+             .fs-actor { fill: var(--ink-3); stroke: var(--accent-flow); stroke-width: 1.5; }
+             .fs-actor-text { fill: var(--fg-0); font-family: var(--font-body); font-size: 13px; text-anchor: middle; dominant-baseline: middle; }
+             .fs-msg { fill: var(--fg-1); font-family: var(--font-body); font-size: 12px; }
+             .fs-msg.dashed { stroke: var(--accent-flow); stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; }
+           </style>
+         </defs>
+         <g id="fs-actor-u">
+           <rect class="fs-actor" x="40" y="20" width="120" height="40" rx="6"/>
+           <text class="fs-actor-text" x="100" y="40">User</text>
+           <line class="fs-lifeline" x1="100" y1="60" x2="100" y2="340"/>
+         </g>
+         <g id="fs-actor-a">
+           <rect class="fs-actor" x="240" y="20" width="160" height="40" rx="6"/>
+           <text class="fs-actor-text" x="320" y="40">Agent (/deviate-flows)</text>
+           <line class="fs-lifeline" x1="320" y1="60" x2="320" y2="340"/>
+         </g>
+         <g id="fs-actor-s">
+           <rect class="fs-actor" x="500" y="20" width="160" height="40" rx="6"/>
+           <text class="fs-actor-text" x="580" y="40">Specs</text>
+           <line class="fs-lifeline" x1="580" y1="60" x2="580" y2="340"/>
+         </g>
+         <line class="fs-line" x1="100" y1="100" x2="320" y2="100" marker-end="url(#arrow)"/>
+         <text class="fs-msg" x="210" y="92">invokes /deviate-flows</text>
+         <line class="fs-line" x1="320" y1="140" x2="100" y2="140" marker-end="url(#arrow)"/>
+         <text class="fs-msg" x="210" y="132">clarifying questions</text>
+         <line class="fs-line" x1="100" y1="180" x2="320" y2="180" marker-end="url(#arrow)"/>
+         <text class="fs-msg" x="210" y="172">answers</text>
+         <line class="fs-line" x1="320" y1="220" x2="580" y2="220" marker-end="url(#arrow)"/>
+         <text class="fs-msg" x="450" y="212">writes flow + index</text>
+         <line class="fs-line" x1="580" y1="260" x2="320" y2="260" marker-end="url(#arrow)"/>
+         <text class="fs-msg" x="450" y="252">write confirmation</text>
+       </svg>
+       <figcaption>Replace actors and messages with the real walkthrough.</figcaption>
   -->
+
+
 </section>
 
 <section id="coverage-map">

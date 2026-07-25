@@ -2,7 +2,7 @@
 name: deviate-html
 description: Manually author the ADHD-friendly HTML counterpart for a phase markdown (plan, prd, flows, architecture, domain-model). The agent writes the body directly — no markdown→HTML auto-translation.
 category: deviatdd-product-layer
-version: 1.0.0
+version: 1.1.0
 aliases:
   - html
   - /deviate-html
@@ -79,7 +79,7 @@ The CLI emits `<source_md>.html` adjacent to the markdown file. The starter cont
 Read the corresponding `.md` file in full. Build a mental model of:
 - Section structure (## and ### headers) — the starter mirrors this, but you may reorganize for HTML legibility (e.g., group related ## sections into a `<section class="cluster">`).
 - Tables — these typically render better as native HTML tables or definition lists in the HTML version.
-- Diagrams — markdown code fences become real SVG, mermaid, or annotated boxes in HTML.
+- Diagrams — markdown code fences become inline SVG blocks in HTML. The scaffold is offline-first (no JavaScript runtime loaded), so any code-block diagram format (Mermaid, PlantUML, etc.) renders as plain text. Inline SVG only.
 - FR / AC / FLOW / ADR tokens — every one MUST appear in both files.
 - Cross-references to other artifacts (`specs/constitution.md`, other flow files, etc.) — carry them through as anchor links.
 
@@ -90,7 +90,7 @@ Open the emitted `.html` file and fill the body section-by-section:
 1. **Replace every `<!-- TODO -->` marker** with content drawn from the corresponding markdown section. If a section does not exist in the markdown, either skip the placeholder or flag the gap to the user.
 2. **Preserve the starter's structural conventions**: keep the `<section id="...">` anchors, the `<h2 id="...">` headings, the `<aside class="callout ...">` blocks. They are part of the contract — downstream tooling (jump links, coverage matrix tooling, future search) expects them.
 3. **Use HTML's full surface where markdown cannot**:
-   - Mermaid or inline SVG for component / sequence / ER diagrams.
+   - **Inline SVG** for component / sequence / ER / state diagrams. Use `<svg viewBox="...">` with `<rect>` for nodes, `<line>` or `<path>` for edges, and a `<defs><marker>` for arrowheads. Each phase template ships a worked example in the commented-out `DIAGRAM COMPONENT` block — copy, adapt, replace. The scaffold is offline-first (no JavaScript runtime loaded), so any code-block diagram format (Mermaid, PlantUML, etc.) renders as plain text. Do not embed Mermaid.
    - Native `<table>` with `<thead>` / `<tbody>` for FR / AC / decision matrices.
    - `<details><summary>` collapsibles for long acceptance scenarios or risk registers.
    - `<aside class="callout callout-{info|warn|ready}">` for visual emphasis.
@@ -150,7 +150,7 @@ After completing the work, emit a structured authoring report:
 
 ## Diagram Surface
 - **Native HTML tables**: <count>
-- **Mermaid / SVG diagrams**: <count>
+- **Inline SVG diagrams**: <count>
 - **Callout blocks**: <count>
 - **Collapsible sections**: <count>
 
