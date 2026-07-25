@@ -154,6 +154,35 @@ def test_render_starter_does_not_translate_markdown_body(tmp_path: Path) -> None
     assert "<h2 id=" not in out
 
 
+def test_render_starter_recommends_inline_svg_over_mermaid(tmp_path: Path) -> None:
+    """Diagrams must render as inline SVG, not Mermaid.
+
+    The scaffold is offline-first: no JavaScript, no CDN, no external fonts.
+    A ``<pre class="mermaid">`` block with no Mermaid runtime loaded renders
+    as plain text — the exact failure mode that prompted this contract.
+    Inline SVG keeps the page portable, diff-friendly, and accessible.
+    """
+    md = tmp_path / "demo.md"
+    md.write_text("# Demo\n")
+    for phase in supported_phases():
+        out = render_starter(phase, md)
+        # Case-insensitive guard against any Mermaid reference in prose,
+        # placeholder text, or commented-out examples.
+        assert "mermaid" not in out.lower(), (
+            f"{phase} scaffold still mentions Mermaid; the offline-first "
+            "contract forbids loading a JS runtime. Use inline SVG instead."
+        )
+        # Phases that include a diagram slot (an actual <div class="diagram-slot">)
+        # must ship an inline-SVG example so the agent has a working pattern
+        # to copy-paste. Phases without an instantiated slot (currently ``plan``)
+        # are exempt — the slot CSS class is still present in the bundle, so we
+        # match the HTML attribute string instead.
+        if 'class="diagram-slot"' in out:
+            assert "<svg" in out, (
+                f"{phase} scaffold has a diagram slot but no inline-SVG example"
+            )
+
+
 # ---------------------------------------------------------------------------
 # CLI: per-phase commands
 # ---------------------------------------------------------------------------
