@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from hashlib import sha256
+
 import shutil
 import subprocess
 import time
@@ -32,7 +32,7 @@ from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact, stage_and_commit
 from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands
-from deviate.core.issues import claim_issue, resolve_issue_artifact_path
+from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
 from deviate.core.validation import validate_acceptance_contract
 from deviate.core.worktree import (
@@ -1675,156 +1675,6 @@ def _meso_run(
 
 
 meso_app = typer.Typer(no_args_is_help=True)
-
-
-def _artifact_sha256(path: Path) -> str:
-    return sha256(path.read_bytes()).hexdigest()
-
-
-def _resolve_approve_targets(
-    issue: str | None,
-    plan_arg: Path | None,
-    tasks_arg: Path | None,
-) -> tuple[str, Path, Path]:
-    """Resolve the active ``(issue, plan, tasks)`` triple for ``meso approve``.
-
-    When any argument is omitted, falls back to ``.deviate/session.json`` for
-    the active issue and ``resolve_issue_artifact_path`` for the canonical
-    plan/tasks paths. Exits with a friendly error if no target can be derived.
-    """
-    resolved_issue = issue
-    if resolved_issue is None:
-        session_path = _resolve_dot_deviate() / "session.json"
-        if not session_path.exists():
-            console.print(
-                "[red]HITL_GATE_2_NO_ACTIVE_ISSUE[/] no --issue given and "
-                f"{session_path} is missing; pass --issue explicitly"
-            )
-            raise typer.Exit(code=1)
-        session = SessionState.load(session_path)
-        resolved_issue = session.active_issue_id or None
-        if not resolved_issue:
-            console.print(
-                "[red]HITL_GATE_2_NO_ACTIVE_ISSUE[/] no --issue given and "
-                "session.json has no active_issue_id; pass --issue explicitly"
-            )
-            raise typer.Exit(code=1)
-    dot_dir = _resolve_dot_deviate()
-    if not dot_dir.exists():
-        _handle_missing_dot_dir("APPROVE")
-    record = resolve_issue_record(
-        resolved_issue, _resolve_specs_root() / "issues.jsonl"
-    )
-    if record is None:
-        console.print(f"[red]ISSUE_NOT_FOUND[/] {resolved_issue} not in ledger")
-        raise typer.Exit(code=1)
-    expected_plan = resolve_issue_artifact_path(
-        Path.cwd(), record.source_file, "plan.md"
-    ).resolve()
-    expected_tasks = resolve_issue_artifact_path(
-        Path.cwd(), record.source_file, "tasks.md"
-    ).resolve()
-    resolved_plan = plan_arg.resolve() if plan_arg is not None else expected_plan
-    resolved_tasks = tasks_arg.resolve() if tasks_arg is not None else expected_tasks
-    return resolved_issue, resolved_plan, resolved_tasks
-
-
-@meso_app.command("approve")
-def meso_approve_command(
-    issue: str | None = typer.Option(
-        None,
-        "--issue",
-        help="Issue ID being approved (default: active issue from .deviate/session.json)",
-    ),
-    plan: Path | None = typer.Option(
-        None,
-        "--plan",
-        help="Reviewed plan.md path (default: canonical artifact for the active issue)",
-    ),
-    tasks: Path | None = typer.Option(
-        None,
-        "--tasks",
-        help="Reviewed tasks.md path (default: canonical artifact for the active issue)",
-    ),
-    yes: bool = typer.Option(
-        False,
-        "--yes",
-        "-y",
-        help="Skip the interactive confirmation prompt",
-    ),
-) -> None:
-    """Record HITL Gate 2 approval for exact plan.md and tasks.md contents.
-
-    All three of ``--issue``, ``--plan``, and ``--tasks`` are optional. When
-    omitted, ``deviate meso approve`` reads ``.deviate/session.json`` to
-    discover the active issue and resolves the canonical ``plan.md`` /
-    ``tasks.md`` paths from the ledger's ``source_file``. The Gate 2
-    contract — SHA-256 hashes of both files pinned to the issue — is
-    unchanged: passing wrong paths still fails with ``HITL_GATE_2_ARTIFACT_MISMATCH``.
-    Use ``--yes`` to skip the interactive confirmation prompt.
-    """
-    issue, plan, tasks = _resolve_approve_targets(
-        issue=issue, plan_arg=plan, tasks_arg=tasks
-    )
-    if not plan.is_file() or not tasks.is_file():
-        console.print("[red]HITL_GATE_2_ARTIFACT_MISSING[/]")
-        raise typer.Exit(code=1)
-    acceptance_errors = validate_acceptance_contract(plan.read_text(encoding="utf-8"))
-    if acceptance_errors:
-        console.print(
-            f"[red]PLAN_ACCEPTANCE_CONTRACT_INVALID[/] {'; '.join(acceptance_errors)}"
-        )
-        raise typer.Exit(code=1)
-    if not re.search(r"(?m)^- TSK-\d{3}-\d{2}:", tasks.read_text(encoding="utf-8")):
-        console.print("[red]TASKS_INVALID[/] no TSK-NNN-NN task entries found")
-        raise typer.Exit(code=1)
-    if not yes and not typer.confirm(
-        f"Approve plan.md and tasks.md for {issue} and unlock micro execution?"
-    ):
-        console.print("[yellow]HITL_GATE_2_NOT_APPROVED[/]")
-        raise typer.Exit(code=1)
-
-    session_path = _resolve_dot_deviate() / "session.json"
-    session = SessionState.load(session_path)
-    if session.active_issue_id != issue:
-        console.print(
-            f"[red]HITL_GATE_2_ISSUE_MISMATCH[/] active={session.active_issue_id} "
-            f"requested={issue}"
-        )
-        raise typer.Exit(code=1)
-    ledger_path = _resolve_specs_root() / "issues.jsonl"
-    record = resolve_issue_record(issue, ledger_path)
-    if record is None:
-        console.print(f"[red]ISSUE_NOT_FOUND[/] {issue}")
-        raise typer.Exit(code=1)
-    expected_plan = resolve_issue_artifact_path(
-        Path.cwd(), record.source_file, "plan.md"
-    ).resolve()
-    expected_tasks = resolve_issue_artifact_path(
-        Path.cwd(), record.source_file, "tasks.md"
-    ).resolve()
-    if plan.resolve() != expected_plan or tasks.resolve() != expected_tasks:
-        console.print(
-            "[red]HITL_GATE_2_ARTIFACT_MISMATCH[/] approval requires "
-            f"{expected_plan} and {expected_tasks}"
-        )
-        raise typer.Exit(code=1)
-    try:
-        plan_path = plan.resolve().relative_to(Path.cwd().resolve())
-        tasks_path = tasks.resolve().relative_to(Path.cwd().resolve())
-    except ValueError:
-        console.print(
-            "[red]HITL_GATE_2_ARTIFACT_OUTSIDE_WORKTREE[/] "
-            "plan.md and tasks.md must belong to the active worktree"
-        )
-        raise typer.Exit(code=1) from None
-    session.hitl_gate_2_approved_issue_id = issue
-    session.hitl_gate_2_plan_path = str(plan_path)
-    session.hitl_gate_2_tasks_path = str(tasks_path)
-    session.hitl_gate_2_plan_sha256 = _artifact_sha256(plan)
-    session.hitl_gate_2_tasks_sha256 = _artifact_sha256(tasks)
-    session.save(session_path)
-    console.print(f"[green]HITL_GATE_2_APPROVED[/] {issue}")
 
 
 @meso_app.command("run")

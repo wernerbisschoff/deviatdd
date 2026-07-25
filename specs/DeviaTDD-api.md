@@ -270,7 +270,7 @@ All macro-layer commands follow the `pre`/`post` subcommand pattern (except `ini
 Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--quiet`
 (suppress diagnostic output).
 
-**Active Domain Discipline** is enforced at HITL gates: the macro phases that interact with the human (`/deviate-research` Gate 1, `/deviate-prd` Ambiguity Interrogation, `/deviate-shard` Gate 2) actively term-challenge against the upstream glossary, sharpen fuzzy language, stress-test with concrete edge-case scenarios, and update the relevant artifact (`design.md`, `data-model.md`, `prd.md`) inline as terms resolve — not as a passive sign-off step.
+**Active Domain Discipline** is enforced at HITL gates: the macro phases that interact with the human (`/deviate-research` Gate 1, `/deviate-prd` Ambiguity Interrogation) actively term-challenge against the upstream glossary, sharpen fuzzy language, stress-test with concrete edge-case scenarios, and update the relevant artifact (`design.md`, `data-model.md`, `prd.md`) inline as terms resolve — not as a passive sign-off step.
 
 #### `deviate explore pre <problem> [--slug]`
 
@@ -423,25 +423,11 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 
 #### `deviate tasks post [--force] [--issue-id]`
 
-Validates tasks.md exists and is non-empty, commits it, transitions session to IDLE, and stops at HITL Gate 2. Tasks map work to `AC-PLAN-NNN` scenario IDs.
-
-#### `deviate meso approve [--issue <id>] [--plan <path>] [--tasks <path>] [--yes]`
-
-* **Description:** Interactive Gate 2 sign-off after the human reviews plan.md and tasks.md together. Validates canonical active-issue artifact paths and contracts, then persists issue ID plus SHA-256 hashes of both files in session state.
-* **Defaults:** All three of `--issue`, `--plan`, and `--tasks` are optional. When omitted, `meso approve` reads the active issue from `.deviate/session.json` and resolves the canonical `plan.md` / `tasks.md` paths from the ledger record's `source_file`. This makes the post-`deviate run` workflow a single bare command instead of a copy-paste of three flags.
-* **Flags:**
-  * `--issue <id>` — Issue ID being approved (default: `session.active_issue_id`).
-  * `--plan <path>` — Reviewed `plan.md` (default: `resolve_issue_artifact_path(cwd, record.source_file, "plan.md")`).
-  * `--tasks <path>` — Reviewed `tasks.md` (default: `resolve_issue_artifact_path(cwd, record.source_file, "tasks.md")`).
-  * `--yes` / `-y` — Skip the interactive confirmation prompt (useful for scripted approvals).
-* **Errors:**
-  * `HITL_GATE_2_NO_ACTIVE_ISSUE` — neither `--issue` nor session.json has an active issue; pass `--issue` explicitly.
-  * `HITL_GATE_2_ARTIFACT_MISMATCH` — the resolved or supplied paths do not match the canonical artifacts for the active issue.
-* **Enforcement:** `deviate micro run` fails closed with `HITL_GATE_2_APPROVAL_REQUIRED` when absent and `HITL_GATE_2_APPROVAL_STALE` when either reviewed artifact changed.
+Validates tasks.md exists and is non-empty, commits it, and transitions session to IDLE. There is no human-approval step between Tasks and Micro — the system auto-advances. Tasks map work to `AC-PLAN-NNN` scenario IDs.
 
 #### `deviate run [--issue] [--force]`
 
-Runs setup → Plan → Tasks and stops at `AWAITING_HITL_GATE_2`. The former Micro-related flags (`--profile`, `--no-judge`, `--no-refactor`, `--agent`, `--json`) are removed; use them on `deviate micro run` after approval.
+Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain the task queue. There is no human-approval step between meso and micro — the system never blocks on human approval. The former Micro-related flags (`--profile`, `--no-judge`, `--no-refactor`, `--agent`, `--json`) are removed; use them on `deviate micro run` directly if you only want to drain pending tasks.
 
 #### `deviate tasks <issue-id>` (Legacy)
 
@@ -594,17 +580,17 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 ### 5. Automated Pipeline Orchestration
 
-#### `deviate run` (Meso → Gate 2 Handoff)
+#### `deviate run` (Meso → Micro Chain)
 
 * **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)
-* **Description:** Canonical "go do the next thing" entry point for the meso layer. Runs `deviate meso run` end-to-end (SPECIFY setup → PLAN → TASKS) and stops at Gate 2 with an `AWAITING_HITL_GATE_2` banner. Micro execution is no longer chained: after the human reviews `plan.md` + `tasks.md` together, run `deviate meso approve` (all flags auto-resolve from `.deviate/session.json` and the ledger — pass `--yes` to skip the prompt), then dispatch micro via `deviate micro run --all`. Discovers the next unblocked BACKLOG issue, claims it (creating the per-issue worktree), runs the meso pipeline in the worktree, then halts for Gate 2 approval. Internally:
+* **Description:** Canonical "go do the next thing" entry point. Runs `deviate meso run` end-to-end (SPECIFY setup → PLAN → TASKS) and then **chains** into `deviate micro run --all` to drain the task queue. There is no human-approval step between meso and micro — the system auto-advances. Discovers the next unblocked BACKLOG issue, claims it (creating the per-issue worktree), runs the meso pipeline in the worktree, then dispatches the micro drain. Internally:
   1. Calls `_meso_run(issue_id=...)` from `src/deviate/cli/meso.py`, which returns the created worktree path on success (`str(worktree_path)`).
-  2. `chdir`s into that worktree, updates `.deviate/session.json` to record the handoff, and emits the `AWAITING_HITL_GATE_2` banner instructing the user to run the now-flagless `deviate meso approve`.
-  3. Does **not** invoke `_run_all()`; micro runs only after Gate 2 approves exact SHA-256 hashes of `plan.md` and `tasks.md` (`HITL_GATE_2_APPROVAL_REQUIRED`/`STALE` enforce this).
+  2. `chdir`s into that worktree, updates `.deviate/session.json` to record the handoff.
+  3. Invokes `_run_all(root, console)` from `src/deviate/cli/micro.py` against the worktree, draining every PENDING task for the active issue.
 * **Input Parameters:**
   * `--issue <ISS-NNN-NN>` (Target a specific BACKLOG issue; default: next unblocked)
   * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
-* **Exit Codes:** 0 on meso success; 1 if meso reports failure.
+* **Exit Codes:** 0 on meso + micro success; 1 if meso reports failure (`RUN_NO_WORKTREE` / `RUN_WORKTREE_MISSING`).
 * **Replaces:** The old task-dispatch surface. The per-task and `--all` dispatches live at `deviate micro run <task-id>` and `deviate micro run --all`; the former `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` flags were removed from `deviate run` and remain available on `deviate micro run`.
 
 #### `deviate micro run [task-id]` / `deviate micro run --all`
@@ -1084,9 +1070,9 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-prd` | Product Owner Proxy | `specs/{FEATURE_SLUG}/prd.md` | `deviate prd pre/post` | 4 steps: read design.md, synthesize requirements, write prd.md, commit |
 | `/deviate-shard` | Decomposition Engine | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}-*.md` | `deviate shard pre/post` | 5 steps: read prd.md, identify vertical slices, validate granularity, create issue stubs with `AO-NNN` acceptance outlines (no Gherkin), register in ledger. PRD/Shard/Adhoc halt with `GHERKIN_LEAK_DETECTED` on bold `**Given**`/`**When**`/`**Then**`; final Gherkin belongs to Plan. |
 | `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation (acceptance outline; no Gherkin), ledger registration, commit, Gherkin-leak guard |
-| **[HITL GATE 2]** | Human Reviewer (post-Tasks) | --- | `deviate meso approve` | Review `plan.md` + `tasks.md` together after Tasks commits. `deviate meso approve` (all flags optional; resolves active issue from `.deviate/session.json` and artifact paths from the ledger record's `source_file`; `--yes` skips the prompt) records SHA-256 hashes for both artifacts; Micro fails closed on `HITL_GATE_2_APPROVAL_REQUIRED`/`STALE`. Moved from after Shard to after Tasks so the human reviews the current-code-informed contract and its decomposition together. |
+| **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
-| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes, encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` stops at `AWAITING_HITL_GATE_2`. |
+| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes, encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
 | `/deviate-walkthrough` | Architectural Walkthrough Guide | (none — conversation only) | `deviate walkthrough pre/post` | 5 steps: gather, sweep, curate, walk (conversational), synthesize |
 | `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC/FLOW/ADR tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-flows`, `/deviate-architecture`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
 
@@ -1095,8 +1081,8 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 **Session Continuity Strategy:**
 - **Macro layer** (explore -> research -> prd -> shard): Sequential CLI invocations, each persisting session to `.deviate/session.json`. Phase transitions validated by `SessionState`. Shard now emits issue outlines only; final Gherkin lands in Plan.
 - **Meso layer** (`/deviate-plan` -> `/deviate-tasks`): Single continuous LLM session per issue. The system prompt, tool definitions, issue content, and `constitution.md` form a stable prefix cached after turn 1. Tasks now reads the authoritative `plan.md` Acceptance Contract rather than the issue's own Gherkin.
-- **Gate 2 (post-Tasks):** `deviate meso approve` records SHA-256 hashes of `plan.md` + `tasks.md` against the active issue. All flags are optional and resolve from `.deviate/session.json` / the ledger; `--yes` skips the prompt. Micro fails closed when approval is missing or stale.
-- **Micro layer** (RED -> GREEN -> JUDGE -> REFACTOR): Task execution reuses the same in-process state via `force_transition_to()`. Dispatch through `deviate micro run <task-id>` or `deviate micro run --all` after Gate 2 approval.
+- **Gate 2 (REMOVED):** The post-Tasks `deviate meso approve` hard gate was removed. The system never blocks on human approval. Plan and Tasks still commit authored artifacts to the worktree, but review happens out-of-band without gating execution.
+- **Micro layer** (RED -> GREEN -> JUDGE -> REFACTOR): Task execution reuses the same in-process state via `force_transition_to()`. Dispatch through `deviate micro run <task-id>` or `deviate micro run --all`; no approval prerequisite.
 ---
 
 ### 3. Issue & Task Status Models
