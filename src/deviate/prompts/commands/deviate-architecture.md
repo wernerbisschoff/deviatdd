@@ -100,18 +100,21 @@ CRITICAL INVARIANTS:
     protocol collapses the work into one commit at sign-off, the
     same model `/deviate-flows` v1.4.0 enforces.
 
-    **Phase A — Draft.** Write `specs/_product/architecture.md` and
-    `specs/_product/domain-model.md` to disk via the `write` tool as
-    the conversation progresses. Stage the session-owned files via
-    `deviate.core.commit.stage_files` so the user can `git diff
-    --cached` while reviewing. Do NOT call `commit_artifact`, do NOT
-    run `git add -A`, do NOT fire any commit. The working tree
-    stays dirty-but-staged-but-uncommitted so the user can iterate
-    on the architecture without polluting the log with one-commit-per-
-    revision noise. The FLOW-04 lesson still applies: chat-only output
-    is not enough; the files MUST land on disk so downstream
-    `/deviate-release` can read them through its `ARCH_OR_FLOWS_MISSING`
-    precondition gate.
+
+
+   **Phase A — Draft.** Write `specs/_product/architecture.md` and
+   `specs/_product/domain-model.md` to disk via the `write` tool as
+   the conversation progresses. Stage the session-owned files via
+   the host agent's git tooling (e.g. `git add
+   specs/_product/architecture.md specs/_product/domain-model.md`)
+   so the user can `git diff --cached` while reviewing. Do NOT
+   run `git add -A`, do NOT fire any commit. The working tree
+   stays dirty-but-staged-but-uncommitted so the user can iterate
+   on the architecture without polluting the log with one-commit-per-
+   revision noise. The FLOW-04 lesson still applies: chat-only output
+   is not enough; the files MUST land on disk so downstream
+   `/deviate-release` can read them through its `ARCH_OR_FLOWS_MISSING`
+   precondition gate.
 
     **Phase B — Sign-off and one commit.** When the user signals they
     are happy with the full set of changes ("commit", "looks good",
@@ -123,21 +126,31 @@ CRITICAL INVARIANTS:
     2. Run `git diff --cached --name-only`; if any cached path is
        outside the session-owned file set, halt and surface the
        staged list (do NOT auto-unstage).
-    3. Invoke `deviate.core.commit.stage_and_commit` EXACTLY ONCE
-       with `files=` listing every session-authored architecture
-       and domain-model file. Pass a Conventional Commits subject
-       (`docs(architecture): <one-line summary>` or, when both
-       files changed, a single
-       `docs(architecture): <summary> and sync domain model`).
-       Embed the classification banner
-       (`Local` / `Context-Bridging` / `Context-Creating`) in the
-       commit body. Do NOT call `commit_artifact(path, msg)` —
-       that helper commits one path per call and would emit one
-       commit per file. Do NOT use `git add -A` or
-       `git commit --only`.
-    4. Never pass `no_verify=True`; if a pre-commit hook fails,
-       surface stderr verbatim and stop — do not retry with
-       `--no-verify`.
+   3. If `<repo_root>/CONTRIBUTING.md` exists, read it in full to
+      discover the target repository's commit-message convention
+      (types, scopes, emoji prefix, subject length). The default
+      when absent is Conventional Commits (`<type>(<scope>):
+      <subject>`); if CONTRIBUTING.md exists and declares a
+      different convention, that wins. Stage every session-authored
+      architecture and domain-model file via the host agent's git
+      tooling (e.g. `git add specs/_product/architecture.md
+      specs/_product/domain-model.md`) and fire exactly one
+      `git commit -m '<subject per CONTRIBUTING.md or default>'`
+      using the type/scope/emoji declared above (e.g.
+      `docs(architecture): <one-line summary>`, or
+      `docs(architecture): <summary> and sync domain model` when
+      both files changed). Embed the classification banner
+      (`Local` / `Context-Bridging` / `Context-Creating`) in the
+      commit body. Do NOT use `git add -A` or
+      `git commit --only` — the commit must be exactly one for the
+      full session-owned file set.
+   4. Run `git commit` WITHOUT `--no-verify` by default — the
+      target repo's pre-commit hooks may check arbitrary content
+      (lint, format, secrets, links), not only Python. If
+      CONTRIBUTING.md (from step 3) exists and explicitly permits
+      `--no-verify` for docs-only commits, pass it; otherwise
+      let the hook run. If a hook fails, surface stderr verbatim
+      and stop — never retry with `--no-verify` to bypass.
 
     This invariant is grounded in the prior session's bug where the
     FLOW-04 architecture was emitted into chat but never written
@@ -222,10 +235,11 @@ architectural change.
 **7a. Phase A — Persist and stage (no commit).** Write both
 `specs/_product/architecture.md` and `specs/_product/domain-model.md`
 to disk via the `write` tool. After both writes succeed, stage the
-session-owned files via `deviate.core.commit.stage_files` so the user
-can review with `git diff --cached`. Do NOT call `commit_artifact`,
-do NOT run `git add -A`, do NOT fire any commit. The working tree
-stays dirty-but-staged-but-uncommitted so the user can iterate on the
+session-owned files via the host agent's git tooling (e.g. `git add
+specs/_product/architecture.md specs/_product/domain-model.md`)
+so the user can review with `git diff --cached`. Do NOT run
+`git add -A`, do NOT fire any commit. The working tree stays
+dirty-but-staged-but-uncommitted so the user can iterate on the
 architecture without polluting the log with one-commit-per-revision
 noise. If the file write fails, halt and surface the write error
 verbatim — do not commit a partial tree.
@@ -241,20 +255,33 @@ sign-off — if the user asks for revisions, return to step 5.
 **7c. Phase B — Atomic commit (exactly once).** On explicit user
 sign-off, run `git diff --cached --name-only`; if any cached path is
 outside the session-owned file set, halt and surface the staged list
-(do NOT auto-unstage). Then invoke
-`deviate.core.commit.stage_and_commit` EXACTLY ONCE with `files=`
-listing every session-authored architecture and domain-model file.
-Pass a Conventional Commits subject
-(`docs(architecture): <one-line summary>` or, when both files
-changed, `docs(architecture): <summary> and sync domain model`).
-Embed the classification banner
+(do NOT auto-unstage). If `<repo_root>/CONTRIBUTING.md` exists,
+read it in full to discover the target repository's
+commit-message convention (types, scopes, emoji prefix, subject
+length). The default when absent is Conventional Commits; if
+CONTRIBUTING.md exists and declares a different convention, that
+wins. Then via the host agent's git tooling fire exactly one
+`git commit -m '<subject per CONTRIBUTING.md or default>'`
+(e.g. `docs(architecture): <one-line summary>`, or
+`docs(architecture): <summary> and sync domain model` when both
+files changed). Embed the classification banner
 (`Local` / `Context-Bridging` / `Context-Creating`) in the commit
-body. Never pass `no_verify=True`; if a pre-commit hook fails,
-surface stderr verbatim and stop — do not retry with `--no-verify`.
-The conversational output of this skill MUST NOT be considered
-complete until both files are on disk and committed — downstream
-`/deviate-release` reads them from disk to satisfy its precondition
-gate.
+body. Run `git commit` WITHOUT `--no-verify` by default; if
+CONTRIBUTING.md exists and explicitly permits `--no-verify` for
+this scenario, pass it; otherwise let the hook run. If a hook
+fails, surface stderr verbatim and stop. The conversational
+output of this skill MUST NOT be considered complete until both
+files are on disk and committed — downstream `/deviate-release`
+reads them from disk to satisfy its precondition gate.
+
+**7d. HTML Artifacts — Author the human-review pages.** After both `architecture.md` and `domain-model.md` are committed, emit empty starter scaffolds next to each:
+```bash
+deviate html architecture
+deviate html domain-model   # only if domain-model.md was updated
+```
+Open each `.html` file and author its body from the corresponding `.md`. The starter contains section anchors and `TODO` placeholders — fill them in. Use HTML's full surface (component diagrams, ER diagrams, decision log tables) where it expresses the architecture more clearly than markdown. **Do NOT auto-translate the markdown** — the whole point of the starter scaffold is that the agent authors HTML directly so the page can express things markdown cannot.
+
+The HTML files are NOT committed by the session's existing git tooling yet — add them to the same atomic commit as the markdown via your host agent's git tooling, alongside `architecture.md` and (if changed) `domain-model.md`.
 
 ## 8. Flow Traceability Audit
 Cross-check: every component in `architecture.md` references at least one
@@ -280,10 +307,8 @@ Inform the user that downstream `deviate shard` invocations will now emit
 | Flow ID references no component | Surface as `[yellow]ORPHAN_FLOW[/]` warning |
 | Component or ADR carries no `libref` source anchor | Halt write with `[yellow]UNVERIFIED_CLAIM[/]`; run `libref query` and ground the claim before yield |
 | `libref` package missing for a referenced library | Run `libref add <git-url>` first; only fall back to `web_search` if `libref add` fails |
-| File write to `specs/_product/architecture.md` or `domain-model.md` fails | Halt and surface the write error verbatim; do not commit a partial tree |
-| `stage_and_commit` reports a pre-commit hook failure during Phase B | Surface hook stderr verbatim; do not pass `no_verify=True`; halt the session and surface the failure so the user can fix the lint or format violation and re-trigger sign-off |
+| `git commit` reports a pre-commit hook failure during Phase B | Surface hook stderr verbatim; do NOT retry with `--no-verify` to bypass. Halt the session and surface the failure so the user can remediate the underlying violation and re-trigger sign-off |
 | Git working tree dirty from prior work | Stash or revert before persisting; never co-mingle unrelated changes in the architecture commit |
-
 </edge_case_handling>
 <context>
 <user_input>

@@ -231,20 +231,21 @@ def _extract_panel_command_names(panel_block: str) -> list[str]:
     return pattern.findall(panel_block)
 
 
-def test_help_user_panel_has_exactly_three_commands():
+def test_help_user_panel_has_exactly_four_commands():
     """The 'Run by you' panel must contain exactly ``setup``, ``run``,
-    ``meso``, ``render`` as command rows. If a phase dispatcher or agent-internal
+    ``meso``, ``html`` as command rows. If a phase dispatcher or agent-internal
     command ever leaks into this panel, a first-timer will think it is
     for them — this assertion catches that regression.
 
-    ``render`` was added when spec HTML preview moved out of the post-hook
-    auto-render path (manual command for flows files).
+    ``html`` is the agent-authored HTML starter scaffold command; the
+    auto-render ``render`` subcommand it replaced was removed when the
+    markdown→HTML auto-render path was cut in favour of agent-authored HTML.
     """
     output = _help_output()
     user_block = _panel_block(output, USER_PANEL)
     user_command_names = set(_extract_panel_command_names(user_block))
-    assert user_command_names == {"setup", "run", "meso", "render"}, (
-        f"User panel must contain exactly {{setup, run, meso, render}} as "
+    assert user_command_names == {"setup", "run", "meso", "html"}, (
+        f"User panel must contain exactly {{setup, run, meso, html}} as "
         f"command rows; got {sorted(user_command_names)}"
     )
 

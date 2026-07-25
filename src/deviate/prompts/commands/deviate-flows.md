@@ -114,18 +114,32 @@ CRITICAL INVARIANTS:
    2. Run `git diff --cached --name-only`; if any cached path is
       outside the session-owned file set, halt and surface the
       staged list (do NOT auto-unstage).
-   3. Invoke `deviate.core.commit.stage_and_commit` EXACTLY ONCE
-      with `files=` listing every session-authored flow file plus
-      `specs/_product/flows/index.md`. Pass a Conventional Commits
-      subject (`docs(flows): add FLOW-NN[, FLOW-MM, ...] and update
-      index`, or `docs(flows): update index` when no flow files
-      were added). Do NOT call `commit_artifact(path, msg)` here —
-      that helper commits one path per call and would emit one
-      commit per file. Do NOT use `git add -A` or
-      `git commit --only`.
-   4. Never pass `no_verify=True`; if a pre-commit hook fails,
-      surface stderr verbatim and stop.
-
+   3. If `<repo_root>/CONTRIBUTING.md` exists, read it in full to
+      discover the target repository's commit-message convention
+      (types, scopes, emoji prefix, subject length). The default
+      when absent is Conventional Commits (`<type>(<scope>):
+      <subject>`); if CONTRIBUTING.md exists and declares a
+      different convention, that wins. Stage every session-authored
+      flow file plus `specs/_product/flows/index.md` via the host
+      agent's git tooling (e.g. `git add
+      specs/_product/flows/flows-<domain>.md
+      specs/_product/flows/index.md`) and fire exactly one
+      `git commit -m '<subject per CONTRIBUTING.md or default>'`
+      using the type/scope/emoji declared above (e.g.
+      `docs(flows): add FLOW-NN[, FLOW-MM, ...] and update index`
+      under the default; `docs: add FLOW-NN and update index`
+      if CONTRIBUTING.md omits the scope; emoji-prefixed variant
+      if it declares a gitmoji rule). Do NOT emit one commit per
+      file (the prior per-file-commit helper was retired) and do
+      NOT use `git add -A` or `git commit --only` — the commit
+      must be exactly one for the full session-owned file set.
+   4. Run `git commit` WITHOUT `--no-verify` by default — the
+      target repo's pre-commit hooks may check arbitrary content
+      (lint, format, secrets, links), not only Python. If
+      `CONTRIBUTING.md` from step 3 explicitly permits
+      `--no-verify` for docs-only commits, pass it; otherwise
+      let the hook run. If a hook fails, surface stderr verbatim
+      and stop — never retry with `--no-verify` to bypass.
 </system_instructions>
 
 <execution_sequence>
@@ -179,12 +193,23 @@ request explicit user approval before committing. Silence is not
 sign-off; if the user asks for revisions, return to step 3. See
 invariant 9 for the full Phase B protocol.
 
-## 6. Atomic Commit (Phase B, exactly once)
-Per invariant 9, invoke `stage_and_commit` exactly once with the
-session-owned file list. Do not call `commit_artifact`, do not
-run `git add -A`, do not pass `--no-verify`.
+## 6. HTML Artifact — Author the human-review page
+Run the CLI to emit an empty starter scaffold next to the flows index:
+```bash
+deviate html flows
+```
+Open `specs/_product/flows/index.html` and author its body from `index.md`: structure the flow catalog, per-flow detail (actor / trigger / happy path / failure modes / outcomes / trace), flow diagrams, and coverage map. The starter contains section anchors and `TODO` placeholders — fill them in. **Do NOT auto-translate the markdown.** Use HTML's full surface (sequence diagrams, clickable coverage matrices, visual hierarchy) where it expresses the catalog more clearly than markdown.
 
-## 7. Cross-Layer Signal
+## 7. Atomic Commit (Phase B, exactly once)
+Stage the full session-owned file set (`flows-<domain>.md`, `index.md`, `index.html`) via the host
+agent's git tooling and fire exactly one `git commit -m '<subject
+derived from CONTRIBUTING.md or the Conventional Commits default>'`.
+Do not run `git add -A`. Pre-commit hooks configured in the target
+repo (via `.git/hooks/`, `core.hooksPath`, or `husky`/`pre-commit`
+framework) run automatically when `git commit` is invoked without
+`--no-verify`.
+
+## 8. Cross-Layer Signal
 Inform the user that the new `FLOW-NN` ID(s) are now available for
 downstream `deviate shard` invocations to reference via
 `flow_refs: [FLOW-NN]`.
@@ -260,9 +285,8 @@ downstream `deviate shard` invocations to reference via
 | User provides no domain qualifier | Use the default `flows.md` filename |
 | Duplicate flow ID detected | Refuse to overwrite; surface a collision error and prompt the user for the next ID |
 | Index file is malformed (not a markdown table) | Append the new row as a markdown table; preserve the existing malformed header verbatim |
-| Cross-layer file referenced | Refuse and route to the appropriate skill (`deviate-architecture` or `deviate-release`) |
+| `git commit` reports a pre-commit hook failure | Surface hook stderr verbatim; do NOT retry with `--no-verify` to bypass. Stop and re-trigger sign-off after the user remediates the underlying violation |
 | Generated flow block exceeds the line/word budgets in invariant 8 | Tighten prose before writing; downstream `/prd` and `/shard` will fail to parse bloated sections |
-| `stage_and_commit` reports a pre-commit hook failure | Surface hook stderr verbatim; do not pass `no_verify=True`; halt the session and surface the failure so the user can fix the lint or format violation and re-trigger sign-off |
 
 </edge_case_handling>
 

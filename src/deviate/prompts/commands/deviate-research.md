@@ -179,6 +179,18 @@ Write the architecture, options, trade-offs, recommendation, contrarian viewpoin
 Write the entities, relationships, schemas, state transitions, and data flow into `<data_model_target>` — the absolute path from the contract.
 </step>
 
+<step id="html_artifact">
+**HTML Artifact — Conditional on data-model.md update.** Run `deviate html domain-model` ONLY IF this research invocation actually updated `<data_model_target>` (i.e., new entities, schemas, or relationships were introduced). If the architecture changed but the data model was unchanged, skip this step entirely.
+
+When the data model did change, emit the empty starter scaffold next to the canonical product-layer file:
+```bash
+deviate html domain-model
+```
+Open `specs/_product/domain-model.html` and author its body from the updated `<data_model_target>` and the existing `specs/_product/domain-model.md` (which the architecture command mirrors per its invariant 5). The starter contains section anchors and `TODO` placeholders — fill them in. **Do NOT auto-translate the markdown** — use HTML's full surface (ER diagrams, schema tables, state-machine diagrams) where it expresses the model more clearly than markdown.
+
+The HTML file is NOT committed by the research post-script. Add it to the same atomic commit as `<design_target>` and `<data_model_target>` via your host agent's git tooling.
+</step>
+
 <step id="interactive_hitl_gate_1">
 **HITL Gate 1 — Interactive Review.** After writing `<design_target>` and `<data_model_target>`, pause to get human feedback before finalizing. The interaction is **active**, not a sign-off: complete a full domain-discipline pass below before presenting the `## Pending HITL Decisions` questions.
 
