@@ -19,7 +19,7 @@ Read `{spec_path}` for user stories, AO outlines, scope, edge cases, performance
 </step>
 
 <step id="codebase_scan">
-Use the codebase-index MCP tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) to scan the workstation files declared in the system topology mapping — verify symbol presence, surface call relationships, and locate prior `plan.md` references. Verify the index is current via `index_status` before depending on it. Augment with `git log --oneline -20` for prior-commit context, read `specs/issues.jsonl` for related issues, and check prior `plan.md` in related issue directories. If `specs/_product/` exists, also read `specs/_product/release-next.md` Goal and `specs/_product/architecture.md` §3 Components table for the Architecture Components Touched field.
+Use the codebase-index tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) to scan the workstation files declared in the system topology mapping — verify symbol presence, surface call relationships, and locate prior `plan.md` references. Verify the index is current via `index_status` before depending on it. Augment with `git log --oneline -20` for prior-commit context, read `specs/issues.jsonl` for related issues, and check prior `plan.md` in related issue directories. If `specs/_product/` exists, also read `specs/_product/release-next.md` Goal and `specs/_product/architecture.md` §3 Components table for the Architecture Components Touched field.
 </step>
 
 <step id="prior_analysis">
@@ -95,6 +95,19 @@ The CLI orchestrator runs `deviate plan post` after your response to validate pl
 | NO_FLOW_INHERITANCE — issue has no `flow_refs` and no Product-layer mapping could be inferred | Medium | Low | Downstream phases operate without Product-layer anchor; tasks will carry `**Flow References**: []` |
 | PRODUCT_LAYER_ABSENT — `specs/_product/` directory not present | Low | Low | Plan proceeds without cross-epic context |
 
+
+## Security Profile
+
+List the risk surfaces this task touches (auth, secrets, PII, outbound HTTP,
+deserialization, subprocess, file paths, SQL/ORM, eval) and the negative tests
+the planner expects RED to write. Free-form prose is fine — structured parsing
+is a future PR. The body of this section is stored verbatim on the task
+record's `security_profile` field and read by the JUDGE prompt as supplementary
+context when populating the `security_checks` manifest field.
+
+Risk surfaces: <list the surfaces this task touches, e.g. "auth, secrets, subprocess">
+Negative tests: <the negative tests RED must write, e.g. "auth bypass fails, secrets not in logs">
+Constraints: <green-phase constraints, e.g. "no new dependencies without checksum, no hardcoded secrets">
 ## Integration Points
 - **<integration point>**: <what connects here and the contract expected>
 

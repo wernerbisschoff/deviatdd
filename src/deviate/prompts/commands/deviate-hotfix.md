@@ -70,7 +70,7 @@ The contract on stdout contains: `status`, `issue_id`, `bug_description`, `git_b
 <step id="bug_analysis">
 Given bug description from user input or JSON contract:
 1. Read `specs/constitution.md` for architectural invariants, coding conventions, and testing mandates
-2. Identify broken file(s): use `codebase_search` / `codebase_peek` to locate files matching bug keywords; fall back to `grep` / `find` only when the codebase-index MCP is unavailable
+2. Identify broken file(s): use `codebase_search` / `codebase_peek` to locate files matching bug keywords; fall back to `grep` / `find` only when the codebase-index is unavailable
 3. Identify matching test file(s): look for *.spec.*, *_test.*, test_*.py
 4. Confirm root cause: read the broken file, identify exact line/function causing the bug
 5. Verify test exists: if no test exists, create one in the standard test location
@@ -167,7 +167,7 @@ Return output as a raw JSON object with schema:
 |---|---|
 | NO_TEST_FOUND | Create a new test file alongside the broken file. Use existing test framework conventions. |
 | MULTIPLE_BUGS | If bug description mentions multiple issues, create separate T001/T002 tasks. If more than 2 tasks needed, reject to /deviate-tasks. |
-| NO_BUG_LOCATION | Use `codebase_search` for semantic matches of relevant keywords, function names, or error messages mentioned in the bug report; fall back to `grep` for literal keyword search when the codebase-index MCP is unavailable. |
+| NO_BUG_LOCATION | Use `codebase_search` for semantic matches of relevant keywords, function names, or error messages mentioned in the bug report; fall back to `grep` for literal keyword search when the codebase-index is unavailable. |
 | WRONG_BRANCH | Abort and instruct user to create a feature branch. |
 | Pre-script returns FAILURE | Surface the reason from the JSON contract and stop. |
 
