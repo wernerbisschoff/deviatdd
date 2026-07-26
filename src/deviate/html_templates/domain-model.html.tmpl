@@ -30,10 +30,9 @@
     -->
   </ol>
   <div class="toc-progress">
-    Progress: <strong><span id="progress-count">0</span> / 6</strong> sections authored
+    Progress: <strong><span id="progress-count">0</span> / <<SECTION_COUNT>></strong> sections authored
     <span class="toc-progress-dots" aria-hidden="true">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+<<TOC_DOTS>>
     </span>
   </div>
 </aside>
@@ -50,7 +49,7 @@
     This page is the <em>canonical visual model</em>; the markdown table at
     <code><<SOURCE_MD>></code> is the audit-friendly counterpart. Diagram-first,
     schema-second, prose last.
-    <span class="chip chip-todo">6 sections to fill</span>
+    <span class="chip chip-todo"><<SECTION_COUNT>> sections to fill</span>
   </p>
 </header>
 
@@ -358,7 +357,7 @@
   <h2>Source Registry</h2>
 
   <p>Citations for facts that did not originate in this document. One row per source.</p>
-  <table>
+  <table class="audit-log">
     <thead>
       <tr><th>Source</th><th>Informs</th><th>Reference</th></tr>
     </thead>

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -135,10 +136,63 @@ def test_render_starter_substitutes_all_sentinels(tmp_path: Path) -> None:
     assert "<<PHASE_TITLE>>" not in out
     assert "<<SOURCE_MD>>" not in out
     assert "<<CSS>>" not in out
+    assert "<<SECTION_COUNT>>" not in out
+    assert "<<TOC_DOTS>>" not in out
     # The source path appears in the header / <meta> tag.
     assert "architecture.md" in out
     # CSS content is present (variable declarations).
     assert "--bg:" in out
+
+
+def test_render_starter_derives_progress_slots_from_sections(tmp_path: Path) -> None:
+    """The denominator, fill slots, and authoring chip share one source."""
+    for phase in supported_phases():
+        out = render_starter(phase, tmp_path / f"{phase}.md")
+        section_count = len(re.findall(r'<section\b[^>]*\bid="[^"]+"', out))
+        assert section_count > 0
+        assert f" / {section_count}</strong> sections authored" in out
+        assert out.count('<span class="dot"></span>') == section_count
+        assert f">{section_count} sections to fill</span>" in out
+
+
+def test_render_starter_exposes_shared_authoring_surface(tmp_path: Path) -> None:
+    """Every phase receives the reusable CSS and quiet print treatment."""
+    out = render_starter("prd", tmp_path / "prd.md")
+    for selector in (
+        ".component-grid",
+        ".flow-list",
+        ".principle-list",
+        ".contract-block",
+        ".op-signature",
+        ".order-steps",
+        ".audit-log",
+    ):
+        assert selector in out
+    assert ".chip::before { display: none; }" in out
+
+
+def test_prd_starter_has_prd_authoring_examples(tmp_path: Path) -> None:
+    """The PRD starter demonstrates the high-friction composition patterns."""
+    out = render_starter("prd", tmp_path / "prd.md")
+    assert "FR-001-EVENT" in out
+    assert "FR-001-INIT" not in out
+    assert out.count('class="state-pill initial"') >= 1
+    assert out.count('class="state-pill terminal"') >= 1
+    assert out.count('id="ac-001-event-') == 2
+    assert "<blockquote>" in out
+    assert '<table class="audit-log">' in out
+    for actor in (
+        "Organizer",
+        "Attendee",
+        "Door Staff",
+        "Phoenix Web",
+        "Events",
+        "Pay+Peach",
+        "DB",
+        "Delivery",
+    ):
+        assert actor in out
+    assert "FLOW-08" in out
 
 
 def test_render_starter_does_not_translate_markdown_body(tmp_path: Path) -> None:
