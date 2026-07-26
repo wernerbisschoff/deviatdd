@@ -45,8 +45,8 @@ from deviate.state.config import (
     AgentConfig,
     PytestReportConfig,
     SessionState,
+    _load_deviate_config_toml,
     resolve_graphite_config,
-    resolve_model_for_phase,
 )
 from deviate.ui.monitor import OrchestrationMonitor
 from deviate.ui.pipeline import (
@@ -71,6 +71,37 @@ from deviate.state.ledger import (
 
 console = Console()
 _verbose: bool = False
+
+_cli_model_override: str | None = None
+
+
+def _resolve_run_model(phase: str, root: Path) -> str | None:
+    """Resolve model for *phase* with CLI override priority.
+
+    Priority (highest first):
+        1. Phase-specific config key (e.g. ``[models].red``)
+        2. CLI ``--model`` flag (``_cli_model_override``)
+        3. Default config key (``[models].default``)
+        4. ``None`` — backend uses its native default
+
+    JUDGE phase is excluded from CLI override to preserve model tiering
+    (V4 Pro for JUDGE). Phase-specific and default config still apply.
+    """
+    data = _load_deviate_config_toml(root)
+    models: dict = {}
+    if data:
+        m = data.get("models", {})
+        if isinstance(m, dict):
+            models = {k.lower(): str(v) for k, v in m.items() if v}
+    if phase.lower() in models:
+        return models[phase.lower()]
+    allowed = frozenset({"RED", "GREEN", "REFACTOR", "EXECUTE"})
+    if _cli_model_override and phase.upper() in allowed:
+        return _cli_model_override
+    if "default" in models:
+        return models["default"]
+    return None
+
 
 _YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)
 _YAML_FENCE_CLOSE_RE = re.compile(r"^```+\s*$")
@@ -965,7 +996,7 @@ def _run_red_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
-    red_model = resolve_model_for_phase("RED", root)
+    red_model = _resolve_run_model("RED", root)
     manifest, agent_tail = _invoke_agent(
         prompt,
         c,
@@ -1071,7 +1102,7 @@ def _run_green_phase(
         if persisted:
             prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
-    green_model = resolve_model_for_phase("GREEN", root)
+    green_model = _resolve_run_model("GREEN", root)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -1913,7 +1944,7 @@ def _run_judge_phase(
         )
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
-    judge_model = resolve_model_for_phase("JUDGE", root)
+    judge_model = _resolve_run_model("JUDGE", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -2179,7 +2210,7 @@ def _run_refactor_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
-    refactor_model = resolve_model_for_phase("REFACTOR", root)
+    refactor_model = _resolve_run_model("REFACTOR", root)
     manifest, agent_tail = _invoke_agent(
         prompt,
         c,
@@ -2528,7 +2559,7 @@ def _run_execute_phase(
     has_spec = bool(spec_content)
     train_feedback = ""
     max_judge_attempts = 3
-    execute_model = resolve_model_for_phase("EXECUTE", root)
+    execute_model = _resolve_run_model("EXECUTE", root)
 
     session_path = root / ".deviate" / "session.json"
     session = (
@@ -2599,7 +2630,7 @@ def _run_execute_phase(
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
-        judge_model = resolve_model_for_phase("JUDGE", root)
+        judge_model = _resolve_run_model("JUDGE", root)
         judge_manifest, _ = _invoke_agent(
             judge_prompt,
             c,
@@ -2824,7 +2855,11 @@ def _run_single(
     no_judge: bool = False,
     no_refactor: bool = False,
     agent: str | None = None,
+    model: str | None = None,
 ) -> None:
+    global _cli_model_override
+    if model is not None:
+        _cli_model_override = model
     task, ledger_file = _resolve_task_context(task_id, root)
     status = task.get("status", "PENDING")
 
@@ -2983,7 +3018,11 @@ def _run_all(
     no_refactor: bool = False,
     agent: str | None = None,
     json_mode: bool = False,
+    model: str | None = None,
 ) -> None:
+    global _cli_model_override
+    if model is not None:
+        _cli_model_override = model
     if agent is None:
         agent = _resolve_agent_config(root, None)
     _run_all_start = time.monotonic()
@@ -4228,10 +4267,16 @@ def run_command(
         False, "--dry-run", help="Print resolved task and exit"
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Print debug diagnostics"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override default model for RED/GREEN/REFACTOR/EXECUTE phases",
+    ),
 ) -> None:
     """Use `deviate micro run --all` to drain the queue."""
-    global _verbose
+    global _verbose, _cli_model_override
     _verbose = verbose
+    _cli_model_override = model
 
     root = _resolve_workspace_root()
     session_path = root / ".deviate" / "session.json"
@@ -4296,6 +4341,7 @@ def run_command(
                 no_refactor=skip_refactor,
                 agent=agent,
                 json_mode=json_mode,
+                model=model,
             )
             raise typer.Exit(code=0)
 
@@ -4306,6 +4352,7 @@ def run_command(
             no_judge=skip_judge,
             no_refactor=skip_refactor,
             agent=agent,
+            model=model,
         )
     finally:
         run_logger.close()

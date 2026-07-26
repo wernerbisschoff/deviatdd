@@ -1097,6 +1097,11 @@ def run_command(
         "--force",
         help="Bypass pre-flight guards (e.g. blocked_by dependencies)",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override default model for RED/GREEN/REFACTOR/EXECUTE phases",
+    ),
 ) -> None:
     """Prepare the next issue end-to-end and run it.
 
@@ -1127,4 +1132,4 @@ def run_command(
 
     # Chain into micro: drain the task queue in the worktree the meso step just
     # prepared. There is no approval step between meso and micro.
-    _run_all(worktree_path, console)
+    _run_all(worktree_path, console, model=model)

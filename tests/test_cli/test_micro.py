@@ -2448,6 +2448,243 @@ class TestPhaseModelUnitResolution:
         assert resolve_model_for_phase("EXPLORE", config_with_models) == "fast/model"
 
 
+class TestResolveRunModel:
+    """Unit tests for _resolve_run_model: config + CLI override priority.
+
+    Priority: phase-specific config > CLI --model > default config > None.
+    JUDGE phase MUST NOT accept CLI --model override.
+    """
+
+    @pytest.fixture
+    def config_default(self, tmp_path: Path) -> Path:
+        dot = tmp_path / ".deviate"
+        dot.mkdir(parents=True)
+        (dot / "config.toml").write_text('[models]\ndefault = "fast/model"\n')
+        return tmp_path
+
+    @pytest.fixture
+    def config_with_judge(self, tmp_path: Path) -> Path:
+        dot = tmp_path / ".deviate"
+        dot.mkdir(parents=True)
+        (dot / "config.toml").write_text(
+            '[models]\ndefault = "fast/model"\njudge = "premium/model"\n'
+            'red = "red-specific/model"\n'
+        )
+        return tmp_path
+
+    @pytest.fixture
+    def config_no_models(self, tmp_path: Path) -> Path:
+        dot = tmp_path / ".deviate"
+        dot.mkdir(parents=True)
+        (dot / "config.toml").write_text("profile = 'default'\n")
+        return tmp_path
+
+    def test_default_model_without_cli_override(self, config_default: Path) -> None:
+        """No CLI override: falls through to default config."""
+        from deviate.cli.micro import _resolve_run_model, _cli_model_override
+
+        assert _cli_model_override is None
+        assert _resolve_run_model("RED", config_default) == "fast/model"
+        assert _resolve_run_model("GREEN", config_default) == "fast/model"
+        assert _resolve_run_model("REFACTOR", config_default) == "fast/model"
+        assert _resolve_run_model("EXECUTE", config_default) == "fast/model"
+
+    def test_phase_specific_overrides_cli(
+        self, config_with_judge: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase-specific config wins over CLI --model."""
+        monkeypatch.setattr(
+            "deviate.cli.micro._cli_model_override", "cli/override-model"
+        )
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("RED", config_with_judge) == "red-specific/model"
+        assert _resolve_run_model("JUDGE", config_with_judge) == "premium/model"
+
+    def test_cli_override_used_when_no_phase_config(
+        self, config_default: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CLI --model used when no phase-specific config exists."""
+        monkeypatch.setattr(
+            "deviate.cli.micro._cli_model_override", "cli/override-model"
+        )
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("RED", config_default) == "cli/override-model"
+
+    def test_cli_override_beats_default_config(
+        self, config_default: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CLI --model overrides [models].default but not phase-specific."""
+        monkeypatch.setattr(
+            "deviate.cli.micro._cli_model_override", "cli/override-model"
+        )
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("RED", config_default) == "cli/override-model"
+
+    def test_judge_ignores_cli_override(
+        self, config_default: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """JUDGE phase must NOT use CLI --model (maintains V4 Pro tiering)."""
+        monkeypatch.setattr(
+            "deviate.cli.micro._cli_model_override", "cli/override-model"
+        )
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("JUDGE", config_default) == "fast/model"
+
+    def test_judge_without_default_config_still_ignores_cli(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """JUDGE returns None even with CLI override if no config exists."""
+        monkeypatch.setattr(
+            "deviate.cli.micro._cli_model_override", "cli/override-model"
+        )
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("JUDGE", config_no_models) is None
+
+    def test_no_config_no_override_returns_none(self, tmp_path: Path) -> None:
+        """No config.toml and no CLI override -> None."""
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("RED", tmp_path) is None
+
+    def test_cli_override_for_green_and_refactor_and_execute(
+        self, config_default: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """GREEN, REFACTOR, EXECUTE all accept CLI override."""
+        monkeypatch.setattr(
+            "deviate.cli.micro._cli_model_override", "cli/override-model"
+        )
+        from deviate.cli.micro import _resolve_run_model
+
+        assert _resolve_run_model("GREEN", config_default) == "cli/override-model"
+        assert _resolve_run_model("REFACTOR", config_default) == "cli/override-model"
+        assert _resolve_run_model("EXECUTE", config_default) == "cli/override-model"
+
+
+class TestCliModelFlag:
+    """Integration tests: CLI ``--model`` flag threads through to ``_run_all``."""
+
+    @patch("deviate.cli.micro._run_all")
+    @patch("deviate.cli.micro._load_skill_content")
+    @patch("deviate.cli.micro._find_all_pending_tasks")
+    def test_micro_run_model_flag_sets_override(
+        self,
+        mock_find: MagicMock,
+        mock_skill: MagicMock,
+        mock_run_all: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``deviate micro run --all --model foo/bar`` passes model through."""
+        _setup_issue_ledger(
+            tmp_git_repo,
+            "ISS-CLI-001",
+            "adhoc",
+            "cli-model-test",
+            [
+                {
+                    "id": "TSK-CLI-01",
+                    "issue_id": "ISS-CLI-001",
+                    "status": "PENDING",
+                    "execution_mode": "TDD",
+                    "description": "CLI model flag test",
+                }
+            ],
+        )
+        _setup_session(tmp_git_repo, "ISS-CLI-001")
+        monkeypatch.chdir(tmp_git_repo)
+
+        runner.invoke(cli, ["micro", "run", "--all", "--model", "foo/bar"])
+
+        mock_run_all.assert_called_once()
+        _args, kwargs = mock_run_all.call_args
+        assert kwargs.get("model") == "foo/bar", (
+            f"Expected model='foo/bar' in _run_all kwargs, got {kwargs.get('model')}"
+        )
+
+    @patch("deviate.cli.micro._run_all")
+    @patch("deviate.cli.micro._load_skill_content")
+    @patch("deviate.cli.micro._find_all_pending_tasks")
+    def test_judge_not_overridden_by_model_flag(
+        self,
+        mock_find: MagicMock,
+        mock_skill: MagicMock,
+        mock_run_all: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With ``--model foo/bar`` and ``[models] judge = \"premium/x\"``,
+        JUDGE resolves to ``premium/x``."""
+        from deviate.cli.micro import _resolve_run_model
+
+        _setup_issue_ledger(
+            tmp_git_repo,
+            "ISS-CLI-002",
+            "adhoc",
+            "cli-model-judge",
+            [
+                {
+                    "id": "TSK-CLI-02",
+                    "issue_id": "ISS-CLI-002",
+                    "status": "PENDING",
+                    "execution_mode": "TDD",
+                    "description": "Judge override test",
+                }
+            ],
+        )
+        _setup_session(tmp_git_repo, "ISS-CLI-002")
+        dot_dir = tmp_git_repo / ".deviate"
+        (dot_dir / "config.toml").write_text('[models]\njudge = "premium/x"\n')
+        monkeypatch.chdir(tmp_git_repo)
+        monkeypatch.setattr("deviate.cli.micro._cli_model_override", "foo/bar")
+
+        assert _resolve_run_model("JUDGE", tmp_git_repo) == "premium/x"
+
+    @patch("deviate.cli.micro._run_all")
+    @patch("deviate.cli.micro._load_skill_content")
+    @patch("deviate.cli.micro._find_all_pending_tasks")
+    def test_red_uses_cli_model_when_no_phase_config(
+        self,
+        mock_find: MagicMock,
+        mock_skill: MagicMock,
+        mock_run_all: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without phase-specific config, ``--model foo/bar`` applies
+        to RED."""
+        from deviate.cli.micro import _resolve_run_model
+
+        _setup_issue_ledger(
+            tmp_git_repo,
+            "ISS-CLI-003",
+            "adhoc",
+            "cli-model-red",
+            [
+                {
+                    "id": "TSK-CLI-03",
+                    "issue_id": "ISS-CLI-003",
+                    "status": "PENDING",
+                    "execution_mode": "TDD",
+                    "description": "Red model test",
+                }
+            ],
+        )
+        _setup_session(tmp_git_repo, "ISS-CLI-003")
+
+        dot_dir = tmp_git_repo / ".deviate"
+        (dot_dir / "config.toml").write_text('[models]\ndefault = "fast/model"\n')
+        monkeypatch.chdir(tmp_git_repo)
+        monkeypatch.setattr("deviate.cli.micro._cli_model_override", "foo/bar")
+
+        result = _resolve_run_model("RED", tmp_git_repo)
+        assert result == "foo/bar", f"Expected foo/bar, got {result}"
+
+
 class TestModelPassedToInvokeAgent:
     """Verify the resolved model is passed to _invoke_agent.
 
@@ -2456,7 +2693,7 @@ class TestModelPassedToInvokeAgent:
     to the _invoke_agent call.
     """
 
-    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._resolve_run_model")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
     @patch("deviate.cli.micro._make_agent_output_callback")
@@ -2532,7 +2769,7 @@ class TestModelPassedToInvokeAgent:
             f"got {invoke_kwargs.get('model')}"
         )
 
-    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._resolve_run_model")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
     @patch("deviate.cli.micro._make_agent_output_callback")
@@ -2598,7 +2835,7 @@ class TestTddCycleIntegration:
     phase runner, confirming the correct phase constant is passed.
     """
 
-    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._resolve_run_model")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
     @patch("deviate.cli.micro._make_agent_output_callback")
@@ -2669,7 +2906,7 @@ class TestTddCycleIntegration:
 
         mock_resolve.assert_called_once_with("RED", cwd)
 
-    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._resolve_run_model")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
     @patch("deviate.cli.micro._make_agent_output_callback")
@@ -2742,7 +2979,7 @@ class TestTddCycleIntegration:
 
         mock_resolve.assert_called_once_with("GREEN", cwd)
 
-    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._resolve_run_model")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
     @patch("deviate.cli.micro._make_agent_output_callback")
@@ -2795,7 +3032,7 @@ class TestTddCycleIntegration:
 
         mock_resolve.assert_called_once_with("JUDGE", cwd)
 
-    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._resolve_run_model")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._build_auto_prompt")
     @patch("deviate.cli.micro._make_agent_output_callback")
