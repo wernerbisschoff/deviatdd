@@ -71,7 +71,7 @@ def test_task_verification_has_priority(tmp_path: Path) -> None:
         )
 
     assert result.returncode == 0
-    assert calls[0][0] == ["sh", "-c", "pytest tests/test_specific.py -q"]
+    assert calls[0][0] == ["pytest", "tests/test_specific.py", "-q"]
 
 
 def test_constitution_command_used_without_mise_task(tmp_path: Path) -> None:
@@ -89,7 +89,7 @@ def test_constitution_command_used_without_mise_task(tmp_path: Path) -> None:
         result = _run_test_cmd(tmp_path)
 
     assert result.returncode == 0
-    assert calls == [["sh", "-c", "pytest"]]
+    assert calls == [["pytest"]]
 
 
 def test_missing_mise_task_falls_back_to_constitution(tmp_path: Path) -> None:
@@ -114,7 +114,7 @@ def test_missing_mise_task_falls_back_to_constitution(tmp_path: Path) -> None:
         result = _run_test_cmd(tmp_path)
 
     assert result.returncode == 0
-    assert calls == [["mise", "run", "test"], ["sh", "-c", "pytest fallback"]]
+    assert calls == [["mise", "run", "test"], ["pytest", "fallback"]]
 
 
 def test_nested_python_manifest_is_used_when_root_is_unconfigured(
@@ -134,5 +134,39 @@ def test_nested_python_manifest_is_used_when_root_is_unconfigured(
         result = _run_test_cmd(tmp_path)
 
     assert result.returncode == 0
-    assert calls[0][0] == ["sh", "-c", "pytest"]
-    assert calls[0][1]["cwd"] == service
+    assert calls[0][0] == ["pytest"]
+    assert Path(calls[0][1]["cwd"]) == service
+
+
+def test_repository_command_shell_syntax_is_rejected_without_spawn(
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "pwned", "")
+
+    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+        result = _run_test_cmd(
+            tmp_path,
+            {"verification": "pytest tests -q; touch SHOULD_NOT_EXIST"},
+        )
+
+    assert result.returncode != 0
+    assert calls == []
+    assert not (tmp_path / "SHOULD_NOT_EXIST").exists()
+
+
+def test_repository_command_unsupported_executable_is_rejected(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "pwned", "")
+
+    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+        result = _run_test_cmd(tmp_path, {"verification": "bash -c 'echo pwned'"})
+
+    assert result.returncode != 0
+    assert calls == []
