@@ -98,6 +98,12 @@ The contract on stdout contains: `status`, `task_id`, `test_command`, `lint_comm
 5. Parse test framework conventions from the test file
 </step>
 
+<step id="feedback_ingestion">
+1. If the prompt contains a `<train_feedback>` block, treat it as the **authoritative, current** instruction from the orchestrator. Implement against it directly — it reflects the live retry signal.
+2. If `<train_feedback>` is absent and the prompt contains a `<persisted_judge_feedback>` block, treat that as the source of truth. Each line inside is a verbatim `**Judge Feedback**` bullet persisted under this task in `tasks.md` by a previous JUDGE run; resolve every bullet before declaring GREEN done.
+3. If both are present, `<train_feedback>` wins — `<persisted_judge_feedback>` is stale history and must be ignored (the orchestrator only ever surfaces one at a time).
+</step>
+
 <step id="implementation">
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
 2. Maintain existing functional signatures — do not change test files
@@ -188,7 +194,6 @@ next_phase: "/deviate-refactor"
 </output_format_schemas>
 
 <edge_case_handling>
-
 | Condition | Action |
 |---|---|
 | Pre-script returns NO_TASKS_REMAINING | Surface message; recommend running /deviate-tasks |
@@ -199,9 +204,9 @@ next_phase: "/deviate-refactor"
 | Test file not found | Read RED handover manifest for test file path; if missing, search for test files matching the task_id |
 | Post-script returns non-zero exit code or COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
-
+| RED test cannot be satisfied within mechanical scope (CLI surface out of scope, required tool not in workspace, fixture missing) | Set `status: FAILURE` with `rationale:` naming the exact test path and why, plus `failure_kind: mechanical`. |
+| RED test asserts behavior the spec does not require (wrong assertion, wrong abstraction, contradicts spec/data-model) | Set `status: FAILURE` with `rationale:` citing the FR/AC the test contradicts, plus `failure_kind: test_defect`. |
 </edge_case_handling>
-
 <context>
 <user_input>
 $ARGUMENTS

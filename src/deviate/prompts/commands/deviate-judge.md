@@ -98,10 +98,23 @@ phase: JUDGE
 status: PASS
 task_id: "{TASK_ID}"
 verdict: "COMPLIANCE_PASS"
-rationale: "Implementation correctly satisfies all FR-NN / AC-NN requirements; tests validate the spec; no security, governance, tamper, or flow issues."
+summary: "Implementation correctly satisfies all FR-NN / AC-NN requirements; tests validate the spec; no security, governance, tamper, or flow issues."
 violations: []
 train_feedback: |
   Optional: REFACTOR NOTE: <observation about refactoring opportunity>. Not blocking.
+evaluation:
+  spec_compliance: PASS
+  functional_invariance: PASS
+  test_integrity: PASS
+  security_governance: PASS
+  flow_alignment: PASS
+  no_shortcuts: PASS
+  security_checks: pass
+diff_summary:
+  files_changed: 0
+  files_modified: 0
+  files_created: 0
+  files_deleted: 0
 ```
 
 On rejection (a real correctness gap exists):
@@ -110,16 +123,16 @@ On rejection (a real correctness gap exists):
 1. **State what GREEN did wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
 2. **Tell the next GREEN what to do instead** — concrete, actionable steps starting with "The next GREEN attempt must:"
 3. **Be instruction, not observation** — GREEN must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
-4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `rationale`, not `train_feedback`.
+4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
 
-Do NOT write operator-directed observations in `train_feedback` (e.g. "Observational note for the operator: ..."). Those belong in `rationale`.
+Do NOT write operator-directed observations in `train_feedback` (e.g. "Observational note for the operator: ..."). Those belong in `summary`.
 
 ```yaml
 phase: JUDGE
 status: FAILURE
 task_id: "{TASK_ID}"
 verdict: "COMPLIANCE_VIOLATION"
-rationale: "Implementation returns a hardcoded token instead of computing the JWT signature, contradicting FR-01."
+summary: "Implementation returns a hardcoded token instead of computing the JWT signature, contradicting FR-01."
 train_feedback: |
   The encode() function returns a static string "token" instead of computing
   a real JWT signature. The next GREEN attempt must:
@@ -133,6 +146,19 @@ violations:
     severity: HIGH
     requirement: "FR-01"
     recommendation: "Compute the JWT signature from the payload using the secret key."
+evaluation:
+  spec_compliance: FAIL
+  functional_invariance: FAIL
+  test_integrity: PASS
+  security_governance: PASS
+  flow_alignment: FAIL
+  no_shortcuts: FAIL
+  security_checks: pass
+diff_summary:
+  files_changed: 1
+  files_modified: 1
+  files_created: 0
+  files_deleted: 0
 ```
 
 </execution_sequence>
@@ -146,12 +172,14 @@ phase: JUDGE
 status: PASS | FAILURE
 task_id: "{TASK_ID}"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
-rationale: "Summary of the evaluation outcome"
+summary: "Summary of the evaluation outcome"
+next_phase: "IDLE"
+next_action: "revert_before" | "revert_to_red" | "skip_refactor" | "continue_refactor" | "proceed_to_refactor_no_diff"
 train_feedback: |
   FAILURE: Specific, actionable instructions for the next GREEN.
   MUST state what went wrong AND what to do ("The next GREEN
   attempt must:" steps). NEVER "REFACTOR NOTE:" or operator
-  observations here — those go in rationale.
+  observations here — those go in summary.
 
   PASS: Optional informational REFACTOR NOTE: about non-blocking
   observations for the REFACTOR phase.
@@ -162,23 +190,63 @@ violations:
     severity: CRITICAL | HIGH | MEDIUM | LOW
     requirement: "FR-NN | AC-NN"
     recommendation: "Concrete fix (specific files, specific changes)"
+evaluation:
+  spec_compliance: PASS | FAIL
+  functional_invariance: PASS | FAIL
+  test_integrity: PASS | FAIL
+  security_governance: PASS | FAIL
+  flow_alignment: PASS | FAIL | SKIP
+  no_shortcuts: PASS | FAIL
+  security_checks: pass | fail | warn
+diff_summary:
+  files_changed: 0
+  files_modified: 0
+  files_created: 0
+  files_deleted: 0
 ```
 
+<failure_contract>
 
+When `verdict: COMPLIANCE_VIOLATION` is emitted, the manifest MUST
+carry actionable feedback. The orchestrator reads these fields, in
+this precedence:
 
-</output_format_schemas>
+1. `train_feedback` (optional, free-form multi-line guidance)
+2. `violations: [...]` (structured list, used to build feedback)
+3. `summary` (one-sentence outcome; legacy fallback)
 
+**Hard contract:** emitting `COMPLIANCE_VIOLATION` with all fields
+empty is a manifest error — the orchestrator aborts the run
+with `JUDGE_AGENT_NO_FEEDBACK` and the operator must intervene. To
+avoid that path, every `COMPLIANCE_VIOLATION` emission MUST populate
+at least:
+
+- `summary` with a one-sentence description of WHY the diff is
+  non-compliant, AND
+- `violations` with at least one entry carrying
+  `{category, file, detail, severity, recommendation}`.
+
+The `recommendation` field is what the next GREEN attempt will read
+— it must be concrete enough to act on (specific files, specific
+changes, not "re-verify spec compliance"). Recommendations must
+address a CORRECTNESS gap (missing behavior, wrong behavior, stub,
+security hole, gate skip, flow break), never a refactor.
+
+</failure_contract>
 <edge_case_handling>
 
 | Condition | Action |
 |---|---|
 | spec.md not found | Emit FAILURE with category "Spec Non-Compliance" and note "SPEC_NOT_FOUND" |
 | No diff to evaluate | Emit PASS with note "NO_DIFF" |
-| Binary files in diff | Skip binary files, note in rationale |
-| All changes are test-only without src changes | Flag as SUSPICIOUS — FAILURE with category "Test Integrity Violation". In `train_feedback`, state: "GREEN modified only test files. The next GREEN attempt must implement the feature in `src/` per `spec.md` and `data-model.md`." |
+| Binary files in diff | Skip binary files, note in summary |
+| All changes are test-only without src changes | Flag as SUSPICIOUS — FAILURE with category "Test Integrity Violation". |
 | Pre-existing violations (not from this task) | Flag only violations introduced by this diff |
 | Empty `**Flow References**` in task | Treat task as enabling / infrastructure; flow alignment is SKIP |
-| Refactoring opportunity observed | Emit PASS **only** (never FAILURE for refactoring). Populate `train_feedback` with `REFACTOR NOTE:` prefix. On FAILURE, put refactoring observations in `rationale`, not `train_feedback`. |
+| Refactoring opportunity observed | Emit PASS **only** (never FAILURE for refactoring). Populate `train_feedback` with `REFACTOR NOTE:` prefix. |
+| `<failure_kind>mechanical</failure_kind>` and slice is intrinsically RED-only (fixture file, migration script, generated types, doc-only slice) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff`. |
+| `<failure_kind>mechanical</failure_kind>` present otherwise | GREEN emitted `status: FAILURE` with mechanical rationale. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_before` or `revert_to_red` or `skip_refactor`. |
+| `<failure_kind>test_defect</failure_kind>` present | GREEN judged the RED test itself wrong. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_before` (re-run RED). |
 
 </edge_case_handling>
 
