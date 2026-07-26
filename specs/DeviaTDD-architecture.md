@@ -616,6 +616,19 @@ DeviaTDD's phase structure is also a cost-optimization architecture. Three mecha
 | EXECUTE / E2E / HOTFIX | V4 Flash | $0.0028 | As needed | Cheap |
 
 Model routing is **guidance, not enforcement** — the `deviate` CLI does not select models.
+
+**Model Resolution Priority Chain:** Both `deviate micro run` and the top-level
+`deviate run` accept a `--model <id>` CLI flag. The resolved model ID for each
+phase follows this priority (highest first):
+
+1. **Phase-specific config** — `[models].red`, `[models].green`, etc.
+2. **CLI `--model` flag** — overrides default config but not phase-specific keys
+3. **Default config** — `[models].default` in `.deviate/config.toml`
+4. **Backend native default** — no model override passed
+
+**JUDGE phase is excluded from CLI override** to preserve the V4 Pro tiering
+mandated by the model routing table above. Phase-specific and default config
+keys still apply to JUDGE; only the `--model` flag is blocked.
 ~85% of all recommended LLM turns use V4 Flash at cache-hit rates.
 
 ### 9.2 Continuous-Thread Caching

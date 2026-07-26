@@ -590,6 +590,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Input Parameters:**
   * `--issue <ISS-NNN-NN>` (Target a specific BACKLOG issue; default: next unblocked)
   * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
+  * `--model <id>` (Override default model for RED/GREEN/REFACTOR/EXECUTE phases;
+    resolution: phase-specific config &gt; CLI `--model` &gt; default config &gt; backend native;
+    JUDGE is excluded from CLI override to preserve model tiering)
 * **Exit Codes:** 0 on meso + micro success; 1 if meso reports failure (`RUN_NO_WORKTREE` / `RUN_WORKTREE_MISSING`).
 * **Replaces:** The old task-dispatch surface. The per-task and `--all` dispatches live at `deviate micro run <task-id>` and `deviate micro run --all`; the former `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` flags were removed from `deviate run` and remain available on `deviate micro run`.
 
@@ -724,6 +727,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     * Boolean flags `--no-judge` / `--no-refactor` retained as composable overrides
   * `--agent <name>` (Override agent backend; falls back to `[agent].backend` in
     `.deviate/config.toml`)
+  * `--model <id>` (Override default model for RED/GREEN/REFACTOR/EXECUTE phases;
+    resolution: phase-specific config &gt; CLI `--model` &gt; default config &gt; backend native;
+    JUDGE is excluded from CLI override to preserve model tiering)
   * `--dry-run` (Print the resolved task and exit without dispatching)
   * `--json`, `--quiet`, `--verbose`
 
