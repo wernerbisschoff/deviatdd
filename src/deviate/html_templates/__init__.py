@@ -15,6 +15,7 @@ no path-on-disk coupling for the stylesheet.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # Phase identifiers accepted by ``deviate html <phase>``. Each maps to
@@ -418,6 +419,22 @@ th {
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:nth-child(even) td { background: var(--ink-2); }
 
+/* Compact audit/source tables keep identifiers narrow and prose readable. */
+table.audit-log {
+    font-size: 0.82rem;
+}
+table.audit-log th,
+table.audit-log td {
+    padding: 0.45rem 0.65rem;
+    line-height: 1.45;
+}
+table.audit-log th:first-child,
+table.audit-log td:first-child {
+    width: 1%;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+}
+
 /* --- 9. Spec header (top of main column) ----------------------------- */
 .spec-meta {
     border-bottom: 1px solid var(--ink-4);
@@ -699,6 +716,14 @@ section[id] h3 .chip {
     font-weight: 600;
 }
 
+
+/*
+   Callout variant convention:
+   .callout-info  = neutral cross-references;
+   .callout-note  = authorial instructions (for example, "shape it like this");
+   .callout-warn  = defensive boundaries and exclusions;
+   .callout-ready = positive status (no blockers, gate cleared, contract honoured).
+*/
 .callout-note    { border-left-color: var(--fg-2); }
 .callout-ready   { border-left-color: var(--accent-go);  background: color-mix(in srgb, var(--accent-go) 6%, var(--ink-2)); }
 .callout-warn    { border-left-color: var(--accent-warn); background: color-mix(in srgb, var(--accent-warn) 6%, var(--ink-2)); }
@@ -902,6 +927,134 @@ code.fr::before, code.ac::before, code.flow-ref::before { content: ""; }
     .kv { grid-template-columns: 1fr; gap: 0.15rem 0; }
     .kv dt { margin-top: 0.5rem; }
 }
+
+/* --- 18b. Shared authoring surfaces ------------------------------------ */
+/* These patterns are available in every phase starter, not just the file
+   that first demonstrated them. */
+.component-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.85rem;
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 1.25rem;
+}
+.component-grid > * {
+    min-width: 0;
+    margin: 0;
+    padding: 1rem 1.1rem;
+    background: var(--ink-2);
+    border: 1px solid var(--ink-4);
+    border-radius: 8px;
+}
+
+.flow-list {
+    display: grid;
+    gap: 0.6rem;
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 1.25rem;
+}
+.flow-list > li {
+    margin: 0;
+    padding: 0.7rem 0.9rem 0.7rem 1rem;
+    background: var(--ink-2);
+    border: 1px solid var(--ink-4);
+    border-left: 3px solid var(--accent-flow);
+    border-radius: 6px;
+}
+
+.principle-list {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 1.25rem;
+    counter-reset: principle;
+}
+.principle-list > li {
+    counter-increment: principle;
+    position: relative;
+    margin: 0.55rem 0;
+    padding: 0.75rem 1rem 0.75rem 3rem;
+    background: var(--ink-2);
+    border: 1px solid var(--ink-4);
+    border-radius: 6px;
+}
+.principle-list > li::before {
+    content: counter(principle, decimal-leading-zero);
+    position: absolute;
+    left: 1rem;
+    top: 0.75rem;
+    color: var(--accent-flow);
+    font-family: var(--font-mono);
+    font-size: 0.75em;
+    font-weight: 700;
+    padding: 0.18em 0.45em;
+    border: 1px solid var(--ink-4);
+    border-radius: 4px;
+    background: var(--ink-1);
+}
+
+.contract-block {
+    margin: 1rem 0 1.5rem;
+    padding: 1rem 1.25rem;
+    background: color-mix(in srgb, var(--accent-ac) 5%, var(--ink-2));
+    border: 1px solid color-mix(in srgb, var(--accent-ac) 30%, var(--ink-4));
+    border-left: 3px solid var(--accent-ac);
+    border-radius: 6px;
+}
+.contract-block > :first-child { margin-top: 0; }
+.contract-block > :last-child { margin-bottom: 0; }
+
+.op-signature {
+    display: block;
+    margin: 0.65rem 0;
+    padding: 0.65rem 0.8rem;
+    overflow-x: auto;
+    background: var(--ink-0);
+    border: 1px solid var(--ink-4);
+    color: var(--accent-ac);
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+}
+
+.order-steps {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 1.25rem;
+    counter-reset: order-step;
+}
+.order-steps > li {
+    counter-increment: order-step;
+    position: relative;
+    margin: 0.5rem 0;
+    padding: 0.85rem 1rem 0.85rem 3rem;
+    background: var(--ink-2);
+    border: 1px solid var(--ink-4);
+    border-radius: 6px;
+}
+.order-steps > li::before {
+    content: counter(order-step, decimal-leading-zero);
+    position: absolute;
+    left: 1rem;
+    top: 0.85rem;
+    color: var(--accent-ac);
+    font-family: var(--font-mono);
+    font-size: 0.75em;
+    font-weight: 700;
+    padding: 0.18em 0.45em;
+    border: 1px solid var(--ink-4);
+    border-radius: 4px;
+    background: var(--ink-1);
+}
+
+.component-grid > .component-block {
+    margin: 0;
+}
+
+.component-grid + .component-grid {
+    margin-top: 0.85rem;
+}
+
 
 /* --- 19. State pills -------------------------------------------------- */
 .state-pill {
@@ -1111,6 +1264,7 @@ code.fr::before, code.ac::before, code.flow-ref::before { content: ""; }
     .chip, .state-pill {
         border: 1px solid #999 !important;
     }
+    .chip::before { display: none; }
     .callout {
         background: #f5f5f5;
         border-color: #999;
@@ -1144,6 +1298,9 @@ def _phase_title(phase: str) -> str:
     }[phase]
 
 
+_SECTION_TAG_RE = re.compile(r'<section\b[^>]*\bid="[^"]+"', re.IGNORECASE)
+
+
 def render_starter(phase: str, source_md: Path) -> str:
     """Render the starter HTML scaffold for ``phase``.
 
@@ -1164,14 +1321,20 @@ def render_starter(phase: str, source_md: Path) -> str:
     )
     # Use sentinel substitution exclusively. ``str.format()`` is unsafe
     # here because template bodies contain literal ``{NNN}`` / ``{ID}``
-    # placeholders (FR token schemas, ID list items, etc.) that would
-    # be interpreted as format placeholders. All four substitution slots
-    # use unambiguous sentinels (``<<NAME>>``) and a single ``.replace``
-    # pass each, in CSS-last order to keep the stylesheet out of the
-    # format machinery entirely.
+    # placeholders (FR token schemas, ID list items, etc.) that would be
+    # interpreted as format placeholders. All substitution slots use
+    # unambiguous sentinels and a single replacement pass.
+    section_count = len(_SECTION_TAG_RE.findall(template_text))
+    if section_count == 0:
+        raise ValueError(f"template for {phase!r} contains no section anchors")
+    progress_dots = "\n".join(
+        '      <span class="dot"></span>' for _ in range(section_count)
+    )
     rendered = template_text
     rendered = rendered.replace("<<TITLE>>", _phase_title(phase))
     rendered = rendered.replace("<<PHASE_TITLE>>", _phase_title(phase))
     rendered = rendered.replace("<<SOURCE_MD>>", str(source_md))
+    rendered = rendered.replace("<<SECTION_COUNT>>", str(section_count))
+    rendered = rendered.replace("<<TOC_DOTS>>", progress_dots)
     rendered = rendered.replace("<<CSS>>", _CSS)
     return rendered

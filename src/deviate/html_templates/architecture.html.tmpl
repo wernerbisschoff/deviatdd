@@ -34,11 +34,9 @@
     -->
   </ol>
   <div class="toc-progress">
-    Progress: <strong><span id="progress-count">0</span> / 7</strong> sections authored
+    Progress: <strong><span id="progress-count">0</span> / <<SECTION_COUNT>></strong> sections authored
     <span class="toc-progress-dots" aria-hidden="true">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      <span class="dot"></span>
+<<TOC_DOTS>>
     </span>
   </div>
 </aside>
@@ -54,7 +52,7 @@
     <strong>Starter scaffold</strong> &mdash; author the body from <code><<SOURCE_MD>></code>.
     Markdown is NOT auto-translated; this HTML is the document of record.
     Replace every <code>&lt;!-- TODO --&gt;</code> marker with real content.
-    <span class="chip chip-todo">7 sections to fill</span>
+    <span class="chip chip-todo"><<SECTION_COUNT>> sections to fill</span>
   </p>
 </header>
 
@@ -262,7 +260,7 @@
     One row per source &mdash; name, what it informed, link or file reference.
   </div>
 
-  <table>
+  <table class="audit-log">
     <thead>
       <tr><th>Source</th><th>Informs</th><th>Reference</th></tr>
     </thead>
