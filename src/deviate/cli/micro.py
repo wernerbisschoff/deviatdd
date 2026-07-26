@@ -58,7 +58,10 @@ from deviate.ui.pipeline import (
 )
 from deviate.ui.render import stdout_lock
 
-
+from deviate.cli._safe_commands import (
+    is_safe_test_command,
+    run_safe_command,
+)
 from deviate.state.ledger import (
     RollbackSnapshot,
     TaskRecord,
@@ -3328,6 +3331,23 @@ def _normalise_test_command(value: object) -> str:
 
 
 def _task_verification_command(root: Path, task: dict | None) -> str:
+    """Return the Verification value from the ledger or ``tasks.md``.
+
+    A safety filter (:func:`is_safe_test_command`) is applied as
+    defence in depth: any task verification that fails the parser is
+    silently dropped so a poisoned record cannot smuggle an executable
+    string through the task ledger. The final execution layer
+    (:func:`run_safe_command`) repeats the same check and produces a
+    deterministic failed ``CompletedProcess`` if a malicious value
+    somehow slipped past this filter.
+    """
+    raw = _resolve_task_verification_value(root, task)
+    if raw and is_safe_test_command(raw):
+        return _normalise_test_command(raw)
+    return ""
+
+
+def _resolve_task_verification_value(root: Path, task: dict | None) -> str:
     if task:
         command = _normalise_test_command(task.get("verification"))
         if command:
@@ -3359,9 +3379,15 @@ def _constitution_test_command(root: Path) -> str:
     from deviate.core.constitution import extract_commands
 
     commands = extract_commands(path)
-    return _normalise_test_command(
+    raw = _normalise_test_command(
         commands.get("test_command") or commands.get("python_test_command")
     )
+    # Constitution is repository-controlled metadata; route it through
+    # the same policy as the ledger and tasks.md so a poisoned
+    # constitution cannot escape via this source.
+    if raw and is_safe_test_command(raw):
+        return raw
+    return ""
 
 
 def _mise_has_test_task(root: Path) -> bool:
@@ -3429,13 +3455,17 @@ def _test_command_candidates(
 
 
 def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProcess:
-    args = (
-        ["mise", "run", "test"] if command == "mise run test" else ["sh", "-c", command]
-    )
-    try:
-        return subprocess.run(args, cwd=cwd, capture_output=True, text=True)
-    except OSError as exc:
-        return subprocess.CompletedProcess(args, 127, "", str(exc))
+    """Execute a single candidate test command through the safe-command gate.
+
+    The previous implementation invoked ``sh -c`` for every value, which
+    allowed arbitrary shell execution from any untrusted repository
+    source (constitution / tasks.md / ledger). The new implementation
+    routes the command through :func:`run_safe_command`, which parses
+    it via :mod:`shlex` against an executable allowlist and rejects
+    shell metacharacters and unsupported binaries before the process
+    is spawned.
+    """
+    return run_safe_command(command, cwd)
 
 
 def _mise_test_invocation_failed(proc: subprocess.CompletedProcess) -> bool:
@@ -3448,9 +3478,15 @@ def _mise_test_invocation_failed(proc: subprocess.CompletedProcess) -> bool:
 
 
 def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedProcess:
-    """Run configured tests via ``sh -c`` to preserve shell syntax.
+    """Run configured tests through the safe-command gate.
 
-    Constitution commands may contain pipes, redirects, expansions, or quoted whitespace.
+    The candidate list is built by :func:`_test_command_candidates`,
+    which already drops values that fail :func:`is_safe_test_command`
+    for the task-ledger and constitution sources. Each remaining
+    candidate is then executed by :func:`_execute_test_command`, which
+    uses :func:`run_safe_command` — the single structured-argv
+    trust boundary. No shell is ever spawned for repository-provided
+    test commands.
     """
     candidates = _test_command_candidates(root, task)
     if not candidates:
