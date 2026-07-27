@@ -272,13 +272,16 @@ def _setup_mise(worktree_path: Path | None = None) -> None:
 
 _AGENT_DIRS = (".claude", ".opencode", ".factory", ".pi", ".omp")
 
+_WORKTREE_SYNC_FILES = (".env",)
 
-def _sync_agent_dirs_to_worktree(repo_root: Path, worktree_path: Path) -> None:
-    """Copy agent skill directories from repo root to worktree.
+
+def _sync_worktree_assets(repo_root: Path, worktree_path: Path) -> None:
+    """Copy agent skill directories and config files from repo root to worktree.
 
     This ensures worktrees have the same skills (.claude/, .opencode/,
-    .factory/, .pi/, .omp/) as the main repository so deviate commands
-    work inside the worktree without re-running ``deviate setup``.
+    .factory/, .pi/, .omp/) and environment files (.env) as the main
+    repository so deviate commands work inside the worktree without
+    re-running ``deviate setup`` or losing local configuration.
     """
     for agent_dir in _AGENT_DIRS:
         src = repo_root / agent_dir
@@ -286,6 +289,13 @@ def _sync_agent_dirs_to_worktree(repo_root: Path, worktree_path: Path) -> None:
         if src.exists():
             shutil.copytree(src, dst, dirs_exist_ok=True)
             console.print(f"[green]SYNC[/] {agent_dir}/ → worktree")
+
+    for filename in _WORKTREE_SYNC_FILES:
+        src = repo_root / filename
+        dst = worktree_path / filename
+        if src.is_file():
+            shutil.copy2(src, dst)
+            console.print(f"[green]SYNC[/] {filename} → worktree")
 
 
 # ---------------------------------------------------------------------------
@@ -466,11 +476,11 @@ def _try_claim_issue(
             console.print(f"[yellow]WORKTREE_ERROR[/] {e}")
             return None
 
-        # ── Mise setup ─────────────────────────────────────────────────
-        _setup_mise(Path(worktree_path))
+        # ── Sync agent skill directories and config to worktree ────────
+        _sync_worktree_assets(repo_root, Path(worktree_path))
 
-        # ── Sync agent skill directories to worktree ──────────────────
-        _sync_agent_dirs_to_worktree(repo_root, Path(worktree_path))
+        # ── Mise setup (after asset sync so .env is available) ─────────
+        _setup_mise(Path(worktree_path))
 
         # ── Claim issue (write directly to worktree ledger) ────────────
         wt_ledger_path = Path(worktree_path) / "specs" / "issues.jsonl"

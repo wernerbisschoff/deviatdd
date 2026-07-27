@@ -749,9 +749,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   any later state, and fails if `blocked_by` dependencies are not COMPLETED (unless `--force`).
 * **Pipeline Steps (in order):**
   1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run)`, which creates a
-     linked worktree at `.worktrees/feat/{epic}/{issue}/`, runs `mise trust && mise install
-     && mise run setup`, copies `.claude/`, `.opencode/`, `.factory/` agent skill directories
-     into the worktree, claims the issue via `claim_issue()`, commits the claim to the
+     linked worktree at `.worktrees/feat/{epic}/{issue}/`, copies `.claude/`, `.opencode/`,
+     `.factory/`, `.pi/`, `.omp/` agent skill directories and `.env` (if present) into the
+     worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
+     during setup), claims the issue via `claim_issue()`, commits the claim to the
      worktree's `specs/issues.jsonl`, and pushes the branch to origin.
   2. **Plan:** `chdir`s into the worktree, calls `_plan_pre()` (emits a `plan_pre` JSON
      contract), invokes the agent with the slim `plan` prompt and the per-phase model from
