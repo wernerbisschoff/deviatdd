@@ -150,9 +150,14 @@ def test_render_starter_derives_progress_slots_from_sections(tmp_path: Path) -> 
         out = render_starter(phase, tmp_path / f"{phase}.md")
         section_count = len(re.findall(r'<section\b[^>]*\bid="[^"]+"', out))
         assert section_count > 0
-        assert f" / {section_count}</strong> sections authored" in out
-        assert out.count('<span class="dot"></span>') == section_count
         assert f">{section_count} sections to fill</span>" in out
+        # Phases that still carry a sidebar progress block must keep the
+        # denominator, dot count, and section count in lockstep. Plan
+        # dropped the block (always "0 / N", no JS to update it); the
+        # chip above is the single source of truth for its section count.
+        if "sections authored" in out:
+            assert f" / {section_count}</strong> sections authored" in out
+            assert out.count('<span class="dot"></span>') == section_count
 
 
 def test_render_starter_exposes_shared_authoring_surface(tmp_path: Path) -> None:
