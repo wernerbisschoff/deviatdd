@@ -391,3 +391,42 @@ class TestDeviateHtmlCommand:
         assert isinstance(description, str) and description.strip(), (
             f"{path.name}: description must be a non-empty string (got {description!r})"
         )
+
+
+class TestConsumerRepositoryPromptBoundaries:
+    def test_issue_and_task_commands_have_valid_frontmatter_and_boundary(self):
+        for command_name in (
+            "deviate-adhoc",
+            "deviate-shard",
+            "deviate-plan",
+            "deviate-tasks",
+        ):
+            content = resolve_command(
+                command_name, commands_root=_SOURCE_COMMANDS_ROOT
+            ).read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            assert len(parts) == 3, f"{command_name}: malformed frontmatter"
+            frontmatter = yaml.safe_load(parts[1])
+            assert isinstance(frontmatter, dict)
+            assert frontmatter["name"] == command_name
+            assert isinstance(frontmatter.get("aliases"), list)
+
+            body = parts[2]
+            assert "<consumer_repository_boundary>" in body
+            assert "META_WORK_NOT_ALLOWED" in body
+            assert "application behavior" in body
+            assert "read-only" in body.lower()
+
+    def test_commands_keep_dev_repo_setup_out_of_generated_work(self):
+        for command_name in (
+            "deviate-adhoc",
+            "deviate-shard",
+            "deviate-plan",
+            "deviate-tasks",
+        ):
+            content = resolve_command(
+                command_name, commands_root=_SOURCE_COMMANDS_ROOT
+            ).read_text(encoding="utf-8")
+            assert "agent skill" in content
+            assert "flow authoring" in content.lower()
+            assert "do not" in content.lower()

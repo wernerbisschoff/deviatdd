@@ -25,9 +25,13 @@ CRITICAL INSTRUCTION INVARIANTS:
 8. **Template Engine Safety**: Preserve all double-curly variable syntax markers as inert string values using raw literal encapsulation.
 9. **Local Issue Registry Invariant**: After generating the issue, register it in `specs/issues.jsonl` via the issues ledger script --type adhoc. The issue is NOT complete until it appears in the ledger.
 10. **Path Normalization**: Every file path, module reference, or test target written into the issue body must be strictly relative to the workspace root (e.g., `src/core/runner.py`). Absolute machine paths are forbidden.
-11. **Product-Layer Flow Traceability**: Before generating the issue, read `specs/_product/flows/` (especially `specs/_product/flows/flows-product.md` and any domain-specific `flows-<domain>.md`) and `specs/_product/release-next.md` to determine which Product-layer flow IDs (`FLOW-XX`) the user's natural-language task touches. Map the task description against the canonical FLOW-01 (Flows), FLOW-02 (Architecture), FLOW-03 (Release) definitions and any domain-specific flows. If the user passed an explicit `--flow-ref FLOW-01,FLOW-02` CLI flag (propagated as a comma-separated string), use that value verbatim and skip inference. Otherwise, infer the mapping from the task description; if no flow match can be resolved, surface a clarifying question in the Discovery Audit (`"Could not infer Product-layer flow mapping — please re-run with --flow-ref FLOW-XX"`) and emit `flow_refs: []`. In every emitted issue file's YAML frontmatter at `specs/adhoc/issues/{NNN}-{slug}.md`, include `flow_refs: [FLOW-XX, ...]` populated from the resolved mapping (explicit override wins over inferred). An empty list (`flow_refs: []`) is acceptable for enabling/infrastructure tasks that touch zero Product-layer flows. If `specs/_product/` is absent, emit `flow_refs: []` for all issues and note the gap in the Discovery Audit.
+11. **Existing Flow Traceability**: Read the repository's existing `specs/_product/flows/` artifacts only to map the requested application behavior to user-visible `FLOW-XX` references. Use explicit `--flow-ref` values verbatim when supplied; otherwise infer only from existing flow definitions. `flow_refs` are metadata, not scope. Keep flow files and indexes unchanged and never turn a missing mapping into a flow-authoring issue.
 
 </system_instructions>
+
+<consumer_repository_boundary>
+The ad-hoc issue describes implementation of requested application behavior in a consumer repository. Assume the DeviaTDD CLI, agent skills, and existing Product-layer flow catalog are already available. Existing flows are read-only context for `flow_refs`; they are never issue work. Do not generate an issue for DeviaTDD setup, agent skills or slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance. Do not repeat those preconditions in the generated issue or ledger record. If the request is meta-only, halt with `META_WORK_NOT_ALLOWED` before writing files.
+</consumer_repository_boundary>
 
 <execution_sequence>
 
@@ -49,12 +53,11 @@ CRITICAL INSTRUCTION INVARIANTS:
    - Register relevant documentation sources via `libref add <source>` for detected frameworks and libraries (e.g., `libref add <git-repo-url> --name <lib> --path docs --tag <semver>`). Use `libref list` to check what is already available.
    - Output findings in a `## Discovery Audit` block
 
-3.5. **Product-Layer Flow Discovery**: Map the user's task to Product-layer flow IDs:
-   a. **Explicit override (highest precedence)**: If the user invoked with `--flow-ref FLOW-01,FLOW-02` (propagated as a comma-separated string via the underlying Typer command at `src/deviate/cli/adhoc.py:75-79`), use that value verbatim. Skip inference. The override is authoritative.
-   b. **Read Product-layer specs**: Read `specs/_product/flows/flows-product.md` for the canonical FLOW-01 (Flows), FLOW-02 (Architecture), FLOW-03 (Release) definitions. Read any domain-specific `specs/_product/flows/flows-<domain>.md` if present. Read `specs/_product/release-next.md` to detect in-flight release priorities that may bias flow selection.
-   c. **Infer mapping**: Match the user's natural-language task description against each flow's Trigger and Problem statements (e.g., a task mentioning "add a CLI flag for filtering by domain" maps to FLOW-01 because it modifies the Flows domain; a task mentioning "update architecture.md" maps to FLOW-02; a task mentioning "release-goal description" maps to FLOW-03).
-   d. **Surface ambiguity**: If no flow match can be resolved AND no explicit override was provided, surface a clarifying question in the Discovery Audit: `"Could not infer Product-layer flow mapping — please re-run with --flow-ref FLOW-XX"`. Emit `flow_refs: []` for the issue file but flag the gap for human review.
-   e. **Emit resolved list**: Record the final `flow_refs` list (always non-null; may be empty) in the Discovery Audit under `## Discovery Audit` → `Flow Refs Resolved`.
+3.5. **Existing Flow Mapping**: Map the application task to existing Product-layer flow IDs:
+   a. **Explicit override (highest precedence)**: If the user invoked with `--flow-ref FLOW-01,FLOW-02`, use that value verbatim and skip inference.
+   b. **Read-only context**: Read existing domain flow definitions when present and match the requested application behavior to their Trigger and Happy Path. Do not author, repair, synchronize, or index flows.
+   c. **Infer mapping**: Record only existing matching `FLOW-XX` IDs. If no match exists, use `flow_refs: []` and continue the application issue; do not propose a flow issue.
+   d. **Emit resolved list**: Record the final list under `## Discovery Audit` → `Flow Refs Resolved`.
 
 4. **Shared PRD Lifecycle**:
    a) Check if `specs/adhoc/prd.md` exists. If not, create it with a minimal header:
@@ -200,13 +203,15 @@ Appended to `specs/issues.jsonl`:
 <action>Emit the issue content to stdout and instruct the user to register manually. Do not lose the generated issue.</action>
 </case>
 <case condition="specs/_product/ directory missing">
-<action>Skip Product-Layer Flow Discovery (step 3.5). Emit `flow_refs: []` for the issue file. Note the gap in the Discovery Audit: `"specs/_product/ not present — flow_refs defaulted to []"`. Do not halt.</action>
+<action>Skip Product-layer flow mapping and emit `flow_refs: []` for the application issue. Note that no existing flow context was available; do not create Product-layer setup work.</action>
 </case>
 <case condition="User passed --flow-ref explicitly">
 <action>Use the explicit value verbatim in the issue frontmatter and ledger record (e.g., `--flow-ref FLOW-01,FLOW-03` → `flow_refs: [FLOW-01, FLOW-03]`). Skip the inference step in 3.5(b)–(c). Record `"Flow Refs Resolved: explicit override"` in the Discovery Audit.</action>
 </case>
 <case condition="Task description does not match any Product-layer flow">
-<action>Surface clarifying question in Discovery Audit and emit `flow_refs: []` for the issue file. Continue generation — empty flow_refs is valid for enabling/infrastructure tasks.</action>
+<action>Emit `flow_refs: []` for the application issue and continue. A missing flow match is not a request to author or synchronize a flow.</action>
+<case condition="The task requests DeviaTDD setup, agent skills, slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance">
+<action>Halt with `META_WORK_NOT_ALLOWED`; do not write the issue, shared PRD entry, or ledger record.</action>
 </case>
 </edge_case_handling>
 

@@ -20,36 +20,42 @@ Your job is to ingest the JSON contract emitted by `deviate shard pre`, parse th
 
 CRITICAL INSTRUCTION INVARIANTS:
 1. **Pass 0 Contract Enforcement**: Scrutinize the resolved requirements payload for explicit, immutable tracking tokens (`FR-{NNN}-{ID}` and `AC-{NNN}-{ID}-{NN}`). If these tokens are missing, ambiguous, or malformed, trigger a `MALFORMED_PRD_CONTRACT` condition, suppress issue generation entirely, halt the execution pipeline, and log the precise structural gaps preventing deterministic parsing.
-2. **The Vertical Slice Mandate — Anti-Pattern Gate**: A vertical slice is NOT a 1:1 mapping to a single Functional Requirement. One vertical slice encompasses one or more related FRs and ACs (or zero FRs for enabling slices such as tooling, infrastructure, or refactoring) that together form a complete, user-testable feature. You are strictly forbidden from generating layered shards (e.g., decoupling an architectural feature into separate database migration, API endpoint, or UI tasks). Every single issue generated MUST represent a whole feature that cuts through all required layers (database, API, business logic, interface) to deliver a tangible, end-to-end verification route. **Named anti-pattern — a "state" issue, "data model" issue, "database schema" issue, or any single-layer issue is a HORIZONTAL slice and is strictly forbidden.** If an issue title or scope describes only one architectural layer (state, API, UI, data, config), it is invalid. Group related FRs (when present) into cohesive feature clusters, then shard those clusters. Never shard requirements along horizontal component lines. **Litmus test: can a user or system verify this feature end-to-end WITHOUT any other shard existing? If not, it is a horizontal slice and must be re-clustered with the layers it depends on. Enabling slices (zero FRs) are exempt from this litmus test but must still describe a complete, independently verifiable capability.**
-3. **Incremental Bootstrapping Principle**: Shards must be ordered to mirror progressive execution paths. Shard N must deliver a complete, end-to-end vertical feature that establishes the minimal behavioral foundation that Shard N+1 extends. **The "foundation" is a working feature, not a layer.** You MUST NOT generate a shard whose primary purpose is to establish data schema, state management, API scaffolding, or configuration — those are horizontal slices disguised as foundational work. Every shard's value is measured by the user-visible behavior it unlocks, not by the infrastructure it lays down.
+2. **The Vertical Slice Mandate — Anti-Pattern Gate**: A vertical slice encompasses one or more related FRs and ACs that together form a complete, user-testable application feature. Every emitted shard MUST carry at least one PRD FR. Technical support work stays inside the feature slice whose behavior requires it. You are strictly forbidden from generating layered shards or zero-FR setup, tooling, governance, and refactoring shards. A "foundation" is a working user-visible feature, not schema, state, API scaffolding, configuration, or process setup.
+3. **Incremental Bootstrapping Principle**: Order shards by progressive application behavior. Shard N delivers a complete end-to-end behavior that Shard N+1 extends. Its value is measured by the requested product behavior it unlocks, not by infrastructure or workflow setup.
 4. **Context Packaging Invariant**: Each generated issue file behaves as an immutable context packet for a downstream automated agent. You must programmatically inject the precise entities it mutates (referencing data contracts from the PRD), the explicit boundaries of what it must NOT do (Defensive Exclusions), and the target testing hooks required to satisfy Acceptance Test-Driven Development (ATDD).
 5. **Acceptance Outline Anti-Pattern Gate**: Shard issues carry implementation-independent `AO-NNN` outcomes, not final test scenarios. `## Acceptance Outline` MUST NOT contain bold `**Given**`, `**When**`, or `**Then**` clauses. Example forbidden output: `**Given** a repository / **When** the command runs / **Then** it succeeds`. If any clause leaks into an issue, halt with `GHERKIN_LEAK_DETECTED`. `/deviate-plan` alone expands outlines into current-code-informed Gherkin.
 6. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-003`, `ISS-004`, ...). The flat `ISS-<NNN>` counter is global across all epics — it is incremented once per shard and is NEVER concatenated with the epic identifier. Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-003"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
-7. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute seven sequential mental loops inside an internal engineering ledger block (`## Internal ICoT Ledger`):
-   - Pass 1 (Topological Layout + Flow Anchor): Read `specs/_product/flows/` first. Partition FRs by primary `FLOW-XX` — flow is the primary partition key, not the FR. Within each flow cluster, group FRs into end-to-end behavior bundles. A slice may carry one or many FRs (zero only for enabling slices such as tooling, CI, infrastructure). Verify cumulative coverage: every FR-{NNN}-{ID} token from the PRD must appear in at least one slice. Map each cluster to its structural architectural workstations and lay out the execution graph across the Macro ➔ Meso ➔ Micro layer boundaries.
+7. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute eight sequential mental loops inside an internal engineering ledger block (`## Internal ICoT Ledger`):
+   - Pass 1 (Topological Layout + Flow Anchor): Read the existing `specs/_product/flows/` catalog as read-only context. Partition FRs by the user-visible flows they already serve, then group them into end-to-end application behavior bundles. Every candidate slice carries one or more FRs. Verify cumulative coverage: every FR-{NNN}-{ID} token from the PRD appears in at least one slice. Map each cluster to application workstations in the consumer repository.
    - Pass 1.5 (Slice Cap Gate): Hard ceiling: 10 slices per epic. Target range: 4–8. If draft count exceeds 10, halt with `SLICE_CAP_EXCEEDED`. Re-cluster by merging adjacent flow-anchored slices that share workstations or demo paths; do not proceed until count ≤ 10. This pass is non-negotiable — over-counted PRDs fail at the consumer, not at the source.
    - Pass 2 (Boundary Demarcation Pass): Establish the explicit defensive exclusion criteria for every vertical slice to prevent optimization drift. Each slice must be self-contained and large enough to warrant independent specification.
-   - Pass 2.1 (FR-to-Flow Traceability): For every FR-{NNN}-{ID}, record one or more `FLOW-XX` IDs derived from `specs/_product/flows/flows-product.md` (and domain-specific `flows-<domain>.md` when present); record `flow_refs: []` for enabling slices that touch zero Product-layer flows.
-   - Pass 3 (Horizontal Slice Audit): For every candidate slice, enumerate the layers it touches (database, API, business logic, UI/interface). If the slice contains one or more FRs and touches only ONE layer, mark it as `HORIZONTAL_SLICE_DETECTED` and feed it to Pass 3.5 for merging with adjacent FRs until it cuts through at least two layers with complete end-to-end behavior. Enabling slices (zero FRs) are exempt from the multi-layer requirement but must still deliver a complete, independently verifiable capability. Log any slices that failed this audit and how they were resolved.
+   - Pass 2.1 (FR-to-Flow Traceability): For every FR-{NNN}-{ID}, record matching `FLOW-XX` IDs from the existing catalog. Use `flow_refs: []` when no flow matches; do not create flow-authoring or index-synchronization work.
+   - Pass 3 (Horizontal Slice Audit): For every candidate slice, enumerate the application layers it touches (database, API, business logic, UI/interface). If it touches only ONE layer, mark it as `HORIZONTAL_SLICE_DETECTED` and feed it to Pass 3.5 for merging until it delivers complete end-to-end behavior.
    - Pass 3.5 (Merge Pass): For every pair of slices A, B: if B's `## Demonstration Path` references an artifact only created by A's workstation cluster, OR if B is flagged by Pass 3 as `HORIZONTAL_SLICE_DETECTED`, merge A and B into one slice. Re-run until no merge candidates remain, then re-check the cap (Pass 1.5).
    - Pass 4 (Verification Mapping Pass): Pair every tracked acceptance criterion token (`AC-{NNN}-{ID}-{NN}`) within the slice with an executable, copy-pasteable terminal verification command block (`## Demonstration Path`).
+   - Pass 5 (Consumer Implementation Audit): Reject every candidate whose deliverable is DeviaTDD setup, agent skill or slash-command creation, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance. Halt immediately with `META_WORK_NOT_ALLOWED`; do not emit a mixed meta/application shard set.
 8. **Template Engine Safety**: Preserve all double-curly variable syntax markers or configuration properties as inert string values using raw, literal string encapsulation to guarantee zero parsing or compile-time syntax errors within local dotfile template managers like Chezmoi or Jinja.
 9. **Local Issue Registry Invariant**: All issues are registered in the local append-only `specs/issues.jsonl` ledger. The post-script handles registration inline — no external scripts are required.
-10. **Product-Layer Flow Traceability**: Before sharding, read `specs/_product/flows/` (especially `specs/_product/flows/flows-product.md` and any domain-specific `flows-<domain>.md`), `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` when present. Add Pass 2.1 `FR-to-Flow Traceability` to the `## Internal ICoT Ledger`, mapping every `FR-{NNN}-{ID}` to one or more `FLOW-XX` IDs derived from those files. Emit the resulting `flow_refs` in each issue's YAML frontmatter and manifest record; enabling slices that touch no Product-layer flow MUST emit `flow_refs: []`. Use release priorities to bias shard ordering and preserve architecture/domain-model constraints.
+10. **Existing Flow Traceability**: Read existing Product-layer flows, release context, architecture, and domain-model files only to understand the application behavior and map each FR to existing `FLOW-XX` references. `flow_refs` are metadata, not implementation scope. Keep those Product-layer artifacts unchanged during sharding.
 
 </system_instructions>
+
+<consumer_repository_boundary>
+The target is the consumer application's implementation. Assume the DeviaTDD CLI and every required agent skill already exist. Generated issue files and manifests omit DeviaTDD setup, skill paths, slash-command files, flow-catalog work, release scaffolding, and workflow-ledger maintenance entirely. They contain only requested application behavior, application workstations, and verification of that behavior. If any PRD requirement is meta work rather than application behavior, halt with `META_WORK_NOT_ALLOWED` before any issue file is written.
+</consumer_repository_boundary>
 
 <output_format_schemas>
 
 ## Internal ICoT Ledger
 ```text
-Pass 1 (Topological Layout + Flow Anchor): [Read specs/_product/flows/. Partition FRs by primary FLOW-XX first — flow is the primary partition key, not the FR. Within each flow cluster, group FRs into end-to-end behavior bundles. A slice may carry one or many FRs (zero only for enabling slices). Verify cumulative FR coverage: every FR appears in at least one slice.]
+Pass 1 (Topological Layout + Flow Anchor): [Group FR-backed application behavior against existing read-only FLOW-XX context. Every emitted slice carries at least one FR; verify cumulative coverage.]
 Pass 1.5 (Slice Cap Gate): [Hard ceiling: 10 slices per epic. Target range: 4–8. If draft count exceeds 10, halt with SLICE_CAP_EXCEEDED. Re-cluster by merging adjacent flow-anchored slices that share workstations or demo paths; do not proceed until count ≤ 10.]
 Pass 2 (Boundary Demarcation): [Isolate inclusion vs exclusion constraints for each feature slice]
-Pass 2.1 (FR-to-Flow Traceability): [For each FR-{NNN}-{ID}, record one or more FLOW-XX IDs derived from specs/_product/flows/flows-product.md (and domain-specific flows-<domain>.md when present); record flow_refs: [] for enabling slices that touch zero Product-layer flows]
-Pass 3 (Horizontal Slice Audit): [Verify each slice cuts through multiple layers (database, API, logic, UI) with complete end-to-end behavior; flag HORIZONTAL_SLICE_DETECTED and feed it to Pass 3.5 for merging]
+Pass 2.1 (FR-to-Flow Traceability): [For each FR-{NNN}-{ID}, record matching existing FLOW-XX IDs or an empty list; no catalog work]
+Pass 3 (Horizontal Slice Audit): [Verify every slice cuts through the application layers needed for complete end-to-end behavior; merge one-layer candidates]
 Pass 3.5 (Merge Pass): [For every pair of slices A, B: if B's ## Demonstration Path references an artifact only created by A's workstation cluster, OR if B is flagged as HORIZONTAL_SLICE_DETECTED, merge A and B. Re-run until no merge candidates remain, then re-check the cap (Pass 1.5).]
 Pass 4 (Verification Mapping): [Verify that each AC maps to an explicit end-to-end bash execution path validation block]
+Pass 5 (Consumer Implementation Audit): [Confirm every issue implements application behavior and names no DeviaTDD setup, skill, flow-catalog, release-scaffold, or workflow-ledger work]
 ```
 
 ## Shard Generation Manifest
@@ -105,12 +111,13 @@ If the PRD is missing `FR-{NNN}-{ID}` or `AC-{NNN}-{ID}-{NN}` tokens, trigger `M
 </step>
 
 <step id="vertical_slicing">
-Execute the Internal ICoT (Pass 1, 1.5, 2, 2.1, 3, 3.5, 4) — flow-anchored clustering with hard cap and merge enforcement — to cluster related FRs into vertical slices. Primary partition key is FLOW-XX (Pass 1), not the FR. Cap is hard-enforced at 10 (Pass 1.5); horizontal slices are merged via Pass 3.5 before emission. Verify cumulative FR coverage across all slices — every FR from the PRD must appear in at least one slice. Write the ICoT ledger as `## Internal ICoT Ledger` in the output.
+Execute the Internal ICoT (Pass 1, 1.5, 2, 2.1, 3, 3.5, 4, 5) — cluster FR-backed application behavior against existing flow context, enforce the hard cap, merge horizontal candidates, and reject meta work before emission. Verify cumulative FR coverage across all slices.
+
 
 For each vertical slice:
-1. Group one or more related FRs (or zero for enabling slices such as tooling, infrastructure, or refactoring) into a cohesive, independently verifiable feature
-2. Ensure the slice cuts through ALL layers (database, API, logic, UI) — enabling slices with zero FRs are exempt from this requirement
-3. Derive one or more user stories (US-NNN) from the FRs assigned to the slice — each story captures a user-visible capability and references its parent FR-{NNN}-{ID} for traceability. Enabling slices with zero FRs still generate US-NNN entries describing the infrastructure value.
+1. Group one or more related FRs into a cohesive, independently verifiable application feature; every slice carries at least one FR
+2. Ensure the slice cuts through every application layer required for its observable behavior; keep migrations, configuration, and support code inside that feature slice
+3. Derive one or more user stories (US-NNN) from the assigned FRs — each story captures user-visible application capability and references its parent FR-{NNN}-{ID}
 4. Map implementation-independent acceptance outlines (`AO-NNN`) to each user story, covering happy-path outcomes, error categories, and boundary categories without Given/When/Then syntax
 5. Verify the slice is non-trivial — it must warrant its own spec + plan phase
 6. Map blocked_by and coordinates_with dependencies across slices
@@ -140,7 +147,7 @@ After all issue files are written, validate cumulative FR coverage:
 3. If any FR is unmapped (appears in zero issues), halt with `INCOMPLETE_FR_COVERAGE` and list the missing FRs
 4. Log the coverage summary in the manifest
 
-Zero-FR enabling slices are valid — the coverage check only ensures no FR is orphaned.
+Every emitted shard is FR-backed application implementation work; the coverage check rejects orphaned FRs and Pass 5 rejects DeviaTDD or Product-layer meta work.
 </step>
 
 <step id="manifest_writing">
@@ -215,7 +222,7 @@ If the post-script exits with `status: FAILURE`, surface the `reason` to the use
 | Circular dependency detected in DAG | Halt with TOPOLOGY_LOOP_FAULT |
 | Post-script returns MANIFEST_NOT_FOUND | LLM forgot to write manifest — write it, then re-run post |
 | `--dry-run` mode | Write preview manifest, post-script emits preview without mutations |
-| `specs/_product/` directory missing | Emit `flow_refs: []` for all shards and note gap in manifest; do not halt |
+| `specs/_product/` directory missing | Emit `flow_refs: []` for all application shards; do not create Product-layer setup work. |
 
 </edge_case_handling>
 

@@ -174,3 +174,21 @@ class TestSlimPromptConstraints:
     def test_no_placeholders_in_tasks(self):
         content = _read_template("tasks.md")
         assert "${" not in content or "<context>" in content
+
+
+class TestConsumerRepositoryBoundaries:
+    def test_auto_macro_and_meso_prompts_reject_meta_work(self):
+        for template_name in ("shard", "plan", "tasks"):
+            content = load_template(template_name)
+            assert "<consumer_repository_boundary>" in content
+            assert "META_WORK_NOT_ALLOWED" in content
+            assert "application behavior" in content
+            assert "existing" in content.lower()
+            assert "read-only" in content.lower()
+
+    def test_auto_prompts_require_application_targets_for_empty_flow_refs(self):
+        for template_name in ("shard", "plan", "tasks"):
+            content = load_template(template_name)
+            assert "flow_refs: []" in content
+            assert "do not" in content.lower()
+            assert "setup" in content.lower()

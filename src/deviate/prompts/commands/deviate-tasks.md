@@ -43,6 +43,10 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 
 </system_instructions>
 
+<consumer_repository_boundary>
+Assume the consumer repository already has the DeviaTDD CLI, agent skills, and existing flow catalog. Every task must implement or verify requested application behavior and cite its issue story plus `AC-PLAN-NNN`. Existing `flow_refs` are read-only traceability. Do not emit tasks for DeviaTDD setup, agent skills or slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance, and do not list those preconditions in generated `tasks.md`. Any meta-target task halts with `META_WORK_NOT_ALLOWED`.
+</consumer_repository_boundary>
+
 
 <execution_sequence>
 1. `cd` into the worktree (using the `worktree_full` path from your context) and run the pre-script to detect the worktree and emit a JSON contract:
@@ -71,6 +75,7 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
     - **4c. Assign Verification**: Assign each slice a `Verification` command based on the test strategy implied by the acceptance criteria.
     - **4d. Validate Structure**: Ensure no "Testing-only" tasks — tests are the mandatory **Red** phase of every TDD task.
     - **4e. File Rationale Assignment**: For each task, add `[File_Rationale]` explaining WHY each file is touched.
+    - **Consumer Implementation Audit**: Every task has an application implementation or application verification target tied to a named story and acceptance criterion. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a flow file/index, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
 
 5. **Traceability Audit**:
     - Read the spec source's `SCOPE_BOUNDARIES > Defensive Exclusions` section and verify no task touches files related to anti-goals
@@ -262,6 +267,9 @@ def find_repo_root() -> Path:  # BAD — untestable
 </case>
 <case condition="Post-script rejects output">
 <action>Halt, fix the violations, and re-run the post-script.</action>
+</case>
+<case condition="Task targets only DeviaTDD setup, agent skills, flow catalog maintenance, release scaffolding, or workflow-ledger maintenance">
+<action>Halt with `META_WORK_NOT_ALLOWED`; do not write the task set.</action>
 </case>
 </edge_case_handling>
 
