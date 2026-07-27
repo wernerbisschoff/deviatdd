@@ -652,7 +652,27 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   (`_execute_task_with_retry`, `for attempt in range(2)`) before being marked
   `FAILED` in the issue-scoped `tasks.jsonl`. The pipeline **halts on the first
   failure** (`any_failed = True; break`) and exits with code `1`. If no
-* **Train Retry Loop (per task):** Inside each task's TDD cycle,
+* **Test-command deadline (`_run_test_cmd` → `_execute_test_command`):**
+  Every test command is run through `run_safe_command(command, cwd,
+  timeout=...)` (`src/deviate/cli/_safe_commands.py`). The deadline
+  resolves as `DEVIATE_TEST_TIMEOUT_SECONDS` (env override) →
+  `DeviateConfig.timeout_seconds` (`.deviate/config.toml`, default
+  `300`) → `300`; an unparseable env value or a `gt=0`-violating
+  config value falls through to the next source so the timeout
+  binding can never be silently disabled. When the deadline lapses
+  the orchestrator runs SIGTERM, waits a 5s grace window, then
+  SIGKILL on the **process group** (`start_new_session=True` →
+  `os.killpg`) so every descendant of the test command — e.g.
+  `cargo test` spawning `gloss serve` parked on stdin EOF — is
+  reaped alongside the immediate child. The wrapper returns a
+  deterministic `subprocess.CompletedProcess` with
+  `returncode == 124` (GNU `timeout(1)`-compatible) and preserves
+  partial stdout/stderr captured before the deadline. Fixes the
+  GREEN-phase hang observed when the inner child caught SIGTERM but
+  refused to exit (e.g. tokio's signal drain). Use
+  `timeout_seconds = 1800` in `.deviate/config.toml` for worktrees
+  whose test commands legitimately run for tens of minutes.
+* **Train Retry Loop (per task):**
   `_run_tdd_cycle` runs RED → GREEN → JUDGE → REFACTOR with up to
   ``max_train_attempts = 3`` GREEN retries driven by JUDGE feedback.
   The loop never invokes the agent twice in a row for the same

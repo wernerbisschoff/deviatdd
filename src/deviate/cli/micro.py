@@ -3496,6 +3496,38 @@ def _test_command_candidates(
     return []
 
 
+def _resolve_test_timeout_seconds(root: Path) -> int:
+    """Resolve the test-command deadline for *root*.
+
+    Resolution order (highest first):
+        1. ``DEVIATE_TEST_TIMEOUT_SECONDS`` environment variable
+           (ad-hoc CI override; takes a positive integer in seconds).
+        2. ``DeviateConfig.timeout_seconds`` from the worktree's
+           ``.deviate/config.toml`` (default 300s).
+        3. The Pydantic default ``300`` when no config is present.
+
+    An unparseable env var falls back to the config value; a config
+    value that violates ``gt=0`` (only ``0`` is reachable through the
+    loader today) also falls back to 300. Both fallback rules keep
+    the timeout binding active even when the user mistypes the
+    override — a silent disable would resurrect the GREEN-hang bug.
+    """
+    env_override = os.environ.get("DEVIATE_TEST_TIMEOUT_SECONDS", "").strip()
+    if env_override:
+        try:
+            override = int(env_override)
+            if override > 0:
+                return override
+        except ValueError:
+            pass
+    data = _load_deviate_config_toml(root)
+    if isinstance(data, dict):
+        config_value = data.get("timeout_seconds")
+        if isinstance(config_value, int) and config_value > 0:
+            return config_value
+    return 300
+
+
 def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProcess:
     """Execute a single candidate test command through the safe-command gate.
 
@@ -3506,8 +3538,15 @@ def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProces
     it via :mod:`shlex` against an executable allowlist and rejects
     shell metacharacters and unsupported binaries before the process
     is spawned.
+
+    The deadline is resolved from :func:`_resolve_test_timeout_seconds`
+    and forwarded to ``run_safe_command`` so a hung test command (for
+    example ``cargo test`` spawning ``gloss serve`` parked on stdin
+    EOF) cannot wedge the orchestrator. The deadline also opts into
+    process-group isolation so SIGTERM/SIGKILL reach every descendant.
     """
-    return run_safe_command(command, cwd)
+    timeout = _resolve_test_timeout_seconds(cwd)
+    return run_safe_command(command, cwd, timeout=timeout)
 
 
 def _mise_test_invocation_failed(proc: subprocess.CompletedProcess) -> bool:

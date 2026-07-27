@@ -234,7 +234,20 @@ to invoke, but model selection is delegated to the calling environment.
 
 * **GREEN (The Execution):**
     * **Action:** The agent iterates on production code to pass the test.
-    * **Timeout Guard:** The runner enforces a hard timeout (e.g., `--timeout=10`) to kill infinite loops.
+    * **Test-command Deadline:** Every test invocation flows through
+      ``run_safe_command`` (``src/deviate/cli/_safe_commands.py``).
+      The deadline resolves as ``DEVIATE_TEST_TIMEOUT_SECONDS`` (env
+      override) → ``DeviateConfig.timeout_seconds``
+      (``.deviate/config.toml``, default ``300``) → ``300``; an
+      unparseable env value or a ``gt=0``-violating config value
+      falls through to the next source so the timeout binding can
+      never be silently disabled. On expiry the orchestrator runs
+      SIGTERM, waits a 5s grace, then SIGKILL on the **process
+      group** (``start_new_session=True`` + ``os.killpg``) so every
+      descendant of the test command is reaped alongside the
+      immediate child. Returned
+      ``CompletedProcess.returncode == 124`` (GNU ``timeout(1)``
+      convention) — never an indefinite hang.
     * **State Lock:** Upon a valid Green pass, `git add . && git commit -m "feat: [TASK-ID] Green phase complete"`.
     * **Layer discipline:** GREEN's only invariant is "make the RED test pass via the library/API surface declared in scope." It does NOT make scope, spec-drift, or HITL-routing judgments — those belong to JUDGE. When a RED test cannot be satisfied within GREEN's mechanical scope, GREEN emits `status: FAILURE` with a concrete `rationale:` naming the test path and why; `status: "ERROR"` is reserved strictly for tool/orchestration failure. The runner's `_is_hitl_escalation` is a narrow defensive fallback that ONLY promotes structured `contract_drift` / `escalates_to` / `hitl_options` dict keys to `HITL_PENDING` — loose-string `error_kind` discriminators and free-form scope-conflict text do NOT trigger HITL escalation.
     * **Mechanical Failure → JUDGE Routing:** When GREEN emits `status: FAILURE` with a concrete `rationale:` (the mechanical scope-boundary case above), the runner routes control to JUDGE instead of raising `PhaseFailedError`. `_run_green_phase` sets `session.train_feedback = rationale` + `session.failure_kind = "mechanical"` and returns the session; `_run_judge_phase` injects a `<failure_kind>mechanical</failure_kind>` discriminator block into the JUDGE prompt that instructs the agent to emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` (when the slice is intrinsically RED-only and REFACTOR's no-op commit + COMPLETED transition is the right termination) OR `verdict: COMPLIANCE_VIOLATION` + one of three `next_action` values (`revert_before` / `revert_to_red` / `skip_refactor`) instead of attempting to satisfy the test itself. This closes the loop where mechanical FAILURE (e.g. slice-scope conflict, CLI-surface-out-of-sco…

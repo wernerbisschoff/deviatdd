@@ -19,7 +19,7 @@ The tests exercise the four policy entry points:
   route through the same gate
 
 Each rejection case asserts that no subprocess spawns (we patch
-:func:`subprocess.run` so any real fork is loud-failure detected) and
+:func:`subprocess.Popen` so any real fork is loud-failure detected) and
 that the returned object is structured — never a shell call.
 """
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -179,17 +179,19 @@ class TestRunSafeCommandNeverSpawnsShell:
 
     The contract is straightforward: ``shell=False`` is mandatory, every
     accepted argv is passed as a list, and rejections never call
-    ``subprocess.run`` at all. The tests below patch the real
-    ``subprocess.run`` so any shell dispatch would surface as a test
-    failure rather than a silent escape.
+    ``subprocess.Popen`` at all. The tests below patch the real
+    ``subprocess.Popen`` so any shell dispatch would surface as a test
+    failure rather than a silent escape. ``Popen`` (not ``run``) is the
+    production code path: ``run_safe_command`` owns the spawned PID so
+    it can target the process group on timeout expiry.
     """
 
     def test_rejected_command_returns_failed_completed_process(
         self, tmp_path: Path
     ) -> None:
-        with patch("deviate.cli._safe_commands.subprocess.run") as mocked_run:
+        with patch("deviate.cli._safe_commands.subprocess.Popen") as mocked_popen:
             result = run_safe_command("pytest tests/ && rm -rf /", tmp_path)
-        mocked_run.assert_not_called()
+        mocked_popen.assert_not_called()
         assert result.returncode == 127
         assert "refused to execute" in (result.stderr or "")
         # Args should be the diagnostic label, never a ``["sh", "-c", ...]``
@@ -207,14 +209,16 @@ class TestRunSafeCommandNeverSpawnsShell:
             stdout="ok",
             stderr="",
         )
+        popen_instance = MagicMock()
+        popen_instance.communicate.return_value = (sentinel.stdout, sentinel.stderr)
+        popen_instance.returncode = sentinel.returncode
         with patch(
-            "deviate.cli._safe_commands.subprocess.run", return_value=sentinel
-        ) as mocked_run:
-            result = run_safe_command("pytest tests/ -v", tmp_path)
-        assert result is sentinel
-        mocked_run.assert_called_once()
-        kwargs = mocked_run.call_args.kwargs
-        positional = list(mocked_run.call_args.args[0])
+            "deviate.cli._safe_commands.subprocess.Popen", return_value=popen_instance
+        ) as mocked_popen:
+            run_safe_command("pytest tests/ -v", tmp_path)
+        mocked_popen.assert_called_once()
+        kwargs = mocked_popen.call_args.kwargs
+        positional = list(mocked_popen.call_args.args[0])
         assert positional == ["pytest", "tests/", "-v"], positional
         assert kwargs.get("shell") is False
 
@@ -227,20 +231,22 @@ class TestRunSafeCommandNeverSpawnsShell:
             stdout="ok",
             stderr="",
         )
+        popen_instance = MagicMock()
+        popen_instance.communicate.return_value = (sentinel.stdout, sentinel.stderr)
+        popen_instance.returncode = sentinel.returncode
         with patch(
-            "deviate.cli._safe_commands.subprocess.run", return_value=sentinel
-        ) as mocked_run:
-            result = run_safe_command("mise run test", tmp_path)
-        positional = list(mocked_run.call_args.args[0])
+            "deviate.cli._safe_commands.subprocess.Popen", return_value=popen_instance
+        ) as mocked_popen:
+            run_safe_command("mise run test", tmp_path)
+        positional = list(mocked_popen.call_args.args[0])
         assert positional == ["mise", "run", "test"], positional
-        assert mocked_run.call_args.kwargs.get("shell") is False
-        assert result is sentinel
+        assert mocked_popen.call_args.kwargs.get("shell") is False
 
     def test_oserror_falls_through_to_failed_completed_process(
         self, tmp_path: Path
     ) -> None:
         with patch(
-            "deviate.cli._safe_commands.subprocess.run",
+            "deviate.cli._safe_commands.subprocess.Popen",
             side_effect=OSError("missing binary"),
         ):
             result = run_safe_command("pytest tests/ -v", tmp_path)
@@ -268,6 +274,79 @@ class TestPredicateShieldsUntrustedSources:
     def test_non_string_input_filtered(self) -> None:
         assert not is_safe_test_command(None)  # type: ignore[arg-type]
         assert not is_safe_test_command(12345)  # type: ignore[arg-type]
+
+
+class TestParseSafeCommandRejectsPathPrefixBypass:
+    """The basename allowlist alone is not enough — a repository contributor
+    can plant a file named ``pytest`` (or any other basename on the
+    allowlist) inside the repo and reference it as ``./pytest`` or
+    ``scripts/pytest``. The early BASENAME-MATCH-ONLY check would accept
+    that token, and the runner would then execute the planted file under
+    the operator's UID.
+
+    The location check requires any path-qualified entry to resolve to
+    the same real file as ``shutil.which(basename)``; bare names are
+    unaffected because the OS resolves them via PATH at exec time.
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "./pytest",
+            "scripts/pytest",
+            "../poc-malicious-repo/pytest",
+            "/tmp/pytest",
+            "/var/pytest",
+            "/usr/local/bin/pytest",
+        ],
+    )
+    def test_planted_relpath_rejected(self, command: str) -> None:
+        # Every relative or absolute path pointing at a non-allowlisted
+        # location must be rejected. The basename-only check would
+        # accept these; the location check rejects them.
+        result = parse_safe_command(command)
+        assert not result.accepted, (command, result.reason)
+        assert "path-qualified" in result.reason or "unsupported" in result.reason
+
+    def test_basename_alone_still_accepted(self) -> None:
+        # The fix must not break the bare-name case: ``pytest`` stays
+        # accepted because the OS resolves it via PATH.
+        result = parse_safe_command("pytest tests/ -v")
+        assert result.accepted
+        assert result.argv == ("pytest", "tests/", "-v")
+
+    def test_python3_bare_accepted(self) -> None:
+        # The python special-case in ``_match_executable`` accepts any
+        # basename starting with ``python``; bare names continue to work.
+        result = parse_safe_command("python3 -m pytest tests/")
+        assert result.accepted
+        assert result.argv == ("python3", "-m", "pytest", "tests/")
+
+    def test_planted_pytest_end_to_end_rejected(self, tmp_path: Path) -> None:
+        # The full reproduction scenario from p10-001: a planted
+        # ``./pytest`` file in a tmp repo must not be executed by
+        # ``run_safe_command``.
+        planted = tmp_path / "pytest"
+        planted.write_text("#!/usr/bin/env python3\nprint('PWNED')\n")
+        planted.chmod(0o755)
+        with patch("deviate.cli._safe_commands.subprocess.Popen") as mocked_popen:
+            result = run_safe_command("./pytest", tmp_path)
+        mocked_popen.assert_not_called()
+        assert result.returncode == 127
+        assert "refused" in (result.stderr or "")
+
+    def test_three_untrusted_sources_all_route_through_check(
+        self, tmp_path: Path
+    ) -> None:
+        # The same planted-binary bypass must be blocked across all
+        # three repository-controlled sources (ledger, constitution).
+        _seed_ledger(tmp_path, verification="./pytest")
+        _seed_constitution(tmp_path, test_command="./pytest")
+        task: dict[str, object] = json.loads(
+            (tmp_path / "tasks.jsonl").read_text().splitlines()[0]
+        )
+        assert micro._task_verification_command(tmp_path, task) == ""
+        assert micro._constitution_test_command(tmp_path) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +423,7 @@ class TestConstitutionTestCommandFiltersMaliciousValues:
 class TestRunTestCmdNoShell:
     """End-to-end: ``_run_test_cmd`` never invokes ``sh -c``.
 
-    We patch ``subprocess.run`` (the layer that would receive the
+    We patch ``subprocess.Popen`` (the layer that would receive the
     shell escape) and assert that every call uses ``shell=False`` and
     argv lists made of safe tokens. A test that sees
     ``["sh", "-c", ...]`` would mean the policy regressed.
@@ -358,12 +437,16 @@ class TestRunTestCmdNoShell:
         sentinel = subprocess.CompletedProcess(
             args=(), returncode=127, stdout="", stderr="rej"
         )
+        popen_instance = MagicMock()
+        popen_instance.communicate.return_value = (sentinel.stdout, sentinel.stderr)
+        popen_instance.returncode = sentinel.returncode
         with patch(
-            "deviate.cli._safe_commands.subprocess.run", return_value=sentinel
-        ) as mocked_run:
+            "deviate.cli._safe_commands.subprocess.Popen",
+            return_value=popen_instance,
+        ) as mocked_popen:
             result = micro._run_test_cmd(tmp_path, task)
         # No real subprocess call — the policy rejected the value.
-        mocked_run.assert_not_called()
+        mocked_popen.assert_not_called()
         assert result.returncode == 127
         argv_list = list(result.args)
         assert argv_list != ["sh", "-c", "pytest tests/x; rm -rf /"]
@@ -380,12 +463,15 @@ class TestRunTestCmdNoShell:
             stdout="",
             stderr="",
         )
+        popen_instance = MagicMock()
+        popen_instance.communicate.return_value = (ok.stdout, ok.stderr)
+        popen_instance.returncode = ok.returncode
         with patch(
-            "deviate.cli._safe_commands.subprocess.run", return_value=ok
-        ) as mocked_run:
+            "deviate.cli._safe_commands.subprocess.Popen", return_value=popen_instance
+        ) as mocked_popen:
             micro._run_test_cmd(tmp_path, task)
-        mocked_run.assert_called()
-        for call in mocked_run.call_args_list:
+        mocked_popen.assert_called()
+        for call in mocked_popen.call_args_list:
             positional = list(call.args[0])
             assert positional != ["sh", "-c"], positional
             assert call.kwargs.get("shell") is False
