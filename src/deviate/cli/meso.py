@@ -1725,7 +1725,14 @@ def meso_run_command(
 
 
 def specify(
-    issue_id: str = typer.Argument(..., help="Issue ID (or 'pre' / 'post')"),
+    issue_id: str | None = typer.Argument(
+        None,
+        help=(
+            "Issue ID to claim. Omit to auto-discover the next unblocked BACKLOG "
+            "issue via select_next_unblocked_issue(). Also accepts 'pre' / 'post' "
+            "as agent-internal dispatch sentinels."
+        ),
+    ),
     force: bool = typer.Option(
         False, "--force", help="Force operation (bypass push failure)"
     ),
@@ -1738,11 +1745,21 @@ def specify(
         None, "--issue", help="Issue ID for pre subcommand"
     ),
 ) -> None:
-    """Setup: create worktree and claim issue for the given issue ID"""
+    """Claim an issue and create its worktree.
+
+    With no argument, auto-discovers the next unblocked BACKLOG issue and
+    claims it. With an explicit issue ID, claims that specific issue. Stops
+    after the worktree is created and the claim is committed — does NOT
+    advance session state and does NOT run plan or tasks. To advance from
+    the claim, run ``deviate plan pre`` or invoke the ``/deviate-plan`` slash
+    command inside the new worktree.
+    """
     if issue_id == "pre":
         _specify_pre(issue_id=issue, force=force, dry_run=dry_run)
     elif issue_id == "post":
         _specify_post(force=force)
+    elif issue_id is None:
+        _specify_pre(issue_id=_discover_unclaimed(), force=force, dry_run=dry_run)
     else:
         _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
 

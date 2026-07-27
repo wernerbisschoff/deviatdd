@@ -392,11 +392,15 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Validates `spec.md` Gherkin syntax via `validate_gherkin_syntax()`,
   commits the spec, and transitions session to TASKS.
 
-#### `deviate specify <issue-id>` (Legacy)
+#### `deviate specify [<issue-id>]` (Legacy)
 
 * **Source:** `src/deviate/cli/meso.py`
-* **Description:** Direct positional-argument interface. Validates the issue exists, creates
-  the spec directory, forces session to SPECIFY with `active_issue_id` set.
+* **Description:** Claim an issue and create its worktree. With an explicit `<issue-id>`,
+  claims that specific issue. With **no argument**, auto-discovers the next unblocked
+  BACKLOG issue via `select_next_unblocked_issue()` and claims it. Stops after the
+  worktree is created and the claim is committed — does NOT advance session state and
+  does NOT run plan or tasks. To continue, run ``deviate plan pre`` or invoke the
+  ``/deviate-plan`` slash command inside the new worktree.
 
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 

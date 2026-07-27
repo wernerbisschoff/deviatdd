@@ -71,9 +71,21 @@ Once setup is done, drive the entire lifecycle from inside your agent. Each phas
 /deviate-adhoc "Add a /healthz endpoint"   # condenses explore+research+prd+shard into one issue
 ```
 
-**Meso** — for each sharded issue, decompose into tasks. `tasks.md` is the human's execution blueprint:
+**Meso — claim the issue and enter its worktree.** Meso slash commands run inside the per-issue worktree; claim first, then `cd` in:
 
 ```
+# From the main checkout (NOT inside a worktree):
+deviate specify                            # auto-claim the next unblocked BACKLOG issue, create .worktrees/<branch>/, print the path
+#   or, to claim a specific issue by ID:
+deviate specify ISS-001-007                # claim that exact issue; same worktree creation
+cd $(deviate specify ISS-001-007 2>&1 | grep '^WORKTREE' | awk '{print $2}')
+                                           # then re-open the agent inside the worktree
+```
+
+**Meso** — with the worktree active, decompose into tasks. `tasks.md` is the human's execution blueprint:
+
+```
+# Now INSIDE the worktree:
 /deviate-plan                              # per-issue localized research → plan.md
 /deviate-tasks                             # → tasks.md: 4-8 tasks, each with Verification CLI
                                            #   TDD tasks flow to the Red→Green→Judge→Refactor loop;
@@ -102,13 +114,16 @@ Once setup is done, drive the entire lifecycle from inside your agent. Each phas
 /deviate-review                          # ← Gate 3: final PR scan; merge or request changes
 ```
 
-**Or, run the whole pipeline in one command** — the top-level
-`deviate run` is the canonical "go do the next thing" entry point. It
-discovers the next BACKLOG issue, claims it (creating the per-issue
+**Or, run the unattended one-shot pipeline** — the top-level
+`deviate run` is the unattended drain that *replaces* the Meso · Claim,
+Meso · Plan, Meso · Tasks, and Micro steps above with a single command.
+It discovers the next BACKLOG issue, claims it (creating the per-issue
 worktree), runs SPECIFY → PLAN → TASKS in the worktree, then drains
 every PENDING task through the TDD cycle. Under the hood it chains
 `deviate meso run` with `deviate micro run --all` inside the created
-worktree:
+worktree. Use it when you trust the agent to run end-to-end; use the
+manual Meso + Micro blocks above when you want to review plan.md and
+tasks.md between phases:
 
 ```
 deviate run                              # full pipeline (meso + micro --all)
@@ -189,11 +204,11 @@ style Ex fill:#f5e1e1
 | **Macro · Explore** | `/deviate-explore` | `specs/{epic}/explore.md` (raw codebase scan — what exists, not what to do) | Does the scan cover the right subsystems? Commit to advance. |
 | **Macro · Research** *(Gate 1)* | `/deviate-research` | `specs/{epic}/design.md`, `specs/{epic}/data-model.md` | **Gate 1**: approve the design + data-model before PRD synthesis. |
 | **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
-| **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — there is no separate specify step. |
-| **Macro · Adhoc** *(shortcut)* | `/deviate-adhoc` | `specs/adhoc/ISS-ADH-NNN-*.md` (single issue, spec-enriched) | Use for low/medium-complexity tasks; the complexity classifier auto-routes high-complexity work to the full Macro path. |
+| **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — the user-facing *spec content* is embedded here, but **claiming and worktree creation is a separate CLI step (`deviate specify`)** that runs after Gate 2 and before the meso slash commands below. |
+| **Meso · Specify** | `deviate specify [ISS-NNN-NNN]` | A git worktree at `.worktrees/<branch>/`, a claim entry appended to `specs/issues.jsonl`, and the branch pushed to remote | The setup step before plan/tasks. With no argument, auto-claims the next unblocked BACKLOG issue; with an explicit ID, claims that issue. Stops after the worktree is created — does NOT advance session state and does NOT run plan or tasks. `cd` into the printed worktree path before running any other meso slash command. |
 | **Run** *(full pipeline, end-to-end)* | `deviate run` | Worktree at `.worktrees/<branch>/`, `tasks.md`, `tasks.jsonl`, then completed task commits | The canonical "go do the next thing" command. Discovers the next BACKLOG issue, claims it (creating a per-issue worktree), runs SPECIFY → PLAN → TASKS in that worktree, then drains every PENDING task through the TDD cycle. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` to the micro drain. Internally calls `deviate meso run` then `deviate micro run --all` inside the created worktree. |
-| **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
-| **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | The `tasks.md` artifact is the human's execution blueprint. Verify: 4–8 tasks per issue, every task has a Verification CLI command, each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, DAG `blocked_by` deps are right. TDD tasks flow to red→green→judge→refactor; IMMEDIATE tasks route to `/deviate-execute`. |
+| **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | **Must be invoked inside the worktree that `deviate specify` created.** Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
+| **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | **Must be invoked inside the same worktree.** The `tasks.md` artifact is the human's execution blueprint. Verify: 4–8 tasks per issue, every task has a Verification CLI command, each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, DAG `blocked_by` deps are right. TDD tasks flow to red→green→judge→refactor; IMMEDIATE tasks route to `/deviate-execute`. |
 | **Micro · Red** | `/deviate-red <task-id>` | A failing test (no production code) | Agent-internal; you see the test on commit. |
 | **Micro · Green** | `/deviate-green <task-id>` | Production code that passes the test | Agent-internal; GREEN is constrained to `src/` + permitted paths, and JUDGE checks scope before advancing. |
 | **Micro · Judge** | `/deviate-judge <task-id>` | A `JUDGE_PASS` or `JUDGE_REJECTED` verdict over the GREEN diff | On rejection, the **Green → Judge → Green loop** rolls back to the RED commit, injects `<train_feedback>` into the next GREEN, and retries (up to 3 attempts). Read the feedback — it's the only signal you'll get for what the compliance checker objected to. |
@@ -367,6 +382,14 @@ agent** — Slash commands are installed to `<workdir>/.claude/commands/`,
 `.opencode/commands/`, `.omp/commands/`, `.factory/commands/`, and
 `.pi/prompts/`. Verify the directory exists and is readable, then restart
 the agent so it picks up the new commands.
+**`/deviate-plan` (or `/deviate-tasks`) picks up the wrong issue, claims
+"no active issue", or shows stale context** — Meso slash commands must be
+invoked from inside the per-issue worktree that `deviate specify` (or
+`deviate run`) created. From the main checkout, run `deviate specify`
+(or `deviate specify ISS-NNN-NNN` for a specific issue), `cd` into the
+`.worktrees/<branch>/` path it prints, and re-open the agent there
+before running `/deviate-plan` or `/deviate-tasks`.
+
 
 **`mise run publish` fails with `PYPI_API_TOKEN is not set`** — The task
 loads `.env` from the project root. `.env` must contain
