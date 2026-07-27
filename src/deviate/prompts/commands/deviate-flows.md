@@ -23,11 +23,11 @@ aliases:
 </outputs>
 
 <domain_construct>
-SCOPE: DeviaTDD Product-layer FLOW-01 (Flows) authoring.
+SCOPE: DeviaTDD Product-layer flow authoring.
 WRITES: `specs/_product/flows/flows-<domain>.md` files and `specs/_product/flows/index.md`.
 DOES NOT WRITE: `specs/_product/architecture.md`, `specs/_product/domain-model.md`, `specs/_product/release-next.md`.
-SEED: `specs/_product/flows/flows-product.md` is read-only; extend, never regenerate.
-GOAL: Produce FLOW-NN flow blocks that conform to the FLOW-01 section schema, stay terse, and remain traceable via `flow_refs:` frontmatter.
+SEED: `specs/_product/flows/flows-product.md` is an optional starter template; treat its example as illustrative, not as a fixed FLOW-01/02/03 triple. The first flow the operator authors is FLOW-01; subsequent flows become FLOW-02, FLOW-03, etc.
+GOAL: Produce `FLOW-NN` flow blocks that conform to the seed's section schema, stay terse, and remain traceable via `flow_refs:` frontmatter.
 </domain_construct>
 
 <system_instructions>
@@ -36,12 +36,8 @@ CRITICAL INVARIANTS:
 
 0. **Input Resolution Rule**: First, read and consider the contents of the `<user_input>` container before continuing with execution. If that container is unpopulated or empty, resolve the target prompt by parsing the conversational history.
 
-1. **Seed Extension, Not Regeneration**: `specs/_product/flows/flows-product.md`
-   is the authoritative FLOW-01 seed. Extend it with domain-specific flow files
-   (`flows-<domain>.md`); never regenerate it and never delete existing flow
-   IDs (FLOW-01/02/03) from the catalog.
-2. **Flow ID Format**: Every flow block carries a `## FLOW-NN <Name>` header
-   where `NN` is a zero-padded two-digit (or more) integer. IDs are the
+1. **No Mandated Triple**: The agent does NOT need to author a fixed FLOW-01/02/03 set. FLOW-01 is whatever the operator's first flow turns out to be; FLOW-02 the next, and so on. If `specs/_product/flows/flows-product.md` exists, treat its example as a starting template, not as a required skeleton — the operator can replace its example block with their own first flow, append new `flows-<domain>.md` files for additional flows, or skip it entirely. The previous wording that required seeding FLOW-01/02/03 is RETIRED — consumer repos may ship with zero flow files.
+2. **Flow ID Format**: Every flow block carries a `## FLOW-NN <Name>` header where `NN` is a zero-padded two-digit (or more) integer. IDs are the
    cross-layer traceability anchors used by `deviate shard`, `deviate adhoc`,
    and the issues ledger (`flow_refs:` frontmatter).
 3. **Index Sync Discipline**: After authoring any new flow file under
@@ -56,12 +52,14 @@ CRITICAL INVARIANTS:
    `specs/_product/flows/`. Do NOT touch `specs/_product/architecture.md`,
    `specs/_product/domain-model.md`, or `specs/_product/release-next.md` —
    those belong to `deviate-architecture` and `deviate-release`.
-6. **FLOW-01 Schema Conformance**: Each flow file uses the section schema
-   defined in `specs/_product/flows/flows-product.md` (header bullets:
-   `Actor`, `Domain`, `Status`, `Source`; sections: `Problem / job to be done`,
-   `Trigger`, `Preconditions`, `Happy path (primary steps)`,
-   `Alternate / error paths`, `Success State`, `Metrics / Signals`). Use the
-   same bullet-list style as the seed — never invent a table-only variant.
+6. **Flow Block Schema Conformance**: Each flow file uses the section schema
+   defined in the seed (header bullets: `Actor`, `Domain`, `Status`, `Source`;
+   sections: `Problem / job to be done`, `Trigger`, `Preconditions`, `Happy
+   path (primary steps)`, `Alternate / error paths`, `Success State`, `Metrics
+   / Signals`). Use the same bullet-list style as the seed — never invent a
+   table-only variant. The seed's example block uses `FLOW-01` as a
+   placeholder; replace it with the operator's first real flow ID.
+
 7. **Relative Path Discipline**: Every path written to a flow file or to the
    index is relative to `repo_root`. No absolute machine paths.
 
@@ -166,8 +164,8 @@ Ask targeted questions to clarify:
 - Happy path (3–7 primary steps)
 - Alternate / error paths (only if non-obvious; otherwise mark `TBD`)
 
-If `specs/_product/flows/flows-product.md` is populated, read it first to
-avoid re-asking about FLOW-01/02/03.
+If `specs/_product/flows/flows-product.md` is populated, read it first as a
+starting template — the example block is illustrative, not a mandated triple.
 
 ## 2. Determine Flow ID
 Scan existing IDs in `specs/_product/flows/index.md`. Assign the next
@@ -176,7 +174,7 @@ explicit ID, validate it matches `^FLOW-\d{2,}$`.
 
 ## 3. Write Flow File
 Write to `specs/_product/flows/flows-<domain>.md` (or `flows.md` if no
-domain qualifier applies). Use the FLOW-01 bullet-list schema verbatim —
+domain qualifier applies). Use the starter's bullet-list schema verbatim —
 do NOT switch to a table format. Stay within the per-section length
 budgets in invariant 8. Cross-references to other `FLOW-NN` IDs belong
 under `Metrics / Signals`; at least one cross-reference is recommended
@@ -277,7 +275,7 @@ downstream `deviate shard` invocations to reference via
 | Condition | Action |
 |---|---|
 | `specs/_product/flows/` directory missing | Create the directory; emit a `[yellow]NOTICE[/] no Product-layer flows dir; created` log line |
-| `flows-product.md` missing | Surface a clarifying question: "FLOW-01 seed is absent — recreate from template or skip?" |
+| `flows-product.md` missing | Surface a clarifying question: "DeviaTDD Product Flow Starter is absent — would you like me to author your first flow as FLOW-01, or skip and bring your own?" |
 | User provides no domain qualifier | Use the default `flows.md` filename |
 | Duplicate flow ID detected | Refuse to overwrite; surface a collision error and prompt the user for the next ID |
 | Index file is malformed (not a markdown table) | Append the new row as a markdown table; preserve the existing malformed header verbatim |

@@ -21,22 +21,16 @@ exploration phases.
 
 CRITICAL INVARIANTS:
 
-1. **Architecture + Flows Precondition Gate**: This skill MUST refuse to run
-   unless both `specs/_product/architecture.md` and at least one flow file
-   under `specs/_product/flows/` exist (per FLOW-03 Preconditions at
-   `specs/_product/flows/flows-product.md:77-79`). If either is absent, surface
-   `[red]ARCH_OR_FLOWS_MISSING[/]` and recommend `/deviate-architecture` or
-   `/deviate-flows` respectively.
+1. **No Mandatory Flow or Architecture Precondition**: This skill does NOT refuse to run when `specs/_product/architecture.md` is missing or `specs/_product/flows/` is empty. Release authoring only needs the operator's goal; flows and architecture are optional inputs that the release may reference when present. If the goal names a flow or component that isn't yet catalogued, surface a `[yellow]WARN[/]` and recommend the relevant skill only when the operator's request actually depends on it.
 2. **Goal-First Composition**: The release MUST be expressed as a coherent
    slice of flows and epics that makes sense to users and to the business. The
    user supplies a release-goal description; the agent derives the Included
    Flows table, the Included Work table, and the Acceptance Criteria from that
-   goal plus the existing flow and architecture artifacts.
+   goal plus the existing flow and architecture artifacts when they exist.
 3. **Acceptance Criteria Mandate**: `specs/_product/release-next.md` MUST end
    with an `## Acceptance Criteria` section enumerating concrete, testable
-   statements. The first criterion MUST cite `deviate setup` installation
-   semantics when Product-layer skills are part of the release scope (per
-   `specs/_product/release-next.md:26`).
+   statements. Acceptance criteria describe the user-visible capability the
+   release delivers, not DeviaTDD setup internals.
 4. **Flow Reference Discipline**: Every entry in the Included Work table MUST
    carry a `Flow Refs` column listing the `FLOW-NN` IDs the work touches (or
    `none` for enabling/infrastructure slices). This column is the contract
@@ -78,21 +72,17 @@ CRITICAL INVARIANTS:
    release was emitted into chat but never written to disk, leaving
    `/deviate-explore` (the recommended next step) without a guiding
    compass file to read.
-10. **Flow Coverage Grounding (three states)**: Coverage is consulted
-    only after the State 1 gate (invariant 1) passes. Three states
-    apply: **State 1 — config error** — if
-    `specs/_product/flows/index.md` is absent, REFUSE with
-    `[red]FLOWS_INDEX_MISSING[/]` recommending `/deviate-flows` BEFORE
-    writing release-next.md (already enforced by invariant 1;
-    coverage is not consulted). **State 2 — normal first-run
-    (warn-and-proceed)** — when `flows/index.md` exists but
+10. **Flow Coverage Grounding (two states)**: Coverage is consulted only
+    when the operator's goal references flows. Two states apply:
+    **State 1 — normal first-run (warn-and-proceed)** — when
+    `specs/_product/flows/index.md` is absent OR
     `specs/_product/flows.jsonl` is absent, surface
     `[yellow]NO_FLOWS_LEDGER[/]` recommending `deviate explore post`
     (or `deviate inspect flows coverage` for a dry-run view); DO NOT
-    block release writing — flows.jsonl is seed-by-explore, and a
+    block release writing — flows and coverage are optional inputs, and a
     release may legitimately be authored before explore has run on a
     fresh feature, so the Included Work / Deferred Epics tables
-    proceed with reduced coverage evidence. **State 3 — real
+    proceed with reduced or no coverage evidence. **State 2 — real
     coverage** — when `flows.jsonl` is seeded, cross-reference each
     Included Work row's `Flow Refs` against the coverage rows; a
     flow with `drift_flag == OK` and a non-empty
@@ -110,10 +100,10 @@ CRITICAL INVARIANTS:
 <workflow>
 
 ## 1. Precondition Check
-Verify `specs/_product/architecture.md` exists and at least one flow file
-exists under `specs/_product/flows/`. Refuse with `[red]ARCH_OR_FLOWS_MISSING[/]`
-if either is missing.
-
+If `specs/_product/release-next.md` already exists, surface
+`[yellow]RELEASE_OVERRIDE[/]` and stage a diff preview before overwriting.
+Flows and architecture are optional inputs — proceed without them when
+absent.
 ## 2. Read Catalogs
 Load the full flow catalog from `specs/_product/flows/index.md` and the
 component→flow map from `specs/_product/architecture.md`. Build a unified
@@ -206,8 +196,8 @@ release file as the guiding compass. Do NOT trigger exploration automatically.
 
 | Condition | Action |
 |---|---|
-| `architecture.md` missing | Refuse with `[red]ARCH_OR_FLOWS_MISSING[/]`; recommend `/deviate-architecture` |
-| No flow files under `specs/_product/flows/` | Refuse with `[red]ARCH_OR_FLOWS_MISSING[/]`; recommend `/deviate-flows` |
+| `architecture.md` missing | Proceed without component→flow map; surface `[yellow]NO_ARCH_YET[/]` only if the release references an unnamed component |
+| No flow files under `specs/_product/flows/` | Proceed without flow catalog; surface `[yellow]NO_FLOWS_YET[/]` only if the release references an unnamed flow |
 | Release file already exists | Surface `[yellow]RELEASE_OVERRIDE[/]`; show diff before write |
 | Prior release had non-trivial ACs that new release omits | Surface `[yellow]WARN[/]` listing dropped ACs |
 | User goal references no flows | Surface clarifying question: "Which flows should this release serve?" |

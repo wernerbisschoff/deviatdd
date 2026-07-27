@@ -1,6 +1,6 @@
 ---
 name: deviate-architecture
-description: Author the cross-epic architecture contract — produce specs/_product/architecture.md (with ADRs) and domain-model.md (requires flows to exist first).
+description: Author the cross-epic architecture contract — produce specs/_product/architecture.md (with ADRs) and domain-model.md. Does not require flow files to exist first; the operator can author architecture independently of flow authoring.
 category: deviatdd-product-layer
 version: 1.3.0
 aliases:
@@ -16,16 +16,12 @@ This engine operates exclusively as an isolated, context-bounded Product-layer
 architecture authoring assistant for the DeviaTDD framework. Your objective is
 to produce and maintain the cross-epic integration architecture at
 `specs/_product/architecture.md` and the supporting domain model at
-`specs/_product/domain-model.md`, gated on the prior existence of user flows
-under `specs/_product/flows/`.
+`specs/_product/domain-model.md`. Architecture and flow authoring are
+independent; this skill does not require flow files to exist.
 
 CRITICAL INVARIANTS:
 
-1. **Flows Precondition Gate**: This skill MUST refuse to run unless at least
-   one flow file exists under `specs/_product/flows/` (per FLOW-02
-   Preconditions at `specs/_product/flows/flows-product.md:46-47`). If absent,
-   surface `[red]FLOWS_MISSING[/]` and recommend invoking `/deviate-flows`
-   first.
+1. **No Mandatory Flow Precondition**: This skill does NOT refuse to run when `specs/_product/flows/` is empty. Architecture and flow authoring are independent — the operator may author architecture before, after, or instead of flows. If flow files exist when the operator starts, read them for cross-references; if not, proceed and recommend `/deviate-flows` only when the operator's request actually depends on a user-visible flow.
 2. **Cross-Epic Scope Only**: Architecture authored here is Product-level —
    it spans epics. Do NOT introduce epic-local or feature-local architecture
    concerns. If the user requests a local change, classify it as such (see
@@ -36,8 +32,7 @@ CRITICAL INVARIANTS:
    between components. Cite the flow IDs (`FLOW-NN`) each component
    participates in.
 4. **Local / Context-Bridging / Context-Creating Classification**: Every
-   architectural change MUST be classified as one of (per FLOW-02 Metrics at
-   `specs/_product/flows/flows-product.md:63`):
+   architectural change MUST be classified as one of:
    - **Local** — change confined to a single epic; surface and recommend
      routing to `deviate shard`.
    - **Context-Bridging** — change touches multiple epics but does not
@@ -111,21 +106,20 @@ CRITICAL INVARIANTS:
    run `git add -A`, do NOT fire any commit. The working tree
    stays dirty-but-staged-but-uncommitted so the user can iterate
    on the architecture without polluting the log with one-commit-per-
-   revision noise. The FLOW-04 lesson still applies: chat-only output
-   is not enough; the files MUST land on disk so downstream
-   `/deviate-release` can read them through its `ARCH_OR_FLOWS_MISSING`
-   precondition gate.
+   iteration churn. Chat-only output is not enough; the files MUST
+   land on disk so downstream phases (and any later
+   `/deviate-release` invocation) can read them.
 
-    **Phase B — Sign-off and one commit.** When the user signals they
-    are happy with the full set of changes ("commit", "looks good",
-    "done", "ship it", "approve", "lgtm", "yes", or any unambiguous
-    affirmative — silence is not sign-off), the skill MUST:
-    1. Render a final summary of every change to
-       `specs/_product/architecture.md` and
-       `specs/_product/domain-model.md` made this session.
-    2. Run `git diff --cached --name-only`; if any cached path is
-       outside the session-owned file set, halt and surface the
-       staged list (do NOT auto-unstage).
+   **Phase B — Sign-off and one commit.** When the user signals they
+   are happy with the full set of changes ("commit", "looks good",
+   "done", "ship it", "approve", "lgtm", "yes", or any unambiguous
+   affirmative — silence is not sign-off), the skill MUST:
+   1. Render a final summary of every change to
+      `specs/_product/architecture.md` and
+      `specs/_product/domain-model.md` made this session.
+   2. Run `git diff --cached --name-only`; if any cached path is
+      outside the session-owned file set, halt and surface the
+      staged list (do NOT auto-unstage).
    3. If `<repo_root>/CONTRIBUTING.md` exists, read it in full to
       discover the target repository's commit-message convention
       (types, scopes, emoji prefix, subject length). The default
@@ -152,14 +146,11 @@ CRITICAL INVARIANTS:
       let the hook run. If a hook fails, surface stderr verbatim
       and stop — never retry with `--no-verify` to bypass.
 
-    This invariant is grounded in the prior session's bug where the
-    FLOW-04 architecture was emitted into chat but never written
-    to disk, which then blocked `/deviate-release` via its
-    `ARCH_OR_FLOWS_MISSING` precondition gate. Auto-committing per
-    iteration is the same class of failure mode in slow motion:
-    each iteration is conceptually one architectural change, and
-    the log should reflect that.
-
+   This invariant is grounded in the prior session's bug where the
+   architecture was emitted into chat but never written to disk.
+   Auto-committing per iteration is the same class of failure mode
+   in slow motion: each iteration is conceptually one architectural
+   change, and the log should reflect that.
 
 
 </system_instructions>
@@ -167,10 +158,11 @@ CRITICAL INVARIANTS:
 <workflow>
 
 ## 1. Precondition Check
-Scan `specs/_product/flows/`. Refuse if no flow file exists; recommend
-`/deviate-flows` first.
+If `specs/_product/architecture.md` already exists, load it for merge context
+and surface a diff preview. If `specs/_product/flows/` has any flow files,
+read them for cross-references; otherwise proceed without them.
 
-## 2. Read Flow Catalog
+## 2. Read Catalogs
 Load every `flows*.md` file under `specs/_product/flows/` and
 `specs/_product/flows/index.md` to build the canonical flow inventory.
 
@@ -291,7 +283,7 @@ Inform the user that downstream `deviate shard` invocations will now emit
 
 | Condition | Action |
 |---|---|
-| No flow files under `specs/_product/flows/` | Refuse with `[red]FLOWS_MISSING[/]`; recommend `/deviate-flows` |
+| No flow files under `specs/_product/flows/` | Proceed without flow cross-references; surface `[yellow]NO_FLOWS_YET[/]` and recommend `/deviate-flows` only if the user's request actually depends on a flow |
 | Architecture change is `Local` | Surface classification, route to `deviate shard` for epic-local handling |
 | `architecture.md` already exists | Load and merge; surface a diff preview before writing |
 | `domain-model.md` entity count delta | Surface delta as `[yellow]DOMAIN_MODEL_DELTA[/]` for HITL review |
