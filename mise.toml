@@ -1,9 +1,6 @@
 [env]
-python = "3.13"
-# Load secrets from project-local .env so `mise run publish` can pick up
-# PYPI_API_TOKEN. The file is gitignored — never commit real tokens.
-# See .env.example for the expected variable name.
 _.file = ".env"
+python = "3.13"
 
 
 [tools]
