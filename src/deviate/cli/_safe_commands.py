@@ -39,11 +39,28 @@ executable value through whichever path bypasses review.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
+import shutil
+import signal
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+
+#: Canonical exit code returned by ``run_safe_command`` when the
+#: ``timeout=`` deadline lapses. ``124`` mirrors GNU ``timeout(1)`` and
+#: ``coreutils`` so downstream tooling can distinguish a hard timeout
+#: from any other failure mode without parsing stderr.
+TEST_TIMEOUT_EXIT_CODE: int = 124
+
+#: Grace period between SIGTERM and SIGKILL when the timeout fires.
+#: Long enough for the test command to flush its own shutdown handler
+#: (e.g. tokio's SIGTERM drain in ``gloss serve``) but short enough
+#: that the orchestrator does not block the operator's feedback loop.
+_TIMEOUT_GRACE_SECONDS: float = 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +206,67 @@ def _match_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str] | No
     return None
 
 
+def _resolve_executable_path(head: str) -> str | None:
+    """Enforce the executor-location check on ``head``.
+
+    The basename allowlist alone is not enough: a repository contributor
+    can plant a file named ``pytest`` (or any other basename on the
+    allowlist) inside the repo and reference it as ``./pytest`` or
+    ``scripts/pytest``. The basename-only check inside
+    :func:`_match_executable` would accept that token, and the runner
+    would then :func:`subprocess.run` it under the operator's UID.
+
+    The fix: when ``head`` carries a path separator, the path MUST
+    resolve to the same real file that the operator's ``PATH`` would
+    find for the matching basename. Bare names (``pytest``,
+    ``python3``) continue to work because the OS resolves them via
+    ``PATH`` at exec time. Path-qualified entries override that
+    resolution — so the override must be shown to point at the same
+    trusted binary, or be rejected.
+
+    Policy:
+
+    * No path separator in ``head`` → ``head`` itself (the OS will
+      resolve via PATH at exec time).
+    * Absolute path with separator → must resolve to the same real
+      file as ``shutil.which(basename)``; symlinks are followed.
+    * Relative path with separator → rejected. Relative paths are
+      cwd-dependent and the parser is a pure string→string function
+      with no cwd context; refusing them outright keeps the policy
+      flat and unambiguous.
+
+    Return the resolved canonical path on success; ``None`` when the
+    token is rejected.
+    """
+    # Bare names (no path separator) are resolved by the OS via PATH
+    # at exec time — no location check needed for them.
+    if os.sep not in head and (os.altsep is None or os.altsep not in head):
+        return head
+    # Relative paths are out of scope: the parser has no cwd context
+    # and accepting them would require threading cwd through every
+    # caller. Reject whichever form carries a separator but is not
+    # absolute.
+    if not os.path.isabs(head):
+        return None
+    basename = head.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    # Find the canonical real-file the operator's PATH would resolve.
+    expected = shutil.which(basename)
+    if expected is None:
+        # The basename is unknown to PATH; an absolute path that
+        # bypasses PATH cannot be authorised.
+        return None
+    try:
+        resolved = os.path.realpath(head)
+    except OSError:
+        return None
+    if not os.path.isfile(resolved):
+        return None
+    expected_real = os.path.realpath(expected)
+    if resolved != expected_real:
+        return None
+    return resolved
+
+
 def parse_safe_command(command: str) -> SafeCommand:
     """Return whether ``command`` may execute as an argv-based subprocess.
 
@@ -266,6 +344,17 @@ def parse_safe_command(command: str) -> SafeCommand:
     for piece in _prefix:
         if not _is_safe_token(piece):
             return SafeCommand(False, (), f"unsafe executable token: {piece!r}", "")
+    # Executable-location check: a path-qualified argv[0] must resolve
+    # to the same real file the operator's PATH would find for the
+    # matching basename. This blocks the path-prefix bypass closed by
+    # p10-001 (any planted file with an allowlisted basename).
+    if _resolve_executable_path(tokens[0]) is None:
+        return SafeCommand(
+            False,
+            (),
+            f"path-qualified executable does not resolve to a trusted binary: {tokens[0]!r}",
+            "",
+        )
     return SafeCommand(True, tuple(tokens), "", label)
 
 
@@ -274,19 +363,55 @@ def parse_safe_command(command: str) -> SafeCommand:
 # ---------------------------------------------------------------------------
 
 
+def _kill_process_group(pid: int, sig: int) -> None:
+    """Best-effort ``os.killpg`` wrapper that swallows ESRCH.
+
+    Skips invalid pids (``None``, ``0``, negative). ``pid == 0`` is
+    special: ``os.killpg(0, sig)`` signals the **current** process
+    group, which would self-terminate the orchestrator. When
+    ``subprocess.TimeoutExpired.pid`` is ``None`` (the child never
+    spawned, or ``start_new_session=True`` left the field unset),
+    there is no group to target — the ``subprocess.run`` timeout
+    machinery has already SIGKILL'd the immediate child. ESRCH means
+    the group already exited, also a fine end-state.
+    """
+    if pid <= 0:
+        return
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        return
+
+
 def run_safe_command(
     command: str,
     cwd: Path,
     *,
     env: dict[str, str] | None = None,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess:
     """Run ``command`` if it satisfies :func:`parse_safe_command`.
 
     On rejection, returns a deterministic failed
     :class:`subprocess.CompletedProcess` (returncode ``127``) without
     spawning a shell. On acceptance, runs the structured argv with
-    ``subprocess.run(..., shell=False)`` exactly like a normal argv
-    invocation.
+    ``Popen(..., shell=False)`` exactly like a normal argv invocation.
+
+    When ``timeout`` is supplied, the command is launched with
+    ``start_new_session=True`` so the orchestrator can ``killpg`` the
+    whole process group on expiry — grandchildren spawned by the test
+    command (for example ``cargo test`` → ``gloss serve`` parked on
+    stdin EOF) are torn down alongside the immediate child. We use
+    :class:`subprocess.Popen` directly (not :func:`subprocess.run`)
+    so we own the spawned PID and can target the process group on
+    expiry — ``subprocess.run`` does not reliably populate
+    ``TimeoutExpired.pid``, which made the killpg escalation a no-op
+    in practice. On expiry a deterministic
+    :class:`subprocess.CompletedProcess` is returned with
+    ``returncode == TEST_TIMEOUT_EXIT_CODE`` and the partial
+    stdout/stderr captured before the deadline. Without ``timeout``
+    the wrapper behaves exactly as before — same return shape — so
+    existing callers are unaffected.
     """
     parsed = parse_safe_command(command)
     if not parsed.accepted:
@@ -301,15 +426,23 @@ def run_safe_command(
                 f"  original: {command!r}"
             ),
         )
+    popen_kwargs: dict[str, object] = {
+        "cwd": str(cwd),
+        "env": env,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "shell": False,
+    }
+    if timeout is not None:
+        # ``start_new_session=True`` puts the child at the head of a
+        # fresh process group so ``os.killpg`` reaches every descendant
+        # spawned by the test command. ``start_new_session=True`` and
+        # ``start_new_session`` set the same bit on POSIX (process group
+        # leader + session leader); we use the canonical name.
+        popen_kwargs["start_new_session"] = True
     try:
-        return subprocess.run(
-            list(parsed.argv),
-            cwd=str(cwd),
-            env=env,
-            capture_output=True,
-            text=True,
-            shell=False,
-        )
+        proc = subprocess.Popen(list(parsed.argv), **popen_kwargs)
     except OSError as exc:
         return subprocess.CompletedProcess(
             args=list(parsed.argv),
@@ -317,6 +450,87 @@ def run_safe_command(
             stdout="",
             stderr=str(exc),
         )
+    # Track the spawned PID so OSError cleanup below can target the
+    # process group (start_new_session=True was set above when
+    # ``timeout`` is not None — killpg reaches the whole subtree).
+    stdout_bytes: str | bytes = ""
+    stderr_bytes: str | bytes = ""
+    partial_stdout: str | bytes = ""
+    partial_stderr: str | bytes = ""
+    timed_out = False
+    try:
+        stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        # ``TimeoutExpired`` carries any partial output captured by
+        # ``communicate`` at the moment of expiry. Capture it first
+        # so the killpg escalation below cannot lose buffered data.
+        partial_stdout = getattr(exc, "stdout", None) or ""
+        partial_stderr = getattr(exc, "stderr", None) or ""
+        timed_out = True
+    except OSError as exc:
+        # ``communicate`` raised OSError (e.g. broken pipe while
+        # reading from the child). Reap the spawned child — we own
+        # the PID — before returning the 127 sentinel, so a runaway
+        # test command cannot leak a process when ``run_safe_command``
+        # is invoked with a non-timeout deadline.
+        try:
+            _kill_process_group(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=_TIMEOUT_GRACE_SECONDS + 1.0)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            pass
+        return subprocess.CompletedProcess(
+            args=list(parsed.argv),
+            returncode=127,
+            stdout="",
+            stderr=str(exc),
+        )
+    if timed_out:
+        # Drain any remaining buffered output without blocking; SIGTERM
+        # lands first so children that ignore it (e.g. Gloss's tokio
+        # SIGTERM drain) get a graceful-drain window before SIGKILL.
+        _kill_process_group(proc.pid, signal.SIGTERM)
+        time.sleep(_TIMEOUT_GRACE_SECONDS)
+        _kill_process_group(proc.pid, signal.SIGKILL)
+        try:
+            extra_stdout, extra_stderr = proc.communicate(timeout=0)
+        except (subprocess.TimeoutExpired, OSError):
+            extra_stdout, extra_stderr = None, None
+        # ``proc.communicate(timeout=0)`` after the kill returns any
+        # output the children wrote between SIGTERM and SIGKILL — if
+        # it succeeded, prefer the cumulative read over the partial
+        # captured at expiry.
+        if extra_stdout:
+            partial_stdout = extra_stdout
+        if extra_stderr:
+            partial_stderr = extra_stderr
+        # Reap the zombie; ``wait()`` with a bounded timeout does not
+        # block on a still-alive child — the SIGKILL above will land
+        # and the kernel will reap eventually.
+        try:
+            proc.wait(timeout=_TIMEOUT_GRACE_SECONDS + 1.0)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        if isinstance(partial_stdout, bytes):
+            partial_stdout = partial_stdout.decode("utf-8", errors="replace")
+        if isinstance(partial_stderr, bytes):
+            partial_stderr = partial_stderr.decode("utf-8", errors="replace")
+        timeout_repr = f"{timeout:g}s" if isinstance(timeout, float) else f"{timeout}s"
+        message = (
+            f"deviate: test command timeout after {timeout_repr} "
+            f"(SIGTERM → {_TIMEOUT_GRACE_SECONDS:g}s grace → SIGKILL on process group)\n"
+        )
+        return subprocess.CompletedProcess(
+            args=list(parsed.argv),
+            returncode=TEST_TIMEOUT_EXIT_CODE,
+            stdout=partial_stdout,
+            stderr=partial_stderr + message,
+        )
+    return subprocess.CompletedProcess(
+        args=list(parsed.argv),
+        returncode=proc.returncode,
+        stdout=stdout_bytes or "",
+        stderr=stderr_bytes or "",
+    )
 
 
 def is_safe_test_command(command: str) -> bool:

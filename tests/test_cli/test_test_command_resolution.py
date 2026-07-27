@@ -58,13 +58,17 @@ def test_extract_python_test_command_alias(tmp_path: Path) -> None:
 
 
 def test_task_verification_has_priority(tmp_path: Path) -> None:
-    calls: list[tuple[list[str], dict]] = []
+    calls: list[tuple[list[str], str]] = []
 
-    def fake_run(args, **kwargs):
-        calls.append((args, kwargs))
-        return subprocess.CompletedProcess(args, 0, "passed", "")
+    def fake_run(
+        command: str, cwd: Path, **kwargs: object
+    ) -> subprocess.CompletedProcess:
+        # ``run_safe_command`` parses the command string into argv via
+        # ``parse_safe_command``; we mirror the expected argv here.
+        calls.append((command.split(), str(cwd)))
+        return subprocess.CompletedProcess(calls[-1][0], 0, "passed", "")
 
-    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+    with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(
             tmp_path,
             {"verification": "pytest tests/test_specific.py -q"},
@@ -81,11 +85,14 @@ def test_constitution_command_used_without_mise_task(tmp_path: Path) -> None:
 
     calls: list[list[str]] = []
 
-    def fake_run(args, **kwargs):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 0, "passed", "")
+    def fake_run(
+        command: str, cwd: Path, **kwargs: object
+    ) -> subprocess.CompletedProcess:
+        argv = command.split()
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "passed", "")
 
-    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+    with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(tmp_path)
 
     assert result.returncode == 0
@@ -102,15 +109,18 @@ def test_missing_mise_task_falls_back_to_constitution(tmp_path: Path) -> None:
 
     calls: list[list[str]] = []
 
-    def fake_run(args, **kwargs):
-        calls.append(args)
-        if args == ["mise", "run", "test"]:
+    def fake_run(
+        command: str, cwd: Path, **kwargs: object
+    ) -> subprocess.CompletedProcess:
+        argv = command.split()
+        calls.append(argv)
+        if argv == ["mise", "run", "test"]:
             return subprocess.CompletedProcess(
-                args, 1, "", "mise ERROR unknown command: test"
+                argv, 1, "", "mise ERROR unknown command: test"
             )
-        return subprocess.CompletedProcess(args, 0, "passed", "")
+        return subprocess.CompletedProcess(argv, 0, "passed", "")
 
-    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+    with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(tmp_path)
 
     assert result.returncode == 0
@@ -124,18 +134,21 @@ def test_nested_python_manifest_is_used_when_root_is_unconfigured(
     service.mkdir(parents=True)
     (service / "pyproject.toml").write_text("[project]\nname='solver'\n")
 
-    calls: list[tuple[list[str], dict]] = []
+    calls: list[tuple[list[str], str]] = []
 
-    def fake_run(args, **kwargs):
-        calls.append((args, kwargs))
-        return subprocess.CompletedProcess(args, 0, "passed", "")
+    def fake_run(
+        command: str, cwd: Path, **kwargs: object
+    ) -> subprocess.CompletedProcess:
+        argv = command.split()
+        calls.append((argv, str(cwd)))
+        return subprocess.CompletedProcess(argv, 0, "passed", "")
 
-    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+    with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(tmp_path)
 
     assert result.returncode == 0
     assert calls[0][0] == ["pytest"]
-    assert Path(calls[0][1]["cwd"]) == service
+    assert Path(calls[0][1]) == service
 
 
 def test_repository_command_shell_syntax_is_rejected_without_spawn(
@@ -143,11 +156,13 @@ def test_repository_command_shell_syntax_is_rejected_without_spawn(
 ) -> None:
     calls: list[list[str]] = []
 
-    def fake_run(args, **kwargs):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 0, "pwned", "")
+    def fake_run(
+        command: str, cwd: Path, **kwargs: object
+    ) -> subprocess.CompletedProcess:
+        calls.append(command.split())
+        return subprocess.CompletedProcess([], 0, "pwned", "")
 
-    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+    with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(
             tmp_path,
             {"verification": "pytest tests -q; touch SHOULD_NOT_EXIST"},
@@ -161,11 +176,13 @@ def test_repository_command_shell_syntax_is_rejected_without_spawn(
 def test_repository_command_unsupported_executable_is_rejected(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
-    def fake_run(args, **kwargs):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 0, "pwned", "")
+    def fake_run(
+        command: str, cwd: Path, **kwargs: object
+    ) -> subprocess.CompletedProcess:
+        calls.append(command.split())
+        return subprocess.CompletedProcess([], 0, "pwned", "")
 
-    with patch("deviate.cli.micro.subprocess.run", side_effect=fake_run):
+    with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(tmp_path, {"verification": "bash -c 'echo pwned'"})
 
     assert result.returncode != 0
