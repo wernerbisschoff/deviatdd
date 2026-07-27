@@ -28,6 +28,9 @@ def _setup_minimal_workspace(
     issue_id: str = "ISS-001-001",
     issue_status: str = "BACKLOG",
     create_spec_md: bool = False,
+    seed_plan: bool = True,
+    seed_tasks: bool = True,
+    seed_slug: str = "iss-001",
 ) -> None:
     dot_dir = tmp_git_repo / ".deviate"
     dot_dir.mkdir(parents=True)
@@ -42,26 +45,48 @@ def _setup_minimal_workspace(
 
     issue_body_dir = spec_root / "test-epic" / "issues"
     issue_body_dir.mkdir(parents=True)
-    (issue_body_dir / "iss-001.md").write_text("# Test Issue\n\nFR-001: do the thing\n")
+    (issue_body_dir / f"{seed_slug}.md").write_text(
+        "# Test Issue\n\nFR-001: do the thing\n"
+    )
 
     prd_dir = spec_root / "test-epic"
     (prd_dir / "prd.md").write_text("# PRD\n\nFR-001: do the thing\n")
 
     if create_spec_md:
-        spec_dir = spec_root / "test-epic" / "iss-001"
+        spec_dir = spec_root / "test-epic" / seed_slug
         spec_dir.mkdir(parents=True)
         (spec_dir / "spec.md").write_text(
             "# Spec\n\n**Scenario 1:**\n- **Given** precondition\n"
             "- **When** action\n- **Then** result\n"
         )
 
+    # Seed plan.md / tasks.md at the spec-path location so the
+    # ``_enforce_phase_artifact`` guard (added 2026-07-27 to close the
+    # false-success validation gap) passes for tests that mock
+    # ``AgentBackend.invoke`` to return PASS without writing files.
+    # Regression tests pass ``seed_plan=False`` / ``seed_tasks=False`` to
+    # exercise the missing-artifact path without an ``os.remove`` dance.
+    # ``seed_slug`` overrides the default issue-slug location so tests
+    # that resolve a different ``source_file`` (e.g. ``iss-002``) seed
+    # at the matching path the orchestrator will look up.
+    issue_dir = spec_root / "test-epic" / seed_slug
+    issue_dir.mkdir(parents=True, exist_ok=True)
+    if seed_plan:
+        (issue_dir / "plan.md").write_text(
+            "## Acceptance Contract\n\n"
+            "### AC-PLAN-001: seeded smoke\n"
+            "**Given** seeded repo\n**When** plan phase runs\n"
+            "**Then** the contract is honored\n"
+        )
+    if seed_tasks:
+        (issue_dir / "tasks.md").write_text("# Tasks\n\n- TSK-001-01 smoke (tdd)\n")
     ledger = spec_root / "issues.jsonl"
     record = IssueRecord(
         issue_id=issue_id,
         type="feature",
         title="Test Meso Issue",
         status=issue_status,
-        source_file="specs/test-epic/issues/iss-001.md",
+        source_file=f"specs/test-epic/issues/{seed_slug}.md",
         timestamp=datetime.now(timezone.utc),
     )
     ledger.write_text(record.model_dump_json() + "\n")
@@ -392,7 +417,9 @@ class TestMesoOrchestration:
             args=[], returncode=0, stdout="1 passed", stderr=""
         )
 
-        _setup_minimal_workspace(tmp_git_repo, issue_id="ISS-001-001")
+        _setup_minimal_workspace(
+            tmp_git_repo, issue_id="ISS-001-001", seed_slug="iss-002"
+        )
 
         ledger = tmp_git_repo / "specs" / "issues.jsonl"
         blocked = IssueRecord(
@@ -765,3 +792,99 @@ class TestMesoRunNoSetup:
             "SPECIFY must appear in PipelineBanner steps when "
             f"no_setup=False:\n{default_output}"
         )
+
+
+class TestMesoArtifactEnforcement:
+    """``_enforce_phase_artifact`` must fail fast when an agent returns
+    PASS without producing its phase artifact.
+
+    Regression tests for the false-success validation gap where
+    ``_invoke_agent_phase`` trusted ``manifest.status == "PASS"`` and the
+    orchestrator advanced to the next phase even though no plan.md /
+    tasks.md existed. The earlier pipeline tests mocked ``_plan_post`` /
+    ``_tasks_post`` so they could not catch this; here we let the post
+    hooks run unmocked but trip the new guard first.
+    """
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_plan_not_written_when_agent_returns_pass(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Defensive: if a prior test leaked cwd into tmp_git_repo, fail
+        # loudly with a clear message rather than spinning on a wrong cwd.
+        if Path.cwd().resolve() == tmp_git_repo.resolve():
+            raise AssertionError(
+                f"cwd leaked into tmp_git_repo before test started: {Path.cwd()}"
+            )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        # Agent says PASS but writes nothing; ``_plan_post`` is mocked to
+        # prove the guard (not the post-hook) is what catches the gap.
+        mock_invoke.return_value = MagicMock(status="PASS", phase="plan")
+
+        _setup_minimal_workspace(tmp_git_repo, seed_plan=False, seed_tasks=False)
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                with pytest.raises(SystemExit) as exc_info:
+                    _meso_run(issue_id="ISS-001-001")
+
+        assert exc_info.value.code != 0
+        # The guard fires before ``_plan_post`` — the post-hook is never
+        # invoked because the orchestrator aborts on the missing
+        # artifact at the orchestrator layer, not the validator layer.
+        mock_plan_post.assert_not_called()
+        mock_tasks_post.assert_not_called()
+        captured = capsys.readouterr()
+        assert "PLAN_NOT_WRITTEN" in captured.out + captured.err
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_tasks_not_written_when_agent_returns_pass(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Defensive: see PLAN regression test above for rationale.
+        if Path.cwd().resolve() == tmp_git_repo.resolve():
+            raise AssertionError(
+                f"cwd leaked into tmp_git_repo before test started: {Path.cwd()}"
+            )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        # Both invocations return PASS without writing files; plan.md is
+        # seeded so the PLAN guard passes, but tasks.md is missing so
+        # the TASKS guard fires.
+        mock_invoke.return_value = MagicMock(status="PASS", phase="tasks")
+
+        _setup_minimal_workspace(tmp_git_repo, seed_plan=True, seed_tasks=False)
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                with pytest.raises(SystemExit) as exc_info:
+                    _meso_run(issue_id="ISS-001-001")
+
+        assert exc_info.value.code != 0
+        # PLAN succeeded (artifact existed), so ``_plan_post`` ran; the
+        # abort happens at the TASKS guard, before ``_tasks_post``.
+        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
+        mock_tasks_post.assert_not_called()
+        captured = capsys.readouterr()
+        assert "TASKS_NOT_WRITTEN" in captured.out + captured.err
