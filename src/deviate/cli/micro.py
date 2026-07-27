@@ -47,6 +47,7 @@ from deviate.state.config import (
     SessionState,
     _load_deviate_config_toml,
     resolve_graphite_config,
+    resolve_phase_model,
 )
 from deviate.ui.monitor import OrchestrationMonitor
 from deviate.ui.pipeline import (
@@ -75,7 +76,7 @@ _verbose: bool = False
 _cli_model_override: str | None = None
 
 
-def _resolve_run_model(phase: str, root: Path) -> str | None:
+def resolve_model_for_phase(phase: str, root: Path) -> str | None:
     """Resolve model for *phase* with CLI override priority.
 
     Priority (highest first):
@@ -86,9 +87,13 @@ def _resolve_run_model(phase: str, root: Path) -> str | None:
 
     JUDGE phase is excluded from CLI override to preserve model tiering
     (V4 Pro for JUDGE). Phase-specific and default config still apply.
+
+    Exposed as a module-level symbol so micro-layer tests can
+    ``unittest.mock.patch`` it to bypass config + CLI resolution for
+    hermetic unit tests.
     """
     data = _load_deviate_config_toml(root)
-    models: dict = {}
+    models: dict[str, str] = {}
     if data:
         m = data.get("models", {})
         if isinstance(m, dict):
@@ -98,9 +103,7 @@ def _resolve_run_model(phase: str, root: Path) -> str | None:
     allowed = frozenset({"RED", "GREEN", "REFACTOR", "EXECUTE"})
     if _cli_model_override and phase.upper() in allowed:
         return _cli_model_override
-    if "default" in models:
-        return models["default"]
-    return None
+    return resolve_phase_model(phase, models)
 
 
 _YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)
@@ -996,7 +999,7 @@ def _run_red_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
-    red_model = _resolve_run_model("RED", root)
+    red_model = resolve_model_for_phase("RED", root)
     manifest, agent_tail = _invoke_agent(
         prompt,
         c,
@@ -1102,7 +1105,7 @@ def _run_green_phase(
         if persisted:
             prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
-    green_model = _resolve_run_model("GREEN", root)
+    green_model = resolve_model_for_phase("GREEN", root)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -1944,7 +1947,7 @@ def _run_judge_phase(
         )
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
-    judge_model = _resolve_run_model("JUDGE", root)
+    judge_model = resolve_model_for_phase("JUDGE", root)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -2210,7 +2213,7 @@ def _run_refactor_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
-    refactor_model = _resolve_run_model("REFACTOR", root)
+    refactor_model = resolve_model_for_phase("REFACTOR", root)
     manifest, agent_tail = _invoke_agent(
         prompt,
         c,
@@ -2559,7 +2562,7 @@ def _run_execute_phase(
     has_spec = bool(spec_content)
     train_feedback = ""
     max_judge_attempts = 3
-    execute_model = _resolve_run_model("EXECUTE", root)
+    execute_model = resolve_model_for_phase("EXECUTE", root)
 
     session_path = root / ".deviate" / "session.json"
     session = (
@@ -2630,7 +2633,7 @@ def _run_execute_phase(
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
-        judge_model = _resolve_run_model("JUDGE", root)
+        judge_model = resolve_model_for_phase("JUDGE", root)
         judge_manifest, _ = _invoke_agent(
             judge_prompt,
             c,
