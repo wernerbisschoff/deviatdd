@@ -1396,6 +1396,23 @@ def _invoke_agent_phase(
         raise SystemExit(1)
 
 
+def _enforce_phase_artifact(phase: str, artifact_path: Path) -> None:
+    """Fail-fast guard: agent returned PASS but the phase artifact is missing.
+
+    Closes the false-success validation gap where ``_invoke_agent_phase``
+    trusts ``manifest.status == "PASS"`` without verifying the agent
+    actually wrote its deliverable. Distinct diagnostic code so logs
+    distinguish "agent didn't do the work" from "agent wrote something
+    invalid" (the latter is still caught by ``_plan_post`` / ``_tasks_post``).
+    """
+    if not artifact_path.exists() or artifact_path.stat().st_size == 0:
+        console.print(
+            f"[red]{phase.upper()}_NOT_WRITTEN[/] agent returned PASS but "
+            f"{artifact_path} is missing or empty"
+        )
+        raise SystemExit(1)
+
+
 def _meso_discover_and_sequence() -> str | None:
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     issue = select_next_unblocked_issue(ledger_path)
@@ -1652,6 +1669,7 @@ def _meso_run(
                 _plan_pre, force=force, dry_run=False, skip_auto_claim=no_setup
             )
             _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
+            _enforce_phase_artifact("plan", Path(contract["plan_path"]))
             _plan_post(force=force, issue_id=issue_id)
         plan_md = Path(contract["plan_path"])
         contract["plan_digest"] = _build_plan_digest(plan_md)
@@ -1660,6 +1678,7 @@ def _meso_run(
         with _phase_callout("TASKS", issue_id, issue_title or ""):
             _silence_stdout(_tasks_pre, force=force, dry_run=False)
             _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
+            _enforce_phase_artifact("tasks", Path(contract["tasks_target"]))
             _tasks_post(force=force, issue_id=issue_id)
 
         # ── Final IDLE guard ─────────────────────────────────────────
