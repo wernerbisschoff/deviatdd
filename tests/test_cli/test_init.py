@@ -778,15 +778,8 @@ class TestInitAgentFlag:
             assert "*/commands/deviate-*.md" in root_gi
 
     def test_init_writes_root_gitignore_for_all_agent_dirs(self, tmp_path: Path):
-        """``deviate setup`` writes four ``*/commands/`` and ``*/prompts/``
-        patterns to the project-root ``.gitignore``.
-
-        The single-level ``*/`` prefix scopes the patterns to one directory
-        before ``commands/`` or ``prompts/`` — broad enough to cover every
-        supported agent (``.claude/``, ``.opencode/``, ``.factory/``,
-        ``.pi/``) but tight enough NOT to match the project's own source
-        paths (e.g. ``src/deviate/prompts/commands/``, which is three
-        directories deep).
+        """``deviate setup`` writes agent artifact patterns and ``.worktrees/``
+        to the project-root ``.gitignore``.
         """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -794,6 +787,7 @@ class TestInitAgentFlag:
             root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
             assert "*/commands/deviate-*.md" in root_gi
             assert "*/prompts/deviate-*.md" in root_gi
+            assert ".worktrees/" in root_gi
 
     def test_init_installs_commands_to_all_agent_dirs(self, tmp_path: Path):
         """``deviate setup --agent <x>`` installs the command library into
@@ -842,6 +836,7 @@ class TestInitAgentFlag:
             for entry in (
                 "*/commands/deviate-*.md",
                 "*/prompts/deviate-*.md",
+                ".worktrees/",
             ):
                 assert root_gi.count(entry) == 1, (
                     f"{entry} duplicated in root .gitignore"

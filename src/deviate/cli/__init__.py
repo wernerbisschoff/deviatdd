@@ -863,43 +863,18 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
 
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
-    artifacts across all agent platforms.
+    artifacts and worktrees across all agent platforms.
     Three artifact families are installed and must not be committed:
-
     - ``deviate-*`` commands under ``<agent>/commands/`` and
       ``<agent>/prompts/`` — the core DeviaTDD command library.
-    - The single ``deviatdd`` skill under ``<agent>/skills/deviatdd/``
-      for every active agent platform (write-everywhere; mirrors the
-      ``_install_commands_to_agents`` policy). The skill is installed
-      for all five ``active_agents`` (``claude``, ``opencode``,
-      ``factory``, ``pi``, ``omp``) regardless of which platforms
-      document a project-local skills convention.
-
-    The command patterns are scoped with ``*/commands/`` and
-    ``*/prompts/`` so they only match a SINGLE directory level before
-    the agent subdir — this is deliberately tight because the project
-    itself stores command sources three levels deep at
-    ``src/deviate/prompts/commands/deviate-*.md`` (plus spec files like
-    ``specs/plans/deviate-content.md``). A broader ``**/deviate-*.md``
-    pattern would silently ignore those source-of-truth files and break
-    ``deviate setup`` in the deviatdd repo itself. The command patterns
-    cover every supported agent (``.claude/commands/``,
-    ``.opencode/commands/``, ``.factory/commands/``, ``.pi/prompts/``,
-    ``.omp/prompts/``) and any future agent that follows the same
-    ``<dir>/commands/`` or ``<dir>/prompts/`` flat-file convention.
-
-    ``*/skills/deviatdd/`` mirrors the existing ``*/commands/`` and
-    ``*/prompts/`` single-level wildcards - covers all five agent
-    platforms (``.claude/``, ``.opencode/``, ``.factory/``, ``.pi/``,
-    ``.omp/``) with one pattern. The single-level prefix (``*/`` not
-    ``**/``) keeps it scoped to the project root, never matching the
-    source-of-truth at ``src/deviate/prompts/skills/deviatdd/`` (three
-    directories deep).
+    - The single ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
+    - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
     """
     entries = (
         "*/commands/deviate-*.md",
         "*/prompts/deviate-*.md",
         "*/skills/deviatdd/",
+        ".worktrees/",
     )
     gitignore_path = workdir / ".gitignore"
     if gitignore_path.exists():
