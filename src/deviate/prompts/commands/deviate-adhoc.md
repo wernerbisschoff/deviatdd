@@ -54,9 +54,9 @@ The ad-hoc issue describes implementation of requested application behavior in a
    - Output findings in a `## Discovery Audit` block
 
 3.5. **Existing Flow Mapping**: Map the application task to existing Product-layer flow IDs:
-   a. **Explicit override (highest precedence)**: If the user invoked with `--flow-ref FLOW-01,FLOW-02`, use that value verbatim and skip inference.
+   a. **Explicit override (highest precedence)**: If the user invoked with `--flow-ref FLOW-04,FLOW-05`, use that value verbatim and skip inference.
    b. **Read-only context**: Read existing domain flow definitions when present and match the requested application behavior to their Trigger and Happy Path. Do not author, repair, synchronize, or index flows.
-   c. **Infer mapping**: Record only existing matching `FLOW-XX` IDs. If no match exists, use `flow_refs: []` and continue the application issue; do not propose a flow issue.
+   c. **Infer mapping**: Record only existing matching `FLOW-XX` IDs. If no match exists, use `flow_refs: []` and continue the application issue; do not propose a flow issue. Example mapping: a task that touches the streaming catalog and the existing FLOW-04 row says "Live-Stream Agent Progress via RPC" should pick up `FLOW-04`; a task unrelated to any cataloged flow uses `flow_refs: []`.
    d. **Emit resolved list**: Record the final list under `## Discovery Audit` → `Flow Refs Resolved`.
 
 4. **Shared PRD Lifecycle**:
