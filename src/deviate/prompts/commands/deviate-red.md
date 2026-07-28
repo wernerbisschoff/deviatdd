@@ -26,6 +26,20 @@ This is the **RED** (test-writing) phase of the DeviaTDD micro-cycle. Use it whe
 
 After completion, the `deviate-green` skill should be invoked for the implementation phase.
 
+## Retry Contract (test_defect)
+
+When the orchestrator retries this RED phase because a prior GREEN
+run declared ``failure_kind: test_defect`` (the test itself was
+wrong, not the implementation), the runner injects the GREEN's
+rationale into the prompt as ``{train_feedback}``. Treat that
+rationale as the authoritative defect description: re-author the
+failing test so it asserts the behavior the spec actually requires
+— do NOT keep the prior assertion that GREEN judged wrong. After
+rewriting, run ``{test_command}`` and confirm the test fails for
+the intended reason (missing implementation, not a syntactic
+error). The orchestrator rejects the phase if the test passes; the
+runner enforces that RED must produce a failing test.
+
 </system_instructions>
 
 <traceability_mandates>
