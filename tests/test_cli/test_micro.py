@@ -2175,9 +2175,70 @@ class TestJudgeTrainRollback:
         )
 
 
-class TestFindTaskRecord:
-    """_find_task_record returns the latest (last) matching record."""
+class TestCoerceJudgeActionFailureKind:
+    """Table-driven unit tests for ``_coerce_judge_action`` once it accepts
+    a ``failure_kind`` discriminator threaded from ``session.failure_kind``.
 
+    Pins defect #1 (coercion): ``failure_kind == "test_defect"`` plus
+    ``verdict == COMPLIANCE_VIOLATION`` forces ``revert_before`` regardless
+    of what ``next_action`` the JUDGE manifest declared. PASS verdicts and
+    non-test_defect paths preserve the legacy resolution (JUDGE remains the
+    authority on its own outcome).
+    """
+
+    @pytest.mark.parametrize(
+        "next_action,verdict,failure_kind,expected",
+        [
+            # test_defect + violation: forced revert_before, regardless of
+            # what the agent declared or omitted.
+            ("revert_before", "COMPLIANCE_VIOLATION", "test_defect", "revert_before"),
+            (None, "COMPLIANCE_VIOLATION", "test_defect", "revert_before"),
+            ("revert_to_red", "COMPLIANCE_VIOLATION", "test_defect", "revert_before"),
+            # PASS verdicts: runner-level override does NOT fire; JUDGE wins.
+            (None, "COMPLIANCE_PASS", "test_defect", None),
+            ("skip_refactor", "COMPLIANCE_PASS", "test_defect", "skip_refactor"),
+            # Non-test_defect failures: legacy contract preserved.
+            (None, "COMPLIANCE_VIOLATION", "mechanical", "revert_to_red"),
+            ("revert_before", "COMPLIANCE_VIOLATION", "mechanical", "revert_before"),
+            (None, "COMPLIANCE_PASS", "mechanical", None),
+            # Clean run (no failure_kind): legacy contract preserved.
+            ("skip_refactor", "COMPLIANCE_PASS", "", "skip_refactor"),
+            (None, "COMPLIANCE_PASS", "", None),
+        ],
+    )
+    def test_overrides_to_revert_before_on_test_defect(
+        self,
+        next_action: str | None,
+        verdict: str,
+        failure_kind: str,
+        expected: str | None,
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+        from deviate.core.agent import HandoverManifest
+
+        manifest_kwargs: dict[str, object] = {}
+        if next_action is not None:
+            manifest_kwargs["next_action"] = next_action
+        manifest = HandoverManifest.model_construct(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict=verdict,
+            task_id="TSK-005-09",
+            **manifest_kwargs,
+        )
+        # RED today: ``_coerce_judge_action`` does not accept
+        # ``failure_kind``. GREEN widens the signature to a keyword-only
+        # ``failure_kind`` parameter; the matrix above then locks the
+        # override semantics in place.
+        result = _coerce_judge_action(manifest, verdict, failure_kind=failure_kind)
+        assert result == expected, (
+            f"failure_kind={failure_kind!r} verdict={verdict!r} "
+            f"next_action={next_action!r}: expected {expected!r}, "
+            f"got {result!r}"
+        )
+
+
+class TestFindTaskRecord:
     def test_find_task_record_returns_latest_status(self, tmp_path: Path):
         from deviate.cli.micro import _find_task_record
 
@@ -3854,4 +3915,305 @@ class TestExecuteTaskRetryJudgeFeedbackCommitBound:
         ), (
             "monitor error_reason must surface the JUDGE feedback "
             f"commit failure message; got {tracked.error_reason!r}"
+        )
+
+
+class TestRunnerLoopRestartsRedOnRevertBefore:
+    """Defect #2: ``_run_tdd_cycle`` must loop back to RED (not just GREEN)
+    when JUDGE returns ``next_action="revert_before"``.
+
+    Patches phase helpers (``_run_red_phase``, ``_run_green_phase``,
+    ``_run_judge_phase``, ``_finish_tdd_cycle``) and asserts:
+      * the call order is ``RED, GREEN, JUDGE, RED, GREEN, JUDGE, REFACTOR``,
+      * the second ``_run_red_phase`` is invoked with the GREEN's
+        ``test_defect`` rationale injected into ``session.train_feedback``,
+      * the runner does not overwrite that rationale with the generic
+        ``GENERIC_TRAIN_FEEDBACK`` string on the JUDGE → RED transition.
+    """
+
+    def test_revert_before_dispatches_red_again(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """RED today: ``_run_tdd_cycle`` ignores
+        ``pending_judge_action == "revert_before"`` and silently loops
+        GREEN → JUDGE → GREEN. GREEN adds a ``revert_before`` branch
+        that resets ``train_attempts`` and dispatches ``_run_red_phase``
+        again (bypassing ``_phase_already_done``) so the append-only
+        ledger gains a fresh RED entry and the agent receives the
+        GREEN's ``test_defect`` rationale via ``session.train_feedback``.
+        """
+        from deviate.cli.micro import (
+            _run_tdd_cycle,
+        )
+        from deviate.state.config import SessionState
+        from deviate.state.ledger import TaskRecord, append_task_transition
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        monkeypatch.setattr(
+            "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+        )
+
+        ledger_dir = (
+            root / "specs" / "002-deviatdd-gap-analysis" / "005-micro-layer-integrity"
+        )
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        ledger_path = ledger_dir / "tasks.jsonl"
+        task = {
+            "id": "TSK-005-09",
+            "issue_id": "ISS-002-005",
+            "description": "loop control",
+            "execution_mode": "TDD",
+        }
+        append_task_transition(TaskRecord(**task), ledger_path)
+
+        session_path = root / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(active_issue_id="ISS-002-005").save(session_path)
+
+        call_log: list[str] = []
+        test_defect_rationale = (
+            "RED test asserts the wrong tenant (Tenant A) where the "
+            "spec requires isolation from Tenant B."
+        )
+
+        def _red(*args, **kwargs):
+            call_log.append("RED")
+            session_path_arg = args[3]
+            current = SessionState.load(session_path_arg)
+            if call_log.count("RED") >= 2:
+                assert current.train_feedback == test_defect_rationale, (
+                    "Runner must inject GREEN's test_defect rationale "
+                    "into session.train_feedback before the retry RED; "
+                    f"got {current.train_feedback!r}"
+                )
+                assert current.pending_judge_action == "revert_before"
+            return current
+
+        def _green(*args, **kwargs):
+            call_log.append("GREEN")
+            session_path_arg = args[3]
+            current = SessionState.load(session_path_arg)
+            if call_log.count("GREEN") == 1:
+                # First GREEN: emit a test_defect failure so JUDGE
+                # has something to reject with ``revert_before``.
+                current.failure_kind = "test_defect"
+                current.train_feedback = test_defect_rationale
+            else:
+                current.failure_kind = ""
+                current.train_feedback = ""
+            current.save(session_path_arg)
+            return current
+
+        def _judge(*args, **kwargs):
+            call_log.append("JUDGE")
+            session_path_arg = args[3]
+            current = SessionState.load(session_path_arg)
+            if call_log.count("JUDGE") == 1:
+                current.judge_rejected = True
+                current.pending_judge_action = "revert_before"
+                current.train_feedback = test_defect_rationale
+            else:
+                current.judge_rejected = False
+                current.pending_judge_action = "skip_refactor"
+                current.train_feedback = ""
+            current.save(session_path_arg)
+            return current
+
+        def _finish(*args, **kwargs):
+            call_log.append("REFACTOR")
+
+        monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+        monkeypatch.setattr("deviate.cli.micro._run_green_phase", _green)
+        monkeypatch.setattr("deviate.cli.micro._run_judge_phase", _judge)
+        monkeypatch.setattr("deviate.cli.micro._finish_tdd_cycle", _finish)
+
+        _run_tdd_cycle(task, ledger_path, Console())
+
+        assert call_log == [
+            "RED",
+            "GREEN",
+            "JUDGE",
+            "RED",
+            "GREEN",
+            "JUDGE",
+            "REFACTOR",
+        ], f"Runner must restart RED on revert_before; got phase order {call_log!r}"
+
+
+class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
+    """Defect #3: ``_run_red_phase`` must enforce the RED contract.
+
+    (a) If pytest returns ``returncode == 0`` after the RED agent's
+        commit, ``_run_red_phase`` must raise ``PhaseFailedError``
+        instead of letting the GREEN phase pick up a passing test
+        (the regression that produced the TSK-002-02 mismatch).
+
+    (b) On a JUDGE ``revert_before`` retry, ``session.train_feedback``
+        must be appended to the RED prompt so the agent knows what
+        defect to fix.
+    """
+
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree", lambda *a, **kw: None)
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
+    @patch("deviate.cli.micro._commit_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_passing_test_after_red_commit_raises_phase_failed(
+        self,
+        mock_invoke: MagicMock,
+        mock_commit: MagicMock,
+        mock_find_tests: MagicMock,
+        mock_format: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from deviate.cli.micro import _run_red_phase
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.state.ledger import TaskRecord, append_task_transition
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        (root / "feature.py").write_text("def feature(): pass")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-005-09): seed"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+        ledger_dir = (
+            root / "specs" / "002-deviatdd-gap-analysis" / "005-micro-layer-integrity"
+        )
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        ledger_path = ledger_dir / "tasks.jsonl"
+        task = {
+            "id": "TSK-005-09",
+            "issue_id": "ISS-002-005",
+            "description": "RED enforces failing test",
+            "execution_mode": "TDD",
+        }
+        append_task_transition(TaskRecord(**task), ledger_path)
+
+        session = SessionState(active_issue_id="ISS-002-005")
+        session_path = root / ".deviate" / "session.json"
+        session.save(session_path)
+
+        mock_commit.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="abc123", stderr=""
+        )
+        mock_invoke.return_value = (
+            HandoverManifest(phase="RED", status="SUCCESS", task_id="TSK-005-09"),
+            "",
+        )
+        mock_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with patch(
+            "deviate.cli.micro._run_test_cmd",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ):
+            with pytest.raises(Exception) as excinfo:
+                _run_red_phase(task, ledger_path, session, session_path, Console())
+        # Pin: the error message must specifically say the test passes,
+        # not the unrelated post-commit verification error (those fire
+        # on different code paths). GREEN adds a check that pytest
+        # rc == 0 raises; that message will mention "passes" / "test".
+        assert (
+            any(
+                token in str(excinfo.value).lower()
+                for token in ("test", "passes", "passing")
+            )
+            and "did not commit" not in str(excinfo.value).lower()
+        ), (
+            "_run_red_phase must raise a phase-failed error referencing "
+            "the passing test (not the post-commit verification error); "
+            f"got {type(excinfo.value).__name__}: {excinfo.value}"
+        )
+
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree", lambda *a, **kw: None)
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
+    @patch("deviate.cli.micro._commit_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_train_feedback_injected_into_retry_red_prompt(
+        self,
+        mock_invoke: MagicMock,
+        mock_commit: MagicMock,
+        mock_find_tests: MagicMock,
+        mock_format: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from deviate.cli.micro import _run_red_phase
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.state.ledger import TaskRecord, append_task_transition
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        (root / "feature.py").write_text("def feature(): pass")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test(TSK-005-09): seed"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+        ledger_dir = (
+            root / "specs" / "002-deviatdd-gap-analysis" / "005-micro-layer-integrity"
+        )
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        ledger_path = ledger_dir / "tasks.jsonl"
+        task = {
+            "id": "TSK-005-09",
+            "issue_id": "ISS-002-005",
+            "description": "train_feedback injection",
+            "execution_mode": "TDD",
+        }
+        append_task_transition(TaskRecord(**task), ledger_path)
+
+        session = SessionState(active_issue_id="ISS-002-005")
+        session.train_feedback = (
+            "RED test asserts the wrong tenant (Tenant A) where the "
+            "spec requires isolation from Tenant B."
+        )
+        session.pending_judge_action = "revert_before"
+        session.failure_kind = "test_defect"
+        session_path = root / ".deviate" / "session.json"
+        session.save(session_path)
+
+        mock_commit.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="abc123", stderr=""
+        )
+        mock_invoke.return_value = (
+            HandoverManifest(phase="RED", status="SUCCESS", task_id="TSK-005-09"),
+            "",
+        )
+        mock_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with patch(
+            "deviate.cli.micro._run_test_cmd",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+        ):
+            _run_red_phase(task, ledger_path, session, session_path, Console())
+
+        prompt_arg = mock_invoke.call_args.args[0]
+        assert session.train_feedback in prompt_arg, (
+            "Runner must inject session.train_feedback into the retry "
+            "RED prompt so the agent knows what defect to fix.\n"
+            f"feedback={session.train_feedback!r}\n"
+            f"prompt={prompt_arg!r}"
         )
