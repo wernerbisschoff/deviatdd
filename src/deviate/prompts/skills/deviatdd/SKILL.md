@@ -1,28 +1,115 @@
 ---
 name: deviatdd
-description: Operate deviate micro run --all — triage failures, troubleshoot from logs, retry cleanly
+description: Step through deviate micro run one task at a time — inspect each result, triage failures, file harness issues
 category: deviatdd-tooling
-version: 1.1.0
+version: 2.0.0
 ---
 
-# deviatdd — Operating deviate micro run
+# deviatdd — Per-task micro orchestrator
 
-This skill orchestrates `deviate micro run --all` and triages its failure
-modes. It is **Micro-layer only**: meso orchestration is the job of
-`/deviate-meso`, `/deviate-plan`, and `/deviate-tasks`. When a failure
+This skill orchestrates `deviate micro run <TASK_ID>` one task at a time,
+inspecting each result before proceeding to the next. When a failure
 escapes micro's scope, the skill points you at the canonical slash
 command (see **Dispatch to slash commands** below) — it does not act
 inline.
 
+A fast-path `deviate micro run --all` is available but *only* when you
+have verified the workspace is healthy (e.g. via `--dry-run` on the first
+task) or when the operator explicitly requests "drain all". The
+default mode is single-task stepping for maximum reactiveness to
+harness issues.
+
 ## When to use this skill
 
-- The operator typed `/deviatdd` or asked "drain the queue", "run
-  micro", "fix this failing micro run", or "why is the queue stuck".
-- A micro run is mid-flight and stuck on a single task.
-- The micro queue drained but the next task is in a wedged state.
+- The operator typed `/deviatdd` or asked "run tasks", "step through
+  micro", "drain the queue", or "fix this failing micro run".
+- An issue has been planned and has pending tasks ready to execute.
+- A previous `--all` run failed on one task and you want to retry
+  that single task and then decide whether to continue.
+- A harness or git/ledger anomaly was encountered and the operator
+  needs to inspect the result before proceeding.
 
-- Before executing a long-running task, preview resolution with `deviate micro run <TASK_ID> --dry-run`.
-- Inspect one issue or task directly with `deviate inspect issues show <ISS-ID> --json` or `deviate inspect tasks show <TSK-ID> --json`.
+Before executing a task, preview resolution with:
+
+```bash
+deviate micro run <TASK_ID> --dry-run
+```
+
+Inspect one issue or task directly with:
+
+```bash
+deviate inspect issues show <ISS-ID> --json
+deviate inspect tasks show <TSK-ID> --json
+```
+
+## Per-task stepping protocol
+
+Instead of `--all`, run tasks one at a time. The agent stops to
+inspect **only when a task fails or behaves unexpectedly** — a
+successful task just advances to the next.
+
+### Step 0: Discover pending tasks
+
+```bash
+# Inside the worktree, list all PENDING tasks:
+deviate inspect tasks list --status PENDING --json 2>/dev/null \
+  | uv run python -c "import sys,json; data=json.load(sys.stdin); [print(f\"  {t['id']}: {t.get('description','')[:60]}\") for t in data]"
+```
+
+Or use a simpler grep-based discovery:
+
+```bash
+# Quick peek at PENDING task IDs in the worktree:
+grep -h '"PENDING"' specs/**/tasks.jsonl 2>/dev/null | head -10
+```
+
+### Step 1: Run the next task
+
+```bash
+deviate micro run <TASK_ID>
+```
+
+Flags you may need:
+- `--no-refactor` — skip REFACTOR phase (e.g. for doc-only slices)
+- `--no-judge` — skip JUDGE phase (careful — bypasses compliance check)
+- `--profile fast` — minimal phase set (RED → GREEN, no judge/refactor)
+- `--model <name>` — override model for this task
+- `--dry-run` — preview before executing
+
+### Step 2: Check the result
+
+If the command exits successfully (exit code 0), the task COMPLETED.
+Move on to the next PENDING task — no need to read logs.
+
+If the command exits non-zero, inspect the per-task transcript before
+deciding how to proceed:
+
+```bash
+cat .deviate/logs/<ISSUE_ID>/<TASK_ID>.log | tail -30
+```
+
+Key signals:
+
+| Signal | What it means |
+|---|---|
+| `TASK_FAILED` with `error=` | Top-level cycle failure — read this first. |
+| `PHASE_DECISION` `decision=CYCLE_COMPLETE` | Task finished successfully (should not be here if exit was non-zero). |
+| `PHASE_DECISION` `decision=JUDGE_REJECTED` | JUDGE found compliance issues. |
+| `AGENT_RESULT` `status=error` | Agent subprocess error (timeout, crash, etc.). |
+| `POST_CMD_FAILURE` | Post-phase commit/lint hook failed. |
+
+### Step 3: Decide what to do next
+
+| After-task state | Next action |
+|---|---|
+| Exited 0 (COMPLETED) | Continue to next PENDING task (Step 1). |
+| Task FAILED (test/code issue) | Inspect the log. Retry the same task once, or skip and fix manually via `/deviate-red`/`/deviate-green`. |
+| Task FAILED (harness/git/ledger issue) | This is a deviatdd bug. See **Filing deviatdd issues** below before retrying. |
+| Agent timeout / model rate-limit | Retry once with the same task ID. |
+| Worktree / session corruption | Run the **Clean-slate retry** gate below. |
+
+---
+---
 
 ## Troubleshooting failed runs
 
@@ -96,11 +183,16 @@ slash command in the **Dispatch** table.
 ## Canonical invocation
 
 ```bash
+# Default: one task at a time (inspect between each)
+deviate micro run <TASK_ID>
+
+# Fast-path: drain all pending (only when healthy)
 deviate micro run --all
 ```
 
-That is the single command this skill runs. Everything else below is
-triage or recovery around that command.
+The per-task stepping loop is the default mode. Use `--all` only
+when you have verified workspace health or the operator explicitly
+requests it.
 
 ## Error triage table
 
@@ -109,18 +201,95 @@ diagnostic, and the next action.
 
 | Failure class | Diagnostic | Next action |
 |---|---|---|
-| `NO_PENDING_TASKS` | micro emits `[yellow]NO_PENDING_TASKS[/]` and exits 0 | Nothing to do — the queue is empty. Stop. |
-| Single task stuck in `FAILED` | micro prints `TASK_FAILED` for one task and exits non-zero | Inspect `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`. If a previous RED was rolled back, run `/deviate-red` (or `/deviate-green` / `/deviate-refactor`) on the task directly. |
+| `NO_PENDING_TASKS` | micro emits `[yellow]NO_PENDING_TASKS[/]` and exits 0 | Nothing to do — the queue is empty. Fail here gracefully. |
+| Single task stuck in `FAILED` | micro prints `TASK_FAILED` for one task and exits non-zero | Inspect `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`. If a previous RED was rolled back, run `/deviate-red` (or `/deviate-green` / `/deviate-refactor`) on the task directly. If the failure looks like a deviatdd harness bug, file a deviatdd issue (see **Filing deviatdd issues** below). |
 | `MERGE_CONFLICT` during `deviate merge` between micro runs | git reports conflicts in `specs/issues.jsonl` / `specs/**/tasks.jsonl` | Do NOT resolve manually — the append-only ledgers are union-merged via `.gitattributes`. Surface the conflict to the operator and dispatch to `/deviate-merge` or `/squash-merge`. |
-| Pre-commit hook failure | `git commit` exits non-zero with hook stderr | Read hook stderr verbatim. Fix the underlying issue (lint / format / type / test). Do NOT pass `--no-verify`. Retry the micro run. |
+| Pre-commit hook failure | `git commit` exits non-zero with hook stderr | Read hook stderr verbatim. Fix the underlying issue (lint / format / type / test). Do NOT pass `--no-verify`. Retry the task. |
 | Session state corruption | `.deviate/session.json` is missing, malformed, or points at a deleted worktree | Inspect via `/deviate-inspect`. If unrecoverable, run the four-step clean-slate retry below. |
-| Dependency install drift | `uv sync` / `mise install` / `npm install` fails mid-micro | Re-run `mise run setup` (or the project's equivalent). Do NOT bypass with `--system`. Retry micro. |
+| Dependency install drift | `uv sync` / `mise install` / `npm install` fails mid-micro | Re-run `mise run setup` (or the project's equivalent). Do NOT bypass with `--system`. Retry the task. |
 | No `tasks.jsonl` entry found | micro emits `LEDGER_MISSING` / `TASK_NOT_FOUND` | Check the active issue via `/deviate-inspect`. If issue is missing entirely, escalate to `/deviate-meso`. |
 | Uncommitted spec files | `git status --porcelain -- specs/` shows dirty entries | The deviatdd append-only ledger protocol commits specs at every phase post. Dirty specs mean a phase post was interrupted. Inspect, then dispatch to `/deviate-meso` for a clean rerun. |
 | Detached HEAD | micro refuses to dispatch tasks | `git checkout <branch>` to the worktree's branch. If the branch is gone, the worktree is gone — run the clean-slate retry below. |
 | Branch drift | the worktree branch has diverged from `origin/<base>` | Run `/deviate-merge` to land the diverged work, or rebase manually only if you have operator sign-off. |
 | Judge emits `COMPLIANCE_PASS` on a slice whose diff is intrinsically empty (e.g. RED-only deliverable, fixture file, generated types, doc-only slice) | micro routes the JUDGE verdict to `next_action: proceed_to_refactor_no_diff` and enters REFACTOR regardless of `--no-refactor`; the GREEN-empty branch never enters the rejection cascade. Inspect the task log to confirm the GREEN diff is genuinely empty | No operator action — REFACTOR commits the empty-diff sign-off and marks the task COMPLETED. If REFACTOR runs but the task doesn't progress (legacy runner without the discriminator), dispatch `/deviate-execute` for the task to land it as DIRECT. |
 | Agent subprocess timeout | micro prints `AGENT_TIMEOUT` after N seconds | Inspect the task log; if the model was rate-limited, retry once. If it persists, dispatch `/deviate-meso` to claim a fresh session. |
+| Pattern: repeated harness failures across different tasks | Multiple tasks fail with similar git/ledger/agent errors | **Do not retry**. File a deviatdd issue (see below). The harness has a bug, not the task. |
+
+## Filing deviatdd issues
+
+When a task failure reveals a bug in the deviatdd harness itself
+(not in the task being executed), file an issue on the deviatdd
+repository so the root cause is tracked and fixed.
+
+### Indicators of a harness bug
+
+These are signals that the task itself is probably fine but the
+orchestration layer is broken:
+
+- Git operations fail in ways the task could not cause (e.g. detached
+  HEAD in a freshly-created worktree, `git commit` even though the task
+  ran correctly).
+- Ledger corruption or ledger write failures that leave tasks in
+  an unprocessable state.
+- Session state corruption visible across multiple tasks.
+- Error messages that reference internal deviatdd code paths
+  (`src/deviate/...`) with stack traces.
+- `POST_CMD_FAILURE` that is not a lint/format issue (e.g. `git`
+  misconfiguration, hook script itself crashing).
+- Agent backend issues that persist across retries (same error,
+  different tasks).
+- Rollback logic fails or leaves the worktree in a dirty state
+  that the clean-slate retry cannot recover.
+
+### How to file a deviatdd issue
+
+When you identify a harness bug, file an issue in the deviatdd
+repository. The deviatdd repo is the current working directory
+(`/Users/werner/Projects/tools/deviatdd`).
+
+```bash
+# Capture the evidence first — copy the relevant log:
+TASK_LOG=".deviate/logs/$(ls -t .deviate/logs/*/*.log 2>/dev/null | head -1)"
+TASK_LOG_CONTENT=$(cat "$TASK_LOG" 2>/dev/null)
+
+# Create a GitHub issue for deviatdd:
+gh issue create \
+  --repo werner/deviatdd \
+  --title "bug: <short description of the harness failure>" \
+  --label bug \
+  --body "## Description
+  <What went wrong in 1-2 sentences>
+
+  ## Evidence
+  \`\`\`
+  $TASK_LOG_CONTENT
+  \`\`\`
+
+  ## Task context
+  - Task ID: <TSK-NNN-NN>
+  - Issue ID: <ISS-NNN-NNN>
+  - Command run: \`deviate micro run <TASK_ID>\`
+  - DeviatDD version: \`uv run deviate --version\`
+
+  ## Suspected root cause
+  <Your analysis — what in the harness appears to be the issue>
+"
+```
+
+If the log is very large, truncate to the relevant section and note
+that the full log is available at the path shown.
+
+After filing the issue, decide whether to:
+
+1. **Continue** — if the bug is isolated to one task, skip that task
+   via the ledgers and proceed to the next.
+2. **Stop** — if the harness is fundamentally broken (session state,
+   git isolation), halt and surface the issue to the operator with a
+   `next_action: /deviate-meso` recommendation.
+3. **Workaround** — if there is a known workaround (e.g. clean-slate
+   retry), apply it and note the issue reference in the status output.
+
+---
 
 ## Clean-slate retry
 
@@ -174,10 +343,11 @@ git reset --hard HEAD
 git clean -fd    # WITHOUT -x: preserves .deviate/, .mise/, .venv/, __pycache__/, .worktrees/
 ```
 
-Then re-invoke:
+Then re-invoke for the next pending task:
 
 ```bash
-deviate micro run --all
+# Inside the worktree:
+deviate micro run <TASK_ID>
 ```
 
 What `git clean -fd` deliberately does NOT touch (`-x` excluded):
@@ -227,20 +397,30 @@ contract stays intact and individually testable.
 - Never wrap `/deviate-meso` in this skill — meso has its own
   orchestrator with its own safety gates; duplicating it here would
   bypass them.
+- Never file a deviatdd issue for a task-level failure (lint, test
+  logic, formatting, missing implementation). Harness issues are
+  git/ledger/session/agent errors that repeat across tasks — not
+  per-task code quality problems.
+- Never file a deviatdd issue for `TASK_FAILED` errors whose root
+  cause is the task's own RED/GREEN/JUDGE logic. Verify the triage
+  table first.
 
 ## Output contract
 
 The skill emits a final status block at the end of every invocation:
 
 ```
-{status: DRAINED | STUCK | BLOCKED,
+{status: DRAINED | STUCK | BLOCKED | DEVIATDD_BUG,
  tasks_completed: N,
  tasks_remaining: M,
  retry_recommended: bool,
- next_action: <slash-command-name | "none">}
+ next_action: <slash-command-name | "none">,
+ deviatdd_issue_filed: <issue-url | null>}
 ```
 
 - `DRAINED` — queue empty, no errors.
 - `STUCK` — one or more tasks failed; clean-slate retry may unstick.
 - `BLOCKED` — failure mode escapes micro; dispatch to the slash command
   named in `next_action`.
+- `DEVIATDD_BUG` — harness failure identified; deviatdd issue filed at
+  `deviatdd_issue_filed`.
