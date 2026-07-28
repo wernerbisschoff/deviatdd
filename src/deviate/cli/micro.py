@@ -74,16 +74,41 @@ console = Console()
 _verbose: bool = False
 
 _cli_model_override: str | None = None
+# Backend → env-var map for the model fallback. Add new backends here as
+# their CLIs adopt a stable env-var convention. ``pi`` reads ``PI_MODEL``
+# natively; the others don't yet ship one, so we keep the map conservative.
+_BACKEND_MODEL_ENV: dict[str, str] = {
+    "pi": "PI_MODEL",
+}
 
 
-def resolve_model_for_phase(phase: str, root: Path) -> str | None:
+def _resolve_model_from_env(backend: str | None) -> str | None:
+    """Return the model from the backend-specific env var, or None.
+
+    Empty strings are treated as unset so operators who ``export PI_MODEL=``
+    to "clear" the override don't accidentally select an empty model id.
+    """
+    if not backend:
+        return None
+    var = _BACKEND_MODEL_ENV.get(backend)
+    if not var:
+        return None
+    value = os.environ.get(var, "").strip()
+    return value or None
+
+
+def resolve_model_for_phase(
+    phase: str, root: Path, *, backend: str | None = None
+) -> str | None:
     """Resolve model for *phase* with CLI override priority.
 
     Priority (highest first):
         1. Phase-specific config key (e.g. ``[models].red``)
         2. CLI ``--model`` flag (``_cli_model_override``)
         3. Default config key (``[models].default``)
-        4. ``None`` — backend uses its native default
+        4. Backend env var (``PI_MODEL`` for the ``pi`` backend, etc.) — only
+           consulted when *backend* is provided so legacy callers are unaffected.
+        5. ``None`` — backend uses its native default
 
     JUDGE phase is excluded from CLI override to preserve model tiering
     (V4 Pro for JUDGE). Phase-specific and default config still apply.
@@ -103,7 +128,10 @@ def resolve_model_for_phase(phase: str, root: Path) -> str | None:
     allowed = frozenset({"RED", "GREEN", "REFACTOR", "EXECUTE"})
     if _cli_model_override and phase.upper() in allowed:
         return _cli_model_override
-    return resolve_phase_model(phase, models)
+    resolved = resolve_phase_model(phase, models)
+    if resolved is not None:
+        return resolved
+    return _resolve_model_from_env(backend)
 
 
 _YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)
@@ -999,7 +1027,7 @@ def _run_red_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("red", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
-    red_model = resolve_model_for_phase("RED", root)
+    red_model = resolve_model_for_phase("RED", root, backend=backend)
     manifest, agent_tail = _invoke_agent(
         prompt,
         c,
@@ -1105,7 +1133,7 @@ def _run_green_phase(
         if persisted:
             prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
-    green_model = resolve_model_for_phase("GREEN", root)
+    green_model = resolve_model_for_phase("GREEN", root, backend=backend)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -1947,7 +1975,7 @@ def _run_judge_phase(
         )
 
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
-    judge_model = resolve_model_for_phase("JUDGE", root)
+    judge_model = resolve_model_for_phase("JUDGE", root, backend=backend)
     manifest, _ = _invoke_agent(
         prompt,
         c,
@@ -2213,7 +2241,7 @@ def _run_refactor_phase(
     root = Path.cwd()
     prompt = _build_auto_prompt("refactor", task, root)
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
-    refactor_model = resolve_model_for_phase("REFACTOR", root)
+    refactor_model = resolve_model_for_phase("REFACTOR", root, backend=backend)
     manifest, agent_tail = _invoke_agent(
         prompt,
         c,
@@ -2562,7 +2590,7 @@ def _run_execute_phase(
     has_spec = bool(spec_content)
     train_feedback = ""
     max_judge_attempts = 3
-    execute_model = resolve_model_for_phase("EXECUTE", root)
+    execute_model = resolve_model_for_phase("EXECUTE", root, backend=backend)
 
     session_path = root / ".deviate" / "session.json"
     session = (
@@ -2633,7 +2661,7 @@ def _run_execute_phase(
         judge_prompt = _build_auto_prompt("judge", task, root)
         judge_prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
 
-        judge_model = resolve_model_for_phase("JUDGE", root)
+        judge_model = resolve_model_for_phase("JUDGE", root, backend=backend)
         judge_manifest, _ = _invoke_agent(
             judge_prompt,
             c,
