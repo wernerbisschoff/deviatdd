@@ -42,6 +42,19 @@ permanently after 2 attempts.**
 {task_content}
 </task_content>
 
+<train_feedback>
+When the orchestrator retries this RED phase because a prior GREEN run
+declared ``failure_kind: test_defect`` (the test itself was wrong, not
+the implementation), the runner injects the GREEN's rationale below as
+the defect to fix. Treat the feedback as the authoritative defect
+description: re-author the failing test so it asserts the behavior the
+spec actually requires — do NOT keep the prior assertion that GREEN
+judged wrong. After rewriting, run the test_command and confirm the
+test fails for the intended reason (missing implementation, not a
+syntactic error).
+{train_feedback}
+</train_feedback>
+
 <spec_content>
 The `<authoritative_acceptance_contract source="plan.md">` block is authoritative. The `<macro_issue_intent>` block supplies scope and lineage only; ignore any legacy Gherkin it may contain.
 {spec_content}

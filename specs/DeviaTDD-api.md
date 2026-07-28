@@ -1223,8 +1223,25 @@ Git hooks.
 Unknown `next_action` values are logged (`JUDGE_UNKNOWN_ACTION`) and the runner falls
 back to the legacy verdict-based default (rollback on violation, continue on pass).
 
+**Runner-level override on `failure_kind=test_defect`:** When `_run_judge_phase`
+(`src/deviate/cli/micro.py`) routes a JUDGE manifest whose `failure_kind ==
+"test_defect"` against a `COMPLIANCE_VIOLATION` verdict, the runner-level
+override in `_coerce_judge_action` (`src/deviate/cli/micro.py`) forces
+`next_action="revert_before"` regardless of what `next_action` the agent declared
+or omitted. The override reflects a contract invariant: when the RED test itself
+is wrong, the runner must restart RED with the GREEN's rationale injected, not
+loop back into GREEN with the same test. `_coerce_judge_action` accepts a
+keyword-only `failure_kind` parameter (default `""`) and is the single source of
+truth for the override; `_run_tdd_cycle` honours `pending_judge_action ==
+"revert_before"` (set by JUDGE or the override) by resetting `train_attempts`,
+dispatching `_run_red_phase(task, ..., bypass_phase_done=True)`, and `continue`-
+ing the loop. The bypass preserves the append-only ledger — a fresh RED record
+appends rather than rewriting the previous one — and the `session.train_feedback`
+that GREEN populated is threaded into the retry RED prompt so the agent sees
+the test_defect rationale. `revert_before` judgments on `COMPLIANCE_PASS`
+verdicts do NOT trigger the override; JUDGE's outcome is final on PASS.
+
 There is no interactive prompt; the manifest is the source of truth. A future `--judge-action`
-CLI flag (operator escape hatch) can override the manifest per-invocation.
 
 ---
 

@@ -941,8 +941,20 @@ def _build_scope(issue_id: str, task_id: str) -> str:
     return issue_id
 
 
-def _build_auto_prompt(phase: str, task: dict, root: Path) -> str:
-    """Build a prompt from auto templates with context injected."""
+def _build_auto_prompt(
+    phase: str,
+    task: dict,
+    root: Path,
+    *,
+    train_feedback: str = "",
+) -> str:
+    """Build a prompt from auto templates with context injected.
+
+    ``train_feedback`` is injected as the ``{train_feedback}`` placeholder
+    so retry RED runs (after JUDGE ``revert_before``) carry the
+    GREEN's ``test_defect`` rationale to the agent. Empty string when
+    not on a retry path; the placeholder is rendered empty.
+    """
     issue_id = task.get("issue_id", "")
     task_id = task.get("id", "")
     source_file = _resolve_issue_source_file(root, issue_id) if issue_id else None
@@ -989,6 +1001,7 @@ def _build_auto_prompt(phase: str, task: dict, root: Path) -> str:
         "verification_command": verification_command,
         "verification_binary": verification_binary,
         "next_phase": "",
+        "train_feedback": train_feedback,
     }
     return assemble_prompt(
         template_name=phase, context=context, constitution_path=const_path
@@ -1013,9 +1026,13 @@ def _run_red_phase(
     c: Console,
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
+    *,
+    bypass_phase_done: bool = False,
 ) -> SessionState:
     tid = task.get("id", "?")
-    if _phase_already_done(ledger_path, task.get("id", ""), "RED"):
+    if not bypass_phase_done and _phase_already_done(
+        ledger_path, task.get("id", ""), "RED"
+    ):
         c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
         return session
     _log_run("PHASE_START", task_id=tid, phase="RED")
@@ -1025,7 +1042,9 @@ def _run_red_phase(
 
     backend = agent or "pi"
     root = Path.cwd()
-    prompt = _build_auto_prompt("red", task, root)
+    prompt = _build_auto_prompt(
+        "red", task, root, train_feedback=session.train_feedback
+    )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
     red_model = resolve_model_for_phase("RED", root, backend=backend)
     manifest, agent_tail = _invoke_agent(
@@ -1054,7 +1073,14 @@ def _run_red_phase(
 
     test_files = _find_test_files(root)
     if test_files:
-        _run_test_cmd(root)
+        test_result = _run_test_cmd(root)
+        if test_result.returncode == 0:
+            raise PhaseFailedError(
+                f"RED phase test passed for {tid} — RED must author a "
+                "failing test, not a passing one. Confirm the new test "
+                "exercises the target behavior the spec requires before "
+                "the implementation exists."
+            )
 
     _run_format_cmd(root)
 
@@ -1678,11 +1704,25 @@ _JUDGE_ACTIONS = frozenset(
 )
 
 
-def _coerce_judge_action(manifest: HandoverManifest, verdict: str) -> str | None:
+def _coerce_judge_action(
+    manifest: HandoverManifest,
+    verdict: str,
+    *,
+    failure_kind: str = "",
+) -> str | None:
     """Return the manifest's ``next_action`` if valid; default to
     ``revert_to_red`` on violation when the field is absent; ``None`` on
     pass when the field is absent.
+
+    Runner-level override: when ``failure_kind == "test_defect"`` and
+    the verdict is a violation, force ``revert_before`` regardless of
+    what ``next_action`` the JUDGE manifest declared (or omitted).
+    The RED test itself is wrong; the agent must re-author it before
+    any further GREEN attempt. PASS verdicts preserve the agent's
+    outcome.
     """
+    if failure_kind == "test_defect" and verdict.upper() == "COMPLIANCE_VIOLATION":
+        return "revert_before"
     next_action = getattr(manifest, "next_action", None)
     if next_action in _JUDGE_ACTIONS:
         return next_action
@@ -1990,7 +2030,7 @@ def _run_judge_phase(
             f"JUDGE phase agent error for {tid}: agent returned no manifest"
         )
     verdict = getattr(manifest, "verdict", "")
-    action = _coerce_judge_action(manifest, verdict)
+    action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
 
     # ---- Violation routes ----------------------------------------------
     if action in {"revert_to_red", "revert_before"}:
@@ -2505,6 +2545,47 @@ def _run_tdd_cycle(
         }:
             judge_passed = True
             break
+        # Revert-before branch: when JUDGE marked the RED test itself
+        # wrong (``failure_kind == "test_defect"`` -> ``revert_before``),
+        # the runner must re-author the failing test, not loop GREEN.
+        # Reset the train budget, dispatch RED with phase-done bypass
+        # so a fresh RED entry lands in the append-only ledger, and
+        # preserve the rationale on session.train_feedback so the
+        # agent sees it on the next prompt. The override matrix in
+        # ``_coerce_judge_action`` already routes test_defect verdicts
+        # here regardless of what next_action the agent declared.
+        if (
+            session.pending_judge_action == "revert_before"
+            or session.failure_kind == "test_defect"
+        ):
+            train_attempts = 0
+            _maybe_push_event(
+                monitor,
+                "phase_change",
+                task_id=tid,
+                phase="RED",
+                description=task_desc,
+            )
+            session = _run_red_phase(
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                agent=agent,
+                monitor=monitor,
+                bypass_phase_done=True,
+            )
+            session.judge_rejected = False
+            session.save(session_path)
+            _log_run(
+                "PHASE_DECISION",
+                task_id=tid,
+                phase="JUDGE",
+                decision="reroute_to_red",
+                reason="test_defect",
+            )
+            continue
         if session.judge_rejected or session.train_feedback or green_tests_failed:
             train_attempts += 1
             if train_attempts >= max_train_attempts:
