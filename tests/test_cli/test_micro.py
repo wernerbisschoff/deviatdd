@@ -2569,6 +2569,98 @@ class TestResolveModelForPhase:
         )
 
 
+class TestResolveModelForPhaseEnvVar:
+    """Backend env-var fallback for resolve_model_for_phase.
+
+    When no config resolves a model and no CLI override is set, the resolver
+    falls back to a backend-specific env var so operators can pick the model
+    per-invocation without editing ``.deviate/config.toml``.
+
+    Priority (highest first):
+        1. Phase-specific config (``[models].red``)
+        2. CLI ``--model`` flag
+        3. Default config (``[models].default``)
+        4. Backend env var (``PI_MODEL`` for ``pi``)
+        5. ``None``
+    """
+
+    @pytest.fixture
+    def config_default(self, tmp_path: Path) -> Path:
+        dot = tmp_path / ".deviate"
+        dot.mkdir(parents=True)
+        (dot / "config.toml").write_text('[models]\ndefault = "fast/model"\n')
+        return tmp_path
+
+    @pytest.fixture
+    def config_no_models(self, tmp_path: Path) -> Path:
+        dot = tmp_path / ".deviate"
+        dot.mkdir(parents=True)
+        (dot / "config.toml").write_text("[agent]\nbackend = 'pi'\n")
+        return tmp_path
+
+    def test_pi_model_env_var_used_when_no_config(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
+        assert (
+            resolve_model_for_phase("RED", config_no_models, backend="pi")
+            == "openai/gpt-5"
+        )
+
+    def test_pi_model_env_var_ignored_when_config_resolves(
+        self, config_default: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Config wins over env var."""
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
+        assert (
+            resolve_model_for_phase("RED", config_default, backend="pi") == "fast/model"
+        )
+
+    def test_pi_model_env_var_ignored_when_cli_set(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CLI override wins over env var."""
+        from deviate.cli import micro as micro_mod
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setattr(micro_mod, "_cli_model_override", "cli/override-model")
+        monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
+        assert (
+            resolve_model_for_phase("RED", config_no_models, backend="pi")
+            == "cli/override-model"
+        )
+
+    def test_env_var_only_applies_to_named_backend(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """PI_MODEL should NOT be read when backend != pi."""
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
+        assert resolve_model_for_phase("RED", config_no_models, backend="omp") is None
+
+    def test_empty_env_var_falls_through(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setenv("PI_MODEL", "")
+        assert resolve_model_for_phase("RED", config_no_models, backend="pi") is None
+
+    def test_no_backend_arg_keeps_legacy_behaviour(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Backward compatibility: callers that don't pass backend get None."""
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
+        assert resolve_model_for_phase("RED", config_no_models) is None
+
+
 class TestCliModelFlag:
     """Integration tests: CLI ``--model`` flag threads through to ``_run_all``."""
 
@@ -2766,7 +2858,7 @@ class TestModelPassedToInvokeAgent:
 
         _run_red_phase(task, ledger_path, session, session_path, Console())
 
-        mock_resolve.assert_called_once_with("RED", cwd)
+        mock_resolve.assert_called_once_with("RED", cwd, backend="pi")
         _, invoke_kwargs = mock_agent.call_args
         assert invoke_kwargs.get("model") == "red/specific-model", (
             f"Expected model='red/specific-model' in _invoke_agent call, "
@@ -2824,7 +2916,7 @@ class TestModelPassedToInvokeAgent:
 
         _run_judge_phase(task, ledger_path, session, session_path, Console())
 
-        mock_resolve.assert_called_once_with("JUDGE", cwd)
+        mock_resolve.assert_called_once_with("JUDGE", cwd, backend="pi")
         _, invoke_kwargs = mock_agent.call_args
         assert invoke_kwargs.get("model") == "judge/specific-model", (
             f"Expected model='judge/specific-model' in _invoke_agent call, "
@@ -2908,7 +3000,7 @@ class TestTddCycleIntegration:
 
         _run_red_phase(task, ledger_path, session, session_path, Console())
 
-        mock_resolve.assert_called_once_with("RED", cwd)
+        mock_resolve.assert_called_once_with("RED", cwd, backend="pi")
 
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
@@ -2981,7 +3073,7 @@ class TestTddCycleIntegration:
 
         _run_green_phase(task, ledger_path, session, session_path, Console())
 
-        mock_resolve.assert_called_once_with("GREEN", cwd)
+        mock_resolve.assert_called_once_with("GREEN", cwd, backend="pi")
 
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
@@ -3034,7 +3126,7 @@ class TestTddCycleIntegration:
 
         _run_judge_phase(task, ledger_path, session, session_path, Console())
 
-        mock_resolve.assert_called_once_with("JUDGE", cwd)
+        mock_resolve.assert_called_once_with("JUDGE", cwd, backend="pi")
 
     @patch("deviate.cli.micro.resolve_model_for_phase")
     @patch("deviate.cli.micro._invoke_agent")
@@ -3105,7 +3197,7 @@ class TestTddCycleIntegration:
 
         _run_refactor_phase(task, ledger_path, session, session_path, Console())
 
-        mock_resolve.assert_called_once_with("REFACTOR", cwd)
+        mock_resolve.assert_called_once_with("REFACTOR", cwd, backend="pi")
 
 
 def Console() -> MagicMock:  # noqa: N802
