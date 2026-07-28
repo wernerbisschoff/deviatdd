@@ -399,12 +399,13 @@ class TestRunTestCmdThreadsTimeout:
         assert inst is not None
         assert inst.kwargs.get("start_new_session") is True
 
-    def test_defaults_to_300_when_no_config(
+    def test_defaults_to_1800_when_no_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # No ``.deviate/config.toml`` present — must fall back to the
-        # documented default (300s) so a missing config does not
-        # silently disable the timeout.
+        # documented default (1800s, accommodating long-running test
+        # commands) so a missing config does not silently disable the
+        # timeout.
         self._seed_test_file(tmp_path)
         monkeypatch.delenv("DEVIATE_TEST_TIMEOUT_SECONDS", raising=False)
         _reset_popen_config()
@@ -414,7 +415,7 @@ class TestRunTestCmdThreadsTimeout:
         ):
             micro._run_test_cmd(tmp_path)
         # The deadline is encoded as ``start_new_session=True``; without
-        # it, the wrapper would not bound execution. The default of 300s
+        # it, the wrapper would not bound execution. The default of 1800s
         # is enforced by ``_resolve_test_timeout_seconds`` regardless of
         # whether the config file is present.
         inst = _popen_config.last_instance

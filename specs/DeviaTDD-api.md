@@ -669,9 +669,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   `returncode == 124` (GNU `timeout(1)`-compatible) and preserves
   partial stdout/stderr captured before the deadline. Fixes the
   GREEN-phase hang observed when the inner child caught SIGTERM but
-  refused to exit (e.g. tokio's signal drain). Use
-  `timeout_seconds = 1800` in `.deviate/config.toml` for worktrees
-  whose test commands legitimately run for tens of minutes.
+  refused to exit (e.g. tokio's signal drain). Tighten the deadline
+  via `DEVIATE_TEST_TIMEOUT_SECONDS=300` (env) or
+  `timeout_seconds = 300` (`.deviate/config.toml`) for CI runs
+  where short-deadline failure is preferable to a slow green.
 * **Train Retry Loop (per task):**
   `_run_tdd_cycle` runs RED → GREEN → JUDGE → REFACTOR with up to
   ``max_train_attempts = 3`` GREEN retries driven by JUDGE feedback.

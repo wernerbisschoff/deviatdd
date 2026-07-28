@@ -17,7 +17,7 @@ class TestDeviateConfig:
     def test_default_values(self):
         config = DeviateConfig()
         assert config.profile == "default"
-        assert config.timeout_seconds == 300
+        assert config.timeout_seconds == 1800
         assert config.agent_export_mode == "local"
 
     def test_extra_fields_forbidden(self):
