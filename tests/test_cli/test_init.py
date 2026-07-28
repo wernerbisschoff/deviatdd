@@ -1450,7 +1450,7 @@ class TestInstallDeviatddSkill:
         assert fm.get("category") == "deviatdd-tooling", (
             f"category mismatch: got {fm.get('category')!r}"
         )
-        assert fm.get("version") == "1.1.0", (
+        assert fm.get("version") == "2.0.0", (
             f"version mismatch: got {fm.get('version')!r}"
         )
 
