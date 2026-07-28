@@ -3503,8 +3503,8 @@ def _resolve_test_timeout_seconds(root: Path) -> int:
         1. ``DEVIATE_TEST_TIMEOUT_SECONDS`` environment variable
            (ad-hoc CI override; takes a positive integer in seconds).
         2. ``DeviateConfig.timeout_seconds`` from the worktree's
-           ``.deviate/config.toml`` (default 300s).
-        3. The Pydantic default ``300`` when no config is present.
+           ``.deviate/config.toml`` (default 1800s).
+        3. The Pydantic default ``1800`` when no config is present.
 
     An unparseable env var falls back to the config value; a config
     value that violates ``gt=0`` (only ``0`` is reachable through the
@@ -3525,7 +3525,7 @@ def _resolve_test_timeout_seconds(root: Path) -> int:
         config_value = data.get("timeout_seconds")
         if isinstance(config_value, int) and config_value > 0:
             return config_value
-    return 300
+    return 1800
 
 
 def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProcess:

@@ -162,8 +162,11 @@ def normalize_task_id(ref: str) -> str:
 class DeviateConfig(BaseModel):
     # Profile name — defines preset config groups (default, full, fast, secure)
     profile: str = "default"
-    # CLI inactivity timeout in seconds (must be > 0)
-    timeout_seconds: int = Field(default=300, gt=0)
+    # Default 1800s accommodates legitimate long-running test commands
+    # (e.g. Rust workspace `cargo test` first builds); the orchestrator
+    # still enforces a hard deadline via SIGTERM/SIGKILL on the process
+    # group, so this is a ceiling, not a sleep.
+    timeout_seconds: int = Field(default=1800, gt=0)
     # Agent export mode: "local" (project .claude/) or "global" (~/.claude/)
     agent_export_mode: Literal["local", "global"] = "local"
     # Agent backend config (opencode, claude, or droid)
