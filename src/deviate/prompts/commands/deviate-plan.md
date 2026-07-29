@@ -68,8 +68,37 @@ CRITICAL INSTRUCTION INVARIANTS:
    c) Note any defensive exclusions that should not be violated
    d) Assess whether the issue scope fits within the estimated time budget
 
-7. **Acceptance Contract Finalization**: Reconcile every `AO-NNN` against the current codebase evidence gathered above. Emit one or more `AC-PLAN-NNN` scenarios per outline. Every scenario MUST cite `**Source Outline**: AO-NNN`, relevant upstream FR/AC tokens, and current-code evidence, then provide complete bold `**Given**`, `**When**`, and `**Then**` clauses. This `## Acceptance Contract` is the sole authoritative source for Tasks, RED, and JUDGE. If an outline is invalidated or refined, record that decision explicitly rather than preserving contradictory issue-level behavior.
-8. **Generate `plan.md`**: Write the planning document to the issue workspace using the schema below. `deviate plan post` rejects a missing or malformed Acceptance Contract.
+7. **Acceptance Contract Finalization**: Reconcile every `AO-NNN` against the current codebase evidence gathered above. Emit one or more `AC-PLAN-NNN` scenarios per outline. Every scenario MUST cite `**Source Outline**: AO-NNN` (an AO token from the issue's `## Acceptance Outline` — never an ad-hoc label like `"Edge Cases"` or `"Constitutional §…"`), relevant upstream FR/AC tokens, and current-code evidence, then provide complete bold `**Given**`, `**When**`, and `**Then**` clauses. This `## Acceptance Contract` is the sole authoritative source for Tasks, RED, and JUDGE. If an outline is invalidated or refined, record that decision explicitly rather than preserving contradictory issue-level behavior.
+
+7a. **Source Outline discipline** (MUST follow):
+   - The `**Source Outline**:` line MUST be exactly `` `AO-NNN` `` — an AO token literally present in the issue's `## Acceptance Outline`. One `AC-PLAN-NNN` may reference one AO (`AO-007`) or, for cross-cutting scenarios, a list (`AO-007, AO-008`).
+   - Do NOT invent alternate Source Outline labels such as `Edge Cases`, `Boundary`, `Constitutional §1.3`, `RLS`, `Tenant Isolation`, `Hardening`, or `Security`. The validator rejects these with `missing Source Outline AO-NNN traceability`.
+   - Every AO from the issue's `## Acceptance Outline` MUST appear as the Source Outline of at least one AC-PLAN-NNN. Unused AOs produce a validation error and the agent must re-emit the contract.
+   - Behavioural coverage that does not map cleanly to a single AO (e.g. an HMAC failure, an RLS isolation invariant, a defensive boundary) belongs under an existing AO that already covers the same behaviour, with the AO's Error Category or Boundary Category used to shape the scenario. If no existing AO fits, the issue's `## Acceptance Outline` is incomplete — halt with `INCOMPLETE_ISSUE_OUTLINE` and request that shard/adhoc regenerate the issue rather than inventing a non-AO source.
+8. **Generate `plan.md`**: Write the planning document to the issue workspace using the schema below. `deviate plan post` rejects a missing or malformed Acceptance Contract. The required fields per scenario and per section are non-negotiable — re-read this schema before each emission.
+   **Per-scenario required fields** (every `AC-PLAN-NNN` MUST contain all five):
+   1. **Scenario header** — `**Scenario AC-PLAN-NNN: <observable behaviour, imperative present tense>**`. `AC-PLAN-NNN` is zero-padded three digits, sequential, starting at `AC-PLAN-001`. Identifiers are unique and gap-free.
+   2. **Source Outline** — `**Source Outline**: \`AO-NNN\`[, \`AO-MMM\`…]`. The value MUST be an AO token literally present in the issue's `## Acceptance Outline`. A comma-separated list is permitted for cross-cutting scenarios that span multiple AOs. Ad-hoc labels (`Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`) are forbidden — see step 7a.
+   3. **Upstream Traceability** — `**Upstream Traceability**: \`US-NNN-NN\`, \`FR-NNN-ID\`, \`AC-NNN-ID-NN\`. At minimum one `US-`, one `FR-`, and one `AC-` token, comma-separated, all drawn from the issue's `## Upstream Requirement Tracing` and `## User Stories Ledger` sections.
+   4. **Current-Code Evidence** — `**Current-Code Evidence**: \`<relative path>:<symbol or line>\``. At least one concrete path reference grounded in the codebase scan (a module, schema, migration, or test file actually present in the workstation).
+   5. **Given / When / Then** — exactly three bold-labelled clauses, in that order: `**Given**:`, `**When**:`, `**Then**:`. Each clause is a single imperative sentence and MUST NOT embed additional `**Given**` / `**When**` / `**Then**` markers. The `**Then**` clause MUST state a verifiable observable outcome.
+   **Per-section required structure** (every `plan.md` MUST contain every section below, in this order, with the exact `##` header):
+   1. `## Plan Summary` — bullets: Issue, Implementation Strategy, Estimated Complexity, Estimated Effort.
+   2. `## Product Layer Anchors` — bullets: Flow References, Source, Release Context, Architecture Components Touched (or `None` when absent).
+   3. `## Acceptance Contract` — one or more `**Scenario AC-PLAN-NNN: …**` blocks satisfying the per-scenario rules above. Every AO from the issue MUST appear at least once.
+   4. `## Workstation Mapping` — per file: Current State, Changes Required, Integration Surface.
+   5. `## Implementation Strategy` — phased; each phase lists Files, Approach, Verification.
+   6. `## Data Flow Analysis` — narrative.
+   7. `## Risk Assessment` — Markdown table with Risk / Impact / Likelihood / Mitigation columns; include a `FLOW_CONTEXT_UNAVAILABLE` row when `specs/_product/` is absent or empty.
+   8. `## Security Profile` — Risk surfaces, Negative tests, Constraints (free-form prose).
+   9. `## Integration Points` — bulleted list.
+   10. `## Constitutional Alignment` — Architecture / Testing / Git Isolation / Product Layer bullets.
+   **Forbidden patterns** (any one of these causes `PLAN_ACCEPTANCE_CONTRACT_INVALID` from `deviate plan post`):
+   - Source Outline labelled `Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`, or any non-AO string.
+   - Scenario missing `**Source Outline**`, `**Upstream Traceability**`, `**Current-Code Evidence**`, or any of `**Given**` / `**When**` / `**Then**`.
+   - An AO from `## Acceptance Outline` not used by any AC-PLAN-NNN.
+   - Two scenarios sharing the same `AC-PLAN-NNN` number, or gaps in the sequence.
+   - Wrapping the plan body in any XML tag, code fence, or preamble — write raw Markdown only.
 9. **HTML Artifact — optional, on-demand.** When the user wants an ADHD-friendly HTML review surface for this plan, run `/deviate-html plan` (or `deviate html plan` directly) to author `plan.html` next to `plan.md`. This command is **not** auto-invoked by `/deviate-plan`; the user decides when to ship the HTML counterpart. Skip this step entirely unless the user asks. See `src/deviate/prompts/commands/deviate-html.md` for the authoring protocol.
 10. **Commit `plan.md`**: Run ``deviate plan post``. It validates and commits the plan, then advances to TASKS. The HTML counterpart (if authored) is committed separately by the user via `/deviate-html plan`'s protocol.
 
