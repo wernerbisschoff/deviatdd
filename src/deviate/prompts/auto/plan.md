@@ -68,13 +68,26 @@ The CLI orchestrator runs `deviate plan post` after your response to validate pl
 **Invariant**: Every downstream artifact (`tasks.md`, RED tests, GREEN implementation, JUDGE verdict, E2E coverage, PR description) MUST surface these `Flow References` when present and verify the requested application behavior serves them. This section is traceability context only; it never authorizes flow-catalog, release, DeviaTDD setup, skill, or workflow-ledger work.
 
 ## Acceptance Contract
-**Scenario AC-PLAN-001: <observable behavior>**
+
+**Required fields per scenario** — every `AC-PLAN-NNN` MUST contain all five:
+1. **Scenario header** — `**Scenario AC-PLAN-NNN: <observable behaviour, imperative present tense>**`. Sequential, zero-padded, unique.
+2. **Source Outline** — `**Source Outline**: \`AO-NNN\`[, \`AO-MMM\`…]`. MUST be a literal AO token from the issue's `## Acceptance Outline`. A comma-separated list is allowed for cross-cutting scenarios. Ad-hoc labels (`Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`) are forbidden — `deviate plan post` rejects them with `missing Source Outline AO-NNN traceability`. Every AO from the issue MUST appear as the Source Outline of at least one AC-PLAN scenario.
+3. **Upstream Traceability** — `**Upstream Traceability**: \`US-NNN-NN\`, \`FR-NNN-ID\`, \`AC-NNN-ID-NN\`. At minimum one `US-`, one `FR-`, and one `AC-` token, comma-separated, drawn from the issue's `## Upstream Requirement Tracing` and `## User Stories Ledger`.
+4. **Current-Code Evidence** — `**Current-Code Evidence**: \`<relative path>:<symbol or line>\``. At least one concrete path reference grounded in the codebase scan.
+5. **Given / When / Then** — exactly three bold-labelled clauses in this order: `**Given**:`, `**When**:`, `**Then**:`. Each clause is a single imperative sentence and MUST NOT embed additional `**Given**` / `**When**` / `**Then**` markers. The `**Then**` clause MUST state a verifiable observable outcome.
+
+**Canonical example** (the shape to copy):
+**Scenario AC-PLAN-001: <observable behaviour>**
 - **Source Outline**: `AO-001`
-- **Upstream Traceability**: `FR-NNN-ID`, `AC-NNN-ID-NN`
-- **Current-Code Evidence**: `<relative path>:<symbol>`
-- **Given**: <precondition>
-- **When**: <trigger>
-- **Then**: <outcome>
+- **Upstream Traceability**: `US-001-01`, `FR-001-01`, `AC-001-01-01`
+- **Current-Code Evidence**: `<relative path>:<symbol or line>`
+- **Given**: <current, implementation-aware precondition>
+- **When**: <observable trigger>
+- **Then**: <verifiable outcome>
+
+**Required sections in canonical order**: `## Plan Summary` → `## Product Layer Anchors` → `## Acceptance Contract` (one or more scenarios; every issue AO covered) → `## Workstation Mapping` → `## Implementation Strategy` → `## Data Flow Analysis` → `## Risk Assessment` → `## Security Profile` → `## Integration Points` → `## Constitutional Alignment`.
+
+**Forbidden patterns** (any one triggers `PLAN_ACCEPTANCE_CONTRACT_INVALID`): non-AO Source Outline labels, missing `Source Outline` / `Upstream Traceability` / `Current-Code Evidence` / any of `Given` / `When` / `Then`, an issue AO not used by any AC-PLAN scenario, duplicate or non-sequential `AC-PLAN-NNN` identifiers, wrapping the plan body in any XML tag / code fence / preamble.
 
 
 ## Workstation Mapping
