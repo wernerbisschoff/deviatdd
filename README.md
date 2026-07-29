@@ -48,7 +48,7 @@ deviate --version                # confirm install
 deviate setup --agent claude     # or: opencode | pi | droid | factory | omp
 ```
 
-Once setup is done, drive the entire lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the three gates) pauses for human review.
+Once setup is done, drive the entire lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the two gates) pauses for human review.
 
 **Product layer** *(optional, for cross-product framing — skip if your repo only ships single features):*
 
@@ -65,7 +65,7 @@ Once setup is done, drive the entire lifecycle from inside your agent. Each phas
 /deviate-explore "Add user authentication via OAuth2"
 /deviate-research                          # ← Gate 1: review design.md + data-model.md
 /deviate-prd
-/deviate-shard                             # ← Gate 2: review every ISS-NNN spec-enriched issue
+/deviate-shard                             # ← review every ISS-NNN spec-enriched issue (soft review — system auto-advances to Meso; not a hard HITL gate)
 
 # — or — Adhoc shortcut for low/medium-complexity work
 /deviate-adhoc "Add a /healthz endpoint"   # condenses explore+research+prd+shard into one issue
@@ -141,7 +141,7 @@ dispatcher is `deviate micro run <task-id>` and the queue drain is
 The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail.
 ---
 
-## Architecture: Four Layers, Three Gates
+## Architecture: Four Layers, Two Gates
 
 ```mermaid
 flowchart TB
@@ -156,8 +156,6 @@ subgraph Macro["Macro Layer — Feature Scoping"]
   P --> S[shard]
   E -.->|low/medium complexity| Ad[adhoc]
 end
-
-S -.->|HITL Gate 2| Pl
 
 subgraph Meso["Meso Layer — Issue Engineering"]
   Pl[plan] --> T[tasks]
@@ -204,7 +202,7 @@ style Ex fill:#f5e1e1
 | **Macro · Explore** | `/deviate-explore` | `specs/{epic}/explore.md` (raw codebase scan — what exists, not what to do) | Does the scan cover the right subsystems? Commit to advance. |
 | **Macro · Research** *(Gate 1)* | `/deviate-research` | `specs/{epic}/design.md`, `specs/{epic}/data-model.md` | **Gate 1**: approve the design + data-model before PRD synthesis. |
 | **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
-| **Macro · Shard** *(Gate 2)* | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | **Gate 2**: read every sharded issue for completeness, edge cases, and scope. Issues are born as full specs — the user-facing *spec content* is embedded here, but **claiming and worktree creation is a separate CLI step (`deviate specify`)** that runs after Gate 2 and before the meso slash commands below. |
+| **Macro · Shard** | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | Review every sharded issue for completeness, edge cases, and scope (soft review — the system auto-advances to Meso and does not block). Issues are born as full specs — the user-facing *spec content* is embedded here, but **claiming and worktree creation is a separate CLI step (`deviate specify`)** that runs after `/deviate-shard` and before the meso slash commands below. |
 | **Meso · Specify** | `deviate specify [ISS-NNN-NNN]` | A git worktree at `.worktrees/<branch>/`, a claim entry appended to `specs/issues.jsonl`, and the branch pushed to remote | The setup step before plan/tasks. With no argument, auto-claims the next unblocked BACKLOG issue; with an explicit ID, claims that issue. Stops after the worktree is created — does NOT advance session state and does NOT run plan or tasks. `cd` into the printed worktree path before running any other meso slash command. |
 | **Run** *(full pipeline, end-to-end)* | `deviate run` | Worktree at `.worktrees/<branch>/`, `tasks.md`, `tasks.jsonl`, then completed task commits | The canonical "go do the next thing" command. Discovers the next BACKLOG issue, claims it (creating a per-issue worktree), runs SPECIFY → PLAN → TASKS in that worktree, then drains every PENDING task through the TDD cycle. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` to the micro drain. Internally calls `deviate meso run` then `deviate micro run --all` inside the created worktree. |
 | **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | **Must be invoked inside the worktree that `deviate specify` created.** Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
@@ -249,7 +247,7 @@ DeviaTDD's phase structure is not arbitrary. Each phase exists because the alter
 - **Splitting the PRD, the design, and the data-model into three artifacts is what lets each be reviewed by a different lens and revised on a different cadence.** The PRD is *what* the system must do (requirements); the design is *how* (architecture); the data-model is *what shape the information takes* (entities, relations). Conflated artifacts force joint review and weaken every review *(SDD; Agile-V)*.
 - **Testable acceptance criteria are the requirement for a requirement to enter the PRD.** A requirement without criteria is a wish; a PRD full of wishes cannot be sharded because there is nothing for the issues to test against. The criterion test is what turns a wishlist into a PRD *(SDD — "passing spec tests only guarantee the code matches the spec"; Definitive SDD — 3–10× higher first-pass success rate via structured specs; Acceptance Test Gen — LLM-generated acceptance tests are usable in production at 60% as-generated, 92% after fixes; LLM BDD)*.
 - **Decomposing a feature into vertical slices, not horizontal layers, is what makes each issue independently shippable and Gate-2-reviewable.** A vertical slice is a complete, testable behavior end-to-end; a horizontal layer is a file or module. Vertical slices can be reviewed for missing behavior; horizontal layers hide integration risk until merge *(TDFlow; TDDev)*.
-- **Embedding the spec (Gherkin AC, user stories, edge cases) in the shard output, rather than running a separate Specify step, is what keeps the contract and the decomposition reviewed together.** A two-step "decompose, then specify" sequence adds latency and a second place for spec errors to compound. Co-locating the spec and the decomposition means they are revised together or not at all *(Spec Kit — "intermediate artifacts" pattern: SPEC.md + PLAN.md + TASKS.md)*.
+- **Decomposing a feature into vertical slices, not horizontal layers, is what makes each issue independently shippable.** A vertical slice is a complete, testable behavior end-to-end; a horizontal layer is a file or module. Vertical slices can be reviewed for missing behavior; horizontal layers hide integration risk until merge *(TDFlow; TDDev)*.
 - **A complexity gate (low / medium → proceed, high → reject) is what makes Adhoc safe to expose as a shortcut.** Without the gate, "adhoc" becomes a workaround for skipping ceremony on work that needs the full Macro chain. The gate is the structural mechanism that prevents the shortcut from being misused. *_(Adaptive-enforcement concept is parallel to TDDev's protocol-model fit and TDD Governance's N=3 repair cap; the specific "low/medium → proceed, high → reject" classifier is DeviaTDD-original.)_*
 
 ### Why the Meso layer phases exist
@@ -262,13 +260,13 @@ DeviaTDD's phase structure is not arbitrary. Each phase exists because the alter
 - **Treating the GitHub PR as a structural merge boundary, not a code-formatting step, is what gives reviewers a single artifact to review (title, body, diff, review surface).** A list of commits is a history; a PR is the unit of *what we are about to merge* *(Agile-V — SCOPE-V's verify step at "before / during / before-merge / after-deployment", treating the merge boundary as a discrete verification point)*.
 - **Gate 3 (final PR review) is the only audit over the full atomic git history of a feature.** Per-task review sees a slice; Gate 3 sees the whole. A final human audit catches the long-tail issues — integration regressions, doc drift, scope creep — that escaped per-task validation *(extension of Agile-V's verify-step pattern)*.
 
-### Why three non-bypassable human gates
+### Why two non-bypassable human gates
 
-- **Spec errors are the most expensive to fix downstream.** A bug in a contract caught at Gate 2 saves the plan, the tasks, and every TDD cycle that would have implemented the bug. The same bug caught after merge costs the bug report, the rollback, the post-mortem, and the customer trust. Task decomposition is cheap to regenerate; cascades of implemented tasks are not *(Agile-V — SCOPE-V's evidence-based acceptance; SDD — 3–10× first-pass success via structured specs)*.
-- **An LLM cannot self-verify its own output.** Every frontier model is a stochastic generator with zero internal semantic verification capability — the tool is irrelevant, the process is determinative. The same agent that produces a plausible design, plausible issue files, or plausible code will produce a plausible-looking review of them. A human gate at design, contract, and merge is the only verification mechanism with the necessary independence *(IACDM — "verification gap"; PRIME — Executor/Verifier asymmetry; State Contamination — memory laundering preserves adversarial influence below classifier threshold)*.
-- **Gates are cheap; the work that gates prevent is expensive.** A five-minute human check at Gate 1 prevents a multi-day agent cycle that would have built the wrong thing. The economics favor verification early (Gate 1), at the contract boundary (Gate 2), and at the merge boundary (Gate 3) — but not in between, where a working agent loop is already verifiable on its own *(Agile-V — risk-adaptive acceptance at discrete levels rather than everywhere, always)*.
+- **Spec errors are the most expensive to fix downstream.** A bug in a contract caught at the post-shard review saves the plan, the tasks, and every TDD cycle that would have implemented the bug. The same bug caught after merge costs the bug report, the rollback, the post-mortem, and the customer trust. Task decomposition is cheap to regenerate; cascades of implemented tasks are not *(Agile-V — SCOPE-V's evidence-based acceptance; SDD — 3–10× first-pass success via structured specs)*.
+- **An LLM cannot self-verify its own output.** Every frontier model is a stochastic generator with zero internal semantic verification capability — the tool is irrelevant, the process is determinative. The same agent that produces a plausible design or plausible code will produce a plausible-looking review of them. A human gate at design and merge is the only verification mechanism with the necessary independence *(IACDM — "verification gap"; PRIME — Executor/Verifier asymmetry; State Contamination — memory laundering preserves adversarial influence below classifier threshold)*.
+- **Gates are cheap; the work that gates prevent is expensive.** A five-minute human check at Gate 1 prevents a multi-day agent cycle that would have built the wrong thing. The economics favor verification early (Gate 1, design) and at the merge boundary (Gate 3, final audit) — but not in between, where a working agent loop is already verifiable on its own *(Agile-V — risk-adaptive acceptance at discrete levels rather than everywhere, always)*.
 - **"Do not let an agent implement from a long chat; let it implement from a reviewed brief."** Gates are the mechanism that converts a long conversation into a reviewed brief. The contract is what the agent implements against; the chat is at most a source of the contract. Without gates, the implementation drifts away from the original intent as the chat lengthens *(Agile-V / SCOPE-V — direct quote from the paper)*.
-- **Three gates, not one and not ten.** One gate at the end is too late — errors have already cascaded. A gate at every micro-step is bureaucracy. Three gates correspond to the three failure modes that compound across the lifecycle: bad design, bad contract, bad merge. Each gate catches the class of error that the prior phases are most likely to produce. *_(The risk-adaptive framing is supported by Agile-V's R0–R3 acceptance levels; the specific count of three is DeviaTDD-original.)_*
+- **Two gates, not one and not ten.** One gate at the end is too late — errors have already cascaded. A gate at every micro-step is bureaucracy. Two gates correspond to the two failure modes that compound across the lifecycle: bad design (caught at Gate 1) and bad merge (caught at Gate 3). Each gate catches the class of error that the prior phases are most likely to produce. *_(The risk-adaptive framing is supported by Agile-V's R0–R3 acceptance levels; the specific count of two is DeviaTDD-original.)_
 
 ### Why the append-only ledgers exist
 
@@ -361,7 +359,7 @@ Claims in this README flagged with an italic _design proposal_ note have **no di
 - **Product layer optionality; Flows / Architecture / Release triad; single-sentence release goal** — DeviaTDD-original; closest support is SDD's spec-from-plan-from-implementation separation at the feature level.
 - **4–8 tasks per issue** — the 15–60 min cycle target is supported (TDAID); the specific 4–8 count is not.
 - **Per-issue Plan cadence; Adhoc complexity classifier; ledger-derived issue IDs; `flow_refs:` frontmatter convention; deriving CLI state from the ledger** — DeviaTDD-original; parallel support from adjacent work exists but does not directly cover these patterns.
-- **Three gates, not one and not ten** — the risk-adaptive framing is supported (Agile-V R0–R3); the specific count of three is DeviaTDD-original.
+- **Two gates, not one and not ten** — the risk-adaptive framing is supported (Agile-V R0–R3); the specific count of two is DeviaTDD-original.
 
 ---
 

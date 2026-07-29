@@ -46,14 +46,15 @@ User-visible changes MUST append a bullet to `CHANGELOG.md` under `[Unreleased]`
 | Layer | Phases | Output Artifact |
 |-------|--------|-----------------|
 | **Macro** | explore → research → prd → shard | spec-enriched issue files |
-| **Meso** | (HITL Gate 2) → plan → tasks → review | `plan.md`, `tasks.md` |
+| **Meso** | plan → tasks → review | `plan.md`, `tasks.md` |
 | **Micro** | red → green → judge → refactor | passing test + ledger entry |
 
 ### HITL Gates (no programmatic bypass)
 
 - **Gate 1**: after `/research`, before `/prd` — design + data-model approval
-- **Gate 2**: after `/shard`, before `/plan` — spec-enriched issue sign-off
 - **Gate 3**: after all tasks — final merge audit
+
+(HITL Gate 2 — the post-Tasks `deviate meso approve` contract sign-off — was removed in constitution 0.8.0; the system auto-advances meso into micro end-to-end. Only Gate 1 and Gate 3 remain.)
 
 ### Model Tiering
 
@@ -86,7 +87,7 @@ Slash commands are package resources under `src/deviate/prompts/commands/<name>.
 Prefer `libref query <lib> "<topic>"` over web fetching. Workflow: `libref list` → `libref query` → `libref add <git-url>` (register a missing source) → web fetch (last resort).
 ## 🔧 Quick-Start Workflow
 
-`deviate explore` → `research` → `prd` → `shard` → (Gate 2) → `plan` → `tasks` → run each task via RED → GREEN → REFACTOR → `deviate e2e`.
+`deviate explore` → `research` → `prd` → `shard` → `plan` → `tasks` → run each task via RED → GREEN → REFACTOR → `deviate e2e`.
 
 ## 📝 Prompt Edit Discipline
 
