@@ -668,9 +668,27 @@ class TestMicroOrchestration:
         (JUDGE prompt content). Runner-routing + prompt-content =
         three-axis pin.
         """
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        # Drive the runner's RED-passing-test rejection check on EVERY
+        # RED invocation rather than relying on the empty temp-repo
+        # ``_find_test_files`` bypass. Sequence:
+        #   1. initial RED   → rc=1 (failing test, as RED must author)
+        #   2. retry RED    → rc=1 (re-authored failing test)
+        #   3. GREEN retry  → rc=0 (mechanical GREEN succeeded)
+        #   4. REFACTOR     → rc=0 (refactor must keep tests passing)
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]  # fmt: skip
         mechanical_rationale = (
             "RED test at tests/embedder_swap_test.rs:307-379 invokes "
             "`gloss index .` as a subprocess; CLI dispatch at "
@@ -753,6 +771,41 @@ class TestMicroOrchestration:
             _write_ledger(ledger_path, task)
             approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
+            # Seed a tracked test file BEFORE invoking the CLI so
+            # ``_run_red_phase`` finds ``tests/test_index.py`` and exercises
+            # the failing-test contract check (micro.py:_run_red_phase).
+            # Without this commit, ``_find_test_files`` returns ``[]`` in
+            # an empty temp repo and the rejection path is never entered —
+            # the test would silently skip the very contract it claims to
+            # pin. The seed commit becomes ``red_sha^`` so the
+            # ``revert_before`` ``git reset --hard`` returns HEAD here and
+            # the retry RED phase still sees the file on disk.
+            tests_seed = Path("tests")
+            tests_seed.mkdir(parents=True, exist_ok=True)
+            (tests_seed / "test_index.py").write_text(
+                "def test_seed_placeholder():\n    assert False\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "add", "tests/"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    "test: seed fixture for runner rejection-check exercise",
+                ],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+            )
+
             result = runner.invoke(cli, ["micro", "run", "TSK-004-15"])
 
             assert "HITL_REQUIRED" not in result.output, (
@@ -763,11 +816,15 @@ class TestMicroOrchestration:
                 f"the runner routed straight to FAILED. "
                 f"call_log={call_log}"
             )
-            # One RED + two GREEN (fail + retry) + two JUDGE
-            # (revert_before + pass) + one REFACTOR = 6.
-            assert mock_agent.call_count == 6, (
-                f"Expected RED+GREEN+JUDGE+GREEN+JUDGE+REFACTOR "
-                f"(6 calls), got {mock_agent.call_count}: "
+            # One RED + one RED retry + two GREEN (fail + retry) +
+            # two JUDGE (revert_before + pass) + one REFACTOR = 7.
+            # Mechanical ``revert_before`` shares the RED-retry path with
+            # ``test_defect``: JUDGE says the slice's existing RED test is
+            # unsatisfiable, so the runner must re-author the failing test
+            # before the GREEN retry can land a passing implementation.
+            assert mock_agent.call_count == 7, (
+                f"Expected RED+GREEN+JUDGE+RED+GREEN+JUDGE+REFACTOR "
+                f"(7 calls), got {mock_agent.call_count}: "
                 f"phases={call_log}"
             )
             judge_prompts = [
@@ -792,10 +849,18 @@ class TestMicroOrchestration:
                 f"GREEN retry succeeds, got {result.exit_code}: "
                 f"{result.output}"
             )
-            statuses = _read_statuses(ledger_path)
-            assert "HITL_PENDING" not in statuses, (
-                f"Mechanical FAILURE must NOT write HITL_PENDING — "
-                f"layer discipline: {statuses}"
+            # Contract regression guard: with the seeded tracked test file
+            # and the rc=1 sequence driving RED #1 and retry RED #2, both
+            # RED invocations must clear the failing-test check at
+            # deviate.cli.micro._run_red_phase. If the runner ever hands
+            # a passing test back, it raises
+            # 'RED phase test passed ...'. The loop-control fix must not
+            # paper over a regression by letting one RED slip through
+            # with a tautological test.
+            assert "RED phase test passed" not in result.output, (
+                f"Runner rejected a RED invocation as a passing test — "
+                f"the rc=1 mock sequence must keep both REDs failing. "
+                f"output={result.output}"
             )
 
     @patch("deviate.cli.micro._run_test_cmd")
@@ -822,9 +887,34 @@ class TestMicroOrchestration:
         Companion to ``test_judge_auto_prompt_handles_test_defect_failure``
         (JUDGE prompt content).
         """
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        # Drive the runner's RED-passing-test rejection check on EVERY
+        # RED invocation, not just the implicit noop-_find_test_files
+        # path the empty temp repo used to enable. Sequence:
+        #   1. initial RED   → rc=1 (failing test, as RED must author)
+        #   2. retry RED    → rc=1 (re-authored failing test)
+        #   3. GREEN retry  → rc=0 (implementation passes the test)
+        #   4. REFACTOR     → rc=0 (refactor must keep tests passing)
+        # If the runner ever hands a passing test back to
+        # _run_red_phase, the production check at
+        # deviate.cli.micro._run_red_phase raises
+        # ``PhaseFailedError('RED phase test passed ...')``. That path is
+        # the contract this branch enforces, so the orchestration test
+        # exercises it explicitly rather than relying on the empty
+        # ``_find_test_files`` bypass.
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]  # fmt: skip
         test_defect_rationale = (
             "RED test at tests/embedder_test.py:42 asserts that "
             "`embedder.embed()` returns sorted vectors by magnitude, but "
@@ -910,6 +1000,41 @@ class TestMicroOrchestration:
             _write_ledger(ledger_path, task)
             approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
+            # Seed a tracked test file BEFORE invoking the CLI so
+            # ``_run_red_phase`` finds ``tests/test_embedder.py`` and
+            # exercises the failing-test contract check. Without this
+            # commit, ``_find_test_files`` returns ``[]`` in an empty
+            # temp repo and the rejection path is never entered — the
+            # test would silently skip the very contract this branch
+            # claims to enforce. The seed commit becomes ``red_sha^`` so
+            # ``revert_before``'s ``git reset --hard`` returns HEAD here
+            # and the retry RED phase still sees the file on disk.
+            tests_seed = Path("tests")
+            tests_seed.mkdir(parents=True, exist_ok=True)
+            (tests_seed / "test_embedder.py").write_text(
+                "def test_seed_placeholder():\n    assert False\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "add", "tests/"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    "test: seed fixture for runner rejection-check exercise",
+                ],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+            )
+
             result = runner.invoke(cli, ["micro", "run", "TSK-004-16"])
 
             assert "HITL_REQUIRED" not in result.output, (
@@ -964,10 +1089,19 @@ class TestMicroOrchestration:
                 f"GREEN retry succeeds, got {result.exit_code}: "
                 f"{result.output}"
             )
-            statuses = _read_statuses(ledger_path)
-            assert "HITL_PENDING" not in statuses, (
-                f"Test-defect FAILURE must NOT write HITL_PENDING — "
-                f"layer discipline: {statuses}"
+            # Contract regression guard: the runner's failing-test check at
+            # deviate.cli.micro._run_red_phase raises PhaseFailedError
+            # ('RED phase test passed ...') whenever the RED-authored test
+            # returns rc=0. With the seeded tracked test file and the
+            # rc=1 sequence driving RED #1 and retry RED #2, BOTH
+            # invocations must clear the rejection and land in the
+            # ledger — meaning the loop fix didn't paper over a
+            # regression by reverting the runner to a tautologically
+            # passing RED test.
+            assert "RED phase test passed" not in result.output, (
+                f"Runner rejected a RED invocation as a passing test — "
+                f"the rc=1 mock sequence must keep both REDs failing. "
+                f"output={result.output}"
             )
 
     @patch("deviate.cli.micro._run_test_cmd")

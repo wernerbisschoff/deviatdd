@@ -2577,6 +2577,12 @@ def _run_tdd_cycle(
                 bypass_phase_done=True,
             )
             session.judge_rejected = False
+            # Consume the one-shot action so a subsequent JUDGE pass on the
+            # retry RED + GREEN cycle doesn't re-enter this branch and
+            # dispatch RED forever. ``pending_judge_action`` is otherwise
+            # only cleared by ``_finish_tdd_cycle`` (skipped here because
+            # we continue the loop, not exit).
+            session.pending_judge_action = ""
             session.save(session_path)
             _log_run(
                 "PHASE_DECISION",
