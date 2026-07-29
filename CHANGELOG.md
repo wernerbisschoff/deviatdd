@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-07-29
+
 ### Added
 - **`PI_MODEL` env var is now a model source for the `pi` backend.** When no `[models]` config key resolves the model for a phase and no `--model` CLI override is set, `resolve_model_for_phase` falls back to the backend-specific env var (`PI_MODEL` for `pi`). This lets operators select a model per-invocation from their shell / mise without editing `.deviate/config.toml`. Config and CLI override still win over the env var. The new helper lives in `src/deviate/cli/micro.py::_resolve_model_from_env` (with a `_BACKEND_MODEL_ENV` map for future backends). Pinned by `tests/test_cli/test_micro.py::TestResolveModelForPhaseEnvVar` (6 tests: env-var used, config wins, CLI wins, backend filtering, empty-string passthrough, legacy no-backend behaviour).
 - **`subprocess.Popen` agent-spawn now documents its env inheritance explicitly.** `src/deviate/core/agent.py::AgentBackend.invoke` sets `env=None` in `popen_kwargs` (Python's default — parent env inherits verbatim) with a comment explaining why, so future readers don't accidentally introduce `env={...}` and silently strip operator-set keys like `PI_MODEL` / `OPENCODE_API_KEY` / mise-injected vars.

@@ -1,6 +1,6 @@
 # Project Constitution
 
-Version: 0.7.0
+Version: 0.9.0
 
 ---
 
@@ -93,6 +93,7 @@ Version: 0.7.0
 
 ## 6. Version History
 
+- 0.9.0 — Cut v2.15.0 release. Records the release of accumulated micro-layer hardening, doc/code drift fixes, and Product-layer discipline additions since v2.4.0 (2026-07-04).
 - 0.8.0 — Removed HITL Gate 2 (post-Tasks `deviate meso approve` approval) entirely. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Two HITL gates remain: Gate 1 (Design Approval after research) and Gate 3 (Final Merge Audit after micro). §1 Architectural Principles (Four-Layer Architecture, HITL principle) and §5 Definition of Done updated to reflect the removal.
 - 0.7.0 — Added `specs/_product/flows.jsonl` to the append-only ledger protocol (§1); enumerated alongside `issues.jsonl` / `tasks.jsonl` in §2 *Database*; seeded via `deviate explore post` with `FlowRecord` identity rows + `FlowEvent` append-only event rows. Cross-branch merge safety extends via `merge=union` in `.gitattributes`. Derivation of `FlowCoverage` (drift-flag taxonomy) is emit-only and never persisted; canonical state is derived by sequential ledger parsing per §1
 - 0.6.0 — Promoted the Product layer (Flows → Architecture → Release) into §1 Architectural Principles as an optional fourth layer above Macro; updated the principle count from three to four layers; aligned GREEN-scope enforcement language with v2.2.0 (JUDGE performs scope verification against `src/` + permitted paths — no separate TamperGuard)
