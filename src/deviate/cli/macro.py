@@ -1,4 +1,5 @@
 from __future__ import annotations
+import importlib.resources
 import json
 import shutil
 import subprocess
@@ -48,7 +49,6 @@ from deviate.state.ledger import (
     FlowEvent,
     FlowRecord,
     append_flow_event,
-    append_flow_record,
     load_flow_coverage,
     _parse_flows_index,
     IssueRecord,
@@ -164,6 +164,51 @@ def _resolve_constitution_commands() -> dict:
     }
 
 
+_CONSTITUTION_SEED_PACKAGE = "deviate.prompts"
+_CONSTITUTION_SEED_FILE = "constitution_seed.md"
+
+
+def _bootstrap_constitution_if_missing(workdir: Path) -> None:
+    """Scaffold ``specs/constitution.md`` from the bundled placeholder seed.
+
+    Idempotent: if the constitution already exists, this is a no-op.
+    The placeholder carries ``TBD`` test/lint/type-check commands; safe because
+    ``extract_commands`` callers strip non-allowlisted values before execution.
+    Macro-layer bootstrap lives here (not in ``deviate setup``) so a brand-new
+    project reports ``is_greenfield=true`` until research actually seeds the
+    document. See ``deviate-explore.md`` "no constitution found" branch.
+    """
+    specs_dir = workdir / "specs"
+    const_path = specs_dir / "constitution.md"
+    if const_path.exists():
+        console.print("  [yellow]SKIP[/] specs/constitution.md already exists")
+        return
+    try:
+        seed = (
+            importlib.resources.files(_CONSTITUTION_SEED_PACKAGE)
+            .joinpath(_CONSTITUTION_SEED_FILE)
+            .read_text(encoding="utf-8")
+        )
+    except (ModuleNotFoundError, FileNotFoundError):
+        console.print(
+            "  [red]ERROR[/] constitution_seed.md not found in package —"
+            " cannot scaffold placeholder"
+        )
+        return
+    specs_dir.mkdir(parents=True, exist_ok=True)
+    const_path.write_text(seed, encoding="utf-8")
+    console.print("  [green]CREATE[/] specs/constitution.md")
+
+
+def _resolve_greenfield_flag(const_cmds: dict[str, object]) -> bool:
+    """Derive ``is_greenfield`` from constitution presence in the contract.
+
+    Matches the spec at ``deviate-explore.md``:99,:233 — no constitution
+    found means the project is greenfield.
+    """
+    return not const_cmds.get("constitution_path")
+
+
 def _emit_contract(
     phase: str,
     session: SessionState,
@@ -216,7 +261,9 @@ def explore_pre(
     slug: str | None = typer.Option(None, "--slug", help="Explore slug"),
 ) -> None:
     """Allocate explore directory and register scratch entry"""
-    _validate_constitution("EXPLORE")
+    const_cmds = _resolve_constitution_commands()
+    if const_cmds.get("constitution_path"):
+        _validate_constitution("EXPLORE")
 
     session, session_path = _load_and_transition("EXPLORE")
 
@@ -227,7 +274,6 @@ def explore_pre(
 
     spec_target_rel = f"specs/explore/{final_slug}.md"
     spec_target_abs = str((explore_dir / f"{final_slug}.md").resolve())
-
     console.print(f"[green]EXPLORE_DIR_CREATED[/] {explore_dir}")
 
     _emit_contract(
@@ -235,7 +281,7 @@ def explore_pre(
         session,
         session_path,
         epic_id=final_slug or "",
-        is_greenfield=False,
+        is_greenfield=_resolve_greenfield_flag(const_cmds),
         feature_slug=final_slug,
         feature_dir=str(explore_dir),
         specs_directory=str(specs_root),
@@ -344,6 +390,12 @@ def research_pre(
             f"explore.md not found at specs/explore/{resolved_slug}.md",
         )
 
+    try:
+        repo_root = find_repo_root()
+    except ValueError:
+        repo_root = Path.cwd()
+    _bootstrap_constitution_if_missing(repo_root)
+    const_cmds = _resolve_constitution_commands()
     _validate_constitution("RESEARCH")
 
     session, session_path = _load_and_transition("RESEARCH")
@@ -377,7 +429,7 @@ def research_pre(
         "RESEARCH",
         session,
         session_path,
-        is_greenfield=False,
+        is_greenfield=_resolve_greenfield_flag(const_cmds),
         epic_id=epic_slug,
         feature_slug=epic_slug,
         feature_dir=str(feature_dir),
@@ -961,12 +1013,15 @@ def _shard_post(manifest: Path, epic: str | None = None, force: bool = False) ->
 
 
 def _run_flow_ledger_cycle(specs_root: Path) -> None:
-    """Seed the flow ledger, reverse-index issue refs, and render coverage.
+    """Reverse-index issue refs into the flows ledger and render coverage.
 
     Reads ``specs/_product/flows/index.md`` (the canonical flow index) and
     ``specs/_product/flows.jsonl`` (the append-only flow event ledger) to
-    derive a ``FlowCoverage`` report. If the index is absent, emits a
-    ``FLOWS_INDEX_MISSING`` warning and returns early.
+    derive a ``FlowCoverage`` report. Identity and documentation events
+    (``FLOW_DISCOVERED`` / ``FLOW_DOCUMENTED``) are emitted by
+    ``deviate flows sync`` — this function only handles the macro-layer
+    reverse-index of ``specs/issues.jsonl::flow_refs``. If the index is
+    absent, emits a ``FLOWS_INDEX_MISSING`` warning and returns early.
     """
     flows_index_path = specs_root / "_product" / "flows" / "index.md"
     flows_ledger_path = specs_root / "_product" / "flows.jsonl"
@@ -975,59 +1030,27 @@ def _run_flow_ledger_cycle(specs_root: Path) -> None:
     if not flows_index_path.exists():
         console.print(
             "[yellow]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md — "
-            "skipping flow ledger seeding and coverage report"
+            "skipping flow coverage report"
         )
         return
 
-    records = _seed_flow_ledger(flows_ledger_path, flows_index_path)
-    seeded_ids = {r.flow_id for r in records}
+    records_by_id: dict[str, FlowRecord] = {
+        r.flow_id: r for r in _parse_flows_index(flows_index_path)
+    }
+    seeded_ids: set[str] = set(records_by_id)
 
     if issues_ledger_path.exists():
         _reverse_index_issue_flow_refs(
             issues_ledger_path, flows_ledger_path, seeded_ids
         )
 
-    records_by_id = {r.flow_id: r for r in records}
-
     rows = load_flow_coverage(flows_ledger_path, flows_index_path, issues_ledger_path)
     _render_flow_coverage_report(rows, records_by_id)
 
 
 # ---------------------------------------------------------------------------
-# Flow ledger helpers (seeding, reverse-indexing, report rendering)
+# Flow ledger helpers (reverse-indexing, report rendering)
 # ---------------------------------------------------------------------------
-
-
-def _seed_flow_ledger(ledger_path: Path, flows_index_path: Path) -> list[FlowRecord]:
-    """Parse the canonical flow index and append missing identity + event rows.
-
-    Reads ``specs/_product/flows/index.md`` (per the Product-layer contract),
-    builds ``FlowRecord`` identity rows for each canonical flow, and appends
-    ``FLOW_DISCOVERED`` + ``FLOW_DOCUMENTED`` events per flow. Both the
-    identity row and event rows are compound-key idempotent — re-seeding a
-    populated ledger produces zero net appends.
-    """
-    records = _parse_flows_index(flows_index_path)
-    now = datetime.now(timezone.utc)
-    for record in records:
-        append_flow_record(record, ledger_path)
-        append_flow_event(
-            FlowEvent(
-                flow_id=record.flow_id,
-                event_type="FLOW_DISCOVERED",
-                timestamp=now,
-            ),
-            ledger_path,
-        )
-        append_flow_event(
-            FlowEvent(
-                flow_id=record.flow_id,
-                event_type="FLOW_DOCUMENTED",
-                timestamp=now,
-            ),
-            ledger_path,
-        )
-    return records
 
 
 def _reverse_index_issue_flow_refs(

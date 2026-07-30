@@ -123,11 +123,15 @@ class TestMacroContracts:
         )
 
     @staticmethod
-    def _setup_minimal_env(path: Path, session_phase: str = "IDLE") -> None:
+    def _setup_minimal_env(
+        path: Path, session_phase: str = "IDLE", *, with_constitution: bool = True
+    ) -> None:
         dot_dir = path / ".deviate"
         dot_dir.mkdir(parents=True, exist_ok=True)
         session_data = {"current_phase": session_phase}
         (dot_dir / "session.json").write_text(json.dumps(session_data))
+        if not with_constitution:
+            return
 
         specs_dir = path / "specs"
         specs_dir.mkdir(parents=True, exist_ok=True)
@@ -270,3 +274,61 @@ class TestMacroContracts:
             assert result.exit_code == 0, result.output
 
             assert ledger_path.read_text() == ""
+
+    def test_explore_pre_reports_greenfield_when_constitution_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """explore pre derives is_greenfield from constitution presence.
+
+        A fresh repo (no specs/constitution.md) reports ``is_greenfield=True``.
+        explore does NOT bootstrap the constitution — that's research pre's job.
+        """
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(
+                tmp_path, session_phase="IDLE", with_constitution=False
+            )
+
+            result = runner.invoke(
+                cli, ["explore", "pre", "test problem", "--slug", "test-feature"]
+            )
+            assert result.exit_code == 0, result.output
+
+            contract = self._extract_contract(result.output)
+            assert contract["is_greenfield"] is True
+            assert contract["constitution_path"] == ""
+
+            # Constitution is still absent — explore must not bootstrap it.
+            assert not (tmp_path / "specs" / "constitution.md").exists()
+
+    def test_research_pre_bootstraps_constitution_when_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """research pre scaffolds specs/constitution.md when absent.
+
+        The contract is emitted AFTER the bootstrap, so the scaffolded
+        path is visible in ``constitution_path`` and ``is_greenfield``
+        reflects the post-bootstrap state (False).
+        """
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(
+                tmp_path, session_phase="EXPLORE", with_constitution=False
+            )
+
+            explore_dir = tmp_path / "specs" / "explore"
+            explore_dir.mkdir(parents=True, exist_ok=True)
+            (explore_dir / "test-feature.md").write_text(
+                "# Explore\n\nDiscovered facts.\n"
+            )
+
+            result = runner.invoke(cli, ["research", "pre", "--slug", "test-feature"])
+            assert result.exit_code == 0, result.output
+
+            # Bootstrap fired.
+            const_path = tmp_path / "specs" / "constitution.md"
+            assert const_path.exists()
+
+            contract = self._extract_contract(result.output)
+            assert contract["is_greenfield"] is False
+            assert contract["constitution_path"].endswith("specs/constitution.md")

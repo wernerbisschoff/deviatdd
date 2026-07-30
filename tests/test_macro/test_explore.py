@@ -35,18 +35,31 @@ class TestExploreCommand:
             assert loaded.current_phase == "EXPLORE"
             assert (Path("specs") / "explore").is_dir()
 
-    def test_explore_pre_rejects_if_not_idle(self, tmp_path: Path):
+    def test_explore_pre_accepts_greenfield_and_transitions_from_any_phase(
+        self, tmp_path: Path
+    ) -> None:
+        """Greenfield explore (no ``specs/constitution.md``) proceeds.
+
+        explore pre no longer halts on a missing constitution — it derives
+        ``is_greenfield=true`` from constitution absence. The orchestrator
+        does NOT enforce phase transitions via ``_load_and_transition``;
+        a non-IDLE starting phase is silently overwritten (see
+        ``SessionState.transition_to``). The ``is_greenfield`` flag is the
+        greenfield-detection signal downstream phases rely on.
+        """
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="RESEARCH")
             session.save(dot_dir / "session.json")
+            # No constitution file — greenfield.
 
             result = runner.invoke(
                 cli, ["explore", "pre", "test", "--slug", "test-slug"]
             )
-            assert result.exit_code != 0
-            assert "EXPLORE_HALTED" in result.output
+            assert result.exit_code == 0, result.output
+            loaded = SessionState.load(dot_dir / "session.json")
+            assert loaded.current_phase == "EXPLORE"
 
     def test_explore_pre_missing_session_file_defaults_idle(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -148,16 +161,20 @@ class TestExploreCommand:
                 " | specs/_product/flows/flows-streaming.md |\n"
             )
 
-            (Path("specs/_product") / "flows.jsonl").write_text("")
+            from deviate.state.ledger import seed_flow_ledger
+
+            flows_ledger = Path("specs/_product") / "flows.jsonl"
+            seed_flow_ledger(
+                Path("specs/_product") / "flows" / "index.md",
+                flows_ledger,
+            )
 
             result = runner.invoke(cli, ["explore", "post", "--slug", "test-slug"])
             assert result.exit_code == 0, result.output
             assert "FLOW-04" in result.output
             assert "DOCUMENTED_BUT_NOT_IMPLEMENTED" in result.output
 
-            flows_jsonl = Path("specs/_product") / "flows.jsonl"
-            assert flows_jsonl.exists()
-            content = flows_jsonl.read_text().strip()
+            content = flows_ledger.read_text().strip()
             lines = [ln for ln in content.split("\n") if ln.strip()]
             records = [json.loads(ln) for ln in lines]
             flow_records = [
@@ -264,3 +281,46 @@ class TestExploreCommand:
                 records = [json.loads(ln) for ln in lines]
                 flow_99_records = [r for r in records if r.get("flow_id") == "FLOW-99"]
                 assert len(flow_99_records) == 0
+
+    def test_explore_post_does_not_seed_flow_identity_or_documented_events(
+        self, tmp_git_repo: Path
+    ) -> None:
+        with chdir(tmp_git_repo):
+            Path("specs").mkdir(parents=True)
+            (Path("specs") / "constitution.md").write_text("# Constitution\n")
+
+            explore_dir = Path("specs/explore")
+            explore_dir.mkdir(parents=True)
+            (explore_dir / "test-slug.md").write_text(
+                "# Explore: test-slug\n\n"
+                "## Problem Definition\nTest\n\n"
+                "## Discovery Audit Results\nNone\n\n"
+                "## Constitution Quotes\nNone\n\n"
+                "## Architectural Baselines\nNone\n\n"
+                "## Ecosystem Research\nNone\n\n"
+                "## File Registry\nNone\n\n"
+                "## Status Summary\nNone\n"
+            )
+
+            flows_dir = Path("specs/_product/flows")
+            flows_dir.mkdir(parents=True)
+            (flows_dir / "index.md").write_text(
+                "| Flow ID | Name | Actor | Domain | Status | Source |\n"
+                "|---------|------|-------|--------|--------|--------|\n"
+                "| FLOW-04 | Live-Stream Agent Progress via RPC | Developer"
+                " | Agent Integration | Active"
+                " | specs/_product/flows/flows-streaming.md |\n"
+            )
+
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="EXPLORE")
+            session.save(dot_dir / "session.json")
+
+            result = runner.invoke(cli, ["explore", "post", "--slug", "test-slug"])
+            assert result.exit_code == 0, result.output
+            flows_jsonl = Path("specs/_product") / "flows.jsonl"
+            assert not flows_jsonl.exists(), (
+                "explore post must not create flows.jsonl; "
+                "creation belongs to `deviate flows sync`"
+            )

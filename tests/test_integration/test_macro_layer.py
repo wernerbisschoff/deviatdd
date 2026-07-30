@@ -43,7 +43,17 @@ class TestExplorePre:
                 "explore pre should not append to issues ledger"
             )
 
-    def test_explore_pre_rejects_missing_constitution(self, tmp_git_repo: Path) -> None:
+    def test_explore_pre_accepts_greenfield_and_reports_is_greenfield(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """A fresh repo (no ``specs/constitution.md``) is greenfield.
+
+        explore pre no longer halts on a missing constitution — it derives
+        ``is_greenfield=true`` from constitution absence and the agent
+        running ``/deviate-explore`` is responsible for noting that
+        ``/deviate-research`` will bootstrap the placeholder. ``research pre``
+        performs the actual scaffold (see ``test_macro_contracts.py``).
+        """
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -54,11 +64,8 @@ class TestExplorePre:
                 cli,
                 ["explore", "pre", "No constitution", "--slug", "no-const"],
             )
-            assert result.exit_code != 0
-            assert (
-                "CONSTITUTION" in result.output.upper()
-                or "HALTED" in result.output.upper()
-            )
+            assert result.exit_code == 0, result.output
+            assert "no-const" in result.output
 
 
 class TestResearchPre:

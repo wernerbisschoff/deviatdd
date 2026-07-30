@@ -23,12 +23,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `cli/__init__.py:669`.
 * **Description:** Initializes a standard project-level DeviaTDD compliance framework. Builds
   the `.deviate/` directory (containing `config.toml`, `session.json`, `.gitignore`, and an
-  empty `artifacts/` workspace), detects the project type (`python`, `node`, `rust`, `go`,
-  `elixir_phoenix`, or `unknown`) and writes a `specs/constitution.md` populated with
-  project-specific test/lint/format/setup/dev commands, ensures a symlink
-  relationship between `CLAUDE.md` and `AGENTS.md` (via
-  `_linkify_governance_files`), applies governance blocks to the canonical
-  file, and installs the DeviaTDD prompt commands. Currently 24 `deviate-*`
+  empty `artifacts/` workspace); ensures a symlink relationship between `CLAUDE.md` and
+  `AGENTS.md` (via `_linkify_governance_files`); applies governance blocks to the canonical
+  file; and installs the DeviaTDD prompt commands. `deviate setup` does **not** scaffold
+  `specs/constitution.md` — that bootstrap is owned by `deviate research pre` (see below),
+  so a fresh project reports `is_greenfield=true` until `/research` populates the
+  constitution. `deviate init pre` continues to scaffold the constitution independently.
   slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
   — 25 flat `.md` files total in the Factory install; 24 in every other agent
   `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land in all agent
@@ -275,10 +275,13 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate explore pre <problem> [--slug]`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Allocate a feature bucket and register a scratch ledger entry. Validates
-  the constitution, transitions session to EXPLORE, allocates the bucket via
-  `allocate_feature_bucket()`, appends a DRAFT issue record, and emits a JSON contract to
-  stdout (spec_target, feature_dir, issue_id, etc.).
+* **Description:** Allocate a feature bucket and register a scratch ledger entry. On a
+  non-greenfield project (constitution present), validates the constitution. Transitions
+  session to EXPLORE, allocates the bucket via `allocate_feature_bucket()`, appends a DRAFT
+  issue record, and emits a JSON contract to stdout (spec_target, feature_dir, issue_id,
+  `is_greenfield`, etc.). On a **greenfield** project (no `specs/constitution.md`),
+  `_validate_constitution` is skipped — the contract reports `is_greenfield=true` so the
+  downstream `/research` phase knows to bootstrap the constitution.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate explore post`
@@ -291,7 +294,14 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate research pre [<epic>]`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Validates that `specs/explore/<slug>.md` exists and the constitution passes, **moves** the explore artifact into the new numbered epic directory at `specs/{NNN}-<slug>/explore.md`, then transitions session to RESEARCH and emits the JSON contract (`explore_md_path` now pointing at the moved location, plus `design_target`, `data_model_target`, etc.). `specs/explore/<slug>.md` is removed on success — there is no orphan staging copy.
+* **Description:** Validates that `specs/explore/<slug>.md` exists. If `specs/constitution.md`
+  is missing, bootstraps it from the `constitution_seed.md` package resource (the macro
+  layer owns the placeholder scaffold — `deviate setup` does NOT touch the constitution),
+  then validates the freshly-scaffolded constitution. **Moves** the explore artifact into
+  the new numbered epic directory at `specs/{NNN}-<slug>/explore.md`, transitions session
+  to RESEARCH, and emits the JSON contract (`explore_md_path` pointing at the moved
+  location, `design_target`, `data_model_target`, `is_greenfield`, etc.).
+  `specs/explore/<slug>.md` is removed on success — there is no orphan staging copy.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate research post`
@@ -888,9 +898,8 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate inspect flows coverage [--release <release.md>]`
 
 * **Source:** `src/deviate/cli/inspect.py` (`flows_coverage_command`)
-* **Description:** Read-only query surface that joins three inputs — `specs/_product/flows/index.md` (the flows catalog), `specs/_product/flows.jsonl` (the append-only events ledger seeded by `deviate explore post`), and `specs/issues.jsonl` (for issue linkage) — via `load_flow_coverage()` (`src/deviate/state/ledger.py`) to emit one `FlowCoverage` row per `FLOW-NN` with a populated `drift_flag` drawn from the seven-value taxonomy (`OK`, `STALE_DRIFT`, `ORPHANED_FLOW`, `PROMPT_ONLY_NO_CODE`, `DOC_ARTIFACT_ONLY`, `DOCUMENTED_BUT_NOT_IMPLEMENTED`, `IMPLEMENTED_BUT_UNDOCUMENTED`). Renders a Rich `Table` (Flow ID, Title, Drift Flag, Last Event) — these are STATE 3 surface rows, not banners. The command distinguishes two missing-input states with different remediation, and operators must read the banner to know which case they are in:
-  * **STATE 1 — configuration error:** `specs/_product/flows/index.md` is absent. The command emits a `[red]FLOWS_INDEX_MISSING[/]` banner on stderr and exits with code `2`. Remediation: run `/deviate-flows` to populate the catalog before any ledger can be meaningful. The catalog is a hard prerequisite.
-  * **STATE 2 — normal first-run:** `flows/index.md` exists but `specs/_product/flows.jsonl` has not yet been seeded (typical on a fresh checkout before the first `deviate explore post` has run). The command emits a `[yellow]NO_FLOWS_LEDGER[/]` banner on stderr, exits with code `0`, and renders an empty Rich table. Remediation: run `deviate explore post` (or any explore cycle) to seed the ledger; "no rows" is the correct answer, not an error.
+* **Description:** Read-only query surface that joins three inputs — `specs/_product/flows/index.md` (the flows catalog), `specs/_product/flows.jsonl` (the append-only events ledger seeded by `deviate flows sync`), and `specs/issues.jsonl` (for issue linkage) — via `load_flow_coverage()` (`src/deviate/state/ledger.py`) to emit one `FlowCoverage` row per `FLOW-NN` with a populated `drift_flag` drawn from the seven-value taxonomy (`OK`, `STALE_DRIFT`, `ORPHANED_FLOW`, `PROMPT_ONLY_NO_CODE`, `DOC_ARTIFACT_ONLY`, `DOCUMENTED_BUT_NOT_IMPLEMENTED`, `IMPLEMENTED_BUT_UNDOCUMENTED`). Renders a Rich `Table` (Flow ID, Title, Drift Flag, Last Event) — these are STATE 3 surface rows, not banners. The command distinguishes two missing-input states with different remedia…
+  * **STATE 2 — normal first-run:** `flows/index.md` exists but `specs/_product/flows.jsonl` has not yet been seeded (typical on a fresh checkout before the first `deviate flows sync` has run). The command emits a `[yellow]NO_FLOWS_LEDGER[/]` banner on stderr, exits with code `0`, and renders an empty Rich table. Remediation: run `deviate flows sync` (or `/deviate-flows` Phase B, which invokes it) to seed the ledger; "no rows" is the correct answer, not an error.
   * **STATE 3 — live drift:** the ledger is present and the catalog has entries. Every cataloged `FLOW-NN` shows up as a normal table row whose `drift_flag` column carries one of the seven taxonomy values above. No banner — drift surfaces row-by-row.
 * **Input Parameters:**
   * `--release <release.md>` (Path to the active release-next Markdown file. When supplied, parses the `Included Flows` table (rows beginning with `| FLOW-`) and narrows the rendered coverage to only those `FLOW-NN` IDs explicitly listed for the release. Header markers and rows with an empty first cell are skipped silently — so the operator sees "what is still incomplete for THIS release" instead of "what is incomplete globally.")
@@ -908,8 +917,14 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Common Flags:** `--json`, `--quiet`
 * **Read by:** `/deviate-release` step 2.5 as a recommendation list for the Included Flows table. The release prompt's goal-first invariant is preserved: the user/agent composes the Included Flows table; the candidate list is a default-fill suggestion, not an auto-populate.
 
----
+#### `deviate flows sync`
 
+* **Source:** `src/deviate/cli/flow_commands.py` (`flows_sync`)
+* **Description:** Mutating command — the sole owner of `specs/_product/flows.jsonl` creation. Parses every row of `specs/_product/flows/index.md` (the canonical flow catalog) and appends one ``FlowRecord`` identity row plus ``FLOW_DISCOVERED`` and ``FLOW_DOCUMENTED`` events per flow. Re-running on a populated ledger is a no-op (compound-key idempotency on `append_flow_record` + `append_flow_event` — `flow_id` for identity, `(flow_id, event_type, event_issue_id, event_release_version, evidence_path)` for events). Exits non-zero with a `[red]FLOWS_INDEX_MISSING` banner on stderr when `specs/_product/flows/index.md` is absent; exits non-zero with `[red]FLOWS_INDEX_EMPTY` when the index exists but parses to zero rows (authoring-defect detection, surfaces half-baked catalogs). On a successful idempotent re-run, prints `[green]FLOW_LEDGER_UP_TO_DATE`; on first-run emits `[green]FLOW_LEDGER_SEEDED <count>`. ``deviate explore post`` no longer creates the ledger — it retains only reverse-indexing of ``specs/issues.jsonl::flow_refs`` (``FLOW_REFERENCED_BY_ISSUE``) and the coverage report render. Operators can run this command directly to (re-)seed the ledger from the catalog.
+* **Input Parameters:** None.
+* **Common Flags:** None.
+
+---
 ### 7. Code Review & Quality Gates
 
 #### `deviate review pre [--base <branch>] [--branch <branch>]`

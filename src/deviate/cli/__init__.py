@@ -12,6 +12,7 @@ from rich.prompt import Prompt
 from deviate.state.config import DeviateConfig, SessionState
 from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
+from deviate.cli.flow_commands import flows_app as flows_app  # noqa: F401
 from deviate.cli.meso import _meso_run, merge, meso_app, plan, pr, specify, tasks
 from deviate.cli.micro import (
     _run_all as _run_all,  # noqa: F401  (referenced by tests/test_cli/test_top_level_run.py)
@@ -532,31 +533,6 @@ def _apply_governance(workdir: Path, graphite: bool = False) -> None:
                 _upsert_governance_block(t, content)
 
 
-_CONSTITUTION_SEED_MODULE = "deviate.prompts"
-_CONSTITUTION_SEED_FILE = "constitution_seed.md"
-
-
-def _scaffold_constitution(workdir: Path) -> None:
-    """Write a placeholder specs/constitution.md if it doesn't exist.
-
-    The placeholder is populated by ``/research`` during the macro layer.
-    """
-    specs_dir = workdir / "specs"
-    const_path = specs_dir / "constitution.md"
-
-    if const_path.exists():
-        console.print("  [yellow]SKIP[/] specs/constitution.md already exists")
-        return
-
-    seed = _read_seed(_CONSTITUTION_SEED_MODULE, _CONSTITUTION_SEED_FILE)
-    if seed is None:
-        return
-
-    specs_dir.mkdir(parents=True, exist_ok=True)
-    const_path.write_text(seed, encoding="utf-8")
-    console.print("  [green]CREATE[/] specs/constitution.md")
-
-
 def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     """Resolve the slash-command directory for a given agent platform.
 
@@ -782,7 +758,6 @@ def setup(
 
     _apply_governance(workdir, graphite=graphite)
 
-    _scaffold_constitution(workdir)
     # DeviaTDD commands are installed into ALL agent directories regardless
     # of ``--agent``. ``--agent`` only drives the ``[agent].backend`` value
     # written to ``.deviate/config.toml`` — that value is consumed by the
@@ -918,6 +893,12 @@ cli.add_typer(
     name="inspect",
     rich_help_panel=_OPTIONAL_PANEL,
     help="Inspect issue and task ledgers",
+)
+cli.add_typer(
+    flows_app,
+    name="flows",
+    rich_help_panel=_USER_PANEL,
+    help="Flow ledger commands (sync the canonical flow index into flows.jsonl)",
 )
 
 # Top-level macro-phase Typer groups (agent-internal).
