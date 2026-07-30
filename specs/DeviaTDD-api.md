@@ -862,22 +862,24 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate tasks list [--status <status>]`
 
 * **Source:** `src/deviate/cli/inspect.py` (`tasks_list_command`)
-* **Description:** Reads the root-level `tasks.jsonl` ledger and derives current task
-  states by parsing the append-only ledger sequentially via `filter_tasks()` and
-  `LedgerFilter` (`deviate/state/ledger.py`). Outputs a Rich `Table` summary of tasks
-  (ID, Issue ID, Description, Status, Mode) filtered by `--status`. The `--json` flag
-  emits a JSON array; `--quiet` suppresses output.
+* **Description:** Aggregates tasks from every per-issue append-only ledger at
+  `specs/<bucket>/<slug>/tasks.jsonl`. The set of ledgers is derived from the
+  `source_file` of each issue in `specs/issues.jsonl`; the `issues/` segment is
+  dropped when mapping to the tasks directory (see the Append-Only Ledger
+  Protocol in `DeviaTDD-architecture.md`). Each per-issue ledger is parsed
+  sequentially and reduced to one record per task id with `COMPLETED` treated
+  as terminal (mirrors `_deduplicate_issues`). Outputs a Rich `Table` summary
+  (ID, Issue ID, Description, Status, Mode) filtered by `--status`. The
+  `--json` flag emits a JSON array; `--quiet` suppresses output.
 * **Common Flags:** `--json`, `--quiet`
-* **Note:** This command reads from `tasks.jsonl` at the project root, not from
-  issue-scoped ledgers. The issue-scoped task ledger query surface is intentionally
-  minimal — task work is normally dispatched via `deviate run` and `deviate run --all`.
+* **Note:** A stray top-level `specs/tasks.jsonl` is **not** consulted — task
+  state lives under each issue directory.
 
 
 #### `deviate inspect tasks show <TSK-ID>`
 
 * **Source:** `src/deviate/cli/inspect.py` (`tasks_show_command`)
-* **Description:** Looks up one task by ID in the root `tasks.jsonl` ledger and emits a single JSON object with `--json`, or a readable record without it. Unknown IDs fail with a parameter error.
-
+* **Description:** Looks up one task by ID across all aggregated per-issue ledgers (`specs/<bucket>/<slug>/tasks.jsonl`) and emits a single JSON object with `--json`, or a readable record without it. Unknown IDs fail with a parameter error.
 #### `deviate inspect issues show <ISS-ID>`
 
 * **Source:** `src/deviate/cli/inspect.py` (`issues_show_command`)
@@ -1025,18 +1027,19 @@ specs/
 │   ├── prd.md                # Aggregated PRD entries (append-only)
 │   └── issues/               # Adhoc-scoped issue files
 │       └── {ADH-NNN}-{kebab-slug}.md
-└── {FEATURE_SLUG}/           # Feature workspace bucket
+└── {FEATURE_SLUG}/           # Feature workspace bucket (e.g. ``001-...``, ``002-...``, ``adhoc``)
     ├── explore.md            # Raw codebase context (cheap scan - what exists)
     ├── design.md             # Architectural decisions and trade-offs
     ├── data-model.md         # Entity relationships, schemas, data flow
     ├── prd.md                # Product requirement documents
     ├── spec.md               # Functional contract ("What & Why" system bounds) — deprecated, shard now embeds specs in issues
-    └── issues/               # Issue sub-workspaces
-        └── {ISSUE_ID}/
-            ├── spec.md       # Issue-level functional specification (shard-produced, with Gherkin AC)
-            ├── plan.md       # ← NEW: per-issue localized research report (deviate-plan output)
-            ├── tasks.md      # Task decomposition (human-authored, what/why/how)
-            └── tasks.jsonl   # Append-only task event ledger (CLI-managed)
+    ├── issues/               # Issue source markdown files (``source_file`` in ``issues.jsonl``)
+    │   └── {ISSUE_ID}.md     # Per-issue markdown: scope, Gherkin AC, edge cases
+    └── {ISSUE_ID}/           # Per-issue workspace (sibling to ``issues/``, not nested)
+        ├── spec.md           # Issue-level functional specification (shard-produced, with Gherkin AC)
+        ├── plan.md           # Per-issue localized research report (deviate-plan output)
+        ├── tasks.md          # Task decomposition (human-authored, what/why/how)
+        └── tasks.jsonl       # Per-issue append-only task event ledger (CLI-managed)
 
 src/deviate/
 ├── __init__.py

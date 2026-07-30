@@ -275,42 +275,77 @@ class TestIssuesListCompletedPrecedence:
 
 
 class TestTasksList:
-    """US-004-TasksList: Tasks list commands."""
+    """US-004-TasksList: Tasks list commands.
 
-    def _seed_tasks_jsonl(self, path: Path, records: list[dict]) -> Path:
-        ledger = path / "tasks.jsonl"
-        with ledger.open("a", encoding="utf-8") as f:
-            for r in records:
-                f.write(json.dumps(r) + "\n")
-        return ledger
+    Tasks live under each issue directory as ``specs/<bucket>/<slug>/tasks.jsonl``
+    (the per-issue append-only ledger). The buggy implementation looked at
+    ``specs/tasks.jsonl``, which never exists — these tests exercise the
+    real on-disk layout.
+    """
+
+    @staticmethod
+    def _seed_issue(
+        repo: Path,
+        issue_id: str,
+        bucket: str,
+        slug: str,
+    ) -> Path:
+        source_file = f"specs/{bucket}/issues/{slug}.md"
+        issues = repo / "specs" / "issues.jsonl"
+        issues.parent.mkdir(parents=True, exist_ok=True)
+        with issues.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "issue_id": issue_id,
+                        "type": "feature",
+                        "title": f"Test {issue_id}",
+                        "status": "SPECIFIED",
+                        "source_file": source_file,
+                        "blocked_by": [],
+                        "coordinates_with": [],
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                + "\n"
+            )
+        tasks = repo / "specs" / bucket / slug / "tasks.jsonl"
+        tasks.parent.mkdir(parents=True, exist_ok=True)
+        return tasks
+
+    @staticmethod
+    def _seed_task(tasks_path: Path, record: dict) -> None:
+        with tasks_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
 
     def test_tasks_list_status_filter(self, tmp_path: Path) -> None:
-        self._seed_tasks_jsonl(
-            tmp_path,
-            [
-                {
-                    "id": "TSK-001-01",
-                    "issue_id": "iss-001",
-                    "description": "Task A",
-                    "status": "PENDING",
-                    "execution_mode": "TDD",
-                },
-                {
-                    "id": "TSK-001-02",
-                    "issue_id": "iss-001",
-                    "description": "Task B",
-                    "status": "IN_PROGRESS",
-                    "execution_mode": "TDD",
-                },
-                {
-                    "id": "TSK-001-03",
-                    "issue_id": "iss-001",
-                    "description": "Task C",
-                    "status": "COMPLETED",
-                    "execution_mode": "DIRECT",
-                },
-            ],
+        tasks = self._seed_issue(
+            tmp_path, "ISS-001", "002-embedder-vector-search", "001-embedder-registry"
         )
+        for r in [
+            {
+                "id": "TSK-001-01",
+                "issue_id": "ISS-001",
+                "description": "Task A",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+            {
+                "id": "TSK-001-02",
+                "issue_id": "ISS-001",
+                "description": "Task B",
+                "status": "IN_PROGRESS",
+                "execution_mode": "TDD",
+            },
+            {
+                "id": "TSK-001-03",
+                "issue_id": "ISS-001",
+                "description": "Task C",
+                "status": "COMPLETED",
+                "execution_mode": "DIRECT",
+            },
+        ]:
+            self._seed_task(tasks, r)
         with chdir(tmp_path):
             result = runner.invoke(
                 cli,
@@ -324,32 +359,33 @@ class TestTasksList:
         assert data[0]["status"] == "PENDING"
 
     def test_tasks_list_json(self, tmp_path: Path) -> None:
-        self._seed_tasks_jsonl(
-            tmp_path,
-            [
-                {
-                    "id": "TSK-002-01",
-                    "issue_id": "iss-002",
-                    "description": "Task X",
-                    "status": "PENDING",
-                    "execution_mode": "TDD",
-                },
-                {
-                    "id": "TSK-002-02",
-                    "issue_id": "iss-002",
-                    "description": "Task Y",
-                    "status": "GREEN",
-                    "execution_mode": "TDD",
-                },
-                {
-                    "id": "TSK-002-03",
-                    "issue_id": "iss-002",
-                    "description": "Task Z",
-                    "status": "COMPLETED",
-                    "execution_mode": "E2E",
-                },
-            ],
+        tasks = self._seed_issue(
+            tmp_path, "ISS-002", "002-embedder-vector-search", "002-project-config-extensions"
         )
+        for r in [
+            {
+                "id": "TSK-002-01",
+                "issue_id": "ISS-002",
+                "description": "Task X",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+            {
+                "id": "TSK-002-02",
+                "issue_id": "ISS-002",
+                "description": "Task Y",
+                "status": "GREEN",
+                "execution_mode": "TDD",
+            },
+            {
+                "id": "TSK-002-03",
+                "issue_id": "ISS-002",
+                "description": "Task Z",
+                "status": "COMPLETED",
+                "execution_mode": "E2E",
+            },
+        ]:
+            self._seed_task(tasks, r)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
 
@@ -370,6 +406,126 @@ class TestTasksList:
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "[]"
 
+    def test_tasks_list_aggregates_across_multiple_issues(
+        self, tmp_path: Path
+    ) -> None:
+        """AC-006-Tasks-Aggregate: Tasks from multiple issues are aggregated.
+
+        Reproduces the bug reported on the
+        ``feat/002-embedder-vector-search/001-embedder-registry`` worktree: a
+        tasks ledger at the per-issue path was not visible to
+        ``deviate inspect tasks list``.
+
+        Status precedence mirrors ``TestIssuesListCompletedPrecedence``:
+        ``COMPLETED`` is terminal — once captured, no later non-``COMPLETED``
+        transition (e.g. a ``GREEN`` written after the ``COMPLETED`` during a
+        merge flow) may override it. Among non-terminal entries, the last by
+        file position wins. Aggregation is per-task across all issues.
+        """
+        tasks_019 = self._seed_issue(
+            tmp_path, "ISS-019", "002-embedder-vector-search", "001-embedder-registry"
+        )
+        tasks_020 = self._seed_issue(
+            tmp_path, "ISS-020", "002-embedder-vector-search", "002-project-config-extensions"
+        )
+        tasks_adhoc = self._seed_issue(
+            tmp_path, "ISS-021", "adhoc", "007-graphite-cli"
+        )
+        # TSK-019-01 mid-RG-R: RED then GREEN. Latest non-terminal wins → GREEN.
+        self._seed_task(
+            tasks_019,
+            {
+                "id": "TSK-019-01",
+                "issue_id": "ISS-019",
+                "description": "Declare EmbedderModeConfig",
+                "status": "RED",
+                "execution_mode": "TDD",
+            },
+        )
+        self._seed_task(
+            tasks_019,
+            {
+                "id": "TSK-019-01",
+                "issue_id": "ISS-019",
+                "description": "Declare EmbedderModeConfig",
+                "status": "GREEN",
+                "execution_mode": "TDD",
+            },
+        )
+        self._seed_task(
+            tasks_020,
+            {
+                "id": "TSK-020-01",
+                "issue_id": "ISS-020",
+                "description": "Extend ProjectConfig",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+        )
+        # TSK-021-01: COMPLETED first, then a stray GREEN must NOT downgrade it.
+        self._seed_task(
+            tasks_adhoc,
+            {
+                "id": "TSK-021-01",
+                "issue_id": "ISS-021",
+                "description": "Wire Graphite",
+                "status": "COMPLETED",
+                "execution_mode": "DIRECT",
+            },
+        )
+        self._seed_task(
+            tasks_adhoc,
+            {
+                "id": "TSK-021-01",
+                "issue_id": "ISS-021",
+                "description": "Wire Graphite",
+                "status": "GREEN",
+                "execution_mode": "TDD",
+            },
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        ids = {entry["id"] for entry in data}
+        assert ids == {"TSK-019-01", "TSK-020-01", "TSK-021-01"}
+        by_id = {entry["id"]: entry for entry in data}
+        # Non-terminal: latest entry (GREEN) wins.
+        assert by_id["TSK-019-01"]["status"] == "GREEN"
+        # Terminal COMPLETED is sticky across the ledger even if a later
+        # non-COMPLETED entry was appended.
+        assert by_id["TSK-021-01"]["status"] == "COMPLETED"
+
+    def test_tasks_list_ignores_legacy_top_level_ledger(
+        self, tmp_path: Path
+    ) -> None:
+        """Pinning: a stray top-level ``specs/tasks.jsonl`` is ignored.
+
+        The legacy buggy code path read ``specs/tasks.jsonl``. That file does
+        not exist in any real repo; if a user drops one there by mistake the
+        inspect command MUST NOT pick it up. Aggregation is sourced from the
+        per-issue ``tasks.jsonl`` files only.
+        """
+        legacy = tmp_path / "specs" / "tasks.jsonl"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(
+            json.dumps(
+                {
+                    "id": "TSK-LEGACY-01",
+                    "issue_id": "ISS-XXX",
+                    "description": "stale",
+                    "status": "PENDING",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n"
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == "[]"
 
 class TestInspectFlowsCoverage:
     @staticmethod
@@ -783,7 +939,30 @@ class TestInspectById:
         assert json.loads(result.stdout)["issue_id"] == "ISS-013"
 
     def test_tasks_show_accepts_task_id(self, tmp_path: Path) -> None:
-        (tmp_path / "tasks.jsonl").write_text(
+        # Per-issue tasks ledger at the canonical on-disk location.
+        bucket = "001-gloss-v1-mvp"
+        slug = "011-watcher-dispatch-wire"
+        issues = tmp_path / "specs" / "issues.jsonl"
+        issues.parent.mkdir(parents=True, exist_ok=True)
+        issues.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-013",
+                    "type": "feature",
+                    "title": "Target",
+                    "status": "SPECIFIED",
+                    "source_file": f"specs/{bucket}/issues/{slug}.md",
+                    "blocked_by": [],
+                    "coordinates_with": [],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        tasks = tmp_path / "specs" / bucket / slug / "tasks.jsonl"
+        tasks.parent.mkdir(parents=True, exist_ok=True)
+        tasks.write_text(
             json.dumps(
                 {
                     "id": "TSK-013-02",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import warnings
 from pathlib import Path
 
 import typer
@@ -15,9 +16,7 @@ from deviate.core.worktree import detect_remote
 from deviate.state.ledger import (
     FlowCoverage,
     IssueRecord,
-    LedgerFilter,
     _read_ledger_strict,
-    filter_tasks,
     load_flow_coverage,
     select_release_candidate_flows,
 )
@@ -186,26 +185,121 @@ def issues_list_command(
             )
         console.print(table)
 
+def _tasks_dir_from_source(source_file: str) -> Path | None:
+    """Map a ``source_file`` path to its per-issue tasks ledger directory.
+
+    ``source_file`` follows ``specs/<bucket>/issues/<slug>.md`` (where
+    ``<bucket>`` is e.g. ``001-…``, ``002-…``, or ``adhoc``). Tasks live under
+    ``specs/<bucket>/<slug>/tasks.jsonl`` — the ``issues/`` segment is dropped
+    because the tasks ledger is sibling to the bucket root, not nested under
+    ``issues/``.
+
+    Returns ``None`` if the path doesn't match the expected shape so callers
+    can skip malformed entries instead of crashing on unrelated source files.
+    """
+    parts = Path(source_file).parts
+    # Expect ['specs', '<bucket>', 'issues', '<slug>.md'].
+    if len(parts) != 4 or parts[0] != "specs" or parts[2] != "issues":
+        return None
+    bucket, slug_md = parts[1], parts[3]
+    if not slug_md.endswith(".md"):
+        return None
+    return Path("specs") / bucket / slug_md[:-3]
+
+
+def _latest_completed_wins(records: list[dict]) -> dict:
+    """Reduce a task's sequential ledger entries to one record.
+
+    Mirrors ``_deduplicate_issues``: ``COMPLETED`` is terminal — once captured,
+    no later non-``COMPLETED`` transition may override it. Among non-terminal
+    entries, the last by file position wins. ``None``-valued status is ignored
+    so that legacy entries with missing fields don't poison the precedence
+    chain.
+    """
+    last: dict | None = None
+    for rec in records:
+        status = rec.get("status")
+        if last is not None and last.get("status") == "COMPLETED":
+            if status != "COMPLETED":
+                continue
+        last = rec
+    return last if last is not None else {}
+
 
 def _tasks_list(
     status_filter: str | None = None,
 ) -> list[dict]:
-    tasks_ledger = Path.cwd() / "tasks.jsonl"
-    filter_obj = LedgerFilter(
-        entity_type="task",
-        status_filter=status_filter or None,
-    )
-    records = filter_tasks(tasks_ledger, filter_obj)
-    return [
+    repo = Path.cwd()
+    issues_ledger = repo / "specs" / "issues.jsonl"
+    issue_records = _read_ledger_strict(issues_ledger) if issues_ledger.exists() else []
+    issues = _deduplicate_issues(issue_records)
+
+    by_task: dict[str, dict] = {}
+    for issue in issues:
+        source_file = issue.get("source_file") or ""
+        tasks_dir = _tasks_dir_from_source(source_file)
+        if tasks_dir is None:
+            continue
+        tasks_ledger = repo / tasks_dir / "tasks.jsonl"
+        if not tasks_ledger.exists():
+            continue
+        try:
+            raw_records = _read_ledger_strict(tasks_ledger)
+        except ValueError:
+            # Malformed per-issue ledger: surface to the caller via stderr but
+            # don't abort the whole aggregation. Existing strict semantics
+            # for ``specs/issues.jsonl`` are preserved by re-raising there.
+            warnings.warn(
+                f"Skipping malformed tasks ledger: {tasks_ledger}", stacklevel=2
+            )
+            continue
+        # Group this issue's records by task id (sequential-ledger parsed in
+        # file order), then reduce to one record per task.
+        per_task: dict[str, list[dict]] = {}
+        order: list[str] = []
+        for rec in raw_records:
+            tid = rec.get("id")
+            if not tid:
+                continue
+            if tid not in per_task:
+                order.append(tid)
+                per_task[tid] = []
+            per_task[tid].append(rec)
+        for tid in order:
+            current = by_task.get(tid)
+            latest = _latest_completed_wins(per_task[tid])
+            # If we already aggregate a record for this task across another
+            # issue (rare — task ids are normally issue-scoped — but the
+            # append-only protocol does not forbid cross-issue collisions),
+            # merge via the same COMPLETED-sticky rule.
+            if current is None:
+                by_task[tid] = latest
+                continue
+            merged_status = current.get("status")
+            if merged_status == "COMPLETED":
+                # Sticky: keep current.
+                continue
+            if latest.get("status") == "COMPLETED":
+                by_task[tid] = latest
+                continue
+            # Both non-terminal: last by file position wins. The newer ledger
+            # (this issue) was appended after the prior issue, so it wins.
+            by_task[tid] = latest
+
+    rows = [
         {
-            "id": t.id,
-            "issue_id": t.issue_id,
-            "description": t.description,
-            "status": t.status,
-            "execution_mode": t.execution_mode,
+            "id": t["id"],
+            "issue_id": t.get("issue_id", ""),
+            "description": t.get("description", ""),
+            "status": t.get("status", ""),
+            "execution_mode": t.get("execution_mode", ""),
         }
-        for t in records
+        for t in by_task.values()
     ]
+    if status_filter:
+        rows = [r for r in rows if r.get("status") == status_filter]
+    rows.sort(key=lambda r: r.get("id") or "")
+    return rows
 
 
 @tasks_app.command("list")
