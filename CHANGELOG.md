@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`deviate --help` panel grouping corrected.** The `micro` group moved from the "Agent/internal (via /deviate-* slash commands)" panel to the "Run by you (start here)" panel, and `html` moved the other way. `deviate micro run [task-id] --all` is the user-facing task-queue drain (the `/deviate-micro` skill orchestrates it, but the CLI surface itself is what a human runs after meso lands tasks); `deviate html` is dispatched by the `/deviate-html` slash command and never run by hand. The swap removes a misleading onboarding hint from `--help`. Pinned by `tests/test_cli/test_help.py::test_help_user_panel_has_exactly_four_commands` (now expects `{setup, run, meso, micro}`) and `::test_help_agent_panel_lists_macro_micro_groups` (now asserts `html` in the agent panel, `micro` in the user panel). Source: `src/deviate/cli/__init__.py` (`micro_app` / `html_app` `add_typer` calls).
+
 ## [2.15.0] - 2026-07-29
 
 ### Added

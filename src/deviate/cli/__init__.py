@@ -1049,14 +1049,14 @@ cli.add_typer(
 cli.add_typer(
     micro_app,
     name="micro",
-    rich_help_panel=_AGENT_PANEL,
-    help="Micro: drain the task queue (single or --all) inside a worktree",
+    rich_help_panel=_USER_PANEL,
+    help="Drain the task queue (single or --all) inside a worktree — `deviate micro run --all` is the user-facing micro drain",
 )
 cli.add_typer(
     html_app,
     name="html",
-    rich_help_panel=_USER_PANEL,
-    help="Write per-phase HTML starter scaffolds (plan, prd, flows, architecture, domain-model). The agent authors the body from the corresponding .md file.",
+    rich_help_panel=_AGENT_PANEL,
+    help="Write per-phase HTML starter scaffolds (plan, prd, flows, architecture, domain-model). Agent-internal — invoked from the /deviate-html slash command, not by hand.",
 )
 
 

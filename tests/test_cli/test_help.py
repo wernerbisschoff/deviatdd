@@ -126,11 +126,9 @@ def test_help_agent_panel_lists_macro_micro_groups():
     # Macro-phase groups
     for cmd in ("explore", "research", "prd", "shard", "macro", "adhoc"):
         assert cmd in block, f"Expected macro group {cmd!r} in {AGENT_PANEL!r} panel"
-    # Micro-phase groups (per-phase dispatchers + umbrella `micro` group).
-    # `micro` is the umbrella for `deviate micro run [task-id] --all`; it
-    # used to live as a top-level `run` and was moved to `micro run` when
-    # the top-level `deviate run` was promoted to the full-pipeline
-    # orchestrator.
+    # Micro-phase groups (per-phase dispatchers; the umbrella `micro` group
+    # is now a USER_PANEL entry point since `deviate micro run --all` is
+    # the human-facing drain — see test_help_user_panel_has_exactly_four_commands).
     for cmd in (
         "red",
         "green",
@@ -139,11 +137,12 @@ def test_help_agent_panel_lists_macro_micro_groups():
         "execute",
         "e2e",
         "hotfix",
-        "micro",
     ):
         assert cmd in block, f"Expected micro group {cmd!r} in {AGENT_PANEL!r} panel"
-    # Operational (still agent-internal)
-    for cmd in ("constitution", "init", "review"):
+    # Operational (still agent-internal) — `html` joins this bucket: the
+    # `deviate html` command is invoked from the /deviate-html slash
+    # command, not run by hand.
+    for cmd in ("constitution", "init", "review", "html"):
         assert cmd in block, (
             f"Expected operational command {cmd!r} in {AGENT_PANEL!r} panel"
         )
@@ -236,19 +235,21 @@ def _extract_panel_command_names(panel_block: str) -> list[str]:
 
 def test_help_user_panel_has_exactly_four_commands():
     """The 'Run by you' panel must contain exactly ``setup``, ``run``,
-    ``meso``, ``html`` as command rows. If a phase dispatcher or agent-internal
+    ``meso``, ``micro`` as command rows. If a phase dispatcher or agent-internal
     command ever leaks into this panel, a first-timer will think it is
     for them — this assertion catches that regression.
 
-    ``html`` is the agent-authored HTML starter scaffold command; the
-    auto-render ``render`` subcommand it replaced was removed when the
-    markdown→HTML auto-render path was cut in favour of agent-authored HTML.
+    ``micro`` is the user-facing drain for the task queue
+    (``deviate micro run [task-id] --all``); it pairs with the meso pipeline
+    as the human entry point on the micro side. The HTML scaffold command
+    (``deviate html``) was demoted to the agent panel when the swap landed,
+    since the slash-command surface (``/deviate-html``) is what dispatches it.
     """
     output = _help_output()
     user_block = _panel_block(output, USER_PANEL)
     user_command_names = set(_extract_panel_command_names(user_block))
-    assert user_command_names == {"setup", "run", "meso", "html"}, (
-        f"User panel must contain exactly {{setup, run, meso, html}} as "
+    assert user_command_names == {"setup", "run", "meso", "micro"}, (
+        f"User panel must contain exactly {{setup, run, meso, micro}} as "
         f"command rows; got {sorted(user_command_names)}"
     )
 
