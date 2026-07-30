@@ -24,7 +24,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 3. **Incremental Bootstrapping Principle**: Order shards by progressive application behavior. Shard N delivers a complete end-to-end behavior that Shard N+1 extends. Its value is measured by the requested product behavior it unlocks, not by infrastructure or workflow setup.
 4. **Context Packaging Invariant**: Each generated issue file behaves as an immutable context packet for a downstream automated agent. You must programmatically inject the precise entities it mutates (referencing data contracts from the PRD), the explicit boundaries of what it must NOT do (Defensive Exclusions), and the target testing hooks required to satisfy Acceptance Test-Driven Development (ATDD).
 5. **Acceptance Outline Anti-Pattern Gate**: Shard issues carry implementation-independent `AO-NNN` outcomes, not final test scenarios. `## Acceptance Outline` MUST NOT contain bold `**Given**`, `**When**`, or `**Then**` clauses. Example forbidden output: `**Given** a repository / **When** the command runs / **Then** it succeeds`. If any clause leaks into an issue, halt with `GHERKIN_LEAK_DETECTED`. `/deviate-plan` alone expands outlines into current-code-informed Gherkin.
-6. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract (e.g., `ISS-003`, `ISS-004`, ...). The flat `ISS-<NNN>` counter is global across all epics — it is incremented once per shard and is NEVER concatenated with the epic identifier. Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g., `blocked_by: ["ISS-003"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort execution.
+6. **Issue ID Assignment & Dependency Topology**: Assign each shard a sequential `issue_id` starting from `next_issue_id` in the contract. New issues in a numbered epic bucket (e.g. `002-embedder-vector-search`) emit per-epic ids of the form `<epic-prefix>-<ordinal>` (e.g. `002-001`, `002-002`, ...), where `<epic-prefix>` is the leading 3-digit segment of the epic bucket dir; the adhoc bucket and bootstrap contexts fall back to the legacy global-counter `ISS-NNN`. Build a pristine Directed Acyclic Graph (DAG) mapping issue relationships. Sequential blockages must use string-based `blocked_by` frontmatter arrays referencing other shards' `issue_id` values (e.g. `blocked_by: ["002-001"]`). Lateral knowledge overlaps must leverage the `coordinates_with` array. Execute an internal validation pass to catch loop states; if any circular dependency chain is detected, trigger a `TOPOLOGY_LOOP_FAULT` and abort exec…
 7. **Execution Lifecycle Protocols (Internal ICoT)**: Before emitting file payloads, execute eight sequential mental loops inside an internal engineering ledger block (`## Internal ICoT Ledger`):
    - Pass 1 (Topological Layout + Flow Anchor): Read the existing `specs/_product/flows/` catalog as read-only context. Partition FRs by the user-visible flows they already serve, then group them into end-to-end application behavior bundles. Every candidate slice carries one or more FRs. Verify cumulative coverage: every FR-{NNN}-{ID} token from the PRD appears in at least one slice. Map each cluster to application workstations in the consumer repository.
    - Pass 1.5 (Slice Cap Gate): Hard ceiling: 10 slices per epic. Target range: 4–8. If draft count exceeds 10, halt with `SLICE_CAP_EXCEEDED`. Re-cluster by merging adjacent flow-anchored slices that share workstations or demo paths; do not proceed until count ≤ 10. This pass is non-negotiable — over-counted PRDs fail at the consumer, not at the source.
@@ -83,7 +83,7 @@ Run the pre-script to discover the feature workspace, resolve the PRD path, and 
 deviate shard pre
 ```
 
-The contract on stdout contains: `status`, `phase`, `repo_root`, `git_branch`, `epic_slug`, `epic_id`, `feature_dir`, `prd_path`, `constitution_path`, `issues_dir` (where to write shard files), `issues_ledger`, `next_issue_id` (the next available ISS-NNN), `plan_target` (where to write the execution manifest), `dry_run`, `timestamp`.
+The contract on stdout contains: `status`, `phase`, `repo_root`, `git_branch`, `epic_slug`, `epic_id`, `feature_dir`, `prd_path`, `constitution_path`, `issues_dir` (where to write shard files), `issues_ledger`, `next_issue_id` (the next available id — `<epic-prefix>-<ordinal>` for numbered epics, e.g. `002-001`; legacy `ISS-NNN` for the adhoc bucket and bootstrap contexts), `plan_target` (where to write the execution manifest), `dry_run`, `timestamp`.
 
 After parsing the contract:
 - If `status` is `NO_EPIC` — surface that no epic slug could be resolved and stop.
@@ -157,12 +157,12 @@ Write the execution manifest JSON to `plan_target` (absolute path from the contr
 - `issues` — non-empty array of IssueRecord-shaped objects. Each entry:
   ```json
   {
-    "issue_id": "ISS-<NNN>",
+    "issue_id": "<epic-prefix>-<ordinal> (e.g. 002-001) for numbered epics; ISS-NNN for legacy/adhoc",
     "type": "feature",
     "title": "<short title>",
     "source_file": "<issues_dir>/<NNN>-<slug>.md",
-    "blocked_by": ["ISS-<NNN>", ...],
-    "coordinates_with": ["ISS-<NNN>", ...],
+    "blocked_by": ["<ISS_ID>", ...],
+    "coordinates_with": ["<ISS_ID>", ...],
     "flow_refs": ["FLOW-XX", ...]
   }
   ```
@@ -177,12 +177,12 @@ Write the execution manifest JSON to `plan_target` (absolute path from the contr
   "task_id": "shard",
   "issues": [
     {
-      "issue_id": "ISS-003",
+      "issue_id": "002-001",
       "type": "feature",
       "title": "Vertical slice 1",
       "source_file": "specs/003-foo/issues/001-slice.md",
       "blocked_by": [],
-      "coordinates_with": ["ISS-004"],
+      "coordinates_with": ["002-002"],
       "flow_refs": ["FLOW-01"]
     }
   ],

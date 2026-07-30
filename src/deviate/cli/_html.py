@@ -15,7 +15,7 @@ Usage examples::
     deviate html architecture
     deviate html prd
     deviate html plan                # autodetect issue from current git branch
-    deviate html plan --issue ISS-001-03
+    deviate html plan --issue 002-001
     deviate html flows --force       # overwrite existing HTML
     deviate html all
 """
@@ -63,11 +63,11 @@ def _source_stem(source_file: str) -> str:
 def _resolve_plan_md(issue_id: str | None) -> Path:
     """Resolve the ``plan.md`` path for ``issue_id``.
 
-    Resolution order:
-    1. ``--issue ISS-NNN-NN`` (explicit)
-    2. Active git branch via ``resolve_issue_id_from_branch``
-    3. ``.deviate/session.json`` ``active_issue_id``
-    4. Hard fail with ``HTML_NO_ISSUE``
+     Resolution order:
+    1. ``--issue <ISS_ID>`` (e.g. ``002-001`` for new work, ``ISS-NNN`` for grandfathered ids)
+     2. Active git branch via ``resolve_issue_id_from_branch``
+     3. ``.deviate/session.json`` ``active_issue_id``
+     4. Hard fail with ``HTML_NO_ISSUE``
     """
     root = Path.cwd()
     resolved_id = issue_id
@@ -85,7 +85,7 @@ def _resolve_plan_md(issue_id: str | None) -> Path:
 
     if resolved_id is None:
         console.print(
-            "[red]HTML_NO_ISSUE[/] pass --issue ISS-NNN-NN or run from a "
+            "[red]HTML_NO_ISSUE[/] pass --issue <ISS_ID> (e.g. 002-001) or run from a "
             "feat/<bucket>/<slug> branch with an active session"
         )
         raise typer.Exit(code=1)
@@ -174,7 +174,7 @@ def html_plan(
         typer.Option(
             "--issue",
             "-i",
-            help="Issue ID (e.g. ISS-001-03). Autodetects from the active git branch.",
+            help="Issue ID (e.g. 002-001 for new work, ISS-019 for grandfathered ids). Autodetects from the active git branch.",
         ),
     ] = None,
     force: Annotated[bool, typer.Option(help="Overwrite existing HTML")] = False,
