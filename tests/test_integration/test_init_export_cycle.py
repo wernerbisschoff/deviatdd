@@ -99,7 +99,10 @@ class TestFullInitCycle:
             assert session_path.exists()
             assert claude_path.exists()
             assert agents_path.exists()
-            assert const_path.exists()
+            # ``specs/constitution.md`` is NOT created by setup — macro-layer
+            # ``research pre`` bootstraps it on demand (see test_macro_contracts
+            # greenfield tests). A new project stays greenfield until /research.
+            assert not const_path.exists()
 
             config_text = config_path.read_text()
             assert 'profile = "default"' in config_text
@@ -117,10 +120,6 @@ class TestFullInitCycle:
             agents_text = agents_path.read_text()
             assert "## 🛠 DeviaTDD Phase Architecture" not in agents_text
             assert "## 📚 Offline Documentation (libref)" in agents_text
-
-            const_text = const_path.read_text()
-            assert "# Project Constitution" in const_text
-            assert "## 3. TESTING_PROTOCOLS" in const_text
 
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
         with chdir(tmp_path):

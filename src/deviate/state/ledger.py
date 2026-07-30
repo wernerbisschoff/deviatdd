@@ -510,6 +510,61 @@ def append_flow_event(event: FlowEvent, ledger_path: Path) -> bool:
     )
 
 
+class FlowIndexEmptyError(Exception):
+    """Raised when ``flows/index.md`` exists but contains zero parseable rows.
+
+    The flow index is the canonical source of flow identity. A
+    present-but-empty catalog is an authoring defect, not a normal
+    first-run state — callers must surface it so ``/deviate-flows`` cannot
+    silently commit a half-baked ledger.
+    """
+
+
+def seed_flow_ledger(
+    flows_index: Path,
+    ledger_path: Path,
+    *,
+    timestamp: datetime | None = None,
+) -> int:
+    """Seed the flows ledger from the canonical ``flows/index.md``.
+
+    Appends one ``FlowRecord`` identity row plus ``FLOW_DISCOVERED`` and
+    ``FLOW_DOCUMENTED`` events per parsed flow. Idempotent on the
+    underlying append helpers — re-running on a populated ledger produces
+    zero net appends. Returns the count of new identity rows written.
+
+    Raises ``FlowIndexEmptyError`` when ``flows_index`` exists but
+    contains zero parseable rows.
+    """
+    records = _parse_flows_index(flows_index)
+    if flows_index.exists() and not records:
+        raise FlowIndexEmptyError(
+            f"{flows_index} exists but contains zero parseable rows"
+        )
+    now = timestamp if timestamp is not None else datetime.now(timezone.utc)
+    appended = 0
+    for record in records:
+        if append_flow_record(record, ledger_path):
+            appended += 1
+        append_flow_event(
+            FlowEvent(
+                flow_id=record.flow_id,
+                event_type="FLOW_DISCOVERED",
+                timestamp=now,
+            ),
+            ledger_path,
+        )
+        append_flow_event(
+            FlowEvent(
+                flow_id=record.flow_id,
+                event_type="FLOW_DOCUMENTED",
+                timestamp=now,
+            ),
+            ledger_path,
+        )
+    return appended
+
+
 def _parse_flows_index(flows_index: Path) -> list[FlowRecord]:
     """Parse the canonical ``flows/index.md`` table into identity rows.
 

@@ -91,6 +91,15 @@ Breaks a business goal down into standard development project containers.
 * **PRD:** Translates `design.md` into immutable FR/AC tokens plus implementation-independent `AO-NNN` acceptance outlines. Given/When/Then is forbidden here; Plan owns final Gherkin.
 * **Shard:** Breaks down the PRD into standalone technical issue files (GitHub Issues). Each issue must be a **vertical slice** — a complete, testable behavior end-to-end (not a horizontal layer like "add database"). Target 4-8 issues per feature shard. Enforce bounds: minimum 1 issue, maximum 10 issues. A single-issue shard is valid (the option to have used `/deviate-adhoc` has passed by the time shard runs). Each issue must be independently implementable and testable, with clear acceptance criteria. **Slicing rules live entirely in the `deviate-shard` prompt** (Pass 1 flow-anchored clustering, Pass 1.5 hard cap with `SLICE_CAP_EXCEEDED`, Pass 3.5 horizontal-slice merging); the PRD prompt only shapes FRs via flow-segment authoring guidance, never pre-decides groupings.
 * **Adhoc (Fast-Path):** A condensed single-command shortcut (`/deviate-adhoc`) that compresses Explore + Research + PRD + Shard into one operation for low-to-medium complexity tasks. Performs proportional exploration (lightweight file scanning, dependency mapping), synthesizes a condensed PRD entry, and emits a single vertical-slice issue directly into `specs/adhoc/`. Appends to the aggregated `specs/adhoc/prd.md` and registers the issue in the global `specs/issues.jsonl` append-only ledger with an `ADH-{NNN}` identifier. A **Complexity Gate** evaluates the task description before proceeding: high-complexity tasks (multi-module coordination, state management, new architecture) are rejected with a directive to run `/deviate-explore` to initiate a full epic workflow instead. This gate prevents scope-creep and ensures adhoc remains a true fast-path, not a bypass for complex engineering.
+* **Greenfield bootstrap:** `deviate explore pre` and `deviate research pre` are the two
+  points at which a fresh project's `specs/constitution.md` is created. On a project with
+  no existing constitution, `explore pre` skips `_validate_constitution` and emits
+  `is_greenfield=true` in its JSON contract; `research pre` then bootstraps the
+  placeholder scaffold from `src/deviate/prompts/constitution_seed.md` before
+  validation, so a brand-new repo is greenfield exactly once (through explore) and
+  becomes governed at the first research invocation. `deviate setup` deliberately does
+  NOT scaffold the constitution — keeping setup constitution-agnostic preserves the
+  greenfield signal for the orchestrator and downstream phases.
 
 * **Active Domain Discipline (HITL gates):** `/deviate-research` Gate 1 and `/deviate-prd` Ambiguity Interrogation actively challenge terms and edge cases. Plan + Tasks produce the current acceptance contract and decomposition; the system auto-advances from Tasks into Micro with no human-approval step.
 
@@ -165,11 +174,13 @@ to build codebase comprehension and surface hidden trade-offs.
   `[green]CONFIRMED[/] FLOW-XX` per ref,
   `[yellow]LEDGER_IDEMPOTENT[/]` on re-runs,
   `[yellow]NO_FLOW_REFS[/]` when the issue carries no `flow_refs` (no flows file is created),
-  `[yellow]ORPHANED_FLOW_REF_SKIPPED[/] <ref>` for malformed tokens.  Orphan classification
   for refs that lack a `FlowRecord` in the flows ledger is a coverage concern
   (`ORPHANED_FLOW` drift), not a merge-time skip — see `load_flow_coverage` in
   `src/deviate/state/ledger.py`.
   `main` per issue, containing both the feature code and the COMPLETED ledger entry; the
+
+**Flow identity / documentation events (`FLOW_DISCOVERED`, `FLOW_DOCUMENTED`) are owned by `deviate flows sync`, not `deviate explore post`.** A new top-level `flows` Typer group (`src/deviate/cli/flow_commands.py::flows_sync`) parses `specs/_product/flows/index.md` and emits one ``FlowRecord`` identity row plus the paired events per flow. The public service `seed_flow_ledger(flows_index, ledger_path)` lives in `src/deviate/state/ledger.py` alongside the existing ``append_flow_record`` / ``append_flow_event`` helpers, with idempotency on `flow_id` (identity) and the compound event key `(flow_id, event_type, event_issue_id, event_release_version, evidence_path)` (events). `deviate explore post` no longer creates the ledger from the flow index — its `_run_flow_ledger_cycle` only reverse-indexes `specs/issues.jsonl::flow_refs` (``FLOW_REFERENCED_BY_ISSUE`` events) and renders the coverage report. The boundary is enforced by `FlowIndexEmptyError`: when the index exists but parses to zero rows, `seed_flow_ledger` raises and `flows sync` exits non-zero with `[red]FLOWS_INDEX_EMPTY` on stderr — surfaces authoring defects instead of silently committing a half-baked catalog. The `deviate --help` user panel groups `flows` alongside `setup`, `run`, `meso`, `micro` so operators can also run `deviate flows sync` directly to re-seed if the ledger drifts from the catalog.
+
   archive tag is the only path back to the pre-squash per-commit history.
   redundant context injection into CLAUDE.md/AGENTS.md unnecessary. Mutating CLAUDE.md
   mid-cycle would invalidate LLM KV caches, defeating the cache optimization strategy.

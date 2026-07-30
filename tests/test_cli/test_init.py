@@ -601,30 +601,31 @@ class TestInitGraphiteFlag:
             content = fpath.read_text()
             assert "## Graphite Stacked Changes Workflow" not in content
 
-    def test_init_scaffolds_constitution_placeholder(self, tmp_path: Path):
-        """Init writes a placeholder specs/constitution.md when none exists."""
+    def test_setup_does_not_scaffold_constitution(self, tmp_path: Path):
+        """`deviate setup` no longer scaffolds ``specs/constitution.md`` — the macro-layer
+        ``research pre`` owns that bootstrap. Constitution absence here is intentional,
+        so a brand-new project reports ``is_greenfield=true`` until ``/research`` runs.
+        """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
 
             const_path = tmp_path / "specs" / "constitution.md"
-            assert const_path.exists()
-            content = const_path.read_text()
-            assert "# Project Constitution" in content
-            assert "TBD" in content
-            assert "## 3. TESTING_PROTOCOLS" in content
+            assert not const_path.exists()
 
-    def test_init_scaffold_constitution_idempotent(self, tmp_path: Path):
-        """Re-running init preserves existing specs/constitution.md."""
+    def test_setup_does_not_overwrite_existing_constitution(self, tmp_path: Path):
+        """`deviate setup` is constitution-agnostic — it never touches
+        ``specs/constitution.md`` whether the file is present or not.
+        Re-running setup preserves the operator's authored content.
+        """
         with chdir(tmp_path):
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result.exit_code == 0, result.output
-
+            (tmp_path / "specs").mkdir()
             const_path = tmp_path / "specs" / "constitution.md"
+            const_path.write_text("# Operator-authored\n\nExisting content.\n")
             original = const_path.read_text()
 
-            result2 = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result2.exit_code == 0, result2.output
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
             assert const_path.read_text() == original
 
     def test_init_graphite_governance_section_present(self, tmp_path: Path):
