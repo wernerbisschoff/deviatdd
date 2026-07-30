@@ -360,7 +360,10 @@ class TestTasksList:
 
     def test_tasks_list_json(self, tmp_path: Path) -> None:
         tasks = self._seed_issue(
-            tmp_path, "ISS-002", "002-embedder-vector-search", "002-project-config-extensions"
+            tmp_path,
+            "ISS-002",
+            "002-embedder-vector-search",
+            "002-project-config-extensions",
         )
         for r in [
             {
@@ -406,9 +409,7 @@ class TestTasksList:
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "[]"
 
-    def test_tasks_list_aggregates_across_multiple_issues(
-        self, tmp_path: Path
-    ) -> None:
+    def test_tasks_list_aggregates_across_multiple_issues(self, tmp_path: Path) -> None:
         """AC-006-Tasks-Aggregate: Tasks from multiple issues are aggregated.
 
         Reproduces the bug reported on the
@@ -426,11 +427,12 @@ class TestTasksList:
             tmp_path, "ISS-019", "002-embedder-vector-search", "001-embedder-registry"
         )
         tasks_020 = self._seed_issue(
-            tmp_path, "ISS-020", "002-embedder-vector-search", "002-project-config-extensions"
+            tmp_path,
+            "ISS-020",
+            "002-embedder-vector-search",
+            "002-project-config-extensions",
         )
-        tasks_adhoc = self._seed_issue(
-            tmp_path, "ISS-021", "adhoc", "007-graphite-cli"
-        )
+        tasks_adhoc = self._seed_issue(tmp_path, "ISS-021", "adhoc", "007-graphite-cli")
         # TSK-019-01 mid-RG-R: RED then GREEN. Latest non-terminal wins → GREEN.
         self._seed_task(
             tasks_019,
@@ -497,9 +499,7 @@ class TestTasksList:
         # non-COMPLETED entry was appended.
         assert by_id["TSK-021-01"]["status"] == "COMPLETED"
 
-    def test_tasks_list_ignores_legacy_top_level_ledger(
-        self, tmp_path: Path
-    ) -> None:
+    def test_tasks_list_ignores_legacy_top_level_ledger(self, tmp_path: Path) -> None:
         """Pinning: a stray top-level ``specs/tasks.jsonl`` is ignored.
 
         The legacy buggy code path read ``specs/tasks.jsonl``. That file does
@@ -526,6 +526,7 @@ class TestTasksList:
 
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "[]"
+
 
 class TestInspectFlowsCoverage:
     @staticmethod
