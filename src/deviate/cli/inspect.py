@@ -185,6 +185,7 @@ def issues_list_command(
             )
         console.print(table)
 
+
 def _tasks_dir_from_source(source_file: str) -> Path | None:
     """Map a ``source_file`` path to its per-issue tasks ledger directory.
 
