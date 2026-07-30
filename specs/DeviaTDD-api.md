@@ -307,9 +307,7 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate research post`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Scans for constitutional violations, validates both `design.md` and
-  `data-model.md` with `validate_artifact()`, runs pre-commit hooks, commits both artifacts,
-  and saves session.
+* **Description:** Discovers the active epic slug, validates that `explore.md`, `design.md`, and `data-model.md` all exist inside the numbered epic directory (the explore.md artifact must have been moved here by `deviate research pre` — `specs/explore/<slug>.md` is no longer the canonical location), runs `git ls-files --error-unmatch` on the source path persisted by `research_pre` on `SessionState.research_explore_source`, then commits **all four state changes** in a single atomic commit: `git add`s the moved `explore.md`, `design.md`, and `data-model.md`; `git rm`s the original `specs/explore/<slug>.md` (git's rename detection usually surfaces this as an `R100` rename line in `git show`); also includes `constitution.md` if it was created or modified during greenfield bootstrap. The commit message is `docs({epic}): add research artifacts (explore.md, design.md, data-model.md)`. When `research_pre` never ran (manual escape hatch), the source-path field is empty and only `design.md` + `data-model.md` are committed — same behavior as before the move-atomicity fix.
 
 #### `deviate prd pre [--dry-run]`
 

@@ -211,7 +211,7 @@ deviate research post
 ```
 **IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
-The post-script reads both output files (design.md, data-model.md), validates required sections, and creates a **single commit** containing all research artifacts (including constitution.md for greenfield projects). The commit message is `docs({epic_id}): add research artifacts (design.md, data-model.md)`.
+The post-script reads both output files (design.md, data-model.md), validates required sections, and creates a **single commit** containing all research artifacts. It also commits the `specs/explore/<slug>.md` → `specs/<epic>/explore.md` move performed by `deviate research pre` in the same atomic commit: the moved `explore.md` is `git add`-ed and the source path (persisted by `research_pre` on `SessionState.research_explore_source`) is `git rm`-ed, so the working tree carries no tracked-but-deleted or untracked residue from the move. Git's rename detection usually surfaces this as an `R100` rename line in `git show`. The commit message is `docs({epic_id}): add research artifacts (explore.md, design.md, data-model.md)` when the move was tracked, falling back to `docs({epic_id}): add research artifacts (design.md, data-model.md)` for the manual-escape-hatch path where `research_pre` never ran (no source path on the session). `constitution.md` is included in the commit when it was created or modified during greenfield bootstrap.
 
 **Reminder**: the post-script is mechanical and blind to constitutional violations. It will commit any files you point it at. The agent-level `violation_check` step above is the only gate against committing a violation.
 </step>

@@ -84,6 +84,77 @@ class TestStageAndCommit:
         ).stdout.strip()
         assert before_sha == after_sha, "no new commit should have been created"
 
+    def test_stage_and_commit_with_files_to_remove_records_rename(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """``stage_and_commit(files_to_remove=[old])`` records the
+        add+delete as a single commit. Git's rename detection usually
+        surfaces this as an ``R100`` line; the contract is that the
+        old path is gone from the index and the new path is present.
+        """
+        old = tmp_git_repo / "old.txt"
+        old.write_text("hello\n")
+        new = tmp_git_repo / "new.txt"
+        new.write_text("hello\n")
+
+        subprocess.run(
+            ["git", "add", "old.txt"], cwd=tmp_git_repo, env=_git_env(), check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "seed old.txt"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        sha = stage_and_commit(
+            message="chore: rename old.txt to new.txt",
+            files=[new],
+            files_to_remove=[old],
+            repo=tmp_git_repo,
+        )
+        assert sha is not None
+
+        show = subprocess.run(
+            ["git", "show", "--name-status", "--format=", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        # Git may render this as ``R100 old.txt new.txt`` OR
+        # ``A  new.txt`` + ``D  old.txt`` — both are correct.
+        assert "new.txt" in show
+        assert "old.txt" in show
+
+    def test_stage_and_commit_files_to_remove_skips_when_nothing_changes(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """If both ``files`` and ``files_to_remove`` resolve to no
+        index changes, ``stage_and_commit`` returns ``None`` and no
+        commit is created.
+        """
+        tracked = tmp_git_repo / "stable.txt"
+        tracked.write_text("stable\n")
+        subprocess.run(
+            ["git", "add", "stable.txt"], cwd=tmp_git_repo, env=_git_env(), check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "seed stable.txt"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        sha = stage_and_commit(
+            message="noop",
+            files=[tracked],
+            files_to_remove=[tracked],
+            repo=tmp_git_repo,
+        )
+        assert sha is None, f"expected None when nothing changes, got {sha!r}"
+
     def test_commit_artifact_returns_none_when_no_changes(self, tmp_git_repo: Path):
         artifact = tmp_git_repo / "artifact.md"
         artifact.write_text("# Artifact")

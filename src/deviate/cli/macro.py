@@ -416,6 +416,19 @@ def research_pre(
     console.print(
         f"[green]EXPLORE_MOVED[/] {source_explore_path} → {moved_explore_path}"
     )
+    # Persist the (relative) source path on the session so research_post
+    # can ``git rm`` it inside the same atomic commit that adds the
+    # moved explore.md into the epic dir. ``shutil.move`` only renames
+    # the file on disk — the index still tracks the old path, so the
+    # staged move needs an explicit ``git rm`` of the source. Storing
+    # the explicit path (rather than re-deriving it from ``epic_slug``)
+    # survives ``allocate_feature_bucket`` idempotency — a research_pre
+    # invocation with an already-numbered ``--slug`` like ``001-foo``
+    # would otherwise try to delete the wrong path.
+    explore_source_rel = source_explore_path.as_posix()
+    session.research_explore_source = explore_source_rel
+    session.save(session_path)
+    console.print(f"[green]EXPLORE_SOURCE_RECORDED[/] {explore_source_rel}")
 
     issues_ledger = str(specs_root / "issues.jsonl")
     explore_md_abs = str(moved_explore_path.resolve())
@@ -488,14 +501,61 @@ def research_post(
     if const_path and const_path.exists():
         artifacts.append(const_path)
 
+    # Atomic move of explore.md (research_pre renamed
+    # specs/explore/<slug>.md into the epic dir but never staged the new
+    # path or removed the old one). Persisted at research_pre time on
+    # ``session.research_explore_source`` — see the comment in
+    # ``research_pre`` for why we can't just strip the ``NNN-`` prefix
+    # off ``epic_slug`` (``allocate_feature_bucket`` is idempotent on
+    # already-numbered slugs).
+    files_to_remove: list[Path] = []
+    moved_explore = specs_root / epic_slug / "explore.md"
+    if session.research_explore_source:
+        source_rel = session.research_explore_source
+        # Only schedule a removal if the source is actually tracked.
+        # ``git rm`` on a never-tracked path would fail the commit;
+        # on a tracked-but-deleted path it stages the deletion cleanly.
+        ls_files = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--error-unmatch",
+                "--",
+                source_rel,
+            ],
+            cwd=Path.cwd(),
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+        )
+        if ls_files.returncode == 0:
+            files_to_remove.append(Path.cwd() / source_rel)
+    if moved_explore.exists() and moved_explore not in artifacts:
+        artifacts.append(moved_explore)
+
     _run_pre_commit_hooks()
 
     epic_num = _extract_epic_num(epic_slug)
-    message = format_commit_message(
-        f"docs({epic_num}): add research artifacts (design.md, data-model.md)",
-        Path.cwd(),
+    # Mention explore.md in the message only when it's actually being
+    # added (i.e. research_pre ran and persisted the source). For the
+    # manual-escape-hatch path the message stays as it was before.
+    if moved_explore.exists() and files_to_remove:
+        message = format_commit_message(
+            f"docs({epic_num}): add research artifacts "
+            f"(explore.md, design.md, data-model.md)",
+            Path.cwd(),
+        )
+    else:
+        message = format_commit_message(
+            f"docs({epic_num}): add research artifacts (design.md, data-model.md)",
+            Path.cwd(),
+        )
+    sha = stage_and_commit(
+        message=message,
+        files=artifacts,
+        repo=Path.cwd(),
+        files_to_remove=files_to_remove,
     )
-    sha = stage_and_commit(message=message, files=artifacts, repo=Path.cwd())
     if sha is None:
         console.print("[yellow]COMMIT_SKIP[/] research artifacts — no changes to stage")
     else:

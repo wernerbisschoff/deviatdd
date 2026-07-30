@@ -263,6 +263,15 @@ class SessionState(BaseModel):
     red_commit_sha: str = ""
     pending_judge_feedback: Optional[dict[str, str]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Path of the ``specs/explore/<slug>.md`` source file that
+    # ``deviate research pre`` moved into the numbered epic dir. Populated
+    # by ``research_pre`` so ``research_post`` can ``git rm`` it inside
+    # the same atomic commit that adds the moved ``explore.md`` into the
+    # epic dir. The default ``""`` keeps pre-fix ``.deviate/session.json``
+    # files compatible — ``research_post`` skips the deletion when this
+    # field is empty (the manual-escape-hatch path where research_pre
+    # never ran).
+    research_explore_source: str = ""
 
     @field_validator("current_phase")
     @classmethod
@@ -283,6 +292,7 @@ class SessionState(BaseModel):
             judge_rejected=self.judge_rejected,
             pending_judge_action=self.pending_judge_action,
             pending_judge_feedback=self.pending_judge_feedback,
+            research_explore_source=self.research_explore_source,
         )
 
     def force_transition_to(self, phase: str) -> SessionState:
@@ -296,6 +306,7 @@ class SessionState(BaseModel):
             judge_rejected=self.judge_rejected,
             pending_judge_action=self.pending_judge_action,
             pending_judge_feedback=self.pending_judge_feedback,
+            research_explore_source=self.research_explore_source,
         )
 
     def save(self, path: Path) -> None:
