@@ -609,7 +609,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   2. `chdir`s into that worktree, updates `.deviate/session.json` to record the handoff.
   3. Invokes `_run_all(root, console)` from `src/deviate/cli/micro.py` against the worktree, draining every PENDING task for the active issue.
 * **Input Parameters:**
-  * `--issue <ISS-NNN-NN>` (Target a specific BACKLOG issue; default: next unblocked)
+  * `--issue <ISS_ID>` (Target a specific BACKLOG issue; e.g. `002-001` for new work, `ISS-019` for grandfathered ids. Default: next unblocked.)
   * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
   * `--model <id>` (Override default model for RED/GREEN/REFACTOR/EXECUTE phases;
     resolution: phase-specific config &gt; CLI `--model` &gt; default config &gt; backend native;
@@ -1105,11 +1105,11 @@ src/deviate/
 
 **Issue-Scoped Task Ledger (`specs/{FEATURE_SLUG}/issues/{ISSUE_ID}/tasks.jsonl`):**
 ```json
-{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "PENDING", "execution_mode": "TDD"}
-{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "RED"}
-{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "GREEN"}
-{"id": "TSK-001-01", "issue_id": "ISS-001-001", "description": "create_jwt_validator_class", "status": "COMPLETED"}
-{"id": "TSK-001-02", "issue_id": "ISS-001-001", "description": "integration_token_flow", "status": "PENDING", "execution_mode": "E2E"}
+{"id": "TSK-001-01", "issue_id": "001-001", "description": "create_jwt_validator_class", "status": "PENDING", "execution_mode": "TDD"}
+{"id": "TSK-001-01", "issue_id": "001-001", "description": "create_jwt_validator_class", "status": "RED"}
+{"id": "TSK-001-01", "issue_id": "001-001", "description": "create_jwt_validator_class", "status": "GREEN"}
+{"id": "TSK-001-01", "issue_id": "001-001", "description": "create_jwt_validator_class", "status": "COMPLETED"}
+{"id": "TSK-001-02", "issue_id": "001-001", "description": "integration_token_flow", "status": "PENDING", "execution_mode": "E2E"}
 ```
 
 ---
@@ -1125,11 +1125,11 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-explore` | Context Scanner (Cheap) | `specs/{FEATURE_SLUG}/explore.md` | `deviate feature create`, `deviate explore pre/post` | 6 steps: feature create, constitution validate, bucket allocate, codebase scan, write explore.md, commit |
 | `/deviate-research` | Architect (Expensive) | `specs/{FEATURE_SLUG}/design.md`, `data-model.md` | `deviate research pre/post` | 5 steps: read explore.md, analyze options, produce design.md, produce data-model.md, commit |
 | `/deviate-prd` | Product Owner Proxy | `specs/{FEATURE_SLUG}/prd.md` | `deviate prd pre/post` | 4 steps: read design.md, synthesize requirements, write prd.md, commit |
-| `/deviate-shard` | Decomposition Engine | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}-*.md` | `deviate shard pre/post` | 5 steps: read prd.md, identify vertical slices, validate granularity, create issue stubs with `AO-NNN` acceptance outlines (no Gherkin), register in ledger. PRD/Shard/Adhoc halt with `GHERKIN_LEAK_DETECTED` on bold `**Given**`/`**When**`/`**Then**`; final Gherkin belongs to Plan. |
+| `/deviate-shard` | Decomposition Engine | `specs/{FEATURE_SLUG}/issues/{ORDINAL}-{slug}.md` (filenames use the per-epic ordinal; the ledger id is `{epic-prefix}-{ORDINAL}`, e.g. `002-001`) | `deviate shard pre/post` | 5 steps: read prd.md, identify vertical slices, validate granularity, create issue stubs with `AO-NNN` acceptance outlines (no Gherkin), register in ledger. PRD/Shard/Adhoc halt with `GHERKIN_LEAK_DETECTED` on bold `**Given**`/`**When**`/`**Then**`; final Gherkin belongs to Plan. New issues emit `{epic-prefix}-{ordinal}` ids; legacy `ISS-NNN` ids still resolve. |
 | `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation (acceptance outline; no Gherkin), ledger registration, commit, Gherkin-leak guard |
 | **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
-| `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
-| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/issues/{ISS-NNN}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes, encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
+| `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
+| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes, encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
 | `/deviate-walkthrough` | Architectural Walkthrough Guide | (none — conversation only) | `deviate walkthrough pre/post` | 5 steps: gather, sweep, curate, walk (conversational), synthesize |
 | `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC/FLOW/ADR tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-flows`, `/deviate-architecture`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
 
@@ -1148,7 +1148,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `issue_id` | `str` | Unique ID (`ISS-NNN`) |
+| `issue_id` | `str` | Unique ID — `<epic-prefix>-<ordinal>` for new work in numbered epics (e.g. `002-001`); legacy `ISS-NNN` grandfathered |
 | `type` | `str` | Issue type (`feature`, `adhoc`, etc.) |
 | `title` | `str` | Human-readable title |
 | `status` | Literal | `DRAFT`, `BACKLOG`, `SPECIFIED`, `SHARDED`, `COMPLETED` |

@@ -155,45 +155,51 @@ class TestInstallCommandGraphiteRouting:
 
 
 class TestShardCommandIssueIdFormat:
-    """deviate-shard command must use the flat ``ISS-<NNN>`` format.
+    """``deviate-shard`` command must use per-epic ``<epic-prefix>-<ordinal>`` ids.
 
-    The ``next_issue_id`` returned by ``deviate shard pre`` is the flat global
-    counter (``ISS-001``, ``ISS-002``, ...). The command must instruct the LLM
-    to consume ``next_issue_id`` directly and increment per shard — it must
-    NEVER concatenate the epic identifier, which would produce duplicate
-    ``ISS-<epic>-<NNN>`` IDs across epics.
+    New issues in numbered epic buckets (``001-…``, ``002-…``) emit per-epic
+    ids of the form ``<epic-prefix>-<ordinal>`` (e.g. ``002-001``), where
+    ``<epic-prefix>`` is the leading 3-digit segment of the epic bucket dir.
+    The adhoc bucket and bootstrap contexts fall back to the legacy global
+    counter ``ISS-NNN``. The command must instruct the LLM to consume
+    ``next_issue_id`` directly and increment per shard — it must NEVER
+    concatenate the epic identifier into a 3-segment ``ISS-<epic>-<NNN>``
+    shape, which would produce duplicate ids and break the resolve layer.
     """
 
     @staticmethod
     def _command_text() -> str:
         return resolve_command("deviate-shard").read_text(encoding="utf-8")
 
-    def test_instruction_uses_flat_format_not_epic_prefixed(self):
-        """Issue ID assignment rule must show flat ``ISS-<NNN>`` examples."""
+    def test_instruction_uses_per_epic_format(self):
+        """Issue ID assignment rule must show per-epic ``002-001`` examples."""
         text = self._command_text()
-        assert "ISS-001-004" not in text
-        assert "ISS-001-005" not in text
+        assert "002-001" in text
+        assert "002-002" in text
 
-    def test_blocked_by_and_coordinates_with_examples_use_flat_format(self):
-        """blocked_by / coordinates_with examples must reference flat IDs."""
+    def test_blocked_by_examples_use_per_epic_format(self):
+        """blocked_by example must reference per-epic ids, not flat ``ISS-NNN-NNN``."""
         text = self._command_text()
+        assert 'blocked_by: ["002-001"]' in text
         assert 'blocked_by: ["ISS-001-004"]' not in text
 
-    def test_manifest_schema_uses_flat_format(self):
-        """Manifest schema must declare ``ISS-<NNN>``, not ``ISS-<epic>-<NNN>``."""
+    def test_manifest_schema_uses_per_epic_format(self):
+        """Manifest schema must declare per-epic shape, not 3-segment legacy."""
         text = self._command_text()
+        assert "<epic-prefix>-<ordinal>" in text
         assert "ISS-<epic>-<NNN>" not in text
 
-    def test_manifest_example_uses_flat_format(self):
-        """Manifest example must show flat IDs (e.g. ``ISS-003``, not ``ISS-003-001``)."""
+    def test_manifest_example_uses_per_epic_format(self):
+        """Manifest example must show per-epic ids (``002-001``, not 3-segment legacy)."""
         text = self._command_text()
+        assert '"issue_id": "002-001"' in text
         assert "ISS-003-001" not in text
         assert "ISS-003-002" not in text
 
-    def test_instruction_references_flat_counter_format(self):
-        """The rule must explicitly show the flat counter pattern."""
+    def test_instruction_references_legacy_fallback(self):
+        """The rule must explicitly call out the legacy ``ISS-NNN`` fallback."""
         text = self._command_text()
-        assert "ISS-003" in text or "ISS-004" in text
+        assert "ISS-NNN" in text
 
 
 class TestDeviateFlowsCommitAtSignOff:

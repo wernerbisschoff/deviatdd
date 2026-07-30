@@ -27,6 +27,7 @@ from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.cli.feature import _derive_slug
 from deviate.core.epic import (
+    _extract_prefix_num,
     allocate_feature_bucket,
     discover_latest_epic,
     resolve_active_feature,
@@ -233,8 +234,73 @@ def _emit_contract(
     return contract
 
 
-def _compute_next_issue_id(ledger_path: Path) -> str:
+def _compute_next_issue_id(
+    ledger_path: Path,
+    *,
+    epic_slug: str | None = None,
+) -> str:
+    """Compute the next issue id to assign.
+
+    Two modes, decided by ``epic_slug``:
+
+    - **Numeric prefix present** (e.g. ``002-embedder-vector-search``):
+      emits a per-epic compound label ``<prefix>-<ordinal>`` where
+      ``<prefix>`` is the leading 3-digit segment of ``epic_slug`` and
+      ``<ordinal>`` is the next free ordinal among rows whose
+      ``source_file`` is under ``specs/<epic_slug>/issues/``.
+      **Interpretation #2:** both the new ``NNN-NNN`` format and legacy
+      ``ISS-NNN`` rows from the same epic count toward the ordinal, so
+      if epic 002 has shipped 19 issues under the legacy scheme, the
+      next new id is ``002-020``, not ``002-001``. Legacy ``ISS-NNN``
+      rows from *other* epics are ignored (their ``source_file``
+      doesn't match the bucket prefix). The function trusts the
+      ledger's ordinal claims — a stray out-of-range row (e.g.
+      ``002-100``) shifts the next id to ``002-101``.
+    - **No numeric prefix** (``adhoc``, empty string, unparseable):
+      falls back to the legacy global-counter ``ISS-NNN`` format. The
+      fallback uses **global max across all rows in the ledger**,
+      regardless of bucket, so adhoc and bootstrap callers always see
+      a fresh ``ISS-NNN``. Adhoc issue generation is unchanged from
+      the pre-per-epic behavior.
+    """
     records = _read_ledger(ledger_path)
+    prefix = _extract_prefix_num(epic_slug or "")
+    if prefix > 0 and epic_slug:
+        epic_prefix = f"{prefix:03d}"
+        ordinals: list[int] = []
+        bucket_prefix = f"specs/{epic_slug}/issues/"
+        for data in records:
+            src = data.get("source_file") or ""
+            if not src.startswith(bucket_prefix):
+                continue
+            iid = data.get("issue_id", "")
+            if not isinstance(iid, str):
+                continue
+            # Accept both forms when source_file is in the target
+            # bucket: the new NNN-NNN format AND the legacy
+            # ISS-NNN rows from the same epic. Under interpretation
+            # 2, legacy ISS-019 in epic 002 contributes ordinal 19 —
+            # the next new id is 002-020, not 002-001. Legacy
+            # rows from other epics never enter this loop because the
+            # source_file prefix filter excludes them.
+            parts = iid.split("-")
+            if len(parts) != 2:
+                continue
+            head, tail = parts
+            if head == epic_prefix:
+                try:
+                    ordinals.append(int(tail))
+                except ValueError:
+                    continue
+            elif head == "ISS":
+                try:
+                    ordinals.append(int(tail))
+                except ValueError:
+                    continue
+        next_ordinal = (max(ordinals) + 1) if ordinals else 1
+        return f"{epic_prefix}-{next_ordinal:03d}"
+    # Fallback: legacy ``ISS-NNN`` global counter (unchanged from the
+    # pre-per-epic behavior).
     numbers: list[int] = []
     for data in records:
         iid = data.get("issue_id", "")
@@ -759,7 +825,7 @@ def shard_pre(
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
 
-    next_issue_id = _compute_next_issue_id(ledger_path)
+    next_issue_id = _compute_next_issue_id(ledger_path, epic_slug=epic_slug)
 
     session, session_path = _load_session_for_phase("SHARD", dry_run=dry_run)
 
