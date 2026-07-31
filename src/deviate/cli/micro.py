@@ -621,7 +621,13 @@ def _summarize_timeout_context(
 
 
 def _git_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    """Git subprocess env: strip inherited ``GIT_*`` overrides and pin the
+    locale so CLI output parsing stays stable regardless of the operator's
+    system locale (e.g. the "nothing to commit" detection in
+    ``_commit_phase_with_recovery`` relies on git's untranslated message)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["LC_ALL"] = "C"
+    return env
 
 
 def _resolve_workspace_root() -> Path:
@@ -3663,7 +3669,9 @@ def _commit_phase_with_recovery(
     * Always print the recovery banner and raise — the dispatcher will
       mark the task FAILED with reason ``commit_failed`` and stop the run.
 
-    Returns ``True`` only when ``git commit`` exits zero.
+    Returns ``True`` when ``git commit`` exits zero, or when the
+    worktree was already clean (``nothing to commit``) — a legitimate
+    no-op EXECUTE outcome treated as success.
     """
     formatted = format_commit_message(message, root, phase=phase)
     cmd = ["git", "commit", "-m", formatted]
@@ -3679,6 +3687,28 @@ def _commit_phase_with_recovery(
         console.print(f"  [green]Committed[/] [dim]{formatted}[/]")
         return True
     combined_output = (result.stdout or "") + (result.stderr or "")
+
+    # A clean worktree is a legitimate EXECUTE outcome: the agent made
+    # no changes (e.g. the deliverable already exists in the repo), so
+    # ``git commit`` exits 1 with "nothing to commit". Git only emits
+    # that message AFTER the hook chain passes, so this cannot mask a
+    # hook-blocked commit. Treat it as a successful no-op (mirroring
+    # ``_commit_phase``'s clean-tree contract) instead of fabricating a
+    # recovery ref for an empty tree; the caller's no-diff branch
+    # (JUDGE_SKIP) then completes the task as designed.
+    if result.returncode == 1 and "nothing to commit" in combined_output:
+        _log_run(
+            "COMMIT_NOOP",
+            task_id=task_id,
+            attempt=attempt,
+            reason="clean_worktree",
+            output_trimmed=combined_output.strip()[:200],
+        )
+        console.print(
+            f"  [dim]Nothing to commit for {task_id} — EXECUTE produced "
+            "no changes (no-op)[/]"
+        )
+        return True
     plumbing_output = ""
     tree_sha = ""
     recovery_ref: str | None = None

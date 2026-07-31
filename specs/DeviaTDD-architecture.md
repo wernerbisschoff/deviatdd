@@ -399,7 +399,16 @@ NOTES:
   `no_verify=True` RED/GREEN/REFACTOR commits behaving exactly as
   before, the EXECUTE site was switched to
   `_commit_phase_with_recovery(message, root, *, task_id, attempt,
-  phase="EXECUTE")`. On `git commit` non-zero, the new helper
+  phase="EXECUTE")`. On `git commit` non-zero, the helper first
+  detects the benign clean-worktree case (`git commit` exit 1 with
+  "nothing to commit", a message git only emits AFTER the hook chain
+  passes, so it cannot mask a hook-blocked commit) and treats it as a
+  successful no-op: it returns `True` without creating a recovery ref
+  or raising, and the caller's no-diff branch (`JUDGE_SKIP`) completes
+  the task (the EXECUTE agent legitimately made zero changes, e.g.
+  the deliverable already exists). `_git_env()` pins `LC_ALL=C` so
+  the detection is locale-independent. On other non-zero exits, the
+  helper
   preserves the staged tree on a per-task recovery ref
   `refs/deviate/recovery/<sanitized-task-id>/attempt-<N>` (a SEPARATE
   namespace from the rollback preservation ref
