@@ -3431,6 +3431,54 @@ class TestSummarizeTimeoutContextFallback:
         )
 
 
+class TestRedPhaseFailureBoundaryIsolation:
+    @patch("deviate.cli.micro._invoke_agent", return_value=(None, "403 RegionError"))
+    def test_agent_error_does_not_reuse_previous_task_rollback_boundary(
+        self,
+        mock_invoke: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_red_phase
+
+        monkeypatch.chdir(tmp_git_repo)
+        previous_task_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = SessionState(current_phase="IDLE", red_commit_sha=previous_task_sha)
+        session.save(session_path)
+        task = {
+            "id": "TSK-001-02",
+            "issue_id": "ISS-001-001",
+            "description": "Next task",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_git_repo / "tasks.jsonl"
+
+        with pytest.raises(PhaseFailedError, match="agent returned no manifest"):
+            _run_red_phase(
+                task,
+                ledger_path,
+                session,
+                session_path,
+                Console(),
+            )
+
+        persisted = SessionState.load(session_path)
+        assert persisted.red_commit_sha == "", (
+            "a new RED attempt must clear another task's rollback boundary before "
+            "invoking the agent"
+        )
+
+
 class TestExecutePhaseJudgeRouting:
     """EXECUTE phase's inner JUDGE branch mirrors the four-action
     routing with ``pre_execute_sha`` as the rollback anchor (EXECUTE

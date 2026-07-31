@@ -387,6 +387,10 @@ NOTES:
   preserved) and `force_transition_to("GREEN")` sends the session back to
   GREEN with `<train_feedback>` injected. Up to `max_train_attempts = 3`
   retries; exhaustion raises `PhaseFailedError`.
+- RED rollback boundaries are task-local: each fresh RED entry clears any
+  boundary retained by a completed prior task before invoking the agent, and
+  stores a replacement only after the RED commit succeeds. A pre-manifest
+  agent failure cannot expose earlier completed commits to a later rollback.
 - TRAIN rollback uses `git reset --hard <red_sha>` followed by `git clean -fd`
   (precise RED-boundary SHA + untracked cleanup) — never `git revert`, because
   resetting to the verified-good RED boundary discards the suspect GREEN

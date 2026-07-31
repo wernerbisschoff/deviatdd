@@ -1035,6 +1035,11 @@ def _run_red_phase(
     ):
         c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
         return session
+    # A rollback boundary belongs to the active task.  Clear any boundary
+    # retained by a completed prior task before the RED agent can fail; this
+    # phase records its own boundary only after the RED commit lands.
+    session.red_commit_sha = ""
+    session.save(session_path)
     _log_run("PHASE_START", task_id=tid, phase="RED")
     _emit_phase_callout(c, "RED", task, PhaseMarker.IN_PROGRESS)
     if _verbose:
