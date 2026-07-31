@@ -392,6 +392,31 @@ NOTES:
   stores a replacement only after the RED commit succeeds. A pre-manifest
   agent failure cannot expose earlier completed commits to a later rollback.
 - TRAIN rollback uses `git reset --hard <boundary_sha>` followed by `git clean -fd` (caller-supplied boundary + untracked cleanup) — never `git revert`, because resetting to the verified-good boundary discards the suspect GREEN cleanly, and `git clean -fd` (without `-x`) removes untracked artifacts that the failed GREEN may have left behind while preserving gitignored state such as `.deviate/`. The boundary is threaded explicitly: TDD JUDGE `revert_to_red` passes `session.red_commit_sha`; TDD JUDGE `revert_before` derives `red_commit_sha^` via `_resolve_pre_red_sha` (falling back to `session.red_commit_sha` when known, otherwise raising `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")`); EXECUTE JUDGE passes `pre_execute_sha`. Each discard is also captured on a per-task, per-attempt recovery ref `tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>` so a parent SIGTERM between `git reset` and `git clean` doesn't strand the discarded work and a second rollback cannot clobber the first attempt's recovery handle.
+- **EXECUTE commit-failure recovery (terminal contract):** The single
+  EXECUTE-phase commit at `src/deviate/cli/micro.py:2857` is the
+  only `_commit_phase` call site that intentionally lets the
+  project's pre-commit hook gate the commit. To keep routine
+  `no_verify=True` RED/GREEN/REFACTOR commits behaving exactly as
+  before, the EXECUTE site was switched to
+  `_commit_phase_with_recovery(message, root, *, task_id, attempt,
+  phase="EXECUTE")`. On `git commit` non-zero, the new helper
+  preserves the staged tree on a per-task recovery ref
+  `refs/deviate/recovery/<sanitized-task-id>/attempt-<N>` (a SEPARATE
+  namespace from the rollback preservation ref
+  `tmp/deviate-agent-work/<task>/attempt-<N>`), prints a recovery
+  banner offering two operator-driven recovery options, and raises
+  `CommitFailedError(PhaseFailedError, terminal=True)`. The
+  exception subclasses `PhaseFailedError` so existing catch sites
+  match without code changes; the task is marked FAILED with
+  reason `commit_failed`. No `git add`, `git reset`, `git clean`, or
+  `git stash` runs after preservation — the operator's index and
+  worktree are intact so they can either re-run `git commit` after
+  fixing the hook, or `git cherry-pick` the recovery ref after
+  explicit cleanup of their own. The banner does NOT prescribe
+  `git reset` or `git clean -fd`. The reservation of the attempt
+  number is performed ONCE, before any plumbing call, so the
+  commit message and the recovery ref name cannot disagree even
+  under concurrent failures.
 ```
 
 ---
