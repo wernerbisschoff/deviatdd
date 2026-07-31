@@ -1648,12 +1648,14 @@ class TestExecuteRollbackUntrackedCleanup:
         Creates a tracked ``red.py`` file and commits it as the RED
         boundary. Optionally adds a second commit (``green.py``) so the
         rollback has history to discard. Writes ``.deviate/session.json``
-        with ``red_commit_sha`` so ``_resolve_red_boundary_sha()`` returns
-        the precise boundary (instead of falling back to ``HEAD~1``).
-        In production ``.deviate/`` is gitignored, so ``git clean -fd``
-        (without ``-x``) preserves the audit trail. The fixture mirrors
-        that by writing a ``.gitignore`` ignoring ``.deviate/`` *before*
-        the RED boundary commit, so the safety invariant is exercised.
+        with ``red_commit_sha`` so production rollback tests can pin the
+        boundary that the JUDGE/EXECUTE runners should thread into
+        ``_execute_rollback`` (the runner no longer falls back to
+        ``HEAD~1`` when ``boundary_sha`` is missing). In production
+        ``.deviate/`` is gitignored, so ``git clean -fd`` (without ``-x``)
+        preserves the audit trail. The fixture mirrors that by writing a
+        ``.gitignore`` ignoring ``.deviate/`` *before* the RED boundary
+        commit, so the safety invariant is exercised.
         """
         # Mirror the project `.gitignore`: `.deviate/` is gitignored so
         # `git clean -fd` (without `-x`) skips it. This must be committed
@@ -1720,9 +1722,11 @@ class TestExecuteRollbackUntrackedCleanup:
                 check=True,
             ).stdout.strip()
 
-        # Persist session.json with red_commit_sha so _resolve_red_boundary_sha
-        # returns the precise boundary (not HEAD~1, which fails when the
-        # GREEN commit doesn't exist).
+        # Persist session.json so the JUDGE/EXECUTE runners can observe the
+        # boundary they should thread into ``_execute_rollback``. The runner
+        # itself no longer reads ``session.red_commit_sha`` to discover the
+        # boundary (it must be passed explicitly), but the audit trail and
+        # downstream code paths still rely on the field being set.
         deviate_dir = tmp_git_repo / ".deviate"
         deviate_dir.mkdir(parents=True, exist_ok=True)
         session_payload = {
@@ -1748,6 +1752,10 @@ class TestExecuteRollbackUntrackedCleanup:
         artifact or scratch file the agent created). After rollback:
         ``scratch.py`` must NOT exist, ``green.py`` must be gone (reset to
         red_sha), and ``red.py`` must still be present.
+
+        ``_execute_rollback`` requires keyword-only ``boundary_sha``,
+        ``task_id``, and ``attempt``; the runner no longer infers the
+        boundary from session state.
         """
         from deviate.cli.micro import _execute_rollback
 
@@ -1774,7 +1782,12 @@ class TestExecuteRollbackUntrackedCleanup:
         )
 
         red_sha_returned = _execute_rollback(
-            tmp_git_repo, reason="violation: stray file"
+            tmp_git_repo,
+            boundary_sha=red_sha,
+            reason="violation: stray file",
+            phase="JUDGE",
+            task_id="TSK-EXEC-001",
+            attempt=0,
         )
 
         assert red_sha_returned == red_sha
@@ -1826,7 +1839,14 @@ class TestExecuteRollbackUntrackedCleanup:
             "Pre-condition: scratch_dir/inner.py must exist before rollback"
         )
 
-        _execute_rollback(tmp_git_repo, reason="violation: stray directory")
+        _execute_rollback(
+            tmp_git_repo,
+            boundary_sha=red_sha,
+            reason="violation: stray directory",
+            phase="JUDGE",
+            task_id="TSK-EXEC-002",
+            attempt=0,
+        )
 
         assert not scratch_dir.exists(), (
             f"_execute_rollback must remove untracked directories (scratch_dir still exists at {scratch_dir})"
@@ -1870,7 +1890,14 @@ class TestExecuteRollbackUntrackedCleanup:
         deviate_dir = tmp_git_repo / ".deviate"
         assert (deviate_dir / "session.json").exists()
 
-        _execute_rollback(tmp_git_repo, reason="violation: audit-trail safety")
+        _execute_rollback(
+            tmp_git_repo,
+            boundary_sha=red_sha,
+            reason="violation: audit-trail safety",
+            phase="JUDGE",
+            task_id="TSK-EXEC-003",
+            attempt=0,
+        )
 
         # The gitignored .deviate/ directory must survive — `git clean -fd`
         # without `-x` does not touch gitignored paths.

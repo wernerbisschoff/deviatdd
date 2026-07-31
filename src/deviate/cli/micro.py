@@ -1421,34 +1421,77 @@ def _read_judge_feedback_from_tasks_md(root: Path, task: dict) -> str:
     return "\n".join(feedback)
 
 
-def _resolve_red_boundary_sha(root: Path) -> str:
-    session_path = root / ".deviate" / "session.json"
-    if session_path.exists():
-        session = SessionState.load(session_path)
-        if session.red_commit_sha:
-            return session.red_commit_sha
-    _log("No RED commit SHA in session — falling back to HEAD~1 as boundary")
-    parent = subprocess.run(
-        ["git", "rev-parse", "HEAD~1"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
-    if parent:
-        return parent
-    _log("HEAD~1 is empty — using root commit as last resort")
-    root_sha = subprocess.run(
-        ["git", "rev-list", "--max-parents=0", "HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
-    return root_sha
+# Defensive regex matching RED-phase task-id characters used by
+# `_recovery_branch_for`. Git ref components disallow a few shell-hostile
+# characters (``:``, spaces, ``~``, ``^``, ``?``, ``*``, ``[``, ASCII
+# controls); the sanitiser maps anything outside `[A-Za-z0-9_./-]` to ``-``
+# so a hostile task id can't escape the `tmp/deviate-agent-work/` prefix.
+_RECOVERY_REF_SAFE_RE = re.compile(r"[^A-Za-z0-9_./-]")
+_RECOVERY_REF_PREFIX = "tmp/deviate-agent-work"
 
 
-def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
+def _recovery_branch_for(task_id: str, attempt: int) -> str:
+    """Return the per-task, per-attempt recovery ref name.
+
+    Format: ``tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>``.
+
+    Each discarded commit lands on its own ref so a parent SIGTERM between
+    ``git reset`` and ``git clean`` cannot overwrite an earlier attempt's
+    recovery handle. The sanitiser collapses any character outside
+    ``[A-Za-z0-9_./-]`` to ``-`` so unusual task ids (slashes, colons,
+    whitespace) still produce a valid git ref. A missing task id falls
+    back to ``"unknown"`` rather than producing an empty path segment.
+    """
+    raw = (task_id or "").strip() or "unknown"
+    sanitized = _RECOVERY_REF_SAFE_RE.sub("-", raw)
+    return f"{_RECOVERY_REF_PREFIX}/{sanitized}/attempt-{int(attempt)}"
+
+
+def _execute_rollback(
+    root: Path,
+    *,
+    boundary_sha: str,
+    reason: str,
+    phase: str = "JUDGE",
+    task_id: str,
+    attempt: int,
+) -> str:
+    """Reset HEAD and clean untracked state back to ``boundary_sha``.
+
+    F3 (commit-before-judge rollback safety): the agent's pre-reset HEAD
+    is captured on a per-task, per-attempt recovery ref
+    (``tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>``) BEFORE
+    any destructive reset so a parent SIGTERM landing between ``git
+    reset`` and ``git clean`` doesn't strand the agent's commit. Older
+    snapshots stay reachable at their distinct refs — a single global
+    ref would let the most recent rollback overwrite earlier attempts
+    that the operator may still need to inspect.
+
+    ``boundary_sha`` is REQUIRED and must be explicitly supplied by the
+    caller. There is no implicit fallback to ``SessionState.red_commit_sha``
+    or ``HEAD~1`` — both have masked real boundary-loss bugs (a completed
+    task's stale boundary leaking into the next RED attempt; a partially
+    committed GREEN losing commit content when ``HEAD~1`` resolves to the
+    wrong parent). Empty / whitespace ``boundary_sha`` raises
+    ``PhaseFailedError`` BEFORE ``git reset`` runs so the runner never
+    wipes work without an explicit anchor.
+
+    ``task_id`` and ``attempt`` thread the recovery ref identity: the
+    caller chooses what counts as a distinct attempt (typically one
+    increment per rollback fired inside a single JUDGE-phase call), and
+    the function computes ``tmp/deviate-agent-work/<task>/attempt-N``
+    deterministically.
+    """
+    if not boundary_sha or not boundary_sha.strip():
+        raise PhaseFailedError(
+            f"ROLLBACK_BOUNDARY_MISSING: refusing to roll back without an "
+            f"explicit boundary_sha (phase={phase}, task_id={task_id!r}, "
+            f"attempt={attempt}). The runner no longer falls back to "
+            f"SessionState.red_commit_sha or HEAD~1."
+        )
+    boundary_sha = boundary_sha.strip()
+    recovery_branch = _recovery_branch_for(task_id, attempt)
+
     branch = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=root,
@@ -1456,7 +1499,6 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         text=True,
         env=_git_env(),
     ).stdout.strip()
-    red_sha = _resolve_red_boundary_sha(root)
     commit_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=root,
@@ -1465,20 +1507,26 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     ).stdout.strip()
 
-    # F3 (commit-before-judge rollback safety): capture the agent's work
-    # on a side branch BEFORE any destructive reset so that if the parent
-    # kills the runner mid-rollback (SIGTERM between ``git reset`` and
-    # ``git clean``), the agent's commit survives and is recoverable via
-    # ``git checkout tmp/deviate-agent/<task_id>``. The previous behaviour
-    # wiped the agent's work as soon as ``git reset --hard`` returned.
-    if commit_sha != red_sha:
-        _preserve_agent_work(root, commit_sha, branch, red_sha, reason)
+    # Capture the agent's work on a per-task, per-attempt side branch
+    # BEFORE the destructive reset so the commit survives a parent SIGTERM
+    # landing between ``git reset`` and ``git clean``. Earlier attempts
+    # keep their distinct refs (attempt-0, attempt-1, ...) so a second
+    # rollback cannot silently clobber the first.
+    if commit_sha != boundary_sha:
+        _preserve_agent_work(
+            root,
+            commit_sha=commit_sha,
+            branch=branch,
+            red_sha=boundary_sha,
+            reason=reason,
+            recovery_branch=recovery_branch,
+        )
 
     snapshot = RollbackSnapshot(
         phase=phase,
         branch=branch,
         commit_sha=commit_sha,
-        red_sha=red_sha,
+        red_sha=boundary_sha,
         reason=reason[:500],
     )
     append_rollback_snapshot(snapshot, root / ".deviate")
@@ -1489,14 +1537,14 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         env=_git_env(),
     )
 
-    # Reset to red_sha — discards ALL commits made during GREEN (agent
-    # commit, orchestrator commit, residual commit) preserving only RED
-    # and any previous judge feedback commits.
+    # Reset to boundary_sha — discards ALL commits made during GREEN
+    # (agent commit, orchestrator commit, residual commit) preserving only
+    # the boundary and any previous judge feedback commits.
     #
     # If GREEN never committed (tests failed, early return),
-    # HEAD == red_sha and the reset is a no-op on history.
+    # HEAD == boundary_sha and the reset is a no-op on history.
     subprocess.run(
-        ["git", "reset", "--hard", red_sha],
+        ["git", "reset", "--hard", boundary_sha],
         cwd=root,
         capture_output=True,
         env=_git_env(),
@@ -1513,31 +1561,31 @@ def _execute_rollback(root: Path, reason: str, phase: str = "JUDGE") -> str:
         capture_output=True,
         env=_git_env(),
     )
-    return red_sha
-
-
-# F3 (rollback safety): name of the side branch used to capture an agent's
-# work-in-progress before destructive resets. Overwritten on each rollback
-# so the branch always reflects the most recent attempt that was discarded
-# by JUDGE; older snapshots are kept in ``.deviate/rollback.jsonl`` for
-# audit but are otherwise unrecoverable from this branch.
-_AGENT_WORK_BRANCH = "tmp/deviate-agent-work"
+    return boundary_sha
 
 
 def _preserve_agent_work(
     root: Path,
+    *,
     commit_sha: str,
     branch: str,
     red_sha: str,
     reason: str,
+    recovery_branch: str,
 ) -> None:
-    """Snapshot the agent's commit on a side branch before rollback wipes it.
+    """Snapshot the agent's commit on a per-attempt recovery branch.
 
-    Creates (or force-updates) ``tmp/deviate-agent-work`` pointing at the
-    current ``commit_sha`` so a parent SIGTERM between ``git reset`` and
-    ``git clean`` doesn't strand the agent's work. The branch ref is
-    cheap (a few bytes) and lives outside the worktree's normal branch
-    refs so it never collides with operator-facing branches.
+    Force-updates ``recovery_branch`` (a ref of the form
+    ``tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>``) to point
+    at ``commit_sha`` so a parent SIGTERM between ``git reset`` and
+    ``git clean`` doesn't strand the agent's work. Branch refs are
+    cheap (a few bytes each) and live outside the worktree's normal
+    branch refs so they never collide with operator-facing branches.
+
+    The recovery ref identity MUST be threaded by the caller (typically
+    via ``_recovery_branch_for(task_id, attempt)``) so each rollback
+    stores its discarded commit at a distinct ref. A single global ref
+    overwrites earlier attempts; per-attempt refs preserve them.
 
     Failure modes:
     - Branch creation fails (no git, detached HEAD, etc.): logged via
@@ -1550,7 +1598,7 @@ def _preserve_agent_work(
                 "git",
                 "branch",
                 "-f",
-                _AGENT_WORK_BRANCH,
+                recovery_branch,
                 commit_sha,
             ],
             cwd=root,
@@ -1564,7 +1612,7 @@ def _preserve_agent_work(
             commit_sha=commit_sha,
             branch=branch,
             red_sha=red_sha,
-            recovery_branch=_AGENT_WORK_BRANCH,
+            recovery_branch=recovery_branch,
             reason=reason[:200],
         )
     except Exception as e:
@@ -1575,6 +1623,7 @@ def _preserve_agent_work(
             "AGENT_WORK_PRESERVE_FAILED",
             error=str(e),
             commit_sha=commit_sha,
+            recovery_branch=recovery_branch,
         )
 
 
@@ -2076,7 +2125,16 @@ def _run_judge_phase(
         )
         session.save(session_path)
 
-        # Rollback to the anchor that the action names.
+        # Rollback to the anchor that the action names. Both branches MUST
+        # pass an explicit `boundary_sha` — the runner no longer falls back
+        # to ``SessionState.red_commit_sha`` or ``HEAD~1``. ``task_id`` and
+        # ``attempt`` thread the per-attempt recovery ref
+        # (``tmp/deviate-agent-work/<task>/attempt-<N>``) so each discarded
+        # commit lands on its own ref instead of clobbering one global ref.
+        # ``rollback_attempts`` increments before each preserved reset so
+        # multiple rollbacks inside a single JUDGE-phase call produce
+        # distinct refs.
+        rollback_attempts = 0
         try:
             if action == "revert_before":
                 pre_red = (
@@ -2085,6 +2143,37 @@ def _run_judge_phase(
                     else ""
                 )
                 if pre_red:
+                    # F3 (rollback safety): capture the agent's work BEFORE
+                    # the destructive reset so a parent SIGTERM landing
+                    # between ``git reset`` and ``git clean`` doesn't
+                    # strand the agent's commit. Same recovery-ref
+                    # identity rules as ``_execute_rollback`` apply.
+                    branch = subprocess.run(
+                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                        env=_git_env(),
+                    ).stdout.strip()
+                    head_sha = subprocess.run(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                        env=_git_env(),
+                    ).stdout.strip()
+                    rollback_attempts += 1
+                    if head_sha != pre_red:
+                        _preserve_agent_work(
+                            root,
+                            commit_sha=head_sha,
+                            branch=branch,
+                            red_sha=pre_red,
+                            reason=feedback,
+                            recovery_branch=_recovery_branch_for(
+                                tid, rollback_attempts
+                            ),
+                        )
                     subprocess.run(
                         ["git", "reset", "--hard", pre_red],
                         cwd=root,
@@ -2097,10 +2186,30 @@ def _run_judge_phase(
                         capture_output=True,
                         env=_git_env(),
                     )
+                elif session.red_commit_sha:
+                    # No pre-RED anchor, but ``session.red_commit_sha`` is
+                    # known — fall back to that explicit boundary so the
+                    # runner is never stuck and never guesses.
+                    rollback_attempts += 1
+                    _execute_rollback(
+                        root,
+                        boundary_sha=session.red_commit_sha,
+                        reason=feedback,
+                        phase="JUDGE",
+                        task_id=tid,
+                        attempt=rollback_attempts,
+                    )
                 else:
-                    # No pre-RED anchor known — fall back to the standard
-                    # rollback-to-red_sha so the runner is never stuck.
-                    _execute_rollback(root, feedback)
+                    # No pre-RED anchor AND no RED boundary in session.
+                    # The runner no longer falls back to ``HEAD~1``; raise
+                    # so the operator can see why rollback was refused
+                    # instead of silently losing commits.
+                    raise PhaseFailedError(
+                        f"ROLLBACK_BOUNDARY_MISSING: revert_before for {tid} "
+                        f"has no pre-RED anchor (session.red_commit_sha is "
+                        f"empty) and no explicit boundary_sha was supplied. "
+                        f"Refusing to fall back to HEAD~1."
+                    )
                 # No boundary advance: pre-RED no longer has a RED
                 # boundary in this task, so RED will land a fresh one.
                 session.red_commit_sha = ""
@@ -2120,7 +2229,24 @@ def _run_judge_phase(
                 return session
 
             # revert_to_red: rollback to RED then advance the boundary.
-            _execute_rollback(root, feedback)
+            # ``boundary_sha`` is the active RED commit, threaded from
+            # ``session.red_commit_sha`` — never inferred from session
+            # state inside ``_execute_rollback`` itself.
+            if not session.red_commit_sha:
+                raise PhaseFailedError(
+                    f"ROLLBACK_BOUNDARY_MISSING: revert_to_red for {tid} "
+                    f"has no session.red_commit_sha to roll back to. "
+                    f"Refusing to fall back to HEAD~1."
+                )
+            rollback_attempts += 1
+            _execute_rollback(
+                root,
+                boundary_sha=session.red_commit_sha,
+                reason=feedback,
+                phase="JUDGE",
+                task_id=tid,
+                attempt=rollback_attempts,
+            )
         except Exception as e:
             c.print(
                 f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with "
@@ -2812,7 +2938,20 @@ def _run_execute_phase(
                 feedback=feedback,
             )
             try:
-                _execute_rollback(root, feedback)
+                # EXECUTE has no RED boundary — ``pre_execute_sha`` (captured
+                # before the first EXECUTE attempt) is the only safe anchor,
+                # threaded explicitly so ``_execute_rollback`` cannot infer
+                # it from session state or ``HEAD~1``. ``attempt`` is the
+                # JUDGE-attempt counter so each discarded commit lands on
+                # ``tmp/deviate-agent-work/<tid>/attempt-<N>``.
+                _execute_rollback(
+                    root,
+                    boundary_sha=pre_execute_sha,
+                    reason=feedback,
+                    phase="EXECUTE",
+                    task_id=tid,
+                    attempt=attempt,
+                )
             except Exception as e:
                 c.print(
                     f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with retry"
