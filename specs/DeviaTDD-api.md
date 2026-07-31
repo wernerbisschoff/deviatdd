@@ -659,6 +659,57 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     previous attempt's feedback is injected as `<train_feedback>` into the next
     GREEN prompt via `_build_auto_prompt("green", ...) +
     "\n\n<train_feedback>\n{...}\n</train_feedback>\n"`. The cycle retries from
+
+  * **EXECUTE commit-failure recovery (terminal contract):** The single
+    EXECUTE-phase commit at `micro.py:2857` is the only `_commit_phase`
+    call site that intentionally lets the project's pre-commit hook
+    gate the commit. To keep routine `no_verify=True` RED/GREEN/REFACTOR
+    commits behaving exactly as before, the EXECUTE site was switched
+    to a separate helper, `_commit_phase_with_recovery(message, root, *,
+    task_id, attempt, phase="EXECUTE")`. The new helper:
+    - Runs `git commit` with combined `stdout+stderr` captured.
+    - On non-zero, builds a recovery commit from the existing staged
+      index via `git write-tree` / `git commit-tree -p HEAD` /
+      `git update-ref`. No `git add`, no `git reset`, no `git clean`,
+      no `git stash` — the operator's index and worktree are
+      unchanged after preservation.
+    - Asserts `git rev-parse <sha>^{tree} == <write-tree>` to catch
+      merge-driver / intent-to-add / submodule mismatches before the
+      recovery ref is created.
+    - Reserves a per-task attempt number ONCE before plumbing via
+      `_next_recovery_attempt(task_id, root=root)`; the same integer is
+      used in BOTH the commit message and the recovery ref name
+      (`refs/deviate/recovery/<sanitized-task-id>/attempt-<N>`). This
+      is a SEPARATE namespace from the rollback preservation ref
+      `tmp/deviate-agent-work/<task>/attempt-<N>` defined by the
+      round-1 rollback fix; the two namespaces are kept distinct so a
+      reader can tell rollback-snapshot evidence from commit-hook-block
+      evidence at a glance.
+    - Sanitizes the task id with the allow-list `[A-Za-z0-9_-]`
+      (length cap 64; rejects empty / leading-`.` / `..` / too long).
+      Sanitize failures surface as `CommitFailedError(reason=sanitize_*, recovery_ref=None)`,
+      translated at the call site so they do not collapse into
+      `commit_failed_plumbing`.
+    - Prints a recovery banner with the combined output, the
+      `recovery_ref`, and TWO recovery options: (a) fix the failure
+      in the target repo and re-run `git commit`; (b) restore the
+      rejected work with `git cherry-pick
+      refs/deviate/recovery/<task>/attempt-<N>` after the operator
+      has explicitly restored or removed the current changes. The
+      banner does NOT prescribe `git reset` or `git clean -fd` —
+      those are dangerous generalities the operator must decide
+      themselves.
+    - Raises `CommitFailedError(PhaseFailedError, terminal=True)`. The
+      exception subclasses `PhaseFailedError` so the existing
+      `PhaseFailedError` catch sites in `_run_execute_phase` and
+      `_run_single` continue to match without code changes; the task
+      is marked FAILED with reason `commit_failed`. The failure is
+      terminal for the current run (no automatic retry atop the
+      rejected staged tree).
+    - On plumbing failure (corrupt index, broken worktree), raises
+      `CommitFailedError(recovery_ref=None, reason=commit_failed_plumbing)`
+      with the plumbing stderr in `output` so the operator sees the
+      underlying cause instead of a misleading hook-blocked banner.
   When session feedback is unavailable, auto GREEN reads the matching task's persisted `**Judge Feedback**` bullets from `tasks.md` as `<persisted_judge_feedback>`. Session `train_feedback` remains authoritative when present, preventing duplicate or stale feedback; the reader is scoped to the exact task block.
     GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts
     with `PhaseFailedError`. The feedback source precedence is `train_feedback`

@@ -2854,7 +2854,13 @@ def _run_execute_phase(
         issue_id = task.get("issue_id", "")
         scope = _build_scope(issue_id, tid)
 
-        _commit_phase(f"feat({scope}): EXECUTE phase - {tid}", root)
+        _commit_phase_with_recovery(
+            f"feat({scope}): EXECUTE phase - {tid}",
+            root,
+            task_id=tid,
+            attempt=attempt,
+            phase="EXECUTE",
+        )
 
         _verify_clean_worktree(root, "EXECUTE", tid)
 
@@ -3474,6 +3480,348 @@ def _run_pytest(
         cwd=root,
         capture_output=True,
         text=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Commit-failure recovery
+#
+# The round-1 rollback fix preserves discarded agent work on a per-task,
+# per-attempt ref under the ``tmp/deviate-agent-work/<task>/attempt-<N>``
+# namespace (see ``_execute_rollback`` / ``_preserve_agent_work`` above).
+# This namespace is for *successful* discards of a judged attempt.
+#
+# This block defines a SECOND, parallel namespace
+# (``refs/deviate/recovery/<task>/attempt-<N>``) for the orthogonal case
+# where ``git commit`` itself never lands. The two namespaces are
+# intentionally distinct so a future reader can tell rollback-snapshot
+# evidence from commit-hook-block evidence at a glance. They must not be
+# unified: rollback evidence is anchored to a real git commit that the
+# runner already produced; commit-failure recovery is anchored to the
+# tree the hook rejected, captured at the moment of failure.
+# ---------------------------------------------------------------------------
+
+_RECOVERY_NS_PREFIX = "refs/deviate/recovery"
+_RECOVERY_NS_SAFE_RE = re.compile(r"[^A-Za-z0-9_-]")
+_RECOVERY_ID_MAX_LEN = 64
+
+
+class _SanitizeError(ValueError):
+    """Raised when a task id cannot be safely namespaced for the recovery refs.
+
+    Translates to ``CommitFailedError(reason=<sanitize_reason>, recovery_ref=None)``
+    at the outer caller so the banner preserves the distinction between
+    "operator passed a hostile task id" and "git plumbing failed".
+    """
+
+    def __init__(self, reason: str, raw: str) -> None:
+        super().__init__(f"{reason}: {raw!r}")
+        self.reason = reason
+        self.raw = raw
+
+
+def _sanitize_recovery_id(task_id: str) -> str:
+    """Return a git-ref-safe task id for the recovery namespace.
+
+    Allow-list: ``[A-Za-z0-9_-]``. Length cap: 64 characters. Rejects
+    empty / whitespace, leading ``.``, any literal ``..``, and ids that
+    exceed the cap. The strict allow-list prevents ref injection (e.g.
+    ``../../../HEAD``) and keeps every produced ref inside the
+    ``refs/deviate/recovery/`` namespace.
+
+    Raises ``_SanitizeError``; the outer helper translates that to a
+    ``CommitFailedError`` with a sanitize-specific reason so the banner
+    does not collapse into ``commit_failed_plumbing``.
+    """
+    raw = (task_id or "").strip()
+    if not raw:
+        raise _SanitizeError("sanitize_empty_task_id", task_id or "")
+    if raw.startswith("."):
+        raise _SanitizeError("sanitize_leading_dot", raw)
+    if ".." in raw:
+        raise _SanitizeError("sanitize_double_dot", raw)
+    if len(raw) > _RECOVERY_ID_MAX_LEN:
+        raise _SanitizeError("sanitize_too_long", raw)
+    return _RECOVERY_NS_SAFE_RE.sub("-", raw)
+
+
+def _next_recovery_attempt(task_id: str, *, root: Path) -> int:
+    """Return the next available attempt number for the recovery namespace.
+
+    Enumerates ``refs/deviate/recovery/<sanitized>/attempt-*`` and returns
+    ``max(N) + 1`` (default 1 if none exist). This makes recovery refs
+    collision-safe: two distinct failures for the same task produce
+    ``attempt-1`` and ``attempt-2`` instead of silently overwriting.
+
+    Reservation of the integer is part of the helper contract: the
+    caller threads the same integer into BOTH the commit message and
+    the recovery ref name so they cannot disagree.
+    """
+    sanitized = _sanitize_recovery_id(task_id)
+    listing = subprocess.run(
+        [
+            "git",
+            "for-each-ref",
+            "--format=%(refname)",
+            f"{_RECOVERY_NS_PREFIX}/{sanitized}/",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    refs = [line.strip() for line in listing.stdout.splitlines() if line.strip()]
+    max_n = 0
+    for ref in refs:
+        suffix = ref.rsplit("/attempt-", 1)[-1]
+        try:
+            n = int(suffix)
+        except ValueError:
+            continue
+        if n > max_n:
+            max_n = n
+    return max_n + 1
+
+
+def _recovery_ref(task_id: str, attempt: int) -> str:
+    """Return the namespaced recovery ref for ``task_id`` and ``attempt``."""
+    sanitized = _sanitize_recovery_id(task_id)
+    return f"{_RECOVERY_NS_PREFIX}/{sanitized}/attempt-{int(attempt)}"
+
+
+class CommitFailedError(PhaseFailedError):
+    """Raised when ``git commit`` fails for the EXECUTE phase.
+
+    Carries a recovery ref pointing at a real commit whose tree is
+    exactly the tree the ``git commit`` attempted to record. Operators
+    restore the rejected work with::
+
+        git cherry-pick refs/deviate/recovery/<task>/attempt-<N>
+
+    The recovery ref is created via plumbing only (``git write-tree``,
+    ``git commit-tree``, ``git update-ref``); the operator's index and
+    working tree are NOT mutated. If plumbing itself fails, the
+    ``recovery_ref`` is ``None`` and ``output`` carries the plumbing
+    stderr so the operator sees the underlying cause instead of a
+    misleading hook-blocked banner.
+
+    ``terminal=True`` marks the failure as terminal for the current run
+    (so the dispatcher can render the recovery banner and not silently
+    retry atop the rejected staged tree), but the underlying
+    ``PhaseFailedError`` shape means the existing call sites that
+    already catch ``PhaseFailedError`` continue to match without code
+    changes.
+    """
+
+    terminal: bool = True
+
+    def __init__(
+        self,
+        *,
+        recovery_ref: str | None,
+        output: str,
+        reason: str,
+        terminal: bool = True,
+    ) -> None:
+        self.recovery_ref = recovery_ref
+        self.output = output
+        self.reason = reason
+        self.terminal = terminal
+        super().__init__(f"COMMIT_FAILED: {reason}")
+
+
+def _commit_phase_with_recovery(
+    message: str,
+    root: Path,
+    *,
+    task_id: str,
+    attempt: int,
+    phase: str | None = "EXECUTE",
+) -> bool:
+    """Like ``_commit_phase`` but raises ``CommitFailedError`` on failure.
+
+    The existing ``_commit_phase`` helper silently swallows ``git commit``
+    failures and returns ``False``; that contract is correct for the 10
+    routine ``no_verify=True`` RED/GREEN/REFACTOR sites because their
+    commits are bypassed by hooks and effectively cannot fail for hook
+    reasons. The single EXECUTE call site at ``micro.py:2857`` is the
+    only one that intentionally lets the project's hook gate the commit,
+    so it gets a stricter contract:
+
+    * Run ``git commit`` with combined ``stdout+stderr`` captured.
+    * On non-zero, build a recovery commit from the existing staged
+      index via ``git write-tree`` / ``git commit-tree -p HEAD`` /
+      ``git update-ref`` (no ``git add``, no ``git reset``, no
+      ``git clean``, no ``git stash``).
+    * Assert the recovery commit's tree equals the ``write-tree``
+      output, catching merge-driver / intent-to-add / submodule
+      mismatches that would otherwise produce a cherry-pick that
+      differs from the rejected tree.
+    * On any plumbing failure, raise ``CommitFailedError(recovery_ref=None, ...)``
+      with the plumbing stderr in ``output`` so the operator sees the
+      underlying cause.
+    * Always print the recovery banner and raise — the dispatcher will
+      mark the task FAILED with reason ``commit_failed`` and stop the run.
+
+    Returns ``True`` only when ``git commit`` exits zero.
+    """
+    formatted = format_commit_message(message, root, phase=phase)
+    cmd = ["git", "commit", "-m", formatted]
+    result = subprocess.run(
+        cmd,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+        check=False,
+    )
+    if result.returncode == 0:
+        console.print(f"  [green]Committed[/] [dim]{formatted}[/]")
+        return True
+    combined_output = (result.stdout or "") + (result.stderr or "")
+    plumbing_output = ""
+    tree_sha = ""
+    recovery_ref: str | None = None
+    recovery_sha = ""
+
+    # Reservation: compute the recovery attempt number ONCE, BEFORE the
+    # plumbing try/except, so the commit message and the ref name use
+    # the same integer. Sanitization failures surface here as
+    # ``_SanitizeError``; a dedicated handler (below) translates them to
+    # ``CommitFailedError(reason=sanitize_*, recovery_ref=None)`` instead
+    # of letting them be swallowed by the generic plumbing fallback.
+    try:
+        next_attempt = _next_recovery_attempt(task_id, root=root)
+        recovery_ref = _recovery_ref(task_id, next_attempt)
+    except _SanitizeError as exc:
+        _log_run(
+            "COMMIT_FAILED_SANITIZE",
+            task_id=task_id,
+            attempt=attempt,
+            recovery_ref=None,
+            reason=exc.reason,
+            raw=exc.raw[:200],
+        )
+        console.print(f"  [red]COMMIT_FAILED[/] {task_id} (sanitize: {exc.reason})")
+        raise CommitFailedError(
+            recovery_ref=None,
+            output=combined_output,
+            reason=exc.reason,
+            terminal=True,
+        ) from exc
+
+    try:
+        write_tree = subprocess.run(
+            ["git", "write-tree"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=False,
+        )
+        if write_tree.returncode != 0:
+            plumbing_output = write_tree.stderr or write_tree.stdout or ""
+            raise RuntimeError("write-tree failed")
+        tree_sha = write_tree.stdout.strip()
+
+        commit_tree = subprocess.run(
+            [
+                "git",
+                "commit-tree",
+                tree_sha,
+                "-p",
+                "HEAD",
+                "-m",
+                f"Recovery: {task_id} attempt-{int(next_attempt)} blocked by git commit failure",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=False,
+        )
+        if commit_tree.returncode != 0:
+            plumbing_output = commit_tree.stderr or commit_tree.stdout or ""
+            raise RuntimeError("commit-tree failed")
+        recovery_sha = commit_tree.stdout.strip()
+
+        roundtrip = subprocess.run(
+            ["git", "rev-parse", f"{recovery_sha}^{{tree}}"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=False,
+        )
+        if roundtrip.returncode != 0:
+            plumbing_output = roundtrip.stderr or roundtrip.stdout or ""
+            raise RuntimeError("rev-parse tree failed")
+        roundtrip_tree = roundtrip.stdout.strip()
+        if roundtrip_tree != tree_sha:
+            plumbing_output = (
+                f"tree roundtrip mismatch: write-tree={tree_sha} "
+                f"recovery^{{tree}}={roundtrip_tree}"
+            )
+            raise RuntimeError("tree roundtrip mismatch")
+
+        update = subprocess.run(
+            ["git", "update-ref", recovery_ref, recovery_sha],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=False,
+        )
+        if update.returncode != 0:
+            plumbing_output = update.stderr or update.stdout or ""
+            raise RuntimeError("update-ref failed")
+    except Exception as plumbing_exc:
+        _log_run(
+            "COMMIT_FAILED_PLUMBING",
+            task_id=task_id,
+            attempt=attempt,
+            recovery_ref=recovery_ref,
+            reason=str(plumbing_exc),
+            plumbing_output=plumbing_output[:500],
+        )
+        console.print(
+            f"  [red]COMMIT_FAILED[/] {task_id} attempt-{attempt} "
+            f"(plumbing fallback: {plumbing_exc})"
+        )
+        raise CommitFailedError(
+            recovery_ref=None,
+            output=(combined_output + "\n" + plumbing_output).strip(),
+            reason="commit_failed_plumbing",
+            terminal=True,
+        ) from plumbing_exc
+
+    _log_run(
+        "COMMIT_FAILED",
+        task_id=task_id,
+        attempt=next_attempt,
+        recovery_ref=recovery_ref,
+        tree_sha=tree_sha,
+        recovery_sha=recovery_sha,
+        output_trimmed=combined_output.strip()[:500],
+    )
+    console.print(f"  [red]COMMIT_FAILED[/] {task_id} attempt-{next_attempt}")
+    console.print("    git commit output (combined stdout+stderr):")
+    for line in combined_output.strip().splitlines() or ["(no output captured)"]:
+        console.print(f"      {line}")
+    console.print(f"    recovery_ref: {recovery_ref}")
+    console.print(
+        "    Two recovery options:\n"
+        "      1. Fix the failure in the target repo, then re-run `git commit`\n"
+        "         (the worktree is already in the state the commit failed at).\n"
+        "      2. After you have explicitly restored or removed the current\n"
+        "         changes yourself, restore the rejected work with:\n"
+        f"           git cherry-pick {recovery_ref}"
+    )
+    raise CommitFailedError(
+        recovery_ref=recovery_ref,
+        output=combined_output,
+        reason="commit_failed",
+        terminal=True,
     )
 
 
