@@ -668,6 +668,16 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     to a separate helper, `_commit_phase_with_recovery(message, root, *,
     task_id, attempt, phase="EXECUTE")`. The new helper:
     - Runs `git commit` with combined `stdout+stderr` captured.
+    - Treats the benign clean-worktree case as a successful no-op:
+      when `git commit` exits 1 and the combined output contains
+      "nothing to commit" (a message git only emits AFTER the hook
+      chain passes, so it cannot mask a hook-blocked commit), the
+      helper returns `True` without creating a recovery ref or
+      raising `CommitFailedError`. The caller's no-diff branch
+      (`JUDGE_SKIP`) then completes the task — the EXECUTE agent
+      legitimately made zero changes (deliverable already exists).
+      `_git_env()` pins `LC_ALL=C` so the detection is independent
+      of the operator's locale.
     - On non-zero, builds a recovery commit from the existing staged
       index via `git write-tree` / `git commit-tree -p HEAD` /
       `git update-ref`. No `git add`, no `git reset`, no `git clean`,

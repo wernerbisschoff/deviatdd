@@ -25,6 +25,9 @@ These tests cover the locked contract:
   case proving the routine swallow path is unchanged).
 * Recovery commit can be cherry-picked cleanly into a clean tree.
 * Banner does NOT prescribe ``git reset`` or ``git clean -fd``.
+* Clean worktree (``nothing to commit``) is a successful no-op: returns
+  ``True``, creates no recovery ref, and does not raise — the caller's
+  no-diff branch (JUDGE_SKIP) completes the task.
 
 The file is named ``test_commit_failure.py`` to parallel the existing
 ``test_rollback_safety.py`` shape.
@@ -539,3 +542,111 @@ class TestCommitPhaseUnchanged:
 
         result = _commit_phase("feat: ok", tmp_git_repo, phase="EXECUTE")
         assert result is True
+
+
+class TestCommitPhaseWithRecoveryCleanNoop:
+    """Clean-worktree no-op: ``git commit`` exits 1 with "nothing to
+    commit" when the agent made zero changes (e.g. the deliverable
+    already exists). This is a legitimate EXECUTE outcome — NOT a hook
+    failure — so the helper must return ``True`` without fabricating a
+    recovery ref or raising ``CommitFailedError``. The caller's no-diff
+    branch (JUDGE_SKIP) then completes the task as designed.
+    """
+
+    def test_clean_worktree_is_noop_success(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.micro import _commit_phase_with_recovery
+
+        head_before = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+
+        result = _commit_phase_with_recovery(
+            "feat(TSK-003-11): EXECUTE phase",
+            tmp_git_repo,
+            task_id="TSK-003-11",
+            attempt=1,
+            phase="EXECUTE",
+        )
+
+        assert result is True
+        # No recovery ref may be created — there is nothing to restore
+        # from a no-op (the old behavior minted a useless empty commit).
+        show_ref = subprocess.run(
+            [
+                "git",
+                "show-ref",
+                "--verify",
+                "refs/deviate/recovery/TSK-003-11/attempt-1",
+            ],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert show_ref.returncode != 0
+        # HEAD must not advance and the tree must stay clean.
+        head_after = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+        assert head_after == head_before
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert status.stdout.strip() == ""
+
+    def test_clean_worktree_with_passing_hook_is_noop(self, tmp_git_repo: Path) -> None:
+        # A repo whose hook chain passes on a clean tree (the operator's
+        # real-world case: hooks gate EXECUTE commits but the agent had
+        # nothing to change) must still be a no-op, not a COMMIT_FAILED.
+        from deviate.cli.micro import _commit_phase_with_recovery
+
+        _setup_repo_with_pre_commit_hook(
+            tmp_git_repo,
+            hook_body="#!/bin/sh\nexit 0\n",
+        )
+
+        result = _commit_phase_with_recovery(
+            "feat(TSK-003-11): EXECUTE phase",
+            tmp_git_repo,
+            task_id="TSK-003-11",
+            attempt=1,
+            phase="EXECUTE",
+        )
+
+        assert result is True
+
+    def test_failing_hook_on_staged_change_still_raises(
+        self, tmp_git_repo: Path
+    ) -> None:
+        # Control case: the benign no-op must NOT swallow a genuine
+        # hook-blocked commit — the recovery contract stays intact.
+        from deviate.cli.micro import _commit_phase_with_recovery, CommitFailedError
+
+        _setup_repo_with_pre_commit_hook(
+            tmp_git_repo,
+            hook_body="#!/bin/sh\necho 'pre-commit hook failed: lint violation' >&2\nexit 1\n",
+        )
+        _stage_change(tmp_git_repo, "src/feature.py", "# new feature\n")
+
+        with pytest.raises(CommitFailedError) as info:
+            _commit_phase_with_recovery(
+                "feat(TSK-003-11): EXECUTE phase",
+                tmp_git_repo,
+                task_id="TSK-003-11",
+                attempt=1,
+                phase="EXECUTE",
+            )
+        assert info.value.reason == "commit_failed"
+        assert info.value.recovery_ref is not None
