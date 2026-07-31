@@ -634,12 +634,22 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   * **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the
     GREEN → JUDGE pair in a `while not judge_passed` loop with up to
     `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`,
-    `_execute_rollback()` runs `git reset --hard <red_sha>` against the
-    RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of
-    the RED phase), followed by `git clean -fd` to remove untracked files
-    and directories created during the failed GREEN attempt (preserving
-    gitignored state such as `.deviate/` by omitting `-x`). A fresh RED attempt
-    clears any boundary retained by a prior task before invoking the agent, then
+    `_execute_rollback()` runs `git reset --hard <boundary_sha>` against
+    the boundary the caller threads in: TDD JUDGE's `revert_to_red`
+    passes `session.red_commit_sha`, TDD JUDGE's `revert_before` resolves
+    `red_commit_sha^` via `_resolve_pre_red_sha`, and EXECUTE JUDGE
+    passes the pre-EXECUTE `pre_execute_sha`. `_execute_rollback` requires
+    the boundary explicitly — it no longer falls back to
+    `session.red_commit_sha` or `HEAD~1`, and raises
+    `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")` BEFORE any
+    `git reset` / `git clean` when the caller forgets to thread the
+    boundary or the boundary is empty/whitespace. The rejected-commit
+    snapshot lands on a per-task, per-attempt recovery ref
+    `tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>` (one
+    attempt per rollback fired inside a single JUDGE-phase call, threaded
+    via `_recovery_branch_for`) so a second rollback never clobbers the
+    first attempt's recovery handle. A fresh RED attempt clears any
+    boundary retained by a prior task before invoking the agent, then
     records its own boundary only after the RED commit lands. Agent startup
     failures therefore leave no cross-task rollback anchor. The runner commits
     a feedback marker unconditionally and advances
@@ -1204,7 +1214,6 @@ candidate selection:
 
 
 #### SessionState (Pydantic -- `src/deviate/state/config.py`)
-
 | Field | Type | Description |
 |-------|------|-------------|
 | `current_phase` | `str` (default `"IDLE"`) | Current phase in the TDD cycle; one of `IDLE`, `RED`, `GREEN`, `JUDGE`, `REFACTOR` (see `_VALID_PHASES`) |
@@ -1214,7 +1223,7 @@ candidate selection:
 | `failure_kind` | `Literal["", "mechanical", "test_defect"]` (default `""`) | Discriminator set by GREEN on failure-class routing; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong) |
 | `judge_rejected` | `bool` (default `False`) | `True` while the JUDGE verdict on the current cycle is a rejection |
 | `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_before`, `revert_to_red`, `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off |
-| `red_commit_sha` | `str` (default `""`) | SHA of the task's RED commit; anchors `_execute_rollback` (set at end of RED phase) and advances past each feedback commit on `revert_to_red` rejections |
+| `red_commit_sha` | `str` (default `""`) | SHA of the task's RED commit; the TDD JUDGE runner reads it and threads it into `_execute_rollback(boundary_sha=..., task_id=..., attempt=...)` on `revert_to_red`. Each phase records its own boundary only after the commit lands. The runner no longer reads this field implicitly inside `_execute_rollback`; the boundary MUST be supplied by the caller. EXECUTE JUDGE uses `pre_execute_sha` (captured before the first EXECUTE attempt) instead. |
 | `timestamp` | `datetime` (auto-set on each transition via `force_transition_to`/`transition_to`) | Wall-clock record of last phase change |
 
 
