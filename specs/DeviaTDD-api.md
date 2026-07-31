@@ -638,8 +638,11 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     RED-boundary SHA stored in `session.red_commit_sha` (captured at the end of
     the RED phase), followed by `git clean -fd` to remove untracked files
     and directories created during the failed GREEN attempt (preserving
-    gitignored state such as `.deviate/` by omitting `-x`); the runner
-    commits a feedback marker unconditionally and advances
+    gitignored state such as `.deviate/` by omitting `-x`). A fresh RED attempt
+    clears any boundary retained by a prior task before invoking the agent, then
+    records its own boundary only after the RED commit lands. Agent startup
+    failures therefore leave no cross-task rollback anchor. The runner commits
+    a feedback marker unconditionally and advances
     `session.red_commit_sha` past it so a second rejection can roll back
     only the subsequent GREEN, the session is
     `force_transition_to("GREEN")`, and the
