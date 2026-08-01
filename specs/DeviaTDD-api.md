@@ -1147,6 +1147,11 @@ src/deviate/
 │   ├── __init__.py
 │   ├── assembly.py           # PromptAssembly — builds slim prompts from templates
 │   ├── constitution_seed.md  # Template with ${VARIABLE} placeholders
+│   ├── core/                 # shared prefix injected by load_template() + compose_command_body()
+│   │   ├── core.md             # universal invariants (all phases)
+│   │   ├── macro-shared.md / meso-shared.md / micro-shared.md   # layer preambles
+│   │   ├── lifecycle-auto.md / lifecycle-manual.md             # mode lifecycle blocks
+│   │   └── style-ste.md        # ASD-STE100 Simplified Technical English directive
 │   ├── auto/                 # explore, research, prd, shard, specify, tasks, plan (planned)
 │   │   ├── explore.md, research.md, prd.md, shard.md, specify.md, tasks.md
 │   │   ├── red.md, green.md, judge.md, refactor.md

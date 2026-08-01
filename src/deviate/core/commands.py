@@ -90,6 +90,13 @@ def compose_command_body(raw: str, core_dir: Path) -> str | None:
     if lifecycle:
         parts.append(lifecycle)
 
+    # ASD-STE100 writing-style directive (prose + structured discipline) —
+    # sibling of lifecycle-manual.md; mirrors the auto-mode injection in
+    # deviate.prompts.assembly.load_template.
+    style = _read_text(core_dir / "style-ste.md")
+    if style:
+        parts.append(style)
+
     prefix = "\n\n".join(parts) if parts else None
     if prefix:
         body = f"{prefix}\n\n{body}"

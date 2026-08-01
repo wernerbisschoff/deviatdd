@@ -469,6 +469,23 @@ its own prompts. The exact prompt text is not hard-coded in the CLI source; agen
 implementations may choose their own framing as long as the behavioral invariants are
 preserved.
 
+**ASD-STE100 writing directive (`src/deviate/prompts/core/style-ste.md`).** Both prompt
+composers — `load_template()` (`src/deviate/prompts/assembly.py`, auto mode) and
+`compose_command_body()` (`src/deviate/core/commands.py`, manual slash-command mode) —
+inject a shared ASD-STE100 Simplified Technical English directive as the last prefix
+part, before the phase-specific body. It is self-scoping across two tracks:
+**Track A** (prose rules: one idea per sentence, active voice, present tense, ≤~20-word
+sentences, one qualifier per noun, approved/concrete vocabulary, explicit quantities,
+consistent terminology) applies ONLY when the agent authors natural-language prose in
+documents (PRD, design, data-model, architecture, domain-model, flows, release notes, PR
+bodies, ADRs, review HTML). **Track B** (structured discipline: exact token preservation,
+one semantic per field, no synonym fields, explicit conditions/quantities) applies always,
+including to handover manifests and structured output. Neither track rewrites code,
+identifiers, file paths, command names, JSON/YAML keys, or quoted structure — when a Track
+A rule and a structural constraint collide, the structural constraint wins. This mirrors
+STE100's controlled-vocabulary design: clear prose for humans, unambiguous fixed tokens
+for machines.
+
 ### Model Routing & Cache Discipline (Guidance)
 
 The model routing table below is documented as a recommended strategy in the
