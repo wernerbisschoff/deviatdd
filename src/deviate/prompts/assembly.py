@@ -93,7 +93,12 @@ def load_template(
     if lifecycle:
         parts.append(lifecycle)
 
-    # 4. Phase-specific template
+    # 4. ASD-STE100 writing-style directive (prose + structured discipline)
+    style = _read_resource(_CORE_DIR, "style-ste.md")
+    if style:
+        parts.append(style)
+
+    # 5. Phase-specific template
     phase = _read_resource(_AUTO_DIR, f"{template_name}.md")
     if not phase:
         raise FileNotFoundError(f"Template '{template_name}' not found in {_AUTO_DIR}")
