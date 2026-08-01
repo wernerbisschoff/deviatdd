@@ -134,15 +134,20 @@ class TestMicroOrchestration:
                 f"Expected last_command to be set, got {session_data}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_micro_no_judge_flag(
         self,
         mock_agent,
         mock_verify,
+        mock_run_test,
         tmp_git_repo: Path,
         approve_gate2,
     ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
-from deviate.state.ledger import TaskRecord
+from deviate.state.ledger import TaskRecord, append_task_transition
 
 runner = CliRunner()
 
@@ -207,8 +207,14 @@ class TestRunCommand:
             )
             assert "TASK_NOT_FOUND" in result.output or "NOT_FOUND" in result.output
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_with_profile_fast(self, mock_agent, tmp_path: Path, approve_gate2):
+    def test_run_with_profile_fast(
+        self, mock_agent, mock_run_test, tmp_path: Path, approve_gate2
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -364,6 +370,92 @@ class TestSessionResume:
             )
             assert "JUDGE" in result.output, (
                 f"Expected JUDGE phase in output: {result.output}"
+            )
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_run_profile_fast_resumes_green_when_red_done(
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
+        """--profile fast must still run GREEN when RED is already done.
+
+        Regression: the fast profile (no_judge=True) eagerly set
+        ``judge_passed``, which short-circuited the GREEN train loop entirely —
+        a task whose RED phase was already recorded was marked COMPLETED
+        without its test ever being implemented.
+        """
+        recorded_phases: list[str] = []
+
+        def _recording_agent(*args, **kwargs):
+            phase = kwargs.get("phase", "RED")
+            recorded_phases.append(phase)
+            return HandoverManifest(
+                phase=phase,
+                status="SUCCESS",
+                task_id=kwargs.get("task_id", "TSK-005-07"),
+            ), ""
+
+        mock_agent.side_effect = _recording_agent
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            # RED is already done: session parked in RED, ledger records the
+            # RED transition after the PENDING entry.
+            session = SessionState(current_phase="RED")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-005-07",
+                issue_id="ISS-002-005",
+                description="Resume GREEN after RED with fast profile",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+            red_record = _make_task_record(
+                task_id="TSK-005-07",
+                issue_id="ISS-002-005",
+                description="Resume GREEN after RED with fast profile",
+                status="RED",
+                execution_mode="TDD",
+            )
+            append_task_transition(red_record, ledger_path)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+
+            result = runner.invoke(
+                cli, ["micro", "run", "TSK-005-07", "--profile", "fast"]
+            )
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            assert "RED already done" in result.output, (
+                f"Expected RED to be skipped as already done: {result.output}"
+            )
+            assert "GREEN" in recorded_phases, (
+                "Expected GREEN phase to run when RED is already done, "
+                f"got agent phases: {recorded_phases}"
+            )
+            assert "RED" not in recorded_phases, (
+                f"RED agent must not re-run when RED is already done: {recorded_phases}"
+            )
+            assert "JUDGE" not in result.output, (
+                f"JUDGE phase should be skipped with --profile fast: {result.output}"
+            )
+            assert "COMPLETED" in result.output, (
+                f"Expected task to reach COMPLETED: {result.output}"
             )
 
     @patch("deviate.cli.micro._verify_clean_worktree")

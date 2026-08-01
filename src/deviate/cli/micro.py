@@ -2600,7 +2600,11 @@ def _run_tdd_cycle(
 
     train_attempts = 0
     max_train_attempts = 3
-    judge_passed = no_judge
+    # `no_judge` only skips the JUDGE phase — GREEN must still run. The
+    # in-loop `if no_judge: judge_passed = True; break` below is the exit
+    # path; initializing to `no_judge` here would skip the GREEN loop
+    # entirely and mark the task COMPLETED with its test never implemented.
+    judge_passed = False
     if start_phase != "GREEN":
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
