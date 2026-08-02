@@ -56,13 +56,13 @@ Parse the user's first argument to determine the phase. Accepted values:
 | Argument | Phase identifier | Markdown source | HTML target |
 |----------|------------------|-----------------|-------------|
 | `architecture` | architecture | `specs/_product/architecture.md` | `specs/_product/architecture.html` |
-| `prd` | prd | `<active-epic>/prd.md` (auto-detected from session) | `<active-epic>/prd.html` |
+| `prd` | prd | `<bucket>/prd.md` — pass `--bucket <slug>` to target a specific epic; else auto-detects when exactly one epic owns a prd.md | `<bucket>/prd.html` |
 | `plan` | plan | `<active-issue>/plan.md` (auto-detected from branch) | `<active-issue>/plan.html` |
 | `flows` | flows | `specs/_product/flows/index.md` | `specs/_product/flows/index.html` |
 | `domain-model` | domain-model | `specs/_product/domain-model.md` | `specs/_product/domain-model.html` |
 | `all` | (iterates) | every phase whose HTML is missing | every corresponding target |
 
-For `plan` and `prd`, the CLI handles active-issue detection via `deviate html plan` and `deviate html prd`; you are responsible for passing the right argument through and confirming the resolved path.
+For `plan` and `prd`, the CLI handles active-issue detection via `deviate html plan` and `deviate html prd`. When multiple epics own a `prd.md`, pass `deviate html prd --bucket <slug>` to target one explicitly; do not change directories — the resolver reads `specs/` from the repo root and a nested cwd yields `HTML_NO_PRD`. Confirm the resolved path on stdout.
 
 **If the argument is missing or unrecognized**, surface the accepted values and halt. Do not guess.
 
@@ -82,7 +82,7 @@ The CLI emits `<source_md>.html` adjacent to the markdown file. The starter cont
 - `<!-- TODO -->` placeholders marking where content belongs.
 - A `<meta name="source-md">` tag pointing back at the canonical markdown.
 
-**If the CLI exits with `HTML_NO_PRD` / `HTML_NO_ISSUE` / `HTML_NO_SOURCE` / `HTML_AMBIGUOUS_PRD` / `HTML_EXISTS`**, surface the banner verbatim to the user and halt. Do not invent paths.
+**If the CLI exits with `HTML_NO_PRD` / `HTML_NO_ISSUE` / `HTML_NO_SOURCE` / `HTML_AMBIGUOUS_PRD` / `PRD_NOT_FOUND` / `HTML_EXISTS`**, surface the banner verbatim to the user and halt. Do not invent paths. For `HTML_AMBIGUOUS_PRD`, re-run with `deviate html prd --bucket <slug>` — the banner lists the candidates to choose from; do not change directories.
 
 ### STEP_2: READ_MARKDOWN_SOURCE
 
@@ -183,7 +183,7 @@ After completing the work, emit a structured authoring report:
 | Markdown file missing | Halt with `HTML_NO_SOURCE`; tell the user to write the markdown first. |
 | HTML already exists, no `--force` | Halt with `HTML_EXISTS`; ask the user whether to overwrite. |
 | HTML already exists, `--force` | Confirm with the user once before regenerating; the user explicitly invoked `/deviate-html <phase> --force` only when they want the loss. |
-| Multiple `prd.md` files in `specs/` | Halt with `HTML_AMBIGUOUS_PRD`; the CLI cannot auto-detect which epic the user means. Ask the user to specify the bucket or run from within the epic's worktree. |
+| Multiple `prd.md` files in `specs/` | Halt with `HTML_AMBIGUOUS_PRD`; the banner lists the candidates. Re-run as `deviate html prd --bucket <slug>` to target one epic (run `deviate html prd --help` to confirm the flag). Do not change directories — a nested cwd makes the resolver miss `specs/` and exit with `HTML_NO_PRD`. |
 | Plan not on a `feat/<bucket>/<slug>` branch and no `--issue` flag | Halt with `HTML_NO_ISSUE`; the plan command cannot resolve which issue the HTML belongs to. |
 | Markdown and HTML diverge on FR / AC / FLOW tokens | Surface the divergence in the authoring report; do not silently pick a winner. The markdown is canonical for tooling; the HTML should mirror it. |
 

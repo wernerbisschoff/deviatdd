@@ -117,15 +117,25 @@ def _resolve_product_md(filename: str) -> Path:
     return md
 
 
-def _resolve_prd_md() -> Path:
-    """Resolve the unique ``prd.md`` under the specs root (single-epic)."""
+def _resolve_prd_md(bucket: str | None = None) -> Path:
+    """Resolve the ``prd.md`` for the PRD epic, honoring ``--bucket``.
+
+    With an explicit ``bucket``, resolve directly to ``specs/<bucket>/prd.md``.
+    """
+    specs_root = _specs_root()
+    if bucket is not None:
+        prd_md = specs_root / bucket / "prd.md"
+        if not prd_md.exists():
+            console.print(f"[red]PRD_NOT_FOUND[/] {prd_md}")
+            raise typer.Exit(code=1)
+        return prd_md
     # Only numbered epic dirs (e.g. ``001-deviate-cli-python``) own a
     # ``prd.md``. Other top-level dirs under ``specs/`` carry unrelated
     # artifacts (``adhoc/`` is the shared adhoc ledger,
     # ``_product/`` is the product layer, ``explore/`` is the
     # pre-numbered discovery scratchpad).
     candidates = sorted(
-        p for p in _specs_root().glob("*/prd.md") if p.parent.name[:3].isdigit()
+        p for p in specs_root.glob("*/prd.md") if p.parent.name[:3].isdigit()
     )
     if not candidates:
         console.print("[red]HTML_NO_PRD[/] no */prd.md under specs/")
@@ -134,7 +144,7 @@ def _resolve_prd_md() -> Path:
         names = ", ".join(p.parent.name for p in candidates)
         console.print(
             f"[red]HTML_AMBIGUOUS_PRD[/] multiple prd.md candidates: {names}. "
-            "Disambiguate by removing extras or running from the epic dir."
+            "Pass --bucket <slug> to target one explicitly."
         )
         raise typer.Exit(code=1)
     return candidates[0]
@@ -161,10 +171,18 @@ def html_architecture(
 
 @html_app.command("prd")
 def html_prd(
+    bucket: Annotated[
+        str | None,
+        typer.Option(
+            "--bucket",
+            "-b",
+            help="Epic bucket slug (e.g. 001-deviate-cli-python). Resolves specs/<bucket>/prd.md directly, bypassing ambiguity detection.",
+        ),
+    ] = None,
     force: Annotated[bool, typer.Option(help="Overwrite existing HTML")] = False,
 ) -> None:
     """Write the active epic's ``prd.html`` starter scaffold."""
-    _write_html(_resolve_prd_md(), "prd", force=force)
+    _write_html(_resolve_prd_md(bucket), "prd", force=force)
 
 
 @html_app.command("plan")
