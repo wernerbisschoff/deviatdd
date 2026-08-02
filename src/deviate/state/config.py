@@ -263,6 +263,12 @@ class SessionState(BaseModel):
     red_commit_sha: str = ""
     pending_judge_feedback: Optional[dict[str, str]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Verdict of the most recent JUDGE phase. The runner uses it to tell an
+    # explicit ``COMPLIANCE_PASS`` (which adjudicates residual test failures
+    # as acceptable) apart from an unadjudicated EMPTY verdict (where a
+    # failing GREEN suite must still drive a TRAIN retry). Empty = no judge
+    # has weighed in yet. Decides only the transient TRAIN-loop exit gate.
+    last_judge_verdict: str = ""
     # Path of the ``specs/explore/<slug>.md`` source file that
     # ``deviate research pre`` moved into the numbered epic dir. Populated
     # by ``research_pre`` so ``research_post`` can ``git rm`` it inside
@@ -293,6 +299,7 @@ class SessionState(BaseModel):
             pending_judge_action=self.pending_judge_action,
             pending_judge_feedback=self.pending_judge_feedback,
             research_explore_source=self.research_explore_source,
+            last_judge_verdict=self.last_judge_verdict,
         )
 
     def force_transition_to(self, phase: str) -> SessionState:
@@ -307,6 +314,7 @@ class SessionState(BaseModel):
             pending_judge_action=self.pending_judge_action,
             pending_judge_feedback=self.pending_judge_feedback,
             research_explore_source=self.research_explore_source,
+            last_judge_verdict=self.last_judge_verdict,
         )
 
     def save(self, path: Path) -> None:

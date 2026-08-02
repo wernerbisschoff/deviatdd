@@ -1,85 +1,68 @@
 ---
 name: deviatdd
-description: Step through deviate micro run one task at a time — inspect each result, triage failures, file harness issues
+description: Run deviate micro run (bare) on repeat until NO_PENDING_TASKS; tasks come from tasks.md not the ledger; inspect each result, triage failures, file harness issues; allow git revert to retry tasks
 category: deviatdd-tooling
 version: 2.0.0
 ---
 
 # deviatdd — Per-task micro orchestrator
 
-This skill orchestrates `deviate micro run <TASK_ID>` one task at a time,
-inspecting each result before proceeding to the next. When a failure
-escapes micro's scope, the skill points you at the canonical slash
-command (see **Dispatch to slash commands** below) — it does not act
-inline.
+This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner picks the next unchecked task from `tasks.md` and runs it; the agent re-invokes the same command on each iteration. **Do NOT use `deviate micro run --all`** — that flag is intentionally off-limits here so the agent can stop and react on each failure. The loop terminates when the runner exits with `NO_PENDING_TASKS`. When a failure escapes micro's scope, the skill points you at the canonical slash command (see **Dispatch to slash commands** below) — it does not act inline.
 
-A fast-path `deviate micro run --all` is available but *only* when you
-have verified the workspace is healthy (e.g. via `--dry-run` on the first
-task) or when the operator explicitly requests "drain all". The
-default mode is single-task stepping for maximum reactiveness to
-harness issues.
+The default posture is **repeat stepping**: the agent runs the bare `deviate micro run` on repeat, with the bash tool's `timeout` parameter set (see **Step 1: Run the next task**). Each invocation consumes one unchecked task from `tasks.md`; the loop terminates when the runner exits with `NO_PENDING_TASKS`. A single task boundary keeps the queue inspectable and prevents one bad task from cascading into the next.
 
-## When to use this skill
+## First action: just run it
 
-- The operator typed `/deviatdd` or asked "run tasks", "step through
-  micro", "drain the queue", or "fix this failing micro run".
-- An issue has been planned and has pending tasks ready to execute.
-- A previous `--all` run failed on one task and you want to retry
-  that single task and then decide whether to continue.
-- A harness or git/ledger anomaly was encountered and the operator
-  needs to inspect the result before proceeding.
+This skill is "just run micro" — the very first action is `deviate micro run` (bare, no task ID). The runner picks the next unchecked task from `tasks.md`; the agent does NOT pre-select an ID, run `--dry-run`, or query the ledger. The agent:
 
-Before executing a task, preview resolution with:
+1. Runs `deviate micro run` with the bash tool's `timeout` parameter set (see **Step 1** for the per-profile budget). The runner picks the next task and runs it.
+2. Inspects the exit code (see **Step 2**). Exit 0 → task completed, re-invoke to continue. Exit 1 with `NO_PENDING_TASKS` → queue is drained, stop. Exit non-zero otherwise → triage via **Step 3**.
 
-```bash
-deviate micro run <TASK_ID> --dry-run
-```
+Do NOT waste turns on pre-run exploration. The runner owns RED + GREEN + JUDGE + REFACTOR; the skill's job is to feed it work and react to exits. If a task fails because the spec is wrong or the harness is broken, that is a **Step 3** action (Dispatch / clean-slate retry / deviatdd issue), not a pre-run investigation.
 
-Inspect one issue or task directly with:
+## Code change policy
 
-```bash
-deviate inspect issues show <ISS-ID> --json
-deviate inspect tasks show <TSK-ID> --json
-```
+This skill drives the micro runner; it does **not** own code changes in the project being worked on. The only code changes permitted are:
 
-## Per-task stepping protocol
+- Fixes to the deviatdd harness itself (`src/deviate/**`) when a reproducible harness bug is blocking a task.
+- Skill / prompt template edits under `src/deviate/prompts/**` when the prompt misroutes a task.
 
-Instead of `--all`, run tasks one at a time. The agent stops to
-inspect **only when a task fails or behaves unexpectedly** — a
-successful task just advances to the next.
+Do NOT edit the project's `src/`, `tests/`, `specs/`, or any other code the active issue is touching. If a task needs a code change, the runner's RED/GREEN/JUDGE loop produces it — the skill does not pre-empt that loop. If the loop is broken, the failure is a harness bug and the **Filing deviatdd issues** path applies.
 
-### Step 0: Discover pending tasks
+## Per-task stepping loop
+
+Instead of `--all`, run tasks one at a time and **loop until the queue is empty**. The canonical command is the **bare** `deviate micro run` (no task ID) — the runner resolves the next unchecked task from `tasks.md` and runs it. Re-invoke the same command; it picks the next task each time. The loop terminates when the runner exits with `NO_PENDING_TASKS` (exit 1). An exit-0 from `deviate micro run` only means ONE task completed — it does NOT mean the queue is drained. The agent stops inspecting only when a task fails, behaves unexpectedly, or the runner emits `NO_PENDING_TASKS`.
+
+### Source of truth: `tasks.md` (NOT the ledger)
+
+The micro runner reads from two distinct artifacts, and the right one differs by purpose:
+
+- **`specs/<EPIC>/<ISSUE>/tasks.md`** — the **human-authored decomposition**. This is the queue. The runner scans it for unchecked `[ ]` tasks (implementation lives at `src/deviate/cli/micro.py::_find_all_pending_tasks`, which `glob`s `specs/**/tasks.md`). Use `deviate micro run` (bare) to consume the next unchecked task.
+- **`specs/<EPIC>/<ISSUE>/tasks.jsonl`** — the **append-only event ledger**. Each row is a phase transition (PENDING, RED, GREEN, JUDGE, REFACTOR, COMPLETED, FAILED). The ledger only knows about tasks that have already been started. Do NOT use `deviate inspect tasks list --status PENDING` to discover the queue — that reads the ledger and returns `[]` while unchecked tasks in `tasks.md` still exist. The ledger is for inspecting the history and current status of already-started tasks; it is NOT the source of truth for "what's next".
 
 ```bash
-# Inside the worktree, list all PENDING tasks:
-deviate inspect tasks list --status PENDING --json 2>/dev/null \
-  | uv run python -c "import sys,json; data=json.load(sys.stdin); [print(f\"  {t['id']}: {t.get('description','')[:60]}\") for t in data]"
-```
+# Canonical loop — bare command, no task ID. Resolves the next unchecked task from tasks.md.
+deviate micro run
 
-Or use a simpler grep-based discovery:
-
-```bash
-# Quick peek at PENDING task IDs in the worktree:
-grep -h '"PENDING"' specs/**/tasks.jsonl 2>/dev/null | head -10
-```
-
-### Step 1: Run the next task
-
-```bash
+# If the operator pinned a specific task:
 deviate micro run <TASK_ID>
 ```
 
 Flags you may need:
 - `--no-refactor` — skip REFACTOR phase (e.g. for doc-only slices)
 - `--no-judge` — skip JUDGE phase (careful — bypasses compliance check)
-- `--profile fast` — minimal phase set (RED → GREEN, no judge/refactor)
+- `--profile fast` — RED → GREEN only, no JUDGE / REFACTOR. **Use only for very simple tasks** (a one-line change, a fixture file, a config edit). Default profile is `full`; switch to `fast` only when the slice is small enough to read in one screen and there is no compliance surface JUDGE would catch.
 - `--model <name>` — override model for this task
 - `--dry-run` — preview before executing
 
+Do NOT use `--all`. The skill is built around per-task stepping; `--all` defeats the per-task inspection loop and is reserved for the `deviate run` meso driver.
+
+Set a **decent timeout** on the bash invocation of `deviate micro run`. The CLI has no end-to-end deadline (`src/deviate/cli/micro.py::run_command` does not bound the subprocess); the only timeout it self-applies is `_resolve_test_timeout_seconds` (default 1800s) on the *test command*, not the whole cycle. **Use the bash tool's own `timeout` parameter** (e.g. `timeout: 1830` on the bash call) — the shell binary `timeout` and `gtimeout` are NOT installed in this environment. Do NOT wrap the command in a shell-level `timeout` invocation; rely on the harness. Full profile: 1800s. Fast profile: 900s. Add a 30s buffer so the runner can finish gracefully.
+
+If the timeout fires, the task is still in the ledger; the next repeat invocation picks it up from the same phase state. Do NOT bypass with `kill -9` unless the runner left session state corrupted (then run the **Clean-slate retry** gate).
 ### Step 2: Check the result
 
-If the command exits successfully (exit code 0), the task COMPLETED.
-Move on to the next PENDING task — no need to read logs.
+If the command exits successfully (exit code 0), this task COMPLETED. **Do NOT stop the loop here** — re-invoke `deviate micro run` to consume the next unchecked task. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1).
 
 If the command exits non-zero, inspect the per-task transcript before
 deciding how to proceed:
@@ -87,6 +70,7 @@ deciding how to proceed:
 ```bash
 cat .deviate/logs/<ISSUE_ID>/<TASK_ID>.log | tail -30
 ```
+
 
 Key signals:
 
@@ -102,11 +86,29 @@ Key signals:
 
 | After-task state | Next action |
 |---|---|
-| Exited 0 (COMPLETED) | Continue to next PENDING task (Step 1). |
+| Exited 0 (COMPLETED) | **Step 4** — re-invoke `deviate micro run` to consume the next unchecked task. Do NOT stop here. |
 | Task FAILED (test/code issue) | Inspect the log. Retry the same task once, or skip and fix manually via `/deviate-red`/`/deviate-green`. |
 | Task FAILED (harness/git/ledger issue) | This is a deviatdd bug. See **Filing deviatdd issues** below before retrying. |
 | Agent timeout / model rate-limit | Retry once with the same task ID. |
 | Worktree / session corruption | Run the **Clean-slate retry** gate below. |
+| Task produced a bad commit that needs rolling back | `git revert <SHA>` to create a new commit that undoes the bad changes, then re-run the task. `git revert` is the safe retry path — it preserves history and is non-destructive. Do NOT use `git reset` for this (that is the destructive path covered by the clean-slate gate). |
+
+
+
+### Step 4: Loop until the queue is empty
+
+After every successful task (or after Step 3 decides to retry), re-invoke `deviate micro run`. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1):
+
+```bash
+# Termination check — the runner emits NO_PENDING_TASKS when tasks.md has no unchecked `[ ]` tasks.
+deviate micro run
+# Exit code 1, output: [red]NO_PENDING_TASKS[/]
+```
+
+- If the runner exits with `NO_PENDING_TASKS` (exit 1), the queue is drained — emit the skill's output contract and stop.
+- If the runner exits 0, the task completed — re-invoke `deviate micro run` to consume the next unchecked task. Repeat indefinitely.
+
+**Why this matters:** a single `deviate micro run` invocation runs ONE task's full cycle and exits 0 on success. That exit means only this task is done, not the queue. The agent MUST re-invoke the command, otherwise it will stop after one task while `tasks.md` still has unchecked work. The runner's `NO_PENDING_TASKS` exit is the only authoritative "no more work" signal — do NOT use `deviate inspect tasks list --status PENDING` to gate the loop (that reads the ledger, not `tasks.md`, and will give false negatives).
 
 ---
 ---
@@ -124,7 +126,7 @@ events to two sinks under `.deviate/logs/` via the dispatcher in
 - **Per-run chronological log** — `.deviate/logs/run_<UTC>.log`,
   one file per invocation, always written. Use this when the failing
   task is unknown, the per-task file does not exist, or you need a
-  cross-task view of one `--all` run.
+  cross-task view of one multi-task run.
 
 Each line is `[<UTC iso>] <EVENT>\n  <kwarg>: <value>\n` (multi-line
 values are indented four-space under a `key:` header). The
@@ -183,16 +185,17 @@ slash command in the **Dispatch** table.
 ## Canonical invocation
 
 ```bash
-# Default: one task at a time (inspect between each)
-deviate micro run <TASK_ID>
+# Default: bare command, on repeat. The runner picks the next unchecked task from tasks.md.
+deviate micro run
 
-# Fast-path: drain all pending (only when healthy)
-deviate micro run --all
+# Fast profile: 15 minutes (no JUDGE / REFACTOR) — only for very simple slices.
+deviate micro run --profile fast
+
+# Pinned task: the operator gave a specific ID.
+deviate micro run <TASK_ID>
 ```
 
-The per-task stepping loop is the default mode. Use `--all` only
-when you have verified workspace health or the operator explicitly
-requests it.
+The per-task stepping loop is the default mode. **Do NOT use `--all`** — it is reserved for the `deviate run` meso driver that chains meso into micro end-to-end. Here, every PENDING task gets its own invocation so the agent can inspect the result and decide whether to advance.
 
 ## Error triage table
 

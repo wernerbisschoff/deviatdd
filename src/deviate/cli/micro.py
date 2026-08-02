@@ -895,8 +895,10 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
 
     pending = _find_all_pending_tasks(root, issue_id=session.active_issue_id)
     if not pending:
-        console.print("[red]NO_PENDING_TASKS[/]")
-        raise typer.Exit(code=1)
+        console.print("[yellow]NO_PENDING_TASKS[/]")
+        # Empty queue is a graceful no-op, not an error. The trainer's
+        # empty-queue contract (deviatdd skill table) documents exit 0.
+        raise typer.Exit(code=0)
     return pending[0]
 
 
@@ -2071,6 +2073,7 @@ def _run_judge_phase(
         )
     verdict = getattr(manifest, "verdict", "")
     action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
+    session.last_judge_verdict = getattr(manifest, "verdict", "").upper()
 
     # ---- Violation routes ----------------------------------------------
     if action in {"revert_to_red", "revert_before"}:
@@ -2713,7 +2716,18 @@ def _run_tdd_cycle(
                 reason="test_defect",
             )
             continue
-        if session.judge_rejected or session.train_feedback or green_tests_failed:
+        # Decision gate. An explicit COMPLIANCE_PASS verdict adjudicates any
+        # residual suite failures as acceptable, so the pre-JUDGE GREEN-stall
+        # snapshot must not force a spurious TRAIN retry (which would loop a
+        # correct slice into TRAIN_EXHAUSTED). An unadjudicated (EMPTY) judge
+        # verdict leaves the pre-JUDGE snapshot authoritative: a genuinely
+        # failing GREEN suite still retrains to exhaustion.
+        judge_passed_explicitly = bool(
+            session.last_judge_verdict == "COMPLIANCE_PASS"
+            and not session.judge_rejected
+        )
+        still_failing = bool(green_tests_failed and not judge_passed_explicitly)
+        if session.judge_rejected or session.train_feedback or still_failing:
             train_attempts += 1
             if train_attempts >= max_train_attempts:
                 c.print(
