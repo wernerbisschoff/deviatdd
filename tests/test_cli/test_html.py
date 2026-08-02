@@ -457,3 +457,53 @@ def test_html_all_skips_existing(tmp_path: Path, monkeypatch) -> None:
     runner.invoke(cli, ["html", "architecture"])
     r = runner.invoke(cli, ["html", "all"])
     assert "HTML_SKIPPED" in r.output or "HTML_SKIPPED" in (r.stderr or "")
+
+
+# ---------------------------------------------------------------------------
+# CLI: prd --bucket targeting
+# ---------------------------------------------------------------------------
+
+
+def test_html_prd_bucket_targets_specific_epic(tmp_path: Path, monkeypatch) -> None:
+    """``--bucket <slug>`` writes that epic's prd.html despite ambiguity.
+
+    Regression guard: the pre-fix CLI hard-failed with HTML_AMBIGUOUS_PRD
+    whenever more than one epic owned a prd.md and offered no flag to target
+    a specific bucket. ``--bucket`` bypasses the walker entirely."""
+    _seed_product_md(tmp_path)
+    (tmp_path / "specs" / "001-foo").mkdir(parents=True)
+    (tmp_path / "specs" / "001-foo" / "prd.md").write_text("# Foo\n")
+    (tmp_path / "specs" / "002-bar").mkdir(parents=True)
+    (tmp_path / "specs" / "002-bar" / "prd.md").write_text("# Bar\n")
+    monkeypatch.chdir(tmp_path)
+    r = runner.invoke(cli, ["html", "prd", "--bucket", "002-bar"])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "specs" / "002-bar" / "prd.html").exists()
+    # The sibling epic is untouched.
+    assert not (tmp_path / "specs" / "001-foo" / "prd.html").exists()
+
+
+def test_html_prd_bucket_targets_unnumbered_dir(tmp_path: Path, monkeypatch) -> None:
+    """``--bucket`` works for non-numbered dirs the auto-walker rejects."""
+    (tmp_path / "specs" / "adhoc").mkdir(parents=True)
+    (tmp_path / "specs" / "adhoc" / "prd.md").write_text("# Adhoc\n")
+    (tmp_path / "specs" / "001-foo").mkdir(parents=True)
+    (tmp_path / "specs" / "001-foo" / "prd.md").write_text("# Foo\n")
+    monkeypatch.chdir(tmp_path)
+    r = runner.invoke(cli, ["html", "prd", "--bucket", "adhoc"])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "specs" / "adhoc" / "prd.html").exists()
+
+
+def test_html_prd_bucket_missing_file_exits_cleanly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Explicit bucket without a prd.md fails fast — no walker fallback."""
+    (tmp_path / "specs" / "001-foo").mkdir(parents=True)
+    (tmp_path / "specs" / "001-foo" / "prd.md").write_text("# Foo\n")
+    (tmp_path / "specs" / "ghost").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    r = runner.invoke(cli, ["html", "prd", "--bucket", "ghost"])
+    assert r.exit_code != 0
+    assert "PRD_NOT_FOUND" in r.output or "PRD_NOT_FOUND" in (r.stderr or "")
+    assert not (tmp_path / "specs" / "ghost" / "prd.html").exists()
