@@ -2630,19 +2630,21 @@ class TestResolveModelForPhase:
         )
 
 
-class TestResolveModelForPhaseEnvVar:
-    """Backend env-var fallback for resolve_model_for_phase.
+class TestResolveModelForPhaseEnvVarIgnored:
+    """Env vars are NOT a model source for resolve_model_for_phase.
 
-    When no config resolves a model and no CLI override is set, the resolver
-    falls back to a backend-specific env var so operators can pick the model
-    per-invocation without editing ``.deviate/config.toml``.
+    Model selection is config-only: phase-specific ``[models]`` key, then
+    ``[models].default``, then ``None``. Env vars (e.g. ``PI_MODEL``,
+    ``PI_DEFAULT_MODEL``) are deliberately ignored so deviate does not
+    forward ambient model selections to subprocess ``--model`` flags.
+    Operators configure models at the agent layer instead, where their
+    own env-var conventions apply.
 
     Priority (highest first):
         1. Phase-specific config (``[models].red``)
         2. CLI ``--model`` flag
         3. Default config (``[models].default``)
-        4. Backend env var (``PI_MODEL`` for ``pi``)
-        5. ``None``
+        4. ``None``
     """
 
     @pytest.fixture
@@ -2659,32 +2661,40 @@ class TestResolveModelForPhaseEnvVar:
         (dot / "config.toml").write_text("[agent]\nbackend = 'pi'\n")
         return tmp_path
 
-    def test_pi_model_env_var_used_when_no_config(
+    def test_pi_model_env_var_ignored_when_no_config(
         self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from deviate.cli.micro import resolve_model_for_phase
 
         monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
-        assert (
-            resolve_model_for_phase("RED", config_no_models, backend="pi")
-            == "openai/gpt-5"
-        )
+        # Env var set, no config, backend="pi" -> still None.
+        # Model routing is config-only; deviate does not forward PI_MODEL.
+        assert resolve_model_for_phase("RED", config_no_models, backend="pi") is None
 
-    def test_pi_model_env_var_ignored_when_config_resolves(
+    def test_pi_default_model_env_var_ignored_when_no_config(
+        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from deviate.cli.micro import resolve_model_for_phase
+
+        monkeypatch.setenv("PI_DEFAULT_MODEL", "openai/gpt-5")
+        assert resolve_model_for_phase("RED", config_no_models) is None
+
+    def test_env_var_does_not_override_config(
         self, config_default: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Config wins over env var."""
+        """Config still wins when an env var is also set (defensive)."""
         from deviate.cli.micro import resolve_model_for_phase
 
         monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
+        monkeypatch.setenv("PI_DEFAULT_MODEL", "openai/gpt-5")
         assert (
             resolve_model_for_phase("RED", config_default, backend="pi") == "fast/model"
         )
 
-    def test_pi_model_env_var_ignored_when_cli_set(
+    def test_env_var_does_not_override_cli(
         self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """CLI override wins over env var."""
+        """CLI override still wins over any env var (defensive)."""
         from deviate.cli import micro as micro_mod
         from deviate.cli.micro import resolve_model_for_phase
 
@@ -2695,31 +2705,28 @@ class TestResolveModelForPhaseEnvVar:
             == "cli/override-model"
         )
 
-    def test_env_var_only_applies_to_named_backend(
+    def test_env_var_ignored_regardless_of_backend(
         self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """PI_MODEL should NOT be read when backend != pi."""
+        """Env var is ignored for every backend, not just pi."""
         from deviate.cli.micro import resolve_model_for_phase
 
         monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
         assert resolve_model_for_phase("RED", config_no_models, backend="omp") is None
+        assert (
+            resolve_model_for_phase("RED", config_no_models, backend="opencode") is None
+        )
+        assert resolve_model_for_phase("RED", config_no_models, backend="droid") is None
 
-    def test_empty_env_var_falls_through(
-        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
+    def test_backend_kwarg_still_accepted_for_backward_compat(
+        self, config_no_models: Path
     ) -> None:
+        """``backend`` keyword is preserved for caller compatibility."""
         from deviate.cli.micro import resolve_model_for_phase
 
-        monkeypatch.setenv("PI_MODEL", "")
+        # No env set, no config, no CLI -> None regardless of backend arg.
         assert resolve_model_for_phase("RED", config_no_models, backend="pi") is None
-
-    def test_no_backend_arg_keeps_legacy_behaviour(
-        self, config_no_models: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Backward compatibility: callers that don't pass backend get None."""
-        from deviate.cli.micro import resolve_model_for_phase
-
-        monkeypatch.setenv("PI_MODEL", "openai/gpt-5")
-        assert resolve_model_for_phase("RED", config_no_models) is None
+        assert resolve_model_for_phase("RED", config_no_models, backend=None) is None
 
 
 class TestCliModelFlag:
