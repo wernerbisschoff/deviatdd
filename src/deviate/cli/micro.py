@@ -74,27 +74,6 @@ console = Console()
 _verbose: bool = False
 
 _cli_model_override: str | None = None
-# Backend → env-var map for the model fallback. Add new backends here as
-# their CLIs adopt a stable env-var convention. ``pi`` reads ``PI_MODEL``
-# natively; the others don't yet ship one, so we keep the map conservative.
-_BACKEND_MODEL_ENV: dict[str, str] = {
-    "pi": "PI_MODEL",
-}
-
-
-def _resolve_model_from_env(backend: str | None) -> str | None:
-    """Return the model from the backend-specific env var, or None.
-
-    Empty strings are treated as unset so operators who ``export PI_MODEL=``
-    to "clear" the override don't accidentally select an empty model id.
-    """
-    if not backend:
-        return None
-    var = _BACKEND_MODEL_ENV.get(backend)
-    if not var:
-        return None
-    value = os.environ.get(var, "").strip()
-    return value or None
 
 
 def resolve_model_for_phase(
@@ -106,12 +85,16 @@ def resolve_model_for_phase(
         1. Phase-specific config key (e.g. ``[models].red``)
         2. CLI ``--model`` flag (``_cli_model_override``)
         3. Default config key (``[models].default``)
-        4. Backend env var (``PI_MODEL`` for the ``pi`` backend, etc.) — only
-           consulted when *backend* is provided so legacy callers are unaffected.
-        5. ``None`` — backend uses its native default
+        4. ``None`` — backend uses its native default
 
     JUDGE phase is excluded from CLI override to preserve model tiering
     (V4 Pro for JUDGE). Phase-specific and default config still apply.
+
+    *backend* is accepted for backward compatibility with prior callers
+    but is no longer consulted: model resolution is config-only so the
+    same ``[models]`` block applies regardless of which agent CLI is
+    spawned. Operators select models at the agent layer via their own
+    env vars (e.g. ``PI_MODEL``) instead of having deviate forward one.
 
     Exposed as a module-level symbol so micro-layer tests can
     ``unittest.mock.patch`` it to bypass config + CLI resolution for
@@ -128,10 +111,7 @@ def resolve_model_for_phase(
     allowed = frozenset({"RED", "GREEN", "REFACTOR", "EXECUTE"})
     if _cli_model_override and phase.upper() in allowed:
         return _cli_model_override
-    resolved = resolve_phase_model(phase, models)
-    if resolved is not None:
-        return resolved
-    return _resolve_model_from_env(backend)
+    return resolve_phase_model(phase, models)
 
 
 _YAML_FENCE_OPEN_RE = re.compile(r"^```+\s*yaml", re.IGNORECASE)

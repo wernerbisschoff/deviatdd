@@ -629,10 +629,12 @@ class AgentBackend:
             stderr=subprocess.PIPE,
             # Explicit ``env=None`` (Python default) — the agent subprocess
             # inherits the parent's ``os.environ`` verbatim, so keys set by
-            # the operator's shell (PI_MODEL, OPENCODE_API_KEY, mise-injected
-            # vars, …) reach ``pi`` / ``omp`` without any deviation-side
-            # rewriting. Setting ``env={...}`` here would silently drop any
-            # var the operator relies on, so we leave it open.
+            # the operator's shell (PI_MODEL, PI_DEFAULT_MODEL,
+            # OPENCODE_API_KEY, mise-injected vars, …) reach ``pi`` / ``omp``
+            # without any deviation-side rewriting. Model selection is the
+            # agent layer's responsibility; deviate only forwards ``--model``
+            # when ``[models]`` config or ``--model`` CLI resolved a value.
+            # operator relies on, so we leave it open.
             env=None,
         )
         if cwd is not None:
