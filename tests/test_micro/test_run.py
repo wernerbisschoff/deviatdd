@@ -118,6 +118,55 @@ class TestRunCommand:
                 f"Expected immediate task to reach COMPLETED: {result.output}"
             )
 
+    def test_run_execute_commits_untracked_deliverable_without_pre_stage(
+        self, tmp_git_repo: Path
+    ):
+        """EXECUTE must commit the agent's new untracked file even when
+        nothing was pre-staged (regression: _commit_phase_with_recovery does
+        not git add, so the micro-run EXECUTE path must stage first)."""
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            SessionState(current_phase="IDLE").save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-05",
+                issue_id="ISS-001-004",
+                description="EXECUTE with untracked deliverable",
+                status="PENDING",
+                execution_mode="DIRECT",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            def _execute_agent(*args, **kwargs):
+                if kwargs.get("phase") == "EXECUTE":
+                    deliverable = Path("src/deviate/impl.py")
+                    deliverable.parent.mkdir(parents=True, exist_ok=True)
+                    deliverable.write_text("# executed deliverable\n")
+                return HandoverManifest(
+                    phase=kwargs.get("phase", "EXECUTE"),
+                    status="PASS",
+                    task_id=kwargs.get("task_id", task.id),
+                ), ""
+
+            with patch("deviate.cli.micro._invoke_agent", side_effect=_execute_agent):
+                result = runner.invoke(cli, ["micro", "run", task.id])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            # The untracked deliverable must be committed.
+            committed = subprocess.run(
+                ["git", "cat-file", "-e", "HEAD:src/deviate/impl.py"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                capture_output=True,
+            )
+            assert committed.returncode == 0, (
+                "EXECUTE did not commit the untracked deliverable"
+            )
+
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)

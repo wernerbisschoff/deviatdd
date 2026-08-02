@@ -2857,6 +2857,13 @@ def _run_execute_phase(
 
         issue_id = task.get("issue_id", "")
         scope = _build_scope(issue_id, tid)
+        # Stage the agent's deliverable before committing. The recovery
+        # helper (unlike _commit_phase) does not stage, so without this the
+        # EXECUTE commit fails with "nothing staged" and untracked files
+        # (new schemas, migrations) are dropped from the recovery ref.
+        # The worktree at this point holds only this task's changes
+        # (enforced by _verify_clean_worktree below), so a full add is exact.
+        subprocess.run(["git", "add", "-A"], cwd=root, env=_git_env(), check=False)
 
         _commit_phase_with_recovery(
             f"feat({scope}): EXECUTE phase - {tid}",
