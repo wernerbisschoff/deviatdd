@@ -1335,6 +1335,100 @@ class TestMicroOrchestration:
                 f"Expected non-zero exit after retry exhaustion: {result.output}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_compliance_pass_judge_terminates_stale_green_retrain(
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo, approve_gate2
+    ):
+        """COMPLIANCE_PASS judge must terminate the TDD cycle even when the
+        preceding GREEN left the suite failing.
+
+        Regression: `green_tests_failed` was snapshotted right after GREEN and
+        never re-evaluated after the JUDGE verdict. A judge that explicitly
+        approved the diff (verdict=COMPLIANCE_PASS, adjudicating residual
+        failures as acceptable) still hit the stale `True` and the runner
+        looped a correct slice into TRAIN_EXHAUSTED."""
+        # GREEN's test command fails on every attempt, so the pre-JUDGE
+        # `green_tests_failed` snapshot would be True.
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="1 failed", stderr=""
+        )
+
+        def _judge_pass(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-004-15")
+            if phase == "JUDGE":
+                return HandoverManifest(
+                    phase="JUDGE",
+                    status="PASS",
+                    verdict="COMPLIANCE_PASS",
+                    task_id=tid,
+                    summary=(
+                        "Residual unresolved failures are pre-existing and fall",
+                        " outside this diff; the slice itself is compliant.",
+                    ),
+                ), ""
+            return HandoverManifest(phase=phase, status="SUCCESS", task_id=tid), ""
+
+        mock_agent.side_effect = _judge_pass
+
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-15",
+                issue_id="ISS-001-004",
+                description="Compliance pass terminates stale green retrain",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+
+            Path("README.md").write_text("# test\n")
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: setup"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-15"])
+
+            assert "TRAIN_EXHAUSTED" not in result.output, result.output
+            assert "COMPLETED TSK-004-15" in result.output, result.output
+            assert result.exit_code == 0, result.output
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    def test_micro_run_empty_queue_exits_zero(
+        self, mock_verify, tmp_git_repo: Path, approve_gate2
+    ):
+        """`deviate micro run` on a drained queue must exit 0, not 1.
+
+        The deviatdd skill's empty-queue contract documents exit 0 ("nothing
+        to do, fail gracefully"); the runner previously raised ``typer.Exit(1)``
+        which told automation the run errored when the queue was simply empty."""
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE", active_issue_id="ISS-EMPTY")
+            session.save(dot_dir / "session.json")
+            Path("specs").mkdir(parents=True)
+            # No tasks.jsonl and no tasks.md under specs/ → no pending tasks.
+            result = runner.invoke(cli, ["micro", "run"])
+            assert "NO_PENDING_TASKS" in result.output, result.output
+            assert result.exit_code == 0, result.output
+
 
 def _read_statuses(ledger_path: Path) -> list[str]:
     lines = ledger_path.read_text(encoding="utf-8").strip().split("\n")

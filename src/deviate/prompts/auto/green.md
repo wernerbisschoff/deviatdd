@@ -107,7 +107,7 @@ After the implementation is verified passing, emit the handover manifest:
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
-Target_Artifact: `path/to/source_file.ext`
+Target_Artifact: "path/to/source_file.ext"
 
 <handover_manifest>
 ```yaml
@@ -131,7 +131,7 @@ files:
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
-Target_Artifact: `path/to/source_file.ext`
+Target_Artifact: "path/to/source_file.ext"
 
 <handover_manifest>
 ```yaml

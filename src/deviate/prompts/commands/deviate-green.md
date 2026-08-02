@@ -48,7 +48,7 @@ After completion, the `deviate-refactor` skill (or equivalent) should be invoked
 # DeviaTDD Micro Green: TASK-104
 
 Status: GREEN_STATE_ACHIEVED
-Target_Artifact: `src/auth/jwt.py`
+Target_Artifact: "src/auth/jwt.py"
 
 ## Minimal Handover
 ```yaml
@@ -155,7 +155,7 @@ Output NOTHING outside the YAML block — no explanations, no commentary.
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
-Target_Artifact: `path/to/source_file.ext`
+Target_Artifact: "path/to/source_file.ext"
 
 ## Minimal Handover
 ```yaml
@@ -177,7 +177,7 @@ next_phase: "/deviate-refactor"
 # DeviaTDD Micro Green: {TASK_ID}
 
 Status: GREEN_STATE_ACHIEVED
-Target_Artifact: `path/to/source_file.ext`
+Target_Artifact: "path/to/source_file.ext"
 
 ## Minimal Handover
 ```yaml

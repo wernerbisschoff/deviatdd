@@ -77,7 +77,7 @@ The `<authoritative_acceptance_contract source="plan.md">` block is authoritativ
 # DeviaTDD Micro Red: TASK-104
 
 Status: TEST_WRITTEN_FAILING
-Target_Artifact: `tests/auth/test_jwt.py`
+Target_Artifact: "tests/auth/test_jwt.py"
 
 <handover_manifest>
 ```yaml
@@ -141,7 +141,7 @@ Emit exclusively the finalized human-readable Markdown blueprint document satisf
 # DeviaTDD Micro Red: {TASK_ID}
 
 Status: TEST_WRITTEN_FAILING
-Target_Artifact: `path/to/test_file.ext`
+Target_Artifact: "path/to/test_file.ext"
 
 <handover_manifest>
 ```yaml

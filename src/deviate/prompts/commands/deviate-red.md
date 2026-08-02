@@ -59,7 +59,7 @@ runner enforces that RED must produce a failing test.
 # DeviaTDD Micro Red: TASK-104
 
 Status: TEST_WRITTEN_FAILING
-Target_Artifact: `tests/auth/test_jwt.py`
+Target_Artifact: "tests/auth/test_jwt.py"
 
 ## Handover Manifest
 ```yaml
@@ -163,7 +163,7 @@ Output NOTHING outside the YAML block — no explanations, no commentary.
 # DeviaTDD Micro Red: {TASK_ID}
 
 Status: TEST_WRITTEN_FAILING
-Target_Artifact: `path/to/test_file.ext`
+Target_Artifact: "path/to/test_file.ext"
 
 ## Handover Manifest
 ```yaml
@@ -196,7 +196,7 @@ Emit exclusively the finalized human-readable Markdown blueprint document satisf
 # DeviaTDD Micro Red: {TASK_ID}
 
 Status: TEST_WRITTEN_FAILING
-Target_Artifact: `path/to/test_file.ext`
+Target_Artifact: "path/to/test_file.ext"
 
 ## Handover Manifest
 ```yaml
