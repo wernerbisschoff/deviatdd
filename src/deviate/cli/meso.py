@@ -38,6 +38,7 @@ from deviate.core.validation import validate_acceptance_contract
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
+    find_worktree_for_branch,
     remove_worktree,
 )
 from deviate.state.config import (
@@ -432,6 +433,7 @@ def _try_claim_issue(
     remote: str | None = None,
     force: bool = False,
     dry_run: bool = False,
+    local: bool = False,
 ) -> dict | None:
     """Attempt to claim a single issue end-to-end.
 
@@ -448,8 +450,10 @@ def _try_claim_issue(
     console.print(f"[green]SLUG[/] {issue_slug}")
     console.print(f"[green]BRANCH[/] {branch}")
 
-    # ── Remote branch check (non-dry-run only) ──────────────────────────
-    if not dry_run and remote is not None:
+    # ── Remote branch check (non-dry-run, non-local only) ──────────────
+    if local:
+        console.print("[yellow]LOCAL_ONLY[/] skipping remote check")
+    elif not dry_run and remote is not None:
         if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
             console.print(
                 f"[yellow]BRANCH_ON_REMOTE[/] {branch} — issue likely "
@@ -463,6 +467,25 @@ def _try_claim_issue(
         console.print("[yellow]DRY_RUN[/] skipping worktree creation and claim")
         worktree_path = str(repo_root)
     else:
+        # --local short-circuit: a pre-existing local branch is the user's
+        # chosen "already claimed" signal. NOTE: this can false-positive on a
+        # manual `git checkout -b` that pre-dated any claim; the user picked
+        # this semantic explicitly for the no-remote workflow.
+        if local:
+            existing_path = find_worktree_for_branch(branch, repo=repo_root)
+            if existing_path is not None:
+                console.print(
+                    f"[yellow]ALREADY_CLAIMED_LOCAL[/] {branch} → reusing {existing_path}"
+                )
+                return {
+                    "resolved_id": resolved_id,
+                    "issue": issue,
+                    "epic_slug": epic_slug,
+                    "issue_slug": issue_slug,
+                    "branch": branch,
+                    "spec_target_rel": spec_target_rel,
+                    "worktree_path": str(existing_path),
+                }
         wt_path = repo_root / ".worktrees" / branch
         try:
             created = create_worktree(branch, wt_path, repo=repo_root)
@@ -545,26 +568,29 @@ def _try_claim_issue(
             except subprocess.CalledProcessError:
                 console.print("[yellow]COMMIT_CLAIM_SKIP[/] could not commit claim")
 
-            try:
-                # --no-verify: pre-push hook checks only .py files; claim push
-                # has none, so bypass avoids unnecessary hook execution in worktree.
-                subprocess.run(
-                    ["git", "push", "--no-verify", "-u", remote, branch],
-                    cwd=worktree_path,
-                    env=_git_env(),
-                    check=True,
-                    capture_output=True,
-                )
-                console.print(f"[green]PUSHED[/] {branch} pushed to {remote}")
-            except subprocess.CalledProcessError:
-                if force:
-                    console.print("[yellow]PUSH_FAILED[/] continuing (--force)")
-                else:
-                    console.print(
-                        f"[yellow]PUSH_FAILED[/] {branch} — race or remote error"
+            if local:
+                console.print("[yellow]LOCAL_ONLY[/] skipping push")
+            else:
+                try:
+                    # --no-verify: pre-push hook checks only .py files; claim push
+                    # has none, so bypass avoids unnecessary hook execution in worktree.
+                    subprocess.run(
+                        ["git", "push", "--no-verify", "-u", remote, branch],
+                        cwd=worktree_path,
+                        env=_git_env(),
+                        check=True,
+                        capture_output=True,
                     )
-                    remove_worktree(branch, Path(worktree_path), repo=repo_root)
-                    return None
+                    console.print(f"[green]PUSHED[/] {branch} pushed to {remote}")
+                except subprocess.CalledProcessError:
+                    if force:
+                        console.print("[yellow]PUSH_FAILED[/] continuing (--force)")
+                    else:
+                        console.print(
+                            f"[yellow]PUSH_FAILED[/] {branch} — race or remote error"
+                        )
+                        remove_worktree(branch, Path(worktree_path), repo=repo_root)
+                        return None
 
     return {
         "resolved_id": resolved_id,
@@ -582,6 +608,7 @@ def _specify_pre(
     issue_id: str | None = None,
     force: bool = False,
     dry_run: bool = False,
+    local: bool = False,
 ) -> dict | None:
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     if issue_id is None:
@@ -597,6 +624,7 @@ def _specify_pre(
         ledger_path=ledger_path,
         force=force,
         dry_run=dry_run,
+        local=local,
     )
     if result is None:
         console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
@@ -1760,6 +1788,11 @@ def specify(
         "--dry-run",
         help="Resolve issue and emit contract without creating worktree or claiming",
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help="Claim locally only: create worktree, write ledger, commit; skip remote check and push. If the local branch already exists, treat as already claimed.",
+    ),
     issue: str | None = typer.Option(
         None, "--issue", help="Issue ID for pre subcommand"
     ),
@@ -1774,13 +1807,18 @@ def specify(
     command inside the new worktree.
     """
     if issue_id == "pre":
-        _specify_pre(issue_id=issue, force=force, dry_run=dry_run)
+        _specify_pre(issue_id=issue, force=force, dry_run=dry_run, local=local)
     elif issue_id == "post":
         _specify_post(force=force)
     elif issue_id is None:
-        _specify_pre(issue_id=_discover_unclaimed(), force=force, dry_run=dry_run)
+        _specify_pre(
+            issue_id=_discover_unclaimed(),
+            force=force,
+            dry_run=dry_run,
+            local=local,
+        )
     else:
-        _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run)
+        _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run, local=local)
 
 
 def plan(

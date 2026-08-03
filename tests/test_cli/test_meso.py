@@ -141,3 +141,167 @@ class TestWorktreeAssetSyncOrdering:
         assert call_order == ["sync", "setup"], (
             f"Expected sync before setup, got {call_order}"
         )
+
+
+class TestSpecifyLocalFlag:
+    """`_try_claim_issue(..., local=True)` skips remote interaction.
+
+    The `--local` flag is the no-remote workflow: worktree + ledger only.
+    These tests pin the contract that ``branch_exists_on_remote`` and the
+    ``git push`` subprocess are NEVER invoked, and that an existing local
+    branch short-circuits with a fully-populated metadata dict.
+    """
+
+    def _make_issue(self):
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord
+
+        return IssueRecord(
+            issue_id="ISS-001-LOC",
+            type="feature",
+            title="Test local flag",
+            source_file="specs/test-epic/issues/iss-001-loc.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+
+    def test_local_skips_branch_exists_on_remote_call(self, tmp_path):
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _try_claim_issue
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        ledger_path = tmp_path / "specs" / "issues.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+
+        # Patch find_worktree_for_branch to return None so the short-circuit
+        # does NOT fire — we want the function to fall through to the
+        # post-short-circuit code path where branch_exists_on_remote would
+        # have been called if not for the local guard.
+        with (
+            patch("deviate.cli.meso.find_worktree_for_branch", return_value=None),
+            patch(
+                "deviate.cli.meso.create_worktree", return_value=tmp_path / "wt"
+            ) as mock_create,
+            patch("deviate.cli.meso.claim_issue", return_value=False),
+            patch("deviate.cli.meso._sync_worktree_assets"),
+            patch("deviate.cli.meso._setup_mise"),
+            patch("deviate.cli.meso.branch_exists_on_remote") as mock_remote,
+        ):
+            _try_claim_issue(self._make_issue(), repo_root, ledger_path, local=True)
+
+        mock_create.assert_called_once()
+        mock_remote.assert_not_called()
+
+    def test_local_skips_git_push_subprocess(self, tmp_path, monkeypatch):
+        import subprocess
+
+        from deviate.cli.meso import _try_claim_issue
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        ledger_path = tmp_path / "specs" / "issues.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+
+        calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def recording(argv, *args, **kwargs):
+            calls.append(list(argv))
+            return real_run(argv, *args, **kwargs)
+
+        monkeypatch.setattr("deviate.cli.meso.subprocess.run", recording)
+        monkeypatch.setattr(
+            "deviate.cli.meso.find_worktree_for_branch", lambda *a, **k: None
+        )
+        monkeypatch.setattr(
+            "deviate.cli.meso.create_worktree", lambda *a, **k: tmp_path / "wt"
+        )
+        monkeypatch.setattr("deviate.cli.meso.claim_issue", lambda *a, **k: True)
+        monkeypatch.setattr(
+            "deviate.cli.meso._sync_worktree_assets", lambda *a, **k: None
+        )
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+
+        _try_claim_issue(self._make_issue(), repo_root, ledger_path, local=True)
+
+        push_calls = [a for a in calls if a[:2] == ["git", "push"]]
+        assert push_calls == [], f"local mode must not invoke `git push`: {push_calls}"
+
+    def test_local_short_circuits_on_existing_branch(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from deviate.cli.meso import _try_claim_issue
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        ledger_path = tmp_path / "specs" / "issues.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+        existing_path = tmp_path / "wt" / "feat-test-epic-iss-001-loc"
+        existing_path.mkdir(parents=True)
+
+        with (
+            patch(
+                "deviate.cli.meso.find_worktree_for_branch",
+                return_value=existing_path,
+            ),
+            patch(
+                "deviate.cli.meso.create_worktree", new_callable=MagicMock
+            ) as mock_create,
+            patch("deviate.cli.meso.branch_exists_on_remote"),
+            patch("deviate.cli.meso.claim_issue"),
+            patch("deviate.cli.meso._sync_worktree_assets"),
+            patch("deviate.cli.meso._setup_mise"),
+        ):
+            result = _try_claim_issue(
+                self._make_issue(), repo_root, ledger_path, local=True
+            )
+
+        assert isinstance(result, dict)
+        assert result["worktree_path"] == str(existing_path)
+        mock_create.assert_not_called()
+
+    def test_local_returns_coherent_metadata_dict(self, tmp_path):
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _try_claim_issue
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        ledger_path = tmp_path / "specs" / "issues.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+        existing_path = tmp_path / "wt" / "feat-test-epic-iss-001-loc"
+        existing_path.mkdir(parents=True)
+
+        with (
+            patch(
+                "deviate.cli.meso.find_worktree_for_branch",
+                return_value=existing_path,
+            ),
+            patch("deviate.cli.meso.create_worktree"),
+            patch("deviate.cli.meso.branch_exists_on_remote"),
+            patch("deviate.cli.meso.claim_issue"),
+            patch("deviate.cli.meso._sync_worktree_assets"),
+            patch("deviate.cli.meso._setup_mise"),
+        ):
+            result = _try_claim_issue(
+                self._make_issue(), repo_root, ledger_path, local=True
+            )
+
+        assert set(result) == {
+            "resolved_id",
+            "issue",
+            "epic_slug",
+            "issue_slug",
+            "branch",
+            "spec_target_rel",
+            "worktree_path",
+        }, f"metadata dict missing keys: {set(result)}"
+        assert result["resolved_id"] == "ISS-001-LOC"
+        assert result["epic_slug"] == "test-epic"
+        assert result["issue_slug"] == "iss-001-loc"
+        assert result["branch"] == "feat/test-epic/iss-001-loc"
+        assert result["spec_target_rel"] == "specs/test-epic/iss-001-loc/spec.md"
+        assert result["worktree_path"] == str(existing_path)
+        assert result["issue"] is not None
