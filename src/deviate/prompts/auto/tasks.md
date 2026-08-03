@@ -30,6 +30,8 @@ You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHAS
 
 <consumer_repository_boundary>
 Assume the consumer repository already has the DeviaTDD CLI, agent skills, and existing flow catalog. Every task must implement or verify requested application behavior and cite its issue story plus `AC-PLAN-NNN`. Do not emit tasks for DeviaTDD setup, agent skills or slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance, and do not list those preconditions in generated `tasks.md`. Any meta-target task halts with `META_WORK_NOT_ALLOWED`.
+
+**App-verification E2E is NOT meta-work**: A closing `[E2E]` task whose only target is the consumer's own application E2E surface (`tests/e2e/`, `e2e/`, or the consumer's configured E2E command) is application *verification*, not a DeviaTDD-maintenance task. It is always allowed. `META_WORK_NOT_ALLOWED` applies only when a task targets DeviaTDD itself.
 </consumer_repository_boundary>
 
 <traceability_mandates>
@@ -67,6 +69,7 @@ For each workstation cluster:
 6. **Flow References**: Copy `**Flow References**: [FLOW-XX, ...]` from the plan's `## Product Layer Anchors` onto the task. If the plan lacks Product-Layer Anchors, fall back to the issue's `flow_refs` from `{spec_path}` frontmatter. If both are empty/absent, emit `**Flow References**: []`.
 7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a flow file/index, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
+9. **Closing E2E Task**: If the issue carries a user-facing workflow (CLI/Web/API surface, or non-empty Product-layer ``flow_refs``), emit a **final closing `[E2E]` task** that authors the consumer's E2E surface: **Type** `Verification_Batch`, **Mode** `IMMEDIATE`, **Test Strategy** `Integration`, marker `[E2E]` in the description, **Verification** = the consumer's E2E command (constitution ``E2E command`` key, else repo convention: ``bats tests/e2e/``, Playwright, pytest-based HTTP). **Files** restricted to ``tests/e2e/``; **Details** name the concrete happy-path + one critical-failure user scenario driven by the resolved flows; **Acceptance**: ``<E2E command> exits 0``. Emit it **last** with no forward ``Dependency``. Skip it (emit nothing) for issues touching only library/config/schema internals with no user-facing workflow — never manufacture empty E2E files.
 </step>
 
 <step id="write_tasks">
@@ -91,7 +94,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - Task IDs MUST follow the format `TSK-{NNN}-{NN}:` where `NNN` is the 3-digit issue number and `NN` is the 2-digit task index within the issue, starting from `TSK-001-01:`.
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
-- **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config`
+- **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
 - **Mode**: `TDD | IMMEDIATE`
 - **Test Strategy**: `Sociable_Unit | Integration | Solitary_Unit` (required if Mode is TDD)
 - **Verification**: A **Deterministic CLI Command** (e.g., `pytest tests/unit/test_s3.py`)

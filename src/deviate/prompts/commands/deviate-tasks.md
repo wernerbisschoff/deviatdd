@@ -45,6 +45,8 @@ CRITICAL INFERENCE PHYSICS INVARIANTS:
 
 <consumer_repository_boundary>
 Assume the consumer repository already has the DeviaTDD CLI, agent skills, and existing flow catalog. Every task must implement or verify requested application behavior and cite its issue story plus `AC-PLAN-NNN`. Existing `flow_refs` are read-only traceability. Do not emit tasks for DeviaTDD setup, agent skills or slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance, and do not list those preconditions in generated `tasks.md`. Any meta-target task halts with `META_WORK_NOT_ALLOWED`.
+
+**App-verification E2E is NOT meta-work**: A closing `[E2E]` task whose only target is the consumer's own application E2E surface (`tests/e2e/`, `e2e/`, or the consumer's configured E2E command) is application *verification*, not a DeviaTDD-maintenance task. It is always allowed. `META_WORK_NOT_ALLOWED` applies only when a task targets DeviaTDD itself (setup, agent skills, slash commands, flow catalog, release scaffolding, workflow ledgers).
 </consumer_repository_boundary>
 
 
@@ -75,6 +77,13 @@ Assume the consumer repository already has the DeviaTDD CLI, agent skills, and e
     - **4c. Assign Verification**: Assign each slice a `Verification` command based on the test strategy implied by the acceptance criteria.
     - **4d. Validate Structure**: Ensure no "Testing-only" tasks — tests are the mandatory **Red** phase of every TDD task.
     - **4e. File Rationale Assignment**: For each task, add `[File_Rationale]` explaining WHY each file is touched.
+    - **4f. Closing E2E Task**: If the issue's `spec_path`/`plan_path` carries user-facing `flow_refs` (Product layer), or the design implies a real user-facing workflow (CLI command execution, Web browser flow, API request/response cycle), emit a **final closing `[E2E]` task** that authors the consumer's application E2E surface. It MUST:
+        - Use **Type**: `Verification_Batch`, **Mode**: **IMMEDIATE** (E2E authoring is not a Red-Green-Refactor cycle), **Test Strategy**: `Integration`, and a `[E2E]` marker in its description line so the ``deviate e2e`` phase (`STEP_6`) discovers it.
+        - Set **Verification** to the consumer's E2E command, resolved from the same source as the E2E phase contract's `e2e_command` (constitution ``E2E command`` key, else repo convention: ``bats tests/e2e/``, Playwright, pytest-based OAS/HTTP, etc.).
+        - List **Files** under the consumer's E2E dir only (e.g. ``tests/e2e/e2e_<slug>.bats``, ``tests/e2e/<slug>.spec.ts``). Do NOT touch ``src/`` or pytest unit test files.
+        - In **Details**, give **Implementation + Edge Cases** bullets naming the concrete user-facing scenarios: the happy path (the "money maker") and at least one critical-failure path, driven by the resolved ``flow_refs``. Use an **Acceptance** bullet: ``<E2E command> exits 0``.
+        - Be emitted **last** in the ledger with no forward ``Dependency``, so the micro runner consumes it last and the ``deviate e2e`` post-phase's "all tasks terminal" precondition stays valid.
+    - **Skip the closing E2E task** (no bullet for it) when the issue touches only library/config/schema internals with no user-facing workflow — do not manufacture empty E2E files.
     - **Consumer Implementation Audit**: Every task has an application implementation or application verification target tied to a named story and acceptance criterion. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a flow file/index, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
 
 5. **Traceability Audit**:
@@ -115,10 +124,10 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - The post-script validator enforces this exact pattern: `TSK-` followed by exactly 3 digits, `-`, exactly 2 digits, and a colon.
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
-- **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config`
+- **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
 - **Mode**: `TDD | IMMEDIATE` (no default — apply the decision tree at step 4b)
   - `TDD`: Full Red-Green-Refactor cycle. **Use for**: New business logic, state mutations, integration boundaries, or non-trivial acceptance criteria.
-  - `IMMEDIATE`: Execute directly without test-first. **Use for**: Trivial updates (config, docs, constants), pure refactoring with existing test coverage, or low-risk boilerplate where testing cost outweighs regression risk.
+  - `IMMEDIATE`: Execute directly without test-first. **Use for**: Trivial updates (config, docs, constants), pure refactoring with existing test coverage, low-risk boilerplate where testing cost outweighs regression risk, or authoring `Verification_Batch` E2E tests (step 4f).
 - **Test Strategy**: `Sociable_Unit | Integration | Solitary_Unit` (required if Mode is TDD)
 - **Verification**: A **Deterministic CLI Command** (e.g., `pytest tests/unit/test_s3.py`).
 - **Estimated Time**: Time estimate in format `30-90 minutes` or `60 minutes`.
