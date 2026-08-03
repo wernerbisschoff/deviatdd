@@ -1700,6 +1700,29 @@ def _format_violations_as_feedback(
     return "\n".join(lines)
 
 
+def _coerce_feedback_text(value: object) -> str:
+    """Return ``value`` as a readable feedback string, tolerating non-str.
+
+    The judge agent may emit ``train_feedback`` (or ``rationale``/
+    ``summary``) as a YAML mapping or list instead of a plain string.
+    A mapping is flattened to its string sub-values; a list is line-
+    joined; anything else is ``str()``. This keeps the feedback-cascade
+    and ``JUDGE_REFACTOR_NOTE`` paths from crashing on a dict-valued
+    field.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        parts = [
+            _coerce_feedback_text(v) for v in value.values() if v is not None
+        ]
+        return "\n".join(p for p in parts if p) if parts else str(value)
+    if isinstance(value, (list, tuple)):
+        return "\n".join(_coerce_feedback_text(v) for v in value)
+    return str(value)
+
 # ---- Judge next_action routing ---------------------------------------------
 #
 # JUDGE decides, via HandoverManifest.next_action, how the runner should
@@ -1787,20 +1810,17 @@ def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]
     Used by both rejection routes (``revert_to_red`` and ``revert_before``)
     so they share the same feedback source cascade.
     """
-    train_feedback_fb = (
+    train_feedback_fb = _coerce_feedback_text(
         getattr(manifest, "train_feedback", None)
         or (manifest.model_extra or {}).get("train_feedback", "")
-        or ""
     )
-    rationale_fb = (
+    rationale_fb = _coerce_feedback_text(
         getattr(manifest, "rationale", None)
         or (manifest.model_extra or {}).get("rationale", "")
-        or ""
     )
-    summary_fb = (
+    summary_fb = _coerce_feedback_text(
         getattr(manifest, "summary", None)
         or (manifest.model_extra or {}).get("summary", "")
-        or ""
     )
     violations_fb = _format_violations_as_feedback(
         getattr(manifest, "violations", None)
@@ -2284,10 +2304,9 @@ def _run_judge_phase(
     #                                       logs can distinguish a substantive
     #                                       refactor pass from a no-op green
     #                                       sign-off.
-    refactor_note = (
+    refactor_note = _coerce_feedback_text(
         getattr(manifest, "train_feedback", None)
         or (manifest.model_extra or {}).get("train_feedback", "")
-        or ""
     )
     if refactor_note.strip():
         note_preview = refactor_note.replace("\n", " ")[:200]
