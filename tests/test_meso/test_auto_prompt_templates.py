@@ -280,3 +280,110 @@ class TestConsumerRepositoryBoundaries:
             assert "flow_refs: []" in content
             assert "do not" in content.lower()
             assert "setup" in content.lower()
+
+
+class TestMergePromptPushGate:
+    """The /deviate-merge prompt runs an inline copy of .githooks/pre-push
+    before asking the user whether to push. The inline copy must mirror the
+    hook so the safety net fires identically whether the gate runs in-process
+    or git invokes the hook at push time. These tests pin the high-value
+    drift points between the two bodies — a future contributor editing one
+    without the other will fail at least one of these.
+    """
+
+    @staticmethod
+    def _read_prompt() -> str:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-merge.md"
+        ).read_text(encoding="utf-8")
+
+    @staticmethod
+    def _read_hook() -> str:
+        return (
+            Path(__file__).resolve().parents[2] / ".githooks" / "pre-push"
+        ).read_text(encoding="utf-8")
+
+    def test_inline_push_step_replaces_direct_git_push(self):
+        # No numbered "Push to remote" step that just runs `git push`.
+        prompt = self._read_prompt()
+        assert "**Push to remote**" not in prompt
+        assert "git push\n   ```" not in prompt
+        # The gate + prompt steps exist by name.
+        assert "**Run the push gate**" in prompt
+        assert "Ask the user whether to push**" in prompt
+        # Failure states the new flow promises.
+        assert "Failure_State: Push_Gate_Failed" in prompt
+        assert "Failure_State: Push_Deferred" in prompt
+        assert "Failure_State: Push_Failed" in prompt
+
+    def test_inline_gate_mirrors_hook_upstream_first_logic(self):
+        prompt = self._read_prompt()
+        # Upstream preferred, HEAD~1 fallback, no parent → exit 0.
+        assert "@{u}" in prompt
+        assert 'git merge-base "$upstream" HEAD' in prompt
+        assert "HEAD~1" in prompt
+        # GIT_DIR reset + trap preserved verbatim from the hook.
+        assert 'GIT_DIR_SAVED="${GIT_DIR-}"' in prompt
+        assert 'trap \'[ -n "$GIT_DIR_SAVED" ]' in prompt
+
+    def test_inline_gate_mirrors_hook_testmon_fallback(self):
+        prompt = self._read_prompt()
+        assert "if [ -s .testmondata ]; then" in prompt
+        assert "mise run test-affected" in prompt
+        assert "mise run test" in prompt
+        # The hook's "no Python files changed" no-op branch is preserved.
+        assert "# No upstream, no parent — nothing to compare against." in prompt
+        assert 'git diff --name-only --diff-filter=ACMR "$base...HEAD"' in prompt
+
+    @staticmethod
+    def _gate_block_lines(text: str, *, marker: str | None) -> set[str]:
+        """Return the set of non-blank, non-comment lines that make up the
+        gate body, scoped to either the hook (marker=None) or the prompt's
+        push_gate fenced block (marker='Run the push gate')."""
+        if marker is None:
+            # Hook: the executable body starts at the first `set -e` line
+            # and runs to EOF, skipping the shebang + the top doc comments.
+            lines = text.splitlines()
+            start = next(i for i, line in enumerate(lines) if line.strip() == "set -e")
+            return {
+                line.strip()
+                for line in lines[start:]
+                if line.strip() and not line.strip().startswith("#")
+            }
+        # Prompt: extract the fenced ```bash block that immediately follows
+        # the `**Run the push gate**` heading (the next ```bash opening
+        # fence after that heading is the gate body).
+        heading = text.find(marker)
+        assert heading != -1, f"prompt is missing heading {marker!r}"
+        fence_open = text.find("```bash\n", heading)
+        assert fence_open != -1, f"no ```bash fence after {marker!r}"
+        body_start = fence_open + len("```bash\n")
+        fence_close = text.find("```", body_start)
+        assert fence_close != -1, f"unterminated gate fence after {marker!r}"
+        return {
+            line.strip()
+            for line in text[body_start:fence_close].splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        }
+
+    def test_hook_and_prompt_agree_on_gate_body(self):
+        # Strongest invariant: the prompt's push_gate fenced body and the
+        # .githooks/pre-push executable body share the same set of
+        # non-blank, non-comment lines (ignoring indentation). Drift in
+        # either direction — a hook line missing from the prompt, or a
+        # prompt line missing from the hook — fails this assertion so
+        # the two bodies can never silently diverge.
+        hook_lines = self._gate_block_lines(self._read_hook(), marker=None)
+        prompt_lines = self._gate_block_lines(
+            self._read_prompt(), marker="**Run the push gate**"
+        )
+        assert hook_lines == prompt_lines, (
+            "hook/prompt gate-body drift — "
+            f"only-in-hook: {sorted(hook_lines - prompt_lines)[:5]}…, "
+            f"only-in-prompt: {sorted(prompt_lines - hook_lines)[:5]}…"
+        )
