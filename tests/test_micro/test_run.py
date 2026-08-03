@@ -90,9 +90,9 @@ class TestRunCommand:
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_dispatches_immediate_task_to_execute(
-        self, mock_agent, tmp_path: Path, approve_gate2
+        self, mock_agent, tmp_git_repo: Path, approve_gate2
     ):
-        with chdir(tmp_path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -107,7 +107,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
-            approve_gate2(tmp_path, issue_id=task.issue_id)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-02"])
             assert result.exit_code == 0, (
@@ -167,16 +167,23 @@ class TestRunCommand:
                 "EXECUTE did not commit the untracked deliverable"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_all_iterates_mixed_modes(
-        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path, approve_gate2
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
         )
-        with chdir(tmp_path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -198,7 +205,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, tdd_task, imm_task)
-            approve_gate2(tmp_path, issue_id=tdd_task.issue_id)
+            approve_gate2(tmp_git_repo, issue_id=tdd_task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "--all"])
             assert result.exit_code == 0, (
