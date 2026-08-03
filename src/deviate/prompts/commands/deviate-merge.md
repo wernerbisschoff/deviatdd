@@ -2,7 +2,7 @@
 name: deviate-merge
 description: Squash-merge a feature branch into main with a conventional-commit message, then update the ledger with a full IssueRecord.
 category: deviatdd-meso-layer
-version: 2.3.0
+version: 2.4.0
 aliases:
   - merge
   - /deviate-merge
@@ -222,10 +222,102 @@ If the user chooses **Edit commit message**, collect the revised message and re-
      -m "Closes {ISSUE_ID}"
    ```
 
-6. **Push to remote**:
+6. **Run the push gate** — inlines the body of `.githooks/pre-push` verbatim so
+   the safety net fires even though no `git push` happens yet. The inline copy
+   MUST stay byte-equivalent to `.githooks/pre-push`; if you change one, change
+   the other in the same commit. (On a successful merge the real `pre-push`
+   hook will re-run the same gate when the operator eventually pushes, so
+   drift between the inline copy and the hook file would surface as a
+   mysterious second failure — keep them identical.)
+
    ```bash
-   git push
+   # Pre-push: lint + format-check + selective pytest on the Python files
+   # changed since the upstream branch (or HEAD~1 if no upstream yet).
+   # `mise run test` stays the canonical full-suite command for CI / pre-release.
+   #
+   # Portable to bash 3.2 (macOS /bin/bash): no `mapfile`, no `declare -A`, etc.
+   set -e
+   set -o pipefail
+
+   # Unset git env inherited from the hook context. Tests in this repo invoke
+   # git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
+   GIT_DIR_SAVED="${GIT_DIR-}"
+   unset GIT_DIR
+
+   trap '[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED" || unset GIT_DIR' EXIT
+
+   # Pick a base: upstream if we have one, else the previous commit.
+   if upstream=$(git rev-parse --verify --quiet '@{u}' 2>/dev/null); then
+     base=$(git merge-base "$upstream" HEAD)
+   elif base=$(git rev-parse --verify --quiet 'HEAD~1' 2>/dev/null); then
+     :
+   else
+     # No upstream, no parent — nothing to compare against.
+     exit 0
+   fi
+
+   changed=()
+   while IFS= read -r f; do
+     [ -n "$f" ] && changed+=("$f")
+   done < <(git diff --name-only --diff-filter=ACMR "$base...HEAD" -- '*.py' | sort -u)
+
+   if [ "${#changed[@]}" -eq 0 ]; then
+     exit 0
+   fi
+
+   uv run ruff check "${changed[@]}"
+   uv run ruff format --check "${changed[@]}"
+
+   # testmon forceselect requires a warm .testmondata from a prior full-suite
+   # run. Without it, testmon selects zero tests and passes silently — defeating
+   # the purpose of the pre-push gate. Fall back to the full suite when the
+   # data file is missing or empty.
+   if [ -s .testmondata ]; then
+     mise run test-affected
+   else
+     echo "pre-push: .testmondata missing or empty — running full suite"
+     mise run test
+   fi
    ```
+
+   Notes specific to running this body **outside** the hook context:
+
+   - `GIT_DIR` unset + trap is a no-op for non-hook subprocesses but is
+     preserved verbatim so the byte-equivalence claim holds.
+   - On a freshly-squashed `main`, `@{u}` typically does not exist yet
+     (the user has not pushed since the squash), so the script falls through
+     to `HEAD~1` — exactly the prior tip of `main`. That is the correct
+     base: the diff captures everything the squash introduced.
+   - After the operator pushes and the real `pre-push` hook fires on a
+     future merge, `@{u}` will resolve and the hook will switch to the
+     merge-base view. Both copies answer the same question under that
+     condition.
+
+   On non-zero exit from any of the three commands (`ruff check`,
+   `ruff format --check`, `mise run test[-affected]`) halt with
+   `Failure_State: Push_Gate_Failed` and the tool's stderr verbatim — the
+   squash-merge commit has already landed on `main`, so the user will need to
+   either fix the gate failure (`git reset --soft HEAD~1` to recover the
+   staged changes, fix, recommit) or proceed past it manually. Do NOT amend
+   or auto-fix the commit; the operator decides.
+
+7. **Ask the user whether to push** — the gate passed, but the push itself is
+   opt-in. Use the `ask` tool with options: **Push to origin** |
+   **Stop — I'll push manually**.
+
+   - If **Push to origin**: run `git push` (the real `pre-push` hook now fires
+     and re-runs the same gate — passing the inline check above means it will
+     pass again, but the hook is the source of truth and may catch drift if
+     the inline copy and `.githooks/pre-push` have diverged). On push
+     failure, halt with `Failure_State: Push_Failed` and the raw `git push`
+     stderr. Do NOT retry; the operator decides.
+   - If **Stop — I'll push manually**: halt with `Failure_State: Push_Deferred`
+     and a one-line next-step hint ("Run `git push` from the repo root when
+     ready. The pre-push hook will re-run the gate.").
+
+   In either case, the squash-merge commit is already on `main` — the ledger
+   transition inside it is durable regardless of the push outcome.
+
 
 </step>
 
@@ -290,8 +382,9 @@ operations succeeded).
 | Unstaged files after squash + ledger staging (`git diff --quiet` reports changes; staged tree empty via `git diff --cached --quiet`; untracked files via `git ls-files --others --exclude-standard`) | Fail with `Failure_State: Unstaged_Files_Post_Merge`, `Nothing_To_Stage`, or `Untracked_Files_Post_Merge` respectively. Dual-channel diagnostic: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` message body so the operator sees it regardless of how the framework renders failures. Do NOT silently `git add` or `--amend` — operator decides whether to investigate, drop, or commit strays |
 | Issue not found in ledger | Proceed with merge anyway (the branch may have been created outside DeviaTDD). Pass `deviate merge --issue {ISSUE_ID}` — it will fail cleanly with `ISSUE_NOT_FOUND` |
 | Issue already COMPLETED | The ledger step is idempotent — `deviate merge` exits cleanly with `ALREADY_COMPLETED` |
-| `git push` fails (diverged / rejected) | Halt, surface the reason. Do NOT update ledger until push succeeds |
-| No remote configured | Skip push with a warning, proceed with ledger update |
+| `git push` fails (diverged / rejected) | Halt with `Failure_State: Push_Failed`. The squash-merge commit and the ledger transition inside it are already on `main`; only the network push is blocked. Surface the raw `git push` stderr so the operator can resolve (pull --rebase + retry, force-with-lease, or leave the commit local). Do NOT amend the commit, do NOT retry automatically. |
+| User chooses **Stop — I'll push manually** | Halt with `Failure_State: Push_Deferred`. The squash-merge commit is already on `main`; only the network push is deferred. Operator runs `git push` later; the real `pre-push` hook fires at that point. |
+| `push_gate` (inline `pre-push` mirror) fails | Halt with `Failure_State: Push_Gate_Failed`. The squash-merge commit has already landed. Operator decides whether to fix forward, `git reset --soft HEAD~1` and recommit, or push without the gate (`git push --no-verify`). |
 
 </edge_cases>
 
