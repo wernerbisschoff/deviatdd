@@ -1715,13 +1715,12 @@ def _coerce_feedback_text(value: object) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
-        parts = [
-            _coerce_feedback_text(v) for v in value.values() if v is not None
-        ]
+        parts = [_coerce_feedback_text(v) for v in value.values() if v is not None]
         return "\n".join(p for p in parts if p) if parts else str(value)
     if isinstance(value, (list, tuple)):
         return "\n".join(_coerce_feedback_text(v) for v in value)
     return str(value)
+
 
 # ---- Judge next_action routing ---------------------------------------------
 #
