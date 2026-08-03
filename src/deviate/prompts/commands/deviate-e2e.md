@@ -127,9 +127,13 @@ Find existing E2E test files in the repository:
 ### STEP_6: ANALYZE_TASKS_FOR_E2E
 
 From `<REPO_ROOT>/<SPEC_DIR>/tasks.md`, extract:
-1. Tasks with `[E2E]` or `[e2e]` markers
-2. User workflow tasks requiring E2E coverage
-3. Phase identifiers and task descriptions
+1. Tasks with `[E2E]` or `[e2e]` markers — the meso `deviate-tasks` generator (step 4f) emits exactly one such closing task per issue when a user-facing workflow exists.
+2. Tasks whose **Type** is `Verification_Batch` (the E2E-authoring task).
+3. User workflow tasks requiring E2E coverage
+4. Phase identifiers and task descriptions
+
+If a user-facing issue has **no** `[E2E]`/`Verification_Batch` task in `tasks.md`, emit `NO_E2E_TASK_GENERATED` in the report and note that the meso layer did not emit a closing E2E task; do not halt. Continue to surface the gap.
+
 
 ### STEP_7: GENERATE_OR_UPDATE_E2E_TESTS
 
