@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from contextlib import chdir
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core._shared import git_env
 from deviate.state.config import SessionState
 
 runner = CliRunner()
@@ -411,3 +413,68 @@ class TestShardPost:
             assert by_id["ISS-FLOW-B"]["flow_refs"] == ["FLOW-03"], (
                 "ISS-FLOW-B must carry flow_refs=[FLOW-03]"
             )
+
+    def test_shard_post_commits_issues_directory(self, tmp_git_repo: Path) -> None:
+        """shard_post must stage every markdown file under the epic's issues dir.
+
+        When the manifest omits ``epic_slug`` the post-script must derive the
+        epic from the first issue's ``source_file`` and commit every file in
+        ``specs/<epic>/issues/`` rather than silently skipping the directory.
+        """
+        with chdir(tmp_git_repo):
+            Path(".deviate").mkdir(parents=True)
+            SessionState(current_phase="SHARD").save(Path(".deviate/session.json"))
+
+            spec_root = Path("specs")
+            epic_dir = spec_root / "003-shard-commit-dir"
+            issues_dir = epic_dir / "issues"
+            issues_dir.mkdir(parents=True)
+
+            issue_files = {
+                "001-vertical-slice.md": "---\ntitle: Slice 1\nissue_id: 003-001\n---\n",
+                "002-vertical-slice.md": "---\ntitle: Slice 2\nissue_id: 003-002\n---\n",
+            }
+            for name, body in issue_files.items():
+                (issues_dir / name).write_text(body, encoding="utf-8")
+
+            issues_data = [
+                {
+                    "issue_id": "003-001",
+                    "type": "feature",
+                    "title": "Slice 1",
+                    "status": "DRAFT",
+                    "source_file": "specs/003-shard-commit-dir/issues/001-vertical-slice.md",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                {
+                    "issue_id": "003-002",
+                    "type": "feature",
+                    "title": "Slice 2",
+                    "status": "DRAFT",
+                    "source_file": "specs/003-shard-commit-dir/issues/002-vertical-slice.md",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            ]
+            manifest = epic_dir / "manifest.json"
+            # No ``epic_slug`` key — post-script must derive it.
+            manifest.write_text(json.dumps({"issues": issues_data}), encoding="utf-8")
+
+            result = runner.invoke(cli, ["shard", "post", str(manifest)])
+            assert result.exit_code == 0, result.output
+
+            ls = subprocess.run(
+                ["git", "ls-tree", "-r", "HEAD", "--name-only"],
+                cwd=tmp_git_repo,
+                env=git_env(),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            committed = set(ls.stdout.splitlines())
+
+            assert "specs/issues.jsonl" in committed, (
+                "ledger must be committed by shard_post"
+            )
+            for name in issue_files:
+                rel = f"specs/003-shard-commit-dir/issues/{name}"
+                assert rel in committed, f"shard issue file missing from commit: {rel}"
