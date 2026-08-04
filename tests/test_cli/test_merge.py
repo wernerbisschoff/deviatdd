@@ -210,7 +210,7 @@ def test_merge_stage_only_then_message_creates_commit(merge_repo: Path) -> None:
             capture_output=True,
             text=True,
         ).stdout
-        assert "feat(ISS-TEST-001): squash merge test feature" in log_output
+        assert "feat(TEST-001): squash merge test feature" in log_output
         assert "Body paragraph 1" in log_output
         assert "Body paragraph 2" in log_output
         assert "Closes ISS-TEST-001" in log_output
@@ -774,7 +774,7 @@ def test_merge_honors_contributing_md_emoji_prefix(merge_repo: Path) -> None:
         ).stdout
 
     # Subject is prefixed with the feat gitmoji (✨) and unchanged otherwise.
-    assert log.startswith("\u2728 feat(ISS-TEST-001): squash merge test feature"), log
+    assert log.startswith("\u2728 feat(TEST-001): squash merge test feature"), log
     # Body paragraphs are not rewritten — only the subject gets the prefix.
     assert "Body paragraph 1" in log
     assert "Closes ISS-TEST-001" in log
@@ -833,7 +833,7 @@ def test_merge_no_emoji_prefix_when_contributing_md_has_no_emoji(
         ).stdout.rstrip("\n")
 
     # No emoji prefix — the detector returned False.
-    assert log == "feat(ISS-TEST-001): squash merge test feature", log
+    assert log == "feat(TEST-001): squash merge test feature", log
 
 
 # ---------------------------------------------------------------------------
