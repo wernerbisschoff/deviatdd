@@ -20,6 +20,7 @@ from deviate.cli._common import (
     _extract_issue_num,
     _handle_missing_dot_dir,
     console,
+    resolve_issue_id_from_branch,
     with_json_quiet,
 )
 
@@ -709,7 +710,12 @@ def _plan_pre(
 
     # ── Contract mode (inside worktree or from _meso_run) ──────────────
     session, _ = _load_session_accept("SPECIFY", "PLAN", force=force)
-    resolved_issue_id = issue_id or session.active_issue_id or ""
+    resolved_issue_id = (
+        issue_id
+        or session.active_issue_id
+        or resolve_issue_id_from_branch(Path.cwd())
+        or ""
+    )
     if not resolved_issue_id:
         console.print(
             "[red]NO_ACTIVE_ISSUE[/] provide --issue or run from a worktree "
@@ -792,7 +798,9 @@ def _plan_pre(
 def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
     """Validate plan.md, commit it, and advance session to TASKS."""
     session, session_path = _load_session_accept("PLAN", force=force)
-    resolved_issue_id = issue_id or session.active_issue_id
+    resolved_issue_id = (
+        issue_id or session.active_issue_id or resolve_issue_id_from_branch(Path.cwd())
+    )
     if not resolved_issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
@@ -911,7 +919,7 @@ def _tasks_legacy(issue_id: str) -> None:
 def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
     session, _ = _load_session_accept("PLAN", "SPECIFY", "TASKS", force=force)
 
-    issue_id = session.active_issue_id or ""
+    issue_id = session.active_issue_id or resolve_issue_id_from_branch(Path.cwd()) or ""
 
     # Resolve issue file (the spec-enriched issue IS the spec)
     spec_path: str = ""
@@ -1014,7 +1022,9 @@ def _tasks_post(
     issue_id: str | None = None,
 ) -> None:
     session, session_path = _load_session_accept("TASKS", force=force)
-    resolved_issue_id = issue_id or session.active_issue_id
+    resolved_issue_id = (
+        issue_id or session.active_issue_id or resolve_issue_id_from_branch(Path.cwd())
+    )
     if not resolved_issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
@@ -1064,7 +1074,7 @@ def _tasks_post(
 def _pr_pre() -> None:
     session, _ = _load_session_accept("TASKS", "IDLE")
     repo_root = Path.cwd()
-    issue_id = session.active_issue_id
+    issue_id = session.active_issue_id or resolve_issue_id_from_branch(repo_root)
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
@@ -1246,7 +1256,7 @@ def _pr_run(
     auto_merge: bool = False,
 ) -> None:
     session, session_path = _load_session_accept("TASKS", "IDLE")
-    issue_id = session.active_issue_id
+    issue_id = session.active_issue_id or resolve_issue_id_from_branch(Path.cwd())
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)
@@ -1911,7 +1921,7 @@ def _merge_run(
     """
     session, session_path = _load_session_accept("TASKS", "IDLE", force=True)
     if issue_id is None:
-        issue_id = session.active_issue_id
+        issue_id = session.active_issue_id or resolve_issue_id_from_branch(Path.cwd())
     if not issue_id:
         console.print("[red]NO_ACTIVE_ISSUE[/] session has no active_issue_id")
         raise typer.Exit(code=1)

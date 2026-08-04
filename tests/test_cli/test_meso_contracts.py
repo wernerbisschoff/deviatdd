@@ -223,3 +223,59 @@ class TestMesoContracts:
             result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-001-006"])
 
             assert result.exit_code == 0, result.output
+
+    def test_tasks_pre_resolves_issue_from_branch(self, tmp_path: Path) -> None:
+        """`tasks pre` derives the issue from the feature branch when the
+        session has no active_issue_id."""
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(tmp_path, session_phase="SPECIFY")
+
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "ISS-BR-021",
+                "type": "feature",
+                "title": "Branch-resolved issue",
+                "status": "BACKLOG",
+                "source_file": "specs/002-embedder-vector-search/issues/003-config-embedder-cli.md",
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+
+            issue_file = specs_dir / "002-embedder-vector-search" / "issues"
+            issue_file.mkdir(parents=True, exist_ok=True)
+            (issue_file / "003-config-embedder-cli.md").write_text(
+                "# Spec", encoding="utf-8"
+            )
+
+            # plan.md present so tasks pre does not gate on PLAN_NOT_FOUND.
+            feature_dir = (
+                specs_dir / "002-embedder-vector-search" / "003-config-embedder-cli"
+            )
+            feature_dir.mkdir(parents=True, exist_ok=True)
+            (feature_dir / "plan.md").write_text("# Plan", encoding="utf-8")
+
+            subprocess.run(
+                [
+                    "git",
+                    "checkout",
+                    "-b",
+                    "feat/002-embedder-vector-search/003-config-embedder-cli",
+                ],
+                cwd=tmp_path,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+            )
+
+            result = runner.invoke(cli, ["tasks", "pre"])
+            assert result.exit_code == 0, result.output
+
+            contract = self._extract_contract(result.output)
+            assert contract.get("issue_id") == "ISS-BR-021", (
+                "tasks pre must resolve the issue from the feature branch when "
+                f"the session is empty; got issue_id={contract.get('issue_id')!r}"
+            )
+            assert contract.get("tasks_target", "").endswith(
+                "002-embedder-vector-search/003-config-embedder-cli/tasks.md"
+            )
