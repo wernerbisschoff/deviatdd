@@ -77,8 +77,10 @@ Per [`specs/constitution.md` §4](specs/constitution.md#4-development-workflow):
 
 - Features: `feat/<epic-slug>/<issue-slug>`
 - Hotfixes: `fix/<short-description>`
-- All commits reference a task ID (e.g. `T001`) in the conventional
-  commit scope.
+- All issue-scoped commits use the canonical issue ID. Numbered scopes use
+  `001-001`. Ad-hoc scopes use `ADH-001`. Never use the legacy `ISS-` prefix.
+- Task-level micro commits continue to use their task scope, such as
+  `TSK-001-01`.
 
 Direct commits to `main` are acceptable for **docs-only or CI-only
 changes** that do not touch `src/` or `specs/`. Anything else goes
@@ -105,8 +107,10 @@ through a feature branch.
 | `docs` | Docs-only change |
 | `chore` | Tooling, CI, deps — no production code change |
 
-Scope is typically the task ID (`T001`) or a tight subsystem
-(`cli`, `micro`, `prompts`, `init`). Body lines wrap at 72 characters.
+Scope is the canonical issue ID (`001-001` or `ADH-001`) for issue-level
+commits. Micro phase commits use the task ID (`TSK-001-01`). Product-level
+and untracked commits can use a tight subsystem (`cli`, `prompts`, or `init`).
+Never use an `ISS-` prefix in a commit scope. Body lines wrap at 72 characters.
 
 > **Never** use `git commit --no-verify` or `git push --no-verify`. The
 > pre-commit (`mise run check`) and pre-push (`mise run test`) hooks

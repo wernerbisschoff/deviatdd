@@ -3,9 +3,17 @@ from __future__ import annotations
 from typer.testing import CliRunner
 
 from deviate.cli import cli
-from deviate.cli.meso import _AGENT_DIRS, _sync_worktree_assets
+from deviate.cli.meso import _AGENT_DIRS, _pr_title, _sync_worktree_assets
 
 runner = CliRunner()
+
+
+class TestPrTitle:
+    def test_uses_numbered_issue_commit_scope(self) -> None:
+        assert _pr_title("ISS-001-001", "Feature") == "feat(001-001): Feature"
+
+    def test_uses_adhoc_issue_commit_scope(self) -> None:
+        assert _pr_title("ISS-ADH-001", "Fix", "bug") == "fix(ADH-001): Fix"
 
 
 class TestSpecifyPre:
