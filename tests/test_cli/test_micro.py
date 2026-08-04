@@ -4272,3 +4272,93 @@ class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
             f"feedback={session.train_feedback!r}\n"
             f"prompt={prompt_arg!r}"
         )
+
+
+class TestResolveTaskContextUsesBranch:
+    """`micro run` (no task id) must resolve the issue from the branch.
+
+    Regression: with `active_issue_id` empty, `_resolve_task_context(None, root)`
+    scanned every tasks.md in the repo and returned the first unchecked bullet —
+    e.g. an unrelated stale task such as `TSK-004-11` (ISS-004) leaking from a
+    `001-gloss-v1-mvp` slice while the checked-out branch was
+    `feat/002-embedder-vector-search/003-config-embedder-cli` (ISS-021). The
+    intended issue must be derived from the branch instead."""
+
+    @staticmethod
+    def _seed_issue(root: Path, issue_id: str, bucket: str, slug: str) -> None:
+        """Write issues.jsonl + tasks.md for one issue under specs."""
+        spec_dir = root / "specs"
+        if not (spec_dir / "issues.jsonl").exists():
+            spec_dir.mkdir(parents=True, exist_ok=True)
+            (spec_dir / "issues.jsonl").write_text("", encoding="utf-8")
+        with open(spec_dir / "issues.jsonl", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "issue_id": issue_id,
+                        "source_file": f"specs/{bucket}/issues/{slug}.md",
+                    }
+                )
+                + "\n"
+            )
+        feature_dir = spec_dir / bucket / slug
+        feature_dir.mkdir(parents=True, exist_ok=True)
+        tid = f"TSK-{issue_id[-3:]}-01"
+        # Non-terminal ledger record so the issue carries its real issue_id even
+        # when the scan is unscoped. Lexicographically lower bucket ("001") sits
+        # first in the repo-wide sorted scan, so the unrelated issue is selected
+        # pre-fix.
+        (feature_dir / "tasks.jsonl").write_text(
+            json.dumps(
+                {
+                    "id": tid,
+                    "issue_id": issue_id,
+                    "description": "pending",
+                    "status": "RED",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (feature_dir / "tasks.md").write_text(
+            f"# Tasks\n\n- {tid}: pending\n",
+            encoding="utf-8",
+        )
+
+    def _checkout(self, root: Path, branch: str) -> None:
+        subprocess.run(
+            ["git", "checkout", "-b", branch],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+    def test_branch_selects_intended_issue_over_stale_pending(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _resolve_task_context
+
+        self._seed_issue(
+            tmp_git_repo, "ISS-UNREL-001", "001-stale-slice", "001-stale-task"
+        )
+        self._seed_issue(
+            tmp_git_repo,
+            "ISS-INT-021",
+            "002-embedder-vector-search",
+            "003-config-embedder-cli",
+        )
+
+        # An unrelated stale branch — analogous to the old elixirls sidecar slice.
+        self._checkout(tmp_git_repo, "feat/001-stale-slice/001-stale-task")
+        # The intended branch — matches ISS-INT-021.
+        self._checkout(
+            tmp_git_repo, "feat/002-embedder-vector-search/003-config-embedder-cli"
+        )
+
+        result = _resolve_task_context(None, tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task["issue_id"] == "ISS-INT-021", (
+            f"Expected branch-derived issue ISS-INT-021, got {task['issue_id']}"
+        )
