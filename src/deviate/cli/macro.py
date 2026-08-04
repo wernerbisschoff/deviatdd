@@ -937,13 +937,39 @@ def shard_post(
 
     _run_pre_commit_hooks()
 
+    # Fall back to deriving the epic slug from the first issue's
+    # ``source_file`` when the manifest omits ``epic_slug``. The
+    # ``/deviate-shard`` slash command writes ``epic_slug`` upstream, but a
+    # hand-rolled manifest or a forgetting LLM left the directory unwritable
+    # silent — every shard file was skipped and only ``issues.jsonl`` got
+    # committed. Capture whichever epic actually owns the issues so the
+    # commit always carries the shard directory.
+    resolved_epic = epic_slug
+    if not resolved_epic:
+        for issue_data in issues:
+            source_file = issue_data.get("source_file", "")
+            parts = source_file.split("/") if source_file else []
+            if len(parts) >= 2 and parts[0] == "specs":
+                resolved_epic = parts[1]
+                break
+
     artifacts: list[Path] = [ledger_path]
-    if epic_slug:
-        issues_dir = _resolve_specs_root() / epic_slug / "issues"
+    if resolved_epic:
+        issues_dir = _resolve_specs_root() / resolved_epic / "issues"
         if issues_dir.exists():
-            artifacts.extend(sorted(issues_dir.glob("*-*.md")))
+            artifacts.extend(sorted(issues_dir.glob("**/*.md")))
+        else:
+            console.print(
+                f"[yellow]SHARD_WARNING[/] issues dir missing: {issues_dir} — "
+                "only the issues ledger will be committed"
+            )
+    else:
+        console.print(
+            "[yellow]SHARD_WARNING[/] no epic_slug resolvable from manifest or "
+            "issue source_files — only the issues ledger will be committed"
+        )
     if (Path.cwd() / ".git").exists():
-        epic_num = _extract_epic_num(epic_slug)
+        epic_num = _extract_epic_num(resolved_epic)
         sha = stage_and_commit(
             message=format_commit_message(
                 f"docs({epic_num}): shard issue files and ledger", Path.cwd()
