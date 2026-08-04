@@ -893,7 +893,16 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
 
-    pending = _find_all_pending_tasks(root, issue_id=session.active_issue_id)
+    issue_id = session.active_issue_id
+    if not issue_id:
+        # Session has no active issue (fresh checkout / no session.json).
+        # Fall back to the branch slug so the scan stays scoped to the
+        # issue the feature branch belongs to. Without this, an unscoped
+        # scan returns the first unchecked task in any tasks.md repo-wide
+        # (e.g. a stale slice task from an unrelated issue).
+        issue_id = _resolve_issue_id_from_branch(root) or issue_id
+
+    pending = _find_all_pending_tasks(root, issue_id=issue_id)
     if not pending:
         console.print("[yellow]NO_PENDING_TASKS[/]")
         # Empty queue is a graceful no-op, not an error. The trainer's
