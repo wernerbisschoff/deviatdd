@@ -99,6 +99,93 @@ class TestE2ePre:
             assert "INCOMPLETE_TASKS" in result.output
 
 
+class TestE2ePreBranchScoping:
+    """`deviate e2e pre` must scope the completeness check to the branch's issue.
+
+    Regression: it previously checked every specs/**/tasks.jsonl repo-wide, so
+    running e2e in a multi-issue worktree aborted with INCOMPLETE_TASKS because
+    an *unrelated* issue's tasks were still pending — even when the branch's own
+    issue was complete. It also emitted only {test_paths}, omitting the
+    spec_dir / tasks_file / git_branch fields the /deviate-e2e contract documents.
+    """
+
+    @staticmethod
+    def _seed_issue(
+        root: Path, issue_id: str, bucket: str, slug: str, complete: bool
+    ) -> None:
+        spec_dir = root / "specs"
+        if not (spec_dir / "issues.jsonl").exists():
+            spec_dir.mkdir(parents=True, exist_ok=True)
+            (spec_dir / "issues.jsonl").write_text("", encoding="utf-8")
+        with open(spec_dir / "issues.jsonl", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "issue_id": issue_id,
+                        "source_file": f"specs/{bucket}/issues/{slug}.md",
+                    }
+                )
+                + "\n"
+            )
+        feature_dir = spec_dir / bucket / slug
+        feature_dir.mkdir(parents=True, exist_ok=True)
+        tid = f"TSK-{issue_id[-3:]}-01"
+        rec = {
+            "id": tid,
+            "issue_id": issue_id,
+            "description": "task",
+            "status": "COMPLETED" if complete else "PENDING",
+            "execution_mode": "TDD",
+        }
+        (feature_dir / "tasks.jsonl").write_text(
+            json.dumps(rec) + "\n", encoding="utf-8"
+        )
+        (feature_dir / "tasks.md").write_text(
+            f"# Tasks\n\n- {tid}: task\n", encoding="utf-8"
+        )
+
+    @staticmethod
+    def _checkout(root: Path, branch: str) -> None:
+        subprocess.run(
+            ["git", "checkout", "-b", branch],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+    def test_e2e_pre_scopes_to_branch_issue(self, tmp_git_repo: Path):
+        # An unrelated issue with an incomplete task must NOT abort E2E for
+        # the branch's own (complete) issue.
+        self._seed_issue(
+            tmp_git_repo, "ISS-UNREL-004", "001-stale-slice", "004-stale-task", False
+        )
+        self._seed_issue(
+            tmp_git_repo,
+            "ISS-INT-021",
+            "002-embedder-vector-search",
+            "003-config-embedder-cli",
+            True,
+        )
+        self._checkout(
+            tmp_git_repo, "feat/002-embedder-vector-search/003-config-embedder-cli"
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["e2e", "pre"])
+
+        assert result.exit_code == 0, (
+            f"Expected exit 0 (branch issue complete), got {result.exit_code}: {result.output}"
+        )
+        data = json.loads(result.output)
+        assert "test_paths" in data
+        assert data.get("git_branch") == (
+            "feat/002-embedder-vector-search/003-config-embedder-cli"
+        )
+        tasks_file = data.get("tasks_file", "")
+        assert "002-embedder-vector-search" in tasks_file
+        assert "003-config-embedder-cli" in tasks_file
+
+
 class TestE2ePost:
     def test_e2e_post_commits_results(self, tmp_git_repo: Path):
         with chdir(tmp_git_repo):

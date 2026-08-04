@@ -663,10 +663,15 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 9. **The Model Tiering Constraint:** Model selection is defined as a recommended strategy in `specs/constitution.md` seeds and prompt skills. The `deviate` CLI does **not** enforce model selection programmatically. The `--agent` flag and `DeviateConfig.agent.backend` field configure agent backends (`opencode`, `claude`, `droid`), but the specific model used within each backend is chosen by the calling environment. The `_SKILL_NAMES` dict in `micro.py` maps `JUDGE → "deviate-judge"` for skill-based agent guidance.
 
-10. **The Issue-Scoped Task Sweep:** `deviate micro run --all` is **issue-scoped**, not
-    global. The active issue is resolved from `session.active_issue_id`, falling
-    back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against
-    `specs/issues.jsonl`. If neither resolves, no tasks are dispatched. Once the issue is
+10. **The Issue-Scoped Resolution & Sweep:** task-resolution across micro, e2e, and meso is
+    **issue-scoped**, not global. The active issue is resolved from `session.active_issue_id`,
+    falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against
+    `specs/issues.jsonl`. This fallback is shared by `deviate micro run` (single-task and
+    `--all`), `deviate e2e pre`, and the meso `plan`/`tasks` pre/post contract emit, so every
+    command run inside a feature-branch worktree targets the branch's own issue even when
+    `.deviate/session.json` has no `active_issue_id`. If neither resolves, no micro tasks are
+    dispatched (single-task and `--all` emit NO tasks; `e2e pre` and meso either emit an
+    issue-less contract or raise `NO_ACTIVE_ISSUE`). Once the issue is
     resolved, only the PENDING tasks for that issue (`_find_all_pending_tasks(root,
     issue_id=...)`) are swept. Tasks are dispatched sequentially; each task gets up to
     **2 retry attempts** (`_execute_task_with_retry`, `for attempt in range(2)`) before

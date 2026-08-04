@@ -416,7 +416,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Source:** `src/deviate/cli/meso.py` (`_plan_pre`)
 * **Description:** Per-issue localized research phase with two operating modes:
   * **Outside a linked worktree:** auto-discovers or uses `--issue`, creates/claims the worktree through `_specify_pre`, force-transitions to PLAN, and syncs `.deviate/`.
-  * **Inside a linked worktree:** accepts SPECIFY or PLAN, resolves `record.source_file`, parses `## System Topology Mapping`, and emits `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`, and constitution paths.
+  * **Inside a linked worktree:** accepts SPECIFY or PLAN, resolves `record.source_file`, parses `## System Topology Mapping`, and emits `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`, and constitution paths. The issue is resolved from `session.active_issue_id`, falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against `specs/issues.jsonl` so a fresh worktree with an empty session still targets the branch's own issue.
 * **Acceptance ownership:** The issue supplies stories, scope, topology, `AO-NNN` outlines, edge cases, performance constraints, and flow refs. Plan reconciles each outline into complete `AC-PLAN-NNN` scenarios with Source Outline, upstream traceability, current-code evidence, and Given/When/Then. This contract is authoritative for Tasks, RED, and JUDGE.
   * **Per-scenario required fields** (every `AC-PLAN-NNN` MUST contain all five):
     1. **Scenario header** — `**Scenario AC-PLAN-NNN: <observable behaviour, imperative present tense>**`. Sequential, zero-padded, unique.
@@ -438,7 +438,7 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 
 * **Source:** `src/deviate/cli/meso.py`
 * **Two-source input:** `spec_path` supplies macro intent; `plan_path` supplies strategy and authoritative scenarios. Plan wins over legacy issue/spec Gherkin.
-* **Contract:** detects worktree/branch, resolves constitution commands, and emits `spec_path`, `plan_path`, `tasks_target`, worktree metadata, status, and flags.
+* **Contract:** detects worktree/branch, resolves constitution commands, and emits `spec_path`, `plan_path`, `tasks_target`, worktree metadata, status, and flags. The issue is resolved from `session.active_issue_id`, falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against `specs/issues.jsonl`.
 * **Plan digest:** TASKS receives a bounded 16 KiB UTF-8 `plan_digest` plus `plan_path`; truncation inserts `PLAN_DIGEST_TRUNCATED`, requiring a full read.
 * **Validation:** reports PLAN_NOT_FOUND, PLAN_ACCEPTANCE_CONTRACT_MISSING, or PLAN_ACCEPTANCE_CONTRACT_INVALID; no Gherkin fallback.
 * **Common Flags:** `--json`, `--quiet`.
@@ -594,7 +594,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate e2e pre`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Verifies ALL tasks across all ledgers are COMPLETED. If not, halts.
+* **Description:** Verifies the branch's issue tasks are COMPLETED, then emits the E2E contract. The active issue is resolved from `session.active_issue_id`, falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against `specs/issues.jsonl` (same resolution as `deviate micro run`). When no issue resolves (plain dir / non-feature branch) it fall-backs to a repo-wide completeness check for backward compatibility. When an issue resolves, completeness is scoped to that issue's own `tasks.jsonl` so an unrelated issue's incomplete tasks do not block the run. The emitted contract adds `issue_id`, `tasks_file`, `spec_dir`, and `git_branch` alongside `test_paths` (the `/deviate-e2e` skill consumes these to read the issue spec and task ledger).
 
 #### `deviate e2e post [<manifest>]`
 

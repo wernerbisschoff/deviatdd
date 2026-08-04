@@ -833,10 +833,10 @@ def _resolve_md_issue_id(md_path: Path) -> str:
     return ""
 
 
-def _resolve_issue_id_from_branch(root: Path) -> str | None:
-    """Derive issue_id from the current git branch via issues.jsonl."""
+def _git_branch(root: Path) -> str:
+    """Return the current branch name, or "" when not a git repo."""
     try:
-        branch = subprocess.run(
+        return subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=root,
             capture_output=True,
@@ -844,7 +844,12 @@ def _resolve_issue_id_from_branch(root: Path) -> str | None:
             check=True,
         ).stdout.strip()
     except (subprocess.CalledProcessError, OSError):
-        return None
+        return ""
+
+
+def _resolve_issue_id_from_branch(root: Path) -> str | None:
+    """Derive issue_id from the current git branch via issues.jsonl."""
+    branch = _git_branch(root)
     m = _BRANCH_SLUG_RE.match(branch)
     if not m:
         return None
@@ -3984,6 +3989,22 @@ def _all_tasks_complete(root: Path) -> bool:
     return True
 
 
+def _issue_tasks_complete(root: Path, issue_id: str) -> bool:
+    """True when every record for *issue_id*'s own tasks.jsonl is terminal.
+
+    Scoped to the resolved issue's ledger, not the repo-wide glob, so an
+    unrelated issue's incomplete tasks cannot block this issue's E2E run.
+    """
+    source_file = _resolve_issue_source_file(root, issue_id)
+    if not source_file:
+        return False
+    ledger_path = resolve_issue_artifact_path(root, source_file, "tasks.jsonl")
+    for record in _read_ledger_records(ledger_path):
+        if record.get("status") not in ("COMPLETED", "REFACTOR"):
+            return False
+    return True
+
+
 def _load_governance_context(root: Path) -> str:
     parts: list[str] = []
     constitution_path = root / "specs" / "constitution.md"
@@ -4858,12 +4879,45 @@ def execute_post(
 def e2e_pre() -> None:
     root = Path.cwd()
 
-    if not _all_tasks_complete(root):
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    issue_id = session.active_issue_id
+    if not issue_id:
+        issue_id = _resolve_issue_id_from_branch(root) or issue_id
+
+    # Scope the completeness check to the branch's own issue so an unrelated
+    # issue's incomplete tasks cannot block this E2E run. When no issue is
+    # resolvable (plain dir, non-feature branch) fall back to the repo-wide
+    # check for backward compatibility.
+    if issue_id:
+        all_complete = _issue_tasks_complete(root, issue_id)
+    else:
+        all_complete = _all_tasks_complete(root)
+
+    if not all_complete:
         console.print("[red]INCOMPLETE_TASKS[/] Some tasks not completed")
         raise typer.Exit(code=1)
 
     test_paths = [str(p) for p in _find_test_files(root)]
-    contract = {"test_paths": test_paths}
+    contract: dict[str, object] = {"test_paths": test_paths}
+    if issue_id:
+        source_file = _resolve_issue_source_file(root, issue_id)
+        tasks_file = ""
+        spec_dir = ""
+        if source_file:
+            tasks_file = str(
+                resolve_issue_artifact_path(root, source_file, "tasks.jsonl")
+            )
+            spec_file = resolve_issue_artifact_path(root, source_file, "spec.md")
+            if spec_file is not None:
+                spec_dir = str(spec_file.parent)
+        contract["issue_id"] = issue_id
+        contract["tasks_file"] = tasks_file
+        contract["spec_dir"] = spec_dir
+        contract["git_branch"] = _git_branch(root)
     print(json.dumps(contract, ensure_ascii=False))
     raise typer.Exit(code=0)
 
