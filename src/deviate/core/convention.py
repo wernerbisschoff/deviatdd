@@ -43,6 +43,8 @@ PHASE_TEST_EMOJI: dict[str, str] = {
 # Conventional-commit type pattern at the start of a message.
 _TYPE_RE = re.compile(r"^(\w+)")
 
+_SCOPE_RE = re.compile(r"^(?P<prefix>\w+)\((?P<scope>[^)]+)\):")
+
 
 def _read_convention_file(repo: Path) -> str | None:
     """Return the content of a project commit-convention file, or None."""
@@ -98,6 +100,24 @@ def _extract_type(message: str) -> str | None:
     return m.group(1) if m else None
 
 
+def commit_scope(identifier: str) -> str:
+    """Return the canonical commit scope for an issue or task identifier."""
+    if identifier.startswith("ISS-"):
+        return identifier[4:]
+    return identifier
+
+
+def _normalize_commit_scope(message: str) -> str:
+    """Remove the legacy ``ISS-`` prefix from a conventional-commit scope."""
+    match = _SCOPE_RE.match(message)
+    if match is None:
+        return message
+    scope = commit_scope(match.group("scope"))
+    if scope == match.group("scope"):
+        return message
+    return f"{match.group('prefix')}({scope}):{message[match.end() :]}"
+
+
 def format_commit_message(message: str, repo: Path, phase: str | None = None) -> str:
     """Prepend the appropriate emoji to a conventional-commit message.
 
@@ -115,6 +135,7 @@ def format_commit_message(message: str, repo: Path, phase: str | None = None) ->
     emoji falls back to ``TYPE_EMOJI_MAP``. An unknown ``phase`` value
     also falls back to the type's default emoji.
     """
+    message = _normalize_commit_scope(message)
     if not detect_uses_emojis(repo):
         return message
 

@@ -31,7 +31,7 @@ from deviate.core.agent import (
 )
 from deviate.core._shared import git_env as _git_env
 from deviate.core.commit import commit_artifact, stage_and_commit
-from deviate.core.convention import format_commit_message
+from deviate.core.convention import commit_scope, format_commit_message
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
@@ -227,7 +227,7 @@ def _pr_title(issue_id: str, record_title: str, record_type: str = "feature") ->
     """
     commit_type = TYPE_MAP.get(record_type, "feat")
     desc = re.sub(r"^\[[A-Z]+-\d+\]\s*", "", record_title).strip()
-    return f"{commit_type}({issue_id}): {desc}"
+    return f"{commit_type}({commit_scope(issue_id)}): {desc}"
 
 
 def _derive_pr_metadata(
@@ -1310,7 +1310,7 @@ def _pr_run(
                     "commit",
                     "--no-verify",
                     "-m",
-                    f"chore({issue_id}): mark COMPLETED in ledger",
+                    f"chore({commit_scope(issue_id)}): mark COMPLETED in ledger",
                 ],
                 cwd=repo_root,
                 env=_git_env(),
@@ -2052,7 +2052,8 @@ def _merge_run(
                     cmd.extend(["-m", body])
             else:
                 subject = format_commit_message(
-                    f"chore({issue_id}): mark COMPLETED in ledger", repo_root
+                    f"chore({commit_scope(issue_id)}): mark COMPLETED in ledger",
+                    repo_root,
                 )
                 cmd = ["git", "commit", "-m", subject]
             subprocess.run(

@@ -11,7 +11,7 @@ import typer
 from deviate.cli._common import console
 from deviate.core._shared import git_env as _git_env
 from deviate.core.complexity import ClassificationResult, ComplexityGate
-from deviate.core.convention import format_commit_message
+from deviate.core.convention import commit_scope, format_commit_message
 from deviate.state.ledger import AdhocRecord
 
 adhoc_app = typer.Typer(no_args_is_help=True)
@@ -144,7 +144,7 @@ def post(
 
     # --- Commit step (skip if not a git repo) ---
     if (root / ".git").is_dir():
-        subject = f"docs(adhoc): add issue {issue_id}"
+        subject = f"docs({commit_scope(issue_id)}): add issue"
         if title:
             subject += f" - {title}"
         message = format_commit_message(subject, root)

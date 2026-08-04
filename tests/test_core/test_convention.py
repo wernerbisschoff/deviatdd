@@ -11,9 +11,38 @@ from deviate.core.convention import (
     TYPE_EMOJI_MAP,
     _extract_type,
     _file_has_emojis,
+    commit_scope,
     detect_uses_emojis,
     format_commit_message,
 )
+
+
+class TestCommitScope:
+    def test_removes_legacy_prefix_from_numbered_issue(self) -> None:
+        assert commit_scope("ISS-001-001") == "001-001"
+
+    def test_removes_legacy_prefix_from_adhoc_issue(self) -> None:
+        assert commit_scope("ISS-ADH-001") == "ADH-001"
+
+    def test_keeps_canonical_scopes(self) -> None:
+        assert commit_scope("001-001") == "001-001"
+        assert commit_scope("ADH-001") == "ADH-001"
+
+    def test_keeps_task_and_subsystem_scopes(self) -> None:
+        assert commit_scope("TSK-001-01") == "TSK-001-01"
+        assert commit_scope("review") == "review"
+
+    def test_format_commit_message_normalizes_legacy_scope(
+        self, tmp_git_repo: Path
+    ) -> None:
+        result = format_commit_message("chore(ISS-001-001): claim issue", tmp_git_repo)
+        assert result == "chore(001-001): claim issue"
+
+    def test_format_commit_message_normalizes_legacy_adhoc_scope(
+        self, tmp_git_repo: Path
+    ) -> None:
+        result = format_commit_message("docs(ISS-ADH-001): add issue", tmp_git_repo)
+        assert result == "docs(ADH-001): add issue"
 
 
 # ---------------------------------------------------------------------------

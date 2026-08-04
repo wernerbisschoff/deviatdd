@@ -81,18 +81,22 @@ Generate a conventional-commit title and multi-paragraph description synthesised
 2. **Confirm the convention in your head**:
    - **Emoji prefix?** Look for any gitmoji-style character (e.g. `✨ feat:`, `🐛 fix:`) in either file. If found, the project expects an emoji prefix on every commit; the ``deviate merge --message`` CLI will apply it automatically (see Step A). If neither file exists or neither contains emoji, default to no prefix — but state that conclusion explicitly in the confirmation step so the operator can override.
    - **Types** allowed: `feat`, `fix`, `test`, `refactor`, `docs`, `chore` (the DeviaTDD constitution set; honour it unless CONTRIBUTING.md overrides).
-- **Scope** is the issue ID (e.g. `002-001` for new work, `ISS-019` for grandfathered ids) unless CONTRIBUTING.md says otherwise.
+- **Scope** is the canonical issue ID: `002-001` for numbered issues or
+  `ADH-001` for ad-hoc issues. Never put the stored legacy `ISS-` prefix in
+  the commit scope. The issue ID used by ledger commands remains unchanged.
 3. **Do NOT bypass the CLI** by calling `git commit` directly with your own subject — that drops the emoji prefix on emoji-convention repos. Always go through ``deviate merge --message`` (Step 5 below) so the CLI's ``format_commit_message`` helper applies the prefix from CONTRIBUTING.md.
 
 **Step A — Title format** (consistent with `deviate pr`):
 
 ```
-{type}({ISSUE_ID}): {description}
+{type}({COMMIT_SCOPE}): {description}
 ```
 
 The ``deviate merge --message`` CLI applies the project's emoji convention (read from CONTRIBUTING.md / .commit-convention.md by ``format_commit_message``), so do NOT pre-pend an emoji here — the CLI will. If neither CONTRIBUTING.md nor `.commit-convention.md` declares an emoji convention, the CLI leaves the subject unchanged.
 
 - **type**: `feature → feat`, `bug → fix`, `chore → chore`, `refactor → refactor`, `docs → docs`, default → `feat`
+- **COMMIT_SCOPE**: strip a leading `ISS-` from the stored issue ID. Thus
+  `ISS-001-001` becomes `001-001`, and `ISS-ADH-001` becomes `ADH-001`.
 - **description**: the ledger issue title with any bracketed prefix (e.g. `[FR-NNN]`) stripped. If no ledger title is available, synthesise from commit history.
 - Max 72 characters, imperative mood, no period.
 - Example: `feat(002-001): add user authentication`
@@ -125,7 +129,7 @@ Commits:        {N} commits
 Files changed:  {N} files, {N}+ / {N}-
 
 Commit:
-  {commit_type}({ISSUE_ID}): {description}
+  {commit_type}({COMMIT_SCOPE}): {description}
 
 Proceed with squash merge?
 ```

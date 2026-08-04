@@ -308,11 +308,11 @@ Run the project's full validation gate from the repo root:
 - If the gate FAILS: `git restore .` to revert every fix from STEP 4, surface the gate output to the user, and abort the commit. Do NOT commit a broken tree.
 
 **Commit step** (mandatory when at least one fix landed and aggregate validation passed):
-1. Resolve the issue ID — read `.deviate/session.json` `active_issue_id` first; fall back to the branch slug (e.g. `feat/001-gloss-v1-mvp/002-parser-packet-stack` → `ISS-002`) when session is null; fall back to `unset-issue` when both are missing.
+1. Resolve the issue ID — read `.deviate/session.json` `active_issue_id` first; fall back to the branch-derived canonical ID (for example, `feat/001-gloss-v1-mvp/002-parser-packet-stack` → `001-002`); fall back to `unset-issue` when both are missing. Derive `{COMMIT_SCOPE}` by removing a leading `ISS-` from a stored legacy ID. For example, `ISS-001-001` becomes `001-001`, and `ISS-ADH-001` becomes `ADH-001`.
 2. Stage every file STEP 4 modified using explicit paths: `git add -- <file1> <file2> ...`. Never use `git add -A` — `.deviate/review/reports/` is advisory and must stay unstaged.
 3. Generate a Conventional Commit subject (≤50 chars):
    ```
-   🐛 fix(review): apply N post-review fixes for {ISSUE_ID}
+   🐛 fix({COMMIT_SCOPE}): apply N review fixes
    ```
 4. Generate a body (≤72-char wrap, optional footer):
    ```
@@ -334,7 +334,7 @@ Applied {N} of {M} selected fixes:
   - {file}:{line} — skipped ([OPPORTUNITY], not in scope)
 
 Validation: {gate command} → {PASS|FAIL}
-Committed: {short-sha} 🐛 fix(review): apply N post-review fixes for {ISSUE_ID}
+Committed: {short-sha} 🐛 fix({COMMIT_SCOPE}): apply N review fixes
 ```
 
 If no fixes match the selection rule:
