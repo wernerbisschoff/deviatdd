@@ -2073,7 +2073,10 @@ class TestJudgeTrainRollback:
 
         # Locate the JUDGE feedback `git commit` invocation and inspect
         # the timeout kwarg. Per the implementation in micro.py the
-        # command is `["git", "commit", "-m", <msg>, "--allow-empty"]`.
+        # command is `["git", "commit", "-m", <msg>, "--no-verify",
+        # "--allow-empty"]`. `--no-verify` keeps the feedback commit from
+        # deadlocking against a repository pre-commit hook that runs the
+        # full test suite on the still-broken next-task deliverable.
         commit_calls = [
             call_args
             for call_args in mock_subprocess.call_args_list
@@ -2093,6 +2096,77 @@ class TestJudgeTrainRollback:
             f"{timeout_kwarg}s. The orchestrator must bound every "
             f"``git commit`` invocation so a stuck hook chain surfaces "
             f"as a documented phase failure rather than a hang."
+        )
+
+    @patch("deviate.cli.micro.subprocess.run")
+    def test_commit_judge_feedback_and_advance_uses_no_verify(
+        self,
+        mock_subprocess: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """JUDGE feedback is a docs-only change appended to ``tasks.md``.
+
+        The orchestrator must invoke ``git commit --no-verify`` so the
+        feedback commit cannot deadlock against a repository pre-commit
+        hook that exercises the full test suite. Without ``--no-verify``,
+        a hook that fails on a still-broken test file (the next micro
+        loop's RED deliverable) leaves the runner pinned at the GREEN
+        baseline: every rejection cycle retries the same failing
+        ``git commit`` and the micro loop cannot advance.
+
+        Regression test: a future revert of ``--no-verify`` on this
+        argv must fail this test. Mirrors the
+        ``no_verify=True`` pattern already enforced at the RED / GREEN /
+        REFACTOR micro-loop commit sites.
+        """
+        from rich.console import Console
+
+        from deviate.cli.micro import _commit_judge_feedback_and_advance
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        task, ledger_path, session_path, dot_dir = self._setup_judge_env(root)
+
+        def _fake_subprocess_run(cmd, *args, **kwargs):
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+
+        mock_subprocess.side_effect = _fake_subprocess_run
+
+        c = Console()
+        session = SessionState.load(session_path)
+
+        _commit_judge_feedback_and_advance(
+            root=root,
+            task=task,
+            feedback="no-verify regression probe",
+            feedback_source="test_judge_unit",
+            c=c,
+            session=session,
+            session_path=session_path,
+        )
+
+        commit_calls = [
+            call_args
+            for call_args in mock_subprocess.call_args_list
+            if call_args.args and call_args.args[0][:2] == ["git", "commit"]
+        ]
+        assert len(commit_calls) == 1, (
+            "expected exactly one ``git commit`` invocation; "
+            f"got {[ca.args[0][:2] for ca in mock_subprocess.call_args_list]}"
+        )
+        commit_argv = commit_calls[0].args[0]
+        assert "--no-verify" in commit_argv, (
+            "JUDGE feedback commit must pass ``--no-verify`` so a "
+            "repository pre-commit hook running the full test suite "
+            "cannot deadlock the micro loop against a still-broken "
+            f"test file. argv was {commit_argv!r}"
         )
 
     @patch("deviate.cli.micro.subprocess.run")
