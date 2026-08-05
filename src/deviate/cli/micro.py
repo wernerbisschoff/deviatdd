@@ -1915,7 +1915,7 @@ def _commit_judge_feedback_and_advance(
     )
     try:
         commit_result = subprocess.run(
-            ["git", "commit", "-m", judge_msg, "--allow-empty"],
+            ["git", "commit", "-m", judge_msg, "--no-verify", "--allow-empty"],
             cwd=root,
             capture_output=True,
             text=True,
