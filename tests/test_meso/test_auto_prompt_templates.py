@@ -387,3 +387,41 @@ class TestMergePromptPushGate:
             f"only-in-hook: {sorted(hook_lines - prompt_lines)[:5]}…, "
             f"only-in-prompt: {sorted(prompt_lines - hook_lines)[:5]}…"
         )
+
+
+class TestReviewPromptSecurityTaxonomy:
+    """The review prompt's cross-task Security section must align with the
+    OWASP/NIST/LLM taxonomy so aggregation findings cite the same baseline as
+    the (OWASP/NIST-aware) JUDGE verdicts."""
+
+    @staticmethod
+    def _read_prompt() -> str:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-review.md"
+        ).read_text(encoding="utf-8")
+
+    def test_review_security_section_names_taxonomy(self):
+        prompt = self._read_prompt()
+        assert "OWASP" in prompt, (
+            "Review Security section must reference the OWASP taxonomy"
+        )
+        assert "NIST" in prompt, "Review Security section must reference NIST"
+        assert "SSDF" in prompt, (
+            "Review Security section must reference the NIST SSDF framework"
+        )
+
+    def test_review_security_section_cites_llm_and_category_codes(self):
+        prompt = self._read_prompt()
+        assert "LLM01" in prompt or "LLM" in prompt, (
+            "Review Security section must reference the OWASP LLM lens for",
+            " LLM-agent-shaped surfaces",
+        )
+        assert "A#" in prompt or "A##" in prompt, (
+            "Review Security section must direct cross-task findings to cite",
+            " an OWASP A# category code",
+        )
