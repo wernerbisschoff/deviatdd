@@ -1682,6 +1682,45 @@ class TestJudgeOwaspNistSection:
         assert "path traversal" in prompt.lower()
         assert "log leakage" in prompt.lower()
 
+    def test_judge_prompt_names_owasp_llm_top_ten(self, tmp_path: Path) -> None:
+        """The prompt must add the OWASP Top 10 for LLM Applications (LLM01-LLM10).
+
+        deviatdd produces LLM-agent-shaped products, so prompt injection and the
+        other agentic risk classes must be a named, auditable lens alongside the
+        web Top 10."""
+        prompt = self._build_prompt(tmp_path)
+        assert "LLM01" in prompt, (
+            "Auto judge prompt must name LLM01 in the LLM Applications lens"
+        )
+        assert "LLM10" in prompt, (
+            "Auto judge prompt must name LLM10 in the LLM Applications lens"
+        )
+        assert "LLM Applications" in prompt, (
+            "Auto judge prompt must name the OWASP LLM Applications taxonomy"
+        )
+
+    def test_judge_prompt_language_agnostic_domain_catalogue(
+        self, tmp_path: Path
+    ) -> None:
+        """The domain-catalogue directive must be language-agnostic.
+
+        It must name generic forbidden patterns (native serialization, SQL
+        interpolation, unsafe self-referential deserialization) without tying to a
+        specific stack or toolchain. No Elixir/Phoenix tools (Sobelow, Credo, mix
+        audit, binary_to_term) and no Python tools (Bandit, pip-audit) are named."""
+        prompt = self._build_prompt(tmp_path)
+        # Language-agnostic forbidden-pattern framing is present.
+        assert (
+            "forbidden pattern" in prompt.lower()
+            or "domain catalogue" in prompt.lower()
+        ), "Auto judge prompt must include a language-agnostic domain catalogue"
+        # The catalogue must not name stack-specific tools.
+        for tool in ["Sobelow", "Credo", "mix audit", "Bandit", "binary_to_term"]:
+            assert tool.lower() not in prompt.lower(), (
+                f"Domain catalogue must be language-agnostic; it must not name "
+                f"stack-specific tool {tool!r}"
+            )
+
 
 class TestExecuteRollbackUntrackedCleanup:
     """``_execute_rollback()`` must remove untracked files and directories.

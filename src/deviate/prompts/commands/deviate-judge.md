@@ -104,6 +104,22 @@ Refactoring opportunities are NOT evaluation criteria for JUDGE — surface them
    Emit `COMPLIANCE_VIOLATION` with category `Security Violation` when a finding
    maps to an OWASP Top 10 entry or an SSDF practice.
 
+6. **OWASP LLM Applications verifier (LLM01-LLM10)**: when the diff touches an
+   LLM-agent-shaped surface (agent tool calls, prompt handling, external-content
+   ingestion, context construction, output handling), assess it against the OWASP
+   Top 10 for LLM Applications. Check at least LLM01 Prompt Injection, LLM04 Model
+   DoS, LLM05 Supply Chain, LLM06 Sensitive Information Disclosure, and LLM08
+   Vector/Embedding Weaknesses. Cite the exact `LLM##` code in the `detail` field.
+
+7. **Language-agnostic domain catalogue**: evaluate the diff against forbidden
+   patterns that hold regardless of stack — native deserialization of untrusted
+   input, SQL/query interpolation from user input, self-referential deserialization
+   (read-from / eval-from a string), unsigned webhook payload accepted before a
+   signature check, missing trust-boundary validation on multi-tenant state, and
+   secrets embedded in source/logs/output. Do not assume a specific language or
+   toolchain. A matching finding is `Security Violation` with the pattern name in
+   the `detail` field.
+
 ### STEP 3: EMIT_VERDICT
 
 On approval (default — correctness is intact):

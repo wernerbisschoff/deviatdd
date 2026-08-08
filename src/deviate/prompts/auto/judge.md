@@ -125,6 +125,38 @@ Emit `COMPLIANCE_VIOLATION` with category `Security Violation` when a finding ma
 to an OWASP Top 10 entry or an SSDF practice. Always cite the exact OWASP A# / SSDF
 practice code in the `detail` field so the finding is traceable to a named baseline.
 
+### OWASP LLM Applications Verifier (LLM01-LLM10)
+
+When the diff touches an LLM-agent-shaped surface (agent tool calls, prompt handling,
+external-content ingestion, context construction, output handling), assess it against
+the OWASP Top 10 for LLM Applications. Key classes this phase must check:
+
+- **LLM01 Prompt Injection** — untrusted content routed into an instruction path without delimiter/escaping
+- **LLM04 Model Denial of Service** — unbounded context/generation, no token limits
+- **LLM05 Supply Chain** — untrusted model/plugin/dependency provenance
+- **LLM06 Sensitive Information Disclosure** — protected data leaked into prompts or outputs
+- **LLM08 Vector and Embedding Weaknesses** — retrieval data not isolated or validated
+
+Cite the exact `LLM##` code in the `detail` field when a finding maps.
+
+### Language-Agnostic Domain Catalogue
+
+Beyond the framework categories, evaluate the diff against a language-agnostic
+domain catalogue of forbidden patterns. These hold regardless of stack:
+
+| Forbidden Pattern | Why it blocks |
+|---|---|
+| Native deserialization of untrusted input | Unrestricted object/byte-code reconstruction |
+| SQL / query string interpolation from user input | Injection via query assembly |
+| Self-referential deserialization (read-from / eval-from string) | Arbitrary code execution vector |
+| Unsigned callback / webhook payload accepted before signature check | Request forgery |
+| Failure to validate a trust boundary on multi-tenant state | Data isolation breach |
+| Secrets or tokens embedded in source, logs, or output | Credential exposure |
+
+Evaluate the actual patterns present in the diff; do not assume a particular language
+or toolchain. A finding that maps to a forbidden pattern is `COMPLIANCE_VIOLATION`
+with category `Security Violation` and the pattern name in the `detail` field.
+
 
 ### STEP_3: EMIT_VERDICT
 
