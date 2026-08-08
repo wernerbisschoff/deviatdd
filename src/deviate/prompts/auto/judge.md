@@ -107,6 +107,24 @@ Then run these hard checks:
 6. **Scope scan**: `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, `pyproject.toml` modifications — flag unless introduced by REFACTOR. GREEN must not modify files outside `src/`.
 7. **Constitution scan**: cross-reference the constitution (prepended to this prompt) against the diff. For each mandated tech-stack, transport, or architectural-boundary element, confirm (a) the dependency is declared in the consumer repo's manifest, (b) the runtime surface (Phoenix endpoint / router / live_mount for LiveView; Phoenix.PubSub PG2 adapter for distributed PubSub; Ecto repo for the data layer) is wired up, and (c) the test exercises the real substrate rather than a stand-in (a "framework-free shell with a socket-shaped map" or "REST shim around a LiveView contract" is a stand-in even when surface behavior appears to satisfy the AC). A moduledoc disclaimer that names the missing component for "future wiring" is evidence of substitution, not deferral.
 
+### OWASP / NIST Security Assessment
+
+Map every finding from the Security scan above to a named vulnerability taxonomy.
+Use the OWASP Top 10 and the NIST Secure Software Development Framework (SSDF)
+as the baseline so reviews are reproducible and auditable, not ad-hoc:
+
+| Flat Security Scan Finding | OWASP Top 10 | NIST SSDF Practice |
+|---|---|---|
+| Hardcoded secrets / credentials | A07:2021 Identification & Authentication Failures | PW.8: Manage and verify integrity |
+| Unsanitized input to subprocess / eval | A03:2021 Injection | PW.7: Implement and verify error and exception handling |
+| Unsafe deserialization (pickle/yaml) | A04:2021 Insecure Design | PW.4: Perform and verify threat modeling |
+| Path traversal via unsanitized paths | A01:2021 Broken Access Control | PW.7: Implement and verify error and exception handling |
+| Secrets in logs / output | A05:2021 Security Misconfiguration | PW.2: Track and ensure security of the source |
+
+Emit `COMPLIANCE_VIOLATION` with category `Security Violation` when a finding maps
+to an OWASP Top 10 entry or an SSDF practice. Always cite the exact OWASP A# / SSDF
+practice code in the `detail` field so the finding is traceable to a named baseline.
+
 
 ### STEP_3: EMIT_VERDICT
 

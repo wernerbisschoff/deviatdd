@@ -90,6 +90,20 @@ Refactoring opportunities are NOT evaluation criteria for JUDGE — surface them
    - Gate bypass (HITL skip, mandatory phase skipped)
 4. Check that GREEN did not modify `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, or `pyproject.toml`. If REFACTOR modified such files, flag only if the change breaks correctness. Files outside `src/` modified by GREEN are scope violations.
 
+5. **OWASP / NIST security assessment**: map each Security & Governance finding
+   above to a named taxonomy — the OWASP Top 10 and the NIST Secure Software
+   Development Framework (SSDF). Cite the exact OWASP A#:2021 and SSDF practice
+   code in the `detail` field. Key mappings:
+
+   - Secrets / credentials → **A07:2021** Identification & Authentication Failures
+   - Injection (`subprocess.run` / `os.system` / `eval`) → **A03:2021** Injection
+   - Unsafe deserialization (`pickle` / `yaml`) → **A04:2021** Insecure Design
+   - Path traversal → **A01:2021** Broken Access Control
+   - Secrets in logs → **A05:2021** Security Misconfiguration
+
+   Emit `COMPLIANCE_VIOLATION` with category `Security Violation` when a finding
+   maps to an OWASP Top 10 entry or an SSDF practice.
+
 ### STEP 3: EMIT_VERDICT
 
 On approval (default — correctness is intact):
