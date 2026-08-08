@@ -53,11 +53,12 @@ JUDGE already validated per-task correctness (spec compliance, test integrity, s
 Evaluate ALL seven domains in a single pass. Use the structured diff to anchor cross-task analysis — symbol-level metadata reveals inter-task interface contracts that raw text diffs hide.
 
 ### 1. Security (Cross-Task Aggregation)
-Per-task injection scanning was done by JUDGE. Focus on cross-task aggregation:
+Per-task injection scanning was done by JUDGE (OWASP / NIST / LLM lenses). Focus on cross-task aggregation:
 - Attack surface composition: do individually-safe changes create a combined vulnerability?
 - Secret propagation across task boundaries (task A introduces a credential, task B leaks it)
 - New dependencies — flag any new `pyproject.toml` / requirements additions without spec coverage
 - Authorization gaps exposed by structured diff's cross-task symbol usage
+- For each finding, cite the same taxonomy JUDGE uses: an OWASP `A#` (web Top 10) / `LLM##` (LLM Applications) category code, or a NIST SSDF practice; put it in the `detail` line.
 
 ### 2. Clean Code (Light Sniff — Cross-Task Only)
 JUDGE checked per-task code quality. Only check what JUDGE couldn't:
