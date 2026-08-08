@@ -5,10 +5,12 @@ from pathlib import Path
 import yaml
 
 from deviate.core.commands import (
+    compose_command_body,
     discover_commands,
     install_command,
     resolve_command,
 )
+
 
 _SOURCE_COMMANDS_ROOT = (
     Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "commands"
@@ -334,6 +336,61 @@ class TestPlatformFrontmatter:
         # must remain in the installed output (proves core prefix is composed).
         assert "<universal_invariants>" in content
 
+    def test_installed_command_strips_constitution_when_no_constitution_in_workdir(
+        self, tmp_path: Path
+    ):
+        """When no ``specs/constitution.md`` exists in ``workdir``, the installed
+        command does not embed a stray constitution block. This guards the
+        greenfield case where ``deviate setup`` runs before ``deviate research``
+        scaffolds the constitution.
+        """
+        workdir = tmp_path / "repo"
+        workdir.mkdir()
+        target = tmp_path / "agent" / "commands"
+
+        install_command("deviate-red", target, workdir=workdir)
+        content = (target / "deviate-red.md").read_text(encoding="utf-8")
+        # No constitution present → no fake constitution text injected.
+        assert "Tech Stack Standards" not in content
+        assert "## Constitution" not in content
+
+    def test_installed_command_includes_constitution_when_workdir_has_one(
+        self, tmp_path: Path
+    ):
+        """When ``workdir/specs/constitution.md`` exists, ``install_command``
+        prepends it to the installed slash command so manual-mode agents
+        see the constitution at the top of the prompt — same parity as the
+        auto path's ``load_template()``. This closes the gap where an agent
+        running ``/deviate-red`` saw the core invariants but never the
+        constitution, and could silently substitute a mandated tech-stack
+        component (e.g., deferring Phoenix LiveView for a framework-free shell).
+        """
+        workdir = tmp_path / "repo"
+        workdir.mkdir()
+        specs_dir = workdir / "specs"
+        specs_dir.mkdir()
+        const_path = specs_dir / "constitution.md"
+        const_path.write_text(
+            "# Tech Stack Standards\n\n"
+            "## Backend\n"
+            "- Phoenix LiveView 1.2+ (HEEx + Tailwind, WebSocket transport)\n",
+            encoding="utf-8",
+        )
+
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-red", target, workdir=workdir)
+        content = (target / "deviate-red.md").read_text(encoding="utf-8")
+
+        # The constitution content must appear in the installed file.
+        assert "Tech Stack Standards" in content
+        assert "Phoenix LiveView" in content
+        # The constitution must be the first tier (precede core invariants).
+        constitution_pos = content.index("Tech Stack Standards")
+        core_pos = content.index("<universal_invariants>")
+        assert constitution_pos < core_pos, (
+            "constitution must precede <universal_invariants> in the composed body"
+        )
+
 
 class TestDeviateHtmlCommand:
     """``/deviate-html`` slash command — manual, on-demand HTML authoring prompt.
@@ -436,3 +493,68 @@ class TestConsumerRepositoryPromptBoundaries:
             assert "agent skill" in content
             assert "flow authoring" in content.lower()
             assert "do not" in content.lower()
+
+
+class TestComposeCommandBodyConstitutionInjection:
+    """``compose_command_body`` must prepend the constitution as the first
+    tier when ``constitution_path`` resolves to a real file — closing the
+    manual/slash-command parity gap with the auto path's
+    ``deviate.prompts.assembly.load_template``. Without this, agents running
+    via ``/deviate-*`` slash commands never see the constitution at the top
+    of the prompt and can silently substitute a mandated tech-stack
+    component (e.g., deferring Phoenix LiveView for a framework-free shell).
+    """
+
+    @staticmethod
+    def _core_dir() -> Path:
+        return (
+            Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "core"
+        )
+
+    @staticmethod
+    def _sample_command() -> str:
+        return (
+            "---\n"
+            "name: test-command\n"
+            "description: sample\n"
+            "layer: micro\n"
+            "---\n"
+            "\n"
+            "# Body\n"
+            "This is the command body.\n"
+        )
+
+    def test_constitution_prepended_when_path_provided(self, tmp_path: Path):
+        const = tmp_path / "constitution.md"
+        const.write_text(
+            "# Constitution\nMandated: Phoenix LiveView.\n", encoding="utf-8"
+        )
+
+        composed = compose_command_body(
+            self._sample_command(), self._core_dir(), constitution_path=const
+        )
+        assert composed is not None
+        assert "Mandated: Phoenix LiveView." in composed
+        # Constitution content must appear before the core invariants.
+        const_pos = composed.index("Mandated: Phoenix LiveView.")
+        core_pos = composed.index("<universal_invariants>")
+        assert const_pos < core_pos, (
+            "constitution must precede <universal_invariants> in the composed body"
+        )
+
+    def test_no_constitution_injection_when_path_is_none(self, tmp_path: Path):
+        composed = compose_command_body(
+            self._sample_command(), self._core_dir(), constitution_path=None
+        )
+        assert composed is not None
+        assert "<universal_invariants>" in composed
+
+    def test_no_constitution_injection_when_file_missing(self, tmp_path: Path):
+        missing = tmp_path / "absent.md"
+        assert not missing.exists()
+
+        composed = compose_command_body(
+            self._sample_command(), self._core_dir(), constitution_path=missing
+        )
+        assert composed is not None
+        assert "<universal_invariants>" in composed

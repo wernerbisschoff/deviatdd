@@ -144,20 +144,22 @@ def test_render_starter_substitutes_all_sentinels(tmp_path: Path) -> None:
     assert "--bg:" in out
 
 
-def test_render_starter_derives_progress_slots_from_sections(tmp_path: Path) -> None:
-    """The denominator, fill slots, and authoring chip share one source."""
+def test_render_starter_has_section_anchors_and_no_progress_chrome(
+    tmp_path: Path,
+) -> None:
+    """Every phase has numbered sections; reader-facing progress/chrome is gone."""
     for phase in supported_phases():
         out = render_starter(phase, tmp_path / f"{phase}.md")
-        section_count = len(re.findall(r'<section\b[^>]*\bid="[^"]+"', out))
+        section_count = len(re.findall(r"<section\b[^>]*\bid=\"[^\"]+\"", out))
         assert section_count > 0
-        assert f">{section_count} sections to fill</span>" in out
-        # Phases that still carry a sidebar progress block must keep the
-        # denominator, dot count, and section count in lockstep. Plan
-        # dropped the block (always "0 / N", no JS to update it); the
-        # chip above is the single source of truth for its section count.
-        if "sections authored" in out:
-            assert f" / {section_count}</strong> sections authored" in out
-            assert out.count('<span class="dot"></span>') == section_count
+        # No authoring progress line, no dot grid, no "sections to fill" chip.
+        assert "sections authored" not in out
+        assert "sections to fill" not in out
+        assert 'class="dot"' not in out
+        assert "toc-progress" not in out
+        # The page header carries only title + source path.
+        assert "phase-tag" not in out
+        assert "starter-note" not in out
 
 
 def test_render_starter_exposes_shared_authoring_surface(tmp_path: Path) -> None:
