@@ -448,35 +448,6 @@ table.audit-log td:first-child {
 }
 .spec-meta p { margin: 0.3rem 0; }
 
-.phase-tag {
-    display: inline-block;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    padding: 0.18em 0.6em;
-    border-radius: 999px;
-    background: var(--ink-3);
-    border: 1px solid var(--ink-4);
-    color: var(--fg-1);
-    margin-bottom: 1rem;
-}
-
-.starter-note {
-    margin-top: 1rem;
-    padding: 0.9rem 1rem;
-    border-left: 3px solid var(--accent-amber);
-    background: rgba(210, 153, 34, 0.06);
-    border-radius: 0 6px 6px 0;
-    color: var(--fg-1);
-    font-size: 0.92rem;
-    line-height: 1.6;
-}
-.starter-note strong { color: var(--accent-amber); }
-.starter-note code {
-    background: var(--ink-0);
-    font-size: 0.85em;
-}
 
 /* --- 10. Section anchors: numbered, dark dividers, target highlight ---- */
 section[id] {
@@ -605,41 +576,6 @@ section[id] h3::before {
     border-left-color: var(--accent-flow);
 }
 
-.toc-progress {
-    border-top: 1px dashed var(--ink-4);
-    padding-top: 1rem;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    color: var(--fg-2);
-    line-height: 1.5;
-}
-.toc-progress strong {
-    color: var(--fg-0);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-
-.toc-progress-dots {
-    display: inline-flex;
-    gap: 5px;
-    margin-left: 0.5rem;
-    vertical-align: -1px;
-}
-.toc-progress-dots .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--ink-4);
-    border: 1px solid var(--ink-5);
-    transition: background var(--dur) var(--ease),
-                box-shadow var(--dur) var(--ease),
-                transform var(--dur) var(--ease);
-}
-.toc-progress-dots .dot.filled {
-    background: var(--accent-go);
-    border-color: var(--accent-go);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--accent-go) 60%, transparent);
-}
 
 /* --- 12. Chips (mission-stamp status badges) -------------------------- */
 .chip {
@@ -1327,14 +1263,9 @@ def render_starter(phase: str, source_md: Path) -> str:
     section_count = len(_SECTION_TAG_RE.findall(template_text))
     if section_count == 0:
         raise ValueError(f"template for {phase!r} contains no section anchors")
-    progress_dots = "\n".join(
-        '      <span class="dot"></span>' for _ in range(section_count)
-    )
     rendered = template_text
     rendered = rendered.replace("<<TITLE>>", _phase_title(phase))
     rendered = rendered.replace("<<PHASE_TITLE>>", _phase_title(phase))
     rendered = rendered.replace("<<SOURCE_MD>>", str(source_md))
-    rendered = rendered.replace("<<SECTION_COUNT>>", str(section_count))
-    rendered = rendered.replace("<<TOC_DOTS>>", progress_dots)
     rendered = rendered.replace("<<CSS>>", _CSS)
     return rendered

@@ -52,7 +52,11 @@ def _resolve_core_dir() -> Path | None:
         return fallback if fallback.exists() else None
 
 
-def compose_command_body(raw: str, core_dir: Path) -> str | None:
+def compose_command_body(
+    raw: str,
+    core_dir: Path,
+    constitution_path: Path | None = None,
+) -> str | None:
     """Compose a command body by prepending core.md, layer-shared.md, and lifecycle-manual.md.
 
     Returns the full composed text (frontmatter + prefix + original body),
@@ -62,6 +66,14 @@ def compose_command_body(raw: str, core_dir: Path) -> str | None:
     with auto-mode composition in :mod:`deviate.prompts.assembly`), and
     ``lifecycle-manual.md`` (the manual-mode counterpart to
     ``lifecycle-auto.md``).
+
+    When ``constitution_path`` resolves to an existing ``constitution.md``,
+    its content is prepended as the first tier of the composed body — the
+    same position ``load_template()`` reserves on the auto path. This
+    closes the manual/slash-command parity gap so agents running via
+    ``/deviate-*`` slash commands see the constitution at the top of the
+    prompt and cannot silently substitute a mandated tech-stack component
+    (e.g., deferring Phoenix LiveView for a framework-free shell).
     """
     fm_match = _YAML_FM_RE.match(raw)
     if not fm_match:
@@ -69,12 +81,24 @@ def compose_command_body(raw: str, core_dir: Path) -> str | None:
 
     frontmatter = fm_match.group(1)
     body = raw[fm_match.end() :].lstrip()
-
     parts: list[str] = []
+
+    # 0. Constitution (project governance) — manual-mode parity with
+    # deviate.prompts.assembly.load_template. Missing file is non-fatal
+    # to match the auto path's tolerance; the constitution is best-effort
+    # because deviatdd may run before `deviate init` (greenfield case).
+    if constitution_path is not None and constitution_path.is_file():
+        try:
+            parts.append(constitution_path.read_text(encoding="utf-8"))
+        except OSError:
+            pass
+
+    # 1. Universal core
     core = _read_text(core_dir / "core.md")
     if core:
         parts.append(core)
 
+    # 2. Layer-specific preamble (shared between auto and manual modes)
     layer_match = _LAYER_RE.search(frontmatter)
     if layer_match:
         layer = layer_match.group(1).strip()
@@ -82,7 +106,7 @@ def compose_command_body(raw: str, core_dir: Path) -> str | None:
         if layer_content:
             parts.append(layer_content)
 
-    # Manual-mode lifecycle block (Pre/Post Script + HITL handoff) —
+    # 3. Manual-mode lifecycle block (Pre/Post Script + HITL handoff) —
     # counterpart to lifecycle-auto.md used by load_template() in
     # deviate.prompts.assembly. Auto and manual share layer-shared.md;
     # only the lifecycle block differs.
@@ -90,7 +114,7 @@ def compose_command_body(raw: str, core_dir: Path) -> str | None:
     if lifecycle:
         parts.append(lifecycle)
 
-    # ASD-STE100 writing-style directive (prose + structured discipline) —
+    # 4. ASD-STE100 writing-style directive (prose + structured discipline) —
     # sibling of lifecycle-manual.md; mirrors the auto-mode injection in
     # deviate.prompts.assembly.load_template.
     style = _read_text(core_dir / "style-ste.md")
@@ -181,7 +205,17 @@ def install_command(
     if core_dir is None:
         return False
 
-    composed = compose_command_body(raw, core_dir)
+    # Resolve the project's constitution from <workdir>/specs/constitution.md
+    # (when workdir is provided). The path is best-effort: a missing file is
+    # non-fatal because `deviate setup` may run before `deviate research`
+    # scaffolds the constitution in a greenfield repo.
+    constitution_path: Path | None = None
+    if workdir is not None:
+        candidate = workdir / "specs" / "constitution.md"
+        if candidate.is_file():
+            constitution_path = candidate
+
+    composed = compose_command_body(raw, core_dir, constitution_path=constitution_path)
     if composed is None:
         return False
 

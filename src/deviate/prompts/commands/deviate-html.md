@@ -25,6 +25,7 @@ BREVITY INVARIANTS (apply to every section you author):
 5. **Strip throat-clearing.** No "Why this section", no "Shape it like this", no "What to write". Lead with the verb and the limit.
 6. **Tight worked examples.** When you keep a worked example (test-pinned), keep the surrounding scaffolding tight — one callout + the example, no duplicate intro.
 7. **Mirror token shape, not prose volume.** The markdown may carry three paragraphs of explanation; the HTML keeps the token-bearing content and tightens the prose to what a reviewer needs to scan.
+8. **Restrain chrome.** Prefer the quiet surface: plain `<h2>`/`<h3>` headings, no decorative status chips or eyebrow tags. Reserve `<span class="chip">`/state pills for load-bearing tokens (priority, AC ids) that a reader must notice. If a marker repeats information the heading or a callout already states, drop it.
 
 OPERATIONAL INVARIANTS:
 
@@ -104,7 +105,7 @@ Open the emitted `.html` and fill the body section-by-section. Apply the BREVITY
    - Native `<table>` with `<thead>` / `<tbody>` for FR / AC / decision matrices.
    - `<details><summary>` collapsibles for long acceptance scenarios or risk registers.
    - `<aside class="callout callout-{info|warn|ready}">` for visual emphasis (one sentence inside).
-   - Status chips (`<span class="chip chip-...">`) for state markers (TODO, DONE, BLOCKED).
+   - Status chips (`<span class="chip chip-...">`) ONLY for load-bearing tokens the reader must notice (priority, a state that is not obvious from the sentence). Skip decorative chips that restate the heading or callout.
 4. **Stay offline**: no external fonts, scripts, stylesheets. Inlined stylesheet only.
 5. **Accessibility**: every diagram has `<figcaption>` or `aria-label`; every table has `<caption>`; every interactive element has an accessible name.
 ### STEP_4: VALIDATE_LOCKSTEP

@@ -64,8 +64,10 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 4. **Security Violation**: Hardcoded credentials/tokens, environment variable leakage, unsafe deserialization (e.g., `pickle.loads`, unsafe `yaml.load`), command injection vectors (unsanitized input to `subprocess.run` / `os.system` / `eval`), or path-traversal via unsanitized path construction.
 5. **Gate Bypass / Governance Violation**: A mandatory HITL gate, mandatory phase, or governance requirement was skipped or circumvented.
 6. **Scope Violation**: GREEN modified files outside its allowed scope (`src/` and permitted implementation paths). Modifications to `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, `pyproject.toml`, or other configuration files by GREEN are unauthorized. Modifications introduced by REFACTOR (post-green cleanup) are acceptable.
+7. **Constitution Compliance Violation**: GREEN/REFACTOR substitutes, defers, mocks away, or omits a component the constitution mandates (tech stack, transport, architectural boundary, runtime, framework) without an ADR and a `constitution.md` amendment. A test that "passes" by mocking the system under test in a way that bypasses the mandated transport (e.g., asserting on a socket-shaped map while the real Phoenix LiveView WebSocket is unwired) is a Constitution Compliance Violation even when the AC-NN's surface behavior appears satisfied — the implementation is not on the mandated substrate. The constitution is prepended to this prompt at the first tier; cross-reference its Tech Stack Standards and Architectural Principles sections before issuing a verdict.
 
 ### Evaluation Dimensions
+
 
 | Dimension | Weight | Description |
 |---|---|---|
@@ -75,7 +77,9 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 | Security & Governance | Critical | No hardcoded secrets, no injection, no audit bypass, no gate skip. |
 | Flow Alignment | High | Diff preserves or extends the user-visible flow(s) named in the task's `**Flow References**`. |
 | No Shortcuts | High | No placeholder / stub / deferred logic in production code paths exercised by the AC-NN. |
+| Constitution Compliance | Critical | Implementation runs on the mandated substrate. Every tech-stack, transport, architectural-boundary, and runtime requirement declared in the constitution (prepended to this prompt) is present, wired, and exercised by the diff. A missing component without an ADR + `constitution.md` amendment is a blocking violation — deferring it via a code comment or a moduledoc disclaimer does not satisfy the contract. |
 | Security Checks | Critical | The `security_checks` field on the manifest is **mandatory** — emitted as `pass | fail | warn` based on the existing flat security scan (secrets, injection, deserialization, path traversal, log leakage) plus any `security_profile.body` content from the task. Absence of the field is a Judge rejection, not a soft warning. |
+
 
 </evaluation_criteria>
 
@@ -101,10 +105,12 @@ Then run these hard checks:
 4. **Security scan**: hardcoded secrets, `subprocess.run` / `os.system` / `eval` with unsanitized input, unsafe `pickle.loads` / `yaml.load`, path construction from user input, secrets in log / print calls.
 5. **Governance scan**: any reference to a HITL gate being skipped, a mandatory phase being bypassed, or a constitution rule being violated.
 6. **Scope scan**: `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, `pyproject.toml` modifications — flag unless introduced by REFACTOR. GREEN must not modify files outside `src/`.
+7. **Constitution scan**: cross-reference the constitution (prepended to this prompt) against the diff. For each mandated tech-stack, transport, or architectural-boundary element, confirm (a) the dependency is declared in the consumer repo's manifest, (b) the runtime surface (Phoenix endpoint / router / live_mount for LiveView; Phoenix.PubSub PG2 adapter for distributed PubSub; Ecto repo for the data layer) is wired up, and (c) the test exercises the real substrate rather than a stand-in (a "framework-free shell with a socket-shaped map" or "REST shim around a LiveView contract" is a stand-in even when surface behavior appears to satisfy the AC). A moduledoc disclaimer that names the missing component for "future wiring" is evidence of substitution, not deferral.
+
 
 ### STEP_3: EMIT_VERDICT
 
-Default to COMPLIANCE_PASS. Emit `COMPLIANCE_VIOLATION` only when one of the seven Categories of Violations above is genuinely present.
+Default to COMPLIANCE_PASS. Emit `COMPLIANCE_VIOLATION` only when one of the eight Categories of Violations above is genuinely present.
 
 **Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST:
 1. **State what GREEN did wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
@@ -141,6 +147,7 @@ train_feedback: |
   security_governance: "PASS" | "FAIL"
   flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
+  constitution_compliance: "PASS" | "FAIL"
 diff_summary:
   files_changed: 5
   files_modified: 3
@@ -186,6 +193,7 @@ evaluation:
   security_governance: "PASS" | "FAIL"
   flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
+  constitution_compliance: "PASS" | "FAIL"
   security_checks: pass | fail | warn
 diff_summary:
   files_changed: 0
@@ -248,7 +256,7 @@ security hole, gate skip, flow break), never a refactor.
 
 <constraints>
 - Evaluate only the `git diff` scope — do not analyze pre-existing code.
-- Default to COMPLIANCE_PASS. Emit COMPLIANCE_VIOLATION only for the seven Categories of Violations above.
+- Default to COMPLIANCE_PASS. Emit COMPLIANCE_VIOLATION only for the eight Categories of Violations above.
 - Refactoring opportunities are NEVER blocking. Surface them as informational notes in `train_feedback` on a passing verdict, or omit them entirely.
 - Violations must be specific and actionable, citing FR-NN / AC-NN where applicable.
 - False positives (flagging compliant changes) should be minimized. When in doubt, pass.
