@@ -1621,6 +1621,68 @@ class TestJudgeSecurityChecksField:
         )
 
 
+class TestJudgeOwaspNistSection:
+    """The JUDGE prompt must evaluate the diff against OWASP Top 10 and NIST
+    SSDF categories."""
+
+    def _build_prompt(self, tmp_path: Path) -> str:
+        from deviate.cli.micro import _build_auto_prompt
+
+        spec_dir = tmp_path / "specs" / "adhoc" / "issues"
+        spec_dir.mkdir(parents=True)
+        spec_file = spec_dir / "015-judge-owasp-nist.md"
+        spec_file.write_text("# Stub Spec\n", encoding="utf-8")
+        issues_jsonl = tmp_path / "specs" / "issues.jsonl"
+        issues_jsonl.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-015",
+                    "source_file": "specs/adhoc/issues/015-judge-owasp-nist.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        task = {
+            "id": "TSK-015-01",
+            "issue_id": "ISS-ADH-015",
+            "description": "Verify OWASP/NIST security section",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        return _build_auto_prompt("judge", task, tmp_path)
+
+    def test_judge_prompt_names_owasp_top_ten(self, tmp_path: Path) -> None:
+        """The prompt must reference OWASP Top 10 as a security taxonomy."""
+        prompt = self._build_prompt(tmp_path)
+        assert "OWASP" in prompt, (
+            "Auto judge prompt must reference the OWASP Top 10 taxonomy"
+        )
+        assert "Top 10" in prompt, (
+            "Auto judge prompt must name OWASP's Top 10 vulnerability list"
+        )
+
+    def test_judge_prompt_names_nist_ssdf(self, tmp_path: Path) -> None:
+        """The prompt must reference the NIST Secure Software Development
+        Framework (SSDF) as a security baseline."""
+        prompt = self._build_prompt(tmp_path)
+        assert "NIST" in prompt, (
+            "Auto judge prompt must reference NIST as a security baseline"
+        )
+        assert "SSDF" in prompt, "Auto judge prompt must name the NIST SSDF framework"
+
+    def test_judge_prompt_maps_flat_scan_to_framework(self, tmp_path: Path) -> None:
+        """The existing flat security categories must map to framework names.
+
+        The OWASP/NIST section must not discard the concrete flat categories
+        (secrets, injection, deserialization, path traversal, log leakage)."""
+        prompt = self._build_prompt(tmp_path)
+        assert "secrets" in prompt.lower()
+        assert "injection" in prompt.lower()
+        assert "path traversal" in prompt.lower()
+        assert "log leakage" in prompt.lower()
+
+
 class TestExecuteRollbackUntrackedCleanup:
     """``_execute_rollback()`` must remove untracked files and directories.
 
