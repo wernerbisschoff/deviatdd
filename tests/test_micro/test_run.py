@@ -597,3 +597,95 @@ class TestSessionResume:
                 f"EXECUTE must not surface test-failure retries: {result.output}"
             )
             mock_run_test.assert_not_called()
+
+
+class TestAutoFlag:
+    """``deviate micro run --auto`` spawns the agent with the deviatdd slash
+    command as the prompt instead of running an internal micro phase."""
+
+    def _seed_minimal_worktree(self, tmp_path: Path, backend: str) -> None:
+        from deviate.cli.micro import _DEVIATDD_SLASH_COMMAND  # noqa: F401
+
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True, exist_ok=True)
+        config_path = dot_dir / "config.toml"
+        config_path.write_text(f'[agent]\nbackend = "{backend}"\n', encoding="utf-8")
+        session = SessionState(current_phase="IDLE")
+        session.save(dot_dir / "session.json")
+
+    def test_auto_flag_uses_slash_command_for_pi_backend(self, tmp_path: Path) -> None:
+        from deviate.cli.micro import _DEVIATDD_SLASH_COMMAND
+
+        self._seed_minimal_worktree(tmp_path, "pi")
+        captured: dict[str, object] = {}
+
+        def fake_invoke_agent(
+            prompt, c, *, backend_name, task_id, phase, output_callback=None, model=None
+        ):
+            captured["prompt"] = prompt
+            captured["backend_name"] = backend_name
+            captured["phase"] = phase
+            return None, ""
+
+        with chdir(tmp_path):
+            with patch(
+                "deviate.cli.micro._invoke_agent", side_effect=fake_invoke_agent
+            ):
+                result = runner.invoke(cli, ["micro", "run", "--auto"])
+
+        assert result.exit_code == 0, (
+            f"Expected exit 0, got {result.exit_code}: {result.output}"
+        )
+        assert captured["prompt"] == _DEVIATDD_SLASH_COMMAND["pi"]
+        assert captured["prompt"] == "/skills:deviatdd"
+        assert captured["backend_name"] == "pi"
+        assert captured["phase"] == "AUTO"
+
+    def test_auto_flag_uses_slash_command_for_claude_backend(
+        self, tmp_path: Path
+    ) -> None:
+        self._seed_minimal_worktree(tmp_path, "claude")
+        captured: dict[str, object] = {}
+
+        def fake_invoke_agent(
+            prompt, c, *, backend_name, task_id, phase, output_callback=None, model=None
+        ):
+            captured["prompt"] = prompt
+            return None, ""
+
+        with chdir(tmp_path):
+            with patch(
+                "deviate.cli.micro._invoke_agent", side_effect=fake_invoke_agent
+            ):
+                result = runner.invoke(cli, ["micro", "run", "--auto"])
+
+        assert result.exit_code == 0
+        assert captured["prompt"] == "/deviatdd"
+
+    def test_auto_flag_unknown_backend_exits_nonzero(self, tmp_path: Path) -> None:
+        self._seed_minimal_worktree(tmp_path, "droid")
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["micro", "run", "--auto"])
+
+        assert result.exit_code != 0, (
+            f"Expected non-zero exit for unsupported backend, got "
+            f"{result.exit_code}: {result.output}"
+        )
+        assert "AUTO_NO_SLASH_COMMAND" in result.output
+
+    def test_auto_flag_skips_normal_dispatch(self, tmp_path: Path) -> None:
+        """``--auto`` must NOT call ``_run_single`` or ``_run_all``."""
+        from deviate.cli.micro import _DEVIATDD_SLASH_COMMAND
+
+        self._seed_minimal_worktree(tmp_path, "omp")
+        with chdir(tmp_path):
+            with patch("deviate.cli.micro._invoke_agent", return_value=(None, "")):
+                with patch("deviate.cli.micro._run_single") as mock_single:
+                    with patch("deviate.cli.micro._run_all") as mock_all:
+                        result = runner.invoke(cli, ["micro", "run", "--auto"])
+
+        assert result.exit_code == 0
+        mock_single.assert_not_called()
+        mock_all.assert_not_called()
+        # Slash command still forwarded correctly for omp.
+        assert _DEVIATDD_SLASH_COMMAND["omp"] == "/skills:deviatdd"

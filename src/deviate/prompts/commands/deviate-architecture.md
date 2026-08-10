@@ -2,7 +2,8 @@
 name: deviate-architecture
 description: Author the cross-epic architecture contract — produce specs/_product/architecture.md (with ADRs) and domain-model.md. Does not require flow files to exist first; the operator can author architecture independently of flow authoring.
 category: deviatdd-product-layer
-version: 1.3.0
+layer: product
+version: 1.4.0
 aliases:
   - architecture
   - /deviate-architecture

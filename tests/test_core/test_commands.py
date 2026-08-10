@@ -558,3 +558,74 @@ class TestComposeCommandBodyConstitutionInjection:
         )
         assert composed is not None
         assert "<universal_invariants>" in composed
+
+
+class TestComposeCommandBodyProductLayerLifecycle:
+    """``layer: product`` commands (deviate-release, deviate-architecture,
+    deviate-flows) must NOT inherit the manual-mode pre/post-script
+    lifecycle, which assumes ``deviate <phase> pre`` exists for every phase.
+    Product-layer commands write a single artifact and commit via
+    ``deviate.core.commit.commit_artifact`` — there is no pre-script and no
+    post-script. The composer must route these commands to the product-layer
+    shared lifecycle block instead of ``lifecycle-manual.md``.
+    """
+
+    @staticmethod
+    def _core_dir() -> Path:
+        return (
+            Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "core"
+        )
+
+    @staticmethod
+    def _sample_command() -> str:
+        return (
+            "---\n"
+            "name: test-product-command\n"
+            "description: sample\n"
+            "layer: product\n"
+            "---\n"
+            "\n"
+            "# Body\n"
+            "This is the command body.\n"
+        )
+
+    def test_product_layer_skips_manual_lifecycle_block(self):
+        composed = compose_command_body(self._sample_command(), self._core_dir())
+        assert composed is not None
+        # The <lifecycle mode="manual"> block must be absent — that block
+        # instructs agents to run ``deviate <phase> pre`` which does not
+        # exist for product-layer commands (no release/architecture/flows
+        # pre-script subcommand). The product-shared block may mention the
+        # phrase in negated form ("there is **no** deviate <phase> pre");
+        # we test the structural marker, not the phrase.
+        assert '<lifecycle mode="manual">' not in composed, (
+            "product-layer commands must not inherit the manual pre/post-script "
+            "lifecycle block; release has no deviate <phase> pre subcommand"
+        )
+
+    def test_product_layer_includes_product_shared_block(self):
+        composed = compose_command_body(self._sample_command(), self._core_dir())
+        assert composed is not None
+        assert "commit_artifact" in composed, (
+            "product-layer lifecycle block must reference commit_artifact"
+        )
+        assert '<lifecycle mode="product">' in composed, (
+            'product-layer lifecycle block must be tagged with mode="product"'
+        )
+
+    def test_micro_layer_still_uses_manual_lifecycle(self):
+        """Regression guard: only ``layer: product`` skips the manual block;
+        ``layer: micro`` and ``layer: meso`` and ``layer: macro`` keep it."""
+        raw = (
+            "---\n"
+            "name: test-micro-command\n"
+            "description: sample\n"
+            "layer: micro\n"
+            "---\n"
+            "\n"
+            "# Body\n"
+        )
+        composed = compose_command_body(raw, self._core_dir())
+        assert composed is not None
+        assert '<lifecycle mode="manual">' in composed
+        assert '<lifecycle mode="product">' not in composed

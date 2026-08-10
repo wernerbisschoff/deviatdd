@@ -100,19 +100,23 @@ def compose_command_body(
 
     # 2. Layer-specific preamble (shared between auto and manual modes)
     layer_match = _LAYER_RE.search(frontmatter)
-    if layer_match:
-        layer = layer_match.group(1).strip()
+    layer = layer_match.group(1).strip() if layer_match else None
+    if layer:
         layer_content = _read_text(core_dir / f"{layer}-shared.md")
         if layer_content:
             parts.append(layer_content)
-
-    # 3. Manual-mode lifecycle block (Pre/Post Script + HITL handoff) —
-    # counterpart to lifecycle-auto.md used by load_template() in
-    # deviate.prompts.assembly. Auto and manual share layer-shared.md;
-    # only the lifecycle block differs.
-    lifecycle = _read_text(core_dir / "lifecycle-manual.md")
-    if lifecycle:
-        parts.append(lifecycle)
+    # 3. Lifecycle block — branch on layer.
+    # Manual-mode (plan/specify/tasks/pr/merge) prepends ``lifecycle-manual.md``
+    # which documents ``deviate <phase> pre`` / ``deviate <phase> post`` scripts.
+    # Product-layer commands (release/architecture/flows) have no pre/post
+    # scripts; they commit a single artifact via
+    # ``deviate.core.commit.commit_artifact`` and the layer-shared block above
+    # already documents that lifecycle. Skip the manual block here so the agent
+    # does not attempt to run ``deviate release pre`` (no such subcommand).
+    if layer != "product":
+        lifecycle = _read_text(core_dir / "lifecycle-manual.md")
+        if lifecycle:
+            parts.append(lifecycle)
 
     # 4. ASD-STE100 writing-style directive (prose + structured discipline) —
     # sibling of lifecycle-manual.md; mirrors the auto-mode injection in

@@ -1506,6 +1506,35 @@ def _discover_claimable_issue() -> str | None:
     return None
 
 
+def _resolve_meso_resume_state(plan_path: Path, tasks_path: Path) -> str:
+    """Return PLAN, TASKS, or COMPLETE without changing existing artifacts."""
+    if plan_path.exists():
+        plan_content = plan_path.read_text(encoding="utf-8")
+        plan_errors = validate_acceptance_contract(plan_content)
+        if plan_errors:
+            console.print(
+                f"[red]MESO_PLAN_INVALID[/] {plan_path}: {'; '.join(plan_errors)}"
+            )
+            raise typer.Exit(code=1)
+        plan_ready = True
+    else:
+        plan_ready = False
+
+    if tasks_path.exists():
+        if not tasks_path.read_text(encoding="utf-8").strip():
+            console.print(f"[red]MESO_TASKS_INVALID[/] {tasks_path}: empty file")
+            raise typer.Exit(code=1)
+        if not plan_ready:
+            console.print(
+                f"[red]MESO_TASKS_WITHOUT_PLAN[/] {tasks_path}: "
+                "tasks.md requires a valid plan.md"
+            )
+            raise typer.Exit(code=1)
+        return "COMPLETE"
+
+    return "TASKS" if plan_ready else "PLAN"
+
+
 def _silence_stdout(
     func: Callable[..., object], *args: object, **kwargs: object
 ) -> None:
@@ -1578,6 +1607,24 @@ def _meso_run(
     session_path = dot_dir / "session.json"
     ledger_path = _resolve_specs_root() / "issues.jsonl"
 
+    # ── Auto-detect: already inside a linked worktree? ──────────────────
+    # When the operator is already inside the worktree that ``_specify_pre``
+    # would have created, treat the run as a PLAN + TASKS continuation.
+    # Auto-claim + a second worktree would clobber the existing branch and
+    # violate the Git Isolation Principle. Skip the SPECIFY step and resolve
+    # the active issue from the branch slug when no explicit ``--issue`` was
+    # given. Operators can still force a fresh SPECIFY cycle by passing
+    # ``--issue <other-id>`` (handled by the ``else`` branch below) or by
+    # invoking ``deviate meso run`` from outside any worktree.
+    if _is_linked_worktree() and issue_id is None and not no_setup:
+        no_setup = True
+        issue_id = resolve_issue_id_from_branch(Path.cwd())
+        if issue_id:
+            console.print(
+                f"[green]WORKTREE_DETECTED[/] continuing PLAN + TASKS for "
+                f"{issue_id} in current worktree (SPECIFY skipped)"
+            )
+
     # ── Discover issue if not specified ──────────────────────────────
     if issue_id is None:
         discovered = _discover_claimable_issue()
@@ -1594,17 +1641,6 @@ def _meso_run(
         console.print(f"[red]ISSUE_COMPLETED[/] {issue_id} is already COMPLETED")
         raise SystemExit(1)
 
-    # ── Check progress → reset ──────────────────────────────────────
-    record = resolve_issue_record(issue_id, ledger_path)
-    if record and record.status not in ("BACKLOG", "DRAFT"):
-        console.print(
-            f"[yellow]PROGRESS_RESET[/] {issue_id} ({record.status})"
-            " — resetting to BACKLOG"
-        )
-        reset = record.model_copy(update={"status": "BACKLOG"})
-        append_issue_transition(reset, ledger_path)
-
-    # Re-resolve after possible reset
     record = resolve_issue_record(issue_id, ledger_path)
     if record is None:
         console.print(f"[red]INVALID_ISSUE_ID[/] {issue_id} not found in ledger")
@@ -1620,21 +1656,11 @@ def _meso_run(
                 )
                 raise SystemExit(1)
 
-    epic_slug = _resolve_bucket_dir(record.source_file) if record else ""
-    issue_slug = _source_stem(record.source_file) if record else ""
-    issue_title = record.title if record else ""
+    epic_slug = _resolve_bucket_dir(record.source_file)
+    issue_slug = _source_stem(record.source_file)
+    issue_title = record.title
 
     _pipeline_start = time.monotonic()
-    console.print(
-        PipelineBanner(
-            issue_id=issue_id,
-            issue_title=issue_title,
-            epic_slug=epic_slug,
-            issue_slug=issue_slug,
-            steps=("PLAN", "TASKS") if no_setup else ("SPECIFY", "PLAN", "TASKS"),
-        ).render()
-    )
-
     if no_setup:
         console.print(
             "[bold][yellow]WARN[/] --no-setup: skipping SPECIFY (no worktree, "
@@ -1665,14 +1691,8 @@ def _meso_run(
         setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
         worktree_path = Path(setup_result["worktree_path"])
 
-    # ── PLAN phase — advance session (in original repo) ──────────────
     dot_dir = _resolve_dot_deviate()
     session_path = (dot_dir / "session.json").resolve()
-    session = SessionState.load(session_path)
-    if session.current_phase != "PLAN":
-        session = session.force_transition_to("PLAN")
-    session.active_issue_id = issue_id
-    session.save(session_path)
 
     # Sync .deviate/ to worktree so downstream functions find the session
     if dot_dir.exists() and not no_setup:
@@ -1699,27 +1719,73 @@ def _meso_run(
         "tasks_target": str(tasks_dir / "tasks.md"),
     }
 
+    plan_path = plan_dir / "plan.md"
+    tasks_path = tasks_dir / "tasks.md"
+    resume_state = (
+        _resolve_meso_resume_state(plan_path, tasks_path) if no_setup else "PLAN"
+    )
+
+    if resume_state == "COMPLETE":
+        console.print(
+            f"[green]MESO_ALREADY_COMPLETE[/] {issue_id}: valid plan.md and "
+            "tasks.md already exist"
+        )
+        return str(worktree_path)
+
+    if resume_state == "TASKS":
+        steps = ("TASKS",)
+    elif no_setup:
+        steps = ("PLAN", "TASKS")
+    else:
+        steps = ("SPECIFY", "PLAN", "TASKS")
+    console.print(
+        PipelineBanner(
+            issue_id=issue_id,
+            issue_title=issue_title,
+            epic_slug=epic_slug,
+            issue_slug=issue_slug,
+            steps=steps,
+        ).render()
+    )
+    if resume_state == "TASKS":
+        console.print(
+            f"[green]MESO_RESUME[/] {issue_id}: valid plan.md found; resuming at TASKS"
+        )
+
+    if record.status not in ("BACKLOG", "DRAFT") and resume_state == "PLAN":
+        console.print(
+            f"[yellow]PROGRESS_RESET[/] {issue_id} ({record.status})"
+            " — resetting to BACKLOG"
+        )
+        reset = record.model_copy(update={"status": "BACKLOG"})
+        append_issue_transition(reset, ledger_path)
+
+    initial_phase = "TASKS" if resume_state == "TASKS" else "PLAN"
+    session = SessionState.load(session_path)
+    if session.current_phase != initial_phase:
+        session = session.force_transition_to(initial_phase)
+    session.active_issue_id = issue_id
+    session.save(session_path)
+
     ctx = chdir(worktree_path)
     with ctx:
-        # ── PLAN phase ───────────────────────────────────────────────
-        with _phase_callout("PLAN", issue_id, issue_title or ""):
-            _silence_stdout(
-                _plan_pre, force=force, dry_run=False, skip_auto_claim=no_setup
-            )
-            _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
-            _enforce_phase_artifact("plan", Path(contract["plan_path"]))
-            _plan_post(force=force, issue_id=issue_id)
-        plan_md = Path(contract["plan_path"])
-        contract["plan_digest"] = _build_plan_digest(plan_md)
+        if resume_state == "PLAN":
+            with _phase_callout("PLAN", issue_id, issue_title):
+                _silence_stdout(
+                    _plan_pre, force=force, dry_run=False, skip_auto_claim=no_setup
+                )
+                _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
+                _enforce_phase_artifact("plan", plan_path)
+                _plan_post(force=force, issue_id=issue_id)
 
-        # ── TASKS phase ──────────────────────────────────────────────
-        with _phase_callout("TASKS", issue_id, issue_title or ""):
+        contract["plan_digest"] = _build_plan_digest(plan_path)
+
+        with _phase_callout("TASKS", issue_id, issue_title):
             _silence_stdout(_tasks_pre, force=force, dry_run=False)
             _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
-            _enforce_phase_artifact("tasks", Path(contract["tasks_target"]))
+            _enforce_phase_artifact("tasks", tasks_path)
             _tasks_post(force=force, issue_id=issue_id)
 
-        # ── Final IDLE guard ─────────────────────────────────────────
         session = SessionState.load(session_path)
         if session.current_phase != "IDLE":
             session = session.force_transition_to("IDLE")
