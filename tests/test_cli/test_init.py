@@ -1451,9 +1451,16 @@ class TestInstallDeviatddSkill:
         assert fm.get("category") == "deviatdd-tooling", (
             f"category mismatch: got {fm.get('category')!r}"
         )
-        assert fm.get("version") == "2.0.0", (
+        assert fm.get("version") == "3.0.0", (
             f"version mismatch: got {fm.get('version')!r}"
         )
+        for instruction in (
+            "deviate meso run",
+            "MESO_ALREADY_COMPLETE",
+            "MESO_PLAN_INVALID",
+            "deviate micro run",
+        ):
+            assert instruction in body
 
     def test_deviatdd_skill_troubleshooting_section_matches_logger(
         self,
@@ -1555,10 +1562,7 @@ class TestInstallDeviatddSkill:
 
 
 def _resolve_skill_source() -> str | None:
-    """Helper: load the deviatdd SKILL.md body from package resources.
-    Mirrors ``deviate.cli._resolve_skill_source`` so tests can assert
-    on the source-of-truth content (frontmatter, safety gate, dispatch
-    table) without depending on the installer output."""
+    """Load the packaged deviatdd skill body for source assertions."""
     try:
         path = importlib.resources.files("deviate.prompts.skills.deviatdd").joinpath(
             "SKILL.md"

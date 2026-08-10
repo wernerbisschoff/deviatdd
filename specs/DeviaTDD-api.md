@@ -150,16 +150,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     `~/.omp/agent/managed-skills/<name>/SKILL.md` and via a
     settings-driven `skills` array; operators can register the
     project-local file via OMP's settings).
-* **Scope:** Micro-layer only. The skill orchestrates `deviate micro
-  run --all`, triages every error class micro can surface, and runs
-  a four-step safety-gated `git reset --hard && git clean -fd`
-  clean-slate retry (ledger sanity -> workspace inventory -> typed
-  user confirmation -> reset; matches `_execute_rollback`'s
-  `git clean -fd` contract — `without -x`, so `.deviate/`, `.mise/`,
-  `.venv/` survive). Meso orchestration is out of scope — operators
-  use `/deviate-meso`, `/deviate-plan`, `/deviate-tasks`. A Dispatch
-  section points the agent to those canonical slash commands when a
-  failure escapes micro's scope; the skill never invokes them inline.
+* **Scope:** Unified Meso and Micro orchestration. The skill first runs
+  `deviate meso run`. In an existing feature worktree, the runner validates
+  `plan.md` and `tasks.md`, skips completed phases, and resumes at Tasks when
+  only Plan is ready. Invalid existing artifacts stop without overwrite.
+  After Meso succeeds, the skill runs bare `deviate micro run` one task at a
+  time and keeps the existing failure-triage and clean-slate safety flow.
 * **`## Troubleshooting failed runs` (skill v1.1.0):** before guessing
   at a fix, the skill directs the agent to the two complementary
   `.deviate/logs/` sinks wired through
@@ -192,7 +188,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE` (carries
   `uncommitted_count=` and `files=`, the dirty files the hook
   refused — NOT `returncode=` / `stderr=`).
-  Skill frontmatter version is `1.1.0`. The drift-check test
+  Skill frontmatter version is `3.0.0`. The drift-check test
   `test_deviatdd_skill_troubleshooting_section_matches_logger` parses
   `micro.py` for `_log_run("<NAME>", ...)` calls and asserts every
   backticked event name in the Troubleshooting section is a real
@@ -212,6 +208,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   idempotence, gitignore entry presence + idempotence, safety-gate
   fragments in the SKILL.md body, well-formed frontmatter, and the
   dispatch table's canonical slash-command references.
+
 
 
 #### `deviate constitution`
@@ -862,6 +859,16 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     JUDGE is excluded from CLI override to preserve model tiering)
   * `--dry-run` (Print the resolved task and exit without dispatching)
   * `--json`, `--quiet`, `--verbose`
+  * `--auto` (Spawn the configured agent with the deviatdd skill slash command as
+    the prompt instead of running an internal micro phase. Skips the normal
+    RED/GREEN/JUDGE/REFACTOR orchestration. The agent runs the skill, which itself
+    drives ``deviate micro run`` per task until the queue drains. Agent-agnostic:
+    the runner maps the configured backend to its canonical slash command —
+    ``/deviatdd`` for Claude Code (which exposes skills under their bare name),
+    ``/skills:deviatdd`` for Pi and OMP. Falls back to ``AUTO_NO_SLASH_COMMAND`` +
+    exit 1 when the configured backend has no documented slash command form,
+    e.g. ``opencode`` / ``droid`` / ``stub`` — operators on those backends must
+    invoke the agent manually with the skill installed by ``deviate setup``.)
 
 > **Note on the `last_command` field:** When the orchestrator hands off to
 > `micro run --all`, the session's `last_command` is rewritten to
@@ -872,11 +879,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate meso run` (Automated Meso Pipeline)
 
 * **Source:** `src/deviate/cli/meso.py` (`_meso_run`, `meso_run_command`)
-* **Description:** Automates the per-issue meso pipeline: SPECIFY (claim) → PLAN → TASKS → IDLE.
-  When invoked without `--issue`, calls `_discover_claimable_issue()` to find the next
-  unblocked BACKLOG issue whose branch is **not** already on the remote (claimed-elsewhere
-  skip). When invoked with `--issue`, validates the issue, resets it to BACKLOG if it is in
-  any later state, and fails if `blocked_by` dependencies are not COMPLETED (unless `--force`).
+* **Description:** Automates the per-issue Meso pipeline: SPECIFY (claim) → PLAN → TASKS → IDLE.
+  Without `--issue`, it discovers the next unblocked BACKLOG issue. Inside a linked feature
+  worktree, it resolves the issue from the branch and resumes idempotently. It fails when
+  `blocked_by` dependencies are not COMPLETED unless `--force` is set.
 * **Pipeline Steps (in order):**
   1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run)`, which creates a
      linked worktree at `.worktrees/feat/{epic}/{issue}/`, copies `.claude/`, `.opencode/`,
@@ -912,10 +918,30 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     ephemeral runs where the operator has already prepared a branch manually; the
     default `deviate meso run` flow remains the canonical entry point that respects
     the worktree-per-issue model.
-* **Error Recovery:** Agent non-zero exit (`AgentSubprocessError`) or `manifest.status != "PASS"`
-  aborts with `<PHASE>_FAILED`. Re-running the pipeline re-processes plan.md and tasks.md
-  (no phase-skip logic); commits are skipped when there are no changes. The
-  `UPSTREAM_MISSING` token is **not** emitted by the current implementation.
+* **Worktree Auto-Detect:** When invoked from inside a linked git worktree (``.git``
+  is a file containing ``/worktrees/``), the pipeline automatically behaves as if
+  ``--no-setup`` were passed: it skips the SPECIFY step, resolves the active issue
+  from the current branch's ``feat/{epic}/{issue}`` slug, and continues with PLAN +
+  TASKS in the existing worktree. This makes ``deviate meso run`` a safe continuation
+  command after re-entering a worktree (e.g. ``cd .worktrees/feat/<epic>/<issue>``
+  followed by ``deviate meso run`` resumes the pipeline for that issue). Operators
+  who want to force the SPECIFY cycle can pass ``--issue <other-id>`` (which bypasses
+  the auto-detect branch entirely) or invoke ``deviate meso run`` from outside the
+  worktree.
+* **Idempotent Resume:** In an existing linked worktree or with `--no-setup`, `_meso_run`
+  validates the canonical issue artifacts before agent dispatch:
+  * No `plan.md`: run Plan and Tasks.
+  * Valid `plan.md` and no `tasks.md`: emit `MESO_RESUME`, skip Plan, and run Tasks.
+  * Valid `plan.md` and non-empty `tasks.md`: emit `MESO_ALREADY_COMPLETE`, skip both agents,
+    preserve ledger progress, and return the current worktree path.
+  * Existing invalid `plan.md`: emit `MESO_PLAN_INVALID` and stop without overwrite.
+  * Existing empty `tasks.md`: emit `MESO_TASKS_INVALID` and stop without overwrite.
+  A fresh claim does not use inherited main-branch artifacts as resume evidence. It runs Plan
+  and Tasks in the new worktree.
+* **Error Recovery:** Agent non-zero exit (`AgentSubprocessError`) or
+  `manifest.status != "PASS"` aborts with `<PHASE>_FAILED`. Re-running from the linked
+  worktree uses the idempotent resume rules above. The `UPSTREAM_MISSING` token is not
+  emitted by the current implementation.
 * **Output:** The pipeline prints a `PipelineBanner` (`src/deviate/ui/pipeline.py`)
   framed opening panel showing `MESO <issue_id> <issue_title>`, the epic / issue
   slugs, and a horizontal step indicator (`SPECIFY ▶ PLAN ▶ TASKS`). On

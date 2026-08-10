@@ -583,12 +583,7 @@ def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
 
 
 def _resolve_skill_source() -> str | None:
-    """Load the deviatdd SKILL.md body from package resources.
-
-    Source of truth: ``src/deviate/prompts/skills/deviatdd/SKILL.md``.
-    Returns ``None`` when the resource is missing (defensive — package
-    install bug or partial checkout). The installer then becomes a no-op.
-    """
+    """Load the deviatdd SKILL.md body from package resources."""
     try:
         path = importlib.resources.files("deviate.prompts.skills.deviatdd").joinpath(
             "SKILL.md"
@@ -644,29 +639,7 @@ def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
 
 
 def _install_deviatdd_skill(workdir: Path, agents: list[str]) -> None:
-    """Provision the single ``deviatdd`` skill into every active agent's
-    project-local ``skills/deviatdd/SKILL.md`` directory.
-
-    Mirrors ``_install_commands_to_agents``'s write-everywhere policy:
-    every agent platform that ``setup`` provisions commands for also
-    receives the skill, regardless of whether that platform's documented
-    skills convention auto-discovers from the install path. The skill
-    body is identical across platforms — only the destination directory
-    differs.
-
-    Auto-discovery status per platform (informational, does not gate the
-    write): ``claude`` and ``pi`` document a project-local skills
-    convention and auto-discover; ``opencode`` and ``factory`` have no
-    documented convention (file is on disk for forward-compat);
-    ``omp`` documents only user-level skills — operators can register
-    the project-local file via OMP's ``skills`` array in settings.
-
-    Idempotent — content-equality skip mirrors ``install_command``'s
-    contract. Single-skill install: there is no discovery abstraction
-    because the deviatdd skill has no siblings (the 25 ``deviate-*``
-    items remain as commands/prompts under
-    ``_install_commands_to_agents``).
-    """
+    """Provision the packaged deviatdd skill for every active agent."""
     body = _resolve_skill_source()
     if body is None:
         console.print("  [yellow]SKIP[/] deviatdd skill source missing")
@@ -842,7 +815,7 @@ def _ensure_root_gitignore(workdir: Path) -> None:
     Three artifact families are installed and must not be committed:
     - ``deviate-*`` commands under ``<agent>/commands/`` and
       ``<agent>/prompts/`` — the core DeviaTDD command library.
-    - The single ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
+    - The ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
     - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
     """
     entries = (

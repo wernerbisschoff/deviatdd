@@ -74,9 +74,13 @@ def _setup_minimal_workspace(
     if seed_plan:
         (issue_dir / "plan.md").write_text(
             "## Acceptance Contract\n\n"
-            "### AC-PLAN-001: seeded smoke\n"
-            "**Given** seeded repo\n**When** plan phase runs\n"
-            "**Then** the contract is honored\n"
+            "**Scenario AC-PLAN-001: Complete the seeded smoke**\n"
+            "**Source Outline**: `AO-001`\n"
+            "**Upstream Traceability**: `US-001-01`, `FR-001-X`, `AC-001-X-01`\n"
+            "**Current-Code Evidence**: `src/example.py:run`\n"
+            "**Given**: A seeded repository is available.\n"
+            "**When**: The plan phase runs.\n"
+            "**Then**: The contract is honored.\n"
         )
     if seed_tasks:
         (issue_dir / "tasks.md").write_text("# Tasks\n\n- TSK-001-01 smoke (tdd)\n")
@@ -643,8 +647,8 @@ class TestMesoRunNoSetup:
             )
 
         mock_specify_pre.assert_not_called()
-        mock_plan_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
-        mock_tasks_post.assert_called_once_with(force=False, issue_id="ISS-001-001")
+        mock_plan_post.assert_not_called()
+        mock_tasks_post.assert_not_called()
 
     @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
@@ -888,3 +892,143 @@ class TestMesoArtifactEnforcement:
         mock_tasks_post.assert_not_called()
         captured = capsys.readouterr()
         assert "TASKS_NOT_WRITTEN" in captured.out + captured.err
+
+
+class TestMesoRunWorktreeAutoDetect:
+    """``_meso_run`` must auto-skip SPECIFY when already inside a linked worktree.
+
+    Inside the worktree, the operator wants a plain continuation: PLAN + TASKS
+    for the active issue. Re-running SPECIFY would clobber the existing branch
+    and violate the Git Isolation Principle.
+    """
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_run_inside_worktree_skips_specify(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        mock_invoke.return_value = MagicMock(status="PASS", phase="tasks")
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        # Sentinel: if SPECIFY runs, the test fails immediately.
+        mock_specify_pre.side_effect = AssertionError(
+            "_specify_pre must not run when already inside the worktree"
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.meso._is_linked_worktree", lambda cwd=None: True):
+                with patch("subprocess.run", _make_mock_subprocess()):
+                    _meso_run()  # No explicit --issue: should resolve from branch.
+
+        mock_specify_pre.assert_not_called()
+        mock_plan_post.assert_not_called()
+        mock_tasks_post.assert_not_called()
+        loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert loaded.current_phase == "IDLE"
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_run_outside_worktree_does_not_skip_specify(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """Sanity: auto-detect must NOT fire outside a linked worktree.
+
+        Sets up a real linked worktree at ``.worktrees/feat/test-epic/iss-001``
+        so the subsequent ``shutil.copytree`` syncs the session into a distinct
+        directory (avoiding the src==dst failure that bit the first draft).
+        """
+        mock_invoke.return_value = MagicMock(status="PASS", phase="tasks")
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        # Create a real linked worktree so SPECIFY's setup pipeline (which
+        # copies ``.deviate/`` into the worktree) has a distinct destination.
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        shutil.copytree(
+            str(tmp_git_repo / ".deviate"),
+            str(worktree_path / ".deviate"),
+            dirs_exist_ok=True,
+        )
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        with chdir(tmp_git_repo):
+            # ``tmp_git_repo`` has ``.git`` as a directory (it's the main
+            # repo the test fixture created), so ``_is_linked_worktree()``
+            # naturally returns False — no patch needed. The pre-created
+            # worktree only takes effect after ``chdir``-ing into it.
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001")
+
+        # Outside a worktree the SPECIFY step still runs (auto-claim path).
+        mock_specify_pre.assert_called_once()
+
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.cli.meso._is_linked_worktree")
+    def test_run_inside_worktree_explicit_issue_overrides_branch(
+        self,
+        mock_is_worktree: MagicMock,
+        mock_specify_pre: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """``--issue <other-id>`` should be honored even inside a worktree.
+
+        The branch-derived issue lookup only fires when the operator omits
+        ``--issue`` — an explicit override must skip the auto-detect branch
+        entirely and fall through to the normal discovery / SPECIFY path.
+        """
+        mock_is_worktree.return_value = True
+        _setup_minimal_workspace(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                with pytest.raises(SystemExit):
+                    # Use an explicit issue ID not present in the ledger so
+                    # the path aborts at INVALID_ISSUE_ID before SPECIFY
+                    # but AFTER the auto-detect branch decides to skip.
+                    _meso_run(issue_id="ISS-999-999")
+
+        # No sentinel on mock_specify_pre: we just want to confirm the
+        # explicit --issue path did not silently succeed — it must surface
+        # the INVALID_ISSUE_ID failure instead of auto-claiming.
+        mock_specify_pre.assert_not_called()

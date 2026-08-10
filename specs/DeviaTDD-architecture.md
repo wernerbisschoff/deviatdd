@@ -899,16 +899,12 @@ write):**
 mirrors `install_command`'s contract). The skill has no siblings —
 there is no `discover_skills()` abstraction.
 
-**Scope:** Micro-layer only. The skill orchestrates `deviate micro run
---all`, triages every error class micro can surface, and runs a
-four-step safety-gated `git reset --hard && git clean -fd` clean-slate
-retry (ledger sanity → workspace inventory → typed user confirmation →
-reset, matching `_execute_rollback`'s `git clean -fd` contract so
-`.deviate/`, `.mise/`, `.venv/` survive). Meso orchestration is out of
-scope — operators use `/deviate-meso`, `/deviate-plan`, `/deviate-tasks`
-for that. A Dispatch section in SKILL.md points the agent to those
-canonical slash commands when a failure escapes micro's scope; the
-skill never invokes them inline. **v1.1.0 added a
+**Scope:** Unified Meso and Micro orchestration. The skill first invokes
+`deviate meso run`. In a linked feature worktree, Meso validates existing
+`plan.md` and `tasks.md`, skips completed phases, resumes at Tasks when only
+Plan is ready, and stops on invalid artifacts without overwrite. After Meso
+succeeds, the skill invokes bare `deviate micro run` one task at a time.
+The existing failure triage and clean-slate safety flow remains. **v1.1.0 added a
 `## Troubleshooting failed runs` section** documenting the two
 `.deviate/logs/` sinks wired through
 `src/deviate/core/run_logger.py::_LogRegistry.dispatch`:
@@ -937,8 +933,8 @@ the refactor hint), `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`,
 `TASKS_MD_SKIP`, `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE`
 (carries `uncommitted_count=` and `files=`, the dirty files the
 hook refused — NOT `returncode=` / `stderr=`). Skill frontmatter
-version is `1.1.0`; the `description` field was updated to include
-"troubleshoot from logs". The drift-check test
+version is `3.0.0`; its description covers Meso preparation and Micro
+queue draining. The drift-check test
 `test_deviatdd_skill_troubleshooting_section_matches_logger` parses
 `micro.py` for `_log_run("<NAME>", ...)` calls and asserts every
 backticked event name in the Troubleshooting section is a real

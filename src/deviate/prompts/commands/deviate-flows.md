@@ -2,7 +2,8 @@
 name: deviate-flows
 description: Author customer flows — discover user-visible flows, write concise flows-<domain>.md files, and maintain the flows catalog at specs/_product/flows/index.md.
 category: deviatdd-product-layer
-version: 1.4.0
+layer: product
+version: 1.5.0
 aliases:
   - flows
   - /deviate-flows

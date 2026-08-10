@@ -243,6 +243,21 @@ _SKILL_NAMES: dict[str, str | None] = {
 }
 
 
+# Per-agent slash command that invokes the deviatdd skill. ``deviate setup``
+# provisions the skill at every platform's project-local skills directory
+# (``.claude/skills/deviatdd/``, ``.pi/skills/deviatdd/``, ``.omp/skills/deviatdd/``,
+# etc.). Sending the literal slash command as the prompt makes the agent
+# resolve and execute the skill on the operator's behalf — no manual TUI
+# invocation needed. Claude Code names the slash command after the skill
+# itself; Pi / OMP use the ``/skills:`` prefix that matches their slash-
+# command parser. The runner stays agent-agnostic by consulting this map.
+_DEVIATDD_SLASH_COMMAND: dict[str, str] = {
+    "claude": "/deviatdd",
+    "pi": "/skills:deviatdd",
+    "omp": "/skills:deviatdd",
+}
+
+
 def _load_skill_content(phase_name: str) -> str | None:
     skill_name = _SKILL_NAMES.get(phase_name.upper())
     if not skill_name:
@@ -5010,6 +5025,44 @@ def _validate_profile(value: str) -> str:
     return value
 
 
+def _run_auto_agent(root: Path, agent: str | None, model: str | None) -> None:
+    """Spawn the agent with the deviatdd skill slash command as the prompt.
+
+    Looks up the canonical slash command for the resolved backend in
+    :data:`_DEVIATDD_SLASH_COMMAND` and invokes the agent with it. The
+    agent then runs the skill, which internally calls ``deviate micro run``
+    per task until the queue drains. Falls back to a warning + exit-1
+    when the configured backend has no known slash command (e.g.
+    ``opencode`` / ``droid`` / ``stub``); operators on those backends
+    must invoke the agent manually.
+    """
+    backend_name = _resolve_agent_config(root, agent)
+    slash_cmd = _DEVIATDD_SLASH_COMMAND.get(backend_name or "")
+    if slash_cmd is None:
+        console.print(
+            f"[red]AUTO_NO_SLASH_COMMAND[/] backend '{backend_name}' has no "
+            f"deviatdd slash command. Invoke the agent manually with the "
+            f"skill installed by `deviate setup`."
+        )
+        raise typer.Exit(code=1)
+    console.print(
+        f"[green]AUTO_AGENT[/] spawning '{backend_name}' with "
+        f"slash command [bold]{slash_cmd}[/]"
+    )
+    # Phase model doesn't apply — the slash-command prompt goes to the
+    # agent's own default model unless the operator passed --model.
+    # Re-use ``_invoke_agent`` so error handling, manifest parsing, and
+    # timeout semantics stay identical to the phase-driven path.
+    _invoke_agent(
+        slash_cmd,
+        console,
+        backend_name=backend_name,
+        task_id="AUTO",
+        phase="AUTO",
+        model=model,
+    )
+
+
 @micro_app.command("run")
 def run_command(
     task_id: str | None = typer.Argument(
@@ -5036,6 +5089,17 @@ def run_command(
         None,
         "--model",
         help="Override default model for RED/GREEN/REFACTOR/EXECUTE phases",
+    ),
+    auto: bool = typer.Option(
+        False,
+        "--auto",
+        help=(
+            "Spawn the agent with the deviatdd skill invoked (slash command), "
+            "instead of running an internal micro phase. Skips the normal "
+            "RED/GREEN/JUDGE/REFACTOR orchestration. The agent runs the "
+            "skill, which itself drives `deviate micro run` per task until "
+            "the queue drains."
+        ),
     ),
 ) -> None:
     """Use `deviate micro run --all` to drain the queue."""
@@ -5066,6 +5130,16 @@ def run_command(
             cmd_parts.append("--all")
         session.last_command = " ".join(cmd_parts)
         session.save(session_path)
+
+    if auto:
+        # ``--auto`` short-circuits the normal RED/GREEN/JUDGE/REFACTOR
+        # orchestration: instead of running one task phase locally, spawn
+        # the configured agent with the deviatdd skill slash command as the
+        # prompt. The agent then drives ``deviate micro run`` itself, per
+        # the skill's per-task stepping loop, until the queue drains. The
+        # runner here is the entry point — not a phase driver.
+        _run_auto_agent(root, agent=agent, model=model)
+        raise typer.Exit(code=0)
 
     if dry_run:
         if all_tasks:

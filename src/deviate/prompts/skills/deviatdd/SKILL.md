@@ -1,8 +1,8 @@
 ---
 name: deviatdd
-description: Run deviate micro run (bare) on repeat until NO_PENDING_TASKS; tasks come from tasks.md not the ledger; inspect each result, triage failures, file harness issues; allow git revert to retry tasks
+description: Prepare missing Meso artifacts with idempotent deviate meso run, then run deviate micro run one task at a time until NO_PENDING_TASKS; inspect and triage each result
 category: deviatdd-tooling
-version: 2.0.0
+version: 3.0.0
 ---
 
 # deviatdd — Per-task micro orchestrator
@@ -11,14 +11,36 @@ This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner pic
 
 The default posture is **repeat stepping**: the agent runs the bare `deviate micro run` on repeat, with the bash tool's `timeout` parameter set (see **Step 1: Run the next task**). Each invocation consumes one unchecked task from `tasks.md`; the loop terminates when the runner exits with `NO_PENDING_TASKS`. A single task boundary keeps the queue inspectable and prevents one bad task from cascading into the next.
 
-## First action: just run it
+## First action: prepare Meso, then run Micro
 
-This skill is "just run micro" — the very first action is `deviate micro run` (bare, no task ID). The runner picks the next unchecked task from `tasks.md`; the agent does NOT pre-select an ID, run `--dry-run`, or query the ledger. The agent:
+Run this command first:
 
-1. Runs `deviate micro run` with the bash tool's `timeout` parameter set (see **Step 1** for the per-profile budget). The runner picks the next task and runs it.
-2. Inspects the exit code (see **Step 2**). Exit 0 → task completed, re-invoke to continue. Exit 1 with `NO_PENDING_TASKS` → queue is drained, stop. Exit non-zero otherwise → triage via **Step 3**.
+```bash
+deviate meso run
+```
 
-Do NOT waste turns on pre-run exploration. The runner owns RED + GREEN + JUDGE + REFACTOR; the skill's job is to feed it work and react to exits. If a task fails because the spec is wrong or the harness is broken, that is a **Step 3** action (Dispatch / clean-slate retry / deviatdd issue), not a pre-run investigation.
+`deviate meso run` owns issue discovery, Specify, Plan, Tasks, and resume decisions.
+Do not inspect `plan.md` or `tasks.md` manually before this command.
+
+The Meso runner is idempotent inside an existing feature worktree:
+
+- Missing `plan.md` and `tasks.md`: run Plan, then Tasks.
+- Valid `plan.md` with no `tasks.md`: skip Plan and resume at Tasks.
+- Valid `plan.md` and non-empty `tasks.md`: emit `MESO_ALREADY_COMPLETE`.
+- Invalid existing Plan or empty Tasks: stop without overwriting the artifact.
+
+From `main` or `master`, Meso claims the next issue and creates its linked worktree.
+Use the returned worktree path for all Micro commands.
+Inside a linked `feat/...` worktree, Meso skips Specify and resumes there.
+
+Stop if Meso exits non-zero. Report `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, or the exact failure.
+Do not start Micro after a Meso failure.
+
+After Meso succeeds or emits `MESO_ALREADY_COMPLETE`, run `deviate micro run` in the returned worktree.
+The runner picks the next unchecked task from `tasks.md`. Re-run it after each successful task.
+
+Do not waste turns on pre-run code exploration. Meso owns preparation.
+Micro owns RED, GREEN, JUDGE, and REFACTOR.
 
 ## Code change policy
 

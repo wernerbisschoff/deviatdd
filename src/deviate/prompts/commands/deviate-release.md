@@ -2,7 +2,8 @@
 name: deviate-release
 description: Plan the next coherent release — compile from existing flows and architecture and write specs/_product/release-next.md.
 category: deviatdd-product-layer
-version: 1.1.0
+layer: product
+version: 1.2.0
 aliases:
   - release
   - /deviate-release
