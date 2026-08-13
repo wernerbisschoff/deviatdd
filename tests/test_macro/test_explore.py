@@ -182,7 +182,7 @@ class TestExploreCommand:
             ]
             assert len(flow_records) >= 4
 
-    def test_explore_post_skips_orphaned_flow_refs(self, tmp_path: Path):
+    def test_explore_post_never_writes_referenced_by_events(self, tmp_path: Path):
         with chdir(tmp_path):
             subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
             subprocess.run(
@@ -213,74 +213,56 @@ class TestExploreCommand:
 
             explore_dir = Path("specs/explore")
             explore_dir.mkdir(parents=True)
-            (explore_dir / "test-slug.md").write_text(
-                "# Explore: test-slug\n"
-                "\n"
-                "## Problem Definition\n"
-                "Test problem\n"
-                "\n"
-                "## Discovery Audit Results\n"
-                "None\n"
-                "\n"
-                "## Constitution Quotes\n"
-                "None\n"
-                "\n"
-                "## Architectural Baselines\n"
-                "None\n"
-                "\n"
-                "## Ecosystem Research\n"
-                "None\n"
-                "\n"
-                "## File Registry\n"
-                "None\n"
-                "\n"
-                "## Status Summary\n"
-                "None\n"
+            explore_text = (
+                "# Explore: test-slug\n\n"
+                + "## Problem Definition\nTest problem\n\n"
+                + "## Discovery Audit Results\nNone\n\n"
+                + "## Constitution Quotes\nNone\n\n"
+                + "## Architectural Baselines\nNone\n\n"
+                + "## Ecosystem Research\nNone\n\n"
+                + "## File Registry\nNone\n\n"
+                + "## Status Summary\nNone\n"
             )
+            (explore_dir / "test-slug.md").write_text(explore_text)
 
             flows_dir = Path("specs/_product/flows")
             flows_dir.mkdir(parents=True)
             (flows_dir / "index.md").write_text(
-                "# DeviaTDD Product Flow Index\n"
-                "\n"
-                "| Flow ID | Name | Actor | Domain | Status | Source |\n"
-                "|---------|------|-------|--------|--------|--------|\n"
-                "| FLOW-01 | Flows | Developer | Software Engineering | Active"
-                " | specs/_product/flows/flows-product.md |\n"
-                "| FLOW-02 | Architecture | Developer | Software Engineering | Active"
-                " | specs/_product/flows/flows-product.md |\n"
-                "| FLOW-03 | Release | Developer | Software Engineering | Active"
-                " | specs/_product/flows/flows-product.md |\n"
-                "| FLOW-04 | Live-Stream Agent Progress via RPC | Developer"
-                " | Agent Integration | Active"
-                " | specs/_product/flows/flows-streaming.md |\n"
+                "# DeviaTDD Product Flow Index\n\n"
+                + "| Flow ID | Name | Actor | Domain | Status | Source |\n"
+                + "|---------|------|-------|--------|--------|--------|\n"
+                + "| FLOW-01 | Flows | Developer | Software Engineering | Active | specs/_product/flows/flows-product.md |\n"
+                + "| FLOW-04 | Live-Stream Agent Progress via RPC | Developer | Agent Integration | Active | specs/_product/flows/flows-streaming.md |\n"
             )
 
-            (Path("specs/_product") / "flows.jsonl").write_text("")
-
-            issue_json = json.dumps(
-                {
-                    "issue_id": "ISS-TEST-001",
-                    "type": "test",
-                    "title": "Test",
-                    "source_file": "test.md",
-                    "timestamp": "2026-01-01T00:00:00Z",
-                    "flow_refs": ["FLOW-99"],
-                }
+            (Path("specs") / "issues.jsonl").write_text(
+                json.dumps(
+                    {
+                        "issue_id": "ISS-TEST-001",
+                        "flow_refs": ["FLOW-01", "FLOW-04", "FLOW-99"],
+                        "created_at": "2026-01-01T00:00:00Z",
+                    }
+                )
+                + "\n",
             )
-            (Path("specs") / "issues.jsonl").write_text(issue_json + "\n")
 
             result = runner.invoke(cli, ["explore", "post", "--slug", "test-slug"])
             assert result.exit_code == 0, result.output
-            assert "ORPHANED_FLOW_REF" in result.output
 
             flows_jsonl = Path("specs/_product") / "flows.jsonl"
             if flows_jsonl.exists():
                 content = flows_jsonl.read_text().strip()
                 lines = [ln for ln in content.split("\n") if ln.strip()]
                 records = [json.loads(ln) for ln in lines]
-                flow_99_records = [r for r in records if r.get("flow_id") == "FLOW-99"]
-                assert len(flow_99_records) == 0
+                referenced_by = [
+                    r
+                    for r in records
+                    if r.get("event_type") == "FLOW_REFERENCED_BY_ISSUE"
+                ]
+                assert referenced_by == [], (
+                    "explore post must never write a FLOW_REFERENCED_BY_ISSUE ",
+                    "event into flows.jsonl",
+                )
 
     def test_explore_post_does_not_seed_flow_identity_or_documented_events(
         self, tmp_git_repo: Path
