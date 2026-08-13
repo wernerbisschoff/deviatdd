@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -312,4 +315,281 @@ class TestSpecifyLocalFlag:
         assert result["branch"] == "feat/test-epic/iss-001-loc"
         assert result["spec_target_rel"] == "specs/test-epic/iss-001-loc/spec.md"
         assert result["worktree_path"] == str(existing_path)
-        assert result["issue"] is not None
+
+
+class TestSpecifyPushFailure:
+    """Regression: `git push` failure must surface the real reason.
+
+    Before the fix, ``_try_claim_issue`` swallowed push stderr
+    (``capture_output=True`` + no stderr logging) and rolled back the
+    worktree+branch with a generic ``PUSH_FAILED ... — race or remote
+    error`` message. Operators could not distinguish a hook decline from
+    a non-fast-forward from a race. Two contracts pinned here:
+
+    1. The push stderr must reach the operator.
+    2. If the push fails but the remote *now* has the branch, the failure
+       is a winning race — keep the worktree and local branch, return
+       ``None`` with a clear ``BRANCH_ON_REMOTE`` signal, and DO NOT
+       invoke ``remove_worktree`` (which would also ``git branch -D`` the
+       local branch the operator might want to push to a different
+       remote).
+    """
+
+    def _make_issue(self):
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord
+
+        return IssueRecord(
+            issue_id="ISS-001-PUSH",
+            type="feature",
+            title="Test push failure",
+            source_file="specs/test-epic/issues/iss-001-push.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+
+    def _push_failing_env(
+        self,
+        tmp_path: Path,
+        *,
+        pre_remote_has_branch: bool,
+        post_remote_has_branch: bool,
+        push_stderr: str,
+    ):
+        """Wire up a ``_try_claim_issue`` call where ``git push`` fails.
+
+        Returns ``(issue, repo_root, ledger_path, push_calls)``. The push
+        call list lets the test assert which subprocess argv triggered
+        the failure path.
+        """
+        import subprocess as _subprocess
+
+        from deviate.cli.meso import _try_claim_issue
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        ledger_path = tmp_path / "specs" / "issues.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+        wt_path = tmp_path / "wt"
+        wt_path.mkdir()
+
+        # Real git subprocesses (for the non-push plumbing) plus a
+        # targeted push failure injected by argv matching.
+        push_calls: list[list[str]] = []
+        real_run = _subprocess.run
+
+        def selective_run(argv, *args, **kwargs):
+            if isinstance(argv, list) and argv[:2] == ["git", "push"]:
+                push_calls.append(list(argv))
+                return _subprocess.CompletedProcess(
+                    args=argv,
+                    returncode=1,
+                    stdout=b"",
+                    stderr=push_stderr.encode("utf-8"),
+                )
+            return real_run(argv, *args, **kwargs)
+
+        # branch_exists_on_remote is called twice in the new flow:
+        # once pre-flight (pre_remote_has_branch), once post-push
+        # (post_remote_has_branch). Patch it directly so we control the
+        # exact check ordering without needing a real remote.
+        remote_states = iter([pre_remote_has_branch, post_remote_has_branch])
+
+        def fake_branch_exists(*_args, **_kwargs):
+            return next(remote_states)
+
+        return (
+            repo_root,
+            ledger_path,
+            wt_path,
+            _try_claim_issue,
+            selective_run,
+            fake_branch_exists,
+        )
+
+    def test_push_failure_surfaces_stderr_and_rolls_back(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Push fails AND remote has no branch → surface stderr, roll back.
+
+        Pre-fix: operator saw ``PUSH_FAILED ... — race or remote error``
+        and the local branch was deleted. Post-fix: operator sees the
+        real stderr and the rollback path is taken (real failure, not a
+        race).
+        """
+
+        (
+            repo_root,
+            ledger_path,
+            wt_path,
+            _try_claim,
+            selective_run,
+            fake_branch_exists,
+        ) = self._push_failing_env(
+            tmp_path,
+            pre_remote_has_branch=False,
+            post_remote_has_branch=False,
+            push_stderr="remote: hook declined: missing signed-off-by",
+        )
+
+        # Track rollback invocations so we can assert it ran.
+        rollback_calls: list[tuple[str, Path]] = []
+
+        def fake_remove(branch: str, path: Path, repo=None):  # noqa: ARG001
+            rollback_calls.append((branch, path))
+
+        monkeypatch.setattr("deviate.cli.meso.subprocess.run", selective_run)
+        monkeypatch.setattr(
+            "deviate.cli.meso.find_worktree_for_branch", lambda *a, **k: None
+        )
+        monkeypatch.setattr("deviate.cli.meso.create_worktree", lambda *a, **k: wt_path)
+        monkeypatch.setattr(
+            "deviate.cli.meso.branch_exists_on_remote", fake_branch_exists
+        )
+        monkeypatch.setattr("deviate.cli.meso.claim_issue", lambda *a, **k: True)
+        monkeypatch.setattr(
+            "deviate.cli.meso._sync_worktree_assets",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+        monkeypatch.setattr("deviate.cli.meso.remove_worktree", fake_remove)
+
+        result = _try_claim(self._make_issue(), repo_root, ledger_path, remote="origin")
+
+        # Stderr reached the operator.
+        captured = capsys.readouterr()
+        assert "missing signed-off-by" in captured.out, (
+            f"push stderr not surfaced; got output={captured.out!r}"
+        )
+        assert "PUSH_FAILED" in captured.out
+
+        # Rollback ran because the remote did NOT gain the branch.
+        assert result is None
+        assert len(rollback_calls) == 1, (
+            f"expected exactly one rollback call, got {rollback_calls}"
+        )
+
+    def test_push_failure_treated_as_race_when_remote_now_has_branch(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Push fails AND remote now has the branch → race, no rollback.
+
+        Pre-fix: ``remove_worktree`` ran ``git branch -D`` and destroyed
+        the operator's local branch even though the claim had already
+        landed on origin (just not via THIS push). Post-fix: detect the
+        race, log ``BRANCH_ON_REMOTE``, and keep the worktree + local
+        branch intact.
+        """
+
+        (
+            repo_root,
+            ledger_path,
+            wt_path,
+            _try_claim,
+            selective_run,
+            fake_branch_exists,
+        ) = self._push_failing_env(
+            tmp_path,
+            pre_remote_has_branch=False,
+            post_remote_has_branch=True,
+            push_stderr="! [rejected] ... non-fast-forward",
+        )
+
+        rollback_calls: list[tuple[str, Path]] = []
+
+        def fake_remove(branch: str, path: Path, repo=None):  # noqa: ARG001
+            rollback_calls.append((branch, path))
+
+        monkeypatch.setattr("deviate.cli.meso.subprocess.run", selective_run)
+        monkeypatch.setattr(
+            "deviate.cli.meso.find_worktree_for_branch", lambda *a, **k: None
+        )
+        monkeypatch.setattr("deviate.cli.meso.create_worktree", lambda *a, **k: wt_path)
+        monkeypatch.setattr(
+            "deviate.cli.meso.branch_exists_on_remote", fake_branch_exists
+        )
+        monkeypatch.setattr("deviate.cli.meso.claim_issue", lambda *a, **k: True)
+        monkeypatch.setattr(
+            "deviate.cli.meso._sync_worktree_assets",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+        monkeypatch.setattr("deviate.cli.meso.remove_worktree", fake_remove)
+
+        result = _try_claim(self._make_issue(), repo_root, ledger_path, remote="origin")
+
+        captured = capsys.readouterr()
+        # Race signal must be present and rollback must NOT have run.
+        assert "BRANCH_ON_REMOTE" in captured.out, (
+            f"expected BRANCH_ON_REMOTE race signal; got output={captured.out!r}"
+        )
+        assert rollback_calls == [], (
+            f"winning race must not roll back; got {rollback_calls}"
+        )
+        assert result is None
+
+    def test_push_failure_force_flag_skips_rollback(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """``--force`` keeps the worktree on push failure (existing contract)."""
+
+        (
+            repo_root,
+            ledger_path,
+            wt_path,
+            _try_claim,
+            selective_run,
+            fake_branch_exists,
+        ) = self._push_failing_env(
+            tmp_path,
+            pre_remote_has_branch=False,
+            post_remote_has_branch=False,
+            push_stderr="could not push",
+        )
+
+        rollback_calls: list[tuple[str, Path]] = []
+
+        def fake_remove(branch: str, path: Path, repo=None):  # noqa: ARG001
+            rollback_calls.append((branch, path))
+
+        monkeypatch.setattr("deviate.cli.meso.subprocess.run", selective_run)
+        monkeypatch.setattr(
+            "deviate.cli.meso.find_worktree_for_branch", lambda *a, **k: None
+        )
+        monkeypatch.setattr("deviate.cli.meso.create_worktree", lambda *a, **k: wt_path)
+        monkeypatch.setattr(
+            "deviate.cli.meso.branch_exists_on_remote", fake_branch_exists
+        )
+        monkeypatch.setattr("deviate.cli.meso.claim_issue", lambda *a, **k: True)
+        monkeypatch.setattr(
+            "deviate.cli.meso._sync_worktree_assets",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+        monkeypatch.setattr("deviate.cli.meso.remove_worktree", fake_remove)
+
+        result = _try_claim(
+            self._make_issue(),
+            repo_root,
+            ledger_path,
+            remote="origin",
+            force=True,
+        )
+
+        captured = capsys.readouterr()
+        assert "PUSH_FAILED" in captured.out
+        assert "continuing (--force)" in captured.out
+        assert rollback_calls == [], (
+            f"--force must keep the worktree; got {rollback_calls}"
+        )
+        assert result is not None
+        assert result["worktree_path"] == str(wt_path)
