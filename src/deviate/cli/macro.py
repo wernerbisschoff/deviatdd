@@ -47,9 +47,7 @@ from rich.console import Console
 from rich.table import Table
 from deviate.state.ledger import (
     FlowCoverage,
-    FlowEvent,
     FlowRecord,
-    append_flow_event,
     load_flow_coverage,
     _parse_flows_index,
     IssueRecord,
@@ -1165,15 +1163,18 @@ def _shard_post(manifest: Path, epic: str | None = None, force: bool = False) ->
 
 
 def _run_flow_ledger_cycle(specs_root: Path) -> None:
-    """Reverse-index issue refs into the flows ledger and render coverage.
+    """Render the flow coverage report from the canonical flow index.
 
     Reads ``specs/_product/flows/index.md`` (the canonical flow index) and
     ``specs/_product/flows.jsonl`` (the append-only flow event ledger) to
     derive a ``FlowCoverage`` report. Identity and documentation events
     (``FLOW_DISCOVERED`` / ``FLOW_DOCUMENTED``) are emitted by
-    ``deviate flows sync`` — this function only handles the macro-layer
-    reverse-index of ``specs/issues.jsonl::flow_refs``. If the index is
-    absent, emits a ``FLOWS_INDEX_MISSING`` warning and returns early.
+    ``deviate flows sync``. Once the ledger is seeded and the index
+    exists, this function renders the coverage report; it never writes
+    ``FLOW_REFERENCED_BY_ISSUE`` events. The 'last referenced by issue'
+    column is derived read-only from ``specs/issues.jsonl::flow_refs``.
+    If the index is absent, emits a ``FLOWS_INDEX_MISSING`` warning and
+    returns early.
     """
     flows_index_path = specs_root / "_product" / "flows" / "index.md"
     flows_ledger_path = specs_root / "_product" / "flows.jsonl"
@@ -1181,68 +1182,17 @@ def _run_flow_ledger_cycle(specs_root: Path) -> None:
 
     if not flows_index_path.exists():
         console.print(
-            "[yellow]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md — "
-            "skipping flow coverage report"
+            "[yellow]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md — ",
+            "skipping flow coverage report",
         )
         return
 
     records_by_id: dict[str, FlowRecord] = {
         r.flow_id: r for r in _parse_flows_index(flows_index_path)
     }
-    seeded_ids: set[str] = set(records_by_id)
-
-    if issues_ledger_path.exists():
-        _reverse_index_issue_flow_refs(
-            issues_ledger_path, flows_ledger_path, seeded_ids
-        )
 
     rows = load_flow_coverage(flows_ledger_path, flows_index_path, issues_ledger_path)
     _render_flow_coverage_report(rows, records_by_id)
-
-
-# ---------------------------------------------------------------------------
-# Flow ledger helpers (reverse-indexing, report rendering)
-# ---------------------------------------------------------------------------
-
-
-def _reverse_index_issue_flow_refs(
-    issues_ledger_path: Path,
-    flows_ledger_path: Path,
-    canonical_flow_ids: set[str],
-) -> None:
-    """Reverse-index ``flow_refs`` from the issue ledger into the flows ledger.
-
-    Iterates every row in ``specs/issues.jsonl`` that parses as an
-    ``IssueRecord``; for each ``flow_refs`` token, appends a
-    ``FLOW_REFERENCED_BY_ISSUE`` event to the flows ledger. Tokens not in
-    *canonical_flow_ids* emit a console warning and are skipped (the
-    issue row's ``flow_refs`` is preserved unchanged).
-    """
-    for data in _read_ledger(issues_ledger_path):
-        try:
-            record = IssueRecord.model_validate(data)
-        except Exception:
-            continue
-        flow_refs: list[str] = record.flow_refs or []
-        timestamp = record.created_at
-        for ref in flow_refs:
-            if not ref or not isinstance(ref, str):
-                continue
-            if ref in canonical_flow_ids:
-                append_flow_event(
-                    FlowEvent(
-                        flow_id=ref,
-                        event_type="FLOW_REFERENCED_BY_ISSUE",
-                        event_issue_id=record.issue_id,
-                        timestamp=timestamp,
-                    ),
-                    flows_ledger_path,
-                )
-            else:
-                console.print(
-                    f"[yellow]ORPHANED_FLOW_REF[/] {ref} "
-                    f"(no matching FlowRecord in flows ledger)"
-                )
 
 
 def _render_flow_coverage_report(
