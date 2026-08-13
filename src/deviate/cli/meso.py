@@ -572,24 +572,44 @@ def _try_claim_issue(
             if local:
                 console.print("[yellow]LOCAL_ONLY[/] skipping push")
             else:
-                try:
-                    # --no-verify: pre-push hook checks only .py files; claim push
-                    # has none, so bypass avoids unnecessary hook execution in worktree.
-                    subprocess.run(
-                        ["git", "push", "--no-verify", "-u", remote, branch],
-                        cwd=worktree_path,
-                        env=_git_env(),
-                        check=True,
-                        capture_output=True,
-                    )
+                push_result = subprocess.run(
+                    ["git", "push", "--no-verify", "-u", remote, branch],
+                    cwd=worktree_path,
+                    env=_git_env(),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if push_result.returncode == 0:
                     console.print(f"[green]PUSHED[/] {branch} pushed to {remote}")
-                except subprocess.CalledProcessError:
+                else:
+                    push_stderr = (push_result.stderr or "").strip()
+                    # Re-check the remote: a winning race looks like a
+                    # push failure (e.g. non-fast-forward) but the
+                    # branch now exists on origin because another
+                    # agent won the race. In that case keep the local
+                    # branch + worktree; rolling back would destroy
+                    # state the operator may want to push elsewhere.
+                    if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
+                        console.print(
+                            f"[yellow]BRANCH_ON_REMOTE[/] {branch} — "
+                            f"race won elsewhere; keeping local worktree"
+                        )
+                        if push_stderr:
+                            console.print(f"[yellow]PUSH_STDERR[/] {push_stderr}")
+                        return None
                     if force:
-                        console.print("[yellow]PUSH_FAILED[/] continuing (--force)")
+                        console.print(
+                            f"[yellow]PUSH_FAILED[/] {branch} — continuing (--force)"
+                        )
+                        if push_stderr:
+                            console.print(f"[yellow]PUSH_STDERR[/] {push_stderr}")
                     else:
                         console.print(
                             f"[yellow]PUSH_FAILED[/] {branch} — race or remote error"
                         )
+                        if push_stderr:
+                            console.print(f"[yellow]PUSH_STDERR[/] {push_stderr}")
                         remove_worktree(branch, Path(worktree_path), repo=repo_root)
                         return None
 
