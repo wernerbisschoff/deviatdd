@@ -472,6 +472,7 @@ def _invoke_agent(
     phase: str = "",
     output_callback: Callable[[str], None] | None = None,
     model: str | None = None,
+    stall_timeout: int | None = None,
 ) -> tuple[HandoverManifest | None, str]:
     model_str = f" --model {model}" if model else ""
     c.print(
@@ -497,7 +498,10 @@ def _invoke_agent(
                 output_callback(line)
 
         manifest = backend.invoke(
-            prompt, output_callback=collecting_handler, model=model
+            prompt,
+            output_callback=collecting_handler,
+            model=model,
+            stall_timeout=stall_timeout,
         )
         c.print("")
         status = getattr(manifest, "status", "?")
@@ -712,6 +716,13 @@ _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 _TASK_BULLET_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
 _JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^  - \*\*Judge Feedback\*\*:\s*(.*)")
 
+# GH-53: DIRECT EXECUTE phases run deterministic long pipelines (clean-checkout
+# ``mise run check``, cargo release builds) that can emit nothing for >15 min.
+# The interactive 900s stall budget would kill a healthy run, so the EXECUTE
+# agent invocation gets a one-hour stall allowance; the hard ``timeout`` still
+# bounds the overall run.
+EXECUTE_STALL_TIMEOUT_SECONDS = 3600
+
 
 def _find_all_pending_tasks(
     root: Path, issue_id: str | None = None
@@ -914,13 +925,26 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
     )
 
     issue_id = session.active_issue_id
-    if not issue_id:
+    branch_issue_id = _resolve_issue_id_from_branch(root)
+    if issue_id and branch_issue_id and branch_issue_id != issue_id:
+        # Stale-session guard (GH-54): a freshly claimed worktree can carry
+        # the *previous* issue's id in session.json while its branch points
+        # at the new issue. When the session issue has no tasks board in
+        # this checkout, the branch is authoritative — re-key so the scan
+        # does not silently emit NO_PENDING_TASKS for a queue that exists.
+        if _find_tasks_md_for_issue(root, issue_id) is None:
+            _log(
+                f"stale session issue {issue_id}: no tasks board in this "
+                f"checkout; re-keying to branch issue {branch_issue_id}"
+            )
+            issue_id = branch_issue_id
+    elif not issue_id:
         # Session has no active issue (fresh checkout / no session.json).
         # Fall back to the branch slug so the scan stays scoped to the
         # issue the feature branch belongs to. Without this, an unscoped
         # scan returns the first unchecked task in any tasks.md repo-wide
         # (e.g. a stale slice task from an unrelated issue).
-        issue_id = _resolve_issue_id_from_branch(root) or issue_id
+        issue_id = branch_issue_id or issue_id
 
     pending = _find_all_pending_tasks(root, issue_id=issue_id)
     if not pending:
@@ -2889,6 +2913,7 @@ def _run_execute_phase(
             phase="EXECUTE",
             output_callback=agent_output_callback,
             model=execute_model,
+            stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS,
         )
         if manifest is None:
             raise PhaseFailedError(

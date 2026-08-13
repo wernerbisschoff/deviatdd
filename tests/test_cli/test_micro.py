@@ -4359,23 +4359,9 @@ class TestResolveTaskContextUsesBranch:
     intended issue must be derived from the branch instead."""
 
     @staticmethod
-    def _seed_issue(root: Path, issue_id: str, bucket: str, slug: str) -> None:
-        """Write issues.jsonl + tasks.md for one issue under specs."""
-        spec_dir = root / "specs"
-        if not (spec_dir / "issues.jsonl").exists():
-            spec_dir.mkdir(parents=True, exist_ok=True)
-            (spec_dir / "issues.jsonl").write_text("", encoding="utf-8")
-        with open(spec_dir / "issues.jsonl", "a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "issue_id": issue_id,
-                        "source_file": f"specs/{bucket}/issues/{slug}.md",
-                    }
-                )
-                + "\n"
-            )
-        feature_dir = spec_dir / bucket / slug
+    def _seed_board(root: Path, issue_id: str, bucket: str, slug: str) -> None:
+        """Write tasks.md + tasks.jsonl for one issue (no issues.jsonl row)."""
+        feature_dir = root / "specs" / bucket / slug
         feature_dir.mkdir(parents=True, exist_ok=True)
         tid = f"TSK-{issue_id[-3:]}-01"
         # Non-terminal ledger record so the issue carries its real issue_id even
@@ -4399,6 +4385,25 @@ class TestResolveTaskContextUsesBranch:
             f"# Tasks\n\n- {tid}: pending\n",
             encoding="utf-8",
         )
+
+    @staticmethod
+    def _seed_issue(root: Path, issue_id: str, bucket: str, slug: str) -> None:
+        """Write issues.jsonl + tasks.md for one issue under specs."""
+        spec_dir = root / "specs"
+        if not (spec_dir / "issues.jsonl").exists():
+            spec_dir.mkdir(parents=True, exist_ok=True)
+            (spec_dir / "issues.jsonl").write_text("", encoding="utf-8")
+        with open(spec_dir / "issues.jsonl", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "issue_id": issue_id,
+                        "source_file": f"specs/{bucket}/issues/{slug}.md",
+                    }
+                )
+                + "\n"
+            )
+        TestResolveTaskContextUsesBranch._seed_board(root, issue_id, bucket, slug)
 
     def _checkout(self, root: Path, branch: str) -> None:
         subprocess.run(
@@ -4435,4 +4440,56 @@ class TestResolveTaskContextUsesBranch:
         task, _ = result
         assert task["issue_id"] == "ISS-INT-021", (
             f"Expected branch-derived issue ISS-INT-021, got {task['issue_id']}"
+        )
+
+    def test_stale_session_issue_rekeys_to_branch_issue(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-54: a stale session ``active_issue_id`` must not yield
+        NO_PENDING_TASKS when the branch points at a different issue.
+
+        A freshly claimed worktree can carry the *previous* issue's id in
+        session.json while its branch (and tasks board) belong to the new
+        issue. Resolution must re-key to the branch's issue instead of
+        scanning an issue whose board is absent in this checkout."""
+        from deviate.cli.micro import _resolve_task_context
+
+        spec_dir = tmp_git_repo / "specs"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-006",
+                    "source_file": "specs/001-forge-layer/issues/006-spawn-form.md",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "ISS-007",
+                    "source_file": (
+                        "specs/001-forge-layer/issues/007-inventory-inspection.md"
+                    ),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        # Only the branch's own issue has a tasks board in this checkout —
+        # the stale issue's board was never merged here (GH-54 repro).
+        self._seed_board(
+            tmp_git_repo, "ISS-007", "001-forge-layer", "007-inventory-inspection"
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+
+        dot_dir = tmp_git_repo / ".deviate"
+        dot_dir.mkdir(exist_ok=True)
+        SessionState(active_issue_id="ISS-006").save(dot_dir / "session.json")
+
+        result = _resolve_task_context(None, tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task["issue_id"] == "ISS-007", (
+            "Stale session issue ISS-006 must re-key to the branch's "
+            f"ISS-007; got {task['issue_id']}"
         )
