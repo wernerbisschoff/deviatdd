@@ -289,11 +289,24 @@ class AgentBackend:
         try:
             manifest = HandoverManifest(**data)
         except ValidationError as e:
+            errors = e.errors()
             parse_errors = [
                 f"{'.'.join(str(p) for p in err.get('loc', ()))}: {err.get('msg', '')}"
-                for err in e.errors()
+                for err in errors
             ]
             recovered = dict(data)
+            # Drop every top-level field that failed validation so the
+            # reconstruction below succeeds. Without this the offending
+            # value (e.g. an out-of-enum ``failure_kind`` / ``next_action``)
+            # re-raises the same ValidationError unguarded, the recovery
+            # degrades into an AGENT_SKIP, and the phase aborts with a
+            # misleading "agent returned no manifest" (GH-52, GH-55).
+            for err in errors:
+                loc = err.get("loc", ())
+                if loc:
+                    key = loc[0]
+                    if key in recovered and key != "parse_errors":
+                        del recovered[key]
             recovered["parse_errors"] = parse_errors
             recovered["phase"] = recovered.get("phase") or "UNKNOWN"
             recovered["status"] = recovered.get("status") or "UNKNOWN"
@@ -347,7 +360,14 @@ class AgentBackend:
         timeout_secs: int,
         backend_name: str,
         output_callback: OutputCallback,
+        stall_timeout: int | None = None,
     ) -> tuple[str, str]:
+        # GH-53: the stall deadline defaults to the module constant but can
+        # be raised per invocation. DIRECT EXECUTE phases run deterministic
+        # long pipelines (clean-checkout ``mise run check`` / cargo release
+        # builds) that legitimately emit nothing for >15 min; the interactive
+        # 900s TDD budget would kill a healthy run.
+        stall_timeout_secs = stall_timeout or STREAM_STALL_TIMEOUT_SECONDS
         try:
             proc.stdin.write(prompt.encode("utf-8"))
             proc.stdin.close()
@@ -372,7 +392,7 @@ class AgentBackend:
         # well below the floor for a real working invocation like
         # ``mix precommit`` (~100 B/s during compile + tests).
         stall_lock = threading.Lock()
-        stall_deadline = [time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS]
+        stall_deadline = [time.monotonic() + stall_timeout_secs]
         byte_samples: list[tuple[float, int]] = []
 
         def record_bytes(num_bytes: int) -> None:
@@ -405,9 +425,7 @@ class AgentBackend:
                     output_callback(line)
                     record_bytes(len(raw_line))
                     with stall_lock:
-                        stall_deadline[0] = (
-                            time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
-                        )
+                        stall_deadline[0] = time.monotonic() + stall_timeout_secs
             except (ValueError, OSError):
                 pass
             finally:
@@ -420,9 +438,7 @@ class AgentBackend:
                     stderr_lines.append(line)
                     record_bytes(len(raw_line))
                     with stall_lock:
-                        stall_deadline[0] = (
-                            time.monotonic() + STREAM_STALL_TIMEOUT_SECONDS
-                        )
+                        stall_deadline[0] = time.monotonic() + stall_timeout_secs
             except (ValueError, OSError, RuntimeError):
                 pass
 
@@ -442,8 +458,7 @@ class AgentBackend:
                 break
             if stall_deadline_remaining() <= 0:
                 stall_reason = (
-                    f"STALL_DETECTED: no agent output for "
-                    f"{STREAM_STALL_TIMEOUT_SECONDS}s"
+                    f"STALL_DETECTED: no agent output for {stall_timeout_secs}s"
                 )
                 stall_partial = (
                     "\n".join(stdout_lines),
@@ -456,8 +471,8 @@ class AgentBackend:
             # ~100 B/s; a stuck subprocess emits <10 B/s. Threshold chosen
             # at 50 B/s to leave room for compile output bursts.
             if (
-                time.monotonic() - stall_deadline[0] + STREAM_STALL_TIMEOUT_SECONDS
-                > STREAM_STALL_TIMEOUT_SECONDS / 2
+                time.monotonic() - stall_deadline[0] + stall_timeout_secs
+                > stall_timeout_secs / 2
                 and byte_rate_below_floor()
             ):
                 stall_reason = (
@@ -598,6 +613,7 @@ class AgentBackend:
         output_callback: OutputCallback | None = None,
         cwd: str | None = None,
         model: str | None = None,
+        stall_timeout: int | None = None,
     ) -> HandoverManifest:
         backend_name: BackendName = backend or self.config.backend
         use_rpc = backend_name == "pi" and self.config.pi_rpc
@@ -656,6 +672,7 @@ class AgentBackend:
                 backend_name,
                 output_callback,
                 use_rpc,
+                stall_timeout=stall_timeout,
             )
         except AgentTimeoutError:
             time.sleep(30)
@@ -668,6 +685,7 @@ class AgentBackend:
                 backend_name,
                 output_callback,
                 use_rpc,
+                stall_timeout=stall_timeout,
             )
 
         try:
@@ -690,6 +708,7 @@ class AgentBackend:
                     backend_name,
                     output_callback,
                     use_rpc,
+                    stall_timeout=stall_timeout,
                 )
             except AgentTimeoutError:
                 proc.kill()
@@ -705,6 +724,7 @@ class AgentBackend:
         backend_name: str,
         output_callback: OutputCallback | None,
         use_rpc: bool,
+        stall_timeout: int | None = None,
     ) -> tuple[str, str]:
         if use_rpc:
             return self._invoke_rpc_blocking(
@@ -712,7 +732,13 @@ class AgentBackend:
             )
         if output_callback is not None:
             return self._invoke_streaming(
-                proc, cmd, prompt, timeout_secs, backend_name, output_callback
+                proc,
+                cmd,
+                prompt,
+                timeout_secs,
+                backend_name,
+                output_callback,
+                stall_timeout=stall_timeout,
             )
         return self._invoke_blocking(proc, cmd, prompt, timeout_secs, backend_name)
 
@@ -730,6 +756,7 @@ class StubAgentBackend(AgentBackend):
         output_callback: OutputCallback | None = None,
         cwd: str | None = None,
         model: str | None = None,
+        stall_timeout: int | None = None,
     ) -> HandoverManifest:
         self._invoked = True
         if output_callback is not None:

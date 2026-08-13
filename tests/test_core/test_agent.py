@@ -346,6 +346,51 @@ class TestAgentBackendErrors:
                 output_callback=lambda _line: None,
             )
 
+    def test_streaming_agent_stall_timeout_override_is_honored(self):
+        """GH-53: a per-invocation ``stall_timeout`` must replace the module
+        constant as the stall deadline (DIRECT EXECUTE raises the budget for
+        long silent verification pipelines)."""
+        from deviate.core.agent import AgentTimeoutError
+
+        release = threading.Event()
+
+        class BlockingPipe:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release.wait()
+                raise StopIteration
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BlockingPipe()
+        mock_proc.stderr = iter(())
+        mock_proc.kill.side_effect = release.set
+        ticks = iter((0.0, 0.0, 0.021))
+
+        with (
+            patch("deviate.core.agent.STREAM_STALL_TIMEOUT_SECONDS", 0.05),
+            patch(
+                "deviate.core.agent.time.monotonic",
+                side_effect=lambda: next(ticks, 0.021),
+            ),
+            pytest.raises(AgentTimeoutError, match="STALL_DETECTED") as exc_info,
+        ):
+            AgentBackend()._invoke_streaming(
+                mock_proc,
+                ["pi", "-p"],
+                "prompt",
+                timeout_secs=10,
+                backend_name="pi",
+                output_callback=lambda _line: None,
+                stall_timeout=0.01,
+            )
+
+        # The module constant is patched to 0.05s; the message must cite the
+        # override's 0.01s budget, proving the override drove the deadline.
+        assert "0.01s" in str(exc_info.value)
+
     def test_streaming_agent_output_completes_without_stall(self):
         mock_proc = MagicMock(spec=subprocess.Popen)
         mock_proc.stdin = MagicMock()
@@ -435,6 +480,43 @@ class TestAgentBackendErrors:
         assert any("phase" in error for error in manifest.parse_errors)
         assert any("status" in error for error in manifest.parse_errors)
         assert manifest.is_success is False
+
+    def test_recovery_drops_invalid_failure_kind(self):
+        """GH-52: a stray out-of-enum ``failure_kind`` must not abort RED.
+
+        The schema-recovery path previously re-constructed the manifest with
+        the offending value intact, re-raising the identical ValidationError
+        unguarded and degrading into an AGENT_SKIP / "agent returned no
+        manifest". Recovery must drop the invalid field so the model default
+        (None) applies and the handover survives.
+        """
+        manifest = AgentBackend.parse_output(
+            "phase: RED\nstatus: PASS\nfailure_kind: garbage_value\n",
+            "pi",
+        )
+
+        assert manifest.phase == "RED"
+        assert manifest.status == "PASS"
+        assert manifest.failure_kind is None
+        assert any("failure_kind" in error for error in manifest.parse_errors)
+
+    def test_recovery_drops_invalid_next_action(self):
+        """GH-55: an out-of-enum ``next_action`` must not abort JUDGE.
+
+        The runner's ``_coerce_judge_action`` already tolerates unknown
+        actions; the crash happened earlier at manifest deserialization. With
+        the offending value dropped, a COMPLIANCE_PASS handover parses and
+        routes via the legacy pass path instead of PhaseFailedError.
+        """
+        manifest = AgentBackend.parse_output(
+            "phase: JUDGE\nstatus: PASS\nnext_action: proceed_to_refactor_no_diff_typo\n",
+            "pi",
+        )
+
+        assert manifest.phase == "JUDGE"
+        assert manifest.status == "PASS"
+        assert manifest.next_action is None
+        assert any("next_action" in error for error in manifest.parse_errors)
 
     def test_agent_malformed_yaml(self):
         from deviate.core.agent import AgentBackend, MalformedHandoverManifestError
