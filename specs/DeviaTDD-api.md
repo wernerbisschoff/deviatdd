@@ -401,8 +401,10 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Claim an issue and create its worktree. With an explicit `<issue-id>`,
-  claims that specific issue. With **no argument**, auto-discovers the next unblocked
-  BACKLOG issue via `select_next_unblocked_issue()` and claims it. Stops after the
+  claims that specific issue. With **no argument**, auto-discovers the next claimable
+  BACKLOG issue — skipping issues whose `feat/{epic}/{issue}` branch already exists on
+  remote (treated as claimed elsewhere) — via `_discover_claimable_issue()` (the same
+  discovery `deviate meso run` uses) and claims it. Stops after the
   worktree is created and the claim is committed — does NOT advance session state and
   does NOT run plan or tasks. To continue, run ``deviate plan pre`` or invoke the
   ``/deviate-plan`` slash command inside the new worktree.
