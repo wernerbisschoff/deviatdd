@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import namedtuple
+from collections.abc import Iterator
 
 import yaml
 
@@ -78,13 +79,20 @@ _VERIFICATION_MODE_LITERALS = ("automated", "manual", "deferred")
 _MODE_PATTERN = re.compile(r"\*\*Verification Mode\*\*:\s*([A-Za-z]+)")
 
 
-def _validate_scenarios(content: str, pattern: re.Pattern[str]) -> list[str]:
-    errors: list[str] = []
+def _iter_scenario_bodies(
+    content: str, pattern: re.Pattern[str]
+) -> Iterator[tuple[re.Match[str], str]]:
+    """Yield each scenario match paired with the body span until the next match."""
     scenarios = list(pattern.finditer(content))
     for i, match in enumerate(scenarios):
         start = match.end()
         end = scenarios[i + 1].start() if i + 1 < len(scenarios) else len(content)
-        body = content[start:end]
+        yield match, content[start:end]
+
+
+def _validate_scenarios(content: str, pattern: re.Pattern[str]) -> list[str]:
+    errors: list[str] = []
+    for match, body in _iter_scenario_bodies(content, pattern):
         label = match.group("label").removeprefix("Scenario ")
         for clause in ("Given", "When", "Then"):
             if f"**{clause}**" not in body:
@@ -111,6 +119,21 @@ def validate_acceptance_outline(content: str) -> list[str]:
     return errors
 
 
+def _validate_verification_mode(scenario_id: str, scenario_body: str) -> list[str]:
+    mode_matches = _MODE_PATTERN.findall(scenario_body)
+    if not mode_matches:
+        return [f"{scenario_id}: missing Verification Mode"]
+    if len(mode_matches) > 1:
+        return [f"{scenario_id}: duplicate Verification Mode lines"]
+    literal = mode_matches[0]
+    if literal.lower() not in _VERIFICATION_MODE_LITERALS:
+        return [
+            f"{scenario_id}: invalid Verification Mode '{literal}'; "
+            "expected one of automated|manual|deferred",
+        ]
+    return []
+
+
 def validate_acceptance_contract(content: str) -> list[str]:
     body = extract_section_body(content, "Acceptance Contract")
     if body is None:
@@ -122,31 +145,15 @@ def validate_acceptance_contract(content: str) -> list[str]:
     scenarios = list(contract_pattern.finditer(body))
     if not scenarios:
         return ["Acceptance Contract must contain at least one AC-PLAN-NNN scenario"]
-    for i, match in enumerate(scenarios):
-        start = match.end()
-        end = scenarios[i + 1].start() if i + 1 < len(scenarios) else len(body)
-        scenario_body = body[start:end]
-        if not re.search(r"\*\*Source Outline\*\*:\s*`?AO-\d{3}`?", scenario_body):
-            errors.append(
-                f"{match.group('id')}: missing Source Outline AO-NNN traceability"
-            )
+    for match, scenario_body in _iter_scenario_bodies(body, contract_pattern):
         scenario_id = match.group("id")
+        if not re.search(r"\*\*Source Outline\*\*:\s*`?AO-\d{3}`?", scenario_body):
+            errors.append(f"{scenario_id}: missing Source Outline AO-NNN traceability")
         if not re.search(r"\*\*Upstream Traceability\*\*:\s*.+", scenario_body):
             errors.append(f"{scenario_id}: missing Upstream Traceability")
         if not re.search(r"\*\*Current-Code Evidence\*\*:\s*.+", scenario_body):
             errors.append(f"{scenario_id}: missing Current-Code Evidence")
-        mode_matches = _MODE_PATTERN.findall(scenario_body)
-        if not mode_matches:
-            errors.append(f"{scenario_id}: missing Verification Mode")
-        elif len(mode_matches) > 1:
-            errors.append(f"{scenario_id}: duplicate Verification Mode lines")
-        else:
-            literal = mode_matches[0]
-            if literal.lower() not in _VERIFICATION_MODE_LITERALS:
-                errors.append(
-                    f"{scenario_id}: invalid Verification Mode '{literal}'; "
-                    "expected one of automated|manual|deferred"
-                )
+        errors.extend(_validate_verification_mode(scenario_id, scenario_body))
     return errors
 
 

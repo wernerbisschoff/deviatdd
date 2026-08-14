@@ -1,2 +1,4 @@
 {"id":"TSK-005-01","issue_id":"005-001","description":"Mode-literal validation in `validate_acceptance_contract` plus unit tests","status":"RED","execution_mode":"TDD","created_at":"2026-08-14T16:50:01.103721Z","security_profile":null}
 {"id":"TSK-005-01","issue_id":"005-001","description":"Mode-literal validation in `validate_acceptance_contract` plus unit tests","status":"GREEN","execution_mode":"TDD","created_at":"2026-08-14T17:11:55.565372Z","security_profile":null}
+{"id":"TSK-005-01","issue_id":"005-001","description":"Mode-literal validation in `validate_acceptance_contract` plus unit tests","status":"JUDGE","execution_mode":"TDD","created_at":"2026-08-14T17:13:48.118036Z","security_profile":null}
+{"id":"TSK-005-01","issue_id":"005-001","description":"Mode-literal validation in `validate_acceptance_contract` plus unit tests","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-08-14T17:18:40.018495Z","security_profile":null}
