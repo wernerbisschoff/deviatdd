@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
+from deviate.cli.micro import _find_task_record, _resolve_issue_id_from_branch
 
 runner = CliRunner()
 
@@ -215,3 +216,78 @@ class TestE2ePost:
             )
             assert log.returncode == 0
             assert len(log.stdout.strip()) > 0
+
+
+class TestCrossIssueTaskIdCollision:
+    """A task id namespaced per issue must not be shadowed by an unrelated
+    issue's ledger.
+
+    Regression: `deviate micro run` resolved the 'latest' record by task id
+    alone. Every issue reuses the same ``TSK-NNN-NN`` numbering, so a same-
+    numbered task in a later-sorting ledger (e.g. ``specs/adhoc/*``) shadowed
+    the active issue's records --- "no ledger entry" against a committed
+    ledger, and explicit ``<tid>`` dispatch hitting the wrong issue's task.",
+    """
+
+    @staticmethod
+    def _seed_ledger(
+        root: Path, issue_id: str, bucket: str, slug: str, status: str
+    ) -> None:
+        tid = "TSK-005-01"
+        rec = {
+            "id": tid,
+            "issue_id": issue_id,
+            "description": "task",
+            "status": status,
+            "execution_mode": "TDD",
+        }
+        ledger = root / "specs" / bucket / slug / "tasks.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _seed_tasks_md(root: Path, bucket: str, slug: str) -> None:
+        md = root / "specs" / bucket / slug / "tasks.md"
+        md.parent.mkdir(parents=True, exist_ok=True)
+        md.write_text("# Tasks\n\n- TSK-005-01: task\n", encoding="utf-8")
+
+    def test_find_task_record_prefers_branch_issue(self, tmp_git_repo: Path):
+        # Active issue 005-001 owns its own TSK-005-01. A same-numbered task
+        # in a later-sorting adhoc ledger by id-only dedup used to shadow it.
+        self._seed_ledger(tmp_git_repo, "ISS-ADH-014", "adhoc", "014-x", "COMPLETED")
+        self._seed_ledger(
+            tmp_git_repo,
+            "005-001",
+            "005-acceptance-gates",
+            "001-verification",
+            "COMPLETED",
+        )
+        self._seed_tasks_md(tmp_git_repo, "005-acceptance-gates", "001-verification")
+        # issues.jsonl maps the branch slug back to issue 005-001.
+        (tmp_git_repo / "specs" / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "005-001",
+                    "source_file": "specs/005-acceptance-gates/issues/001-verification.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", "feat/005-acceptance-gates/001-verification"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        with chdir(tmp_git_repo):
+            branch_issue = _resolve_issue_id_from_branch(tmp_git_repo)
+            assert branch_issue == "005-001", f"got {branch_issue!r}"
+            hit = _find_task_record(tmp_git_repo, "TSK-005-01")
+            assert hit is not None
+            rec, ledger_file = hit
+            assert rec.get("issue_id") == "005-001", (
+                f"found the shadow issue {rec.get('issue_id')}, expected 005-001"
+            )
+            assert "005-acceptance-gates" in str(ledger_file)
