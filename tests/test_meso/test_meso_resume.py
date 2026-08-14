@@ -21,6 +21,7 @@ VALID_PLAN = """# Plan
 **Given**: A claimed issue is available.
 **When**: The meso pipeline prepares the issue.
 **Then**: The task queue is ready for Micro.
+**Verification Mode**: automated
 """
 
 

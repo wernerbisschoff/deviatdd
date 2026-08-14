@@ -74,6 +74,8 @@ _SCENARIO_PATTERN = re.compile(
     r"\*\*(?P<label>(?:Scenario \d+|AC-\d+-\d+|Scenario AC-PLAN-\d+)):.*?\*\*"
 )
 _GHERKIN_CLAUSE_PATTERN = re.compile(r"\*\*(?:Given|When|Then)\*\*\s*:?")
+_VERIFICATION_MODE_LITERALS = ("automated", "manual", "deferred")
+_MODE_PATTERN = re.compile(r"\*\*Verification Mode\*\*:\s*([A-Za-z]+)")
 
 
 def _validate_scenarios(content: str, pattern: re.Pattern[str]) -> list[str]:
@@ -133,6 +135,18 @@ def validate_acceptance_contract(content: str) -> list[str]:
             errors.append(f"{scenario_id}: missing Upstream Traceability")
         if not re.search(r"\*\*Current-Code Evidence\*\*:\s*.+", scenario_body):
             errors.append(f"{scenario_id}: missing Current-Code Evidence")
+        mode_matches = _MODE_PATTERN.findall(scenario_body)
+        if not mode_matches:
+            errors.append(f"{scenario_id}: missing Verification Mode")
+        elif len(mode_matches) > 1:
+            errors.append(f"{scenario_id}: duplicate Verification Mode lines")
+        else:
+            literal = mode_matches[0]
+            if literal.lower() not in _VERIFICATION_MODE_LITERALS:
+                errors.append(
+                    f"{scenario_id}: invalid Verification Mode '{literal}'; "
+                    "expected one of automated|manual|deferred"
+                )
     return errors
 
 
