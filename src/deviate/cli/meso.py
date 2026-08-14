@@ -1907,8 +1907,18 @@ def specify(
     elif issue_id == "post":
         _specify_post(force=force)
     elif issue_id is None:
+        # Align auto-discovery with ``_meso_run``: skip issues whose branch
+        # already exists on remote (claimed elsewhere) and reach the next
+        # claimable one instead of hard-failing on the first BACKLOG.
+        discovered = _discover_claimable_issue()
+        if discovered is None:
+            console.print(
+                "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue ",
+                "available to claim",
+            )
+            raise typer.Exit(code=1)
         _specify_pre(
-            issue_id=_discover_unclaimed(),
+            issue_id=discovered,
             force=force,
             dry_run=dry_run,
             local=local,

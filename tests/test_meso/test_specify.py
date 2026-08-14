@@ -65,14 +65,18 @@ class TestSpecifySetup:
         )
 
         # Stub _try_claim_issue so the test does not need a real git
-        # worktree + remote. We only care that the bare-arg path routes
-        # through _discover_unclaimed and reaches the claim call.
+        # worktree + remote. Mock branch_exists_on_remote to False so
+        # auto-discovery does not attempt a live network call to origin.
         called: dict[str, object] = {}
 
         def fake_try_claim(record, **kwargs):  # noqa: ARG001
             called["issue_id"] = record.issue_id
             return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
 
+        monkeypatch.setattr(
+            "deviate.cli.meso.branch_exists_on_remote",
+            lambda branch, **kw: False,
+        )
         monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake_try_claim)
 
         with chdir(tmp_git_repo):
@@ -82,6 +86,73 @@ class TestSpecifySetup:
         assert called.get("issue_id") == "ISS-001-001", (
             f"Expected auto-discovery to claim ISS-001-001, "
             f"got {called.get('issue_id')}; output={result.output}"
+        )
+        assert "WORKTREE" in result.output
+
+    def test_specify_bare_arg_skips_remote_claimed_issue(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Bare `deviate specify` skips an issue whose branch is already on
+        remote (claimed elsewhere) and claims the next claimable one."""
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+
+        (tmp_git_repo / ".deviate").mkdir()
+        (tmp_git_repo / ".deviate" / "session.json").write_text(
+            '{"current_phase": "IDLE", "active_issue_id": null}'
+        )
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\nlint_command = ruff\n"
+        )
+        ledger = specs_dir / "issues.jsonl"
+        now = datetime.now(timezone.utc)
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="First Backlog",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001.md",
+                timestamp=now,
+            ),
+            ledger,
+        )
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-002",
+                type="feature",
+                title="Second Backlog",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-002.md",
+                timestamp=now,
+            ),
+            ledger,
+        )
+
+        called: dict[str, object] = {}
+
+        def fake_try_claim(record, **kwargs):  # noqa: ARG001
+            called["issue_id"] = record.issue_id
+            return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
+
+        monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake_try_claim)
+        # The origin remote exists but ISS-001-001's branch is claimed elsewhere.
+        monkeypatch.setattr(
+            "deviate.cli.meso.branch_exists_on_remote",
+            lambda branch, **kw: branch == "feat/test-epic/iss-001",
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["specify"])
+
+        assert result.exit_code == 0, result.output
+        assert called.get("issue_id") == "ISS-001-002", (
+            "Expected auto-discovery to skip the remote-claimed ",
+            "ISS-001-001 and claim ISS-001-002, got ",
+            f"{called.get('issue_id')}; output={result.output}",
         )
         assert "WORKTREE" in result.output
 
