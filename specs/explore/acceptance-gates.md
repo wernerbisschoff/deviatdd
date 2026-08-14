@@ -1,11 +1,11 @@
 # Exploration Scan — Acceptance Criteria and Phase-Specific Test Gates
 
 ## Problem Definition
-[Statement]: Make acceptance criteria explicit, slice-level artifacts and apply test enforcement to Green and Refactor but not to Red. The proposed change adds a required `acceptance.md` artifact per implementation slice (`specs/<feature>/<slice>/acceptance.md`), requires criteria-to-task and criteria-to-test traceability, makes Green and Refactor blocking validation phases, and replaces the Red test gate with a non-blocking Red checkpoint.
+[Statement]: Make acceptance criteria explicit, slice-verification artifacts and apply test enforcement to Green and Refactor but not to Red. The project already carries the authoritative Gherkin acceptance contract as `AC-PLAN-NNN` scenarios in each slice's `plan.md` `## Acceptance Contract` section, enforced by `deviate plan post` and `deviate meso tasks pre`. **Decision (Option A):** do NOT introduce a new `acceptance.md` artifact. Instead enrich the existing `plan.md` `AC-PLAN-NNN` contract with explicit verification-mode metadata (automated / manual / deferred), add `acceptance_criteria` task-to-criterion and criterion-to-test traceability, make Green and Refactor blocking validation phases, and replace the Red test gate with a non-blocking Red checkpoint. This narrows the change surface versus the original proposal.
 
 [Scope]: This scan covers the DeviaTDD CLI structures that the proposed change touches. These include the micro-layer phase runners (`src/deviate/cli/micro.py`), the meso-layer plan and tasks commands (`src/deviate/cli/meso.py`), the task ledger model (`src/deviate/state/ledger.py`), the artifact validation layer (`src/deviate/core/validation.py`), the task-ledger generator (`src/deviate/core/tasks_ledger.py`), the micro-layer prompt command templates under `src/deviate/prompts/commands/`, the CLI command registration (`src/deviate/cli/__init__.py`), and the authoritative specs `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md`.
 
-[Exclusions]: Architectural decisions, design trade-offs, recommendation of a specific acceptance.md format, risk analysis, data-model design, and failure-mode speculation are deferred to the `deviate-research` skill. This scan only catalogs what exists.
+[Exclusions]: Architectural decisions, design trade-offs, recommendation of an `acceptance.md` format, risk analysis, data-model design, and failure-mode speculation are deferred to the `deviate-research` skill. This scan only catalogs what exists.
 
 ## Discovery Audit Results
 ### Verified Dependencies
@@ -98,13 +98,13 @@ All paths are strictly relative to `repo_root`. Every row carries a verbatim quo
 ## Scope Sizing
 | Metric | Value |
 | :--- | :--- |
-| Estimated Complexity | High |
-| Files Likely Modified | 10+ key files: `src/deviate/cli/micro.py` (RED checkpoint, GREEN/REFACTOR gates), `src/deviate/cli/meso.py` (acceptance.md scaffolding in tasks/slice setup), `src/deviate/state/ledger.py` (`TaskRecord` + new RedCheckpoint record), `src/deviate/core/validation.py` (acceptance.md parser/validator), `src/deviate/core/tasks_ledger.py`, `src/deviate/cli/__init__.py` (new `acceptance`/`red checkpoint`/`green verify`/`refactor verify` commands), `src/deviate/prompts/commands/*` and `src/deviate/prompts/auto/*` (acceptance/red/green/refactor templates), plus `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`, and new tests under `tests/test_micro/`, `tests/test_meso/`, `tests/test_core/` |
-| New Modules Required | Yes (slice `acceptance.md` artifact generation + a new acceptance/red-checkpoint command surface; possibly new ledger record types) |
-| New Persistence / Data Models | Yes (`acceptance.md` per-slice artifact + persistent non-blocking Red checkpoint records + `acceptance_criteria` field on task records) |
+| Estimated Complexity | Medium |
+| Files Likely Modified | 5-7 key files: `src/deviate/cli/micro.py` (RED checkpoint, GREEN/REFACTOR gate enforcement), `src/deviate/state/ledger.py` (`TaskRecord.acceptance_criteria` + persistent Red-checkpoint record), `src/deviate/core/validation.py` (verification-mode metadata on `AC-PLAN-NNN`), `src/deviate/core/tasks_ledger.py`, `src/deviate/prompts/commands/deviate-red.md` + `auto/red.md` (non-blocking checkpoint), `src/deviate/prompts/auto/green.md`/`refactor.md` plus `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`, and tests under `tests/test_micro/` and `tests/test_core/` |
+| New Modules Required | No (reuses the existing `plan.md` `AC-PLAN-NNN` contract; the Red-checkpoint record and `acceptance_criteria` task field extend existing structures) |
+| New Persistence / Data Models | Yes (persistent non-blocking Red checkpoint records in `.deviate/` or the task ledger + `acceptance_criteria` field on task records; no new slice artifact file) |
 | New External Integrations | No |
-| Upstream / Cross-Cutting Concerns | Touches macro/meso/micro layers and the Product flow model. The new `AC-*` / `AC-PLAN-NNN` traceability must coexist with the existing `AO-NNN` → `AC-PLAN-NNN` contract. Requires coordinated updates to the authoritative `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` in the same commit, plus `CHANGELOG.md`. Applies test gates to GREEN/REFACTOR while changing RED semantics. |
-| Rationale | The change is cross-cutting: it adds a new required slice artifact (`acceptance.md`), a new persistent checkpoint record type, a new task-data field (`acceptance_criteria`), multiple new CLI commands, new prompt templates, and modifies the blocking behavior of all three micro TDD gates. It also mandates identical-commit updates to two authoritative specs and the changelog, which pushes this to High complexity. |
+| Upstream / Cross-Cutting Concerns | Touches all three micro TDD gates and the meso plan/tasks traceability. The `AO-NNN` → `AC-PLAN-NNN` → task → test chain is extended, not replaced. Requires coordinated updates to the authoritative `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` in the same commit, plus `CHANGELOG.md`. `TaskRecord` schema change is backward-compatible (additive field). |
+| Rationale | Option A reuses the existing, already-hard-enforced `plan.md` `AC-PLAN-NNN` Gherkin contract, so no new required slice artifact, generation scaffolding, or new command surface is needed. The residual work is an additive `acceptance_criteria` traceability field on task records, a persistent non-blocking Red checkpoint, verification-mode metadata on existing scenarios, and stricter GREEN/REFACTOR gate enforcement. This is a Medium-complexity change limited to 5-7 files plus tests and the two authoritative specs. |
 
 ## Status Summary
 | Metric | Value |
@@ -113,4 +113,4 @@ All paths are strictly relative to `repo_root`. Every row carries a verbatim quo
 | EXPLORE_SLUG | `acceptance-gates` |
 | GIT_BRANCH | `main` |
 | SPEC_TARGET | `specs/explore/acceptance-gates.md` |
-| NEXT_ACTION | Run `/deviate-research` (High complexity) — see `## Scope Sizing`. Instruct the human operator to invoke the `deviate-research` skill with the explore slug `acceptance-gates`. |
+| NEXT_ACTION | Run `/deviate-adhoc` (Medium complexity per Option A) — or `/deviate-research` if a full design pass is desired. The `explore.md` is already on disk; `/deviate-adhoc` detects and consumes it automatically. |
