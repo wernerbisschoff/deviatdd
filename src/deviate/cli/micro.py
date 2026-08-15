@@ -688,7 +688,7 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
     ``TSK-NNN-NN`` numbering). When several issues carry the same id,
     prefer the record that belongs to this worktree's branch issue so an
     explicit ``deviate micro run <tid>`` targets the active slice rather than
-    a same-numbered task from an unrelated ledger.",
+    a same-numbered task from an unrelated ledger.
     """
     branch_issue_id = _resolve_issue_id_from_branch(root) or ""
     preferred = None
@@ -715,7 +715,7 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
     ``TSK-NNN-NN`` numbering), so the dedup key must include the issue id.
     Keying by task ID alone lets a later-sorted ledger from an unrelated
     issue shadow this issue's records (e.g. ``specs/adhoc/*`` sorting after
-    ``specs/005-*``).",
+    ``specs/005-*``).
     """
     latest: dict[tuple[str, str], dict] = {}
     ledger_of: dict[tuple[str, str], Path] = {}
