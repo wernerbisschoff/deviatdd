@@ -153,7 +153,7 @@ def _validate_verification_mode(scenario_id: str, scenario_body: str) -> list[st
 
 def _validate_acceptance_clauses(scenario_id: str, scenario_body: str) -> list[str]:
     errors: list[str] = []
-    for clause_name, clause_pattern, missing_msg in _ACCEPTANCE_CLAUSES:
+    for _, clause_pattern, missing_msg in _ACCEPTANCE_CLAUSES:
         if not clause_pattern.search(scenario_body):
             errors.append(f"{scenario_id}: {missing_msg}")
     return errors
