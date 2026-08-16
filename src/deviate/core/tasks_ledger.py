@@ -96,6 +96,10 @@ def _parse_criterion_link(task_id: str, entry: str) -> CriterionLink:
         )
     inner = match.group(2)
     parts = [p.strip() for p in inner.split(",")] if inner else []
+    if len(parts) > 2:
+        raise ValueError(
+            f"Malformed acceptance criteria entry for task {task_id}: {entry}"
+        )
     verification_mode = parts[0] if parts else ""
     test_ref = parts[1] if len(parts) > 1 and parts[1] else None
     return CriterionLink(

@@ -176,6 +176,26 @@ class TestGenerateJsonlFromMd:
         assert "AC-PLAN-001 automated" in message
         assert "TSK-005-02" in message
 
+    def test_multi_token_test_ref_fails_generation_with_named_error(
+        self, tmp_path: Path
+    ):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-02: Task with a multi-token test_ref\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001 (automated, tests/a.py, "
+            "tests/b.py)\n"
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            generate_jsonl_from_md(tasks_md, issue_id="005-002")
+        message = str(excinfo.value)
+        assert "AC-PLAN-001 (automated, tests/a.py, tests/b.py)" in message
+        assert "TSK-005-02" in message
+
 
 class TestValidateTasksJsonl:
     def test_valid_records_pass_validation(self):
