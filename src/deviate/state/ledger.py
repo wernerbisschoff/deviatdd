@@ -78,6 +78,9 @@ class SecurityProfile(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+_CRITERION_ID_PATTERN: re.Pattern[str] = re.compile(r"^AC-PLAN-\d{3}$")
+
+
 class CriterionLink(BaseModel):
     """Traceability link from a task row to an AC-PLAN-NNN criterion.
 
@@ -97,8 +100,10 @@ class CriterionLink(BaseModel):
     @field_validator("criterion_id")
     @classmethod
     def _validate_criterion_id(cls, v: str) -> str:
-        if not re.match(r"^AC-PLAN-\d{3}$", v):
-            raise ValueError(f"criterion_id must match AC-PLAN-\\d{{3}}: {v}")
+        if _CRITERION_ID_PATTERN.match(v) is None:
+            raise ValueError(
+                f"criterion_id must match {_CRITERION_ID_PATTERN.pattern}: {v}"
+            )
         return v
 
     @model_validator(mode="after")
