@@ -418,6 +418,51 @@ class TestAppendTaskRecord:
         assert ledger_path.exists()
         assert ledger_path.stat().st_size > 0
 
+    def test_mixed_version_ledger_appends_and_parses(self, tmp_path: Path):
+        ledger_path = tmp_path / "tasks.jsonl"
+        legacy_line = json.dumps(
+            {
+                "id": "TSK-005-10",
+                "issue_id": "005-002",
+                "description": "Legacy task row without the field",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "created_at": "2026-07-04T07:49:30Z",
+            }
+        )
+        ledger_path.write_text(legacy_line + "\n", encoding="utf-8")
+
+        linked = TaskRecord(
+            id="TSK-005-11",
+            issue_id="005-002",
+            description="Task row carrying acceptance_criteria links",
+            acceptance_criteria=[
+                CriterionLink(
+                    criterion_id="AC-PLAN-001",
+                    verification_mode="automated",
+                    test_ref="tests/test_core/test_tasks_ledger.py",
+                ),
+                CriterionLink(criterion_id="AC-PLAN-002", verification_mode="manual"),
+            ],
+        )
+        assert append_task_record(linked, ledger_path) is True
+
+        lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 2
+        assert lines[0] == legacy_line
+
+        parsed_legacy = TaskRecord.model_validate(json.loads(lines[0]))
+        parsed_linked = TaskRecord.model_validate(json.loads(lines[1]))
+        assert parsed_legacy.acceptance_criteria is None
+        assert parsed_linked.acceptance_criteria is not None
+        links = parsed_linked.acceptance_criteria
+        assert links is not None
+        assert [link.criterion_id for link in links] == [
+            "AC-PLAN-001",
+            "AC-PLAN-002",
+        ]
+        assert parsed_linked == linked
+
 
 class TestResolveIssueRecord:
     def test_read_issue_record_by_issue_id(self, tmp_path: Path):

@@ -265,3 +265,120 @@ class TestValidateTasksJsonl:
 
         errors = validate_tasks_jsonl(records)
         assert len(errors) > 0
+
+    def test_valid_link_row_passes_validation(self):
+        from deviate.core.tasks_ledger import validate_tasks_jsonl
+
+        records = [
+            {
+                "id": "TSK-005-01",
+                "issue_id": "005-002",
+                "description": "Task with valid criterion links",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "acceptance_criteria": [
+                    {
+                        "criterion_id": "AC-PLAN-001",
+                        "verification_mode": "automated",
+                        "test_ref": "tests/test_core/test_tasks_ledger.py",
+                    },
+                    {
+                        "criterion_id": "AC-PLAN-002",
+                        "verification_mode": "manual",
+                    },
+                ],
+            }
+        ]
+
+        errors = validate_tasks_jsonl(records)
+        assert errors == []
+
+    def test_malformed_criterion_id_returns_error_naming_acceptance_criteria(
+        self,
+    ):
+        from deviate.core.tasks_ledger import validate_tasks_jsonl
+
+        records = [
+            {
+                "id": "TSK-005-01",
+                "issue_id": "005-002",
+                "description": "Task with a malformed criterion id link",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "acceptance_criteria": [
+                    {
+                        "criterion_id": "AC-PLAN-99",
+                        "verification_mode": "manual",
+                    }
+                ],
+            }
+        ]
+
+        errors = validate_tasks_jsonl(records)
+        assert any("acceptance_criteria" in error for error in errors)
+        assert any("AC-PLAN-99" in error for error in errors)
+
+    def test_automated_link_without_test_ref_returns_error_naming_acceptance_criteria(
+        self,
+    ):
+        from deviate.core.tasks_ledger import validate_tasks_jsonl
+
+        records = [
+            {
+                "id": "TSK-005-01",
+                "issue_id": "005-002",
+                "description": "Task with an automated link missing test_ref",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "acceptance_criteria": [
+                    {
+                        "criterion_id": "AC-PLAN-001",
+                        "verification_mode": "automated",
+                    }
+                ],
+            }
+        ]
+
+        errors = validate_tasks_jsonl(records)
+        assert any("acceptance_criteria" in error for error in errors)
+        assert any("test_ref" in error for error in errors)
+
+    def test_legacy_row_without_acceptance_criteria_passes_validation(self):
+        from deviate.core.tasks_ledger import validate_tasks_jsonl
+
+        records = [
+            {
+                "id": "TSK-005-03",
+                "issue_id": "005-002",
+                "description": "Legacy row from an older CLI version",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "created_at": "2026-07-04T07:49:30Z",
+            }
+        ]
+
+        errors = validate_tasks_jsonl(records)
+        assert errors == []
+
+    def test_link_row_with_unknown_field_still_fails_validation(self):
+        from deviate.core.tasks_ledger import validate_tasks_jsonl
+
+        records = [
+            {
+                "id": "TSK-005-01",
+                "issue_id": "005-002",
+                "description": "Task with links and an unknown field",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "acceptance_criteria": [
+                    {
+                        "criterion_id": "AC-PLAN-001",
+                        "verification_mode": "manual",
+                    }
+                ],
+                "unknown_field": "should_fail",
+            }
+        ]
+
+        errors = validate_tasks_jsonl(records)
+        assert any("unknown_field" in error for error in errors)
