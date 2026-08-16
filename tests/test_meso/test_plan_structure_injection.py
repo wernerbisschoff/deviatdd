@@ -257,6 +257,7 @@ class TestPlanAcceptanceContract:
             "- **Given**: A configured repository\n"
             "- **When**: The command runs\n"
             "- **Then**: It succeeds\n"
+            "- **Verification Mode**: automated\n"
         )
 
         with chdir(tmp_path):

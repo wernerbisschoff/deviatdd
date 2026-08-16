@@ -21,6 +21,7 @@ VALID_PLAN = """# Plan
 **Given**: A claimed issue is available.
 **When**: The meso pipeline prepares the issue.
 **Then**: The task queue is ready for Micro.
+**Verification Mode**: automated
 """
 
 
@@ -115,3 +116,72 @@ class TestMesoIdempotentResume:
         assert tasks_path.read_text() == "\n"
         mock_invoke.assert_not_called()
         assert "MESO_TASKS_INVALID" in capsys.readouterr().out
+
+    @patch("deviate.cli.meso._invoke_agent_phase")
+    def test_modeless_contract_stops_without_overwrite(
+        self,
+        mock_invoke: MagicMock,
+        tmp_git_repo,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _setup_minimal_workspace(tmp_git_repo, seed_plan=False, seed_tasks=False)
+        plan_path = tmp_git_repo / "specs/test-epic/iss-001/plan.md"
+        original = "# Plan\n\n## Acceptance Contract\n\n" + "\n".join(
+            [
+                "**Scenario AC-PLAN-001: A criterion**",
+                "**Source Outline**: AO-001",
+                "**Upstream Traceability**: US-005-01, FR-005-01, AC-005-01-01",
+                "**Current-Code Evidence**: src/demo.py:run",
+                "**Given**: A configured repository.",
+                "**When**: The meso pipeline validates the contract.",
+                "**Then**: The criterion is enforceable.",
+            ]
+        )
+        plan_path.write_text(original)
+
+        with chdir(tmp_git_repo):
+            with pytest.raises(typer.Exit):
+                _meso_run(issue_id="ISS-001-001", no_setup=True)
+
+        assert plan_path.read_text() == original
+        mock_invoke.assert_not_called()
+        captured = capsys.readouterr().out
+        assert "MESO_PLAN_INVALID" in captured
+        assert "AC-PLAN-001: missing Verification Mode" in captured
+
+    @patch("deviate.cli.meso._invoke_agent_phase")
+    def test_illegal_mode_contract_stops_without_overwrite(
+        self,
+        mock_invoke: MagicMock,
+        tmp_git_repo,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _setup_minimal_workspace(tmp_git_repo, seed_plan=False, seed_tasks=False)
+        plan_path = tmp_git_repo / "specs/test-epic/iss-001/plan.md"
+        original = "# Plan\n\n## Acceptance Contract\n\n" + "\n".join(
+            [
+                "**Scenario AC-PLAN-001: A criterion**",
+                "**Source Outline**: AO-001",
+                "**Upstream Traceability**: US-005-01, FR-005-01, AC-005-01-01",
+                "**Current-Code Evidence**: src/demo.py:run",
+                "**Verification Mode**: soon",
+                "**Given**: A configured repository.",
+                "**When**: The meso pipeline validates the contract.",
+                "**Then**: The criterion is enforceable.",
+            ]
+        )
+        plan_path.write_text(original)
+
+        with chdir(tmp_git_repo):
+            with pytest.raises(typer.Exit):
+                _meso_run(issue_id="ISS-001-001", no_setup=True)
+
+        assert plan_path.read_text() == original
+        mock_invoke.assert_not_called()
+        captured = capsys.readouterr().out
+        assert "MESO_PLAN_INVALID" in captured
+        flat_captured = " ".join(captured.split())
+        assert (
+            "AC-PLAN-001: invalid Verification Mode 'soon'; "
+            "expected one of automated|manual|deferred"
+        ) in flat_captured

@@ -682,32 +682,52 @@ def _resolve_issue_number(task_id: str) -> str | None:
 
 
 def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
-    """Look up the latest (current) record by its TSK-NNN-NN ID."""
+    """Look up the latest (current) record by its TSK-NNN-NN ID.
+
+    A task ID is namespaced per issue (every issue reuses the same
+    ``TSK-NNN-NN`` numbering). When several issues carry the same id,
+    prefer the record that belongs to this worktree's branch issue so an
+    explicit ``deviate micro run <tid>`` targets the active slice rather than
+    a same-numbered task from an unrelated ledger.
+    """
+    branch_issue_id = _resolve_issue_id_from_branch(root) or ""
+    preferred = None
     for rec, ledger_file in _collect_latest_task_records(root):
         if rec.get("id") == task_id:
-            return rec, ledger_file
-    return None
+            if rec.get("issue_id") == branch_issue_id:
+                return rec, ledger_file
+            if preferred is None:
+                preferred = (rec, ledger_file)
+    return preferred
 
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REFACTOR"}
 
 
 def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
-    """Return the latest record per task ID across all ledger files.
+    """Return the latest record per (issue_id, task ID) across all ledger files.
 
     Because the ledger is append-only (chronological within each file,
     files sorted lexicographically), the last seen record for each task
-    ID represents its current status.
+    within one issue represents its current status.
+
+    Task IDs are namespaced per issue (every issue reuses the same
+    ``TSK-NNN-NN`` numbering), so the dedup key must include the issue id.
+    Keying by task ID alone lets a later-sorted ledger from an unrelated
+    issue shadow this issue's records (e.g. ``specs/adhoc/*`` sorting after
+    ``specs/005-*``).
     """
-    latest: dict[str, dict] = {}
-    ledger_of: dict[str, Path] = {}
+    latest: dict[tuple[str, str], dict] = {}
+    ledger_of: dict[tuple[str, str], Path] = {}
     for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
         for rec in _read_ledger_records(ledger_file):
             tid = rec.get("id")
+            issue_id = rec.get("issue_id", "")
             if tid:
-                latest[tid] = rec
-                ledger_of[tid] = ledger_file
-    return [(latest[tid], ledger_of[tid]) for tid in latest]
+                key = (issue_id, tid)
+                latest[key] = rec
+                ledger_of[key] = ledger_file
+    return [(latest[key], ledger_of[key]) for key in latest]
 
 
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")

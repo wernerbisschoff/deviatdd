@@ -279,3 +279,84 @@ class TestMesoContracts:
             assert contract.get("tasks_target", "").endswith(
                 "002-embedder-vector-search/003-config-embedder-cli/tasks.md"
             )
+
+    @staticmethod
+    def _contract_plan(mode_line: str | None) -> str:
+        """Build a plan.md whose single AC-PLAN scenario omits or keeps the mode."""
+        lines = [
+            "## Acceptance Contract",
+            "",
+            "**Scenario AC-PLAN-001: A valid criterion**",
+            "**Source Outline**: AO-001",
+            "**Upstream Traceability**: US-005-01, FR-005-01, AC-005-01-01",
+            "**Current-Code Evidence**: src/demo.py:run",
+            "**Given**: A configured repository.",
+            "**When**: The meso pipeline validates the contract.",
+            "**Then**: The criterion is enforceable.",
+        ]
+        if mode_line is not None:
+            lines.append(mode_line)
+        return "\n".join(lines)
+
+    def _invoke_tasks_pre_with_plan(self, tmp_path: Path, plan_text: str):
+        with chdir(tmp_path):
+            self._setup_git_repo(tmp_path)
+            self._setup_minimal_env(
+                tmp_path, session_phase="SPECIFY", active_issue_id="ISS-TEST-001"
+            )
+
+            specs_dir = tmp_path / "specs"
+            issue_record = {
+                "issue_id": "ISS-TEST-001",
+                "type": "feature",
+                "title": "Test",
+                "status": "BACKLOG",
+                "source_file": "specs/test-epic/issues/ISS-TEST-001.md",
+                "timestamp": "2026-01-01T00:00:00Z",
+            }
+            (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+
+            issue_dir = specs_dir / "test-epic" / "issues"
+            issue_dir.mkdir(parents=True, exist_ok=True)
+            (issue_dir / "ISS-TEST-001.md").write_text("# Spec\n\nTest spec.\n")
+
+            feature_dir = specs_dir / "test-epic" / "ISS-TEST-001"
+            feature_dir.mkdir(parents=True, exist_ok=True)
+            (feature_dir / "plan.md").write_text(plan_text)
+
+            return runner.invoke(cli, ["tasks", "pre"])
+
+    def test_tasks_pre_blocks_on_missing_verification_mode(
+        self, tmp_path: Path
+    ) -> None:
+        plan_text = self._contract_plan(mode_line=None)
+        result = self._invoke_tasks_pre_with_plan(tmp_path, plan_text)
+
+        assert result.exit_code == 0, result.output
+        contract = self._extract_contract(result.output)
+        assert contract["status"] == "PLAN_ACCEPTANCE_CONTRACT_INVALID", result.output
+        assert "AC-PLAN-001: missing Verification Mode" in result.output
+
+    def test_tasks_pre_blocks_on_illegal_verification_mode(
+        self, tmp_path: Path
+    ) -> None:
+        plan_text = self._contract_plan(mode_line="**Verification Mode**: soon")
+        result = self._invoke_tasks_pre_with_plan(tmp_path, plan_text)
+
+        assert result.exit_code == 0, result.output
+        contract = self._extract_contract(result.output)
+        assert contract["status"] == "PLAN_ACCEPTANCE_CONTRACT_INVALID", result.output
+        flat_output = " ".join(result.output.split())
+        assert (
+            "AC-PLAN-001: invalid Verification Mode 'soon'; "
+            "expected one of automated|manual|deferred"
+        ) in flat_output
+
+    def test_tasks_pre_passes_on_valid_verification_mode(self, tmp_path: Path) -> None:
+        plan_text = self._contract_plan(mode_line="**Verification Mode**: automated")
+        result = self._invoke_tasks_pre_with_plan(tmp_path, plan_text)
+
+        assert result.exit_code == 0, result.output
+        contract = self._extract_contract(result.output)
+        assert contract["status"] == "READY", result.output
+        assert "export_plan" not in contract
