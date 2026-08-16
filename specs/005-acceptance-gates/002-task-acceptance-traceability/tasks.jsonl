@@ -1,0 +1,1 @@
+{"id":"TSK-005-01","issue_id":"005-002","description":"`CriterionLink` model plus the additive `TaskRecord.acceptance_criteria` field, with model-level accept/reject tests","status":"RED","execution_mode":"TDD","created_at":"2026-08-16T09:30:50.760884Z","security_profile":null}
