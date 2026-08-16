@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
 
 
 class TestGenerateJsonlFromMd:
@@ -53,6 +57,124 @@ class TestGenerateJsonlFromMd:
 
         records = generate_jsonl_from_md(tasks_md, issue_id="ISS-002-005")
         assert records == []
+
+    def test_propagates_acceptance_criteria_links_into_task_records(
+        self, tmp_path: Path
+    ):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-01: Implement criterion link parsing\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001 (automated, "
+            "tests/test_core/test_tasks_ledger.py), AC-PLAN-002 (manual)\n"
+            "  - **Rationale**: US-005-03\n"
+        )
+
+        records = generate_jsonl_from_md(tasks_md, issue_id="005-002")
+
+        assert len(records) == 1
+        links = records[0].acceptance_criteria
+        assert links is not None
+        assert len(links) == 2
+        assert links[0].criterion_id == "AC-PLAN-001"
+        assert links[0].verification_mode == "automated"
+        assert links[0].test_ref == "tests/test_core/test_tasks_ledger.py"
+        assert links[1].criterion_id == "AC-PLAN-002"
+        assert links[1].verification_mode == "manual"
+        assert links[1].test_ref is None
+
+    def test_task_without_criteria_bullet_carries_null_not_empty_list(
+        self, tmp_path: Path
+    ):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-01: Task with criterion references\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001 (automated, "
+            "tests/test_core/test_tasks_ledger.py)\n"
+            "- TSK-005-04: Task without criterion references\n"
+            "  - **Mode**: TDD\n"
+        )
+
+        records = generate_jsonl_from_md(tasks_md, issue_id="005-002")
+
+        assert len(records) == 2
+        assert records[0].acceptance_criteria is not None
+        dumped = json.loads(records[1].model_dump_json())
+        assert dumped["acceptance_criteria"] is None
+
+    def test_malformed_criterion_id_fails_generation_with_named_error(
+        self, tmp_path: Path
+    ):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-02: Task with a malformed criterion id\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-99 (automated, "
+            "tests/test_core/test_tasks_ledger.py)\n"
+        )
+
+        with pytest.raises((ValidationError, ValueError)) as excinfo:
+            generate_jsonl_from_md(tasks_md, issue_id="005-002")
+        assert "AC-PLAN-99" in str(excinfo.value)
+
+    def test_automated_link_without_test_ref_fails_generation(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-02: Task with an automated link missing test_ref\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001 (automated)\n"
+        )
+
+        with pytest.raises(ValidationError) as excinfo:
+            generate_jsonl_from_md(tasks_md, issue_id="005-002")
+        assert "test_ref" in str(excinfo.value)
+
+    def test_invalid_verification_mode_fails_generation(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-02: Task with an invalid verification mode\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001 (soon)\n"
+        )
+
+        with pytest.raises((ValidationError, ValueError)) as excinfo:
+            generate_jsonl_from_md(tasks_md, issue_id="005-002")
+        assert "soon" in str(excinfo.value)
+
+    def test_unparseable_criteria_entry_fails_generation_with_named_error(
+        self, tmp_path: Path
+    ):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-02: Task with an unparseable criteria entry\n"
+            "  - **Mode**: TDD\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001 automated\n"
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            generate_jsonl_from_md(tasks_md, issue_id="005-002")
+        message = str(excinfo.value)
+        assert "AC-PLAN-001 automated" in message
+        assert "TSK-005-02" in message
 
 
 class TestValidateTasksJsonl:
