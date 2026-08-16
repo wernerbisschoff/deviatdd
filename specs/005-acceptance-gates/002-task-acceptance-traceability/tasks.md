@@ -56,7 +56,7 @@
 
 - TSK-005-03: Row-validator accept/reject cases for link rows plus the mixed-version append regression
   - **Type**: Verification_Batch
-  - **Mode**: TDD
+  - **Mode**: IMMEDIATE
   - **Test Strategy**: Sociable_Unit
   - **Verification**: `uv run pytest tests/test_core/test_tasks_ledger.py tests/test_state/test_ledger.py -v` then `mise run check`
   - **Estimated Time**: 60 minutes
