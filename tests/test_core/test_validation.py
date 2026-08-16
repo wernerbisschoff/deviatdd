@@ -153,6 +153,7 @@ class TestAcceptanceOwnershipValidation:
             "- **Current-Code Evidence**: src/demo.py:run\n"
             "- **Given**: A configured repository\n"
             "- **Then**: The command succeeds\n"
+            "- **Verification Mode**: automated\n"
         )
 
         errors = validate_acceptance_contract(content)
@@ -168,6 +169,7 @@ class TestAcceptanceOwnershipValidation:
             "- **Current-Code Evidence**: src/demo.py:run\n"
             "- **When**: The command runs\n"
             "- **Then**: It succeeds\n"
+            "- **Verification Mode**: automated\n"
         )
 
         assert validate_acceptance_contract(content) == [
@@ -182,11 +184,180 @@ class TestAcceptanceOwnershipValidation:
             "- **Given**: A configured repository\n"
             "- **When**: The command runs\n"
             "- **Then**: It succeeds\n"
+            "- **Verification Mode**: automated\n"
         )
 
         assert validate_acceptance_contract(content) == [
             "AC-PLAN-001: missing Upstream Traceability",
             "AC-PLAN-001: missing Current-Code Evidence",
+        ]
+
+
+def _contract_scenario(
+    scenario_id: str = "AC-PLAN-001",
+    *,
+    mode_line: str = "- **Verification Mode**: automated",
+    include_source: bool = True,
+    include_upstream: bool = True,
+    include_evidence: bool = True,
+    include_gherkin: bool = True,
+) -> str:
+    lines = [f"**Scenario {scenario_id}: Some criterion**"]
+    if include_source:
+        lines.append("- **Source Outline**: AO-001")
+    if include_upstream:
+        lines.append("- **Upstream Traceability**: FR-005-01, AC-005-01-01")
+    if include_evidence:
+        lines.append("- **Current-Code Evidence**: src/demo.py:run")
+    if include_gherkin:
+        lines += [
+            "- **Given**: A configured repository",
+            "- **When**: The command runs",
+            "- **Then**: The outcome holds",
+        ]
+    lines.append(mode_line)
+    return "\n".join(lines)
+
+
+def _wrap_contract(scenario_bodies: list[str]) -> str:
+    return "## Acceptance Contract\n" + "\n\n".join(scenario_bodies)
+
+
+class TestVerificationModeValidation:
+    def test_accepts_each_verification_mode_literal(self):
+        for mode in ("automated", "manual", "deferred"):
+            content = _wrap_contract(
+                [_contract_scenario(mode_line=f"- **Verification Mode**: {mode}")]
+            )
+            assert validate_acceptance_contract(content) == [], mode
+
+    def test_accepts_case_variant_literal(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**: Deferred")]
+        )
+        assert validate_acceptance_contract(content) == []
+
+    def test_accepts_surrounding_whitespace_around_literal(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**:   automated  ")]
+        )
+        assert validate_acceptance_contract(content) == []
+
+    def test_accepts_all_deferred_contract(self):
+        bodies = [
+            _contract_scenario(
+                "AC-PLAN-001", mode_line="- **Verification Mode**: deferred"
+            ),
+            _contract_scenario(
+                "AC-PLAN-002", mode_line="- **Verification Mode**: Deferred"
+            ),
+        ]
+        assert validate_acceptance_contract(_wrap_contract(bodies)) == []
+
+    def test_rejects_missing_verification_mode(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="", include_source=True)]
+        )
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing Verification Mode"
+        ]
+
+    def test_rejects_empty_verification_mode_value(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**:")]
+        )
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing Verification Mode"
+        ]
+
+    def test_rejects_illegal_verification_mode_value(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**: soon")]
+        )
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: invalid Verification Mode 'soon'; expected one of automated|manual|deferred"
+        ]
+
+    def test_rejects_case_variant_outside_literals(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**: Soon")]
+        )
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: invalid Verification Mode 'Soon'; expected one of automated|manual|deferred"
+        ]
+
+    def test_rejects_duplicate_verification_mode_lines(self):
+        body = _contract_scenario() + "\n- **Verification Mode**: deferred"
+        content = _wrap_contract([body])
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: duplicate Verification Mode lines"
+        ]
+
+    def test_valid_mode_does_not_waive_mandatory_clauses(self):
+        content = _wrap_contract(
+            [
+                _contract_scenario(
+                    include_upstream=False,
+                    mode_line="- **Verification Mode**: automated",
+                )
+            ]
+        )
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing Upstream Traceability",
+        ]
+
+    def test_valid_mode_does_not_waive_gherkin_clauses(self):
+        content = _wrap_contract(
+            [
+                _contract_scenario(
+                    include_gherkin=False,
+                    mode_line="- **Verification Mode**: automated",
+                )
+            ]
+        )
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing 'Given'",
+            "AC-PLAN-001: missing 'When'",
+            "AC-PLAN-001: missing 'Then'",
+        ]
+
+    def test_mixed_modes_validate_independently(self):
+        bodies = [
+            _contract_scenario(
+                "AC-PLAN-001", mode_line="- **Verification Mode**: automated"
+            ),
+            _contract_scenario(
+                "AC-PLAN-002", mode_line="- **Verification Mode**: manual"
+            ),
+            _contract_scenario(
+                "AC-PLAN-003", mode_line="- **Verification Mode**: deferred"
+            ),
+        ]
+        assert validate_acceptance_contract(_wrap_contract(bodies)) == []
+
+    def test_mixed_modes_report_error_on_the_offending_scenario_only(self):
+        bodies = [
+            _contract_scenario(
+                "AC-PLAN-001", mode_line="- **Verification Mode**: automated"
+            ),
+            _contract_scenario(
+                "AC-PLAN-002", mode_line="- **Verification Mode**: soon"
+            ),
+        ]
+        assert validate_acceptance_contract(_wrap_contract(bodies)) == [
+            "AC-PLAN-002: invalid Verification Mode 'soon'; expected one of automated|manual|deferred",
+        ]
+
+    def test_zero_scenario_contract_keeps_existing_error(self):
+        content = "## Acceptance Contract\n\nNo scenarios here.\n"
+        assert validate_acceptance_contract(content) == [
+            "Acceptance Contract must contain at least one AC-PLAN-NNN scenario"
+        ]
+
+    def test_missing_contract_section_keeps_existing_error(self):
+        content = "## Other Section\nbody\n"
+        assert validate_acceptance_contract(content) == [
+            "PLAN_ACCEPTANCE_CONTRACT_MISSING"
         ]
 
 

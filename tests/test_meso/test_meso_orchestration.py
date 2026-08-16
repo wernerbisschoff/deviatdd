@@ -81,6 +81,7 @@ def _setup_minimal_workspace(
             "**Given**: A seeded repository is available.\n"
             "**When**: The plan phase runs.\n"
             "**Then**: The contract is honored.\n"
+            "**Verification Mode**: automated\n"
         )
     if seed_tasks:
         (issue_dir / "tasks.md").write_text("# Tasks\n\n- TSK-001-01 smoke (tdd)\n")
