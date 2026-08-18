@@ -11,7 +11,7 @@ from deviate.state.ledger import CriterionLink, TaskRecord
 
 _TASK_LINE_PATTERN = re.compile(r"^\s*-\s+(?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.+)")
 _MODE_PATTERN = re.compile(r"\*\*Mode\*\*:\s*(\S+)")
-_CRITERIA_LINE_PATTERN = re.compile(r"\*\*Acceptance Criteria\*\*:\s*(.+)")
+_CRITERIA_LINE_PATTERN = re.compile(r"^\s*-\s*\*\*Acceptance Criteria\*\*:\s*(.+)")
 _LINK_PATTERN = re.compile(r"^(AC-PLAN-\d{3})\s*\(([^)]*)\)$")
 _CRITERIA_ENTRY_SPLIT: re.Pattern[str] = re.compile(r",\s*(?=AC-PLAN-\d{3}\s*\()")
 
@@ -95,12 +95,16 @@ def _parse_criterion_link(task_id: str, entry: str) -> CriterionLink:
             f"Unparseable acceptance criteria entry for task {task_id}: {entry}"
         )
     inner = match.group(2)
-    parts = [p.strip() for p in inner.split(",")] if inner else []
-    if len(parts) > 2:
+    if not inner or not inner.strip():
+        raise ValueError(
+            f"Unparseable acceptance criteria entry for task {task_id}: {entry}"
+        )
+    parts = [p.strip() for p in inner.split(",")]
+    if len(parts) > 2 or not parts[0]:
         raise ValueError(
             f"Malformed acceptance criteria entry for task {task_id}: {entry}"
         )
-    verification_mode = parts[0] if parts else ""
+    verification_mode = parts[0]
     test_ref = parts[1] if len(parts) > 1 and parts[1] else None
     return CriterionLink(
         criterion_id=match.group(1),
