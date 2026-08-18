@@ -77,6 +77,21 @@ def _setup_session_with_gate2(
     )
 
 
+def _seed_tracked_test_file(root: Path, name: str = "test_seed_failing.py") -> None:
+    """Create and commit a tracked failing test so ``_find_test_files`` is
+    non-empty when a RED-phase test run is mocked."""
+    tests_dir = root / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / name).write_text("def test_seed_failing():\n    assert False\n")
+    subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed tracked failing test"],
+        cwd=root,
+        env=_git_env(),
+        check=True,
+    )
+
+
 class TestResolveAgentConfigBackendAlias:
     """Regression: ``_resolve_agent_config`` normalises user-facing backend
     aliases (``factory``) to canonical backends (``droid``) before the
@@ -232,6 +247,7 @@ class TestRunAllMonitorIntegration:
         ]
         _setup_issue_ledger(tmp_git_repo, ISSUE_ID, EPIC, SLUG, tasks)
         _setup_session_with_gate2(tmp_git_repo, ISSUE_ID, approve_gate2, EPIC, SLUG)
+        _seed_tracked_test_file(tmp_git_repo)
         return tmp_git_repo
 
     @patch("deviate.cli.micro._run_format_cmd")
@@ -252,9 +268,17 @@ class TestRunAllMonitorIntegration:
             HandoverManifest(phase="RED", status="SUCCESS"),
             "",
         )
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -284,9 +308,17 @@ class TestRunAllMonitorIntegration:
             HandoverManifest(phase="RED", status="SUCCESS"),
             "",
         )
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -312,9 +344,17 @@ class TestRunAllMonitorIntegration:
             HandoverManifest(phase="RED", status="SUCCESS"),
             "",
         )
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -371,6 +411,7 @@ class TestRunAllMonitorE2E:
         _setup_session_with_gate2(
             tmp_git_repo, E2E_ISSUE_ID, approve_gate2, E2E_EPIC, E2E_SLUG
         )
+        _seed_tracked_test_file(tmp_git_repo)
         return tmp_git_repo
 
     @patch("deviate.cli.micro._run_format_cmd")
@@ -389,9 +430,44 @@ class TestRunAllMonitorE2E:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -455,9 +531,44 @@ class TestRunAllMonitorE2E:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -519,9 +630,44 @@ class TestRunAllMonitorE2E:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -573,9 +719,35 @@ class TestRunAllMonitorE2E:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env3)
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -2424,6 +2596,7 @@ class TestPhaseModelRouting:
         _setup_session_with_gate2(
             tmp_git_repo, ISSUE_005, approve_gate2, "adhoc", SLUG_005
         )
+        _seed_tracked_test_file(tmp_git_repo)
 
         dot_dir = tmp_git_repo / ".deviate"
         config_path = dot_dir / "config.toml"
@@ -2448,9 +2621,17 @@ class TestPhaseModelRouting:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(env)
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -2968,9 +3149,9 @@ class TestModelPassedToInvokeAgent:
         cwd = tmp_path
         mock_cwd.return_value = cwd
         mock_done.return_value = False
-        mock_find_tests.return_value = []
+        mock_find_tests.return_value = ["tests/test_red.py"]
         mock_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
+            args=[], returncode=1, stdout="1 failed", stderr=""
         )
         mock_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -3110,9 +3291,9 @@ class TestTddCycleIntegration:
         cwd = tmp_path
         mock_cwd.return_value = cwd
         mock_done.return_value = False
-        mock_find_tests.return_value = []
+        mock_find_tests.return_value = ["tests/test_red.py"]
         mock_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
+            args=[], returncode=1, stdout="1 failed", stderr=""
         )
         mock_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""

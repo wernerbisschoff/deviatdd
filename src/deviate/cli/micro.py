@@ -1079,6 +1079,62 @@ def _resolve_lint_command(root: Path) -> str:
     return ""
 
 
+_NO_FAILING_TEST_FORWARD_ROUTES = frozenset(
+    {"continue_refactor", "proceed_to_refactor_no_diff", "skip_refactor"}
+)
+
+
+def _worktree_status_paths(root: Path) -> list[str]:
+    """Return ``git status --porcelain`` lines for *root*."""
+    proc = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    return proc.stdout.splitlines()
+
+
+def _restore_worktree_to_baseline(root: Path, baseline: list[str]) -> None:
+    """Discard worktree changes that appeared after *baseline* was captured.
+
+    Used by the RED no-failing-test adjudication to remove the files the RED
+    agent produced (an uncommitted passing test) without touching anything
+    that was already present when the phase started."""
+    baseline_set = set(baseline)
+    for line in _worktree_status_paths(root):
+        if line in baseline_set:
+            continue
+        entry = line[3:].strip().strip('"').rstrip("/")
+        if not entry:
+            continue
+        if line.startswith("??"):
+            subprocess.run(
+                ["git", "clean", "-fd", "--", entry],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+            )
+        else:
+            subprocess.run(
+                ["git", "restore", "--", entry],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+            )
+
+
+def _is_no_tests_collected(proc: subprocess.CompletedProcess) -> bool:
+    """Return whether a pytest-style exit 5 means 'no test ran'."""
+    if proc.returncode != 5:
+        return False
+    output = f"{proc.stdout or ''} {proc.stderr or ''}".lower()
+    return "no tests" in output
+
+
 def _run_red_phase(
     task: dict,
     ledger_path: Path,
@@ -1089,6 +1145,7 @@ def _run_red_phase(
     monitor: OrchestrationMonitor | None = None,
     *,
     bypass_phase_done: bool = False,
+    no_judge: bool = False,
 ) -> SessionState:
     tid = task.get("id", "?")
     if not bypass_phase_done and _phase_already_done(
@@ -1108,6 +1165,7 @@ def _run_red_phase(
 
     backend = agent or "pi"
     root = Path.cwd()
+    red_baseline = _worktree_status_paths(root)
     prompt = _build_auto_prompt(
         "red", task, root, train_feedback=session.train_feedback
     )
@@ -1138,15 +1196,29 @@ def _run_red_phase(
     scope = _build_scope(issue_id, tid)
 
     test_files = _find_test_files(root)
-    if test_files:
-        test_result = _run_test_cmd(root)
-        if test_result.returncode == 0:
-            raise PhaseFailedError(
-                f"RED phase test passed for {tid} — RED must author a "
-                "failing test, not a passing one. Confirm the new test "
-                "exercises the target behavior the spec requires before "
-                "the implementation exists."
-            )
+    if not test_files:
+        raise PhaseFailedError(
+            f"RED phase produced no test files for {tid} — RED must author a "
+            "failing test in a test file the project's test command can "
+            "collect. If the task legitimately needs no code change, take it "
+            "through /deviate-execute (DIRECT) or re-shard via /deviate-meso."
+        )
+
+    test_result = _run_test_cmd(root)
+    if test_result.returncode == 0 or _is_no_tests_collected(test_result):
+        return _adjudicate_red_no_failing_test(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            agent=agent,
+            monitor=monitor,
+            manifest=manifest,
+            test_result=test_result,
+            red_baseline=red_baseline,
+            no_judge=no_judge,
+        )
 
     _run_format_cmd(root)
 
@@ -1179,6 +1251,128 @@ def _run_red_phase(
 
     _verify_clean_worktree(root, "RED", tid)
     return session
+
+
+def _adjudicate_red_no_failing_test(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    *,
+    agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
+    manifest: HandoverManifest,
+    test_result: subprocess.CompletedProcess,
+    red_baseline: list[str],
+    no_judge: bool = False,
+) -> SessionState:
+    """Adjudicate a RED phase that produced no failing test.
+
+    The test command either exited 0 (all tests passed) or collected no
+    tests, so there is nothing for GREEN to implement. The decision goes to
+    JUDGE directly — a vacuous GREEN would only burn the TRAIN budget:
+    JUDGE either rules the behavior already exists (``skip_refactor`` — the
+    task is COMPLETED without landing the agent's passing test) or rules
+    the test wrong (``revert_before`` — the agent's work is discarded and
+    RED re-authors a genuinely failing test)."""
+    tid = task.get("id", "?")
+    root = Path.cwd()
+    rationale = (manifest.rationale or "").strip()
+    declared = manifest.failure_kind
+    if test_result.returncode == 0:
+        symptom = "the test command exited 0 (all tests passed)"
+    else:
+        symptom = "the test command collected no tests"
+    feedback = rationale or (
+        f"RED phase: {symptom}. The authored test is uncommitted in the "
+        "working tree. Decide whether the required behavior already exists "
+        "(adjudicate the task COMPLETED) or the test is wrong (re-author a "
+        "genuinely failing test in RED)."
+    )
+    session.train_feedback = feedback
+    session.failure_kind = "no_failing_test"
+    session.save(session_path)
+
+    c.print(
+        f"  [yellow]RED_NO_FAILING_TEST[/] {tid} \u2014 "
+        "routing to JUDGE for adjudication"
+    )
+    _log_run(
+        "RED_NO_FAILING_TEST",
+        task_id=tid,
+        returncode=test_result.returncode,
+        declared_kind=declared or "",
+        rationale_preview=feedback.replace("\n", " ")[:200],
+        reroute="JUDGE",
+    )
+
+    if no_judge:
+        raise PhaseFailedError(
+            f"RED phase produced no failing test for {tid} and --no-judge "
+            "disables the adjudication — RED must author a failing test. "
+            "Re-run without --no-judge, or route the task through "
+            "/deviate-execute if no test is expected."
+        )
+
+    session = _run_judge_phase(
+        task,
+        ledger_path,
+        session,
+        session_path,
+        c,
+        agent=agent,
+        monitor=monitor,
+        red_baseline=red_baseline,
+    )
+    action = session.pending_judge_action
+
+    if action == "revert_before":
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="rejected",
+            reroute="RED",
+            action=action,
+            reason="no_failing_test_test_defect",
+        )
+        return session
+
+    # A bare COMPLIANCE_PASS verdict (legacy judge path) also signals that
+    # the required behavior already exists.
+    if not action and session.last_judge_verdict == "COMPLIANCE_PASS":
+        action = "skip_refactor"
+        session.pending_judge_action = "skip_refactor"
+
+    if action in _NO_FAILING_TEST_FORWARD_ROUTES:
+        _restore_worktree_to_baseline(root, red_baseline)
+        if action != "skip_refactor":
+            session.pending_judge_action = "skip_refactor"
+        c.print(
+            f"  [green]COMPLETED (adjudicated)[/] {tid} \u2014 "
+            "behavior already exists, no implementation needed"
+        )
+        _log_run(
+            "RED_ADJUDICATED_COMPLETE",
+            task_id=tid,
+            action=action,
+            rationale_preview=feedback.replace("\n", " ")[:200],
+        )
+        session.train_feedback = ""
+        session.failure_kind = ""
+        session.judge_rejected = False
+        session.save(session_path)
+        return session
+
+    # JUDGE returned no actionable verdict — strict RED contract applies.
+    _restore_worktree_to_baseline(root, red_baseline)
+    raise PhaseFailedError(
+        f"RED phase produced no failing test for {tid} and JUDGE returned no "
+        f"routing decision (action={action!r}). The RED agent must author a "
+        "failing test; declare `failure_kind: test_defect` in the RED "
+        "manifest if the test cannot target the required behavior."
+    )
 
 
 def _run_green_phase(
@@ -1851,14 +2045,17 @@ def _coerce_judge_action(
     ``revert_to_red`` on violation when the field is absent; ``None`` on
     pass when the field is absent.
 
-    Runner-level override: when ``failure_kind == "test_defect"`` and
-    the verdict is a violation, force ``revert_before`` regardless of
-    what ``next_action`` the JUDGE manifest declared (or omitted).
-    The RED test itself is wrong; the agent must re-author it before
-    any further GREEN attempt. PASS verdicts preserve the agent's
-    outcome.
+    Runner-level override: when ``failure_kind`` is ``test_defect`` or
+    ``no_failing_test`` and the verdict is a violation, force
+    ``revert_before`` regardless of what ``next_action`` the JUDGE manifest
+    declared (or omitted). The RED test itself is wrong; the agent must
+    re-author it before any further GREEN attempt. PASS verdicts preserve
+    the agent's outcome.
     """
-    if failure_kind == "test_defect" and verdict.upper() == "COMPLIANCE_VIOLATION":
+    if (
+        failure_kind in {"test_defect", "no_failing_test"}
+        and verdict.upper() == "COMPLIANCE_VIOLATION"
+    ):
         return "revert_before"
     next_action = getattr(manifest, "next_action", None)
     if next_action in _JUDGE_ACTIONS:
@@ -2065,6 +2262,7 @@ def _run_judge_phase(
     c: Console,
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
+    red_baseline: list[str] | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     backend = agent or "pi"
@@ -2080,15 +2278,27 @@ def _run_judge_phase(
     # behavior so the diff still matches the GREEN/EXECUTE-only commit.
     if session.red_commit_sha:
         diff_base = f"{session.red_commit_sha}^"
+        committed_diff = subprocess.run(
+            ["git", "diff", f"{diff_base}..HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
+    elif red_baseline is not None:
+        # RED-adjudication path: no RED commit exists, so there is no
+        # committed diff — the uncommitted RED test carries the change
+        # (surfaced via the dirty_parts scan below).
+        committed_diff = ""
     else:
         diff_base = "HEAD~1"
-    committed_diff = subprocess.run(
-        ["git", "diff", f"{diff_base}..HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout
+        committed_diff = subprocess.run(
+            ["git", "diff", f"{diff_base}..HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout
     status = subprocess.run(
         ["git", "status", "--short"],
         cwd=root,
@@ -2148,6 +2358,25 @@ def _run_judge_phase(
             "RED attempt has the full conflict description.\n"
         )
 
+    elif session.failure_kind == "no_failing_test":
+        prompt += (
+            "\n\n<failure_kind>no_failing_test</failure_kind>\n\n"
+            "RED phase completed but produced NO failing test: the test "
+            "command exited 0 (all tests passed) or collected no tests. The "
+            "authored test is uncommitted in the working tree and may be a "
+            "stub; no implementation exists yet. Decide between two "
+            "outcomes:\n"
+            "  - The required behavior ALREADY EXISTS and the task needs no "
+            "implementation: `verdict: COMPLIANCE_PASS` + "
+            "`next_action: skip_refactor` (mark the task COMPLETED; no "
+            "REFACTOR pass is wanted — no implementation was written).\n"
+            "  - The test is wrong, tautological, or cannot target the "
+            "required behavior: `verdict: COMPLIANCE_VIOLATION` + "
+            "`next_action: revert_before` (discard the test and re-author a "
+            "genuinely failing test in RED).\n"
+            "Populate `train_feedback` or `rationale` with the reason, so "
+            "the next RED attempt (or the COMPLETED record) carries it.\n"
+        )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root, backend=backend)
     manifest, _ = _invoke_agent(
@@ -2280,6 +2509,12 @@ def _run_judge_phase(
                         task_id=tid,
                         attempt=rollback_attempts,
                     )
+                elif red_baseline is not None:
+                    # RED-adjudication path: no RED commit exists to roll
+                    # back. Discard only the files this RED attempt produced
+                    # so the next RED re-author starts from the phase
+                    # baseline.
+                    _restore_worktree_to_baseline(root, red_baseline)
                 else:
                     # No pre-RED anchor AND no RED boundary in session.
                     # The runner no longer falls back to ``HEAD~1``; raise
@@ -2684,10 +2919,55 @@ def _run_tdd_cycle(
             monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
         )
         session = _run_red_phase(
-            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            agent=agent,
+            monitor=monitor,
+            no_judge=no_judge,
         )
 
     while not judge_passed:
+        # RED's no-failing-test adjudication (RED → JUDGE direct route) may
+        # have already returned a verdict — honor it before GREEN runs,
+        # since a vacuous GREEN has nothing to implement. Forward verdicts
+        # break out to _finish_tdd_cycle; revert_before re-dispatches RED.
+        if session.pending_judge_action == "revert_before":
+            train_attempts = 0
+            _maybe_push_event(
+                monitor,
+                "phase_change",
+                task_id=tid,
+                phase="RED",
+                description=task_desc,
+            )
+            session = _run_red_phase(
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                agent=agent,
+                monitor=monitor,
+                bypass_phase_done=True,
+                no_judge=no_judge,
+            )
+            session.judge_rejected = False
+            session.pending_judge_action = ""
+            session.save(session_path)
+            _log_run(
+                "PHASE_DECISION",
+                task_id=tid,
+                phase="RED",
+                decision="reroute_to_red",
+                reason="no_failing_test_adjudicated",
+            )
+            continue
+        if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+            judge_passed = True
+            break
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="GREEN", description=task_desc
         )
@@ -2790,6 +3070,7 @@ def _run_tdd_cycle(
                 agent=agent,
                 monitor=monitor,
                 bypass_phase_done=True,
+                no_judge=no_judge,
             )
             session.judge_rejected = False
             # Consume the one-shot action so a subsequent JUDGE pass on the
@@ -4409,7 +4690,14 @@ def red_post() -> None:
     proc = _run_test_cmd(root)
 
     if proc.returncode == 0:
-        console.print("[red]RedMustPassError:[/] Test passed, expected a failing test")
+        console.print(
+            "[red]RedMustPassError:[/] Test passed, expected a failing test "
+            "(no new failing test was produced). Fix the test so it fails "
+            "against the current implementation. If the required behavior "
+            "already exists, declare `failure_kind: already_satisfied` in "
+            "the RED handover manifest so `deviate micro run` adjudicates "
+            "the task as COMPLETED."
+        )
         raise typer.Exit(code=1)
 
     fmt = _run_format_cmd(root)
