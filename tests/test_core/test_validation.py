@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from deviate.core.validation import (
     extract_section_body,
+    repair_missing_verification_mode,
     validate_acceptance_contract,
     validate_acceptance_outline,
     validate_gherkin_syntax,
@@ -359,6 +360,48 @@ class TestVerificationModeValidation:
         assert validate_acceptance_contract(content) == [
             "PLAN_ACCEPTANCE_CONTRACT_MISSING"
         ]
+
+
+class TestRepairMissingVerificationMode:
+    def test_repairs_single_missing_mode(self):
+        content = _wrap_contract([_contract_scenario(mode_line="")])
+        repaired, count = repair_missing_verification_mode(content)
+        assert count == 1
+        assert validate_acceptance_contract(repaired) == []
+
+    def test_repairs_multiple_missing_modes(self):
+        bodies = [
+            _contract_scenario("AC-PLAN-001", mode_line=""),
+            _contract_scenario("AC-PLAN-002", mode_line=""),
+        ]
+        repaired, count = repair_missing_verification_mode(_wrap_contract(bodies))
+        assert count == 2
+        assert validate_acceptance_contract(repaired) == []
+
+    def test_leaves_present_mode_untouched(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**: deferred")]
+        )
+        repaired, count = repair_missing_verification_mode(content)
+        assert count == 0
+        assert repaired == content
+
+    def test_leaves_invalid_mode_untouched(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**: soon")]
+        )
+        repaired, count = repair_missing_verification_mode(content)
+        assert count == 0
+        assert validate_acceptance_contract(repaired) == [
+            "AC-PLAN-001: invalid Verification Mode 'soon'; "
+            "expected one of automated|manual|deferred",
+        ]
+
+    def test_missing_contract_section_is_noop(self):
+        content = "## Other Section\nbody\n"
+        repaired, count = repair_missing_verification_mode(content)
+        assert count == 0
+        assert repaired == content
 
 
 class TestValidateSections:

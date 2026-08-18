@@ -76,12 +76,14 @@ CRITICAL INSTRUCTION INVARIANTS:
    - Every AO from the issue's `## Acceptance Outline` MUST appear as the Source Outline of at least one AC-PLAN-NNN. Unused AOs produce a validation error and the agent must re-emit the contract.
    - Behavioural coverage that does not map cleanly to a single AO (e.g. an HMAC failure, an RLS isolation invariant, a defensive boundary) belongs under an existing AO that already covers the same behaviour, with the AO's Error Category or Boundary Category used to shape the scenario. If no existing AO fits, the issue's `## Acceptance Outline` is incomplete — halt with `INCOMPLETE_ISSUE_OUTLINE` and request that shard/adhoc regenerate the issue rather than inventing a non-AO source.
 8. **Generate `plan.md`**: Write the planning document to the issue workspace using the schema below. `deviate plan post` rejects a missing or malformed Acceptance Contract. The required fields per scenario and per section are non-negotiable — re-read this schema before each emission.
-   **Per-scenario required fields** (every `AC-PLAN-NNN` MUST contain all five):
+   **Per-scenario required fields** (every `AC-PLAN-NNN` MUST contain all six):
    1. **Scenario header** — `**Scenario AC-PLAN-NNN: <observable behaviour, imperative present tense>**`. `AC-PLAN-NNN` is zero-padded three digits, sequential, starting at `AC-PLAN-001`. Identifiers are unique and gap-free.
    2. **Source Outline** — `**Source Outline**: \`AO-NNN\`[, \`AO-MMM\`…]`. The value MUST be an AO token literally present in the issue's `## Acceptance Outline`. A comma-separated list is permitted for cross-cutting scenarios that span multiple AOs. Ad-hoc labels (`Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`) are forbidden — see step 7a.
    3. **Upstream Traceability** — `**Upstream Traceability**: \`US-NNN-NN\`, \`FR-NNN-ID\`, \`AC-NNN-ID-NN\`. At minimum one `US-`, one `FR-`, and one `AC-` token, comma-separated, all drawn from the issue's `## Upstream Requirement Tracing` and `## User Stories Ledger` sections.
    4. **Current-Code Evidence** — `**Current-Code Evidence**: \`<relative path>:<symbol or line>\``. At least one concrete path reference grounded in the codebase scan (a module, schema, migration, or test file actually present in the workstation).
    5. **Given / When / Then** — exactly three bold-labelled clauses, in that order: `**Given**:`, `**When**:`, `**Then**:`. Each clause is a single imperative sentence and MUST NOT embed additional `**Given**` / `**When**` / `**Then**` markers. The `**Then**` clause MUST state a verifiable observable outcome.
+   6. **Verification Mode** — `**Verification Mode**: <automated|manual|deferred>`. Exactly one per scenario, drawn from the three allowed literals (case-insensitive). `automated` means RED/GREEN executes the scenario as a failing-then-passing test; `manual` means a human verifies it via a documented step; `deferred` means verification is postponed to a later slice. `deviate plan post` rejects a missing, duplicate, or invalid mode literal.
+   **Pre-write self-check**: Before writing `plan.md`, enumerate every `AC-PLAN-NNN` you produced and confirm each one carries exactly one `**Verification Mode**:` line with a legal literal. A scenario that maps to RED/GREEN tests MUST use `automated`. Do not emit a scenario without this line — the CLI cannot rescue a plan whose scenarios lack a mode.
    **Per-section required structure** (every `plan.md` MUST contain every section below, in this order, with the exact `##` header):
    1. `## Plan Summary` — bullets: Issue, Implementation Strategy, Estimated Complexity, Estimated Effort.
    2. `## Product Layer Anchors` — bullets: Flow References, Source, Release Context, Architecture Components Touched (or `None` when absent).
@@ -95,7 +97,7 @@ CRITICAL INSTRUCTION INVARIANTS:
    10. `## Constitutional Alignment` — Architecture / Testing / Git Isolation / Product Layer bullets.
    **Forbidden patterns** (any one of these causes `PLAN_ACCEPTANCE_CONTRACT_INVALID` from `deviate plan post`):
    - Source Outline labelled `Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`, or any non-AO string.
-   - Scenario missing `**Source Outline**`, `**Upstream Traceability**`, `**Current-Code Evidence**`, or any of `**Given**` / `**When**` / `**Then**`.
+   - Scenario missing `**Source Outline**`, `**Upstream Traceability**`, `**Current-Code Evidence**`, any of `**Given**` / `**When**` / `**Then**`, or the `**Verification Mode**:` line.
    - An AO from `## Acceptance Outline` not used by any AC-PLAN-NNN.
    - Two scenarios sharing the same `AC-PLAN-NNN` number, or gaps in the sequence.
    - Wrapping the plan body in any XML tag, code fence, or preamble — write raw Markdown only.
@@ -140,6 +142,7 @@ Write the plan as `plan.md` in the issue workspace directory (adjacent to the is
 - **Given**: <current, implementation-aware precondition>
 - **When**: <observable trigger>
 - **Then**: <verifiable outcome>
+- **Verification Mode**: automated
 
 Each `AO-NNN` MUST map to at least one complete scenario. `AC-PLAN-NNN` identifiers are the authoritative acceptance identities consumed downstream.
 
