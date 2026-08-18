@@ -54,6 +54,21 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+def _seed_tracked_test_file(root: Path, name: str = "test_seed_failing.py") -> None:
+    """Create and commit a tracked failing test so ``_find_test_files`` is
+    non-empty when the RED-phase test run is mocked."""
+    tests_dir = root / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / name).write_text("def test_seed_failing():\n    assert False\n")
+    subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed tracked failing test"],
+        cwd=root,
+        env=_git_env(),
+        check=True,
+    )
+
+
 class TestMicroOrchestration:
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
@@ -66,9 +81,18 @@ class TestMicroOrchestration:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -145,9 +169,18 @@ class TestMicroOrchestration:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -183,9 +216,15 @@ class TestMicroOrchestration:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -222,9 +261,18 @@ class TestMicroOrchestration:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -263,9 +311,18 @@ class TestMicroOrchestration:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -306,9 +363,27 @@ class TestMicroOrchestration:
     def test_micro_all_processes_all_pending(
         self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -391,9 +466,21 @@ class TestMicroOrchestration:
         Now _run_green_phase checks session.train_feedback and runs
         regardless of the ledger when feedback is present.
         """
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         call_log: list[str] = []
 
         def _judge_reject_once(*args, **kwargs):
@@ -462,10 +549,11 @@ class TestMicroOrchestration:
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
             )
 
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent")
     def test_micro_judge_rejection_with_empty_feedback_aborts(
-        self, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
+        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo: Path, approve_gate2
     ):
         """JUDGE_REJECTED with no feedback at all must abort, not silently reroute.
 
@@ -499,6 +587,15 @@ class TestMicroOrchestration:
             ), ""
 
         mock_agent.side_effect = _judge_emit_with_no_feedback
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
 
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -558,9 +655,12 @@ class TestMicroOrchestration:
         PhaseFailedError. The runner must short-circuit on first
         detection and surface the agent's hitl_options to the operator.
         """
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
 
         def _escalate_once(*args, **kwargs):
             phase = kwargs.get("phase", "")
@@ -1134,9 +1234,15 @@ class TestMicroOrchestration:
         runner honors the JUDGE-supplied ``proceed_to_refactor_no_diff`` and
         routes straight to REFACTOR's no-op commit + COMPLETED transition.
         """
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
         no_diff_rationale = (
             "TSK-009-07 is a RED-only deliverable slice (KCH fabrication "
             "fixture + downstream MCP integration test). Production code "
@@ -1271,6 +1377,92 @@ class TestMicroOrchestration:
 
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_micro_red_no_failing_test_routes_to_judge_skip_refactor(
+        self,
+        mock_agent,
+        mock_verify,
+        mock_run_format,
+        mock_run_test,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
+        """RED completing with a passing test (rc 0) skips GREEN and routes the
+        decision to JUDGE. JUDGE ruling the behavior already exists
+        (``next_action: skip_refactor``) marks the task COMPLETED without
+        landing the agent's uncommitted passing test — no vacuous GREEN is run."""
+        call_log: list[str] = []
+
+        def _judge_skip_refactor(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-004-20")
+            call_log.append(phase)
+            if phase == "JUDGE":
+                return (
+                    HandoverManifest.model_construct(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_PASS",
+                        task_id=tid,
+                        next_action="skip_refactor",
+                        summary="The required behavior already exists; no implementation needed.",
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _judge_skip_refactor
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with chdir(tmp_git_repo):
+            (tmp_git_repo / "tests").mkdir(parents=True, exist_ok=True)
+            (tmp_git_repo / "tests" / "test_passing.py").write_text(
+                "def test_pass():\n    assert True\n"
+            )
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: seed passing test"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-20",
+                issue_id="ISS-001-004",
+                description="RED passes; behavior already exists",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-20"])
+
+            assert "RED_NO_FAILING_TEST" in result.output, result.output
+            # GREEN was skipped — the adjudication routed RED straight to JUDGE.
+            assert "GREEN" not in call_log, f"GREEN must be skipped: {call_log}"
+            assert call_log.count("JUDGE") == 1, f"JUDGE must run once: {call_log}"
+            assert result.exit_code == 0, f"Unexpected exit: {result.output}"
+            statuses = _read_statuses(ledger_path)
+            assert "COMPLETED" in statuses, f"Task must complete: {statuses}"
+
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
@@ -1322,6 +1514,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
             approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+            _seed_tracked_test_file(tmp_git_repo)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-14"])
 
@@ -1388,6 +1581,7 @@ class TestMicroOrchestration:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
             approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+            _seed_tracked_test_file(tmp_git_repo)
 
             Path("README.md").write_text("# test\n")
             subprocess.run(
@@ -1760,6 +1954,7 @@ class TestYellowHandoffContract:
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
             approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+            _seed_tracked_test_file(tmp_git_repo)
 
             Path("README.md").write_text("# repo\n")
             subprocess.run(
@@ -1798,9 +1993,15 @@ class TestYellowHandoffContract:
                 )
 
         mock_verify.side_effect = _verify_side_effect
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
+        _seed_tracked_test_file(tmp_git_repo)
 
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")

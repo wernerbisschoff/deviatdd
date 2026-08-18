@@ -53,16 +53,49 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+def _seed_tracked_test_file(root: Path, name: str = "test_seed_failing.py") -> None:
+    """Create and commit a tracked failing test so the RED test run has a
+    non-empty ``_find_test_files`` glob."""
+    tests_dir = root / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / name).write_text("def test_seed():\n    assert False\n")
+    subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed"],
+        cwd=root,
+        env=_git_env(),
+        check=True,
+    )
+
+
 class TestRunCommand:
     @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_dispatches_tdd_task_to_rgr(
-        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path, approve_gate2
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_find_tests,
+        mock_commit,
+        tmp_path: Path,
+        approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -180,9 +213,17 @@ class TestRunCommand:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -206,6 +247,7 @@ class TestRunCommand:
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, tdd_task, imm_task)
             approve_gate2(tmp_git_repo, issue_id=tdd_task.issue_id)
+            _seed_tracked_test_file(tmp_git_repo)
 
             result = runner.invoke(cli, ["micro", "run", "--all"])
             assert result.exit_code == 0, (
@@ -216,14 +258,32 @@ class TestRunCommand:
             )
 
     @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_accepts_legacy_TNNN_format(
-        self, mock_agent, mock_run_test, mock_commit, tmp_path: Path, approve_gate2
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_find_tests,
+        mock_commit,
+        tmp_path: Path,
+        approve_gate2,
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -263,14 +323,26 @@ class TestRunCommand:
             )
             assert "TASK_NOT_FOUND" in result.output or "NOT_FOUND" in result.output
 
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_with_profile_fast(
-        self, mock_agent, mock_run_test, tmp_path: Path, approve_gate2
+        self, mock_agent, mock_run_test, mock_find_tests, tmp_path: Path, approve_gate2
     ):
-        mock_run_test.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="1 passed", stderr=""
-        )
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -303,8 +375,26 @@ class TestRunCommand:
                 f"Expected REFACTOR skipped with --profile fast: {result.output}"
             )
 
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
+    @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
-    def test_run_with_flag_overrides(self, mock_agent, tmp_path: Path, approve_gate2):
+    def test_run_with_flag_overrides(
+        self, mock_agent, mock_run_test, mock_find_tests, tmp_path: Path, approve_gate2
+    ):
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="1 failed", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="1 passed", stderr=""
+            ),
+        ]
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
