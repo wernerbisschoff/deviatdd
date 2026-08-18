@@ -425,13 +425,13 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
     5. **Given / When / Then** — exactly three bold-labelled clauses in this order: `**Given**:`, `**When**:`, `**Then**:`. Each clause is a single imperative sentence and MUST NOT embed additional `**Given**` / `**When**` / `**Then**` markers. The `**Then**` clause MUST state a verifiable observable outcome.
   * **Required sections in canonical order**: `## Plan Summary` → `## Product Layer Anchors` → `## Acceptance Contract` → `## Workstation Mapping` → `## Implementation Strategy` → `## Data Flow Analysis` → `## Risk Assessment` → `## Security Profile` → `## Integration Points` → `## Constitutional Alignment`.
   * **Acceptance Coverage Invariant:** Every AO from the issue's `## Acceptance Outline` MUST appear as the Source Outline of at least one AC-PLAN scenario. Behavioural coverage that does not map cleanly to a single AO (e.g. an HMAC failure, an RLS isolation invariant, a defensive boundary) belongs under an existing AO's Error Category or Boundary Category. If no existing AO fits, the issue's outline is incomplete — halt with `INCOMPLETE_ISSUE_OUTLINE` and request that shard/adhoc regenerate the issue.
-  * **Forbidden patterns** (any one triggers `PLAN_ACCEPTANCE_CONTRACT_INVALID` from `deviate plan post`): Source Outline labelled `Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`, or any non-AO string; missing `**Source Outline**` / `**Upstream Traceability**` / `**Current-Code Evidence**` / any of `**Given**` / `**When**` / `**Then**`; missing, repeated, or illegal `**Verification Mode**: <automated|manual|deferred>` (a scenario MUST carry exactly one legal mode line; an empty or non-alphabetic value is treated as missing); an issue AO not used by any AC-PLAN scenario; duplicate or non-sequential `AC-PLAN-NNN` identifiers; wrapping the plan body in any XML tag / code fence / preamble. The validator lives at `src/deviate/core/validation.py::validate_acceptance_contract`.
+  * **Forbidden patterns** (any one triggers `PLAN_ACCEPTANCE_CONTRACT_INVALID` from `deviate plan post`): Source Outline labelled `Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`, or any non-AO string; missing `**Source Outline**` / `**Upstream Traceability**` / `**Current-Code Evidence**` / any of `**Given**` / `**When**` / `**Then**`; a repeated or illegal `**Verification Mode**: <automated|manual|deferred>` literal (a scenario MUST carry exactly one legal mode line; an empty or non-alphabetic value is treated as missing); an issue AO not used by any AC-PLAN scenario; duplicate or non-sequential `AC-PLAN-NNN` identifiers; wrapping the plan body in any XML tag / code fence / preamble. A *missing* mode line is not a stopping error: the meso gates auto-fill the default `automated` value into the scenario body (see `deviate plan post`). The validator lives at `src/deviate/core/validation.py::validate_acceptance_contract`; the repair helper is `repair_missing_verification_mode`.
 * **Input Parameters:** `--issue`, `--force`, `--dry-run`; common `--json` / `--quiet` wrappers apply.
 * **Session:** force-transitions to PLAN with `active_issue_id` set.
 
 #### `deviate plan post [--force] [--issue-id]`
 
-Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract; auto-renders HTML when changed, commits with convention-aware messaging, and transitions to TASKS. Missing/malformed contracts fail as `PLAN_ACCEPTANCE_CONTRACT_MISSING` / invalid contract diagnostics.
+Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract; auto-renders HTML when changed, commits with convention-aware messaging, and transitions to TASKS. Missing/malformed contracts fail as `PLAN_ACCEPTANCE_CONTRACT_MISSING` / invalid contract diagnostics. When the contract fails *only* because scenarios lack the `**Verification Mode**:` line, the gate auto-fills `automated` into each affected scenario body, persists the repaired `plan.md` (`PLAN_MODE_REPAIR` banner), and proceeds; an existing invalid or duplicated mode literal still blocks with `PLAN_ACCEPTANCE_CONTRACT_INVALID`.
 
 #### `deviate tasks pre [--force] [--dry-run]`
 
@@ -439,7 +439,7 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 * **Two-source input:** `spec_path` supplies macro intent; `plan_path` supplies strategy and authoritative scenarios. Plan wins over legacy issue/spec Gherkin.
 * **Contract:** detects worktree/branch, resolves constitution commands, and emits `spec_path`, `plan_path`, `tasks_target`, worktree metadata, status, and flags. The issue is resolved from `session.active_issue_id`, falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against `specs/issues.jsonl`.
 * **Plan digest:** TASKS receives a bounded 16 KiB UTF-8 `plan_digest` plus `plan_path`; truncation inserts `PLAN_DIGEST_TRUNCATED`, requiring a full read.
-* **Validation:** reports PLAN_NOT_FOUND, PLAN_ACCEPTANCE_CONTRACT_MISSING, or PLAN_ACCEPTANCE_CONTRACT_INVALID; no Gherkin fallback.
+* **Validation:** reports PLAN_NOT_FOUND, PLAN_ACCEPTANCE_CONTRACT_MISSING, or PLAN_ACCEPTANCE_CONTRACT_INVALID; no Gherkin fallback. A contract that fails only for a missing `**Verification Mode**:` line is auto-repaired in place (default `automated`) before the status is computed.
 * **Common Flags:** `--json`, `--quiet`.
 
 #### `deviate tasks post [--force] [--issue-id]`
@@ -944,7 +944,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   * Valid `plan.md` and no `tasks.md`: emit `MESO_RESUME`, skip Plan, and run Tasks.
   * Valid `plan.md` and non-empty `tasks.md`: emit `MESO_ALREADY_COMPLETE`, skip both agents,
     preserve ledger progress, and return the current worktree path.
-  * Existing invalid `plan.md`: emit `MESO_PLAN_INVALID` and stop without overwrite.
+  * Existing `plan.md` valid only after repair: when the contract fails solely for a missing `**Verification Mode**:` line, it is auto-filled (`PLAN_MODE_REPAIR`) and treated as valid; a genuinely invalid `plan.md` (missing clauses, bad AO traceability, illegal/duplicated mode) emits `MESO_PLAN_INVALID` and stops without overwrite.
   * Existing empty `tasks.md`: emit `MESO_TASKS_INVALID` and stop without overwrite.
   A fresh claim does not use inherited main-branch artifacts as resume evidence. It runs Plan
   and Tasks in the new worktree.

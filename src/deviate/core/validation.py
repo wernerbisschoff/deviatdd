@@ -177,6 +177,58 @@ def validate_acceptance_contract(content: str) -> list[str]:
     return errors
 
 
+def repair_missing_verification_mode(content: str) -> tuple[str, int]:
+    """Insert a default ``automated`` Verification Mode into every AC-PLAN-NNN
+    scenario absent that line; return the repaired content and repair count.
+
+    Only a genuine absence is filled. An existing mode line — even an
+    invalid or duplicated one — is never touched, so ``validate_acceptance_contract``
+    still rejects those. Callers should gate repair on the contract failing
+    *only* for ``missing Verification Mode`` errors.
+    """
+    lines = content.splitlines()
+    header_idx = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == "## Acceptance Contract"),
+        None,
+    )
+    if header_idx is None:
+        return content, 0
+
+    sec_end = len(lines)
+    for idx in range(header_idx + 1, len(lines)):
+        if lines[idx].lstrip().startswith("## "):
+            sec_end = idx
+            break
+
+    insertions: list[tuple[int, str]] = []
+    i = header_idx + 1
+    while i < sec_end:
+        if lines[i].lstrip().startswith("**Scenario AC-PLAN-"):
+            k = i + 1
+            mode_present = False
+            insert_after: int | None = None
+            while k < sec_end and not lines[k].lstrip().startswith(
+                "**Scenario AC-PLAN-"
+            ):
+                if re.search(r"\*\*Verification Mode\*\*", lines[k], re.IGNORECASE):
+                    mode_present = True
+                if lines[k].strip():
+                    insert_after = k
+                k += 1
+            if not mode_present and insert_after is not None:
+                insertions.append((insert_after, "- **Verification Mode**: automated"))
+            i = k
+        else:
+            i += 1
+
+    if not insertions:
+        return content, 0
+    result = list(lines)
+    for pos, line in sorted(insertions, key=lambda t: t[0], reverse=True):
+        result.insert(pos + 1, line)
+    return "\n".join(result), len(insertions)
+
+
 def validate_sections(content: str | None, required: list[str]) -> list[str]:
     if not content or not content.strip():
         return list(required)

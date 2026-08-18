@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-from deviate.cli.meso import _meso_run
+from deviate.cli.meso import _meso_run, _resolve_meso_resume_state
+
 from tests.test_meso.test_meso_orchestration import _setup_minimal_workspace
 
 
@@ -117,10 +118,8 @@ class TestMesoIdempotentResume:
         mock_invoke.assert_not_called()
         assert "MESO_TASKS_INVALID" in capsys.readouterr().out
 
-    @patch("deviate.cli.meso._invoke_agent_phase")
-    def test_modeless_contract_stops_without_overwrite(
+    def test_modeless_contract_is_repaired_on_resume(
         self,
-        mock_invoke: MagicMock,
         tmp_git_repo,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -138,16 +137,18 @@ class TestMesoIdempotentResume:
             ]
         )
         plan_path.write_text(original)
+        tasks_path = tmp_git_repo / "specs/test-epic/iss-001/tasks.md"
 
         with chdir(tmp_git_repo):
-            with pytest.raises(typer.Exit):
-                _meso_run(issue_id="ISS-001-001", no_setup=True)
+            state = _resolve_meso_resume_state(plan_path, tasks_path)
 
-        assert plan_path.read_text() == original
-        mock_invoke.assert_not_called()
+        assert state == "TASKS"
+        repaired = plan_path.read_text(encoding="utf-8")
+        assert repaired != original
+        assert "**Verification Mode**: automated" in repaired
         captured = capsys.readouterr().out
-        assert "MESO_PLAN_INVALID" in captured
-        assert "AC-PLAN-001: missing Verification Mode" in captured
+        assert "PLAN_MODE_REPAIR" in captured
+        assert "MESO_PLAN_INVALID" not in captured
 
     @patch("deviate.cli.meso._invoke_agent_phase")
     def test_illegal_mode_contract_stops_without_overwrite(

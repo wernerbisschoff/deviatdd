@@ -326,16 +326,17 @@ class TestMesoContracts:
 
             return runner.invoke(cli, ["tasks", "pre"])
 
-    def test_tasks_pre_blocks_on_missing_verification_mode(
-        self, tmp_path: Path
-    ) -> None:
+    def test_tasks_pre_repairs_missing_verification_mode(self, tmp_path: Path) -> None:
         plan_text = self._contract_plan(mode_line=None)
         result = self._invoke_tasks_pre_with_plan(tmp_path, plan_text)
 
         assert result.exit_code == 0, result.output
         contract = self._extract_contract(result.output)
-        assert contract["status"] == "PLAN_ACCEPTANCE_CONTRACT_INVALID", result.output
-        assert "AC-PLAN-001: missing Verification Mode" in result.output
+        assert contract["status"] == "READY", result.output
+        assert "PLAN_MODE_REPAIR" in result.output
+        plan_path = tmp_path / "specs" / "test-epic" / "ISS-TEST-001" / "plan.md"
+        repaired = plan_path.read_text(encoding="utf-8")
+        assert "**Verification Mode**: automated" in repaired
 
     def test_tasks_pre_blocks_on_illegal_verification_mode(
         self, tmp_path: Path

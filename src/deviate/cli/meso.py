@@ -35,7 +35,10 @@ from deviate.core.convention import commit_scope, format_commit_message
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
-from deviate.core.validation import validate_acceptance_contract
+from deviate.core.validation import (
+    repair_missing_verification_mode,
+    validate_acceptance_contract,
+)
 from deviate.core.worktree import (
     branch_exists_on_remote,
     create_worktree,
@@ -815,6 +818,30 @@ def _plan_pre(
     print(json.dumps(contract, indent=2))
 
 
+def _validate_or_repair_plan(content: str) -> tuple[list[str], str]:
+    """Validate a plan contract; auto-fill a missing Verification Mode.
+
+    When the contract fails *only* because scenarios lack a ``**Verification
+    Mode**:`` line, inject the default ``automated`` value and return the
+    repaired body with empty errors. Any other failure (invalid or duplicated
+    mode, missing clauses, bad AO traceability) is returned unchanged so the
+    caller rejects it.
+    """
+    errors = validate_acceptance_contract(content)
+    if not errors:
+        return [], content
+    if not all(e.endswith("missing Verification Mode") for e in errors):
+        return errors, content
+    repaired, count = repair_missing_verification_mode(content)
+    if count == 0:
+        return errors, content
+    console.print(
+        f"[yellow]PLAN_MODE_REPAIR[/] auto-filled {count} missing "
+        "**Verification Mode** line(s) as `automated`"
+    )
+    return validate_acceptance_contract(repaired), repaired
+
+
 def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
     """Validate plan.md, commit it, and advance session to TASKS."""
     session, session_path = _load_session_accept("PLAN", force=force)
@@ -841,7 +868,7 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
     if not content and not force:
         console.print("[red]PLAN_EMPTY[/] plan.md is empty")
         raise typer.Exit(code=1)
-    acceptance_errors = validate_acceptance_contract(content)
+    acceptance_errors, plan_content = _validate_or_repair_plan(content)
     if acceptance_errors:
         status = (
             "PLAN_ACCEPTANCE_CONTRACT_MISSING"
@@ -850,6 +877,8 @@ def _plan_post(force: bool = False, issue_id: str | None = None) -> None:
         )
         console.print(f"[red]{status}[/] {'; '.join(acceptance_errors)}")
         raise typer.Exit(code=1)
+    if plan_content != content:
+        plan_md.write_text(plan_content, encoding="utf-8")
 
     epic_num = _extract_epic_num(bucket)
     issue_num = _extract_issue_num(resolved_issue_id)
@@ -1001,9 +1030,10 @@ def _tasks_pre(force: bool = False, dry_run: bool = False) -> None:
             "(use --force to bypass)"
         )
     elif plan_path and Path(plan_path).exists():
-        acceptance_errors = validate_acceptance_contract(
-            Path(plan_path).read_text(encoding="utf-8")
-        )
+        plan_text = Path(plan_path).read_text(encoding="utf-8")
+        acceptance_errors, plan_text = _validate_or_repair_plan(plan_text)
+        if plan_text != Path(plan_path).read_text(encoding="utf-8"):
+            Path(plan_path).write_text(plan_text, encoding="utf-8")
         if acceptance_errors:
             missing = acceptance_errors == ["PLAN_ACCEPTANCE_CONTRACT_MISSING"]
             status = (
@@ -1527,10 +1557,12 @@ def _discover_claimable_issue() -> str | None:
 
 
 def _resolve_meso_resume_state(plan_path: Path, tasks_path: Path) -> str:
-    """Return PLAN, TASKS, or COMPLETE without changing existing artifacts."""
+    """Return PLAN, TASKS, or COMPLETE; auto-repair a missing Verification Mode."""
     if plan_path.exists():
         plan_content = plan_path.read_text(encoding="utf-8")
-        plan_errors = validate_acceptance_contract(plan_content)
+        plan_errors, plan_content = _validate_or_repair_plan(plan_content)
+        if plan_content != plan_path.read_text(encoding="utf-8"):
+            plan_path.write_text(plan_content, encoding="utf-8")
         if plan_errors:
             console.print(
                 f"[red]MESO_PLAN_INVALID[/] {plan_path}: {'; '.join(plan_errors)}"

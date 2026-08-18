@@ -903,7 +903,9 @@ there is no `discover_skills()` abstraction.
 **Scope:** Unified Meso and Micro orchestration. The skill first invokes
 `deviate meso run`. In a linked feature worktree, Meso validates existing
 `plan.md` and `tasks.md`, skips completed phases, resumes at Tasks when only
-Plan is ready, and stops on invalid artifacts without overwrite. After Meso
+Plan is ready, auto-repairs a plan whose acceptance scenarios lack the
+`**Verification Mode**:` line (default `automated`, `PLAN_MODE_REPAIR`), and
+stops on genuinely invalid artifacts without overwrite. After Meso
 succeeds, the skill invokes bare `deviate micro run` one task at a time.
 The existing failure triage and clean-slate safety flow remains. **v1.1.0 added a
 `## Troubleshooting failed runs` section** documenting the two
