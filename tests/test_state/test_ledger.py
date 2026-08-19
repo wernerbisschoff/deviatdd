@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from deviate.state.ledger import (
     AdhocRecord,
+    CriterionLink,
     FlowEvent,
     FlowRecord,
     IssueRecord,
@@ -227,6 +228,142 @@ class TestTaskRecord:
         restored = TaskRecord.model_validate(data)
         assert restored == record
 
+    def test_task_record_acceptance_criteria_defaults_to_none(self):
+        record = TaskRecord(
+            id="TSK-005-02",
+            issue_id="005-002",
+            description="Field defaults to None when omitted",
+        )
+        assert record.acceptance_criteria is None
+
+    def test_task_record_acceptance_criteria_round_trip(self):
+        record = TaskRecord(
+            id="TSK-005-01",
+            issue_id="005-002",
+            description="CriterionLink list round trips",
+            acceptance_criteria=[
+                CriterionLink(
+                    criterion_id="AC-PLAN-002",
+                    verification_mode="automated",
+                    test_ref="tests/test_state/test_ledger.py",
+                ),
+                CriterionLink(
+                    criterion_id="AC-PLAN-003",
+                    verification_mode="automated",
+                    test_ref="tests/test_state/test_ledger.py",
+                ),
+                CriterionLink(
+                    criterion_id="AC-PLAN-004",
+                    verification_mode="deferred",
+                ),
+            ],
+        )
+        data = json.loads(record.model_dump_json())
+        restored = TaskRecord.model_validate(data)
+        assert restored == record
+        links = restored.acceptance_criteria
+        assert links is not None
+        assert len(links) == 3
+        assert links[0].criterion_id == "AC-PLAN-002"
+        assert links[0].verification_mode == "automated"
+        assert links[0].test_ref == "tests/test_state/test_ledger.py"
+        assert links[1].criterion_id == "AC-PLAN-003"
+        assert links[2].criterion_id == "AC-PLAN-004"
+        assert links[2].verification_mode == "deferred"
+        assert links[2].test_ref is None
+
+    def test_task_record_legacy_row_without_acceptance_criteria_parses(self):
+        legacy = {
+            "id": "TSK-005-03",
+            "issue_id": "005-002",
+            "description": "Legacy row from an older CLI version",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+            "created_at": "2026-07-04T07:49:30Z",
+        }
+        record = TaskRecord.model_validate(legacy)
+        assert record.acceptance_criteria is None
+
+    def test_task_record_serializes_null_never_empty_list(self):
+        record = TaskRecord(
+            id="TSK-005-04",
+            issue_id="005-002",
+            description="Task with no criterion references",
+        )
+        dumped = json.loads(record.model_dump_json())
+        assert "acceptance_criteria" in dumped
+        assert dumped["acceptance_criteria"] is None
+
+    def test_task_record_unknown_field_still_rejected_under_extra_forbid(self):
+        with pytest.raises(ValidationError):
+            TaskRecord(
+                id="TSK-005-05",
+                issue_id="005-002",
+                description="Unknown field",
+                unknown_field="should_fail",
+            )
+
+
+class TestCriterionLink:
+    def test_accepts_manual_link_without_test_ref(self):
+        link = CriterionLink(criterion_id="AC-PLAN-001", verification_mode="manual")
+        assert link.criterion_id == "AC-PLAN-001"
+        assert link.verification_mode == "manual"
+        assert link.test_ref is None
+
+    def test_accepts_deferred_link_without_test_ref(self):
+        link = CriterionLink(criterion_id="AC-PLAN-001", verification_mode="deferred")
+        assert link.verification_mode == "deferred"
+        assert link.test_ref is None
+
+    def test_accepts_manual_link_with_test_ref(self):
+        link = CriterionLink(
+            criterion_id="AC-PLAN-001",
+            verification_mode="manual",
+            test_ref="tests/test_state/test_ledger.py",
+        )
+        assert link.test_ref == "tests/test_state/test_ledger.py"
+
+    def test_accepts_deferred_link_with_test_ref(self):
+        link = CriterionLink(
+            criterion_id="AC-PLAN-001",
+            verification_mode="deferred",
+            test_ref="tests/test_state/test_ledger.py",
+        )
+        assert link.test_ref == "tests/test_state/test_ledger.py"
+
+    def test_rejects_automated_link_without_test_ref(self):
+        with pytest.raises(ValidationError) as excinfo:
+            CriterionLink(criterion_id="AC-PLAN-002", verification_mode="automated")
+        assert "test_ref" in str(excinfo.value)
+
+    def test_rejects_automated_link_with_empty_test_ref(self):
+        with pytest.raises(ValidationError) as excinfo:
+            CriterionLink(
+                criterion_id="AC-PLAN-002",
+                verification_mode="automated",
+                test_ref="",
+            )
+        assert "test_ref" in str(excinfo.value)
+
+    def test_rejects_malformed_criterion_id(self):
+        with pytest.raises(ValidationError) as excinfo:
+            CriterionLink(criterion_id="AC-PLAN-99", verification_mode="manual")
+        assert "AC-PLAN-99" in str(excinfo.value)
+
+    def test_rejects_invalid_verification_mode(self):
+        with pytest.raises(ValidationError) as excinfo:
+            CriterionLink(criterion_id="AC-PLAN-001", verification_mode="soon")
+        assert "soon" in str(excinfo.value)
+
+    def test_rejects_unknown_field_under_extra_forbid(self):
+        with pytest.raises(ValidationError):
+            CriterionLink(
+                criterion_id="AC-PLAN-001",
+                verification_mode="manual",
+                extra_field="should_fail",
+            )
+
 
 class TestAppendTaskRecord:
     def test_append_task_record_new(self, tmp_path: Path):
@@ -280,6 +417,51 @@ class TestAppendTaskRecord:
         assert ledger_path.parent.exists()
         assert ledger_path.exists()
         assert ledger_path.stat().st_size > 0
+
+    def test_mixed_version_ledger_appends_and_parses(self, tmp_path: Path):
+        ledger_path = tmp_path / "tasks.jsonl"
+        legacy_line = json.dumps(
+            {
+                "id": "TSK-005-10",
+                "issue_id": "005-002",
+                "description": "Legacy task row without the field",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+                "created_at": "2026-07-04T07:49:30Z",
+            }
+        )
+        ledger_path.write_text(legacy_line + "\n", encoding="utf-8")
+
+        linked = TaskRecord(
+            id="TSK-005-11",
+            issue_id="005-002",
+            description="Task row carrying acceptance_criteria links",
+            acceptance_criteria=[
+                CriterionLink(
+                    criterion_id="AC-PLAN-001",
+                    verification_mode="automated",
+                    test_ref="tests/test_core/test_tasks_ledger.py",
+                ),
+                CriterionLink(criterion_id="AC-PLAN-002", verification_mode="manual"),
+            ],
+        )
+        assert append_task_record(linked, ledger_path) is True
+
+        lines = ledger_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 2
+        assert lines[0] == legacy_line
+
+        parsed_legacy = TaskRecord.model_validate(json.loads(lines[0]))
+        parsed_linked = TaskRecord.model_validate(json.loads(lines[1]))
+        assert parsed_legacy.acceptance_criteria is None
+        assert parsed_linked.acceptance_criteria is not None
+        links = parsed_linked.acceptance_criteria
+        assert links is not None
+        assert [link.criterion_id for link in links] == [
+            "AC-PLAN-001",
+            "AC-PLAN-002",
+        ]
+        assert parsed_linked == linked
 
 
 class TestResolveIssueRecord:

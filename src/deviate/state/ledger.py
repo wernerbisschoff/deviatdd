@@ -78,6 +78,41 @@ class SecurityProfile(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+_CRITERION_ID_PATTERN: re.Pattern[str] = re.compile(r"^AC-PLAN-\d{3}$")
+
+
+class CriterionLink(BaseModel):
+    """Traceability link from a task row to an AC-PLAN-NNN criterion.
+
+    ``criterion_id`` names a scenario in the owning slice's validated plan
+    contract (``AC-PLAN-\\d{3}``). ``verification_mode`` selects how the
+    criterion is verified; an ``automated`` link must carry a non-empty
+    ``test_ref``. The model follows the ledger family pattern
+    (``model_config = {"extra": "forbid"}``) so unknown fields are rejected.
+    """
+
+    criterion_id: str
+    verification_mode: Literal["automated", "manual", "deferred"]
+    test_ref: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("criterion_id")
+    @classmethod
+    def _validate_criterion_id(cls, v: str) -> str:
+        if _CRITERION_ID_PATTERN.match(v) is None:
+            raise ValueError(
+                f"criterion_id must match {_CRITERION_ID_PATTERN.pattern}: {v}"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _automated_link_requires_test_ref(self) -> "CriterionLink":
+        if self.verification_mode == "automated" and not self.test_ref:
+            raise ValueError("test_ref is required for an automated link")
+        return self
+
+
 class TaskRecord(BaseModel):
     id: str
     issue_id: str
@@ -95,6 +130,7 @@ class TaskRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     security_profile: SecurityProfile | None = None
+    acceptance_criteria: list[CriterionLink] | None = None
     model_config = {"extra": "forbid"}
 
     @field_validator("id")
