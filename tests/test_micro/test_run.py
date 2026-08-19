@@ -11,6 +11,7 @@ from deviate.cli import cli
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
+from deviate.cli.micro import _find_test_files
 
 runner = CliRunner()
 
@@ -120,6 +121,77 @@ class TestRunCommand:
             assert "COMPLETED" in result.output, (
                 f"Expected task to reach COMPLETED state: {result.output}"
             )
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_run_elixir_repo_red_accepts_exs_test(
+        self,
+        mock_run_test,
+        mock_agent,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
+        """An Elixir/Phoenix repo (``test/**/*_test.exs``, no Python tests)
+        must pass the RED gate.
+
+        Regression: ``_find_test_files`` only globbed ``tests/**/test_*.py``,
+        so a correctly authored ``.exs`` test was rejected with ``RED phase
+        produced no test files`` before any test command ran. The red/green
+        run for this repo resolves ``mix test`` via the manifest table."""
+        with chdir(tmp_git_repo):
+            (tmp_git_repo / "mix.exs").write_text(
+                "defmodule TailwindPipeline.MixProject do\n"
+                "  use Mix.Project\n"
+                "  def project, do: [app: :tailwind_pipeline]\n"
+                "end\n"
+            )
+            test_path = tmp_git_repo / "test" / "integration"
+            test_path.mkdir(parents=True)
+            (test_path / "tailwind_pipeline_test.exs").write_text(
+                "defmodule TailwindPipelineTest do\n"
+                "  use ExUnit.Case\n"
+                '  test "compiles" do assert true end\n'
+                "end\n"
+            )
+            assert _find_test_files(tmp_git_repo) == []  # no Python tests
+            mock_run_test.side_effect = [
+                subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="1 file, 1 test, 1 failure", stderr=""
+                ),
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="1 file, 1 test, 0 failures",
+                    stderr="",
+                ),
+                subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="1 file, 1 test, 0 failures",
+                    stderr="",
+                ),
+            ]
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+            task = _make_task_record(
+                task_id="TSK-999-01",
+                issue_id="ISS-999-001",
+                description="Run tailwind pipeline tests",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "elix" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+            result = runner.invoke(cli, ["micro", "run", "TSK-999-01"])
+            assert result.exit_code == 0, result.output
+            assert "COMPLETED" in result.output, result.output
+            assert "produced no test files" not in result.output, result.output
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_dispatches_immediate_task_to_execute(
@@ -477,7 +549,8 @@ class TestRunCommand:
 
 
 class TestSessionResume:
-    """Session-phase resume: _run_single dispatches from session.current_phase."""
+    """JSONL-authoritative resume: _run_single dispatches from the task's
+    latest records status in tasks.jsonl, not from session.json."""
 
     _RESUME_MANIFEST = HandoverManifest(
         phase="JUDGE", status="SUCCESS", task_id="TSK-005-07"
@@ -492,6 +565,7 @@ class TestSessionResume:
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
+            # Tracked JSONL parks the task in JUDGE (crash mid-cycle).
             session = SessionState(current_phase="JUDGE")
             session.save(dot_dir / "session.json")
 
@@ -499,7 +573,7 @@ class TestSessionResume:
                 task_id="TSK-005-07",
                 issue_id="ISS-002-005",
                 description="Resume from JUDGE",
-                status="PENDING",
+                status="JUDGE",
                 execution_mode="TDD",
             )
             ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
@@ -512,10 +586,98 @@ class TestSessionResume:
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
             )
             assert "RED" not in result.output, (
-                f"Session resume from JUDGE must skip RED phase: {result.output}"
+                f"JUDGE JSONL resume must skip RED phase: {result.output}"
             )
             assert "JUDGE" in result.output, (
                 f"Expected JUDGE phase in output: {result.output}"
+            )
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_stale_session_phase_ignored_after_jsonl_reset(
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_find_tests,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
+        """A stale session phase must not drive dispatch after a JSONL reset.
+
+        ``git reset`` reverts the tracked ``specs/**/tasks.jsonl`` to an
+        earlier state (here PENDING), but ``.deviate/session.json`` is not
+        tracked and survives. The runner must read RED/GREEN/REFACTOR
+        progress from the JSONL, so the stale ``current_phase="JUDGE"`` session
+        must NOT resume JUDGE — the reset task must start at RED."""
+        recorded_phases: list[str] = []
+
+        def _recording_agent(*args, **kwargs):
+            phase = kwargs.get("phase", "RED")
+            recorded_phases.append(phase)
+            return HandoverManifest(
+                phase=phase,
+                status="SUCCESS",
+                task_id=kwargs.get("task_id", "TSK-005-07"),
+            ), ""
+
+        mock_agent.side_effect = _recording_agent
+        # Side effects: RED (fail) -> GREEN (pass) -> REFACTOR (pass).
+        mock_run_test.side_effect = [
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="1 failed",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="1 passed",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="1 passed",
+                stderr="",
+            ),
+        ]
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            # Stale session: parked at JUDGE from a previous interrupted run.
+            # The tracked JSONL was reset to PENDING, so this is inconsistent.
+            session = SessionState(current_phase="JUDGE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-005-07",
+                issue_id="ISS-002-005",
+                description="Reset task must start at RED",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+
+            result = runner.invoke(cli, ["micro", "run", "TSK-005-07"])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            assert "RED" in recorded_phases, (
+                "Stale JUDGE session must not suppress RED after a JSONL "
+                + f"reset; got agent phases: {recorded_phases}"
+            )
+            assert recorded_phases[0] == "RED", (
+                "A PENDING JSONL task must start at RED, not resume the stale "
+                + f"JUDGE phase: {recorded_phases}"
             )
 
     @patch("deviate.cli.micro._verify_clean_worktree")
@@ -587,8 +749,11 @@ class TestSessionResume:
             assert result.exit_code == 0, (
                 f"Expected exit 0, got {result.exit_code}: {result.output}"
             )
-            assert "RED already done" in result.output, (
-                f"Expected RED to be skipped as already done: {result.output}"
+            assert "GREEN" in result.output, (
+                f"Expected GREEN to resume when JSONL records RED done: {result.output}"
+            )
+            assert "RED →" not in result.output and "◐  RED" not in result.output, (
+                f"RED must not re-enter when JSONL records it done: {result.output}"
             )
             assert "GREEN" in recorded_phases, (
                 "Expected GREEN phase to run when RED is already done, "

@@ -975,6 +975,21 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
     return pending[0]
 
 
+def _start_phase_from_status(status: str) -> str | None:
+    """Return the phase where a task's run resumes, from its latest JSONL status.
+
+    The tracked ``specs/**/tasks.jsonl`` is authoritative for
+    RED/GREEN/REFACTOR progress; ``session.json`` is an untracked cache that
+    a ``git reset`` does not roll back. ``None`` means start the full RED
+    cycle. Terminal statuses also fall through to ``None`` — their internal
+    ``_phase_already_done`` guards skip re-work."""
+    return {
+        "RED": "GREEN",
+        "GREEN": "JUDGE",
+        "JUDGE": "JUDGE",
+    }.get(status)
+
+
 def _resolve_latest_task(
     root: Path, issue_id: str, status: str
 ) -> tuple[dict, Path] | None:
@@ -1135,6 +1150,18 @@ def _is_no_tests_collected(proc: subprocess.CompletedProcess) -> bool:
     return "no tests" in output
 
 
+def _is_no_test_command(proc: subprocess.CompletedProcess) -> bool:
+    """Return whether the test command could not be resolved.
+
+    ``_run_test_cmd`` returns ``returncode == 127`` with a fixed
+    diagnostic when no command configures and no project is detected,
+    so the RED phase can route that to the same JUDGE adjudication as
+    a pytest ``exit 5`` (``_is_no_tests_collected``)."""
+    if proc.returncode != 127:
+        return False
+    return "no test command" in f"{proc.stderr or ''}".lower()
+
+
 def _run_red_phase(
     task: dict,
     ledger_path: Path,
@@ -1195,17 +1222,12 @@ def _run_red_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    test_files = _find_test_files(root)
-    if not test_files:
-        raise PhaseFailedError(
-            f"RED phase produced no test files for {tid} — RED must author a "
-            "failing test in a test file the project's test command can "
-            "collect. If the task legitimately needs no code change, take it "
-            "through /deviate-execute (DIRECT) or re-shard via /deviate-meso."
-        )
-
     test_result = _run_test_cmd(root)
-    if test_result.returncode == 0 or _is_no_tests_collected(test_result):
+    if (
+        test_result.returncode == 0
+        or _is_no_tests_collected(test_result)
+        or _is_no_test_command(test_result)
+    ):
         return _adjudicate_red_no_failing_test(
             task,
             ledger_path,
@@ -3529,15 +3551,15 @@ def _run_single(
         c.print(f"[yellow]TASK_ALREADY_DONE[/] {task_id} is already completed")
         raise typer.Exit(code=0)
 
-    if session.pending_judge_feedback:
+    # RED/GREEN/REFACTOR progress is read from the tracked tasks.jsonl, not
+    # from session.json (a git reset reverts the JSONL but not the untracked
+    # session cache). pending_judge_feedback is honored only when the JSONL
+    # still records the implementation the judge rejected.
+    if session.pending_judge_feedback and status in ("RED", "GREEN"):
         session = _resume_pending_judge_feedback(root, task, c, session, session_path)
         start_phase = "GREEN"
     else:
-        start_phase = (
-            session.current_phase
-            if session.current_phase not in ("IDLE", "RED")
-            else None
-        )
+        start_phase = _start_phase_from_status(status)
 
     _dispatch_task(
         task,
@@ -3567,9 +3589,14 @@ def _execute_task_with_retry(
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
     start_phase: str | None = None
+    # Honor pending_judge_feedback only when the tracked tasks.jsonl still
+    # records the implementation the judge rejected (RED or GREEN). A git
+    # reset that reverts the JSONL to PENDING invalidates stale feedback.
+    status = task.get("status", "PENDING")
     if (
         session.pending_judge_feedback
         and session.pending_judge_feedback.get("task_id") == tid
+        and status in ("RED", "GREEN")
     ):
         session = _resume_pending_judge_feedback(root, task, c, session, session_path)
         start_phase = "GREEN"
@@ -4681,10 +4708,10 @@ def _changed_source_paths(root: Path) -> list[str]:
 @red_app.command(name="post")
 def red_post() -> None:
     root = Path.cwd()
-    test_files = _find_test_files(root)
-
-    if not test_files:
-        console.print("[red]TEST_NOT_FOUND[/]")
+    if not _test_command_candidates(root):
+        console.print(
+            "[red]TEST_NOT_FOUND[/] No test command configured and no test project detected"
+        )
         raise typer.Exit(code=1)
 
     proc = _run_test_cmd(root)
@@ -4792,10 +4819,10 @@ def green_pre(
 @green_app.command(name="post")
 def green_post() -> None:
     root = Path.cwd()
-    test_files = _find_test_files(root)
-
-    if not test_files:
-        console.print("[red]TEST_NOT_FOUND[/]")
+    if not _test_command_candidates(root):
+        console.print(
+            "[red]TEST_NOT_FOUND[/] No test command configured and no test project detected"
+        )
         raise typer.Exit(code=1)
 
     dot_dir = root / ".deviate"
@@ -5066,9 +5093,7 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
 @refactor_app.command(name="post")
 def refactor_post() -> None:
     root = Path.cwd()
-    test_files = _find_test_files(root)
-
-    if not test_files:
+    if not _test_command_candidates(root):
         console.print("[yellow]NO_TESTS_TO_CHECK[/]")
         raise typer.Exit(code=0)
 
