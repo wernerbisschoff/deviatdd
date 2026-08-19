@@ -538,17 +538,21 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate red post`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Runs `pytest -v` on all test files. Validates the test fails explicitly
-  (ASSERTION_FAILURE, not PASS or SYNTAX_ERROR), runs the test command, and reports whether the
-  test failed as expected. `deviate micro run`'s internal RED phase (`_run_red_phase`) applies the
-  same contract: when the test command exits 0 (all tests passed) or collects no tests (pytest
-  exit 5), it does NOT die — it routes the decision to JUDGE (``failure_kind: no_failing_test``),
-  which either rules the behavior already exists (task COMPLETED, the uncommitted passing test
-  discarded) or rules the test wrong (``revert_before``, RED re-authors a genuinely failing test).
-  When RED produces no test files at all, `deviate micro run` raises "RED phase produced no test
-  files" naming `/deviate-execute` (DIRECT) or `/deviate-meso` re-sharding. On a genuine failing
-  test it appends the RED status transition to the task ledger, forces session to RED, and commits
-  with `test({scope}): RED phase - failing test`.
+* **Description:** Runs the project's resolved test command (language-agnostic: `mix test`,
+  `cargo test`, `npm test`, `go test ./...`, or `pytest` chosen via the `_test_command_candidates`
+  resolution order — task `verification`, constitution `test_command`, `mise run test`, manifest
+  table, Python fallback). Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
+  SYNTAX_ERROR), runs the test command, and reports whether the test failed as expected.
+  `deviate micro run`'s internal RED phase (`_run_red_phase`) applies the same contract: when the
+  test command exits 0 (all tests passed), collects no tests (pytest exit 5), or resolves to no
+  command at all (returncode 127), it does NOT die — it routes the decision to JUDGE
+  (``failure_kind: no_failing_test``), which either rules the behavior already exists (task
+  COMPLETED, the uncommitted passing test discarded) or rules the test wrong (``revert_before``,
+  RED re-authors a genuinely failing test). The RED gate does not require a Python
+  ``tests/**/test_*.py`` glob — test discovery follows the project's own convention (e.g.
+  ``test/**/*_test.exs`` for Elixir). On a genuine failing test it appends the RED status
+  transition to the task ledger, forces session to RED, and commits with
+  `test({scope}): RED phase - failing test`.
   Commit messages are convention-aware: when the project declares an emoji convention in
   ``CONTRIBUTING.md`` / ``.commit-convention.md``, the appropriate gitmoji is prepended
   automatically. RED phase `test:` commits are prefixed with 🚨 to flag the failing test (see
@@ -564,8 +568,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate green post`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Verifies a RED transition exists for the active issue. Runs `pytest -v`,
-  requires returncode 0. Appends GREEN transition to ledger, forces session to GREEN,
+* **Description:** Verifies a RED transition exists for the active issue. Runs the project's
+  resolved test command (language-agnostic, e.g. `mix test` / `cargo test` / `pytest`), requires
+  returncode 0. Appends GREEN transition to ledger, forces session to GREEN,
   commits with `feat({scope}): GREEN phase - implementation passes tests`.
 
 #### `deviate judge pre`
@@ -584,9 +589,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Verifies a GREEN transition exists. Appends REFACTOR transition, runs
-  AST-based return type mismatch check, runs pytest before/after to detect regression.
-  On regression, restores via `git restore .` and halts. Commits with
-  `refactor({scope}): REFACTOR phase - code cleanup`.
+  the AST-based return type mismatch check (Python only), runs the resolved test command
+  before/after to detect regression. On regression, restores via `git restore .` and halts.
+  Commits with `refactor({scope}): REFACTOR phase - code cleanup`.
 
 #### `deviate execute pre [--task <id>]`
 
