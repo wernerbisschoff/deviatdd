@@ -29,11 +29,11 @@ This system operates strictly as an isolated, deterministic execution compilatio
 - **Context Consolidation**: Files that share a logical capability MUST be in the same task.
 - **Maximize Signal-to-Noise**: Group files so the agent has full "Workstation" context in a single Turn.
 
-**Meso Workflow Position**: Shard/Adhoc → Plan → Tasks → [HITL Gate 2] → TDD
+**Meso Workflow Position**: Shard/Adhoc → Plan → Tasks → TDD (Gate 2 removed — see constitution §1)
 - **Shard/Adhoc**: Produces issue intent with user stories and acceptance outlines.
 - **Plan**: Performs fresh research and writes the authoritative Gherkin Acceptance Contract.
-- **Tasks**: Maps every `AC-PLAN-NNN` to executable work, then stops for joint human review of plan.md + tasks.md.
-- **TDD**: Begins only after explicit artifact-bound Gate 2 approval.
+- **Tasks**: Maps every `AC-PLAN-NNN` to executable work, then commits the task manifest. No human-approval gate sits between Tasks and Micro (Gate 2 was removed in constitution 0.8.0) — `deviate run` chains meso into micro end-to-end.
+- **TDD**: Begins immediately after Tasks commits; the system auto-advances without human approval.
 
 Research artifacts (`design.md`, `data-model.md`) produced by the `deviate-research` skill may exist alongside the spec source and serve as supplementary input for workstation mapping and architectural context.
 
