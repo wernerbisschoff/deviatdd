@@ -248,3 +248,19 @@
 6. AC-NARROW-06 / AO-015-06: Pydantic `FlowEvent.model_validate` rejects `FLOW_DEPRECATED` and `FLOW_IMPLEMENTATION_EVIDENCE_ADDED` event types.
 7. AC-NARROW-07 / AO-015-07: `_derive_impl_status` returns only `"CONFIRMED_IMPLEMENTED"` or `"UNCONFIRMED"`; `PARTIALLY_IMPLEMENTED` branch removed.
 8. AC-NARROW-08 / AO-015-08: Full test suite (`mise run test`), lint (`mise run lint`), format check (`mise run format-check`), and type check (`mise run check-types`) all exit 0.
+
+## FR-ADHOC-016: Single-Source Prompt Templates — Auto Canonical, Manual Derived at Install
+
+- **Description**: Make `src/deviate/prompts/auto/<phase>.md` the single canonical per-phase prompt body for the 11 overlapping phases (red, green, refactor, judge, execute, plan, tasks, explore, research, prd, shard). Derive the manual slash-command (`commands/deviate-<phase>.md`) from the auto core plus a per-phase manual overlay (pre/post-script lifecycle, contract-input substitution, rich handover manifest) at `install_command` time. Reconcile the drifted middle to auto semantics (GREEN "write only production code"; RED `status:"PASS"` + `failure_kind`). Delete the duplicated manual middle bodies. Add a drift-guard test enforcing the identical-middle invariant.
+- **Preconditions**: `src/deviate/prompts/assembly.py:48-107` (`load_template`) composes the auto prompt. `src/deviate/core/commands.py:55-133,189-243` (`compose_command_body`, `install_command`) compose and install manual slash-commands. The 11 overlapping phase pairs under `src/deviate/prompts/auto/` and `commands/` share 17-68% identical lines and contradict each other (RED `status:"PASS"` vs `"FAIL"`; GREEN role language). The micro runner (`src/deviate/cli/micro.py`) is the only actively used path and consumes `auto/` templates.
+- **Inputs/Outputs**: Input — the 11 auto phase bodies (canonical), the 11 stale manual command bodies, the shared core/lifecycle blocks, the manual overlay content. Output — a single-source `auto/<phase>.md` per phase, a derived manual command at install, the 11 duplicated manual middles removed, a drift-guard test, and updated `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md`.
+- **Flow Refs**: `[]`
+- **User Stories**:
+1. US-016-01: As a DeviaTDD maintainer, I want a single canonical per-phase prompt body so I edit the middle once instead of maintaining two drift-prone copies. *(Ref: FR-ADHOC-016)*
+2. US-016-02: As a DeviaTDD maintainer, I want the drifted middle reconciled to auto semantics so both modes stop instructing contradictory behavior. *(Ref: FR-ADHOC-016)*
+3. US-016-03: As a DeviaTDD maintainer, I want a drift-guard test that fails when auto and manual middles diverge so the identical-middle invariant is enforced. *(Ref: FR-ADHOC-016)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+1. AC-ADHOC-016-01 / AO-016-01: For each of the 11 overlapping phases, `install_command` derives the manual slash-command body from `auto/<phase>.md` plus the manual overlay; the middle is identical to the auto core.
+2. AC-ADHOC-016-02 / AO-016-02: The drifted middle is reconciled to auto semantics; RED manual no longer emits `status:"FAIL"`/abort-on-passing-test, and GREEN manual matches "write only production code".
+3. AC-ADHOC-016-03 / AO-016-03: A drift-guard test fails when an auto middle body diverges from the derived manual middle.
+4. AC-ADHOC-016-04 / AO-016-04: The 15 commands-only prompts (no auto counterpart) are unchanged; `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are updated in the same commit; CHANGELOG gains an `[Unreleased]` bullet.
