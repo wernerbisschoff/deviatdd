@@ -87,9 +87,10 @@ The ad-hoc issue describes implementation of requested application behavior in a
 ```
 Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
-7. **Commit**: Commit all changes and mark the record as completed via the post-script. The `deviate adhoc post` CLI applies the project's commit convention (emoji prefix if configured, no-op otherwise):
+7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. Completion is driven by the real workflow (`plan` → `tasks` → red/green → merge audit), never by creation. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here.
+
    ```
-   deviate adhoc post {ISSUE_ID} --title "{title}"
+   git add -A && git commit -m "docs(adhoc): add issue {ISSUE_ID}"
    ```
 
 8. **Output Summary**: Display the `## Discovery Audit`, the `## Target Issue Emission`, and the `## Ledger Registration` blocks to the user in clean Markdown. Do NOT emit the full PRD contents — only confirm the FR section was appended.
