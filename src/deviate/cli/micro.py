@@ -2847,8 +2847,7 @@ def _finish_tdd_cycle(
         return _idle_after_tdd(session, session_path)
 
     if (
-        pending == "continue_refactor"
-        or pending == "proceed_to_refactor_no_diff"
+        pending in {"continue_refactor", "proceed_to_refactor_no_diff"}
         or not no_refactor
     ):
         _log_run(
@@ -3073,7 +3072,7 @@ def _train_green_or_escalate(
     no_judge: bool,
     root: Path,
 ) -> tuple[SessionState, bool]:
-    """Count one GREEN train. Escalate when ``green_attempts`` reaches 3.
+    """Count one GREEN train. Escalate when ``green_attempts`` reaches ``_MAX_GREEN_ATTEMPTS``.
 
     Returns ``(session, True)`` after a new RED dispatch, or
     ``(session, False)`` when GREEN should retry the standing RED contract.
@@ -3156,24 +3155,40 @@ def _run_tdd_cycle(
             no_judge=no_judge,
         )
 
+    def _escalate(reason: str) -> SessionState:
+        return _escalate_to_new_red(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            agent=agent,
+            monitor=monitor,
+            no_judge=no_judge,
+            root=root,
+            reason=reason,
+        )
+
+    def _train() -> tuple[SessionState, bool]:
+        return _train_green_or_escalate(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            agent=agent,
+            monitor=monitor,
+            no_judge=no_judge,
+            root=root,
+        )
+
     while not judge_passed:
         # RED's no-failing-test adjudication (RED → JUDGE direct route) may
         # have already returned a verdict — honor it before GREEN runs,
         # since a vacuous GREEN has nothing to implement. Forward verdicts
         # break out to _finish_tdd_cycle; revert_before escalates to a new RED.
         if session.pending_judge_action == "revert_before":
-            session = _escalate_to_new_red(
-                task,
-                ledger_path,
-                session,
-                session_path,
-                c,
-                agent=agent,
-                monitor=monitor,
-                no_judge=no_judge,
-                root=root,
-                reason="no_failing_test_adjudicated",
-            )
+            session = _escalate("no_failing_test_adjudicated")
             continue
         if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
             judge_passed = True
@@ -3190,17 +3205,7 @@ def _run_tdd_cycle(
 
         if session.train_feedback:
             if session.current_phase == "RED":
-                session, escalated = _train_green_or_escalate(
-                    task,
-                    ledger_path,
-                    session,
-                    session_path,
-                    c,
-                    agent=agent,
-                    monitor=monitor,
-                    no_judge=no_judge,
-                    root=root,
-                )
+                session, escalated = _train()
                 if escalated:
                     continue
                 _emit_green_train(
@@ -3241,28 +3246,13 @@ def _run_tdd_cycle(
         # the TRAIN retry loop without re-running GREEN — the forward-route
         # verdict is the cycle's exit signal (clears train_feedback, sets
         # pending_judge_action, and JUDGE has already cleaned up state).
-        if session.pending_judge_action in {
-            "continue_refactor",
-            "proceed_to_refactor_no_diff",
-            "skip_refactor",
-        }:
+        if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
             judge_passed = True
             break
         # Honor coerced ``revert_before``. ``revert_to_red`` still trains
         # GREEN and keeps dump ``train_feedback``.
         if session.pending_judge_action == "revert_before":
-            session = _escalate_to_new_red(
-                task,
-                ledger_path,
-                session,
-                session_path,
-                c,
-                agent=agent,
-                monitor=monitor,
-                no_judge=no_judge,
-                root=root,
-                reason="test_defect",
-            )
+            session = _escalate("test_defect")
             continue
         # Decision gate. An explicit COMPLIANCE_PASS verdict adjudicates any
         # residual suite failures as acceptable, so the pre-JUDGE GREEN-stall
@@ -3276,17 +3266,7 @@ def _run_tdd_cycle(
         )
         still_failing = bool(green_tests_failed and not judge_passed_explicitly)
         if session.judge_rejected or session.train_feedback or still_failing:
-            session, escalated = _train_green_or_escalate(
-                task,
-                ledger_path,
-                session,
-                session_path,
-                c,
-                agent=agent,
-                monitor=monitor,
-                no_judge=no_judge,
-                root=root,
-            )
+            session, escalated = _train()
             if escalated:
                 continue
             if not session.train_feedback:
