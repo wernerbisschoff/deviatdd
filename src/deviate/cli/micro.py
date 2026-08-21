@@ -709,6 +709,7 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
 
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REFACTOR"}
+_ALREADY_DONE_STATUSES = {"COMPLETED", "REFACTOR", "JUDGE", "YELLOW"}
 
 
 def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
@@ -994,6 +995,38 @@ def _synthesize_pinned_pending(root: Path, task_id: str) -> tuple[dict, Path] | 
     return None
 
 
+def _raise_task_not_found(task_id: str, c: Console) -> NoReturn:
+    c.print(f"[red]TASK_NOT_FOUND[/] No task matching {task_id}")
+    raise typer.Exit(code=1)
+
+
+def _exit_if_already_done(
+    task: dict,
+    ledger_file: Path,
+    task_id: str,
+    root: Path,
+    session: SessionState,
+    c: Console,
+) -> tuple[dict, Path, str]:
+    """Print TASK_ALREADY_DONE only for this issue's own terminal status.
+
+    A foreign COMPLETED, REFACTOR, JUDGE, or YELLOW row re-resolves this
+    issue's synthesized PENDING pin. A miss raises TASK_NOT_FOUND.
+    """
+    status = task.get("status", "PENDING")
+    if session.current_phase != "IDLE" or status not in _ALREADY_DONE_STATUSES:
+        return task, ledger_file, status
+    active_issue_id = _resolve_known_active_issue_id(root)
+    if active_issue_id and task.get("issue_id") != active_issue_id:
+        synthesized = _synthesize_pinned_pending(root, task_id)
+        if synthesized is None:
+            _raise_task_not_found(task_id, c)
+        task, ledger_file = synthesized
+        return task, ledger_file, task.get("status", "PENDING")
+    c.print(f"[yellow]TASK_ALREADY_DONE[/] {task_id} is already completed")
+    raise typer.Exit(code=0)
+
+
 def _append_status_transition(
     task_data: dict, new_status: str, ledger_path: Path
 ) -> None:
@@ -1020,8 +1053,7 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
         synthesized = _synthesize_pinned_pending(root, task_id)
         if synthesized is not None:
             return synthesized
-        console.print(f"[red]TASK_NOT_FOUND[/] No task matching {task_id}")
-        raise typer.Exit(code=1)
+        _raise_task_not_found(task_id, console)
 
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
@@ -4093,21 +4125,13 @@ def _run_single(
     if model is not None:
         _cli_model_override = model
     task, ledger_file = _resolve_task_context(task_id, root)
-    status = task.get("status", "PENDING")
-
     session_path = root / ".deviate" / "session.json"
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
-
-    if session.current_phase == "IDLE" and status in (
-        "COMPLETED",
-        "REFACTOR",
-        "JUDGE",
-        "YELLOW",
-    ):
-        c.print(f"[yellow]TASK_ALREADY_DONE[/] {task_id} is already completed")
-        raise typer.Exit(code=0)
+    task, ledger_file, status = _exit_if_already_done(
+        task, ledger_file, task_id, root, session, c
+    )
 
     # RED/GREEN/REFACTOR progress is read from the tracked tasks.jsonl, not
     # from session.json (a git reset reverts the JSONL but not the untracked

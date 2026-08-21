@@ -217,7 +217,9 @@ composable overrides).
 The Micro layer execution engine is implemented as an in-process Python function dispatch
 via `src/deviate/cli/micro.py`. The `deviate micro run <task-id>` command (the per-task
 dispatcher that used to live as top-level `deviate run`) resolves a task by its
-`TSK-NNN-NN` identifier from the ledger and dispatches through the phase cycle based on
+`TSK-NNN-NN` identifier from the ledger. Resolution is issue-scoped when the
+branch or re-keyed session issue is known; same-number TSK ids remain a
+per-issue namespace. It then dispatches through the phase cycle based on
 `execution_mode`. The top-level `deviate run` orchestrator (`src/deviate/cli/__init__.py`)
 chains `deviate meso run` with `deviate micro run --all` inside the created worktree;
 see `DeviaTDD-api.md` §5 for the orchestration contract.:
