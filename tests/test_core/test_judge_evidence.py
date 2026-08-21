@@ -281,3 +281,32 @@ class TestNoAcPlanEmptyEvidence:
             plan_contract=_plan_contract(extra_outside=outside),
         )
         assert result is None
+
+
+class TestAlreadySatisfiedDeclaredPathMembership:
+    """AC-PLAN-005: membership even when the contract has no AC-PLAN-* tokens."""
+
+    def test_already_satisfied_declared_path_missing_without_ac_tokens(self):
+        result = evaluate_judge_evidence(
+            plan_contract=_plan_contract(),
+            injected_diff="",
+            evidence=[],
+            next_action="skip_refactor",
+            head_contents={},
+            declared_paths=["tests/ghost_regression.py"],
+        )
+        assert result is not None
+        assert result.strip() != ""
+        assert "tests/ghost_regression.py" in result
+
+    def test_already_exists_evidence_test_path_missing_without_ac_tokens(self):
+        result = _feedback(
+            evidence=[_item(test_path="tests/ghost_regression.py")],
+            plan_contract=_plan_contract(),
+            injected_diff="",
+            next_action="skip_refactor",
+            head_contents={},
+        )
+        assert result is not None
+        assert result.strip() != ""
+        assert "tests/ghost_regression.py" in result
