@@ -565,7 +565,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   command at all (returncode 127), it does NOT die — it routes the decision to JUDGE
   (``failure_kind: no_failing_test``), which either rules the behavior already exists (task
   COMPLETED, the uncommitted passing test discarded) or rules the test wrong (``revert_before``,
-  RED re-authors a genuinely failing test). The RED gate does not require a Python
+  RED re-authors a genuinely failing test). After ``revert_before`` / cycle
+  ``no_failing_test_adjudicated``, the next ``INVOKE_AGENT`` is RED, or the loop raises
+  ``TRAIN_EXHAUSTED`` / ``PhaseFailedError``. It never invokes GREEN while
+  ``session.red_commit_sha`` is empty. The RED gate does not require a Python
   ``tests/**/test_*.py`` glob — test discovery follows the project's own convention (e.g.
   ``test/**/*_test.exs`` for Elixir). On a genuine failing test it appends the RED status
   transition to the task ledger, forces session to RED, and commits with
@@ -707,7 +710,14 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     `docs(...): add judge feedback` marker, or `force_transition_to("GREEN")`.
     When a RED-phase SHA exists, the runner commits a feedback marker and
     advances `session.red_commit_sha` past it so a second rejection can roll
-    back only the subsequent GREEN. The session is
+    back only the subsequent GREEN. GREEN entry requires that SHA to be a
+    standing RED-phase failing-test commit. After `no_failing_test` /
+    `revert_before` / `no_failing_test_adjudicated`, the next `INVOKE_AGENT`
+    is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`.
+    `_run_green_phase` raises `GREEN_ENTRY_REFUSED` and does not invoke the
+    GREEN agent when `session.red_commit_sha` is empty or a
+    `docs(...): add judge feedback` SHA that does not rest on a RED-phase
+    ancestor. The session is
     `force_transition_to("GREEN")`, and the
     previous attempt's feedback is injected as `<train_feedback>` into the next
     GREEN prompt via `_build_auto_prompt("green", ...) +
@@ -862,6 +872,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   — declared optionally by the agent and recorded for operator
   cross-check only.
 * **JUDGE Failed-GREEN Worktree Visibility:** When GREEN leaves production changes uncommitted because its test command failed, JUDGE evaluates both the committed RED-parent-to-HEAD diff and the current staged, unstaged, and untracked worktree diff. Untracked files are rendered with `git diff --no-index /dev/null <path>`. This preserves the implementation for compliance assessment instead of presenting JUDGE with a false RED-only view.
+* **GREEN Entry Invariant:** `_run_green_phase` (`src/deviate/cli/micro.py`) invokes the GREEN agent only when `session.red_commit_sha` is a standing RED-phase failing-test boundary. Empty or whitespace SHA raises `PhaseFailedError` carrying `GREEN_ENTRY_REFUSED`. A `docs(...): add judge feedback for retry` SHA is refused unless it rests on a RED-phase ancestor (TRAIN). After JUDGE `revert_before` / cycle `no_failing_test_adjudicated` / `escalate_to_red`, `_run_tdd_cycle` re-dispatches RED or raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. It never calls `_run_green_phase` on that path. `_escalate_to_new_red` consumes `revert_before` only after `_has_red_commit_boundary` is true. `skip_refactor` / bare `COMPLIANCE_PASS` still complete without GREEN via `_NO_FAILING_TEST_FORWARD_ROUTES`. TDD `revert_to_red` with an empty SHA raises `PhaseFailedError` carrying `ROLLBACK_BOUNDARY_MISSING` and must not print `ROLLBACK_FAILED` and proceed.
 * **GREEN Rollback Retry Context:** After `revert_to_red`, the next GREEN prompt includes a `<rollback_context>` block stating that rollback discarded prior committed, uncommitted, and untracked GREEN artifacts. GREEN must verify referenced artifacts on disk and recreate missing files before reporting success.
 * **Resumable JUDGE Feedback Commit:** Before attempting the hook-enabled feedback-marker commit, the runner persists the exact task id, feedback text, and feedback source in `SessionState.pending_judge_feedback`. A failed or timed-out hook leaves `red_commit_sha` unchanged and retains this payload. The next explicit task run or `--all` drain selects the task even when its latest ledger status is `FAILED`, retries the same marker commit without rerunning JUDGE, clears the payload only after success, advances `red_commit_sha`, and resumes GREEN with the original feedback.
 * **GREEN Retry State-Drift Guard:** A first-pass zero-change GREEN remains valid and proceeds to JUDGE for empty-GREEN `test_quote` classification. On a JUDGE-directed retry, however, if the ledger already records GREEN, `train_feedback` is present, and `_commit_phase()` reports no new commit, `_run_green_phase()` raises `PhaseFailedError` with `GREEN_STATE_DRIFT`. This prevents JUDGE from evaluating feedback-only diffs and requires the operator to verify the existing implementation and reconcile the append-only task ledger.
@@ -1389,7 +1400,7 @@ candidate selection:
 | `failure_kind` | `Literal["", "mechanical", "test_defect"]` (default `""`) | Discriminator set by GREEN on failure-class routing; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong) |
 | `judge_rejected` | `bool` (default `False`) | `True` while the JUDGE verdict on the current cycle is a rejection |
 | `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_before`, `revert_to_red`, `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off |
-| `red_commit_sha` | `str` (default `""`) | SHA of the task's RED commit; the TDD JUDGE runner reads it and threads it into `_execute_rollback(boundary_sha=..., task_id=..., attempt=...)` on `revert_to_red`. Each phase records its own boundary only after the commit lands. The runner no longer reads this field implicitly inside `_execute_rollback`; the boundary MUST be supplied by the caller. EXECUTE JUDGE uses `pre_execute_sha` (captured before the first EXECUTE attempt) instead. |
+| `red_commit_sha` | `str` (default `""`) | SHA of the task's RED-phase failing-test commit. GREEN entry requires this field to be a standing RED boundary (subject matches `test(...): RED phase`, not a bare `docs(...): add judge feedback` SHA). The TDD JUDGE runner reads it and threads it into `_execute_rollback(boundary_sha=..., task_id=..., attempt=...)` on `revert_to_red`. Each phase records its own boundary only after the commit lands. The runner no longer reads this field implicitly inside `_execute_rollback`; the boundary MUST be supplied by the caller. EXECUTE JUDGE uses `pre_execute_sha` (captured before the first EXECUTE attempt) instead. |
 | `timestamp` | `datetime` (auto-set on each transition via `force_transition_to`/`transition_to`) | Wall-clock record of last phase change |
 
 
@@ -1439,11 +1450,15 @@ or omitted. The override reflects a contract invariant: when the RED test itself
 is wrong, the runner must restart RED with the GREEN's rationale injected, not
 loop back into GREEN with the same test. `_coerce_judge_action` accepts a
 keyword-only `failure_kind` parameter (default `""`) and is the single source of
-truth for the override; `_run_tdd_cycle` honours `pending_judge_action ==
-"revert_before"` (set by JUDGE or the override) by escalating now: reset
-`green_attempts` to 0, increment `red_attempts`, persist both on
-`.deviate/session.json`, dispatch `_run_red_phase(task, ..., bypass_phase_done=True)`,
-and `continue`-ing the loop. The bypass preserves the append-only ledger — a
+truth for the override (`test_defect` / `no_failing_test` on a violation map to
+`revert_before`; the 3/3 caps from ISS-ADH-017 stay). `_run_tdd_cycle` honours
+`pending_judge_action == "revert_before"` (set by JUDGE or the override) by
+escalating now: reset `green_attempts` to 0, increment `red_attempts`, persist
+both on `.deviate/session.json`, dispatch `_run_red_phase(task, ...,
+bypass_phase_done=True)`, and `continue`-ing the loop. The next `INVOKE_AGENT`
+is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. It never
+invokes GREEN while `session.red_commit_sha` is empty. The bypass preserves the
+append-only ledger — a
 fresh RED record appends rather than rewriting the previous one — and a short
 `previous cycle failed because …` note in `session.train_feedback` is threaded
 into the retry RED prompt so the agent sees why the previous cycle failed, not
