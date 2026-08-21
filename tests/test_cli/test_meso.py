@@ -692,3 +692,182 @@ class TestSpecifyPushFailure:
         )
         assert result is not None
         assert result["worktree_path"] == str(wt_path)
+
+
+def seed_adhoc_018_origin_rejecting_name(repo: Path) -> Path:
+    """Seed ``ISS-ADH-018`` and a bare origin that rejects ``018-*`` names.
+
+    The update hook declines ``refs/heads/feat/adhoc/018-*`` with
+    ``already exists`` so the claim path hits a rejected push, not the
+    ``BRANCH_ON_REMOTE`` pre-check. Returns the bare origin path.
+    """
+    import subprocess
+    from datetime import datetime, timezone
+
+    from deviate.state.ledger import IssueRecord, append_issue_transition
+    from tests.conftest import _git_env
+
+    specs = repo / "specs"
+    specs.mkdir(exist_ok=True)
+    ledger = specs / "issues.jsonl"
+    append_issue_transition(
+        IssueRecord(
+            issue_id="ISS-ADH-018",
+            type="feature",
+            title="Collision retry",
+            status="BACKLOG",
+            source_file="specs/adhoc/issues/018-collision.md",
+            timestamp=datetime.now(timezone.utc),
+        ),
+        ledger,
+    )
+    subprocess.run(
+        ["git", "add", "specs/issues.jsonl"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "seed ISS-ADH-018"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+
+    bare = repo.parent / f"{repo.name}-origin.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(bare)],
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    hook = bare / "hooks" / "update"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "refname=$1\n"
+        'case "$refname" in\n'
+        "refs/heads/feat/adhoc/018-*)\n"
+        '  echo "already exists" >&2\n'
+        "  exit 1\n"
+        "  ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+    subprocess.run(
+        ["git", "remote", "set-url", "origin", str(bare)],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "push", "origin", "HEAD:refs/heads/main"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    return bare
+
+
+def _adhoc_018_issue():
+    from datetime import datetime, timezone
+
+    from deviate.state.ledger import IssueRecord
+
+    return IssueRecord(
+        issue_id="ISS-ADH-018",
+        type="feature",
+        title="Collision retry",
+        status="BACKLOG",
+        source_file="specs/adhoc/issues/018-collision.md",
+        timestamp=datetime.now(timezone.utc),
+    )
+
+
+class TestSpecifyPushNameCollisionRetry:
+    """AC-PLAN-003: rejected ``feat/adhoc/018-*`` push increments and retries.
+
+    Default claim mode stays on (``local=False``). A name-collision push
+    must retry ``019`` and must not win via ``--local`` or keep the
+    colliding ``018`` name.
+    """
+
+    def test_rejected_018_push_retries_019_and_does_not_set_local(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import subprocess
+
+        from deviate.cli.meso import _try_claim_issue
+        from tests.conftest import _git_env
+
+        seed_adhoc_018_origin_rejecting_name(tmp_git_repo)
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+
+        push_calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def recording(argv, *args, **kwargs):
+            if isinstance(argv, list) and argv[:2] == ["git", "push"]:
+                push_calls.append(list(argv))
+            return real_run(argv, *args, **kwargs)
+
+        monkeypatch.setattr("deviate.cli.meso.subprocess.run", recording)
+
+        result = _try_claim_issue(
+            _adhoc_018_issue(),
+            tmp_git_repo,
+            tmp_git_repo / "specs" / "issues.jsonl",
+            remote="origin",
+            local=False,
+        )
+
+        captured = capsys.readouterr()
+        assert "LOCAL_ONLY" not in captured.out, (
+            f"collision retry must not skip push via --local; output={captured.out!r}"
+        )
+        assert result is not None, (
+            "expected claim to succeed after incrementing to 019; "
+            f"output={captured.out!r} pushes={push_calls!r}"
+        )
+        assert result["branch"].startswith("feat/adhoc/019-"), (
+            f"winner must be 019-*, not the colliding 018 name: {result['branch']!r}"
+        )
+        assert not result["branch"].startswith("feat/adhoc/018-"), (
+            f"colliding 018 name must not remain the winner: {result['branch']!r}"
+        )
+
+        pushed_branches = [call[-1] for call in push_calls if call]
+        assert any(
+            branch.startswith("feat/adhoc/018-") for branch in pushed_branches
+        ), f"first push must attempt 018-*: {push_calls!r}"
+        assert any(
+            branch.startswith("feat/adhoc/019-") for branch in pushed_branches
+        ), f"retry push must attempt 019-*: {push_calls!r}"
+
+        remote_019 = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin", result["branch"]],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert remote_019.stdout.strip(), (
+            "winning branch must exist on origin (not a local-only win): "
+            f"{result['branch']!r}"
+        )

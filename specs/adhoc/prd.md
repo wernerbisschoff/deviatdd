@@ -314,3 +314,19 @@
   4. AC-ADHOC-017-04 / AO-017-04: `deviate setup --no-claim-remote` (or an interactive no) writes `claim_remote = false` without clobbering other config keys; a fresh setup without that flag writes `claim_remote = true`.
   5. AC-ADHOC-017-05 / AO-017-05: In local mode, `_discover_claimable_issue` does not treat "branch already on origin" as claimed-elsewhere.
   6. AC-ADHOC-017-06 / AO-017-06: `--no-setup` remains distinct: it still drops worktree + ledger claim; local mode does not.
+
+## FR-ADHOC-019: Allocate Issue and Epic Ordinals from Remote Feat Branches
+
+- **Description**: Next issue and epic ordinals are `max(remote-aware ordinals) + 1`, not `max(local ledger or local specs dirs) + 1`. Collect ordinals from the `origin/main` ledger, the current-branch ledger if present, and remote refs matching `feat/<epic>/<NNN>-*` and `feat/adhoc/<NNN>-*`. Adhoc `ISS-ADH-NNN` / `ISS-NNN` / file `NNN-slug.md` / branch `feat/adhoc/NNN-slug` share that one counter. A rejected `git push` of `feat/.../NNN-*` because the name exists increments and retries; it does not fall back to `--local`.
+- **Preconditions**: Python 3.13. `_compute_next_issue_id` (`src/deviate/cli/macro.py`) currently uses `max(local ledger) + 1` and parses only two-part `ISS-NNN` / `<epic>-<ordinal>` ids, so `ISS-ADH-017` is skipped. `_find_next_epic_num` / `allocate_feature_bucket` (`src/deviate/core/epic.py`) use `max(local specs/* dirs) + 1`. `_try_claim_issue` (`src/deviate/cli/meso.py`) treats a rejected push as skip/`--force`, not increment-and-retry. Push-as-claim (`claim_remote`, ISS-ADH-017 optional-push-as-lock / GH #64) remains the distributed lock.
+- **Inputs/Outputs**: Input — already-fetched `origin` refs (or `git fetch --prune`), local `specs/issues.jsonl`, `origin/main:specs/issues.jsonl` when reachable. Output — next issue id / epic bucket number that is strictly greater than every remote-claimed ordinal in that series; on push name-collision, the next free ordinal is retried until push succeeds or a non-name-collision error is raised.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-019-01: As a DeviaTDD operator running parallel `adhoc` / `specify` / shard on two checkouts from stale `main`, I want the next `NNN` to come from remote `feat/adhoc/<NNN>-*` (and the origin ledger) so two unmerged claims cannot both mint `017`. *(Ref: FR-ADHOC-019)*
+  2. US-019-02: As a DeviaTDD operator allocating an epic bucket, I want `allocate_feature_bucket` to count remote `feat/<NNN>-*` refs so two `research pre` calls do not reuse the same epic number. *(Ref: FR-ADHOC-019)*
+  3. US-019-03: As a DeviaTDD operator whose `git push` of `feat/.../NNN-*` is rejected because that name already exists, I want the allocator to increment and retry rather than `--local` winning the collision. *(Ref: FR-ADHOC-019)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-019-01 / AO-019-01: With `origin/feat/adhoc/017-*` present and the local `main` ledger missing `017`, the next adhoc issue is `018` (or `max(remote ordinals)+1`); `ISS-ADH-NNN`, `ISS-NNN`, `NNN-slug.md`, and `feat/adhoc/NNN-slug` share that ordinal.
+  2. AC-ADHOC-019-02 / AO-019-02: `allocate_feature_bucket` returns a bucket number greater than every remote `feat/<NNN>-*` epic prefix, not only local `specs/*` dirs.
+  3. AC-ADHOC-019-03 / AO-019-03: A `git push` rejection because `feat/.../NNN-*` already exists increments the ordinal and retries; it does not fall back to `--local`.
+  4. AC-ADHOC-019-04 / AO-019-04: Local-only unpushed branches do not reserve an ordinal. `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` document the remote-aware rule in the same commit; CHANGELOG `[Unreleased]` records the behavior change.

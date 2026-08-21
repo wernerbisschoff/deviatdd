@@ -30,6 +30,7 @@ from deviate.core.agent import (
     resolve_agent_to_backend,
 )
 from deviate.core._shared import git_env as _git_env
+from deviate.core.epic import _ordinals_from_remote_feat_refs, _remote_adhoc_ordinals
 from deviate.core.commit import commit_artifact, stage_and_commit
 from deviate.core.convention import commit_scope, format_commit_message
 from deviate.core.constitution import extract_commands
@@ -158,6 +159,122 @@ def _resolve_bucket_dir(source_file: str) -> str:
 def _source_stem(source_file: str) -> str:
     """Extract the issue slug (filename stem) from a source_file path."""
     return PurePosixPath(source_file).stem
+
+
+_ISSUE_SLUG_ORDINAL = re.compile(r"^(\d+)-(.*)$")
+_CLAIM_NAME_COLLISION_RETRIES = 3
+
+
+def _as_git_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _is_feat_name_collision(stderr: str | bytes) -> bool:
+    return "already exists" in _as_git_text(stderr).lower()
+
+
+def _next_claim_slug(epic_slug: str, issue_slug: str, repo_path: Path) -> str | None:
+    match = _ISSUE_SLUG_ORDINAL.match(issue_slug)
+    if match is None:
+        return None
+    current = int(match.group(1))
+    rest = match.group(2)
+    if epic_slug == "adhoc":
+        remote_nums = _remote_adhoc_ordinals(repo_path)
+    else:
+        pattern = re.compile(rf"^(?:origin/)?feat/{re.escape(epic_slug)}/(\d+)-")
+        remote_nums = _ordinals_from_remote_feat_refs(pattern, repo_path)
+    next_n = max([current, *remote_nums], default=current) + 1
+    return f"{next_n:03d}-{rest}"
+
+
+def _print_push_stderr(stderr: str) -> None:
+    if stderr:
+        console.print(f"[yellow]PUSH_STDERR[/] {stderr}")
+
+
+def _push_claim_with_collision_retry(
+    *,
+    remote: str | None,
+    branch: str,
+    worktree_path: str,
+    repo_root: Path,
+    epic_slug: str,
+    issue_slug: str,
+    spec_target_rel: str,
+    force: bool,
+) -> tuple[str, str, str] | None:
+    """Push the claim branch; increment NNN and retry on name collision.
+
+    Returns ``(branch, issue_slug, spec_target_rel)`` after a successful
+    push or a ``--force`` continue. Returns ``None`` when a remote race
+    already claimed the name or when a non-collision failure rolls back
+    the worktree. Does not set ``local=True``.
+    """
+    collision_retries = 0
+    while True:
+        push_result = subprocess.run(
+            ["git", "push", "--no-verify", "-u", remote, branch],
+            cwd=worktree_path,
+            env=_git_env(),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if push_result.returncode == 0:
+            console.print(f"[green]PUSHED[/] {branch} pushed to {remote}")
+            return branch, issue_slug, spec_target_rel
+        push_stderr = _as_git_text(push_result.stderr).strip()
+        # Re-check the remote: a winning race looks like a push failure
+        # (e.g. non-fast-forward) but the branch now exists on origin
+        # because another agent won the race. Keep the local branch +
+        # worktree; rolling back would destroy state the operator may
+        # want to push elsewhere.
+        if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
+            console.print(
+                f"[yellow]BRANCH_ON_REMOTE[/] {branch} — "
+                f"race won elsewhere; keeping local worktree"
+            )
+            _print_push_stderr(push_stderr)
+            return None
+        next_slug = (
+            _next_claim_slug(epic_slug, issue_slug, repo_root)
+            if (
+                collision_retries < _CLAIM_NAME_COLLISION_RETRIES
+                and _is_feat_name_collision(push_stderr)
+            )
+            else None
+        )
+        if next_slug is not None:
+            new_branch = f"feat/{epic_slug}/{next_slug}"
+            renamed = subprocess.run(
+                ["git", "branch", "-m", new_branch],
+                cwd=worktree_path,
+                env=_git_env(),
+                check=False,
+                capture_output=True,
+            )
+            if renamed.returncode == 0:
+                collision_retries += 1
+                issue_slug = next_slug
+                branch = new_branch
+                spec_target_rel = f"specs/{epic_slug}/{issue_slug}/spec.md"
+                console.print(
+                    f"[yellow]CLAIM_RETRY[/] name collision; retrying {branch}"
+                )
+                continue
+        if force:
+            console.print(f"[yellow]PUSH_FAILED[/] {branch} — continuing (--force)")
+            _print_push_stderr(push_stderr)
+            return branch, issue_slug, spec_target_rel
+        console.print(f"[yellow]PUSH_FAILED[/] {branch} — race or remote error")
+        _print_push_stderr(push_stderr)
+        remove_worktree(branch, Path(worktree_path), repo=repo_root)
+        return None
 
 
 def _is_issue_completed(issue_id: str, ledger_path: Path) -> bool:
@@ -610,46 +727,19 @@ def _try_claim_issue(
             if local:
                 console.print("[yellow]LOCAL_ONLY[/] skipping push")
             else:
-                push_result = subprocess.run(
-                    ["git", "push", "--no-verify", "-u", remote, branch],
-                    cwd=worktree_path,
-                    env=_git_env(),
-                    check=False,
-                    capture_output=True,
-                    text=True,
+                pushed = _push_claim_with_collision_retry(
+                    remote=remote,
+                    branch=branch,
+                    worktree_path=worktree_path,
+                    repo_root=repo_root,
+                    epic_slug=epic_slug,
+                    issue_slug=issue_slug,
+                    spec_target_rel=spec_target_rel,
+                    force=force,
                 )
-                if push_result.returncode == 0:
-                    console.print(f"[green]PUSHED[/] {branch} pushed to {remote}")
-                else:
-                    push_stderr = (push_result.stderr or "").strip()
-                    # Re-check the remote: a winning race looks like a
-                    # push failure (e.g. non-fast-forward) but the
-                    # branch now exists on origin because another
-                    # agent won the race. In that case keep the local
-                    # branch + worktree; rolling back would destroy
-                    # state the operator may want to push elsewhere.
-                    if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
-                        console.print(
-                            f"[yellow]BRANCH_ON_REMOTE[/] {branch} — "
-                            f"race won elsewhere; keeping local worktree"
-                        )
-                        if push_stderr:
-                            console.print(f"[yellow]PUSH_STDERR[/] {push_stderr}")
-                        return None
-                    if force:
-                        console.print(
-                            f"[yellow]PUSH_FAILED[/] {branch} — continuing (--force)"
-                        )
-                        if push_stderr:
-                            console.print(f"[yellow]PUSH_STDERR[/] {push_stderr}")
-                    else:
-                        console.print(
-                            f"[yellow]PUSH_FAILED[/] {branch} — race or remote error"
-                        )
-                        if push_stderr:
-                            console.print(f"[yellow]PUSH_STDERR[/] {push_stderr}")
-                        remove_worktree(branch, Path(worktree_path), repo=repo_root)
-                        return None
+                if pushed is None:
+                    return None
+                branch, issue_slug, spec_target_rel = pushed
 
     return {
         "resolved_id": resolved_id,

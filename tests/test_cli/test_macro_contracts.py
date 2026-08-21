@@ -526,3 +526,122 @@ class TestMacroContracts:
         assert resolved.issue_id == "ISS-019"
         assert resolved.source_file == legacy_row["source_file"]
         assert resolved.status == "COMPLETED"
+
+
+def _seed_origin_feat_ref(repo: Path, feat_suffix: str) -> None:
+    """Point an already-fetched origin feat ref at HEAD (no network)."""
+    subprocess.run(
+        [
+            "git",
+            "update-ref",
+            f"refs/remotes/origin/feat/{feat_suffix}",
+            "HEAD",
+        ],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+
+
+def _adhoc_ordinal(issue_id: str) -> int:
+    """Last numeric segment of ``ISS-018`` or ``ISS-ADH-018``."""
+    assert issue_id.startswith("ISS-")
+    return int(issue_id.rsplit("-", 1)[-1])
+
+
+def _next_adhoc_id(ledger: Path, repo: Path) -> str:
+    from deviate.cli.macro import _compute_next_issue_id
+
+    with chdir(repo):
+        return _compute_next_issue_id(ledger, epic_slug="adhoc")
+
+
+class TestComputeNextIssueIdRemoteAware:
+    """AC-PLAN-001 / AC-PLAN-004: adhoc next-id is remote-aware, one series."""
+
+    def test_remote_feat_adhoc_017_allocates_018_when_local_ledger_has_no_017(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_origin_feat_ref(tmp_git_repo, "adhoc/017-two-counter-tdd-retry")
+        _seed_origin_feat_ref(tmp_git_repo, "adhoc/017-optional-push-as-lock")
+        ledger = TestMacroContracts._seed_issue_ledger(tmp_git_repo, [])
+
+        next_id = _next_adhoc_id(ledger, tmp_git_repo)
+
+        assert _adhoc_ordinal(next_id) == 18
+
+    def test_iss_adh_017_and_iss_017_share_one_adhoc_series(
+        self, tmp_git_repo: Path
+    ) -> None:
+        ledger = TestMacroContracts._seed_issue_ledger(
+            tmp_git_repo,
+            [
+                TestMacroContracts._ledger_row(
+                    "ISS-ADH-017",
+                    bucket="adhoc",
+                    slug="017-two-counter-tdd-retry",
+                ),
+            ],
+        )
+
+        next_id = _next_adhoc_id(ledger, tmp_git_repo)
+
+        assert _adhoc_ordinal(next_id) == 18
+
+    def test_origin_main_ledger_ordinal_counts_when_working_copy_ledger_is_empty(
+        self, tmp_git_repo: Path
+    ) -> None:
+        ledger = TestMacroContracts._seed_issue_ledger(
+            tmp_git_repo,
+            [
+                TestMacroContracts._ledger_row(
+                    "ISS-ADH-017",
+                    bucket="adhoc",
+                    slug="017-origin-ledger-row",
+                ),
+            ],
+        )
+        subprocess.run(
+            ["git", "add", "specs/issues.jsonl"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "origin ledger"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        ledger.write_text("")
+
+        next_id = _next_adhoc_id(ledger, tmp_git_repo)
+
+        assert _adhoc_ordinal(next_id) == 18
+
+    def test_local_only_feat_adhoc_019_does_not_reserve_019(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_origin_feat_ref(tmp_git_repo, "adhoc/018-claimed-on-origin")
+        subprocess.run(
+            ["git", "branch", "feat/adhoc/019-local-only"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        ledger = TestMacroContracts._seed_issue_ledger(tmp_git_repo, [])
+
+        next_id = _next_adhoc_id(ledger, tmp_git_repo)
+
+        assert _adhoc_ordinal(next_id) == 19
