@@ -425,3 +425,21 @@ class TestReviewPromptSecurityTaxonomy:
             "Review Security section must direct cross-task findings to cite",
             " an OWASP A# category code",
         )
+
+
+class TestVerificationBatchImmediateRouting:
+    """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
+
+    def test_tasks_prompts_lock_verification_batch_to_immediate(self):
+        repo = Path(__file__).resolve().parents[2]
+        paths = (
+            repo / "src" / "deviate" / "prompts" / "commands" / "deviate-tasks.md",
+            repo / "src" / "deviate" / "prompts" / "auto" / "tasks.md",
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            assert "Verification_Batch" in text
+            assert "never TDD" in text, (
+                f"{path.name}: must lock Verification_Batch so it cannot emit Mode: TDD"
+            )
+            assert "Type→Mode lock" in text or "hard type→mode lock" in text

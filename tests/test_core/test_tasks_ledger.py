@@ -40,6 +40,30 @@ class TestGenerateJsonlFromMd:
         assert records[1].status == "PENDING"
         assert records[1].execution_mode == "IMMEDIATE"
 
+    def test_verification_batch_maps_to_immediate_even_when_mode_is_tdd(
+        self, tmp_path: Path
+    ):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-005-03: Row-validator accept/reject cases\n"
+            "  - **Type**: Verification_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: Sociable_Unit\n"
+            "  - **Green**: No production change.\n"
+            "- TSK-005-01: Implement the model field\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+        )
+
+        records = generate_jsonl_from_md(tasks_md, issue_id="005-002")
+
+        assert len(records) == 2
+        assert records[0].execution_mode == "IMMEDIATE"
+        assert records[1].execution_mode == "TDD"
+
     def test_empty_tasks_md_returns_empty_list(self, tmp_path: Path):
         from deviate.core.tasks_ledger import generate_jsonl_from_md
 
@@ -195,6 +219,23 @@ class TestGenerateJsonlFromMd:
         message = str(excinfo.value)
         assert "AC-PLAN-001 (automated, tests/a.py, tests/b.py)" in message
         assert "TSK-005-02" in message
+
+
+class TestResolveExecutionMode:
+    def test_verification_batch_is_immediate_even_when_declared_tdd(self):
+        from deviate.core.tasks_ledger import resolve_execution_mode
+
+        assert resolve_execution_mode("Verification_Batch", "TDD") == "IMMEDIATE"
+        assert resolve_execution_mode("Verification_Batch", "IMMEDIATE") == "IMMEDIATE"
+
+    def test_other_types_keep_declared_mode(self):
+        from deviate.core.tasks_ledger import resolve_execution_mode
+
+        assert resolve_execution_mode("Feature_Batch", "TDD") == "TDD"
+        assert resolve_execution_mode("Feature_Batch", "IMMEDIATE") == "IMMEDIATE"
+        assert resolve_execution_mode("Bugfix", "TDD") == "TDD"
+        assert resolve_execution_mode("Config", "IMMEDIATE") == "IMMEDIATE"
+        assert resolve_execution_mode(None, "TDD") == "TDD"
 
 
 class TestValidateTasksJsonl:
