@@ -49,6 +49,7 @@ from deviate.state.config import (
     AgentConfig,
     SessionState,
     _load_deviate_config_toml,
+    resolve_claim_remote,
     resolve_graphite_config,
     resolve_model_for_phase,
 )
@@ -75,6 +76,17 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _effective_local(local: bool, root: Path | None = None) -> bool:
+    """Resolve claim locality: ``--local`` OR ``claim_remote = false``.
+
+    Explicit ``local=True`` always wins. When *root* is omitted, use
+    ``Path.cwd()``.
+    """
+    if local:
+        return True
+    return not resolve_claim_remote(root if root is not None else Path.cwd())
 
 
 def _resolve_dot_deviate() -> Path:
@@ -648,7 +660,7 @@ def _specify_pre(
         ledger_path=ledger_path,
         force=force,
         dry_run=dry_run,
-        local=local,
+        local=_effective_local(local),
     )
     if result is None:
         console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
