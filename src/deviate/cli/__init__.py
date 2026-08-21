@@ -14,7 +14,16 @@ from deviate.state.config import resolve_graphite_config as resolve_graphite_con
 from deviate.state.config import resolve_base_branch as resolve_base_branch  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
 from deviate.cli.flow_commands import flows_app as flows_app  # noqa: F401
-from deviate.cli.meso import _meso_run, merge, meso_app, plan, pr, specify, tasks
+from deviate.cli.meso import (
+    _LOCAL_CLAIM_HELP,
+    _meso_run,
+    merge,
+    meso_app,
+    plan,
+    pr,
+    specify,
+    tasks,
+)
 from deviate.cli.micro import (
     _run_all as _run_all,  # noqa: F401  (referenced by tests/test_cli/test_top_level_run.py)
     e2e_app,
@@ -100,6 +109,7 @@ _CONFIG_TOML_COMMENTS: dict[str, str] = {
     "use_libref": "Enable the libref CLI for offline documentation lookups",
     "graphite": "Enable Graphite CLI integration for stacked changes",
     "base_branch": "Trunk branch for worktrees, PR base, and review diffs",
+    "claim_remote": "Push the claim branch as a distributed lock (default true)",
 }
 
 
@@ -302,7 +312,7 @@ def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
 
     Preserves every other key/table in the file (similar in spirit to
     :func:`_merge_flag_keys` for the boolean ``graphite`` / ``use_libref``
-    keys, but for the nested ``[agent]`` table).
+    / ``claim_remote`` keys, but for the nested ``[agent]`` table).
 
     Returns ``True`` when the file was modified, ``False`` when the
     existing ``[agent].backend`` already matches the requested value.
@@ -361,6 +371,47 @@ def _prompt_agent_selection(
     return selected
 
 
+def _prompt_claim_remote() -> bool | None:
+    """Ask whether to push claim branches as a remote lock.
+
+    Returns ``False`` when the operator disables push-as-lock,
+    ``True`` when they keep it, and ``None`` when the session is not
+    interactive so the caller keeps the ``claim_remote = true`` default.
+    """
+    if not is_interactive():
+        return None
+    try:
+        selected = Prompt.ask(
+            "Push claim branches to the remote as a lock",
+            choices=["yes", "no"],
+            default="yes",
+            console=console,
+        )
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if selected == "no":
+        return False
+    return True
+
+
+def _resolve_setup_claim_remote(
+    *,
+    no_claim_remote: bool,
+    config_exists: bool,
+) -> bool:
+    """Decide the ``claim_remote`` value written by ``deviate setup``.
+
+    ``--no-claim-remote`` always writes false. A fresh workspace without
+    the flag may prompt on a TTY. Non-interactive sessions and re-runs
+    against an existing config keep the true default.
+    """
+    if no_claim_remote:
+        return False
+    if config_exists:
+        return True
+    return _prompt_claim_remote() is not False
+
+
 def _validate_agent_choice(value: str | None) -> str | None:
     """Typer callback: validate ``--agent`` value and emit Typer error.
 
@@ -377,30 +428,51 @@ def _validate_agent_choice(value: str | None) -> str | None:
     return value
 
 
-def _merge_flag_keys(config_path: Path, *, graphite: bool, use_libref: bool) -> None:
-    """Surgically update ``graphite`` and ``use_libref`` keys in an existing TOML.
+def _insert_toml_root_line(content: str, line: str) -> str:
+    """Insert a root-scope TOML assignment before the first ``[table]`` header."""
+    if not line.endswith("\n"):
+        line += "\n"
+    table_match = re.search(r"^\[.*\]\s*$", content, re.MULTILINE)
+    if table_match:
+        idx = table_match.start()
+        return content[:idx] + line + content[idx:]
+    if content and not content.endswith("\n"):
+        content += "\n"
+    return content + line
 
+
+def _upsert_toml_bool(content: str, key: str, value: bool) -> str:
+    """Replace or insert a top-level boolean assignment in TOML text."""
+    new_line = f"{key} = {'true' if value else 'false'}"
+    pattern = re.compile(rf"^{re.escape(key)}\s*=\s*.*$", re.MULTILINE)
+    if pattern.search(content):
+        return pattern.sub(new_line, content)
+    return _insert_toml_root_line(content, new_line)
+
+
+def _merge_flag_keys(
+    config_path: Path,
+    *,
+    graphite: bool,
+    use_libref: bool,
+    claim_remote: bool = True,
+) -> None:
+    """Surgically update flag keys in an existing TOML.
+
+    Upserts ``graphite``, ``use_libref``, and ``claim_remote``.
     Preserves every other key/table (e.g. user-customised ``[models]``).
-    Used when ``init --graphite`` or ``init --libref`` is re-run on a workspace
-    whose ``.deviate/config.toml`` already exists — the idempotency guard in
+    Used when ``setup --graphite``, ``setup --libref``, or
+    ``setup --no-claim-remote`` is re-run on a workspace whose
+    ``.deviate/config.toml`` already exists — the idempotency guard in
     ``_write_if_missing`` would otherwise silently drop the new flag values.
     """
     content = config_path.read_text(encoding="utf-8")
-    for key, value in (("graphite", graphite), ("use_libref", use_libref)):
-        new_line = f"{key} = {'true' if value else 'false'}"
-        pattern = re.compile(rf"^{re.escape(key)}\s*=\s*.*$", re.MULTILINE)
-        if pattern.search(content):
-            content = pattern.sub(new_line, content)
-        else:
-            # Insert before the first [table] header if any, else append.
-            table_match = re.search(r"^\[.*\]\s*$", content, re.MULTILINE)
-            if table_match:
-                idx = table_match.start()
-                content = content[:idx] + f"{new_line}\n" + content[idx:]
-            else:
-                if content and not content.endswith("\n"):
-                    content += "\n"
-                content += f"{new_line}\n"
+    for key, value in (
+        ("graphite", graphite),
+        ("use_libref", use_libref),
+        ("claim_remote", claim_remote),
+    ):
+        content = _upsert_toml_bool(content, key, value)
     config_path.write_text(content, encoding="utf-8")
 
 
@@ -409,6 +481,7 @@ def _scaffold_dotfiles(
     agent_export_mode: str,
     use_libref: bool = False,
     graphite: bool = False,
+    claim_remote: bool = True,
     force_update_flags: bool = False,
     agent_backend: str | None = None,
 ) -> None:
@@ -421,13 +494,18 @@ def _scaffold_dotfiles(
         console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     elif config_path.exists():
         # Existing config: only touch the keys the caller asked us to touch.
-        # `use_libref` and `graphite` are only ever upserted when the
-        # corresponding flag was passed (force_update_flags).  `agent_backend`
-        # is always upserted when provided so `--agent factory` can overwrite
-        # a previously persisted backend.
+        # `use_libref`, `graphite`, and `claim_remote` are only ever upserted
+        # when the corresponding flag was passed (force_update_flags).
+        # `agent_backend` is always upserted when provided so `--agent factory`
+        # can overwrite a previously persisted backend.
         changed = False
         if force_update_flags:
-            _merge_flag_keys(config_path, graphite=graphite, use_libref=use_libref)
+            _merge_flag_keys(
+                config_path,
+                graphite=graphite,
+                use_libref=use_libref,
+                claim_remote=claim_remote,
+            )
             changed = True
         if agent_backend is not None:
             changed = (
@@ -442,6 +520,7 @@ def _scaffold_dotfiles(
             agent_export_mode=agent_export_mode,
             use_libref=use_libref,
             graphite=graphite,
+            claim_remote=claim_remote,
         )
         if agent_backend is not None:
             config = config.model_copy(
@@ -697,6 +776,11 @@ def setup(
         help="Override auto-detected agent platform",
         callback=_validate_agent_choice,
     ),
+    no_claim_remote: bool = typer.Option(
+        False,
+        "--no-claim-remote",
+        help="Disable push-as-lock; write claim_remote = false",
+    ),
 ) -> None:
     """Bootstrap a new project with DeviaTDD (start here)."""
     workdir = Path.cwd()
@@ -720,6 +804,10 @@ def setup(
                 raise typer.Exit(code=1)
 
     backend = _resolve_agent_to_backend(selected_agent)
+    claim_remote_val = _resolve_setup_claim_remote(
+        no_claim_remote=no_claim_remote,
+        config_exists=config_path.exists(),
+    )
 
     use_libref_val = True if libref else _detect_libref()
     _scaffold_dotfiles(
@@ -727,7 +815,8 @@ def setup(
         agent_export_mode,
         use_libref=use_libref_val,
         graphite=graphite,
-        force_update_flags=graphite or libref,
+        claim_remote=claim_remote_val,
+        force_update_flags=graphite or libref or no_claim_remote,
         agent_backend=backend,
     )
 
@@ -1033,6 +1122,11 @@ def run_command(
         "--model",
         help="Override default model for RED/GREEN/REFACTOR/EXECUTE phases",
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help=_LOCAL_CLAIM_HELP,
+    ),
 ) -> None:
     """Prepare the next issue end-to-end and run it.
 
@@ -1045,7 +1139,7 @@ def run_command(
     ``deviate micro run`` if you only want to drain pending tasks without
     re-running meso.
     """
-    worktree_path_str = _meso_run(issue_id=issue, force=force)
+    worktree_path_str = _meso_run(issue_id=issue, force=force, local=local)
     if not worktree_path_str:
         # _meso_run has already raised SystemExit(1) on hard failures;
         # reaching here means a soft failure (e.g. dry-run consumed the

@@ -8,6 +8,7 @@ from deviate.state.config import (
     DeviateConfig,
     ProfileConfig,
     SessionState,
+    resolve_claim_remote,
     resolve_phase_model,
 )
 from deviate.cli.__init__ import resolve_graphite_config, resolve_base_branch
@@ -142,6 +143,58 @@ class TestDeviateConfig:
     def test_resolve_base_branch_default(self, tmp_path: Path) -> None:
         assert resolve_base_branch(tmp_path) == "main"
         assert resolve_graphite_config(tmp_path) is False
+
+    def test_config_claim_remote_field_default(self) -> None:
+        config = DeviateConfig()
+        assert config.claim_remote is True
+
+    def test_config_claim_remote_round_trip(self) -> None:
+        true_config = DeviateConfig(claim_remote=True)
+        dumped_true = true_config.model_dump()
+        assert "claim_remote" in dumped_true
+        assert dumped_true["claim_remote"] is True
+        restored_true = DeviateConfig.model_validate(
+            json.loads(true_config.model_dump_json())
+        )
+        assert restored_true.claim_remote is True
+
+        false_config = DeviateConfig(claim_remote=False)
+        dumped_false = false_config.model_dump()
+        assert "claim_remote" in dumped_false
+        assert dumped_false["claim_remote"] is False
+        restored_false = DeviateConfig.model_validate(
+            json.loads(false_config.model_dump_json())
+        )
+        assert restored_false.claim_remote is False
+
+    def test_resolve_claim_remote_true(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text("claim_remote = true\n", encoding="utf-8")
+        assert resolve_claim_remote(tmp_path) is True
+
+    def test_resolve_claim_remote_false(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text("claim_remote = false\n", encoding="utf-8")
+        assert resolve_claim_remote(tmp_path) is False
+
+    def test_resolve_claim_remote_key_absent(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text('profile = "default"\n', encoding="utf-8")
+        assert resolve_claim_remote(tmp_path) is True
+
+    def test_resolve_claim_remote_no_file(self, tmp_path: Path) -> None:
+        assert resolve_claim_remote(tmp_path) is True
+
+    def test_resolve_claim_remote_non_bool(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text(
+            'claim_remote = "false"\n', encoding="utf-8"
+        )
+        assert resolve_claim_remote(tmp_path) is True
 
 
 class TestProfileConfig:
