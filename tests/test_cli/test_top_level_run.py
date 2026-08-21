@@ -34,6 +34,7 @@ def test_top_level_run_help_lists_meso_options():
 
     assert "--issue" in output
     assert "--force" in output
+    assert "--local" in output
     for removed in ("--profile", "--no-judge", "--no-refactor", "--agent", "--json"):
         assert removed not in output
 
@@ -46,6 +47,43 @@ def test_top_level_run_help_does_not_mention_gate_2_or_meso_approve():
     assert "HITL Gate 2" not in output, result.output
     assert "meso approve" not in output, result.output
     assert "AWAITING_HITL_GATE_2" not in output, result.output
+
+
+def test_top_level_run_forwards_local(tmp_git_repo: Path) -> None:
+    """AC-PLAN-003: ``deviate run --local`` forwards ``local=True`` to ``_meso_run``.
+
+    The flag is the same skip-push claim as ``deviate meso run --local``.
+    It is not ``--no-setup``.
+    """
+    from deviate.state.config import SessionState
+
+    worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
+    worktree_path.mkdir(parents=True, exist_ok=True)
+    (worktree_path / ".deviate").mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="IDLE", active_issue_id="ISS-001").save(
+        worktree_path / ".deviate" / "session.json"
+    )
+
+    with chdir(tmp_git_repo):
+        with (
+            patch(
+                "deviate.cli._meso_run", return_value=str(worktree_path)
+            ) as mock_meso,
+            patch("deviate.cli._run_all") as mock_run_all,
+        ):
+            result = runner.invoke(cli, ["run", "--local"])
+
+    assert result.exit_code == 0, result.output
+    mock_meso.assert_called_once()
+    assert mock_meso.call_args.kwargs.get("local") is True, (
+        "deviate run --local must forward local=True into _meso_run; "
+        f"got kwargs={mock_meso.call_args.kwargs}"
+    )
+    assert mock_meso.call_args.kwargs.get("no_setup") is not True, (
+        "--local must not be treated as --no-setup; "
+        f"got kwargs={mock_meso.call_args.kwargs}"
+    )
+    mock_run_all.assert_called_once()
 
 
 def test_top_level_run_chains_into_micro_after_meso(tmp_git_repo: Path) -> None:
