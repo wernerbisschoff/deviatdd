@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from contextlib import chdir
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+import typer
+from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.cli.micro import _find_test_files, _run_single
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
-from deviate.cli.micro import _find_test_files
 
 runner = CliRunner()
 
@@ -568,6 +572,175 @@ class TestRunCommand:
             assert "TASK_ALREADY_DONE" in result.output, (
                 f"Expected TASK_ALREADY_DONE warning: {result.output}"
             )
+
+
+class TestPinnedRunIssueScopedAlreadyDone:
+    """AC-PLAN-001 / AC-PLAN-007: TASK_ALREADY_DONE is issue-owned."""
+
+    _SIBLING_COMPLETED = {
+        "id": "TSK-001-04",
+        "issue_id": "001-001",
+        "description": "sibling already done",
+        "status": "COMPLETED",
+        "execution_mode": "TDD",
+    }
+
+    def _seed_empty_active_with_sibling_completed(
+        self, root: Path, *, tasks_md_body: str
+    ) -> Path:
+        """Sibling COMPLETED TSK-001-04; active 001-002 has zero JSONL rows."""
+        sibling_ledger = (
+            root / "specs" / "001-phone-to-pi-relay" / "001-handshake" / "tasks.jsonl"
+        )
+        sibling_ledger.parent.mkdir(parents=True, exist_ok=True)
+        sibling_ledger.write_text(
+            json.dumps(self._SIBLING_COMPLETED) + "\n", encoding="utf-8"
+        )
+        issues = root / "specs" / "issues.jsonl"
+        issues.parent.mkdir(parents=True, exist_ok=True)
+        issues.write_text(
+            json.dumps(
+                {
+                    "issue_id": "001-001",
+                    "source_file": (
+                        "specs/001-phone-to-pi-relay/issues/001-handshake.md"
+                    ),
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "001-002",
+                    "source_file": (
+                        "specs/001-phone-to-pi-relay/issues/"
+                        "002-node-pairing-and-presence.md"
+                    ),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        tasks_md = (
+            root
+            / "specs"
+            / "001-phone-to-pi-relay"
+            / "002-node-pairing-and-presence"
+            / "tasks.md"
+        )
+        tasks_md.parent.mkdir(parents=True, exist_ok=True)
+        tasks_md.write_text(tasks_md_body, encoding="utf-8")
+        subprocess.run(
+            [
+                "git",
+                "checkout",
+                "-b",
+                "feat/001-phone-to-pi-relay/002-node-pairing-and-presence",
+            ],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        return sibling_ledger
+
+    def _idle_session(self, root: Path) -> None:
+        dot_dir = root / ".deviate"
+        dot_dir.mkdir(parents=True, exist_ok=True)
+        SessionState(current_phase="IDLE").save(dot_dir / "session.json")
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    @patch("deviate.cli.micro._dispatch_task")
+    def test_pinned_run_TSK_001_04_skips_sibling_TASK_ALREADY_DONE(
+        self,
+        mock_dispatch,
+        mock_agent,
+        mock_pytest,
+        mock_run_test,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-001: pinned run does not skip this issue's PENDING TSK."""
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        self._seed_empty_active_with_sibling_completed(
+            tmp_git_repo,
+            tasks_md_body="# Tasks\n\n- [ ] TSK-001-04: pair node presence\n",
+        )
+        self._idle_session(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["micro", "run", "TSK-001-04"])
+
+        assert "TASK_ALREADY_DONE" not in result.output, (
+            "sibling COMPLETED TSK-001-04 must not print TASK_ALREADY_DONE: "
+            f"{result.output}"
+        )
+        mock_dispatch.assert_called()
+        task = mock_dispatch.call_args[0][0]
+        assert task.get("issue_id") == "001-002", (
+            "pinned dispatch must use the branch issue_id 001-002, "
+            f"got {task.get('issue_id')!r}"
+        )
+        assert task.get("status") == "PENDING"
+        assert task.get("id") == "TSK-001-04"
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    @patch("deviate.cli.micro._dispatch_task")
+    def test_run_single_refuses_TASK_ALREADY_DONE_for_foreign_completed(
+        self,
+        mock_dispatch,
+        mock_agent,
+        mock_pytest,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-007: IDLE + foreign COMPLETED must not take already-done."""
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        sibling_ledger = self._seed_empty_active_with_sibling_completed(
+            tmp_git_repo,
+            tasks_md_body="# Tasks\n\n- [ ] TSK-001-04: pair node presence\n",
+        )
+        self._idle_session(tmp_git_repo)
+        buf = StringIO()
+        console = Console(file=buf, force_terminal=True, width=120)
+
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.micro._find_task_record",
+                return_value=(self._SIBLING_COMPLETED, sibling_ledger),
+            ):
+                try:
+                    _run_single("TSK-001-04", tmp_git_repo, console)
+                    exit_code = 0
+                except typer.Exit as exc:
+                    exit_code = exc.exit_code
+
+        output = buf.getvalue()
+        assert "TASK_ALREADY_DONE" not in output, (
+            f"foreign COMPLETED record must not print TASK_ALREADY_DONE: {output}"
+        )
+        if "TASK_NOT_FOUND" in output:
+            assert exit_code == 1
+            mock_dispatch.assert_not_called()
+        else:
+            mock_dispatch.assert_called()
+            task = mock_dispatch.call_args[0][0]
+            assert task.get("issue_id") == "001-002", (
+                "_run_single must re-resolve the branch issue 001-002, "
+                f"got {task.get('issue_id')!r}"
+            )
+            assert task.get("id") == "TSK-001-04"
+            assert task.get("status") == "PENDING"
 
 
 class TestSessionResume:

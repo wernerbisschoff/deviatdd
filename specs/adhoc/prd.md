@@ -375,3 +375,17 @@
   1. AC-ADHOC-022-01 / AO-022-01: Test-bearing TDD RED `already_satisfied` with `files`/`test_file` null or empty does not write COMPLETED; it is a RED defect (`PhaseFailedError` or JUDGE `revert_before`).
   2. AC-ADHOC-022-02 / AO-022-02: JUDGE does not accept `COMPLIANCE_PASS` / `skip_refactor` for `already_satisfied` unless every declared regression-test path exists in the injected `<diff>` or the documented already-exists HEAD snapshot; missing paths fail closed.
   3. AC-ADHOC-022-03 / AO-022-03: GREEN is not fattened; ISS-ADH-020 evidence quotes and ISS-ADH-021 SHA/GREEN-entry rules stay as composed callers, not reopened gates. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-023: Pinned `micro run <TASK_ID>` Is Issue-Scoped
+
+- **Description**: An explicit `deviate micro run TSK-NNN-NN` resolves only against the active branch/session issue. A sibling issue's COMPLETED row for the same TSK number is never treated as `TASK_ALREADY_DONE` for this worktree.
+- **Preconditions**: Python 3.13. Feature-branch worktree whose `tasks.md` lists `TSK-NNN-NN` with no row in that issue's `tasks.jsonl`, while another issue's ledger already has COMPLETED for the same TSK id. `_find_task_record` currently falls back to the first same-id record from any issue; `_run_single` then exits 0 on IDLE + COMPLETED. `_find_all_pending_tasks` is already issue-scoped.
+- **Inputs/Outputs**: Input — pinned `task_id` plus the branch/session `issue_id`. Output — the active issue's latest record, or a synthesized PENDING from that issue's `tasks.md`, or `TASK_NOT_FOUND` for this issue. Never a foreign-issue COMPLETED status. Bare `deviate micro run` / `--all` stay issue-scoped.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-023-01: As a DeviaTDD operator, I want a pinned `deviate micro run TSK-NNN-NN` to run this issue's task even when a sibling already completed the same TSK number so worktrees cannot skip PENDING work. *(Ref: FR-ADHOC-023)*
+  2. US-023-02: As a DeviaTDD operator, I want `_run_single` to refuse `TASK_ALREADY_DONE` unless the resolved record belongs to the active issue so a foreign COMPLETED row cannot terminate the run. *(Ref: FR-ADHOC-023)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-023-01 / AO-023-01: Pinned `deviate micro run TSK-NNN-NN` in a worktree whose issue has no ledger row (or a non-terminal row) for that id does not print `TASK_ALREADY_DONE` and does not exit 0 solely because a sibling issue completed the same TSK id.
+  2. AC-ADHOC-023-02 / AO-023-02: `_find_task_record` returns only a record whose `issue_id` matches the active branch/session issue when that issue is known; missing ledger row synthesizes PENDING from this issue's `tasks.md` or is `TASK_NOT_FOUND` for this issue.
+  3. AC-ADHOC-023-03 / AO-023-03: `_run_single` applies `TASK_ALREADY_DONE` only when the resolved record's `issue_id` is the active issue and that issue's latest status is terminal. Bare `micro run` / `--all` remain issue-scoped. API + architecture + CHANGELOG land in the same implementation commit.
