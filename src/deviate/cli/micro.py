@@ -11,7 +11,7 @@ import logging
 import sys
 import warnings
 from collections.abc import Callable, Sequence
-from typing import NoReturn
+from typing import Literal, NoReturn
 from pathlib import Path, PurePosixPath
 
 import typer
@@ -3025,10 +3025,46 @@ def _reset_tdd_retry_budget(session: SessionState) -> None:
     session.red_attempts = 0
 
 
+def _has_red_commit_boundary(session: SessionState) -> bool:
+    """Return True when ``session.red_commit_sha`` is a non-empty SHA."""
+    return bool(session.red_commit_sha.strip())
+
+
+def _tdd_pre_green_decision(
+    session: SessionState,
+) -> Literal["escalate", "complete", "green"]:
+    """Choose the next TDD step before GREEN.
+
+    Precedence is fixed: ``revert_before`` re-authors RED; forward JUDGE
+    routes complete without GREEN; a missing RED SHA re-dispatches RED
+    so a cleared retry gate cannot fall through to GREEN.
+    """
+    pending = session.pending_judge_action
+    if pending == "revert_before":
+        return "escalate"
+    if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
+        return "complete"
+    if not _has_red_commit_boundary(session):
+        return "escalate"
+    return "green"
+
+
 def _clear_judge_retry_gate(session: SessionState) -> None:
     """Consume the one-shot JUDGE action so the next cycle cannot re-escalate."""
     session.pending_judge_action = ""
     session.judge_rejected = False
+
+
+def _consume_retry_gate_after_red(session: SessionState) -> None:
+    """Clear the JUDGE retry gate only after RED lands a failing-test SHA.
+
+    Ownership of the empty-SHA gate lives here so ``_clear_judge_retry_gate``
+    stays a pure consume. A retry RED that re-adjudicates ``revert_before``
+    or a forward route keeps ``pending_judge_action`` until a RED-phase
+    commit exists (or the TDD loop re-dispatches / completes).
+    """
+    if _has_red_commit_boundary(session):
+        _clear_judge_retry_gate(session)
 
 
 def _idle_after_tdd(
@@ -3172,7 +3208,7 @@ def _escalate_to_new_red(
         bypass_phase_done=True,
         no_judge=no_judge,
     )
-    _clear_judge_retry_gate(session)
+    _consume_retry_gate_after_red(session)
     session.save(session_path)
     _log_run(
         "PHASE_DECISION",
@@ -3319,14 +3355,11 @@ def _run_tdd_cycle(
         )
 
     while not judge_passed:
-        # RED's no-failing-test adjudication (RED → JUDGE direct route) may
-        # have already returned a verdict — honor it before GREEN runs,
-        # since a vacuous GREEN has nothing to implement. Forward verdicts
-        # break out to _finish_tdd_cycle; revert_before escalates to a new RED.
-        if session.pending_judge_action == "revert_before":
+        pre_green = _tdd_pre_green_decision(session)
+        if pre_green == "escalate":
             session = _escalate("no_failing_test_adjudicated")
             continue
-        if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+        if pre_green == "complete":
             judge_passed = True
             break
         _maybe_push_event(
