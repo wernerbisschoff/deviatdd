@@ -1,0 +1,1 @@
+{"id":"TSK-017-01","issue_id":"ISS-ADH-017","description":"Add `DeviateConfig.claim_remote` and `resolve_claim_remote`","status":"RED","execution_mode":"TDD","created_at":"2026-08-21T08:13:05.791220Z","security_profile":null,"acceptance_criteria":null}
