@@ -31,7 +31,6 @@
 
 ### Tasks
 
-  - **Judge Feedback**: GREEN scoped _find_task_record through _resolve_active_issue_id so any
 session.active_issue_id counts as a known issue. A stale ISS-999-999
 with no feature branch and no tasks board then makes a pinned lookup
 return None and _resolve_task_context raise TASK_NOT_FOUND. That
@@ -56,6 +55,8 @@ The next GREEN attempt must:
    tests/test_micro/test_execute.py::TestExecutePre::test_execute_pre_overrides_wrong_active_issue_id
    tests/test_micro/test_execute.py::TestExecutePost::test_execute_pre_then_post_uses_session_context
    tests/test_cli/test_micro.py::TestFindTaskRecord
+  - **Judge Feedback**: GREEN scoped _find_task_record through _resolve_active_issue_id so any
+  - **Judge Feedback**: JUDGE evidence test_path is not in the injected diff or HEAD: tests/test_micro/test_e2e.py
 - TSK-023-02: Refuse TASK_ALREADY_DONE for a foreign COMPLETED pin
   - **Type**: Bugfix
   - **Mode**: TDD
