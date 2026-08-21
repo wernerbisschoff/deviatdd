@@ -100,7 +100,11 @@ def _capture_green_prompt(
     *,
     session_feedback: str = "",
 ) -> str:
-    session = SessionState(current_phase="RED", train_feedback=session_feedback)
+    session = SessionState(
+        current_phase="RED",
+        train_feedback=session_feedback,
+        red_commit_sha="seed-red-boundary",
+    )
     session_path = root / ".deviate" / "session.json"
     session_path.parent.mkdir(parents=True, exist_ok=True)
     session.save(session_path)
@@ -271,6 +275,7 @@ class TestGreenAutoPromptFeedback:
             train_feedback=feedback,
             judge_rejected=True,
             pending_judge_action="revert_to_red",
+            red_commit_sha="seed-red-boundary",
         )
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
@@ -329,7 +334,8 @@ class TestGreenDiagnosticSurface:
     ) -> tuple[SessionState, Path, Path, dict]:
         dot_dir = root / ".deviate"
         dot_dir.mkdir(parents=True, exist_ok=True)
-        session = SessionState(current_phase="RED")
+        red_sha = _empty_commit(root, "test(TSK-006-09): RED phase - failing test")
+        session = SessionState(current_phase="RED", red_commit_sha=red_sha)
         session_path = dot_dir / "session.json"
         session.save(session_path)
         task = _make_task_record(
@@ -498,3 +504,154 @@ class TestGreenDiagnosticSurface:
                 _run_green_phase(
                     task, ledger_path, session, session_path, Console(quiet=True)
                 )
+
+
+def _empty_commit(root: Path, message: str) -> str:
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", message],
+        cwd=root,
+        env=_git_env(),
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+        check=True,
+    ).stdout.strip()
+
+
+def _seed_green_workspace(
+    root: Path,
+    *,
+    red_commit_sha: str = "",
+) -> tuple[SessionState, Path, Path, dict]:
+    dot_dir = root / ".deviate"
+    dot_dir.mkdir(parents=True, exist_ok=True)
+    session = SessionState(current_phase="RED", red_commit_sha=red_commit_sha)
+    session_path = dot_dir / "session.json"
+    session.save(session_path)
+    task = _make_task_record(
+        task_id="TSK-021-02",
+        issue_id="ISS-ADH-021",
+        description="Refuse GREEN without a RED-phase failing-test SHA",
+        status="RED",
+    )
+    ledger_path = (
+        root
+        / "specs"
+        / "adhoc"
+        / "021-no-failing-test-escalate-invokes-green"
+        / "tasks.jsonl"
+    )
+    _write_ledger(ledger_path, task)
+    return session, session_path, ledger_path, json.loads(task.model_dump_json())
+
+
+def _drive_green_phase(
+    root: Path,
+    session: SessionState,
+    session_path: Path,
+    ledger_path: Path,
+    task: dict,
+) -> tuple[int, PhaseFailedError | None]:
+    """Run `_run_green_phase` and count GREEN `_invoke_agent` calls."""
+    success = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    invoke_count = {"n": 0}
+
+    def _capture_invoke(*args, **kwargs):
+        invoke_count["n"] += 1
+        return (
+            HandoverManifest(phase="GREEN", status="SUCCESS", task_id=task["id"]),
+            "",
+        )
+
+    error: PhaseFailedError | None = None
+    with (
+        chdir(root),
+        patch("deviate.cli.micro._phase_already_done", return_value=False),
+        patch("deviate.cli.micro._log_run"),
+        patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        patch("deviate.cli.micro._invoke_agent", side_effect=_capture_invoke),
+        patch(
+            "deviate.cli.micro._run_pytest",
+            return_value=subprocess.CompletedProcess(
+                args=["pytest"], returncode=0, stdout="", stderr=""
+            ),
+        ),
+        patch("deviate.cli.micro._run_test_cmd", return_value=success),
+        patch("deviate.cli.micro._run_format_cmd", return_value=success),
+        patch("deviate.cli.micro.append_task_transition"),
+        patch("deviate.cli.micro._commit_phase", return_value=True),
+        patch("deviate.cli.micro._verify_clean_worktree"),
+    ):
+        try:
+            _run_green_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+        except PhaseFailedError as exc:
+            error = exc
+    return invoke_count["n"], error
+
+
+class TestGreenRedCommitShaGate:
+    """AC-PLAN-002 / AC-PLAN-003: GREEN requires a RED-phase failing-test SHA."""
+
+    def test_green_refuses_empty_red_commit_sha_without_invoke(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-002: empty `session.red_commit_sha` does not invoke GREEN."""
+        root = tmp_git_repo
+        session, session_path, ledger_path, task = _seed_green_workspace(
+            root, red_commit_sha=""
+        )
+        invoke_count, error = _drive_green_phase(
+            root, session, session_path, ledger_path, task
+        )
+        assert invoke_count == 0, (
+            "AC-PLAN-002: `_run_green_phase` must not invoke the GREEN agent "
+            f"when session.red_commit_sha is empty; error={error!r}"
+        )
+
+    def test_green_refuses_docs_judge_feedback_red_commit_sha_without_invoke(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-002: a docs-feedback SHA is not a RED-phase boundary."""
+        root = tmp_git_repo
+        docs_sha = _empty_commit(root, "docs(TSK-021-02): add judge feedback for retry")
+        session, session_path, ledger_path, task = _seed_green_workspace(
+            root, red_commit_sha=docs_sha
+        )
+        invoke_count, error = _drive_green_phase(
+            root, session, session_path, ledger_path, task
+        )
+        assert invoke_count == 0, (
+            "AC-PLAN-002: `_run_green_phase` must not invoke the GREEN agent "
+            "when session.red_commit_sha is a docs(...): add judge feedback "
+            f"commit ({docs_sha}); error={error!r}"
+        )
+
+    def test_green_invokes_agent_with_red_phase_red_commit_sha(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-003: a genuine RED-phase SHA still enters GREEN."""
+        root = tmp_git_repo
+        red_sha = _empty_commit(root, "test(TSK-021-02): RED phase - failing test")
+        session, session_path, ledger_path, task = _seed_green_workspace(
+            root, red_commit_sha=red_sha
+        )
+        invoke_count, error = _drive_green_phase(
+            root, session, session_path, ledger_path, task
+        )
+        assert error is None, (
+            "AC-PLAN-003: `_run_green_phase` must not fail when "
+            f"session.red_commit_sha is a RED-phase commit; error={error!r}"
+        )
+        assert invoke_count == 1, (
+            "AC-PLAN-003: `_run_green_phase` must invoke the GREEN agent "
+            f"against the standing RED-phase SHA {red_sha}; "
+            f"invoke_count={invoke_count}"
+        )

@@ -1465,6 +1465,131 @@ class TestMicroOrchestration:
             statuses = _read_statuses(ledger_path)
             assert "COMPLETED" in statuses, f"Task must complete: {statuses}"
 
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._verify_worktree_branch")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_no_failing_test_revert_before_invokes_red_not_green(
+        self,
+        mock_agent,
+        mock_branch,
+        mock_verify,
+        mock_run_format,
+        mock_run_test,
+        mock_run_pytest,
+        tmp_git_repo: Path,
+    ):
+        """AC-PLAN-001: always-``revert_before`` on ``no_failing_test`` stays RED.
+
+        After two (or more) RED_NO_FAILING_TEST adjudications the next
+        ``INVOKE_AGENT`` is RED, or the loop raises ``TRAIN_EXHAUSTED`` /
+        ``PhaseFailedError``. GREEN is never invoked.
+        """
+        call_log: list[str] = []
+        passing = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_test.return_value = passing
+        mock_run_pytest.return_value = passing
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        def _always_revert_before(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-021-01")
+            call_log.append(phase)
+            if len(call_log) > 24:
+                raise AssertionError(
+                    f"TDD loop did not terminate after 24 agent invokes: {call_log!r}"
+                )
+            if phase == "JUDGE":
+                return (
+                    HandoverManifest.model_construct(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_VIOLATION",
+                        task_id=tid,
+                        next_action="revert_before",
+                        rationale=(
+                            "The authored test is tautological; "
+                            "re-author a genuinely failing test."
+                        ),
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _always_revert_before
+        with chdir(tmp_git_repo):
+            tests_dir = tmp_git_repo / "tests"
+            tests_dir.mkdir(parents=True, exist_ok=True)
+            (tests_dir / "test_passing.py").write_text(
+                "def test_pass():\n    assert True\n"
+            )
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "chore: seed passing test"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            SessionState(current_phase="IDLE").save(dot_dir / "session.json")
+            task = {
+                "id": "TSK-021-01",
+                "issue_id": "ISS-ADH-021",
+                "description": (
+                    "Dispatch RED after no_failing_test / revert_before, never GREEN"
+                ),
+                "execution_mode": "TDD",
+            }
+            ledger_path = Path("specs") / "adhoc" / "021-nft" / "tasks.jsonl"
+            _write_ledger(
+                ledger_path,
+                _make_task_record(
+                    task_id=task["id"],
+                    issue_id=task["issue_id"],
+                    description=task["description"],
+                    status="PENDING",
+                ),
+            )
+            buf = io.StringIO()
+            console = Console(file=buf, force_terminal=False, width=200)
+            with pytest.raises(PhaseFailedError) as excinfo:
+                _run_tdd_cycle(task, ledger_path, console)
+            output = buf.getvalue()
+            assert "GREEN" not in call_log, (
+                "AC-PLAN-001: after no_failing_test / revert_before the next "
+                "INVOKE_AGENT must be RED (or TRAIN_EXHAUSTED / "
+                f"PhaseFailedError), never GREEN; got {call_log!r}\n{output}"
+            )
+            assert call_log.count("RED") >= 2, (
+                "AC-PLAN-001: two or more RED_NO_FAILING_TEST adjudications "
+                f"must re-dispatch RED; got {call_log!r}\n{output}"
+            )
+            assert call_log.count("JUDGE") >= 2, (
+                "AC-PLAN-001: JUDGE must adjudicate each no_failing_test RED; "
+                f"got {call_log!r}\n{output}"
+            )
+            assert set(call_log) <= {"RED", "JUDGE"}, (
+                "AC-PLAN-001: agent phases must contain RED and JUDGE only; "
+                f"got {call_log!r}\n{output}"
+            )
+            assert "TRAIN_EXHAUSTED" in str(excinfo.value), (
+                "AC-PLAN-001: always-revert_before on no_failing_test must "
+                "stop at the existing red_attempts cap with TRAIN_EXHAUSTED "
+                f"or PhaseFailedError; got {excinfo.value!r}\n{output}"
+            )
+
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
