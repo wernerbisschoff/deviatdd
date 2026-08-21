@@ -70,6 +70,7 @@ def _seed_tracked_test_file(root: Path, name: str = "test_seed_failing.py") -> N
 
 
 class TestRunCommand:
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
@@ -80,7 +81,8 @@ class TestRunCommand:
         mock_run_test,
         mock_find_tests,
         mock_commit,
-        tmp_path: Path,
+        mock_verify,
+        tmp_git_repo: Path,
         approve_gate2,
     ):
         mock_run_test.side_effect = [
@@ -97,7 +99,7 @@ class TestRunCommand:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
         ]
-        with chdir(tmp_path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -112,7 +114,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "007-macro-meso" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
-            approve_gate2(tmp_path, issue_id=task.issue_id)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-01"])
             assert result.exit_code == 0, (
@@ -329,6 +331,7 @@ class TestRunCommand:
                 f"Expected all tasks to reach COMPLETED: {result.output}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
@@ -339,7 +342,8 @@ class TestRunCommand:
         mock_run_test,
         mock_find_tests,
         mock_commit,
-        tmp_path: Path,
+        mock_verify,
+        tmp_git_repo: Path,
         approve_gate2,
     ):
         mock_run_test.side_effect = [
@@ -356,7 +360,7 @@ class TestRunCommand:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
         ]
-        with chdir(tmp_path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -371,7 +375,7 @@ class TestRunCommand:
             )
             ledger_path = Path("specs") / "001-initial" / "tasks.jsonl"
             _write_ledger(ledger_path, task)
-            approve_gate2(tmp_path, issue_id=task.issue_id)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-05"])
             assert result.exit_code == 0, (
@@ -395,11 +399,20 @@ class TestRunCommand:
             )
             assert "TASK_NOT_FOUND" in result.output or "NOT_FOUND" in result.output
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_with_profile_fast(
-        self, mock_agent, mock_run_test, mock_find_tests, tmp_path: Path, approve_gate2
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_find_tests,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.side_effect = [
             subprocess.CompletedProcess(
@@ -415,7 +428,7 @@ class TestRunCommand:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
         ]
-        with chdir(tmp_path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -432,7 +445,7 @@ class TestRunCommand:
                 Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
             )
             _write_ledger(ledger_path, task)
-            approve_gate2(tmp_path, issue_id=task.issue_id)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(
                 cli, ["micro", "run", "TSK-001-03", "--profile", "fast"]
@@ -447,11 +460,20 @@ class TestRunCommand:
                 f"Expected REFACTOR skipped with --profile fast: {result.output}"
             )
 
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
     @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     def test_run_with_flag_overrides(
-        self, mock_agent, mock_run_test, mock_find_tests, tmp_path: Path, approve_gate2
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_find_tests,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
     ):
         mock_run_test.side_effect = [
             subprocess.CompletedProcess(
@@ -467,7 +489,7 @@ class TestRunCommand:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
         ]
-        with chdir(tmp_path):
+        with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
@@ -484,7 +506,7 @@ class TestRunCommand:
                 Path("specs") / "001-foundation-cli-infrastructure" / "tasks.jsonl"
             )
             _write_ledger(ledger_path, task)
-            approve_gate2(tmp_path, issue_id=task.issue_id)
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
 
             result = runner.invoke(
                 cli,
@@ -720,7 +742,10 @@ class TestSessionResume:
             dot_dir.mkdir(parents=True)
             # RED is already done: session parked in RED, ledger records the
             # RED transition after the PENDING entry.
-            session = SessionState(current_phase="RED")
+            session = SessionState(
+                current_phase="RED",
+                red_commit_sha="deadbeef1234567890abcdef1234567890abcdef",
+            )
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
