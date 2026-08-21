@@ -317,8 +317,8 @@ class TestGreenDiagnosticSurface:
     The class replaces ``TestGreenStubPassGuard`` from commit 6463060:
     that implementation tried to reject empty-diff PASS manifests at
     GREEN, but deciding whether a task is done is JUDGE's job (the
-    JUDGE prompt's edge case table emits COMPLIANCE_PASS with note
-    ``NO_DIFF`` for empty diffs). GREEN's actual blocker in the Gloss
+    JUDGE prompt's edge case table requires a dirty-diff ``test_quote``
+    on ``proceed_to_refactor_no_diff`` for empty GREEN). GREEN's actual blocker in the Gloss
     TSK-006-09 reproduce was the runner's silent ``'unknown'`` fallback
     when an agent emitted ``status: ERROR`` with ``rationale: null``.
     These tests pin the diagnostic improvement.
@@ -360,9 +360,9 @@ class TestGreenDiagnosticSurface:
         This is the *only* blocking fix for the Gloss failure mode.
         GREEN's job is to make tests pass; deciding whether the task is
         done is JUDGE's responsibility (the JUDGE prompt's edge case
-        table emits COMPLIANCE_PASS with note ``NO_DIFF`` for empty
-        diffs, so a stub PASS routes to the next phase instead of
-        looping).
+        table requires a dirty-diff ``test_quote`` on
+        ``proceed_to_refactor_no_diff`` for empty GREEN, so a stub PASS
+        routes to JUDGE instead of looping).
         """
         root = tmp_git_repo
         with chdir(root):
@@ -428,9 +428,9 @@ class TestGreenDiagnosticSurface:
         make tests pass. A test that already passes — feature was
         landed in a prior session, or this is a docs/rename task — is
         a legitimate PASS. Deciding whether the task is done is
-        JUDGE's job; the JUDGE prompt's edge case table emits
-        ``COMPLIANCE_PASS`` with note ``NO_DIFF`` for empty diffs,
-        routing the no-change PASS to REFACTOR or the next task.
+        JUDGE's job; the JUDGE prompt's edge case table requires a
+        dirty-diff ``test_quote`` on ``proceed_to_refactor_no_diff``
+        for empty GREEN, routing the no-change PASS to JUDGE.
         """
         root = tmp_git_repo
         with chdir(root):

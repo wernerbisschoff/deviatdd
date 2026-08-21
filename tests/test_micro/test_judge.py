@@ -2497,3 +2497,57 @@ class TestTddJudgeEvidenceGate:
         assert "COMPLETED" in statuses, (
             f"EXECUTE judge must stay ungated and COMPLETE, statuses={statuses!r}"
         )
+
+
+class TestJudgeEvidencePromptSchema:
+    """AC-PLAN-006: auto judge prompt requires evidence and omits default-pass."""
+
+    def _build_prompt(self, tmp_path: Path) -> str:
+        from deviate.cli.micro import _build_auto_prompt
+
+        spec_dir = tmp_path / "specs" / "adhoc" / "issues"
+        spec_dir.mkdir(parents=True)
+        spec_file = spec_dir / "020-judge-evidence-prompt.md"
+        spec_file.write_text("# Stub Spec\n", encoding="utf-8")
+        issues_jsonl = tmp_path / "specs" / "issues.jsonl"
+        issues_jsonl.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-020",
+                    "source_file": "specs/adhoc/issues/020-judge-evidence-prompt.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        task = {
+            "id": "TSK-020-04",
+            "issue_id": "ISS-ADH-020",
+            "description": "Verify judge evidence prompt schema",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        return _build_auto_prompt("judge", task, tmp_path)
+
+    def test_auto_judge_prompt_requires_evidence_schema(self, tmp_path: Path) -> None:
+        prompt = self._build_prompt(tmp_path)
+        assert "evidence:" in prompt, (
+            "Auto judge prompt must declare an evidence schema key"
+        )
+        assert "test_quote" in prompt, (
+            "Auto judge prompt must declare test_quote on evidence items"
+        )
+        assert "impl_quote" in prompt, (
+            "Auto judge prompt must declare impl_quote on evidence items"
+        )
+
+    def test_auto_judge_prompt_omits_default_pass_language(
+        self, tmp_path: Path
+    ) -> None:
+        prompt = self._build_prompt(tmp_path)
+        assert "Default to COMPLIANCE_PASS" not in prompt, (
+            "Auto judge prompt must omit Default to COMPLIANCE_PASS"
+        )
+        assert "When in doubt, pass." not in prompt, (
+            "Auto judge prompt must omit When in doubt, pass."
+        )

@@ -122,12 +122,20 @@ Refactoring opportunities are NOT evaluation criteria for JUDGE — surface them
 
 ### STEP 3: EMIT_VERDICT
 
-On approval (default — correctness is intact):
+Cite every injected `AC-PLAN-NNN` in `evidence`. Empty `evidence` is not a pass when AC-PLAN tokens exist. Tasks with no `AC-PLAN-*` tokens may emit empty `evidence`. `proceed_to_refactor_no_diff` requires a dirty-diff `test_quote` and omits `impl_quote`. This skill covers TDD JUDGE only.
+
+On approval (every injected `AC-PLAN-NNN` has matching `evidence` citations and no Category of Violation is present):
 ```yaml
 phase: JUDGE
 status: PASS
 task_id: "{TASK_ID}"
 verdict: "COMPLIANCE_PASS"
+evidence:
+  - ac: "AC-PLAN-001"
+    test_path: "tests/example.py"
+    test_quote: "assert increment(2) == 3"
+    impl_path: "src/example.py"
+    impl_quote: "return n + 1"
 summary: "Implementation correctly satisfies all FR-NN / AC-NN requirements; tests validate the spec; no security, governance, tamper, or flow issues."
 violations: []
 train_feedback: |
@@ -202,6 +210,12 @@ phase: JUDGE
 status: PASS | FAILURE
 task_id: "{TASK_ID}"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
+evidence:
+  - ac: "AC-PLAN-001"
+    test_path: "tests/example.py"
+    test_quote: "assert increment(2) == 3"
+    impl_path: "src/example.py"
+    impl_quote: "return n + 1"
 summary: "Summary of the evaluation outcome"
 next_phase: "IDLE"
 next_action: "revert_before" | "revert_to_red" | "skip_refactor" | "continue_refactor" | "proceed_to_refactor_no_diff"
@@ -268,13 +282,13 @@ security hole, gate skip, flow break), never a refactor.
 | Condition | Action |
 |---|---|
 | spec.md not found | Emit FAILURE with category "Spec Non-Compliance" and note "SPEC_NOT_FOUND" |
-| No diff to evaluate | Emit PASS with note "NO_DIFF" |
+| No production diff to evaluate (empty GREEN) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with a dirty-diff `test_quote` in `evidence`. Omit `impl_quote`. Empty evidence is not a pass when AC-PLAN tokens exist. |
 | Binary files in diff | Skip binary files, note in summary |
 | All changes are test-only without src changes | Flag as SUSPICIOUS — FAILURE with category "Test Integrity Violation". |
 | Pre-existing violations (not from this task) | Flag only violations introduced by this diff |
 | Empty `**Flow References**` in task | Treat task as enabling / infrastructure; flow alignment is SKIP |
 | Refactoring opportunity observed | Emit PASS **only** (never FAILURE for refactoring). Populate `train_feedback` with `REFACTOR NOTE:` prefix. |
-| `<failure_kind>mechanical</failure_kind>` and slice is intrinsically RED-only (fixture file, migration script, generated types, doc-only slice) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff`. |
+| `<failure_kind>mechanical</failure_kind>` and slice is intrinsically RED-only (fixture file, migration script, generated types, doc-only slice) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with a dirty-diff `test_quote` in `evidence` and no `impl_quote`. |
 | `<failure_kind>mechanical</failure_kind>` present otherwise | GREEN emitted `status: FAILURE` with mechanical rationale. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_before` or `revert_to_red` or `skip_refactor`. |
 | `<failure_kind>test_defect</failure_kind>` present | GREEN judged the RED test itself wrong. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_before` (re-run RED). |
 
