@@ -1,4 +1,4 @@
-"""Two-counter TDD retry pins (ISS-ADH-017 / AC-PLAN-001..004).
+"""Two-counter TDD retry pins (ISS-ADH-017 / AC-PLAN-001..005).
 
 GREEN trains three times against one standing RED contract on
 ``revert_to_red``, then escalates. Cycle 1 does not print
@@ -7,10 +7,12 @@ escalates print ``TRAIN_EXHAUSTED`` and stop. Counters seed from
 ``SessionState`` so a crash mid-train cannot zero the budget via a
 local ``train_attempts = 0``. Escalate RED receives a short
 ``previous cycle failed because`` note, not the GREEN dump.
+AC-PLAN-005 keeps JUDGE verbs, the coerce matrix, and 3/3 caps.
 """
 
 from __future__ import annotations
 
+import inspect
 import io
 import subprocess
 from pathlib import Path
@@ -20,10 +22,16 @@ from rich.console import Console
 
 from deviate.cli.micro import (
     PhaseFailedError,
+    _JUDGE_ACTIONS,
+    _MAX_GREEN_ATTEMPTS,
+    _MAX_RED_ATTEMPTS,
     _build_auto_prompt,
+    _coerce_judge_action,
     _finish_tdd_cycle,
+    _run_execute_phase,
     _run_tdd_cycle,
 )
+from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
 
@@ -760,4 +768,320 @@ class TestEscalateInjectsShortNoteNotGreenDump:
         assert "previous cycle failed because" not in feedback_at_green[1], (
             "AC-PLAN-004: GREEN-train must not replace train_feedback with "
             f"the escalate note; got {feedback_at_green[1]!r}"
+        )
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_EXPECTED_JUDGE_ACTIONS = frozenset(
+    {
+        "revert_before",
+        "revert_to_red",
+        "continue_refactor",
+        "skip_refactor",
+        "proceed_to_refactor_no_diff",
+    }
+)
+
+
+def _unreleased_changelog(text: str) -> str:
+    marker = "## [Unreleased]"
+    start = text.index(marker)
+    rest = text[start:]
+    nxt = rest.find("\n## [", 1)
+    return rest if nxt < 0 else rest[:nxt]
+
+
+def _install_coerce_violation_stubs(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    failure_kind: str,
+    declared_next_action: str,
+    pass_after_red_count: int = 2,
+) -> dict[str, object]:
+    """Stub JUDGE as an agent that declares ``declared_next_action``.
+
+    The stub then applies ``_coerce_judge_action`` the same way
+    ``_run_judge_phase`` does, so a ``test_defect`` / ``no_failing_test``
+    ``COMPLIANCE_VIOLATION`` becomes ``revert_before`` even when the
+    agent asked for ``revert_to_red``.
+    """
+    call_log: list[str] = []
+    coerced_actions: list[str | None] = []
+    counters_at_red: list[tuple[int, int]] = []
+
+    def _guard() -> None:
+        if len(call_log) > _MAX_PHASES:
+            raise AssertionError(
+                f"TDD loop did not terminate after {_MAX_PHASES} phases: {call_log!r}"
+            )
+
+    def _red(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("RED")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        counters_at_red.append((current.green_attempts, current.red_attempts))
+        if not current.red_commit_sha:
+            current.red_commit_sha = STANDING_RED_SHA
+        current.current_phase = "RED"
+        current.save(session_path_arg)
+        return current
+
+    def _green(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("GREEN")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        current.current_phase = "GREEN"
+        current.failure_kind = failure_kind
+        current.train_feedback = STANDING_FEEDBACK
+        current.save(session_path_arg)
+        return current
+
+    def _judge(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("JUDGE")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        if call_log.count("RED") >= pass_after_red_count:
+            current.judge_rejected = False
+            current.pending_judge_action = "skip_refactor"
+            current.failure_kind = ""
+            current.train_feedback = ""
+            coerced_actions.append("skip_refactor")
+        else:
+            manifest = HandoverManifest.model_construct(
+                phase="JUDGE",
+                status="SUCCESS",
+                verdict="COMPLIANCE_VIOLATION",
+                task_id="TSK-017-05",
+                next_action=declared_next_action,
+                rationale="AC-PLAN-005 coerce matrix pin",
+            )
+            action = _coerce_judge_action(
+                manifest,
+                "COMPLIANCE_VIOLATION",
+                failure_kind=failure_kind,
+            )
+            coerced_actions.append(action)
+            current.failure_kind = failure_kind
+            current.judge_rejected = True
+            current.pending_judge_action = action or ""
+            current.train_feedback = STANDING_FEEDBACK
+        current.save(session_path_arg)
+        return current
+
+    def _finish(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("REFACTOR")
+        session_arg = args[2]
+        assert isinstance(session_arg, SessionState)
+        return session_arg
+
+    monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+    monkeypatch.setattr("deviate.cli.micro._run_green_phase", _green)
+    monkeypatch.setattr("deviate.cli.micro._run_judge_phase", _judge)
+    monkeypatch.setattr("deviate.cli.micro._finish_tdd_cycle", _finish)
+    return {
+        "call_log": call_log,
+        "coerced_actions": coerced_actions,
+        "counters_at_red": counters_at_red,
+    }
+
+
+class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
+    """AC-PLAN-005 / US-017-02 / FR-ADHOC-017 / AC-ADHOC-017-05."""
+
+    @pytest.mark.parametrize(
+        "failure_kind,declared_next_action",
+        [
+            ("test_defect", "revert_to_red"),
+            ("test_defect", None),
+            ("no_failing_test", "revert_to_red"),
+            ("no_failing_test", None),
+        ],
+    )
+    def test_coerce_maps_test_defect_and_no_failing_test_to_revert_before(
+        self,
+        failure_kind: str,
+        declared_next_action: str | None,
+    ) -> None:
+        manifest_kwargs: dict[str, object] = {}
+        if declared_next_action is not None:
+            manifest_kwargs["next_action"] = declared_next_action
+        manifest = HandoverManifest.model_construct(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-017-05",
+            **manifest_kwargs,
+        )
+        result = _coerce_judge_action(
+            manifest, "COMPLIANCE_VIOLATION", failure_kind=failure_kind
+        )
+        assert result == "revert_before", (
+            "AC-PLAN-005: failure_kind "
+            f"{failure_kind!r} on COMPLIANCE_VIOLATION must stay "
+            f"revert_before even when next_action={declared_next_action!r}; "
+            f"got {result!r}"
+        )
+
+    def test_judge_actions_remain_the_five_verb_frozenset(self) -> None:
+        assert _JUDGE_ACTIONS == _EXPECTED_JUDGE_ACTIONS, (
+            "AC-PLAN-005: _JUDGE_ACTIONS must stay the five-verb frozenset; "
+            f"got {_JUDGE_ACTIONS!r}"
+        )
+
+    def test_green_and_red_caps_stay_three(self) -> None:
+        assert _MAX_GREEN_ATTEMPTS == 3, (
+            f"AC-PLAN-005: green_attempts cap must stay 3; got {_MAX_GREEN_ATTEMPTS!r}"
+        )
+        assert _MAX_RED_ATTEMPTS == 3, (
+            f"AC-PLAN-005: red_attempts cap must stay 3; got {_MAX_RED_ATTEMPTS!r}"
+        )
+
+    def test_execute_phase_keeps_max_judge_attempts_three(self) -> None:
+        source = inspect.getsource(_run_execute_phase)
+        assert "max_judge_attempts = 3" in source, (
+            "AC-PLAN-005: _run_execute_phase must keep max_judge_attempts = 3; "
+            "do not retarget the EXECUTE loop."
+        )
+
+    @pytest.mark.parametrize("failure_kind", ["test_defect", "no_failing_test"])
+    def test_coerced_violation_escalates_tdd_loop_now(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        failure_kind: str,
+    ) -> None:
+        """Coerced ``revert_before`` skips remaining GREEN trains."""
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-017",
+            green_attempts=0,
+            red_attempts=0,
+        ).save(session_path)
+
+        traces = _install_coerce_violation_stubs(
+            monkeypatch,
+            failure_kind=failure_kind,
+            declared_next_action="revert_to_red",
+            pass_after_red_count=2,
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        try:
+            _run_tdd_cycle(task, ledger_path, console)
+        except PhaseFailedError as exc:
+            raise AssertionError(
+                "AC-PLAN-005: one coerced revert_before must escalate RED "
+                f"without TRAIN_EXHAUSTED; got {exc!r}\n{buf.getvalue()}"
+            ) from exc
+
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        coerced_actions = traces["coerced_actions"]
+        assert isinstance(coerced_actions, list)
+        counters_at_red = traces["counters_at_red"]
+        assert isinstance(counters_at_red, list)
+
+        assert coerced_actions[0] == "revert_before", (
+            "AC-PLAN-005: _coerce_judge_action must force revert_before for "
+            f"{failure_kind!r} on COMPLIANCE_VIOLATION; got {coerced_actions!r}"
+        )
+        assert call_log.count("RED") >= 2, (
+            "AC-PLAN-005: coerced revert_before must dispatch a retry RED "
+            f"now; got {call_log!r}"
+        )
+        first_contract = call_log[: call_log.index("RED", 1)]
+        assert first_contract.count("GREEN") == 1, (
+            "AC-PLAN-005: coerced revert_before must not burn remaining GREEN "
+            f"tries; got {call_log!r}"
+        )
+        assert counters_at_red[1][0] == 0, (
+            f"AC-PLAN-005: escalate resets green_attempts to 0; got {counters_at_red!r}"
+        )
+        assert counters_at_red[1][1] == 1, (
+            f"AC-PLAN-005: escalate adds 1 to red_attempts; got {counters_at_red!r}"
+        )
+        assert "TRAIN_EXHAUSTED" not in buf.getvalue()
+
+
+class TestAcPlan005SpecAlignment:
+    """AC-PLAN-005: API, architecture, and CHANGELOG describe two counters."""
+
+    def test_api_spec_documents_two_counter_tdd_retry(self) -> None:
+        api = (_REPO_ROOT / "specs" / "DeviaTDD-api.md").read_text(encoding="utf-8")
+        assert "green_attempts" in api, (
+            "AC-PLAN-005: specs/DeviaTDD-api.md must document "
+            "SessionState.green_attempts (max 3)."
+        )
+        assert "red_attempts" in api, (
+            "AC-PLAN-005: specs/DeviaTDD-api.md must document "
+            "SessionState.red_attempts (max 3)."
+        )
+        assert "TRAIN_EXHAUSTED" in api and "escalat" in api.lower(), (
+            "AC-PLAN-005: specs/DeviaTDD-api.md must say TRAIN_EXHAUSTED "
+            "only after three RED escalates."
+        )
+        assert "_coerce_judge_action" in api, (
+            "AC-PLAN-005: specs/DeviaTDD-api.md must keep the "
+            "_coerce_judge_action override."
+        )
+        assert "resetting `train_attempts`" not in api, (
+            "AC-PLAN-005: specs/DeviaTDD-api.md must not reset "
+            "train_attempts on revert_before."
+        )
+        assert "max_train_attempts" not in api, (
+            "AC-PLAN-005: specs/DeviaTDD-api.md must replace "
+            "max_train_attempts with green_attempts / red_attempts."
+        )
+
+    def test_architecture_spec_documents_two_counter_tdd_retry(self) -> None:
+        arch = (_REPO_ROOT / "specs" / "DeviaTDD-architecture.md").read_text(
+            encoding="utf-8"
+        )
+        assert "green_attempts" in arch, (
+            "AC-PLAN-005: specs/DeviaTDD-architecture.md must document "
+            "GREEN train via green_attempts."
+        )
+        assert "red_attempts" in arch, (
+            "AC-PLAN-005: specs/DeviaTDD-architecture.md must document "
+            "RED escalate via red_attempts."
+        )
+        assert "TRAIN_EXHAUSTED" in arch, (
+            "AC-PLAN-005: specs/DeviaTDD-architecture.md must name "
+            "TRAIN_EXHAUSTED after three escalates."
+        )
+        assert "resetting `train_attempts`" not in arch, (
+            "AC-PLAN-005: specs/DeviaTDD-architecture.md must not reset "
+            "train_attempts on revert_before."
+        )
+        assert "max_train_attempts" not in arch, (
+            "AC-PLAN-005: specs/DeviaTDD-architecture.md must replace "
+            "max_train_attempts with GREEN train 3 then escalate."
+        )
+
+    def test_changelog_unreleased_records_two_counter_retry(self) -> None:
+        changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = _unreleased_changelog(changelog)
+        bullets = [ln for ln in unreleased.splitlines() if ln.lstrip().startswith("-")]
+        matching = [
+            b
+            for b in bullets
+            if "TRAIN_EXHAUSTED" in b
+            and "revert_before" in b
+            and ("GREEN" in b or "green_attempts" in b)
+        ]
+        assert matching, (
+            "AC-PLAN-005: CHANGELOG.md [Unreleased] must have a Changed/Fixed "
+            "bullet that GREEN trains three times then escalates and that "
+            "three RED escalates print TRAIN_EXHAUSTED and stop the infinite "
+            "revert_before loop."
         )

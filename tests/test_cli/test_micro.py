@@ -4246,9 +4246,8 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
         """The first ``revert_before`` dispatches a second RED.
 
         Escalate accounting increments ``red_attempts``, resets
-        ``green_attempts`` to 0, and keeps the GREEN ``test_defect``
-        rationale on ``session.train_feedback`` for this task (the short
-        escalate note is TSK-017-04).
+        ``green_attempts`` to 0, and injects a short escalate note into
+        ``session.train_feedback`` for the retry RED (AC-PLAN-004).
         """
         from deviate.cli.micro import (
             _run_tdd_cycle,
@@ -4296,10 +4295,14 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             session_path_arg = args[3]
             current = SessionState.load(session_path_arg)
             if call_log.count("RED") >= 2:
-                assert current.train_feedback == test_defect_rationale, (
-                    "Runner must inject GREEN's test_defect rationale "
-                    "into session.train_feedback before the retry RED; "
-                    f"got {current.train_feedback!r}"
+                assert "previous cycle failed because" in current.train_feedback, (
+                    "AC-PLAN-004/005: escalate RED must get a short "
+                    "'previous cycle failed because' note, not the GREEN "
+                    f"dump; got {current.train_feedback!r}"
+                )
+                assert test_defect_rationale not in current.train_feedback, (
+                    "AC-PLAN-004/005: escalate RED must omit the raw GREEN "
+                    f"rationale dump; got {current.train_feedback!r}"
                 )
                 assert current.pending_judge_action == "revert_before"
                 assert current.red_attempts >= 1, (
