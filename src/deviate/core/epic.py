@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import re
+import subprocess
 import warnings
 from pathlib import Path
+
+from deviate.core._shared import git_env as _git_env
+
+_FEAT_EPIC_PREFIX = re.compile(r"^(?:origin/)?feat/(\d+)-")
 
 
 def _resolve_specs_root(specs_root: Path | None = None) -> Path:
@@ -57,18 +63,48 @@ def _extract_prefix_num(slug: str) -> int:
         return 0
 
 
-def _find_next_epic_num(root: Path) -> int:
-    if not root.is_dir():
-        return 1
-    nums = [
-        _extract_prefix_num(d.name)
-        for d in root.iterdir()
-        if d.is_dir() and _extract_prefix_num(d.name) > 0
+def _list_remote_feat_refs(repo_path: Path | None = None) -> list[str]:
+    """Return already-fetched origin feat ref short names (no network)."""
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/remotes/origin/feat/",
+            ],
+            cwd=repo_path or Path.cwd(),
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _find_next_epic_num(root: Path, repo_path: Path | None = None) -> int:
+    local_nums = [
+        num
+        for d in (root.iterdir() if root.is_dir() else ())
+        if d.is_dir() and (num := _extract_prefix_num(d.name)) > 0
     ]
-    return max(nums, default=0) + 1
+    remote_nums = [
+        int(match.group(1))
+        for ref in _list_remote_feat_refs(repo_path)
+        if (match := _FEAT_EPIC_PREFIX.match(ref))
+    ]
+    return max([*local_nums, *remote_nums], default=0) + 1
 
 
-def allocate_feature_bucket(slug: str, specs_root: Path | None = None) -> Path:
+def allocate_feature_bucket(
+    slug: str,
+    specs_root: Path | None = None,
+    repo_path: Path | None = None,
+) -> Path:
     root = _resolve_specs_root(specs_root)
 
     if _extract_prefix_num(slug) > 0:
@@ -76,7 +112,7 @@ def allocate_feature_bucket(slug: str, specs_root: Path | None = None) -> Path:
         bucket.mkdir(parents=True, exist_ok=True)
         return bucket
 
-    next_num = _find_next_epic_num(root)
+    next_num = _find_next_epic_num(root, repo_path=repo_path)
     numbered_slug = f"{next_num:03d}-{slug}"
     bucket = root / numbered_slug
     bucket.mkdir(parents=True, exist_ok=True)
