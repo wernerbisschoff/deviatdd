@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.cli.micro import PhaseFailedError, _run_tdd_cycle
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
@@ -2043,3 +2047,113 @@ class TestYellowHandoffContract:
                 env=_git_env(),
             ).stdout
             assert "GREEN phase" in log, f"GREEN commit was destroyed! Git log:\n{log}"
+
+
+class TestTwoCounterStubJudgeLoops:
+    """AC-PLAN-005: always-revert stub-JUDGE loops on ``_run_tdd_cycle``.
+
+    HITL / forward-route tests above still assert ``TRAIN_EXHAUSTED`` is
+    the wrong path. These pins cover the two-counter matrices plus the
+    ``failure_kind: test_defect`` coerce.
+    """
+
+    def test_always_revert_to_red_trains_green_three_times_then_escalates(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from tests.test_micro.test_two_counter_retry import (
+            _install_always_revert_to_red_stubs,
+            _mock_pytest,
+            _seed_workspace,
+        )
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-017",
+            green_attempts=0,
+            red_attempts=0,
+        ).save(session_path)
+        traces = _install_always_revert_to_red_stubs(
+            monkeypatch, pass_after_red_count=2
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        _run_tdd_cycle(task, ledger_path, console)
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        assert "TRAIN_EXHAUSTED" not in buf.getvalue()
+        assert call_log.count("RED") >= 2
+        first_contract = call_log[: call_log.index("RED", 1)]
+        assert first_contract.count("GREEN") == 3, (
+            "AC-PLAN-005: always-revert_to_red must train GREEN three times "
+            f"then escalate; got {call_log!r}"
+        )
+
+    def test_always_revert_before_stops_after_three_escalates(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from tests.test_micro.test_two_counter_retry import (
+            _install_always_revert_before_stubs,
+            _mock_pytest,
+            _seed_workspace,
+        )
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(active_issue_id="ISS-ADH-017").save(session_path)
+        traces = _install_always_revert_before_stubs(monkeypatch)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        with pytest.raises(PhaseFailedError, match="TRAIN_EXHAUSTED"):
+            _run_tdd_cycle(task, ledger_path, console)
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        assert call_log.count("RED") == 3, (
+            "AC-PLAN-005: always-revert_before must stop after three "
+            f"escalates with no fourth RED; got {call_log!r}"
+        )
+        assert "TRAIN_EXHAUSTED" in buf.getvalue()
+
+    def test_test_defect_coerce_escalates_now(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from tests.test_micro.test_two_counter_retry import (
+            _install_coerce_violation_stubs,
+            _mock_pytest,
+            _seed_workspace,
+        )
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(active_issue_id="ISS-ADH-017").save(session_path)
+        traces = _install_coerce_violation_stubs(
+            monkeypatch,
+            failure_kind="test_defect",
+            declared_next_action="revert_to_red",
+            pass_after_red_count=2,
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        _run_tdd_cycle(task, ledger_path, console)
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        coerced_actions = traces["coerced_actions"]
+        assert isinstance(coerced_actions, list)
+        assert coerced_actions[0] == "revert_before"
+        first_contract = call_log[: call_log.index("RED", 1)]
+        assert first_contract.count("GREEN") == 1, (
+            f"AC-PLAN-005: test_defect coerce must escalate now; got {call_log!r}"
+        )
+        assert "TRAIN_EXHAUSTED" not in buf.getvalue()
