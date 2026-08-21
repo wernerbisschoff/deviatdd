@@ -281,9 +281,13 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
   non-greenfield project (constitution present), validates the constitution. Transitions
   session to EXPLORE, allocates the bucket via `allocate_feature_bucket()`, appends a DRAFT
   issue record, and emits a JSON contract to stdout (spec_target, feature_dir, issue_id,
-  `is_greenfield`, etc.). On a **greenfield** project (no `specs/constitution.md`),
-  `_validate_constitution` is skipped — the contract reports `is_greenfield=true` so the
-  downstream `/research` phase knows to bootstrap the constitution.
+  `is_greenfield`, etc.). For an unnumbered slug, `allocate_feature_bucket()` sets the next
+  epic number to `max(local numbered specs dirs ∪ remote feat/<NNN>-* prefixes) + 1` from
+  already-fetched `refs/remotes/origin/feat`. A numbered slug such as `005-acceptance-gates`
+  stays idempotent. Local-only unpushed feat branches do not reserve. On a **greenfield**
+  project (no `specs/constitution.md`), `_validate_constitution` is skipped — the contract
+  reports `is_greenfield=true` so the downstream `/research` phase knows to bootstrap the
+  constitution.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate explore post`
@@ -327,9 +331,13 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate shard pre [--dry-run]`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Discovers epic, validates `prd.md` exists, computes the next `ISS-{NNN}`
-  issue ID from the ledger, transitions session to SHARD, and emits JSON contract with
-  `next_issue_id`.
+* **Description:** Discovers epic, validates `prd.md` exists, computes the next issue ID,
+  transitions session to SHARD, and emits JSON contract with `next_issue_id`. Numbered epics
+  emit `<epic-prefix>-<ordinal>`. Adhoc emits `ISS-NNN`. Next `NNN` is `max(ordinals) + 1`
+  over the current `specs/issues.jsonl`, the `origin/<base_branch>:specs/issues.jsonl` blob
+  when present, and already-fetched remote `feat/<epic>/<NNN>-*` / `feat/adhoc/<NNN>-*` refs.
+  `ISS-ADH-NNN` and `ISS-NNN` share one adhoc series. Local-only unpushed feat branches do
+  not reserve.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate shard post <manifest>`
@@ -358,7 +366,10 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
   gate evaluation (`ComplexityGate.classify()` in `core/complexity.py`) before proceeding.
   On acceptance, performs proportional lightweight codebase exploration, emits a JSON
   contract with `next_ADH_num`, `adhoc_dir`, and `prd_path` for the agent to synthesize a
-  single vertical-slice issue.
+  single vertical-slice issue. The `/deviate-adhoc` compiler and `_compute_next_issue_id`
+  share one remote-aware rule: next `NNN` is `max(current ledger, origin ledger, remote
+  feat/adhoc/<NNN>-*) + 1`. `ISS-ADH-NNN` and `ISS-NNN` share that series. Local-only
+  unpushed feat branches do not reserve.
 * **Complexity Gate:**
   * **Low (1-2 files, localized):** Proceed. Minimal exploration.
   * **Medium (2-5 files, bounded):** Proceed. Bounded exploration + abbreviated PRD.
@@ -414,7 +425,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
   NOT advance session state and does NOT run plan or tasks. To continue, run
   ``deviate plan pre`` or invoke the ``/deviate-plan`` slash command inside the new
   worktree.
-* `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `true`; absent file or absent key resolves to `true`). Explicit `--local` always wins over `claim_remote = true`. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim.
+* `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `true`; absent file or absent key resolves to `true`). Explicit `--local` always wins over `claim_remote = true`. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim. When default claim mode is on and `git push` of `feat/<epic>/<NNN>-*` or `feat/adhoc/<NNN>-*` is rejected because the name exists, `_try_claim_issue` increments the ordinal and retries the push, at most 3 times. Collision retry does not set `--local`. Non-name-collision push errors still print `PUSH_STDERR` and follow `--force` or rollback.
 
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 
@@ -919,7 +930,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
      worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
      during setup), claims the issue via `claim_issue()`, and commits the claim to the
      worktree's `specs/issues.jsonl`. Default claim (`claim_remote = true`, no `--local`)
-     then pushes the branch to origin as a distributed lock. Local mode (`--local` or
+     then pushes the branch to origin as a distributed lock. If that push is rejected because
+     the `feat/.../NNN-*` name exists, `_try_claim_issue` increments the ordinal and retries
+     (cap 3). Collision retry does not set `--local`. Non-name-collision push errors still
+     print `PUSH_STDERR` and follow `--force` or rollback. Local mode (`--local` or
      `claim_remote = false`) keeps that worktree and ledger claim and skips the remote-branch
      pre-check and `git push`. `_specify_pre` resolves effective local as `--local` OR
      `claim_remote = false`, so `deviate plan pre` outside a worktree inherits the same rule.
@@ -1212,7 +1226,7 @@ src/deviate/
 │   ├── complexity.py         # ComplexityGate.classify() — adhoc task complexity
 │   ├── constitution.py       # resolve_constitution, extract_commands, validate
 │   ├── contract.py           # emit_contract, load_contract
-│   ├── epic.py               # allocate_feature_bucket, discover_epic, resolve_active_feature
+│   ├── epic.py               # allocate_feature_bucket, discover_epic, remote-aware feat ordinals
 │   ├── issues.py             # claim_issue
 │   ├── prd.py                # extract_prd_requirements
 │   ├── profile.py            # ExecutionProfile (full/fast/secure), resolve_profile()
@@ -1285,7 +1299,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-research` | Architect (Expensive) | `specs/{FEATURE_SLUG}/design.md`, `data-model.md` | `deviate research pre/post` | 5 steps: read explore.md, analyze options, produce design.md, produce data-model.md, commit |
 | `/deviate-prd` | Product Owner Proxy | `specs/{FEATURE_SLUG}/prd.md` | `deviate prd pre/post` | 4 steps: read design.md, synthesize requirements, write prd.md, commit |
 | `/deviate-shard` | Decomposition Engine | `specs/{FEATURE_SLUG}/issues/{ORDINAL}-{slug}.md` (filenames use the per-epic ordinal; the ledger id is `{epic-prefix}-{ORDINAL}`, e.g. `002-001`) | `deviate shard pre/post` | 5 steps: read prd.md, identify vertical slices, validate granularity, create issue stubs with `AO-NNN` acceptance outlines (no Gherkin), register in ledger. PRD/Shard/Adhoc halt with `GHERKIN_LEAK_DETECTED` on bold `**Given**`/`**When**`/`**Then**`; final Gherkin belongs to Plan. New issues emit `{epic-prefix}-{ordinal}` ids; legacy `ISS-NNN` ids still resolve. |
-| `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation (acceptance outline; no Gherkin), ledger registration, commit, Gherkin-leak guard |
+| `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation with remote-aware `NNN` (`max(origin ledger, current ledger, remote feat/adhoc/<NNN>-*) + 1`; `ISS-ADH-NNN` and `ISS-NNN` are one series; local-only branches do not reserve), ledger registration, commit, Gherkin-leak guard |
 | **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
 | `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD; incl. a terminal `[E2E]`/`Verification_Batch` `IMMEDIATE` task that authors `tests/e2e/` user-facing scenarios and runs last when a user-facing workflow or `flow_refs` exists; other types still pick TDD vs IMMEDIATE), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
@@ -1307,7 +1321,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `issue_id` | `str` | Unique ID — `<epic-prefix>-<ordinal>` for new work in numbered epics (e.g. `002-001`); legacy `ISS-NNN` grandfathered |
+| `issue_id` | `str` | Unique ID — `<epic-prefix>-<ordinal>` for new work in numbered epics (e.g. `002-001`); adhoc uses one series (`ISS-NNN` / `ISS-ADH-NNN`); next adhoc `NNN` includes the origin ledger and remote `feat/adhoc/<NNN>-*` refs |
 | `type` | `str` | Issue type (`feature`, `adhoc`, etc.) |
 | `title` | `str` | Human-readable title |
 | `status` | Literal | `DRAFT`, `BACKLOG`, `SPECIFIED`, `SHARDED`, `COMPLETED` |

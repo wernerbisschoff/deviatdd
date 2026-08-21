@@ -26,6 +26,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 9. **Local Issue Registry Invariant**: After generating the issue, register it in `specs/issues.jsonl` via the issues ledger script --type adhoc. The issue is NOT complete until it appears in the ledger.
 10. **Path Normalization**: Every file path, module reference, or test target written into the issue body must be strictly relative to the workspace root (e.g., `src/core/runner.py`). Absolute machine paths are forbidden.
 11. **Existing Flow Traceability**: Read the repository's existing `specs/_product/flows/` artifacts only to map the requested application behavior to user-visible `FLOW-XX` references. Use explicit `--flow-ref` values verbatim when supplied; otherwise infer only from existing flow definitions. `flow_refs` are metadata, not scope. Keep flow files and indexes unchanged and never turn a missing mapping into a flow-authoring issue.
+12. **Remote-Aware Adhoc Ordinal**: Choose `NNN` as `max(ordinals) + 1` over the current `specs/issues.jsonl`, the `origin/<base_branch>:specs/issues.jsonl` blob when it exists, and already-fetched remote refs `feat/adhoc/<NNN>-*` (`git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`). Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs. A local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. A local-ledger-only `max + 1` is insufficient.
 
 </system_instructions>
 
@@ -79,13 +80,13 @@ The ad-hoc issue describes implementation of requested application behavior in a
          2. AC-ADHOC-NNN-02 / AO-NNN: [Observable error or boundary outcome]
        ```
 
-5. **Issue File Generation**: Write the issue markdown file to `specs/adhoc/issues/{NNN}-{slug}.md`. It must contain `## User Stories Ledger`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
+5. **Issue File Generation**: Allocate `NNN` with the remote-aware rule, then write `specs/adhoc/issues/{NNN}-{slug}.md`. Next `NNN` is `max(ordinals) + 1` over (a) current-branch `specs/issues.jsonl`, (b) `origin/<base_branch>:specs/issues.jsonl` when that blob exists, (c) already-fetched `feat/adhoc/<NNN>-*` refs via `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`. Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs; a local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. The file must contain `## User Stories Ledger`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
 
 6. **Ledger Registration**: Append exactly ONE newline-delimited JSON record to `specs/issues.jsonl`. The record MUST use this exact `IssueRecord` schema — no extra fields, no alternate names:
 ```json
 {"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"ISO8601","created_at":"ISO8601","flow_refs":["FLOW-XX", "..."]}
 ```
-Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
+Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reuse the same `NNN` allocated in step 5. `ISS-ADH-NNN` and `ISS-NNN` share that ordinal. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
 7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. Completion is driven by the real workflow (`plan` → `tasks` → red/green → merge audit), never by creation. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here.
 

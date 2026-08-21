@@ -28,6 +28,7 @@ from deviate.core.constitution import extract_commands, resolve_constitution
 from deviate.cli.feature import _derive_slug
 from deviate.core.epic import (
     _extract_prefix_num,
+    _remote_adhoc_ordinals,
     allocate_feature_bucket,
     discover_latest_epic,
     resolve_active_feature,
@@ -54,7 +55,11 @@ from deviate.state.ledger import (
     _read_ledger,
     append_issue_record,
 )
-from deviate.state.config import SessionState, resolve_model_for_phase
+from deviate.state.config import (
+    SessionState,
+    resolve_base_branch,
+    resolve_model_for_phase,
+)
 
 
 def _load_or_create_session(phase: str) -> tuple[SessionState, Path]:
@@ -232,10 +237,78 @@ def _emit_contract(
     return contract
 
 
+def _adhoc_ordinal_from_issue_id(iid: object) -> int | None:
+    """Last numeric segment of ``ISS-NNN`` or ``ISS-ADH-NNN``."""
+    if not isinstance(iid, str) or not iid.startswith("ISS-"):
+        return None
+    try:
+        return int(iid.rsplit("-", 1)[-1])
+    except ValueError:
+        return None
+
+
+def _adhoc_ordinals_from_records(records: list[dict]) -> list[int]:
+    ordinals: list[int] = []
+    for data in records:
+        ordinal = _adhoc_ordinal_from_issue_id(data.get("issue_id", ""))
+        if ordinal is not None:
+            ordinals.append(ordinal)
+    return ordinals
+
+
+def _origin_ledger_records(repo_path: Path) -> list[dict]:
+    """Load ``origin/<base_branch>:specs/issues.jsonl`` when the blob exists."""
+    base = resolve_base_branch(repo_path)
+    try:
+        result = subprocess.run(
+            ["git", "show", f"origin/{base}:specs/issues.jsonl"],
+            cwd=repo_path,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    records: list[dict] = []
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            records.append(data)
+    return records
+
+
+def _allocator_repo_path(ledger_path: Path, repo_path: Path | None) -> Path | None:
+    if repo_path is not None:
+        return repo_path
+    try:
+        return find_repo_root(ledger_path)
+    except ValueError:
+        return None
+
+
+def _collect_adhoc_ordinals(records: list[dict], repo_path: Path | None) -> list[int]:
+    numbers = _adhoc_ordinals_from_records(records)
+    if repo_path is None:
+        return numbers
+    numbers.extend(_adhoc_ordinals_from_records(_origin_ledger_records(repo_path)))
+    numbers.extend(_remote_adhoc_ordinals(repo_path))
+    return numbers
+
+
 def _compute_next_issue_id(
     ledger_path: Path,
     *,
     epic_slug: str | None = None,
+    repo_path: Path | None = None,
 ) -> str:
     """Compute the next issue id to assign.
 
@@ -255,11 +328,11 @@ def _compute_next_issue_id(
       ledger's ordinal claims — a stray out-of-range row (e.g.
       ``002-100``) shifts the next id to ``002-101``.
     - **No numeric prefix** (``adhoc``, empty string, unparseable):
-      falls back to the legacy global-counter ``ISS-NNN`` format. The
-      fallback uses **global max across all rows in the ledger**,
-      regardless of bucket, so adhoc and bootstrap callers always see
-      a fresh ``ISS-NNN``. Adhoc issue generation is unchanged from
-      the pre-per-epic behavior.
+      falls back to the legacy global-counter ``ISS-NNN`` format. Next
+      ``NNN`` is ``max(ordinals) + 1`` over the current ledger, the
+      ``origin/<base_branch>`` ledger blob when present, and remote
+      ``feat/adhoc/<NNN>-*`` refs. ``ISS-ADH-NNN`` and ``ISS-NNN`` share
+      one adhoc series. Local-only feat branches do not reserve.
     """
     records = _read_ledger(ledger_path)
     prefix = _extract_prefix_num(epic_slug or "")
@@ -297,16 +370,9 @@ def _compute_next_issue_id(
                     continue
         next_ordinal = (max(ordinals) + 1) if ordinals else 1
         return f"{epic_prefix}-{next_ordinal:03d}"
-    # Fallback: legacy ``ISS-NNN`` global counter (unchanged from the
-    # pre-per-epic behavior).
-    numbers: list[int] = []
-    for data in records:
-        iid = data.get("issue_id", "")
-        if isinstance(iid, str) and iid.startswith("ISS-"):
-            try:
-                numbers.append(int(iid.split("-")[1]))
-            except (ValueError, IndexError):
-                continue
+    numbers = _collect_adhoc_ordinals(
+        records, _allocator_repo_path(ledger_path, repo_path)
+    )
     next_num = (max(numbers) + 1) if numbers else 1
     return f"ISS-{next_num:03d}"
 
