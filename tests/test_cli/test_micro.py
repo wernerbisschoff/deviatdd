@@ -1742,6 +1742,124 @@ class TestJudgeTrainRollback:
             f"revert_to_red transitions to GREEN; got {result.current_phase}"
         )
 
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._load_skill_content")
+    def test_revert_to_red_missing_red_commit_sha_is_fatal(
+        self,
+        mock_skill: MagicMock,
+        mock_invoke: MagicMock,
+        mock_run_pytest: MagicMock,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-PLAN-004: empty ``red_commit_sha`` makes ``revert_to_red`` fatal.
+
+        JUDGE ``next_action=revert_to_red`` with no RED-phase boundary must
+        raise ``PhaseFailedError`` carrying ``ROLLBACK_BOUNDARY_MISSING``.
+        The runner must not print ``ROLLBACK_FAILED … proceeding with train
+        feedback``, must not stamp ``red_commit_sha`` onto a
+        ``docs(...): add judge feedback`` commit, and must not train GREEN.
+        """
+        from io import StringIO
+
+        from rich.console import Console
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        mock_run_pytest.return_value = subprocess.CompletedProcess(
+            args=["pytest"],
+            returncode=1,
+            stdout="",
+            stderr="",
+        )
+        mock_skill.return_value = "# JUDGE skill"
+        mock_invoke.return_value = (
+            HandoverManifest(
+                phase="JUDGE",
+                status="SUCCESS",
+                verdict="COMPLIANCE_VIOLATION",
+                rationale="GREEN invented production symbols without a RED contract",
+                next_action="revert_to_red",
+            ),
+            "",
+        )
+
+        task, ledger_path, session_path, _ = self._setup_judge_env(root)
+        captured = StringIO()
+        c = Console(file=captured, highlight=False, color_system=None, width=200)
+        session = SessionState.load(session_path)
+        session.red_commit_sha = ""
+        session.save(session_path)
+
+        head_before = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+
+        with pytest.raises(PhaseFailedError) as excinfo:
+            _run_judge_phase(
+                task=task,
+                ledger_path=ledger_path,
+                session=session,
+                session_path=session_path,
+                c=c,
+            )
+
+        assert "ROLLBACK_BOUNDARY_MISSING" in str(excinfo.value), (
+            "PhaseFailedError must carry ROLLBACK_BOUNDARY_MISSING; "
+            f"got {excinfo.value!r}"
+        )
+
+        output = captured.getvalue()
+        assert "ROLLBACK_FAILED" not in output, (
+            "missing-boundary revert_to_red must not print ROLLBACK_FAILED; "
+            f"got {output!r}"
+        )
+        assert "proceeding with train feedback" not in output, (
+            "missing-boundary revert_to_red must not proceed with train "
+            f"feedback; got {output!r}"
+        )
+
+        session_after = SessionState.load(session_path)
+        assert session_after.red_commit_sha == "", (
+            f"red_commit_sha must stay empty; got {session_after.red_commit_sha!r}"
+        )
+        assert session_after.current_phase != "GREEN", (
+            "missing-boundary revert_to_red must not train GREEN; "
+            f"got phase {session_after.current_phase!r}"
+        )
+
+        log_after = subprocess.run(
+            ["git", "log", "--pretty=%s", "-n", "5"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout
+        assert "add judge feedback" not in log_after, (
+            "feedback commit must not land when the RED boundary is missing; "
+            f"got {log_after!r}"
+        )
+        head_after = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert head_after == head_before, (
+            "worktree HEAD must stay at the pre-JUDGE commit when revert_to_red "
+            f"has no RED boundary; before={head_before} after={head_after}"
+        )
+
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
     def test_judge_continue_refactor_skips_rollback_and_preserves_green(
