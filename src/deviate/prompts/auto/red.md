@@ -107,7 +107,7 @@ task_id: "TASK-104"
    {test_command}
    ```
 4. **Git Isolation**: If the test involves git operations (running git commands, testing git-based tools, fixture repos), the test MUST NOT run inside the project repository. Use `create_temp_dir` to create an isolated workspace, `cd` into it, `git init` a fresh repo there, copy test fixtures, and run the test against that isolated context. The `test_command` must be scoped to the isolated directory, not `$REPO_ROOT`.
-5. Validate that the execution crashes explicitly due to assertion failures or missing function components. If the suite passes immediately, the required behavior may already exist: keep the test and emit `failure_kind: already_satisfied` with a `rationale` explaining why no implementation is needed. If the test itself cannot target the required behavior, emit `failure_kind: test_defect`. Only a parsing syntax failure is a hard abort — fix it and re-run. Never emit a bare PASS when the suite does not fail.
+5. Validate that the execution crashes explicitly due to assertion failures or missing function components. If the suite passes immediately, the required behavior may already exist: keep the test and emit `failure_kind: already_satisfied` with a non-empty `files` set and/or `test_file` naming the regression test path(s), plus a `rationale` explaining why no implementation is needed. A passing suite with no named test files is not a COMPLETE. If the test itself cannot target the required behavior, emit `failure_kind: test_defect`. Only a parsing syntax failure is a hard abort — fix it and re-run. Never emit a bare PASS when the suite does not fail.
 6. Run the `lint_command` to ensure lint compliance:
    ```bash
    {lint_command}
@@ -127,7 +127,8 @@ After the test is written and verified failing, emit the handover manifest:
 # When the suite does NOT fail, keep status "PASS" and add a discriminator so the
 # orchestrator can adjudicate:
 #   failure_kind: already_satisfied — the required behavior already exists (no
-#     implementation needed). Explain in `rationale`.
+#     implementation needed). Name `files` and/or `test_file`. A passing suite
+#     with no named test files is not a COMPLETE. Explain in `rationale`.
 #   failure_kind: test_defect — the test cannot target the required behavior and
 #     must be re-authored. Explain in `rationale`.
 phase: RED
@@ -159,6 +160,8 @@ status: "PASS"
 task_id: "{TASK_ID}"
 # Add these only when the suite did not fail:
 # failure_kind: already_satisfied | test_defect
+# files: ["tests/path/to/regression_test.py"]  # required on already_satisfied
+# test_file: "tests/path/to/regression_test.py"  # or a non-empty test_file
 # rationale: <why no implementation is needed / why the test cannot target the behavior>
 </handover_manifest>
 
@@ -171,7 +174,7 @@ Use `status: "ERROR"` only for tool failures, file write errors, or other unfore
 |---|---|
 | Pre-script returns NO_TASKS_REMAINING | Surface message; recommend running /deviate-tasks to generate tasks |
 | Pre-script returns FAILURE | Surface the reason from the JSON contract |
-| Test passes immediately | Emit `failure_kind: already_satisfied` (pre-existing implementation) with a `rationale`, or `failure_kind: test_defect` (wrong test) with a `rationale` — never a bare PASS. The orchestrator routes the outcome to JUDGE for adjudication |
+| Test passes immediately | Emit `failure_kind: already_satisfied` (pre-existing implementation) with a non-empty `files` set and/or `test_file` naming the regression tests plus a `rationale`, or `failure_kind: test_defect` (wrong test) with a `rationale` — never a bare PASS. A passing suite with no named test files is not a COMPLETE. The orchestrator routes a named-files already_satisfied claim to JUDGE for adjudication |
 | Test crashes with syntax error | Fix syntax, re-run, verify FAIL status |
 | Tests involve git operations | Create isolated temp dir via `create_temp_dir`, `git init` a fresh repo, copy test fixtures there, run tests in that isolated context — NEVER inside the project repository |
 | Lint fails | Fix lint issues before proceeding |

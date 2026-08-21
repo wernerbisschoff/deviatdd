@@ -563,9 +563,15 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   `deviate micro run`'s internal RED phase (`_run_red_phase`) applies the same contract: when the
   test command exits 0 (all tests passed), collects no tests (pytest exit 5), or resolves to no
   command at all (returncode 127), it does NOT die — it routes the decision to JUDGE
-  (``failure_kind: no_failing_test``), which either rules the behavior already exists (task
-  COMPLETED, the uncommitted passing test discarded) or rules the test wrong (``revert_before``,
-  RED re-authors a genuinely failing test). After ``revert_before`` / cycle
+  (``failure_kind: no_failing_test``). On a test-bearing TDD task, already-exists COMPLETE
+  requires a non-empty ``files`` set and/or ``test_file`` that names regression tests present
+  in the injected ``<diff>`` or HEAD (constitution §3 Testing Protocols; §5 Definition of Done).
+  Empty ``files`` / ``test_file`` is a RED defect (``PhaseFailedError``); the ledger writes no
+  COMPLETED row. JUDGE ``skip_refactor`` / bare ``COMPLIANCE_PASS`` keeps those declared tests
+  on disk via ``_restore_worktree_to_baseline(..., keep_paths=declared)``. A declared path
+  missing from the snapshot rewrites PASS to ``revert_before`` / ``revert_to_red``. JUDGE still
+  rules a wrong test as ``revert_before`` so RED re-authors a genuinely failing test. EXECUTE,
+  IMMEDIATE, and DIRECT stay ungated by this files rule. After ``revert_before`` / cycle
   ``no_failing_test_adjudicated``, the next ``INVOKE_AGENT`` is RED, or the loop raises
   ``TRAIN_EXHAUSTED`` / ``PhaseFailedError``. It never invokes GREEN while
   ``session.red_commit_sha`` is empty. The RED gate does not require a Python
@@ -1422,7 +1428,7 @@ the action. EXECUTE `_run_execute_phase` and IMMEDIATE judge stay ungated.
 
 **Empty-diff sign-off:** `proceed_to_refactor_no_diff` (`src/deviate/cli/micro.py::_run_judge_phase`) is the forward-route escape for slices whose production-code scope is intrinsically nil — RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose `failure_kind: mechanical` rationale asserts "no production code expected." The TDD evidence gate still requires a dirty-diff `test_quote` and omits `impl_quote`. The JUDGE-side responsibility is to emit the action on a `COMPLIANCE_PASS` verdict when the in-scope rationale is valid but the production diff cannot grow. The action lands the task at REFACTOR's no-op commit + COMPLETED transition in one step; unmatched empty-GREEN PASS does not COMPLETE.
 
-**TDD mechanical evidence gate:** `HandoverManifest.evidence` is a first-class list of nested citations (`ac`, `test_path`, `test_quote`, `impl_path`, `impl_quote`) in `src/deviate/core/agent.py`. After `_coerce_judge_action`, TDD `_run_judge_phase` (`src/deviate/cli/micro.py`) checks every injected `AC-PLAN-NNN` token from `<authoritative_acceptance_contract source="plan.md">` against those citations and the already-built `<diff>` (`git diff <red>^..HEAD` plus dirty `git diff HEAD` and untracked `--no-index` hunks). Missing, empty, or partial evidence, hallucinated paths, empty quotes, quotes below the uniqueness floor (≥ 12 non-whitespace characters, or the full added line if shorter), or quotes that are not exact substrings of the named file hunk rewrite the action to `revert_to_red` with runner-authored feedback in the `JUDGE_AGENT_NO_FEEDBACK` family. The task does not COMPLETE. `skip_refactor` on the already-exists path may quote HEAD file contents; a named test file absent on disk fails. Tasks with no `AC-PLAN-*` tokens may emit empty evidence. `COMPLIANCE_VIOLATION` skips the gate. EXECUTE and IMMEDIATE judge paths stay ungated.
+**TDD mechanical evidence gate:** `HandoverManifest.evidence` is a first-class list of nested citations (`ac`, `test_path`, `test_quote`, `impl_path`, `impl_quote`) in `src/deviate/core/agent.py`. After `_coerce_judge_action`, TDD `_run_judge_phase` (`src/deviate/cli/micro.py`) checks every injected `AC-PLAN-NNN` token from `<authoritative_acceptance_contract source="plan.md">` against those citations and the already-built `<diff>` (`git diff <red>^..HEAD` plus dirty `git diff HEAD` and untracked `--no-index` hunks). Missing, empty, or partial evidence, hallucinated paths, empty quotes, quotes below the uniqueness floor (≥ 12 non-whitespace characters, or the full added line if shorter), or quotes that are not exact substrings of the named file hunk rewrite the action to `revert_to_red` with runner-authored feedback in the `JUDGE_AGENT_NO_FEEDBACK` family. The task does not COMPLETE. `skip_refactor` on the already-exists path may quote HEAD file contents; a named test file absent on disk fails. On a test-bearing TDD already-exists claim, every declared `files` / `test_file` path (and evidence `test_path`) must appear in `_assemble_judge_injected_diff` or `_evidence_head_contents`. The membership check runs even when the plan has no `AC-PLAN-*` tokens. Empty declared files remain a RED defect, not a COMPLETE. Tasks with no `AC-PLAN-*` tokens may emit empty evidence quotes, but they still need named present test paths. `COMPLIANCE_VIOLATION` skips the quote gate. EXECUTE and IMMEDIATE judge paths stay ungated.
 
 **Feedback-commit timeout:** The `revert_to_red` step's "append a feedback
 commit past RED" runs `_commit_judge_feedback_and_advance`

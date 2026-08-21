@@ -1106,6 +1106,54 @@ def _resolve_lint_command(root: Path) -> str:
 _NO_FAILING_TEST_FORWARD_ROUTES = frozenset(
     {"continue_refactor", "proceed_to_refactor_no_diff", "skip_refactor"}
 )
+_NON_TDD_EXECUTION_MODES = frozenset({"EXECUTE", "IMMEDIATE", "DIRECT"})
+_MISSING_REGRESSION_FILES = (
+    "without naming regression tests (files and test_file are empty). "
+    "Declare `files` and/or `test_file` on `failure_kind: already_satisfied`. "
+    "A passing suite with no named test files is not COMPLETE."
+)
+
+
+def _is_test_bearing_tdd(task: dict) -> bool:
+    """Return True when *task* is a test-bearing TDD slice.
+
+    EXECUTE / IMMEDIATE / DIRECT stay ungated by the declared-files
+    already_satisfied rule (AC-PLAN-003 / FR-ADHOC-022).
+    """
+    mode = str(task.get("execution_mode") or "TDD").strip().upper()
+    return mode not in _NON_TDD_EXECUTION_MODES
+
+
+def _unique_relpaths(*groups: Sequence[str] | None) -> list[str]:
+    """Return stripped, de-duplicated relative paths from *groups*."""
+    paths: list[str] = []
+    for group in groups:
+        for raw in group or []:
+            text = str(raw).strip() if raw is not None else ""
+            if text:
+                paths.append(text)
+    return list(dict.fromkeys(paths))
+
+
+def _declared_regression_paths(manifest: HandoverManifest) -> list[str]:
+    """Return unique non-empty ``files`` / ``test_file`` paths from *manifest*."""
+    files = [item for item in (manifest.files or []) if isinstance(item, str)]
+    return _unique_relpaths(files, [manifest.test_file or ""])
+
+
+def _require_tdd_declared_regression_files(
+    task: dict,
+    manifest: HandoverManifest,
+    *,
+    tid: str,
+    context: str,
+) -> None:
+    """Raise when a TDD already-exists / COMPLETE route names no tests."""
+    if not _is_test_bearing_tdd(task):
+        return
+    if _declared_regression_paths(manifest):
+        return
+    raise PhaseFailedError(f"RED phase for {tid} {context} {_MISSING_REGRESSION_FILES}")
 
 
 def _worktree_status_paths(root: Path) -> list[str]:
@@ -1120,18 +1168,47 @@ def _worktree_status_paths(root: Path) -> list[str]:
     return proc.stdout.splitlines()
 
 
-def _restore_worktree_to_baseline(root: Path, baseline: list[str]) -> None:
+def _porcelain_relpath(line: str) -> str:
+    """Return the path from a ``git status --porcelain`` line."""
+    return line[3:].strip().strip('"').rstrip("/")
+
+
+def _keep_declared_status_entry(entry: str, keep: set[str]) -> bool:
+    """Return True when a porcelain path is a declared regression file."""
+    if not entry or not keep:
+        return False
+    if entry in keep:
+        return True
+    entry_prefix = entry + "/"
+    for kept in keep:
+        kept_prefix = kept.rstrip("/") + "/"
+        if kept.startswith(entry_prefix) or entry.startswith(kept_prefix):
+            return True
+    return False
+
+
+def _restore_worktree_to_baseline(
+    root: Path,
+    baseline: list[str],
+    *,
+    keep_paths: Sequence[str] | None = None,
+) -> None:
     """Discard worktree changes that appeared after *baseline* was captured.
 
-    Used by the RED no-failing-test adjudication to remove the files the RED
-    agent produced (an uncommitted passing test) without touching anything
-    that was already present when the phase started."""
+    Used by the RED no-failing-test adjudication to remove undeclared files
+    the RED agent produced without touching anything that was already
+    present when the phase started. Declared regression paths in
+    *keep_paths* stay on disk so COMPLETE cannot wipe the only copy.
+    """
     baseline_set = set(baseline)
+    keep = set(_unique_relpaths(keep_paths))
     for line in _worktree_status_paths(root):
         if line in baseline_set:
             continue
-        entry = line[3:].strip().strip('"').rstrip("/")
+        entry = _porcelain_relpath(line)
         if not entry:
+            continue
+        if _keep_declared_status_entry(entry, keep):
             continue
         if line.startswith("??"):
             subprocess.run(
@@ -1304,13 +1381,25 @@ def _adjudicate_red_no_failing_test(
     tests, so there is nothing for GREEN to implement. The decision goes to
     JUDGE directly — a vacuous GREEN would only burn the TRAIN budget:
     JUDGE either rules the behavior already exists (``skip_refactor`` — the
-    task is COMPLETED without landing the agent's passing test) or rules
+    task is COMPLETED and declared regression tests stay on disk) or rules
     the test wrong (``revert_before`` — the agent's work is discarded and
-    RED re-authors a genuinely failing test)."""
+    RED re-authors a genuinely failing test).
+
+    On a TDD ``already_satisfied`` claim, or on a no-failing-test COMPLETE
+    route, ``_require_tdd_declared_regression_files`` owns the files gate.
+    Empty ``files`` / ``test_file`` raise ``PhaseFailedError``. EXECUTE,
+    IMMEDIATE, and DIRECT stay ungated."""
     tid = task.get("id", "?")
+    if (manifest.failure_kind or "") == "already_satisfied":
+        _require_tdd_declared_regression_files(
+            task,
+            manifest,
+            tid=tid,
+            context="declared `failure_kind: already_satisfied`",
+        )
     root = Path.cwd()
     rationale = (manifest.rationale or "").strip()
-    declared = manifest.failure_kind
+    declared_kind = manifest.failure_kind
     if test_result.returncode == 0:
         symptom = "the test command exited 0 (all tests passed)"
     else:
@@ -1333,7 +1422,7 @@ def _adjudicate_red_no_failing_test(
         "RED_NO_FAILING_TEST",
         task_id=tid,
         returncode=test_result.returncode,
-        declared_kind=declared or "",
+        declared_kind=declared_kind or "",
         rationale_preview=feedback.replace("\n", " ")[:200],
         reroute="JUDGE",
     )
@@ -1346,6 +1435,7 @@ def _adjudicate_red_no_failing_test(
             "/deviate-execute if no test is expected."
         )
 
+    declared = _declared_regression_paths(manifest)
     session = _run_judge_phase(
         task,
         ledger_path,
@@ -1355,6 +1445,7 @@ def _adjudicate_red_no_failing_test(
         agent=agent,
         monitor=monitor,
         red_baseline=red_baseline,
+        declared_paths=declared,
     )
     action = session.pending_judge_action
 
@@ -1377,7 +1468,13 @@ def _adjudicate_red_no_failing_test(
         session.pending_judge_action = "skip_refactor"
 
     if action in _NO_FAILING_TEST_FORWARD_ROUTES:
-        _restore_worktree_to_baseline(root, red_baseline)
+        _require_tdd_declared_regression_files(
+            task,
+            manifest,
+            tid=tid,
+            context="is about to COMPLETE with no failing test",
+        )
+        _restore_worktree_to_baseline(root, red_baseline, keep_paths=declared)
         if action != "skip_refactor":
             session.pending_judge_action = "skip_refactor"
         c.print(
@@ -2497,17 +2594,21 @@ def _git_show_head(root: Path, rel: str) -> str | None:
 
 
 def _evidence_head_contents(
-    root: Path, evidence: Sequence[EvidenceItem] | None
+    root: Path,
+    evidence: Sequence[EvidenceItem] | None,
+    extra_paths: Sequence[str] | None = None,
 ) -> dict[str, str]:
-    """Read HEAD file text for paths named in evidence that exist on disk."""
+    """Read HEAD file text for evidence and declared paths that exist on disk."""
     contents: dict[str, str] = {}
-    for item in evidence or []:
-        for rel in (item.test_path, item.impl_path):
-            if not rel or rel in contents:
-                continue
-            text = _git_show_head(root, rel)
-            if text is not None:
-                contents[rel] = text
+    items = list(evidence or [])
+    for rel in _unique_relpaths(
+        [item.test_path for item in items],
+        [item.impl_path for item in items],
+        extra_paths,
+    ):
+        text = _git_show_head(root, rel)
+        if text is not None:
+            contents[rel] = text
     return contents
 
 
@@ -2527,14 +2628,19 @@ def _rewrite_unmatched_tdd_pass(
     manifest: HandoverManifest,
     action: str | None,
     injected_diff: str,
+    declared_paths: Sequence[str] | None = None,
 ) -> str | None:
     """Force unmatched TDD PASS onto ``revert_to_red`` with runner feedback."""
     if action is not None and action not in _TDD_EVIDENCE_GATE_ROUTES:
         return action
-    head_contents = (
-        _evidence_head_contents(root, manifest.evidence)
-        if action == "skip_refactor"
-        else None
+    declared = _unique_relpaths(
+        declared_paths,
+        _declared_regression_paths(manifest),
+    )
+    head_contents = _evidence_head_contents(
+        root,
+        manifest.evidence,
+        extra_paths=declared,
     )
     feedback = evaluate_judge_evidence(
         plan_contract=_resolve_spec_md(root, task),
@@ -2542,6 +2648,7 @@ def _rewrite_unmatched_tdd_pass(
         evidence=manifest.evidence or [],
         next_action=action,
         head_contents=head_contents,
+        declared_paths=declared,
     )
     if not feedback:
         return action
@@ -2564,6 +2671,7 @@ def _run_judge_phase(
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
     red_baseline: list[str] | None = None,
+    declared_paths: Sequence[str] | None = None,
 ) -> SessionState:
     tid = task.get("id", "?")
     backend = agent or "pi"
@@ -2646,6 +2754,7 @@ def _run_judge_phase(
         manifest=manifest,
         action=action,
         injected_diff=diff,
+        declared_paths=declared_paths,
     )
     session.last_judge_verdict = getattr(manifest, "verdict", "").upper()
 
