@@ -1,5 +1,5 @@
 profile = "default"
-timeout_seconds = 300
+timeout_seconds = 1800
 agent_export_mode = "local"
 
 graphite = false
@@ -7,3 +7,10 @@ use_context = true
 use_libref = true
 [agent]
 backend = "pi"
+transport = "cli"
+pi_rpc = false
+timeout = 1800
+
+[models]
+default = "grok-4.6"
+
