@@ -1,0 +1,5 @@
+`deviate micro` used a single in-memory `train_attempts` budget. JUDGE `revert_before` / `test_defect` zeroed that counter and re-ran RED, so an always-escalate stub looped (181 scratch restarts) instead of handing off. ISS-ADH-017 persists two session counters so GREEN trains three times, then escalates, and three RED escalates print TRAIN_EXHAUSTED.
+
+Session: `SessionState` now stores `green_attempts` / `red_attempts` (default 0) and copies them through `transition_to` / `force_transition_to` via `model_dump()` (`src/deviate/state/config.py`). Loop: `_run_tdd_cycle` seeds from session, trains GREEN on `revert_to_red`, escalates immediately on `revert_before` or GREEN-budget exhaust, injects a short `previous cycle failed because …` note (not the GREEN dump), and stops at 3/3 (`src/deviate/cli/micro.py`). `_coerce_judge_action` and EXECUTE `max_judge_attempts` are unchanged. Specs: API, architecture, and CHANGELOG `[Unreleased]` describe the two-counter contract. Tests: `tests/test_micro/test_two_counter_retry.py` plus orchestration / session / revert_before pins.
+
+Closes #59

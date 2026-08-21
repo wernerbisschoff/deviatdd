@@ -264,3 +264,37 @@
 2. AC-ADHOC-016-02 / AO-016-02: The drifted middle is reconciled to auto semantics; RED manual no longer emits `status:"FAIL"`/abort-on-passing-test, and GREEN manual matches "write only production code".
 3. AC-ADHOC-016-03 / AO-016-03: A drift-guard test fails when an auto middle body diverges from the derived manual middle.
 4. AC-ADHOC-016-04 / AO-016-04: The 15 commands-only prompts (no auto counterpart) are unchanged; `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are updated in the same commit; CHANGELOG gains an `[Unreleased]` bullet.
+
+## FR-ADHOC-017: Two-Counter TDD Retry — GREEN Train vs RED Escalate
+
+- **Description**: Replace the single in-memory `train_attempts` loop counter in `deviate micro` with two session-persisted counters: `green_attempts` (max 3 per RED contract; exhaust escalates to a fresh RED) and `red_attempts` (max 3 per task; exhaust raises `TRAIN_EXHAUSTED` and returns to the human). `revert_to_red` trains GREEN only; `revert_before` / `test_defect` escalate immediately without burning the remaining GREEN budget.
+- **Preconditions**: Python 3.13. `SessionState` at `src/deviate/state/config.py` persists `.deviate/session.json` (gitignored). `_run_tdd_cycle` at `src/deviate/cli/micro.py` currently holds `train_attempts` as a local variable and zeros it on `revert_before`. `_coerce_judge_action` already maps `failure_kind` `test_defect` / `no_failing_test` on a violation to `revert_before`. Caps stay at 3/3.
+- **Inputs/Outputs**: Input — JUDGE `next_action` (`revert_to_red` / `revert_before`) and `failure_kind` (`test_defect` / `no_failing_test`). Output — `SessionState.green_attempts` and `SessionState.red_attempts` persisted on each increment; GREEN retries with existing `train_feedback`; RED retries with a short escalate note; `PhaseFailedError` carrying `TRAIN_EXHAUSTED` after three escalates.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-017-01: As a DeviaTDD operator running `deviate micro`, I want GREEN implementation retries capped at 3 against one RED contract so a wrong implementation trains GREEN without rewriting the test. *(Ref: FR-ADHOC-017)*
+  2. US-017-02: As a DeviaTDD operator, I want a wrong RED test (`revert_before` / `test_defect`) to escalate immediately to a fresh RED so the runner does not burn three GREEN tries on a defective contract. *(Ref: FR-ADHOC-017)*
+  3. US-017-03: As a DeviaTDD operator, I want three RED escalates on one task to stop with `TRAIN_EXHAUSTED` and return control to me so a stub JUDGE that always `revert_before`s cannot infinite-loop. *(Ref: FR-ADHOC-017)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-017-01 / AO-017-01: Three `revert_to_red` outcomes against one RED contract increment `green_attempts` to 3, keep `train_feedback`, retry GREEN, then escalate to a new RED rather than raise `TRAIN_EXHAUSTED` on that first cycle.
+  2. AC-ADHOC-017-02 / AO-017-02: A JUDGE that always emits `revert_before` (or `failure_kind: test_defect` coerced to `revert_before`) increments `red_attempts` per escalate, resets `green_attempts`, and after `red_attempts >= 3` raises `TRAIN_EXHAUSTED` / returns to the human without a fourth RED.
+  3. AC-ADHOC-017-03 / AO-017-03: Both counters persist on `SessionState` in `.deviate/session.json` so `git reset` of the worktree and a process crash mid-cycle resume the same counts.
+  4. AC-ADHOC-017-04 / AO-017-04: An escalate wipes GREEN `train_feedback` and injects a short escalate note into the next RED prompt (`previous cycle failed because …`), not the raw GREEN dump.
+  5. AC-ADHOC-017-05 / AO-017-05: Judge verb names, the `test_defect` / `no_failing_test` coerce-to-`revert_before` matrix, and the 3/3 caps stay unchanged; product/macro/meso surfaces are untouched.
+
+## FR-ADHOC-017: Two-Counter TDD Retry — GREEN Train vs RED Escalate
+
+- **Description**: Replace the single in-memory `train_attempts` budget in `_run_tdd_cycle` with two persisted session counters: `green_attempts` (max 3 per RED contract; exhaust escalates to a fresh RED) and `red_attempts` (max 3 per task; exhaust raises `TRAIN_EXHAUSTED` and returns to the human). `revert_to_red` trains GREEN only; `revert_before` / `failure_kind: test_defect` escalate immediately.
+- **Preconditions**: Python 3.13. `SessionState` at `src/deviate/state/config.py` persists to gitignored `.deviate/session.json`. `_run_tdd_cycle` at `src/deviate/cli/micro.py` currently keeps a local `train_attempts` (max 3) and zeros it on `revert_before` / `test_defect`, which empirically infinite-loops a always-`revert_before` JUDGE. `_coerce_judge_action` already forces `revert_before` for `failure_kind` in `{test_defect, no_failing_test}` on `COMPLIANCE_VIOLATION`.
+- **Inputs/Outputs**: Input — JUDGE `next_action` (`revert_to_red` | `revert_before`) and `failure_kind`. Output — `SessionState.green_attempts` and `SessionState.red_attempts` round-tripped through `.deviate/session.json`; GREEN retries keep `train_feedback`; escalates wipe GREEN dump and inject a short escalate note; `TRAIN_EXHAUSTED` only after `red_attempts` exhausts.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-017-01: As a DeviaTDD operator running `deviate micro`, I want GREEN retried up to 3 times against the same RED contract on `revert_to_red`, then a fresh RED, so a wrong implementation does not exhaust the whole task on the first cycle. *(Ref: FR-ADHOC-017)*
+  2. US-017-02: As a DeviaTDD operator, I want a JUDGE that always `revert_before`s (or reports `test_defect`) to escalate immediately, stop after 3 escalates, and hand off with `TRAIN_EXHAUSTED`, so a wrong test cannot infinite-loop. *(Ref: FR-ADHOC-017)*
+  3. US-017-03: As a DeviaTDD operator, I want both counters persisted on `.deviate/session.json` so a `git reset` inside the same process and a crash/resume keep the budgets. *(Ref: FR-ADHOC-017)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-017-01 / AO-017-01: `revert_to_red` increments `green_attempts`, keeps GREEN `train_feedback`, and retries GREEN up to 3 times without resetting `green_attempts` and without raising `TRAIN_EXHAUSTED`.
+  2. AC-ADHOC-017-02 / AO-017-02: After 3 GREEN trains, or on `revert_before` / `failure_kind: test_defect` (and the existing `no_failing_test` coercion to `revert_before`), the runner escalates: git reset to the pre-RED boundary, wipe GREEN `train_feedback`, reset `green_attempts` to 0, increment `red_attempts`, re-author RED with a short escalate note (not the raw GREEN dump).
+  3. AC-ADHOC-017-03 / AO-017-03: A JUDGE that always emits `revert_before` stops after 3 escalates with `TRAIN_EXHAUSTED` / human handoff and does not dispatch another RED.
+  4. AC-ADHOC-017-04 / AO-017-04: `green_attempts` and `red_attempts` round-trip through `SessionState.save`/`load` of `.deviate/session.json`; `transition_to` / `force_transition_to` copy both fields; a git reset that drops the RED commit does not zero the counters.
+  5. AC-ADHOC-017-05 / AO-017-05: Caps stay 3/3; JUDGE verb names stay `revert_to_red` and `revert_before`; `_coerce_judge_action` still forces `revert_before` for `test_defect` / `no_failing_test` on violation; `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, and `CHANGELOG.md` `[Unreleased]` update in the same implementation commit.

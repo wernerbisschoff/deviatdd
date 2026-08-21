@@ -257,6 +257,8 @@ class SessionState(BaseModel):
     active_issue_id: Optional[str] = None
     last_command: str = ""
     train_feedback: str = ""
+    green_attempts: int = 0
+    red_attempts: int = 0
     failure_kind: Literal["", "mechanical", "test_defect", "no_failing_test"] = ""
     judge_rejected: bool = False
     pending_judge_action: str = ""
@@ -287,35 +289,17 @@ class SessionState(BaseModel):
             raise ValueError(f"Invalid phase '{v}'. Must be one of: {valid}")
         return v
 
+    def _copy_with_phase(self, phase: str) -> SessionState:
+        data = self.model_dump()
+        data["current_phase"] = phase
+        data["timestamp"] = datetime.now(timezone.utc)
+        return type(self).model_validate(data)
+
     def transition_to(self, phase: str) -> SessionState:
-        return SessionState(
-            current_phase=phase,
-            active_issue_id=self.active_issue_id,
-            last_command=self.last_command,
-            red_commit_sha=self.red_commit_sha,
-            train_feedback=self.train_feedback,
-            failure_kind=self.failure_kind,
-            judge_rejected=self.judge_rejected,
-            pending_judge_action=self.pending_judge_action,
-            pending_judge_feedback=self.pending_judge_feedback,
-            research_explore_source=self.research_explore_source,
-            last_judge_verdict=self.last_judge_verdict,
-        )
+        return self._copy_with_phase(phase)
 
     def force_transition_to(self, phase: str) -> SessionState:
-        return SessionState(
-            current_phase=phase,
-            active_issue_id=self.active_issue_id,
-            last_command=self.last_command,
-            red_commit_sha=self.red_commit_sha,
-            train_feedback=self.train_feedback,
-            failure_kind=self.failure_kind,
-            judge_rejected=self.judge_rejected,
-            pending_judge_action=self.pending_judge_action,
-            pending_judge_feedback=self.pending_judge_feedback,
-            research_explore_source=self.research_explore_source,
-            last_judge_verdict=self.last_judge_verdict,
-        )
+        return self._copy_with_phase(phase)
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
