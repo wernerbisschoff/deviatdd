@@ -264,3 +264,19 @@
 2. AC-ADHOC-016-02 / AO-016-02: The drifted middle is reconciled to auto semantics; RED manual no longer emits `status:"FAIL"`/abort-on-passing-test, and GREEN manual matches "write only production code".
 3. AC-ADHOC-016-03 / AO-016-03: A drift-guard test fails when an auto middle body diverges from the derived manual middle.
 4. AC-ADHOC-016-04 / AO-016-04: The 15 commands-only prompts (no auto counterpart) are unchanged; `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are updated in the same commit; CHANGELOG gains an `[Unreleased]` bullet.
+
+## FR-ADHOC-018: Stop Padding Epics — One User-Visible Shard, One Fail-to-Pass Task
+
+- **Description**: Shard Pass 1.5 emits as few independently shippable user-visible verticals as the PRD needs (1 is legal; hard cap 10 remains). Tasks stay one observable fail-to-pass contract per TDD task (Beck: exactly one item on the test list). The 30–90 minute figure names that unit; it is not a timer that splits a single behavior into RED-only vs GREEN-only tasks.
+- **Preconditions**: `deviate-shard` Pass 1.5 currently states "Target range: 4–8" with a hard ceiling of 10 (`src/deviate/prompts/commands/deviate-shard.md`, `src/deviate/prompts/auto/shard.md`). `deviate-tasks` and `auto/tasks.md` instruct "If a task takes < 30 min, merge it. If > 90 min, split it". `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` still advertise a 4–8 issue target and 4–8 tasks per issue.
+- **Inputs/Outputs**: Input — shard/tasks/micro-shared/refactor prompt wording plus API/architecture granularity sections. Output — Pass 1.5 with no floor (1 legal, cap 10), tasks wording that forbids fake splits, aligned specs, CHANGELOG `[Unreleased]` bullet. No runner/retry-loop code change.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-018-01: As a DeviaTDD operator sharding a one-behavior PRD, I want exactly one issue so I do not pay specify → plan → worktree → PR four times. *(Ref: FR-ADHOC-018)*
+  2. US-018-02: As a DeviaTDD operator writing `tasks.md`, I want one TDD task per fail-to-pass contract so micro does not run extra RED/GREEN/JUDGE cycles for the same AC. *(Ref: FR-ADHOC-018)*
+  3. US-018-03: As a DeviaTDD operator on an eight-vertical epic, I still want eight issues, and a mixed 10-file / >400 LOC GREEN packet still split, so large work stays reviewable. *(Ref: FR-ADHOC-018)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-018-01 / AO-018-01: Pass 1.5 has no 4–8 floor; a one-behavior PRD shards to one issue; count > 10 still halts with `SLICE_CAP_EXCEEDED`.
+  2. AC-ADHOC-018-02 / AO-018-02: Tasks prompts treat 30–90 min as "one observable behavior" and forbid RED-only vs GREEN-only vs "add the route" splits of the same AC.
+  3. AC-ADHOC-018-03 / AO-018-03: An eight-vertical PRD still emits eight issues; a GREEN that would bury the contract in a mixed 10-file / >400 LOC packet is still split.
+  4. AC-ADHOC-018-04 / AO-018-04: `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` drop the 4–8 floor in the same commit; CHANGELOG gains an `[Unreleased]` bullet; two-counter retry (ISS-ADH-017) is untouched.
