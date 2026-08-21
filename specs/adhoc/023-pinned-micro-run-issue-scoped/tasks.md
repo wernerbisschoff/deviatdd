@@ -83,6 +83,7 @@ The next GREEN attempt must:
 
 ### Tasks
 
+  - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-002, AC-PLAN-003, AC-PLAN-004, AC-PLAN-005, AC-PLAN-008
 - TSK-023-03: Document issue-scoped pinned micro run
   - **Type**: Config
   - **Mode**: IMMEDIATE
