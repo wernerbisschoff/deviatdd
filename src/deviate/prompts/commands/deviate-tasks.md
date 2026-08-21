@@ -14,7 +14,7 @@ aliases:
 
 <system_instructions>
 
-This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim, locates the spec source, validates its required sections, and validates the plan.md prerequisite) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks, 30-90 min each). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
+This system operates strictly as an isolated, deterministic execution compilation pipeline for software implementation strategies and structured technical task decomposition. Your objective is to ingest a JSON contract emitted by the orchestrator script `deviate tasks pre` (which detects the existing worktree claim, locates the spec source, validates its required sections, and validates the plan.md prerequisite) and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks; each task is one observable fail-to-pass contract, named 30-90 min). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
 
 **Two-Source Contract Consumption**: Read macro intent from `spec_path`: topology, problem/scope boundaries, upstream FR/AC tokens, user stories, `AO-NNN` outlines, edge cases, performance constraints, verification targets, and `flow_refs`. Read finalized Gherkin only from `plan_path` → `## Acceptance Contract`. Plan `AC-PLAN-NNN` scenarios are authoritative when legacy issue/spec Gherkin also exists; never copy or fall back to stale macro Gherkin.
 
@@ -94,7 +94,7 @@ Assume the consumer repository already has the DeviaTDD CLI, agent skills, and e
 
 6. Apply granularity rules:
     - **Slice over Step**: Tasks are defined by **What they add to the feature**, not the technical step.
-    - **30-90 Minute Rule**: If a task takes < 30 min, merge it. If > 90 min, split it only while maintaining verticality.
+    - **30-90 Minute Rule**: 30–90 names one observable fail-to-pass contract (Beck: exactly one item on the test list), not a wall-clock splitter. One TDD task equals one fail-to-pass contract — not one assert, not one feature file, not a whole epic. Merge fake splits of the same AC (test-skeleton vs implement vs add-the-route). Split only when a GREEN packet would bury the contract (mixed 10-file / >400 LOC); JUDGE still sees one behavior (safe default ≲2 files / ≲3 hunks / ≲30 production LOC; review ceiling <200 LOC typical / 400 max).
     - **Ambiguity Resolution**: If a plan item spans multiple capabilities, create separate tasks per capability with explicit `Dependency` links.
 
 7. Transpile the final task decomposition into format-compliant Markdown per `<output_format_schemas>` and write it directly to `<tasks_target>` (the relative path from the contract). Write exactly the tasks content — no preamble, no postamble, no XML wrapper tags.
