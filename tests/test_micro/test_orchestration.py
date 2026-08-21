@@ -58,6 +58,49 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+def _seed_already_satisfied_tdd(
+    repo: Path,
+    *,
+    task_id: str,
+    issue_id: str,
+    description: str,
+    test_rel: str = "tests/test_gates.py",
+) -> tuple[Path, dict]:
+    """Seed a passing regression test and a TDD ledger row in *repo*.
+
+    Callers must already ``chdir`` into *repo*. Git runs use ``cwd=repo``
+    and ``env=_git_env()`` (constitution §3 / AGENTS.md git isolation).
+    """
+    test_path = repo / test_rel
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.write_text("def test_gates():\n    assert True\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed passing regression test"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+    )
+    (repo / ".deviate").mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="IDLE").save(repo / ".deviate" / "session.json")
+    ledger_path = Path("specs") / "adhoc" / "022-already-satisfied" / "tasks.jsonl"
+    record = _make_task_record(
+        task_id=task_id,
+        issue_id=issue_id,
+        description=description,
+        status="PENDING",
+        execution_mode="TDD",
+    )
+    _write_ledger(ledger_path, record)
+    task = {
+        "id": task_id,
+        "issue_id": issue_id,
+        "description": description,
+        "execution_mode": "TDD",
+    }
+    return ledger_path, task
+
+
 def _seed_tracked_test_file(root: Path, name: str = "test_seed_failing.py") -> None:
     """Create and commit a tracked failing test so ``_find_test_files`` is
     non-empty when the RED-phase test run is mocked."""
@@ -1379,6 +1422,7 @@ class TestMicroOrchestration:
                 f"{statuses}"
             )
 
+    @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
@@ -1389,14 +1433,20 @@ class TestMicroOrchestration:
         mock_verify,
         mock_run_format,
         mock_run_test,
+        mock_run_pytest,
         tmp_git_repo: Path,
         approve_gate2,
     ):
         """RED completing with a passing test (rc 0) skips GREEN and routes the
         decision to JUDGE. JUDGE ruling the behavior already exists
-        (``next_action: skip_refactor``) marks the task COMPLETED without
-        landing the agent's uncommitted passing test — no vacuous GREEN is run."""
+        (``next_action: skip_refactor``) marks the task COMPLETED when RED
+        names a present regression path — no vacuous GREEN is run.
+
+        AC-PLAN-002 / FR-ADHOC-022: named ``files`` / ``test_file`` may reach
+        JUDGE. Constitution §3: mock ``_run_pytest``.
+        """
         call_log: list[str] = []
+        present_test = "tests/test_passing.py"
 
         def _judge_skip_refactor(*args, **kwargs):
             phase = kwargs.get("phase", "")
@@ -1414,15 +1464,32 @@ class TestMicroOrchestration:
                     ),
                     "",
                 )
+            if phase == "RED":
+                return (
+                    HandoverManifest(
+                        phase="RED",
+                        status="SUCCESS",
+                        task_id=tid,
+                        failure_kind="already_satisfied",
+                        files=[present_test],
+                        test_file=present_test,
+                        rationale=(
+                            f"Required behavior already exists in {present_test}"
+                        ),
+                    ),
+                    "",
+                )
             return (
                 HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
                 "",
             )
 
         mock_agent.side_effect = _judge_skip_refactor
-        mock_run_test.return_value = subprocess.CompletedProcess(
+        passing = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="1 passed", stderr=""
         )
+        mock_run_test.return_value = passing
+        mock_run_pytest.return_value = passing
         mock_run_format.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -1464,6 +1531,216 @@ class TestMicroOrchestration:
             assert result.exit_code == 0, f"Unexpected exit: {result.output}"
             statuses = _read_statuses(ledger_path)
             assert "COMPLETED" in statuses, f"Task must complete: {statuses}"
+
+    @pytest.mark.parametrize(
+        "declared_files",
+        [None, []],
+        ids=["files_none", "files_empty"],
+    )
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._verify_worktree_branch")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_already_satisfied_null_files_does_not_complete(
+        self,
+        mock_agent,
+        mock_branch,
+        mock_verify,
+        mock_run_format,
+        mock_run_test,
+        mock_run_pytest,
+        declared_files: list[str] | None,
+        tmp_git_repo: Path,
+    ):
+        """AC-PLAN-001 / AO-022-01 / FR-ADHOC-022: empty declared files cannot COMPLETE.
+
+        A test-bearing TDD RED that claims ``failure_kind: already_satisfied``
+        with ``files`` null or empty and ``test_file`` null is a RED defect.
+        The runner raises ``PhaseFailedError`` or forces ``test_defect`` /
+        ``revert_before``. The task ledger has no COMPLETED row. GREEN is
+        never invoked to invent tests. Constitution §3: mock ``_run_pytest``.
+        """
+        call_log: list[str] = []
+        passing = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_test.return_value = passing
+        mock_run_pytest.return_value = passing
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        def _already_satisfied_empty(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-022-01")
+            call_log.append(phase)
+            if len(call_log) > 24:
+                raise AssertionError(
+                    f"TDD loop did not terminate after 24 agent invokes: {call_log!r}"
+                )
+            if phase == "RED":
+                return (
+                    HandoverManifest(
+                        phase="RED",
+                        status="SUCCESS",
+                        task_id=tid,
+                        failure_kind="already_satisfied",
+                        files=declared_files,
+                        test_file=None,
+                        rationale=("Behavior already exists; no new tests required."),
+                    ),
+                    "",
+                )
+            if phase == "JUDGE":
+                return (
+                    HandoverManifest.model_construct(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_PASS",
+                        task_id=tid,
+                        next_action="skip_refactor",
+                        summary=(
+                            "The required behavior already exists; "
+                            "no implementation needed."
+                        ),
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _already_satisfied_empty
+        with chdir(tmp_git_repo):
+            ledger_path, task = _seed_already_satisfied_tdd(
+                tmp_git_repo,
+                task_id="TSK-022-01",
+                issue_id="ISS-ADH-022",
+                description=("Reject empty declared files on TDD already_satisfied"),
+            )
+            buf = io.StringIO()
+            console = Console(file=buf, force_terminal=False, width=200)
+            try:
+                _run_tdd_cycle(task, ledger_path, console)
+            except PhaseFailedError:
+                pass
+            output = buf.getvalue()
+            statuses = _read_statuses(ledger_path)
+            assert "COMPLETED" not in statuses, (
+                "AC-PLAN-001: already_satisfied with null/empty files and "
+                "null test_file must not write COMPLETED; "
+                f"statuses={statuses!r} call_log={call_log!r}\n{output}"
+            )
+            assert "GREEN" not in call_log, (
+                "AC-PLAN-001: GREEN must not invent missing tests when RED "
+                f"omits declared files; call_log={call_log!r}\n{output}"
+            )
+
+    @pytest.mark.parametrize(
+        "files,test_file",
+        [
+            (["tests/test_gates.py"], None),
+            (None, "tests/test_gates.py"),
+        ],
+        ids=["named_files", "named_test_file"],
+    )
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._verify_worktree_branch")
+    @patch("deviate.cli.micro._invoke_agent")
+    def test_already_satisfied_named_files_reaches_judge(
+        self,
+        mock_agent,
+        mock_branch,
+        mock_verify,
+        mock_run_format,
+        mock_run_test,
+        mock_run_pytest,
+        files: list[str] | None,
+        test_file: str | None,
+        tmp_git_repo: Path,
+    ):
+        """AC-PLAN-002 / AO-022-01 / FR-ADHOC-022: named files reach JUDGE.
+
+        ``failure_kind: already_satisfied`` plus a non-empty ``files`` set or
+        ``test_file`` must call ``_run_judge_phase``. Empty-files is not the
+        reason to stop. GREEN stays uninvoked. Constitution §3: mock
+        ``_run_pytest``.
+        """
+        call_log: list[str] = []
+        passing = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_run_test.return_value = passing
+        mock_run_pytest.return_value = passing
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        def _already_satisfied_named(*args, **kwargs):
+            phase = kwargs.get("phase", "")
+            tid = kwargs.get("task_id", "TSK-022-01")
+            call_log.append(phase)
+            if phase == "RED":
+                return (
+                    HandoverManifest(
+                        phase="RED",
+                        status="SUCCESS",
+                        task_id=tid,
+                        failure_kind="already_satisfied",
+                        files=files,
+                        test_file=test_file,
+                        rationale=(
+                            "Required behavior already exists in tests/test_gates.py"
+                        ),
+                    ),
+                    "",
+                )
+            if phase == "JUDGE":
+                return (
+                    HandoverManifest.model_construct(
+                        phase="JUDGE",
+                        status="SUCCESS",
+                        verdict="COMPLIANCE_PASS",
+                        task_id=tid,
+                        next_action="skip_refactor",
+                        summary=(
+                            "The required behavior already exists; "
+                            "no implementation needed."
+                        ),
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        mock_agent.side_effect = _already_satisfied_named
+        with chdir(tmp_git_repo):
+            ledger_path, task = _seed_already_satisfied_tdd(
+                tmp_git_repo,
+                task_id="TSK-022-01",
+                issue_id="ISS-ADH-022",
+                description=("Named already_satisfied files reach JUDGE adjudication"),
+            )
+            buf = io.StringIO()
+            console = Console(file=buf, force_terminal=False, width=200)
+            _run_tdd_cycle(task, ledger_path, console)
+            output = buf.getvalue()
+            assert "JUDGE" in call_log, (
+                "AC-PLAN-002: named files / test_file must reach "
+                f"_run_judge_phase; call_log={call_log!r}\n{output}"
+            )
+            assert "GREEN" not in call_log, (
+                "AC-PLAN-002: named already_satisfied must not invoke GREEN; "
+                f"call_log={call_log!r}\n{output}"
+            )
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._run_test_cmd")

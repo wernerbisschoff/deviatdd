@@ -2450,6 +2450,7 @@ class TestTddJudgeEvidenceGate:
         )
 
     def test_execute_judge_stays_ungated(self, tmp_git_repo: Path) -> None:
+        """AC-PLAN-003 / FR-ADHOC-022: EXECUTE / DIRECT stay ungated by files."""
         from deviate.cli.micro import _run_execute_phase
         import io
 
