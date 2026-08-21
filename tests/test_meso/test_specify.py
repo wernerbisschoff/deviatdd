@@ -417,3 +417,49 @@ class TestSpecifySetup:
             f"Short-circuit must not rewrite ledger: "
             f"before={claims_before} after={claims_after}"
         )
+
+
+class TestSpecifyCollisionRetryKeepsRemoteClaim:
+    """AC-PLAN-003: collision retry does not take the local skip path."""
+
+    def test_collision_retry_does_not_call_local_skip_and_keeps_claim_remote_default(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import typer
+
+        from deviate.cli.meso import _specify_pre
+        from deviate.state.config import resolve_claim_remote
+        from tests.test_cli.test_meso import seed_adhoc_018_origin_rejecting_name
+
+        seed_adhoc_018_origin_rejecting_name(tmp_git_repo)
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+
+        assert resolve_claim_remote(tmp_git_repo) is True, (
+            "claim_remote default must stay true; collision retry is not an opt-out"
+        )
+
+        with chdir(tmp_git_repo):
+            try:
+                result = _specify_pre(issue_id="ISS-ADH-018", local=False)
+                exit_code = 0
+            except typer.Exit as exc:
+                result = None
+                exit_code = exc.exit_code
+
+        captured = capsys.readouterr()
+        output = captured.out
+        assert "LOCAL_ONLY" not in output, (
+            f"collision retry must not call the local skip path; output={output!r}"
+        )
+        assert exit_code == 0, (
+            f"specify pre must succeed after 019 retry; "
+            f"exit={exit_code} output={output!r}"
+        )
+        assert result is not None
+        assert result["branch"].startswith("feat/adhoc/019-"), (
+            f"collision retry must win on 019-*, got {result['branch']!r}"
+        )
+        assert resolve_claim_remote(tmp_git_repo) is True
