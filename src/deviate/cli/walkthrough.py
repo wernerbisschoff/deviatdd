@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from deviate.core._shared import git_env as _git_env
+from deviate.state.config import resolve_base_branch
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +137,8 @@ def _get_branch_commits(repo: Path, base: str) -> list[str]:
 
 @walkthrough_app.command()
 def pre(
-    base: str = typer.Option(
-        "main", "--base", help="Base branch for merge-base computation"
+    base: str | None = typer.Option(
+        None, "--base", help="Base branch for merge-base computation"
     ),
     branch: str | None = typer.Option(
         None, "--branch", help="Target branch for self-contained walkthrough"
@@ -145,15 +146,17 @@ def pre(
 ) -> None:
     """Gather git state and governance context for walkthrough."""
     repo = Path.cwd()
+    resolved_base = base or resolve_base_branch(repo)
+
 
     target = branch or "HEAD"
     branch_name = branch or _get_current_branch(repo)
 
-    diff = _compute_diff(repo, base, target)
+    diff = _compute_diff(repo, resolved_base, target)
     constitution_path = _resolve_constitution_path(repo)
     prd_path, prd_warning = _resolve_prd(branch_name, repo)
-    commit_messages = _get_branch_commits(repo, base)
-    changed_files = _get_changed_files(repo, base, target)
+    commit_messages = _get_branch_commits(repo, resolved_base)
+    changed_files = _get_changed_files(repo, resolved_base, target)
 
     contract: dict[str, object] = {
         "status": "READY",
@@ -162,7 +165,7 @@ def pre(
         "constitution_warning": constitution_path is None,
         "prd_path": prd_path,
         "prd_warning": prd_warning,
-        "base_branch": base,
+        "base_branch": resolved_base,
         "commit_messages": commit_messages,
         "changed_files_count": len(changed_files),
         "changed_files": changed_files,

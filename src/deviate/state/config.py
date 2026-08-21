@@ -177,6 +177,9 @@ class DeviateConfig(BaseModel):
     use_libref: bool = False
     # Enable Graphite CLI integration for stacked changes
     graphite: bool = Field(default=False)
+    # Git branch used as trunk for worktrees, PR base, and review diffs
+    base_branch: str = Field(default="main", min_length=1)
+
 
     model_config = {"extra": "forbid"}
 
@@ -235,6 +238,17 @@ def resolve_graphite_config(root: Path) -> bool:
         return False
     value = data.get("graphite", False)
     return value if isinstance(value, bool) else False
+
+
+def resolve_base_branch(root: Path) -> str:
+    """Return the configured trunk branch, defaulting to ``main``."""
+    data = _load_deviate_config_toml(root)
+    if data is None:
+        return "main"
+    value = data.get("base_branch", "main")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return "main"
 
 
 class PytestReportConfig(BaseModel):

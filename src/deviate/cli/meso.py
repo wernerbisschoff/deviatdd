@@ -44,12 +44,14 @@ from deviate.core.worktree import (
     create_worktree,
     find_worktree_for_branch,
     remove_worktree,
+    resolve_start_point,
 )
 from deviate.state.config import (
     AgentConfig,
     SessionState,
     _load_deviate_config_toml,
     resolve_graphite_config,
+    resolve_base_branch,
     resolve_model_for_phase,
 )
 from deviate.state.ledger import (
@@ -234,11 +236,15 @@ def _pr_title(issue_id: str, record_title: str, record_type: str = "feature") ->
 
 
 def _derive_pr_metadata(
-    branch_name: str, issue_id: str, record_title: str, record_type: str = "feature"
+    branch_name: str,
+    issue_id: str,
+    record_title: str,
+    record_type: str = "feature",
+    repo: Path | None = None,
 ) -> tuple[str, str, str]:
     pr_title = _pr_title(issue_id, record_title, record_type)
     pr_body = ""
-    base_branch = "main"
+    base_branch = resolve_base_branch(repo or Path.cwd())
     return pr_title, pr_body, base_branch
 
 
@@ -492,7 +498,14 @@ def _try_claim_issue(
                 }
         wt_path = repo_root / ".worktrees" / branch
         try:
-            created = create_worktree(branch, wt_path, repo=repo_root)
+            created = create_worktree(
+                branch,
+                wt_path,
+                repo=repo_root,
+                start_point=resolve_start_point(
+                    resolve_base_branch(repo_root), repo=repo_root
+                ),
+            )
             console.print(
                 f"[green]WORKTREE[/] "
                 f"{'detected at' if created != wt_path else 'created at'} "
