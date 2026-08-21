@@ -84,6 +84,7 @@ The next GREEN attempt must:
 ### Tasks
 
   - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-002, AC-PLAN-003, AC-PLAN-004, AC-PLAN-005, AC-PLAN-008
+  - **Judge Feedback**: JUDGE evidence test_path is not in the injected diff or HEAD: tests/test_micro/test_run.py
 - TSK-023-03: Document issue-scoped pinned micro run
   - **Type**: Config
   - **Mode**: IMMEDIATE
