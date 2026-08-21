@@ -148,7 +148,6 @@ def pre(
     repo = Path.cwd()
     resolved_base = base or resolve_base_branch(repo)
 
-
     target = branch or "HEAD"
     branch_name = branch or _get_current_branch(repo)
 

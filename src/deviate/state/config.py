@@ -180,7 +180,6 @@ class DeviateConfig(BaseModel):
     # Git branch used as trunk for worktrees, PR base, and review diffs
     base_branch: str = Field(default="main", min_length=1)
 
-
     model_config = {"extra": "forbid"}
 
 
