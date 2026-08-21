@@ -1,3 +1,4 @@
 {"id":"TSK-023-01","issue_id":"ISS-ADH-023","description":"Scope pinned TSK lookup to the active issue","status":"RED","execution_mode":"TDD","created_at":"2026-08-21T22:20:05.261045Z","security_profile":null,"acceptance_criteria":null}
 {"id":"TSK-023-01","issue_id":"ISS-ADH-023","description":"Scope pinned TSK lookup to the active issue","status":"JUDGE","execution_mode":"TDD","created_at":"2026-08-21T22:50:35.599633Z","security_profile":null,"acceptance_criteria":null}
 {"id":"TSK-023-01","issue_id":"ISS-ADH-023","description":"Scope pinned TSK lookup to the active issue","status":"COMPLETED","execution_mode":"TDD","created_at":"2026-08-21T22:54:31.877765Z","security_profile":null,"acceptance_criteria":null}
+{"id":"TSK-023-02","issue_id":"ISS-ADH-023","description":"Refuse TASK_ALREADY_DONE for a foreign COMPLETED pin","status":"RED","execution_mode":"TDD","created_at":"2026-08-21T23:00:11.839541Z","security_profile":null,"acceptance_criteria":null}
