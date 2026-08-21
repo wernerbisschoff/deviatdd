@@ -1027,10 +1027,9 @@ def _build_auto_prompt(
 ) -> str:
     """Build a prompt from auto templates with context injected.
 
-    ``train_feedback`` is injected as the ``{train_feedback}`` placeholder
-    so retry RED runs (after JUDGE ``revert_before``) carry the
-    GREEN's ``test_defect`` rationale to the agent. Empty string when
-    not on a retry path; the placeholder is rendered empty.
+    ``train_feedback`` fills the ``{train_feedback}`` placeholder.
+    Escalate paths pass a short note from ``_inject_escalate_note``;
+    GREEN-train paths pass the standing GREEN dump. Empty on first RED.
     """
     issue_id = task.get("issue_id", "")
     task_id = task.get("id", "")
@@ -2967,6 +2966,30 @@ def _rollback_pre_red_if_resolvable(
     )
 
 
+def _short_escalate_note(*, reason: str, failure_kind: str = "") -> str:
+    """Build a one-line retry-RED note from the escalate reason token."""
+    cause = " ".join(reason.replace("_", " ").split()) or (
+        "the previous cycle was rejected"
+    )
+    kind = " ".join(failure_kind.split())
+    suffix = f" (failure_kind={kind})" if kind else ""
+    return f"previous cycle failed because {cause}{suffix}."
+
+
+def _inject_escalate_note(
+    session: SessionState,
+    session_path: Path,
+    *,
+    reason: str,
+) -> None:
+    """Replace GREEN ``train_feedback`` with a short note and persist it."""
+    session.train_feedback = _short_escalate_note(
+        reason=reason,
+        failure_kind=session.failure_kind,
+    )
+    session.save(session_path)
+
+
 def _escalate_to_new_red(
     task: dict,
     ledger_path: Path,
@@ -2980,10 +3003,15 @@ def _escalate_to_new_red(
     root: Path,
     reason: str,
 ) -> SessionState:
-    """Escalate to a fresh RED. Stop after three escalates."""
+    """Escalate to a fresh RED. Stop after three escalates.
+
+    Counters persist first. Then GREEN ``train_feedback`` is replaced
+    with a short note so retry RED does not receive the GREEN dump.
+    """
     tid = task.get("id", "?")
     task_desc = task.get("description", "")
     _account_red_escalate(session, session_path, c, task_id=tid)
+    _inject_escalate_note(session, session_path, reason=reason)
     _rollback_pre_red_if_resolvable(
         root,
         session,
@@ -3220,17 +3248,9 @@ def _run_tdd_cycle(
         }:
             judge_passed = True
             break
-        # Revert-before branch: when JUDGE marked the RED test itself
-        # wrong (``failure_kind == "test_defect"`` -> ``revert_before``),
-        # escalate now. ``_escalate_to_new_red`` resets green_attempts,
-        # increments red_attempts, and re-authors RED with phase-done
-        # bypass so a fresh RED row lands in the append-only ledger.
-        # The override matrix in ``_coerce_judge_action`` already routes
-        # test_defect verdicts here regardless of next_action.
-        if (
-            session.pending_judge_action == "revert_before"
-            or session.failure_kind == "test_defect"
-        ):
+        # Honor coerced ``revert_before``. ``revert_to_red`` still trains
+        # GREEN and keeps dump ``train_feedback``.
+        if session.pending_judge_action == "revert_before":
             session = _escalate_to_new_red(
                 task,
                 ledger_path,
