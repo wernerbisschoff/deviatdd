@@ -11,6 +11,7 @@ import logging
 import sys
 import warnings
 from collections.abc import Callable
+from typing import NoReturn
 from pathlib import Path, PurePosixPath
 
 import typer
@@ -2844,12 +2845,7 @@ def _finish_tdd_cycle(
             phase="CYCLE",
             decision="skip_refactor",
         )
-        session.pending_judge_action = ""
-        session = session.force_transition_to("IDLE")
-        session.train_feedback = ""
-        session.judge_rejected = False
-        session.save(session_path)
-        return session
+        return _idle_after_tdd(session, session_path)
 
     if (
         pending == "continue_refactor"
@@ -2876,7 +2872,8 @@ def _finish_tdd_cycle(
         if pending:
             # Consume the pending action so subsequent cycles see clean state.
             session.pending_judge_action = ""
-            session.save(session_path)
+        _reset_tdd_retry_budget(session)
+        session.save(session_path)
         return session
 
     # no_refactor (CLI flag) with no JUDGE override.
@@ -2885,11 +2882,64 @@ def _finish_tdd_cycle(
     except Exception as e:
         c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
+    return _idle_after_tdd(session, session_path)
+
+
+def _reset_tdd_retry_budget(session: SessionState) -> None:
+    """Clear GREEN-train and RED-escalate counters for the next task."""
+    session.green_attempts = 0
+    session.red_attempts = 0
+
+
+def _clear_judge_retry_gate(session: SessionState) -> None:
+    """Consume the one-shot JUDGE action so the next cycle cannot re-escalate."""
+    session.pending_judge_action = ""
+    session.judge_rejected = False
+
+
+def _idle_after_tdd(
+    session: SessionState,
+    session_path: Path,
+) -> SessionState:
+    """Park the session at IDLE with a fresh TDD retry budget."""
+    session.pending_judge_action = ""
     session = session.force_transition_to("IDLE")
     session.train_feedback = ""
     session.judge_rejected = False
+    _reset_tdd_retry_budget(session)
     session.save(session_path)
     return session
+
+
+def _raise_train_exhausted(
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    *,
+    task_id: str,
+) -> NoReturn:
+    """Print TRAIN_EXHAUSTED, zero counters, and hand off to the operator."""
+    message = f"TRAIN_EXHAUSTED: {task_id} reached {_MAX_RED_ATTEMPTS} RED escalates"
+    c.print(f"  [red]TRAIN_EXHAUSTED[/] {message}")
+    _reset_tdd_retry_budget(session)
+    _clear_judge_retry_gate(session)
+    session.save(session_path)
+    raise PhaseFailedError(message)
+
+
+def _account_red_escalate(
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    *,
+    task_id: str,
+) -> None:
+    """Reset GREEN trains, count one RED escalate, and stop at the cap."""
+    session.green_attempts = 0
+    session.red_attempts += 1
+    session.save(session_path)
+    if session.red_attempts >= _MAX_RED_ATTEMPTS:
+        _raise_train_exhausted(session, session_path, c, task_id=task_id)
 
 
 def _rollback_pre_red_if_resolvable(
@@ -2930,12 +2980,10 @@ def _escalate_to_new_red(
     root: Path,
     reason: str,
 ) -> SessionState:
-    """GREEN budget exhausted: reset green_attempts, bump red_attempts, new RED."""
+    """Escalate to a fresh RED. Stop after three escalates."""
     tid = task.get("id", "?")
     task_desc = task.get("description", "")
-    session.green_attempts = 0
-    session.red_attempts += 1
-    session.save(session_path)
+    _account_red_escalate(session, session_path, c, task_id=tid)
     _rollback_pre_red_if_resolvable(
         root,
         session,
@@ -2961,8 +3009,7 @@ def _escalate_to_new_red(
         bypass_phase_done=True,
         no_judge=no_judge,
     )
-    session.judge_rejected = False
-    session.pending_judge_action = ""
+    _clear_judge_retry_gate(session)
     session.save(session_path)
     _log_run(
         "PHASE_DECISION",
@@ -3085,16 +3132,9 @@ def _run_tdd_cycle(
         # RED's no-failing-test adjudication (RED → JUDGE direct route) may
         # have already returned a verdict — honor it before GREEN runs,
         # since a vacuous GREEN has nothing to implement. Forward verdicts
-        # break out to _finish_tdd_cycle; revert_before re-dispatches RED.
+        # break out to _finish_tdd_cycle; revert_before escalates to a new RED.
         if session.pending_judge_action == "revert_before":
-            _maybe_push_event(
-                monitor,
-                "phase_change",
-                task_id=tid,
-                phase="RED",
-                description=task_desc,
-            )
-            session = _run_red_phase(
+            session = _escalate_to_new_red(
                 task,
                 ledger_path,
                 session,
@@ -3102,17 +3142,8 @@ def _run_tdd_cycle(
                 c,
                 agent=agent,
                 monitor=monitor,
-                bypass_phase_done=True,
                 no_judge=no_judge,
-            )
-            session.judge_rejected = False
-            session.pending_judge_action = ""
-            session.save(session_path)
-            _log_run(
-                "PHASE_DECISION",
-                task_id=tid,
-                phase="RED",
-                decision="reroute_to_red",
+                root=root,
                 reason="no_failing_test_adjudicated",
             )
             continue
@@ -3191,24 +3222,16 @@ def _run_tdd_cycle(
             break
         # Revert-before branch: when JUDGE marked the RED test itself
         # wrong (``failure_kind == "test_defect"`` -> ``revert_before``),
-        # the runner must re-author the failing test, not loop GREEN.
-        # Dispatch RED with phase-done bypass so a fresh RED entry lands
-        # in the append-only ledger. GREEN train budget stays on the
-        # session; this branch does not increment green_attempts. The
-        # override matrix in ``_coerce_judge_action`` already routes
+        # escalate now. ``_escalate_to_new_red`` resets green_attempts,
+        # increments red_attempts, and re-authors RED with phase-done
+        # bypass so a fresh RED row lands in the append-only ledger.
+        # The override matrix in ``_coerce_judge_action`` already routes
         # test_defect verdicts here regardless of next_action.
         if (
             session.pending_judge_action == "revert_before"
             or session.failure_kind == "test_defect"
         ):
-            _maybe_push_event(
-                monitor,
-                "phase_change",
-                task_id=tid,
-                phase="RED",
-                description=task_desc,
-            )
-            session = _run_red_phase(
+            session = _escalate_to_new_red(
                 task,
                 ledger_path,
                 session,
@@ -3216,22 +3239,8 @@ def _run_tdd_cycle(
                 c,
                 agent=agent,
                 monitor=monitor,
-                bypass_phase_done=True,
                 no_judge=no_judge,
-            )
-            session.judge_rejected = False
-            # Consume the one-shot action so a subsequent JUDGE pass on the
-            # retry RED + GREEN cycle doesn't re-enter this branch and
-            # dispatch RED forever. ``pending_judge_action`` is otherwise
-            # only cleared by ``_finish_tdd_cycle`` (skipped here because
-            # we continue the loop, not exit).
-            session.pending_judge_action = ""
-            session.save(session_path)
-            _log_run(
-                "PHASE_DECISION",
-                task_id=tid,
-                phase="JUDGE",
-                decision="reroute_to_red",
+                root=root,
                 reason="test_defect",
             )
             continue
