@@ -11,6 +11,7 @@ import typer
 
 from deviate.cli._common import console
 from deviate.core._shared import git_env as _git_env
+from deviate.state.config import resolve_base_branch
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ review_app = typer.Typer(no_args_is_help=True)
 
 @review_app.command()
 def pre(
-    base: str = typer.Option(
-        "main", "--base", help="Base branch for merge-base computation"
+    base: str | None = typer.Option(
+        None, "--base", help="Base branch for merge-base computation"
     ),
     branch: str | None = typer.Option(
         None, "--branch", help="Target branch for self-contained review"
@@ -29,11 +30,12 @@ def pre(
 ) -> None:
     """Gather git state and governance context for review."""
     repo = Path.cwd()
+    resolved_base = base or resolve_base_branch(repo)
 
     target = branch or "HEAD"
     branch_name = branch or _get_current_branch(repo)
 
-    diff = _compute_diff(repo, base, target)
+    diff = _compute_diff(repo, resolved_base, target)
     constitution_path = _resolve_constitution_path(repo)
     prd_path, prd_warning = _resolve_prd(branch_name, repo)
     report_exists = _check_existing_reports(repo)
@@ -45,7 +47,7 @@ def pre(
         "constitution_warning": constitution_path is None,
         "prd_path": prd_path,
         "prd_warning": prd_warning,
-        "base_branch": base,
+        "base_branch": resolved_base,
         "report_exists": report_exists,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

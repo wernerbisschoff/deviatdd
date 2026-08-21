@@ -62,7 +62,30 @@ def branch_exists_on_remote(
     return bool(result.stdout.strip())
 
 
-def create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path:
+def resolve_start_point(base_branch: str, repo: Path | None = None) -> str:
+    """Pick a git start-point for a new feature branch.
+
+    Prefer ``origin/<base>``, then local ``<base>``, then ``HEAD``.
+    """
+    repo = repo or Path.cwd()
+    for candidate in (f"origin/{base_branch}", base_branch):
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", candidate],
+            cwd=repo,
+            env=_git_env(),
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return candidate
+    return "HEAD"
+
+
+def create_worktree(
+    branch: str,
+    path: Path,
+    repo: Path | None = None,
+    start_point: str | None = None,
+) -> Path:
     repo = repo or Path.cwd()
     existing = find_worktree_for_branch(branch, repo)
     if existing is not None:
@@ -78,7 +101,7 @@ def create_worktree(branch: str, path: Path, repo: Path | None = None) -> Path:
     branch_exists = bool(result.stdout.strip())
     if not branch_exists:
         subprocess.run(
-            ["git", "branch", branch, "HEAD"],
+            ["git", "branch", branch, start_point or "HEAD"],
             cwd=repo,
             env=_git_env(),
             check=True,

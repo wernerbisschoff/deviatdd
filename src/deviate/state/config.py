@@ -177,6 +177,8 @@ class DeviateConfig(BaseModel):
     use_libref: bool = False
     # Enable Graphite CLI integration for stacked changes
     graphite: bool = Field(default=False)
+    # Git branch used as trunk for worktrees, PR base, and review diffs
+    base_branch: str = Field(default="main", min_length=1)
     # Push the claim branch as a distributed lock
     claim_remote: bool = Field(default=True)
 
@@ -255,6 +257,17 @@ def resolve_claim_remote(root: Path) -> bool:
     value is not a bool.
     """
     return _resolve_toml_bool(root, "claim_remote", True)
+
+
+def resolve_base_branch(root: Path) -> str:
+    """Return the configured trunk branch, defaulting to ``main``."""
+    data = _load_deviate_config_toml(root)
+    if data is None:
+        return "main"
+    value = data.get("base_branch", "main")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return "main"
 
 
 class PytestReportConfig(BaseModel):

@@ -7,6 +7,7 @@ from deviate.core.worktree import (
     create_worktree,
     detect_worktree,
     find_worktree_for_branch,
+    resolve_start_point,
     validate_worktree,
 )
 
@@ -50,6 +51,52 @@ class TestCreateWorktree:
             repo=tmp_git_repo,
         )
         assert first == second
+
+    def test_create_worktree_uses_start_point(self, tmp_git_repo: Path):
+        import subprocess
+
+        from deviate.core._shared import git_env as _git_env
+
+        subprocess.run(
+            ["git", "checkout", "-b", "wb-dev"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        (tmp_git_repo / "trunk.txt").write_text("from-trunk\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "trunk.txt"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "trunk marker"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        wt_path = tmp_git_repo / "worktrees" / "from-trunk"
+        create_worktree(
+            branch="from-trunk",
+            path=wt_path,
+            repo=tmp_git_repo,
+            start_point="wb-dev",
+        )
+        assert (wt_path / "trunk.txt").read_text(encoding="utf-8") == "from-trunk\n"
+
+    def test_resolve_start_point_falls_back_to_head(self, tmp_git_repo: Path):
+        assert resolve_start_point("does-not-exist", repo=tmp_git_repo) == "HEAD"
 
 
 class TestDetectWorktree:
