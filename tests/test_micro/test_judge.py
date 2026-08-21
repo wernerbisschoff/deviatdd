@@ -11,6 +11,8 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.agent import HandoverManifest
+from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 
 runner = CliRunner()
@@ -2011,4 +2013,487 @@ class TestExecuteRollbackUntrackedCleanup:
         # The rollback ledger entry itself must persist
         assert (deviate_dir / "rollback.jsonl").exists(), (
             ".deviate/rollback.jsonl (audit trail) must persist across rollback"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TSK-020-03: TDD `_run_judge_phase` mechanical evidence gate (AC-PLAN-002..
+# AC-PLAN-006). Constitution §3 Testing Protocols: pytest under tests/;
+# git isolation via tmp_git_repo + _git_env(); mock _invoke_agent and
+# _run_pytest. Flow References: [].
+# ---------------------------------------------------------------------------
+
+_GATE_ISSUE_ID = "ISS-ADH-020"
+_GATE_TASK_ID = "TSK-020-03"
+_GATE_SLUG = "020-judge-compliance-pass-evidence"
+_GATE_TEST_PATH = "tests/example.py"
+_GATE_IMPL_PATH = "src/example.py"
+_GATE_TEST_QUOTE = "assert increment(2) == 3"
+_GATE_IMPL_QUOTE = "return n + 1"
+_GATE_TEST_BODY = "def test_increment() -> None:\n    assert increment(2) == 3\n"
+_GATE_IMPL_BODY = "def increment(n: int) -> int:\n    return n + 1\n"
+_GATE_SHORT_TEST_BODY = (
+    "def test_placeholder() -> None:\n"
+    "    assert True  # increment contract placeholder\n"
+)
+
+
+def _gate_git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _gate_commit(repo: Path, message: str, *relpaths: str) -> str:
+    _gate_git(repo, "add", "--", *relpaths)
+    _gate_git(repo, "commit", "-m", message)
+    return _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def _seed_gate_issue(repo: Path, *acs: str) -> None:
+    issues_dir = repo / "specs" / "adhoc" / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+    (issues_dir / f"{_GATE_SLUG}.md").write_text(
+        "# TDD JUDGE evidence gate\n",
+        encoding="utf-8",
+    )
+    (repo / "specs").mkdir(parents=True, exist_ok=True)
+    (repo / "specs" / "issues.jsonl").write_text(
+        json.dumps(
+            {
+                "issue_id": _GATE_ISSUE_ID,
+                "source_file": f"specs/adhoc/issues/{_GATE_SLUG}.md",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    plan_dir = repo / "specs" / "adhoc" / _GATE_SLUG
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    body = "\n".join(f"**Scenario {ac}: example**" for ac in acs)
+    if not body:
+        body = "No AC-PLAN tokens in this contract.\n"
+    (plan_dir / "plan.md").write_text(body + "\n", encoding="utf-8")
+    (plan_dir / "tasks.md").write_text(
+        f"# Tasks\n\n- {_GATE_TASK_ID}: Rewrite unmatched TDD PASS\n",
+        encoding="utf-8",
+    )
+
+
+def _write_gate_file(repo: Path, relpath: str, body: str) -> None:
+    path = repo / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def _seed_red_green(
+    repo: Path,
+    *,
+    acs: tuple[str, ...] = ("AC-PLAN-001",),
+    test_body: str = _GATE_TEST_BODY,
+    impl_body: str | None = _GATE_IMPL_BODY,
+    commit_test: bool = True,
+    commit_impl: bool = True,
+) -> str:
+    """Seed specs + optional RED/GREEN commits. Returns red_commit_sha."""
+    (repo / ".gitignore").write_text(".deviate/\n", encoding="utf-8")
+    _seed_gate_issue(repo, *acs)
+    _gate_commit(
+        repo,
+        "chore: seed issue and plan",
+        ".gitignore",
+        "specs",
+    )
+    if test_body:
+        _write_gate_file(repo, _GATE_TEST_PATH, test_body)
+        if commit_test:
+            red_sha = _gate_commit(
+                repo,
+                f"test({_GATE_TASK_ID}): RED phase - failing test",
+                _GATE_TEST_PATH,
+            )
+        else:
+            red_sha = _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
+    else:
+        red_sha = _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
+    if impl_body:
+        _write_gate_file(repo, _GATE_IMPL_PATH, impl_body)
+        if commit_impl:
+            _gate_commit(
+                repo,
+                f"feat({_GATE_TASK_ID}): GREEN phase - implementation",
+                _GATE_IMPL_PATH,
+            )
+    return red_sha
+
+
+def _gate_evidence(**overrides: str) -> dict[str, str]:
+    item = {
+        "ac": "AC-PLAN-001",
+        "test_path": _GATE_TEST_PATH,
+        "test_quote": _GATE_TEST_QUOTE,
+        "impl_path": _GATE_IMPL_PATH,
+        "impl_quote": _GATE_IMPL_QUOTE,
+    }
+    item.update(overrides)
+    return item
+
+
+def _gate_manifest(
+    *,
+    next_action: str | None = "skip_refactor",
+    evidence: list[dict[str, str]] | None = None,
+    verdict: str = "COMPLIANCE_PASS",
+    phase: str = "JUDGE",
+    status: str = "PASS",
+) -> HandoverManifest:
+    kwargs: dict = {
+        "phase": phase,
+        "status": status,
+        "task_id": _GATE_TASK_ID,
+        "verdict": verdict,
+        "rationale": "",
+        "train_feedback": "",
+    }
+    if next_action is not None:
+        kwargs["next_action"] = next_action
+    if evidence is not None:
+        kwargs["evidence"] = evidence
+    return HandoverManifest(**kwargs)
+
+
+def _run_tdd_judge(
+    repo: Path,
+    manifest: HandoverManifest,
+    red_sha: str,
+) -> tuple[SessionState, str, Path]:
+    from deviate.cli.micro import _run_judge_phase
+    from deviate.state.config import SessionState
+    import io
+
+    task = {
+        "id": _GATE_TASK_ID,
+        "issue_id": _GATE_ISSUE_ID,
+        "description": "Rewrite unmatched TDD PASS to revert_to_red",
+        "status": "GREEN",
+        "execution_mode": "TDD",
+    }
+    ledger_path = repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+    session = SessionState(
+        current_phase="GREEN",
+        red_commit_sha=red_sha,
+        active_issue_id=_GATE_ISSUE_ID,
+    )
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=200)
+    mock_pytest = patch(
+        "deviate.cli.micro._run_pytest",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        ),
+    )
+    with (
+        chdir(repo),
+        patch(
+            "deviate.cli.micro._invoke_agent",
+            return_value=(manifest, ""),
+        ),
+        patch(
+            "deviate.cli.micro._build_auto_prompt",
+            return_value="test prompt",
+        ),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        mock_pytest,
+    ):
+        session_out = _run_judge_phase(
+            task, ledger_path, session, session_path, console
+        )
+    return session_out, buf.getvalue(), ledger_path
+
+
+def _ledger_statuses(ledger_path: Path) -> list[str]:
+    if not ledger_path.exists():
+        return []
+    statuses: list[str] = []
+    for line in ledger_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        statuses.append(json.loads(line).get("status", ""))
+    return statuses
+
+
+def _assert_reverted_to_red(session: SessionState, ledger_path: Path) -> None:
+    assert session.pending_judge_action == "revert_to_red", (
+        f"Expected revert_to_red, got {session.pending_judge_action!r}"
+    )
+    assert session.judge_rejected is True
+    assert session.train_feedback.strip() != "", (
+        "Runner-authored evidence feedback must train GREEN"
+    )
+    statuses = _ledger_statuses(ledger_path)
+    assert "COMPLETED" not in statuses, (
+        f"Unmatched PASS must not COMPLETE, statuses={statuses!r}"
+    )
+
+
+def _assert_forward(
+    session: SessionState,
+    ledger_path: Path,
+    *,
+    action: str,
+    completed: bool,
+) -> None:
+    assert session.pending_judge_action == action, (
+        f"Expected forward action {action!r}, got {session.pending_judge_action!r}"
+    )
+    assert session.judge_rejected is False
+    statuses = _ledger_statuses(ledger_path)
+    if completed:
+        assert "COMPLETED" in statuses, (
+            f"Expected COMPLETED ledger row, statuses={statuses!r}"
+        )
+    else:
+        assert "COMPLETED" not in statuses, (
+            f"Forward route must not COMPLETE yet, statuses={statuses!r}"
+        )
+
+
+def _seed_already_exists(repo: Path, *, include_test: bool = True) -> str:
+    """Commit test/impl, then an unrelated HEAD so quotes live only at HEAD."""
+    (repo / ".gitignore").write_text(".deviate/\n", encoding="utf-8")
+    _seed_gate_issue(repo, "AC-PLAN-001")
+    paths = [".gitignore", "specs", _GATE_IMPL_PATH]
+    _write_gate_file(repo, _GATE_IMPL_PATH, _GATE_IMPL_BODY)
+    if include_test:
+        _write_gate_file(repo, _GATE_TEST_PATH, _GATE_TEST_BODY)
+        paths.append(_GATE_TEST_PATH)
+    _gate_commit(repo, "chore: already-exists baseline", *paths)
+    note = repo / "docs" / "note.txt"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("unrelated HEAD commit\n", encoding="utf-8")
+    return _gate_commit(repo, "docs: unrelated HEAD commit", "docs/note.txt")
+
+
+class TestTddJudgeEvidenceGate:
+    """TSK-020-03: unmatched TDD PASS rewrites to revert_to_red (AC-PLAN-002..006).
+
+    Constitution §3 Testing Protocols. Flow References: [].
+    """
+
+    def test_missing_evidence_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=None),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_empty_evidence_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=[]),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_partial_evidence_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(
+            tmp_git_repo,
+            acs=("AC-PLAN-001", "AC-PLAN-002"),
+        )
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=[_gate_evidence()]),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_hallucinated_path_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                evidence=[_gate_evidence(test_path="tests/hallucinated.py")],
+            ),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_empty_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=[_gate_evidence(test_quote="")]),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_short_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(
+            tmp_git_repo,
+            test_body=_GATE_SHORT_TEST_BODY,
+        )
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=[_gate_evidence(test_quote="assert True")]),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_wrong_file_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                evidence=[_gate_evidence(test_quote=_GATE_IMPL_QUOTE)],
+            ),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_matching_quotes_keep_forward_route(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="continue_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            red_sha,
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="continue_refactor",
+            completed=False,
+        )
+
+    def test_empty_green_accepts_dirty_test_quote_without_impl(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha = _seed_red_green(
+            tmp_git_repo,
+            impl_body=None,
+            commit_test=False,
+        )
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="proceed_to_refactor_no_diff",
+                evidence=[
+                    _gate_evidence(impl_path="", impl_quote=""),
+                ],
+            ),
+            red_sha,
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="proceed_to_refactor_no_diff",
+            completed=False,
+        )
+
+    def test_already_exists_head_quotes_pass(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_already_exists(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            red_sha,
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="skip_refactor",
+            completed=True,
+        )
+
+    def test_already_exists_missing_test_file_fails(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_already_exists(tmp_git_repo, include_test=False)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+
+    def test_no_ac_plan_empty_evidence_completes(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo, acs=())
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=[]),
+            red_sha,
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="skip_refactor",
+            completed=True,
+        )
+
+    def test_execute_judge_stays_ungated(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.micro import _run_execute_phase
+        import io
+
+        _seed_red_green(tmp_git_repo)
+        extra = tmp_git_repo / "src" / "execute_extra.py"
+        extra.write_text("VALUE = 1\n", encoding="utf-8")
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "EXECUTE judge stays ungated",
+            "status": "PENDING",
+            "execution_mode": "DIRECT",
+        }
+        ledger_path = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(active_issue_id=_GATE_ISSUE_ID).save(session_path)
+        execute_manifest = HandoverManifest(
+            phase="EXECUTE",
+            status="SUCCESS",
+            task_id=_GATE_TASK_ID,
+        )
+        judge_manifest = _gate_manifest(next_action="skip_refactor", evidence=[])
+
+        def _invoke(prompt: str, *args: object, **kwargs: object):
+            if kwargs.get("phase") == "JUDGE":
+                return judge_manifest, ""
+            return execute_manifest, ""
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.micro._invoke_agent", side_effect=_invoke),
+            patch(
+                "deviate.cli.micro._build_auto_prompt",
+                return_value="test prompt",
+            ),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            _run_execute_phase(task, ledger_path, console)
+        statuses = _ledger_statuses(ledger_path)
+        assert "COMPLETED" in statuses, (
+            f"EXECUTE judge must stay ungated and COMPLETE, statuses={statuses!r}"
         )
