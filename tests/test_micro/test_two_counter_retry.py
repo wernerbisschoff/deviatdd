@@ -1,11 +1,12 @@
-"""Two-counter TDD retry pins (ISS-ADH-017 / AC-PLAN-001 / AC-PLAN-002).
+"""Two-counter TDD retry pins (ISS-ADH-017 / AC-PLAN-001..004).
 
 GREEN trains three times against one standing RED contract on
 ``revert_to_red``, then escalates. Cycle 1 does not print
 ``TRAIN_EXHAUSTED``. ``revert_before`` escalates immediately; three
 escalates print ``TRAIN_EXHAUSTED`` and stop. Counters seed from
 ``SessionState`` so a crash mid-train cannot zero the budget via a
-local ``train_attempts = 0``.
+local ``train_attempts = 0``. Escalate RED receives a short
+``previous cycle failed because`` note, not the GREEN dump.
 """
 
 from __future__ import annotations
@@ -17,13 +18,33 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from deviate.cli.micro import PhaseFailedError, _finish_tdd_cycle, _run_tdd_cycle
+from deviate.cli.micro import (
+    PhaseFailedError,
+    _build_auto_prompt,
+    _finish_tdd_cycle,
+    _run_tdd_cycle,
+)
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
 
 STANDING_RED_SHA = "abc-red-contract"
 STANDING_FEEDBACK = (
     "implementation wrong: slice misses AC-PLAN-001 boundary on revert_to_red"
+)
+GREEN_DUMP_MARKER = "UNIQUE_GREEN_DUMP_MARKER_AC_PLAN_004"
+GREEN_DUMP = (
+    "<test_output>\n"
+    "============================= test session starts =============================\n"
+    "FAILED tests/test_cli/test_micro.py::test_foo - AssertionError: 1 != 2\n"
+    f"{GREEN_DUMP_MARKER}\n"
+    "=========================== 1 failed in 4.87s ===========================\n"
+    "</test_output>\n"
+    "\n"
+    "Rationale: GREEN mutated specs/adhoc/017-two-counter-tdd-retry/plan.md "
+    "and rewrote src/deviate/cli/micro.py::_run_tdd_cycle in full. The "
+    "implementation must keep the RED contract standing. Full pytest -vv "
+    "dump follows with 80 lines of traceback and captured stdout from the "
+    "failing assertion.\n"
 )
 _MAX_PHASES = 24
 
@@ -505,3 +526,238 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
         reloaded = SessionState.load(session_path)
         assert reloaded.green_attempts == 0
         assert reloaded.red_attempts == 0
+
+
+def _install_escalate_note_stubs(
+    monkeypatch: pytest.MonkeyPatch,
+    task: dict,
+    *,
+    judge_action: str,
+) -> dict[str, object]:
+    """Stub phases and capture the ``train_feedback`` retry RED forwards.
+
+    ``judge_action`` is ``revert_before`` (escalate) or ``revert_to_red``
+    (GREEN train). After the first retry path, JUDGE forwards
+    ``skip_refactor`` so the loop exits.
+    """
+    call_log: list[str] = []
+    feedback_at_red: list[str] = []
+    prompts_at_red: list[str] = []
+    feedback_at_green: list[str] = []
+
+    def _guard() -> None:
+        if len(call_log) > _MAX_PHASES:
+            raise AssertionError(
+                f"TDD loop did not terminate after {_MAX_PHASES} phases: {call_log!r}"
+            )
+
+    def _red(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("RED")
+        _guard()
+        session_arg = args[2]
+        session_path_arg = args[3]
+        assert isinstance(session_arg, SessionState)
+        assert isinstance(session_path_arg, Path)
+        feedback_at_red.append(session_arg.train_feedback)
+        prompts_at_red.append(
+            _build_auto_prompt(
+                "red",
+                task,
+                Path.cwd(),
+                train_feedback=session_arg.train_feedback,
+            )
+        )
+        if not session_arg.red_commit_sha:
+            session_arg.red_commit_sha = STANDING_RED_SHA
+        session_arg.current_phase = "RED"
+        session_arg.save(session_path_arg)
+        return session_arg
+
+    def _green(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("GREEN")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        feedback_at_green.append(current.train_feedback)
+        current.current_phase = "GREEN"
+        current.train_feedback = GREEN_DUMP
+        current.failure_kind = "test_defect"
+        current.save(session_path_arg)
+        return current
+
+    def _judge(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("JUDGE")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        if call_log.count("JUDGE") >= 2:
+            current.judge_rejected = False
+            current.pending_judge_action = "skip_refactor"
+            current.failure_kind = ""
+            current.train_feedback = ""
+        else:
+            current.judge_rejected = True
+            current.pending_judge_action = judge_action
+            current.failure_kind = "test_defect"
+            current.train_feedback = GREEN_DUMP
+        current.save(session_path_arg)
+        return current
+
+    def _finish(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("REFACTOR")
+        session_arg = args[2]
+        assert isinstance(session_arg, SessionState)
+        return session_arg
+
+    monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+    monkeypatch.setattr("deviate.cli.micro._run_green_phase", _green)
+    monkeypatch.setattr("deviate.cli.micro._run_judge_phase", _judge)
+    monkeypatch.setattr("deviate.cli.micro._finish_tdd_cycle", _finish)
+    return {
+        "call_log": call_log,
+        "feedback_at_red": feedback_at_red,
+        "prompts_at_red": prompts_at_red,
+        "feedback_at_green": feedback_at_green,
+    }
+
+
+class TestEscalateInjectsShortNoteNotGreenDump:
+    """AC-PLAN-004 / US-017-02 / FR-ADHOC-017 / AC-ADHOC-017-04."""
+
+    def test_escalate_injects_short_note_not_green_dump(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Escalate RED gets a short note; the GREEN dump is absent.
+
+        After GREEN stores a long ``train_feedback`` dump that includes
+        ``<test_output>`` and a full rationale, JUDGE returns
+        ``revert_before``. The retry RED prompt that
+        ``_build_auto_prompt`` builds from ``session.train_feedback``
+        contains ``previous cycle failed because`` and omits the dump.
+        """
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-017",
+            green_attempts=0,
+            red_attempts=0,
+        ).save(session_path)
+
+        traces = _install_escalate_note_stubs(
+            monkeypatch, task, judge_action="revert_before"
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        try:
+            _run_tdd_cycle(task, ledger_path, console)
+        except PhaseFailedError as exc:
+            raise AssertionError(
+                "AC-PLAN-004: one revert_before escalate must re-author RED "
+                f"without TRAIN_EXHAUSTED; got {exc!r}\n{buf.getvalue()}"
+            ) from exc
+
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        feedback_at_red = traces["feedback_at_red"]
+        assert isinstance(feedback_at_red, list)
+        prompts_at_red = traces["prompts_at_red"]
+        assert isinstance(prompts_at_red, list)
+
+        assert call_log.count("RED") >= 2, (
+            "AC-PLAN-004: revert_before must dispatch a retry RED so the "
+            f"escalate note can be observed; got {call_log!r}"
+        )
+        retry_feedback = feedback_at_red[1]
+        retry_prompt = prompts_at_red[1]
+        assert isinstance(retry_feedback, str)
+        assert isinstance(retry_prompt, str)
+
+        assert "previous cycle failed because" in retry_feedback, (
+            "AC-PLAN-004: escalate must wipe GREEN train_feedback and set a "
+            "short 'previous cycle failed because …' note for retry RED; "
+            f"got {retry_feedback!r}"
+        )
+        assert "<test_output>" not in retry_feedback, (
+            "AC-PLAN-004: escalate RED must omit raw GREEN <test_output>; "
+            f"got {retry_feedback!r}"
+        )
+        assert GREEN_DUMP_MARKER not in retry_feedback, (
+            "AC-PLAN-004: escalate RED must omit the full GREEN rationale "
+            f"dump; got {retry_feedback!r}"
+        )
+        assert retry_feedback is not None
+        assert retry_feedback.count("\n") <= 3, (
+            "AC-PLAN-004: the escalate note must stay short (not a dump); "
+            f"got {retry_feedback!r}"
+        )
+
+        assert "previous cycle failed because" in retry_prompt, (
+            "AC-PLAN-004: _build_auto_prompt must inject the short note as "
+            "{train_feedback} into the retry RED prompt; "
+            f"prompt excerpt={retry_prompt[-800:]!r}"
+        )
+        assert "<test_output>" not in retry_prompt, (
+            "AC-PLAN-004: retry RED prompt must omit raw GREEN <test_output>; "
+            f"prompt excerpt={retry_prompt[-800:]!r}"
+        )
+        assert GREEN_DUMP_MARKER not in retry_prompt, (
+            "AC-PLAN-004: retry RED prompt must omit the full GREEN dump; "
+            f"prompt excerpt={retry_prompt[-800:]!r}"
+        )
+
+    def test_escalate_revert_to_red_keeps_green_train_feedback(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GREEN-train (``revert_to_red``) keeps the existing dump."""
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-017",
+            green_attempts=0,
+            red_attempts=0,
+        ).save(session_path)
+
+        traces = _install_escalate_note_stubs(
+            monkeypatch, task, judge_action="revert_to_red"
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        try:
+            _run_tdd_cycle(task, ledger_path, console)
+        except PhaseFailedError as exc:
+            raise AssertionError(
+                "AC-PLAN-004: revert_to_red must keep GREEN train_feedback "
+                f"and retry GREEN, not TRAIN_EXHAUSTED; got {exc!r}\n"
+                f"{buf.getvalue()}"
+            ) from exc
+
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        feedback_at_green = traces["feedback_at_green"]
+        assert isinstance(feedback_at_green, list)
+
+        assert call_log.count("GREEN") >= 2, (
+            "AC-PLAN-004: revert_to_red must retry GREEN against the standing "
+            f"RED; got {call_log!r}"
+        )
+        assert feedback_at_green[1] == GREEN_DUMP, (
+            "AC-PLAN-004: revert_to_red keeps the existing GREEN "
+            "train_feedback for the next GREEN; "
+            f"got {feedback_at_green[1]!r}"
+        )
+        assert "previous cycle failed because" not in feedback_at_green[1], (
+            "AC-PLAN-004: GREEN-train must not replace train_feedback with "
+            f"the escalate note; got {feedback_at_green[1]!r}"
+        )
