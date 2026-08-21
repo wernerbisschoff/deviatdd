@@ -177,6 +177,8 @@ class DeviateConfig(BaseModel):
     use_libref: bool = False
     # Enable Graphite CLI integration for stacked changes
     graphite: bool = Field(default=False)
+    # Push the claim branch as a distributed lock
+    claim_remote: bool = Field(default=True)
 
     model_config = {"extra": "forbid"}
 
@@ -228,13 +230,31 @@ def resolve_model_for_phase(phase: str, root: Path) -> str | None:
     return resolve_phase_model(phase, {k: str(v) for k, v in models.items()})
 
 
-def resolve_graphite_config(root: Path) -> bool:
-    """Check whether the Graphite integration is enabled in `.deviate/config.toml`."""
+def _resolve_toml_bool(root: Path, key: str, default: bool) -> bool:
+    """Return a top-level bool from `.deviate/config.toml`.
+
+    Returns *default* when the file is absent, the key is absent, or the
+    value is not a bool.
+    """
     data = _load_deviate_config_toml(root)
     if data is None:
-        return False
-    value = data.get("graphite", False)
-    return value if isinstance(value, bool) else False
+        return default
+    value = data.get(key, default)
+    return value if isinstance(value, bool) else default
+
+
+def resolve_graphite_config(root: Path) -> bool:
+    """Check whether the Graphite integration is enabled in `.deviate/config.toml`."""
+    return _resolve_toml_bool(root, "graphite", False)
+
+
+def resolve_claim_remote(root: Path) -> bool:
+    """Resolve whether claim should push a lock branch to the remote.
+
+    Returns True when the config file is absent, the key is absent, or the
+    value is not a bool.
+    """
+    return _resolve_toml_bool(root, "claim_remote", True)
 
 
 class PytestReportConfig(BaseModel):

@@ -94,9 +94,14 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     existing `config.toml` and installs the Graphite governance block)
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
+  * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
+    `config.toml` without dropping `[models]`, `timeout_seconds`, or `[agent]`.
+    Fresh setup without the flag writes `claim_remote = true`. An interactive TTY
+    session with the flag omitted may prompt; a non-interactive session keeps `true`.)
 * **Output Artifacts:**
   * `.deviate/config.toml` — Persisted configuration profile (includes
-    `[agent].backend` set from `--agent` for meso/micro dispatch)
+    `[agent].backend` set from `--agent` for meso/micro dispatch, and
+    `claim_remote` default `true`)
   * `.deviate/session.json` — Current session state snapshot
   * `.deviate/.gitignore` — Excludes session.json and runtime state
     directories from version control
@@ -402,13 +407,14 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Claim an issue and create its worktree. With an explicit `<issue-id>`,
   claims that specific issue. With **no argument**, auto-discovers the next claimable
-  BACKLOG issue — skipping issues whose `feat/{epic}/{issue}` branch already exists on
-  remote (treated as claimed elsewhere) — via `_discover_claimable_issue()` (the same
-  discovery `deviate meso run` uses) and claims it. Stops after the
-  worktree is created and the claim is committed — does NOT advance session state and
-  does NOT run plan or tasks. To continue, run ``deviate plan pre`` or invoke the
-  ``/deviate-plan`` slash command inside the new worktree.
-* `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed.
+  BACKLOG issue via `_discover_claimable_issue()` (the same discovery `deviate meso run`
+  uses) and claims it. Default discovery skips issues whose `feat/{epic}/{issue}` branch
+  already exists on remote (treated as claimed elsewhere). Local mode does not skip those
+  origin branches. Stops after the worktree is created and the claim is committed — does
+  NOT advance session state and does NOT run plan or tasks. To continue, run
+  ``deviate plan pre`` or invoke the ``/deviate-plan`` slash command inside the new
+  worktree.
+* `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `true`; absent file or absent key resolves to `true`). Explicit `--local` always wins over `claim_remote = true`. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim.
 
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 
@@ -637,6 +643,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **Input Parameters:**
   * `--issue <ISS_ID>` (Target a specific BACKLOG issue; e.g. `002-001` for new work, `ISS-019` for grandfathered ids. Default: next unblocked.)
   * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
+  * `--local` (Claim locally only: create worktree, write ledger, commit; skip remote check and `git push`. Distinct from `--no-setup`. Omitted flag honors `claim_remote` config. Forwarded to `_meso_run`.)
   * `--model <id>` (Override default model for RED/GREEN/REFACTOR/EXECUTE phases;
     resolution: phase-specific config &gt; CLI `--model` &gt; default config &gt; backend native;
     JUDGE is excluded from CLI override to preserve model tiering)
@@ -906,12 +913,16 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   worktree, it resolves the issue from the branch and resumes idempotently. It fails when
   `blocked_by` dependencies are not COMPLETED unless `--force` is set.
 * **Pipeline Steps (in order):**
-  1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run)`, which creates a
+  1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run, local)`, which creates a
      linked worktree at `.worktrees/feat/{epic}/{issue}/`, copies `.claude/`, `.opencode/`,
      `.factory/`, `.pi/`, `.omp/` agent skill directories and `.env` (if present) into the
      worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
-     during setup), claims the issue via `claim_issue()`, commits the claim to the
-     worktree's `specs/issues.jsonl`, and pushes the branch to origin.
+     during setup), claims the issue via `claim_issue()`, and commits the claim to the
+     worktree's `specs/issues.jsonl`. Default claim (`claim_remote = true`, no `--local`)
+     then pushes the branch to origin as a distributed lock. Local mode (`--local` or
+     `claim_remote = false`) keeps that worktree and ledger claim and skips the remote-branch
+     pre-check and `git push`. `_specify_pre` resolves effective local as `--local` OR
+     `claim_remote = false`, so `deviate plan pre` outside a worktree inherits the same rule.
   2. **Plan:** `chdir`s into the worktree, calls `_plan_pre()` (emits a `plan_pre` JSON
      contract), invokes the agent with the slim `plan` prompt and the per-phase model from
      `.deviate/config.toml` via `resolve_model_for_phase("plan", root)`, then calls
@@ -939,7 +950,14 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     note above the banner calling out the Git Isolation Principle bypass. Intended for
     ephemeral runs where the operator has already prepared a branch manually; the
     default `deviate meso run` flow remains the canonical entry point that respects
-    the worktree-per-issue model.
+    the worktree-per-issue model. `--local` does not imply `--no-setup`. Combining
+    `--no-setup` with `--local` still skips SPECIFY because `--no-setup` wins for
+    setup skipping.
+  * `--local` *(optional)* — Claim locally only. Creates the worktree, writes the ledger
+    claim, and commits. Skips the remote-branch pre-check and `git push`. Omitted
+    `--local` honors `.deviate/config.toml` `claim_remote` (default `true`). Explicit
+    `--local` always wins over `claim_remote = true`. Auto-discovery in local mode does
+    not treat an origin `feat/{epic}/{issue}` branch as claimed-elsewhere.
 * **Worktree Auto-Detect:** When invoked from inside a linked git worktree (``.git``
   is a file containing ``/worktrees/``), the pipeline automatically behaves as if
   ``--no-setup`` were passed: it skips the SPECIFY step, resolves the active issue

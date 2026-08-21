@@ -296,3 +296,21 @@
   2. AC-ADHOC-018-02 / AO-018-02: Tasks prompts treat 30–90 min as "one observable behavior" and forbid RED-only vs GREEN-only vs "add the route" splits of the same AC.
   3. AC-ADHOC-018-03 / AO-018-03: An eight-vertical PRD still emits eight issues; a GREEN that would bury the contract in a mixed 10-file / >400 LOC packet is still split.
   4. AC-ADHOC-018-04 / AO-018-04: `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` drop the 4–8 floor in the same commit; CHANGELOG gains an `[Unreleased]` bullet; two-counter retry (ISS-ADH-017) is untouched.
+
+## FR-ADHOC-017: Optional Push-as-Lock — `claim_remote` Config + `--local` on Specify, Meso Run, and Run
+
+- **Description**: Make the claim-time `git push -u <remote> <branch>` distributed lock optional. Keep worktree creation, `feat/{epic}/{issue}` branch naming, ledger BACKLOG → SPECIFIED, and the local claim commit. Skip only the remote-branch-exists pre-check and the push when `.deviate/config.toml` has `claim_remote = false` or when `--local` is passed. Flag overrides config; omitted flag uses the standing config default (`true` = today's push-as-lock).
+- **Preconditions**: `src/deviate/cli/meso.py::_try_claim_issue` already honors `local=True` (skip remote check + skip push; `ALREADY_CLAIMED_LOCAL` reuse). `deviate specify --local` already forwards that flag. `deviate meso run` and `deviate run` currently call `_specify_pre(...)` without `local=True`. `DeviateConfig` (`src/deviate/state/config.py`) has `extra = forbid` and no `claim_remote` field. `deviate setup` scaffolds `.deviate/config.toml` via `_scaffold_dotfiles` / `_merge_flag_keys`.
+- **Inputs/Outputs**: Input — `claim_remote` boolean in `.deviate/config.toml` (default `true`), `--local` on `deviate specify` / `deviate meso run` / `deviate run`, `--no-claim-remote` (and optional interactive prompt) on `deviate setup`. Output — worktree at `.worktrees/feat/{epic}/{issue}/`, SPECIFIED ledger row + local claim commit, no `git push` and no origin-branch skip when local mode is active.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-017-01: As a work-repo operator, I want `deviate setup --no-claim-remote` to persist `claim_remote = false` so `deviate specify`, `deviate meso run`, and `deviate run` claim locally (worktree + SPECIFIED) without pushing a lock branch to the shared remote. *(Ref: FR-ADHOC-017)*
+  2. US-017-02: As a personal-project operator, I want the default (`claim_remote = true`, no flag) to keep pushing the claim branch so today's distributed lock still works. *(Ref: FR-ADHOC-017)*
+  3. US-017-03: As an operator on a one-shot air-gapped or no-review run, I want `--local` on specify / meso run / run to skip the push even when config still says `claim_remote = true`. *(Ref: FR-ADHOC-017)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-017-01 / AO-017-01: With no config key and no `--local`, claim still creates the worktree, writes SPECIFIED, commits the claim, and pushes `-u` to the remote (today's default).
+  2. AC-ADHOC-017-02 / AO-017-02: With `claim_remote = false` and no flag, specify / meso run / run skip remote-branch-exists and skip push, while still creating `.worktrees/feat/...`, writing SPECIFIED, and committing the claim locally.
+  3. AC-ADHOC-017-03 / AO-017-03: `--local` on `deviate specify`, `deviate meso run`, and `deviate run` forces the same skip even when `claim_remote = true`.
+  4. AC-ADHOC-017-04 / AO-017-04: `deviate setup --no-claim-remote` (or an interactive no) writes `claim_remote = false` without clobbering other config keys; a fresh setup without that flag writes `claim_remote = true`.
+  5. AC-ADHOC-017-05 / AO-017-05: In local mode, `_discover_claimable_issue` does not treat "branch already on origin" as claimed-elsewhere.
+  6. AC-ADHOC-017-06 / AO-017-06: `--no-setup` remains distinct: it still drops worktree + ledger claim; local mode does not.

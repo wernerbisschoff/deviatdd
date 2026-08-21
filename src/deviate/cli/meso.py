@@ -49,6 +49,7 @@ from deviate.state.config import (
     AgentConfig,
     SessionState,
     _load_deviate_config_toml,
+    resolve_claim_remote,
     resolve_graphite_config,
     resolve_model_for_phase,
 )
@@ -75,6 +76,38 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_LOCAL_CLAIM_HELP = (
+    "Claim locally only: create worktree, write ledger, commit; skip "
+    "remote check and push. Distinct from --no-setup, which skips the "
+    "worktree and ledger claim. Omitted flag honors claim_remote config."
+)
+
+
+def _effective_local(local: bool, root: Path | None = None) -> bool:
+    """Resolve claim locality: ``--local`` OR ``claim_remote = false``.
+
+    Explicit ``local=True`` always wins. When *root* is omitted, use
+    ``Path.cwd()``.
+    """
+    if local:
+        return True
+    return not resolve_claim_remote(root if root is not None else Path.cwd())
+
+
+def _origin_remote(repo: Path) -> str | None:
+    """Return ``origin`` when that remote is configured, else ``None``."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+    except Exception:
+        return None
+    return "origin" if result.returncode == 0 else None
 
 
 def _resolve_dot_deviate() -> Path:
@@ -525,18 +558,7 @@ def _try_claim_issue(
 
         # ── Detect remote if not specified ────────────────────────────
         if remote is None:
-            try:
-                r = subprocess.run(
-                    ["git", "remote", "get-url", "origin"],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                )
-                if r.returncode == 0:
-                    remote = "origin"
-            except Exception:
-                pass
+            remote = _origin_remote(repo_root)
 
         # ── Commit and push claim ──────────────────────────────────────
         if claimed:
@@ -648,7 +670,7 @@ def _specify_pre(
         ledger_path=ledger_path,
         force=force,
         dry_run=dry_run,
-        local=local,
+        local=_effective_local(local),
     )
     if result is None:
         console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
@@ -1509,12 +1531,24 @@ def _meso_discover_and_sequence() -> str | None:
     return issue.issue_id
 
 
-def _discover_claimable_issue() -> str | None:
-    """Return the next BACKLOG issue whose branch does NOT exist on remote.
+def _origin_holds_claim_branch(
+    candidate: IssueRecord, repo_root: Path, remote: str
+) -> bool:
+    """True when ``feat/{epic}/{issue}`` already exists on *remote*."""
+    branch = (
+        f"feat/{_resolve_bucket_dir(candidate.source_file)}"
+        f"/{_source_stem(candidate.source_file)}"
+    )
+    return branch_exists_on_remote(branch, repo=repo_root, remote=remote)
 
-    Loops through ``select_unblocked_candidates``, checking each candidate's
-    deterministic branch name against the remote.  Issues whose branch already
-    exists on remote are treated as claimed-elsewhere and skipped.
+
+def _discover_claimable_issue(local: bool = False) -> str | None:
+    """Return the next unblocked BACKLOG issue this operator can claim.
+
+    Default mode skips candidates whose ``feat/{epic}/{issue}`` branch already
+    exists on origin (claimed elsewhere). Local mode skips that origin filter
+    so leftover personal branches stay claimable, and does not call
+    ``branch_exists_on_remote``.
 
     Returns the first claimable ``issue_id``, or ``None`` if none available.
     """
@@ -1524,34 +1558,16 @@ def _discover_claimable_issue() -> str | None:
     if not candidates:
         return None
 
-    # Detect the remote once for all candidate checks
-    remote: str | None = None
-    try:
-        r = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        )
-        if r.returncode == 0:
-            remote = "origin"
-    except Exception:
-        pass
-
+    remote = None if local else _origin_remote(repo_root)
     for candidate in candidates:
         if _is_issue_completed(candidate.issue_id, ledger_path):
             continue
-        if remote:
-            epic_slug = _resolve_bucket_dir(candidate.source_file)
-            issue_slug = _source_stem(candidate.source_file)
-            branch = f"feat/{epic_slug}/{issue_slug}"
-            if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
-                console.print(
-                    f"[yellow]SKIP[/] {candidate.issue_id} — "
-                    f"branch already on remote (claimed elsewhere)"
-                )
-                continue
+        if remote and _origin_holds_claim_branch(candidate, repo_root, remote):
+            console.print(
+                f"[yellow]SKIP[/] {candidate.issue_id} — "
+                f"branch already on remote (claimed elsewhere)"
+            )
+            continue
         return candidate.issue_id
     return None
 
@@ -1645,12 +1661,33 @@ def _phase_callout(
     )
 
 
+def _resolve_meso_worktree(
+    issue_id: str | None,
+    force: bool,
+    no_setup: bool,
+    local: bool,
+) -> Path:
+    """Return the directory PLAN and TASKS run in.
+
+    ``no_setup`` keeps PLAN plus TASKS in ``$CWD`` and skips ``_specify_pre``.
+    Otherwise SPECIFY claims the issue and returns the new worktree path.
+    ``local`` does not select the ``no_setup`` skip.
+    """
+    if no_setup:
+        return Path.cwd().resolve()
+    setup_result = _specify_pre(
+        issue_id=issue_id, force=force, dry_run=False, local=local
+    )
+    return Path(setup_result["worktree_path"])
+
+
 @with_json_quiet
 def _meso_run(
     issue_id: str | None = None,
     dry_run: bool = False,
     force: bool = False,
     no_setup: bool = False,
+    local: bool = False,
 ) -> str | None:
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
@@ -1658,6 +1695,7 @@ def _meso_run(
 
     session_path = dot_dir / "session.json"
     ledger_path = _resolve_specs_root() / "issues.jsonl"
+    effective_local = _effective_local(local)
 
     # ── Auto-detect: already inside a linked worktree? ──────────────────
     # When the operator is already inside the worktree that ``_specify_pre``
@@ -1679,7 +1717,7 @@ def _meso_run(
 
     # ── Discover issue if not specified ──────────────────────────────
     if issue_id is None:
-        discovered = _discover_claimable_issue()
+        discovered = _discover_claimable_issue(local=effective_local)
         if discovered is None:
             console.print(
                 "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue "
@@ -1737,11 +1775,12 @@ def _meso_run(
         return None  # dry-run: no worktree to drain
 
     # ── Setup step: create worktree and claim issue ──────────────────
-    if no_setup:
-        worktree_path = Path.cwd().resolve()
-    else:
-        setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
-        worktree_path = Path(setup_result["worktree_path"])
+    worktree_path = _resolve_meso_worktree(
+        issue_id=issue_id,
+        force=force,
+        no_setup=no_setup,
+        local=effective_local,
+    )
 
     dot_dir = _resolve_dot_deviate()
     session_path = (dot_dir / "session.json").resolve()
@@ -1887,10 +1926,20 @@ def meso_run_command(
             "the currently checked-out branch. Bypasses Git Isolation Principle."
         ),
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help=_LOCAL_CLAIM_HELP,
+    ),
 ) -> None:
     """Run the meso automated pipeline (setup → plan → tasks)"""
     _meso_run(
-        issue_id=issue, dry_run=dry_run, force=force, quiet=quiet, no_setup=no_setup
+        issue_id=issue,
+        dry_run=dry_run,
+        force=force,
+        quiet=quiet,
+        no_setup=no_setup,
+        local=local,
     )
 
 
@@ -1939,10 +1988,7 @@ def specify(
     elif issue_id == "post":
         _specify_post(force=force)
     elif issue_id is None:
-        # Align auto-discovery with ``_meso_run``: skip issues whose branch
-        # already exists on remote (claimed elsewhere) and reach the next
-        # claimable one instead of hard-failing on the first BACKLOG.
-        discovered = _discover_claimable_issue()
+        discovered = _discover_claimable_issue(local=_effective_local(local))
         if discovered is None:
             console.print(
                 "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue ",
