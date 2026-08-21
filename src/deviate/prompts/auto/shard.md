@@ -41,7 +41,7 @@ Read the PRD from `prd_path`. Extract all `FR-[ID]` and `AC-[ID]` tokens, data m
 <step id="vertical_slicing">
 Execute Internal ICoT:
 - **Pass 1 (Topological Layout + Flow Anchor)**: Read the existing `specs/_product/flows/` catalog as read-only context. Partition FRs by the user-visible flows they already serve, then group them into end-to-end application behavior bundles. Every candidate slice carries one or more FRs. Verify cumulative FR coverage.
-- **Pass 1.5 (Slice Cap Gate)**: Hard ceiling: 10 slices per epic. Target range: 4-8. If draft count exceeds 10, halt with SLICE_CAP_EXCEEDED. Re-cluster by merging adjacent flow-anchored slices that share workstations or demo paths; do not proceed until count ≤ 10.
+- **Pass 1.5 (Slice Cap Gate)**: Emit as few independently shippable user-visible verticals as the PRD needs. 1 is legal. Hard ceiling: 10 slices per epic. If draft count exceeds 10, halt with SLICE_CAP_EXCEEDED. Re-cluster by merging adjacent flow-anchored slices that share workstations or demo paths; do not proceed until count ≤ 10. Do not invent extra slices to look non-trivial.
 - **Pass 2 (Boundary Demarcation)**: Establish defensive exclusion criteria for each slice.
 - **Pass 2.1 (FR-to-Flow Traceability)**: Record existing `FLOW-XX` references for every FR. Use `flow_refs: []` when no catalog entry matches; do not introduce catalog work.
 - **Pass 3 (Horizontal Slice Audit)**: For every candidate slice, enumerate the application layers it touches (database, API, business logic, UI/interface). If only ONE layer, mark HORIZONTAL_SLICE_DETECTED and feed it to Pass 3.5 for merging.
