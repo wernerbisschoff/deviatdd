@@ -13,7 +13,16 @@ from deviate.state.config import DeviateConfig, SessionState
 from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
 from deviate.cli.flow_commands import flows_app as flows_app  # noqa: F401
-from deviate.cli.meso import _meso_run, merge, meso_app, plan, pr, specify, tasks
+from deviate.cli.meso import (
+    _LOCAL_CLAIM_HELP,
+    _meso_run,
+    merge,
+    meso_app,
+    plan,
+    pr,
+    specify,
+    tasks,
+)
 from deviate.cli.micro import (
     _run_all as _run_all,  # noqa: F401  (referenced by tests/test_cli/test_top_level_run.py)
     e2e_app,
@@ -1031,6 +1040,11 @@ def run_command(
         "--model",
         help="Override default model for RED/GREEN/REFACTOR/EXECUTE phases",
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help=_LOCAL_CLAIM_HELP,
+    ),
 ) -> None:
     """Prepare the next issue end-to-end and run it.
 
@@ -1043,7 +1057,7 @@ def run_command(
     ``deviate micro run`` if you only want to drain pending tasks without
     re-running meso.
     """
-    worktree_path_str = _meso_run(issue_id=issue, force=force)
+    worktree_path_str = _meso_run(issue_id=issue, force=force, local=local)
     if not worktree_path_str:
         # _meso_run has already raised SystemExit(1) on hard failures;
         # reaching here means a soft failure (e.g. dry-run consumed the

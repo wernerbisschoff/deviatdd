@@ -77,6 +77,12 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
+_LOCAL_CLAIM_HELP = (
+    "Claim locally only: create worktree, write ledger, commit; skip "
+    "remote check and push. Distinct from --no-setup, which skips the "
+    "worktree and ledger claim. Omitted flag honors claim_remote config."
+)
+
 
 def _effective_local(local: bool, root: Path | None = None) -> bool:
     """Resolve claim locality: ``--local`` OR ``claim_remote = false``.
@@ -1655,12 +1661,33 @@ def _phase_callout(
     )
 
 
+def _resolve_meso_worktree(
+    issue_id: str | None,
+    force: bool,
+    no_setup: bool,
+    local: bool,
+) -> Path:
+    """Return the directory PLAN and TASKS run in.
+
+    ``no_setup`` keeps PLAN plus TASKS in ``$CWD`` and skips ``_specify_pre``.
+    Otherwise SPECIFY claims the issue and returns the new worktree path.
+    ``local`` does not select the ``no_setup`` skip.
+    """
+    if no_setup:
+        return Path.cwd().resolve()
+    setup_result = _specify_pre(
+        issue_id=issue_id, force=force, dry_run=False, local=local
+    )
+    return Path(setup_result["worktree_path"])
+
+
 @with_json_quiet
 def _meso_run(
     issue_id: str | None = None,
     dry_run: bool = False,
     force: bool = False,
     no_setup: bool = False,
+    local: bool = False,
 ) -> str | None:
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
@@ -1668,6 +1695,7 @@ def _meso_run(
 
     session_path = dot_dir / "session.json"
     ledger_path = _resolve_specs_root() / "issues.jsonl"
+    effective_local = _effective_local(local)
 
     # ── Auto-detect: already inside a linked worktree? ──────────────────
     # When the operator is already inside the worktree that ``_specify_pre``
@@ -1689,7 +1717,7 @@ def _meso_run(
 
     # ── Discover issue if not specified ──────────────────────────────
     if issue_id is None:
-        discovered = _discover_claimable_issue(local=_effective_local(False))
+        discovered = _discover_claimable_issue(local=effective_local)
         if discovered is None:
             console.print(
                 "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue "
@@ -1747,11 +1775,12 @@ def _meso_run(
         return None  # dry-run: no worktree to drain
 
     # ── Setup step: create worktree and claim issue ──────────────────
-    if no_setup:
-        worktree_path = Path.cwd().resolve()
-    else:
-        setup_result = _specify_pre(issue_id=issue_id, force=force, dry_run=False)
-        worktree_path = Path(setup_result["worktree_path"])
+    worktree_path = _resolve_meso_worktree(
+        issue_id=issue_id,
+        force=force,
+        no_setup=no_setup,
+        local=effective_local,
+    )
 
     dot_dir = _resolve_dot_deviate()
     session_path = (dot_dir / "session.json").resolve()
@@ -1897,10 +1926,20 @@ def meso_run_command(
             "the currently checked-out branch. Bypasses Git Isolation Principle."
         ),
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help=_LOCAL_CLAIM_HELP,
+    ),
 ) -> None:
     """Run the meso automated pipeline (setup → plan → tasks)"""
     _meso_run(
-        issue_id=issue, dry_run=dry_run, force=force, quiet=quiet, no_setup=no_setup
+        issue_id=issue,
+        dry_run=dry_run,
+        force=force,
+        quiet=quiet,
+        no_setup=no_setup,
+        local=local,
     )
 
 
