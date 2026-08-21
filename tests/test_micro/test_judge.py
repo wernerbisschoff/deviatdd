@@ -2155,6 +2155,8 @@ def _gate_manifest(
     verdict: str = "COMPLIANCE_PASS",
     phase: str = "JUDGE",
     status: str = "PASS",
+    files: list[str] | None = None,
+    test_file: str | None = None,
 ) -> HandoverManifest:
     kwargs: dict = {
         "phase": phase,
@@ -2168,6 +2170,10 @@ def _gate_manifest(
         kwargs["next_action"] = next_action
     if evidence is not None:
         kwargs["evidence"] = evidence
+    if files is not None:
+        kwargs["files"] = files
+    if test_file is not None:
+        kwargs["test_file"] = test_file
     return HandoverManifest(**kwargs)
 
 
@@ -2283,6 +2289,163 @@ def _seed_already_exists(repo: Path, *, include_test: bool = True) -> str:
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("unrelated HEAD commit\n", encoding="utf-8")
     return _gate_commit(repo, "docs: unrelated HEAD commit", "docs/note.txt")
+
+
+def _assert_already_satisfied_not_completed(
+    session: SessionState,
+    ledger_path: Path,
+) -> None:
+    """AC-PLAN-005: unmatched already-exists PASS cannot COMPLETE."""
+    action = session.pending_judge_action
+    assert action in {"revert_before", "revert_to_red"}, (
+        f"Expected revert_before or revert_to_red, got {action!r}"
+    )
+    assert session.train_feedback.strip() != "", (
+        "Runner-authored feedback must name the missing declared test path"
+    )
+    statuses = _ledger_statuses(ledger_path)
+    assert "COMPLETED" not in statuses, (
+        f"Declared files absent from snapshot must not COMPLETE, "
+        f"statuses={statuses!r} feedback={session.train_feedback!r}"
+    )
+
+
+def _run_already_satisfied_cycle(
+    repo: Path,
+    *,
+    red_files: list[str] | None,
+    red_test_file: str | None = None,
+    write_on_red: dict[str, str] | None = None,
+    tasks_mention: str | None = None,
+    rationale: str = "Required behavior already exists.",
+) -> tuple[list[str], list[str], str, Path]:
+    """Drive RED already_satisfied + JUDGE skip_refactor through _run_tdd_cycle."""
+    import io
+
+    from deviate.cli.micro import PhaseFailedError, _run_tdd_cycle
+
+    task_id = "TSK-022-02"
+    issue_id = "ISS-ADH-022"
+    slug = "022-already-satisfied-red-requires-tests"
+    call_log: list[str] = []
+    passing = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="1 passed", stderr=""
+    )
+    (repo / ".gitignore").write_text(".deviate/\n", encoding="utf-8")
+    specs = repo / "specs" / "adhoc" / slug
+    specs.mkdir(parents=True, exist_ok=True)
+    tasks_md = specs / "tasks.md"
+    mention = tasks_mention or ""
+    tasks_md.write_text(
+        f"# Tasks\n\n- {task_id}: Require declared tests\n{mention}\n",
+        encoding="utf-8",
+    )
+    (repo / "specs" / "issues.jsonl").write_text(
+        json.dumps(
+            {
+                "issue_id": issue_id,
+                "source_file": f"specs/adhoc/issues/{slug}.md",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    issue_dir = repo / "specs" / "adhoc" / "issues"
+    issue_dir.mkdir(parents=True, exist_ok=True)
+    (issue_dir / f"{slug}.md").write_text(
+        "# already_satisfied requires declared tests\n",
+        encoding="utf-8",
+    )
+    (specs / "plan.md").write_text(
+        "No AC-PLAN tokens in this contract.\n",
+        encoding="utf-8",
+    )
+    _gate_commit(repo, "chore: seed ISS-ADH-022 fixtures", ".gitignore", "specs")
+
+    def _invoke(*args: object, **kwargs: object):
+        phase = str(kwargs.get("phase", ""))
+        tid = str(kwargs.get("task_id", task_id))
+        call_log.append(phase)
+        if len(call_log) > 24:
+            raise AssertionError(
+                f"TDD loop did not terminate after 24 agent invokes: {call_log!r}"
+            )
+        if phase == "RED":
+            for rel, body in (write_on_red or {}).items():
+                path = repo / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body, encoding="utf-8")
+            return (
+                HandoverManifest(
+                    phase="RED",
+                    status="SUCCESS",
+                    task_id=tid,
+                    failure_kind="already_satisfied",
+                    files=red_files,
+                    test_file=red_test_file,
+                    rationale=rationale,
+                ),
+                "",
+            )
+        if phase == "JUDGE":
+            return (
+                HandoverManifest.model_construct(
+                    phase="JUDGE",
+                    status="SUCCESS",
+                    verdict="COMPLIANCE_PASS",
+                    task_id=tid,
+                    next_action="skip_refactor",
+                    summary=(
+                        "The required behavior already exists; "
+                        "no implementation needed."
+                    ),
+                ),
+                "",
+            )
+        return (
+            HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+            "",
+        )
+
+    task = {
+        "id": task_id,
+        "issue_id": issue_id,
+        "description": "Require declared tests in the JUDGE snapshot",
+        "status": "PENDING",
+        "execution_mode": "TDD",
+    }
+    ledger_path = specs / "tasks.jsonl"
+    _write_ledger(
+        ledger_path,
+        _make_task_record(
+            task_id=task_id,
+            issue_id=issue_id,
+            description=task["description"],
+            status="PENDING",
+            execution_mode="TDD",
+        ),
+    )
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="IDLE", active_issue_id=issue_id).save(session_path)
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=200)
+    with (
+        chdir(repo),
+        patch("deviate.cli.micro._invoke_agent", side_effect=_invoke),
+        patch("deviate.cli.micro._build_auto_prompt", return_value="test prompt"),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        patch("deviate.cli.micro._verify_worktree_branch"),
+        patch("deviate.cli.micro._verify_clean_worktree"),
+        patch("deviate.cli.micro._run_format_cmd", return_value=passing),
+        patch("deviate.cli.micro._run_test_cmd", return_value=passing),
+        patch("deviate.cli.micro._run_pytest", return_value=passing),
+    ):
+        try:
+            _run_tdd_cycle(task, ledger_path, console)
+        except PhaseFailedError:
+            pass
+    return _ledger_statuses(ledger_path), call_log, buf.getvalue(), ledger_path
 
 
 class TestTddJudgeEvidenceGate:
@@ -2435,6 +2598,154 @@ class TestTddJudgeEvidenceGate:
         )
         _assert_reverted_to_red(session, ledger)
 
+    def test_already_satisfied_declared_files_missing_from_diff_fails(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-005 / AO-022-02: declared files must sit in diff or HEAD.
+
+        JUDGE ``skip_refactor`` plus matching ISS-ADH-020 quotes still cannot
+        COMPLETE when RED/JUDGE ``files`` name a path absent from the
+        injected ``<diff>`` and from ``_evidence_head_contents``. Constitution
+        §3: mock ``_run_pytest``. Flow References: [].
+        """
+        missing = "tests/ghost_regression.py"
+        red_sha = _seed_already_exists(tmp_git_repo)
+        session, output, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[_gate_evidence()],
+                files=[missing],
+                test_file=missing,
+            ),
+            red_sha,
+        )
+        _assert_already_satisfied_not_completed(session, ledger)
+        assert missing in session.train_feedback or missing in output, (
+            "AC-PLAN-005: runner-authored feedback must name the missing "
+            f"declared path {missing!r}; feedback={session.train_feedback!r}\n"
+            f"{output}"
+        )
+
+    def test_already_satisfied_path_named_only_in_tasks_md_does_not_complete(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-005: a path that lives only in tasks.md / rationale fails.
+
+        Cross-check is path membership against the injected diff and HEAD,
+        not semantic reading of class names. Constitution §3. Flow
+        References: [].
+        """
+        ghost = "tests/test_gates.py"
+        red_sha = _seed_already_exists(tmp_git_repo)
+        tasks_md = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
+        tasks_md.write_text(
+            tasks_md.read_text(encoding="utf-8")
+            + "\nClass TestGreenAdvisoryGate lives in tests/test_gates.py\n",
+            encoding="utf-8",
+        )
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[_gate_evidence()],
+                files=[ghost],
+                test_file=ghost,
+            ),
+            red_sha,
+        )
+        _assert_already_satisfied_not_completed(session, ledger)
+        assert ghost in session.train_feedback, (
+            "AC-PLAN-005: feedback must name the tasks.md-only path; "
+            f"feedback={session.train_feedback!r}"
+        )
+
+    def test_already_satisfied_declared_files_in_snapshot_completes_and_keeps_file(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-004 / AO-022-02: dirty declared tests may COMPLETE and stay.
+
+        RED lands an untracked regression test, names it in ``files``, and
+        JUDGE emits ``skip_refactor``. The runner may COMPLETE only when that
+        file remains on disk. Constitution §3: mock ``_run_pytest``. Flow
+        References: [].
+        """
+        rel = "tests/test_gates.py"
+        body = "def test_gates() -> None:\n    assert True\n"
+        statuses, call_log, output, _ledger = _run_already_satisfied_cycle(
+            tmp_git_repo,
+            red_files=[rel],
+            red_test_file=rel,
+            write_on_red={rel: body},
+        )
+        assert "GREEN" not in call_log, (
+            f"AC-PLAN-004: GREEN must not invent tests; call_log={call_log!r}\n{output}"
+        )
+        assert "COMPLETED" in statuses, (
+            "AC-PLAN-004: declared path in the dirty snapshot may COMPLETE; "
+            f"statuses={statuses!r} call_log={call_log!r}\n{output}"
+        )
+        assert (tmp_git_repo / rel).is_file(), (
+            "AC-PLAN-004: COMPLETE must keep the declared dirty test on disk; "
+            f"missing {rel!r} statuses={statuses!r}\n{output}"
+        )
+        assert (tmp_git_repo / rel).read_text(encoding="utf-8") == body, (
+            "AC-PLAN-004: COMPLETE must keep the declared dirty test contents"
+        )
+
+    def test_already_satisfied_restore_does_not_wipe_only_declared_tests(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-006 / AO-022-03: restore-then-COMPLETE cannot discard tests.
+
+        The only copy of the declared regression test is the dirty RED write.
+        After adjudication the file remains, or the ledger has no COMPLETED
+        row. Constitution §3. Flow References: [].
+        """
+        rel = "tests/test_already_satisfied_dirty.py"
+        body = "def test_already_satisfied_dirty() -> None:\n    assert True\n"
+        statuses, call_log, output, _ledger = _run_already_satisfied_cycle(
+            tmp_git_repo,
+            red_files=[rel],
+            write_on_red={rel: body},
+        )
+        kept = (tmp_git_repo / rel).is_file()
+        completed = "COMPLETED" in statuses
+        assert "GREEN" not in call_log, (
+            f"AC-PLAN-006: GREEN must not invent tests; call_log={call_log!r}\n{output}"
+        )
+        assert kept or not completed, (
+            "AC-PLAN-006: runner must keep the only declared dirty tests or "
+            "refuse COMPLETE; wipe-then-COMPLETE is a defect. "
+            f"kept={kept} statuses={statuses!r} call_log={call_log!r}\n{output}"
+        )
+
+    def test_already_satisfied_declared_files_absent_from_cycle_does_not_complete(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-005: RED-named files missing from dirty diff and HEAD.
+
+        A test-bearing TDD already_satisfied claim that names a path the
+        snapshot never saw cannot write COMPLETED. Constitution §3. Flow
+        References: [].
+        """
+        missing = "tests/ghost_regression.py"
+        statuses, call_log, output, _ledger = _run_already_satisfied_cycle(
+            tmp_git_repo,
+            red_files=[missing],
+            red_test_file=missing,
+            rationale=("Required behavior already exists in tests/ghost_regression.py"),
+        )
+        assert "COMPLETED" not in statuses, (
+            "AC-PLAN-005: RED-declared path absent from diff and HEAD must "
+            f"not COMPLETE; statuses={statuses!r} call_log={call_log!r}\n"
+            f"{output}"
+        )
+        assert "GREEN" not in call_log, (
+            "AC-PLAN-005: GREEN must not invent missing tests; "
+            f"call_log={call_log!r}\n{output}"
+        )
+
     def test_no_ac_plan_empty_evidence_completes(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo, acs=())
         session, _, ledger = _run_tdd_judge(
@@ -2450,6 +2761,7 @@ class TestTddJudgeEvidenceGate:
         )
 
     def test_execute_judge_stays_ungated(self, tmp_git_repo: Path) -> None:
+        """AC-PLAN-003 / FR-ADHOC-022: EXECUTE / DIRECT stay ungated by files."""
         from deviate.cli.micro import _run_execute_phase
         import io
 

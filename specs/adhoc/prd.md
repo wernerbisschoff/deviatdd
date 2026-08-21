@@ -361,3 +361,17 @@
   1. AC-ADHOC-021-01 / AO-021-01: After JUDGE `revert_before` / `no_failing_test_adjudicated`, the next agent invoke is RED or the task fails; GREEN is not invoked on that path.
   2. AC-ADHOC-021-02 / AO-021-02: GREEN does not start without a committed failing test and a RED-phase `red_commit_sha`; a docs-feedback SHA is not accepted as that boundary.
   3. AC-ADHOC-021-03 / AO-021-03: `revert_to_red` with empty `red_commit_sha` raises `PhaseFailedError` / `ROLLBACK_BOUNDARY_MISSING` and does not proceed via `ROLLBACK_FAILED` to `_commit_judge_feedback_and_advance`.
+
+## FR-ADHOC-022: already_satisfied RED Cannot COMPLETE Without Declared Regression Tests
+
+- **Description**: A TDD RED that declares `failure_kind: already_satisfied` with null or empty `files` / `test_file` is a RED defect, not a path to COMPLETED. JUDGE must refuse `COMPLIANCE_PASS` / `skip_refactor` on that claim unless the declared regression test exists in the committed or injected snapshot (cross-check `files` against the injected `<diff>` path set / HEAD already-exists snapshot already used by ISS-ADH-020).
+- **Preconditions**: Python 3.13. `_run_red_phase` routes a passing/empty suite to `_adjudicate_red_no_failing_test`, which can COMPLETE via JUDGE `skip_refactor` / bare `COMPLIANCE_PASS` and `_restore_worktree_to_baseline`. `HandoverManifest` already has `files`, `test_file`, and `failure_kind: already_satisfied`. ISS-ADH-020 (`evaluate_judge_evidence`) already fail-closes missing HEAD tests on `skip_refactor`; ISS-ADH-021 keeps GREEN off this path. Observed hole: TSK-005-02 / TSK-005-03 (issue 005-003) COMPLETED with class names only in `tasks.md`.
+- **Inputs/Outputs**: Input — RED handover (`failure_kind`, `files`, `test_file`) plus the injected JUDGE diff/HEAD snapshot. Output — null/empty files on a test-bearing TDD task fails RED (or forces `revert_before` / no COMPLETED row); PASS is accepted only when declared test paths exist in that snapshot; GREEN is not invoked to invent the missing tests.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-022-01: As a DeviaTDD operator, I want `already_satisfied` with null/empty `files` on a test-bearing TDD task treated as a RED defect so the ledger cannot COMPLETE without naming the regression tests. *(Ref: FR-ADHOC-022)*
+  2. US-022-02: As a DeviaTDD operator, I want JUDGE to refuse PASS on an `already_satisfied` claim unless the declared test paths exist in the committed/injected snapshot so rationale-only COMPLETEs cannot ship. *(Ref: FR-ADHOC-022)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-022-01 / AO-022-01: Test-bearing TDD RED `already_satisfied` with `files`/`test_file` null or empty does not write COMPLETED; it is a RED defect (`PhaseFailedError` or JUDGE `revert_before`).
+  2. AC-ADHOC-022-02 / AO-022-02: JUDGE does not accept `COMPLIANCE_PASS` / `skip_refactor` for `already_satisfied` unless every declared regression-test path exists in the injected `<diff>` or the documented already-exists HEAD snapshot; missing paths fail closed.
+  3. AC-ADHOC-022-03 / AO-022-03: GREEN is not fattened; ISS-ADH-020 evidence quotes and ISS-ADH-021 SHA/GREEN-entry rules stay as composed callers, not reopened gates. API + architecture + CHANGELOG land in the same implementation commit.
