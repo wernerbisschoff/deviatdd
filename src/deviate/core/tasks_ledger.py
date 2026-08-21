@@ -11,9 +11,29 @@ from deviate.state.ledger import CriterionLink, TaskRecord
 
 _TASK_LINE_PATTERN = re.compile(r"^\s*-\s+(?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.+)")
 _MODE_PATTERN = re.compile(r"\*\*Mode\*\*:\s*(\S+)")
+_TYPE_PATTERN = re.compile(r"\*\*Type\*\*:\s*(\S+)")
 _CRITERIA_LINE_PATTERN = re.compile(r"^\s*-\s*\*\*Acceptance Criteria\*\*:\s*(.+)")
 _LINK_PATTERN = re.compile(r"^(AC-PLAN-\d{3})\s*\(([^)]*)\)$")
 _CRITERIA_ENTRY_SPLIT: re.Pattern[str] = re.compile(r",\s*(?=AC-PLAN-\d{3}\s*\()")
+
+# Hard type→mode lock. Verification_Batch is not a Red-Green-Refactor cycle
+# (api.md / architecture.md: EXECUTE / IMMEDIATE). Other types keep the
+# planner-declared Mode so adhoc/plan can still pick TDD vs IMMEDIATE.
+IMMEDIATE_TASK_TYPES = frozenset({"Verification_Batch"})
+
+
+def resolve_execution_mode(
+    task_type: str | None,
+    declared_mode: str = "TDD",
+) -> str:
+    """Return the execution mode for a task type.
+
+    ``Verification_Batch`` is always ``IMMEDIATE``. Every other type (or a
+    missing type) keeps *declared_mode*.
+    """
+    if task_type in IMMEDIATE_TASK_TYPES:
+        return "IMMEDIATE"
+    return declared_mode
 
 
 @dataclass
@@ -21,6 +41,7 @@ class _TaskBlock:
     task_id: str
     description: str
     execution_mode: str = "TDD"
+    task_type: str | None = None
     criteria_entries: list[str] = field(default_factory=list)
 
 
@@ -39,6 +60,9 @@ def generate_jsonl_from_md(tasks_md: Path, issue_id: str) -> list[TaskRecord]:
                 description=task_match.group(2).strip(),
             )
         elif current is not None:
+            type_match = _TYPE_PATTERN.search(line)
+            if type_match:
+                current.task_type = type_match.group(1)
             mode_match = _MODE_PATTERN.search(line)
             if mode_match:
                 current.execution_mode = mode_match.group(1)
@@ -55,7 +79,9 @@ def generate_jsonl_from_md(tasks_md: Path, issue_id: str) -> list[TaskRecord]:
             task_id=block.task_id,
             issue_id=issue_id,
             description=block.description,
-            execution_mode=block.execution_mode,
+            execution_mode=resolve_execution_mode(
+                block.task_type, block.execution_mode
+            ),
             criteria_entries=block.criteria_entries,
         )
         for block in blocks

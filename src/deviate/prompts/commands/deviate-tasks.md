@@ -65,6 +65,7 @@ Assume the consumer repository already has the DeviaTDD CLI, agent skills, and e
     - **4a. Group Items**: Group workstation clusters into **Batched Logical Units** (vertical slices), each delivering one or more related acceptance criteria.
      - **4b. Assign Execution_Mode**: Decide **per task** using this decision tree. Run it fresh for every task:
 
+        0. Is this task **Type**: `Verification_Batch`? → **IMMEDIATE** (hard type→mode lock — never TDD; verification batches are not a Red-Green-Refactor cycle)
         1. Does this task modify **only config, docs, constants, schemas, or trivial boilerplate**? → **IMMEDIATE**
         2. Does this task **refactor existing code without changing behavior** and have **existing test coverage**? → **IMMEDIATE**
         3. Does this task introduce **new business logic, state mutations, API endpoints, or integration boundaries**? → **TDD**
@@ -73,7 +74,7 @@ Assume the consumer repository already has the DeviaTDD CLI, agent skills, and e
         6. Otherwise → **IMMEDIATE** (when in doubt, prefer IMMEDIATE over speculative TDD)
         7. Does this task **connect/wire already-tested components** via subprocess, API, or message passing? → **TDD** with system-edge mock boundary (mock `subprocess.Popen`, assert CLI args/env/stdin)
 
-        A single phase can contain both modes. Do NOT default to TDD — TDD carries cost; use it where it earns its keep.
+        A single phase can contain both modes. Do NOT default to TDD — TDD carries cost; use it where it earns its keep. Never emit `Mode: TDD` for `Verification_Batch`.
     - **4c. Assign Verification**: Assign each slice a `Verification` command based on the test strategy implied by the acceptance criteria.
     - **4d. Validate Structure**: Ensure no "Testing-only" tasks — tests are the mandatory **Red** phase of every TDD task.
     - **4e. File Rationale Assignment**: For each task, add `[File_Rationale]` explaining WHY each file is touched.
@@ -125,9 +126,9 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
-- **Mode**: `TDD | IMMEDIATE` (no default — apply the decision tree at step 4b)
-  - `TDD`: Full Red-Green-Refactor cycle. **Use for**: New business logic, state mutations, integration boundaries, or non-trivial acceptance criteria.
-  - `IMMEDIATE`: Execute directly without test-first. **Use for**: Trivial updates (config, docs, constants), pure refactoring with existing test coverage, low-risk boilerplate where testing cost outweighs regression risk, or authoring `Verification_Batch` E2E tests (step 4f).
+- **Mode**: `TDD | IMMEDIATE` (no default — apply the decision tree at step 4b). **Type→Mode lock**: `Verification_Batch` MUST be `IMMEDIATE` — never emit `Mode: TDD` for that type.
+  - `TDD`: Full Red-Green-Refactor cycle. **Use for**: New business logic, state mutations, integration boundaries, or non-trivial acceptance criteria. Never for `Verification_Batch`.
+  - `IMMEDIATE`: Execute directly without test-first. **Use for**: every `Verification_Batch` (hard lock — not only the closing E2E task), trivial updates (config, docs, constants), pure refactoring with existing test coverage, or low-risk boilerplate where testing cost outweighs regression risk.
 - **Test Strategy**: `Sociable_Unit | Integration | Solitary_Unit` (required if Mode is TDD)
 - **Verification**: A **Deterministic CLI Command** (e.g., `pytest tests/unit/test_s3.py`).
 - **Estimated Time**: Time estimate in format `30-90 minutes` or `60 minutes`.

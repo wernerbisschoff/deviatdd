@@ -32,6 +32,7 @@ from deviate.core.agent import (
 )
 from deviate.core.convention import format_commit_message
 from deviate.core.issues import resolve_issue_artifact_path
+from deviate.core.tasks_ledger import resolve_execution_mode
 from deviate.core.profile import resolve_profile
 from deviate.core.run_logger import (
     RunLogger,
@@ -734,6 +735,7 @@ def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
 _TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)")
 _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
+_TYPE_LINE_RE = re.compile(r"^\s*-\s+\*\*Type\*\*:\s*(\S+)")
 _TASK_BULLET_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
 _JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^  - \*\*Judge Feedback\*\*:\s*(.*)")
 
@@ -795,11 +797,16 @@ def _find_all_pending_tasks(
                 _log("    → checked [x] in tasks.md, skipping")
                 continue
             mode = "TDD"
+            task_type: str | None = None
             for j in range(i + 1, min(i + 10, len(content_lines))):
+                type_m = _TYPE_LINE_RE.match(content_lines[j])
+                if type_m:
+                    task_type = type_m.group(1)
+                    continue
                 mode_m = _MODE_LINE_RE.match(content_lines[j])
                 if mode_m:
                     mode = mode_m.group(1)
-                    break
+            mode = resolve_execution_mode(task_type, mode)
             _log(f"    → no ledger entry, mode={mode}")
             results.append(
                 (

@@ -62,7 +62,7 @@ Map all files touched by each user story from spec.md's system topology mapping.
 <step id="task_construction">
 For each workstation cluster:
 1. **Group Items**: Cluster into Batched Logical Units (vertical slices).
-2. **Assign Execution_Mode**: Use the decision tree — TDD for new business logic, state mutations, integration boundaries, or non-trivial ACs; IMMEDIATE for config, docs, constants, trivial boilerplate.
+2. **Assign Execution_Mode**: Type `Verification_Batch` is always **IMMEDIATE** (hard type→mode lock — never TDD). For other types, use the decision tree — TDD for new business logic, state mutations, integration boundaries, or non-trivial ACs; IMMEDIATE for config, docs, constants, trivial boilerplate. Never emit `Mode: TDD` for `Verification_Batch`.
 3. **Assign Verification**: Deterministic CLI command per slice.
 4. **Validate Structure**: No "testing-only" tasks — tests are the Red phase of every TDD task.
 5. **File Rationale**: Explain WHY each file is touched.
@@ -95,7 +95,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
-- **Mode**: `TDD | IMMEDIATE`
+- **Mode**: `TDD | IMMEDIATE`. **Type→Mode lock**: `Verification_Batch` MUST be `IMMEDIATE` — never emit `Mode: TDD` for that type.
 - **Test Strategy**: `Sociable_Unit | Integration | Solitary_Unit` (required if Mode is TDD)
 - **Verification**: A **Deterministic CLI Command** (e.g., `pytest tests/unit/test_s3.py`)
 - **Estimated Time**: `30-90 minutes` or `60 minutes`
