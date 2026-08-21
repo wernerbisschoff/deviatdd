@@ -89,6 +89,21 @@ def _effective_local(local: bool, root: Path | None = None) -> bool:
     return not resolve_claim_remote(root if root is not None else Path.cwd())
 
 
+def _origin_remote(repo: Path) -> str | None:
+    """Return ``origin`` when that remote is configured, else ``None``."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+    except Exception:
+        return None
+    return "origin" if result.returncode == 0 else None
+
+
 def _resolve_dot_deviate() -> Path:
     return Path(".deviate")
 
@@ -537,18 +552,7 @@ def _try_claim_issue(
 
         # ── Detect remote if not specified ────────────────────────────
         if remote is None:
-            try:
-                r = subprocess.run(
-                    ["git", "remote", "get-url", "origin"],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                )
-                if r.returncode == 0:
-                    remote = "origin"
-            except Exception:
-                pass
+            remote = _origin_remote(repo_root)
 
         # ── Commit and push claim ──────────────────────────────────────
         if claimed:
@@ -1521,12 +1525,24 @@ def _meso_discover_and_sequence() -> str | None:
     return issue.issue_id
 
 
-def _discover_claimable_issue() -> str | None:
-    """Return the next BACKLOG issue whose branch does NOT exist on remote.
+def _origin_holds_claim_branch(
+    candidate: IssueRecord, repo_root: Path, remote: str
+) -> bool:
+    """True when ``feat/{epic}/{issue}`` already exists on *remote*."""
+    branch = (
+        f"feat/{_resolve_bucket_dir(candidate.source_file)}"
+        f"/{_source_stem(candidate.source_file)}"
+    )
+    return branch_exists_on_remote(branch, repo=repo_root, remote=remote)
 
-    Loops through ``select_unblocked_candidates``, checking each candidate's
-    deterministic branch name against the remote.  Issues whose branch already
-    exists on remote are treated as claimed-elsewhere and skipped.
+
+def _discover_claimable_issue(local: bool = False) -> str | None:
+    """Return the next unblocked BACKLOG issue this operator can claim.
+
+    Default mode skips candidates whose ``feat/{epic}/{issue}`` branch already
+    exists on origin (claimed elsewhere). Local mode skips that origin filter
+    so leftover personal branches stay claimable, and does not call
+    ``branch_exists_on_remote``.
 
     Returns the first claimable ``issue_id``, or ``None`` if none available.
     """
@@ -1536,34 +1552,16 @@ def _discover_claimable_issue() -> str | None:
     if not candidates:
         return None
 
-    # Detect the remote once for all candidate checks
-    remote: str | None = None
-    try:
-        r = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        )
-        if r.returncode == 0:
-            remote = "origin"
-    except Exception:
-        pass
-
+    remote = None if local else _origin_remote(repo_root)
     for candidate in candidates:
         if _is_issue_completed(candidate.issue_id, ledger_path):
             continue
-        if remote:
-            epic_slug = _resolve_bucket_dir(candidate.source_file)
-            issue_slug = _source_stem(candidate.source_file)
-            branch = f"feat/{epic_slug}/{issue_slug}"
-            if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
-                console.print(
-                    f"[yellow]SKIP[/] {candidate.issue_id} — "
-                    f"branch already on remote (claimed elsewhere)"
-                )
-                continue
+        if remote and _origin_holds_claim_branch(candidate, repo_root, remote):
+            console.print(
+                f"[yellow]SKIP[/] {candidate.issue_id} — "
+                f"branch already on remote (claimed elsewhere)"
+            )
+            continue
         return candidate.issue_id
     return None
 
@@ -1691,7 +1689,7 @@ def _meso_run(
 
     # ── Discover issue if not specified ──────────────────────────────
     if issue_id is None:
-        discovered = _discover_claimable_issue()
+        discovered = _discover_claimable_issue(local=_effective_local(False))
         if discovered is None:
             console.print(
                 "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue "
@@ -1951,10 +1949,7 @@ def specify(
     elif issue_id == "post":
         _specify_post(force=force)
     elif issue_id is None:
-        # Align auto-discovery with ``_meso_run``: skip issues whose branch
-        # already exists on remote (claimed elsewhere) and reach the next
-        # claimable one instead of hard-failing on the first BACKLOG.
-        discovered = _discover_claimable_issue()
+        discovered = _discover_claimable_issue(local=_effective_local(local))
         if discovered is None:
             console.print(
                 "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue ",
