@@ -8,6 +8,7 @@ from pathlib import Path
 from deviate.core._shared import git_env as _git_env
 
 _FEAT_EPIC_PREFIX = re.compile(r"^(?:origin/)?feat/(\d+)-")
+_FEAT_ADHOC_ORDINAL = re.compile(r"^(?:origin/)?feat/adhoc/(\d+)-")
 
 
 def _resolve_specs_root(specs_root: Path | None = None) -> Path:
@@ -86,17 +87,28 @@ def _list_remote_feat_refs(repo_path: Path | None = None) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _ordinals_from_remote_feat_refs(
+    pattern: re.Pattern[str], repo_path: Path | None = None
+) -> list[int]:
+    return [
+        int(match.group(1))
+        for ref in _list_remote_feat_refs(repo_path)
+        if (match := pattern.match(ref))
+    ]
+
+
+def _remote_adhoc_ordinals(repo_path: Path | None = None) -> list[int]:
+    """Adhoc NNN values from already-fetched origin feat/adhoc refs."""
+    return _ordinals_from_remote_feat_refs(_FEAT_ADHOC_ORDINAL, repo_path)
+
+
 def _find_next_epic_num(root: Path, repo_path: Path | None = None) -> int:
     local_nums = [
         num
         for d in (root.iterdir() if root.is_dir() else ())
         if d.is_dir() and (num := _extract_prefix_num(d.name)) > 0
     ]
-    remote_nums = [
-        int(match.group(1))
-        for ref in _list_remote_feat_refs(repo_path)
-        if (match := _FEAT_EPIC_PREFIX.match(ref))
-    ]
+    remote_nums = _ordinals_from_remote_feat_refs(_FEAT_EPIC_PREFIX, repo_path)
     return max([*local_nums, *remote_nums], default=0) + 1
 
 
