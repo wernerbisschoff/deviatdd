@@ -4229,16 +4229,13 @@ class TestExecuteTaskRetryJudgeFeedbackCommitBound:
 
 
 class TestRunnerLoopRestartsRedOnRevertBefore:
-    """Defect #2: ``_run_tdd_cycle`` must loop back to RED (not just GREEN)
-    when JUDGE returns ``next_action="revert_before"``.
+    """AC-PLAN-002: ``revert_before`` escalates to a fresh RED.
 
     Patches phase helpers (``_run_red_phase``, ``_run_green_phase``,
     ``_run_judge_phase``, ``_finish_tdd_cycle``) and asserts:
-      * the call order is ``RED, GREEN, JUDGE, RED, GREEN, JUDGE, REFACTOR``,
-      * the second ``_run_red_phase`` is invoked with the GREEN's
-        ``test_defect`` rationale injected into ``session.train_feedback``,
-      * the runner does not overwrite that rationale with the generic
-        ``GENERIC_TRAIN_FEEDBACK`` string on the JUDGE → RED transition.
+      * the first ``revert_before`` restarts RED (not GREEN),
+      * ``red_attempts`` increments and ``green_attempts`` resets to 0,
+      * a third escalate stops with ``TRAIN_EXHAUSTED``.
     """
 
     def test_revert_before_dispatches_red_again(
@@ -4246,13 +4243,11 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """RED today: ``_run_tdd_cycle`` ignores
-        ``pending_judge_action == "revert_before"`` and silently loops
-        GREEN → JUDGE → GREEN. GREEN adds a ``revert_before`` branch
-        that resets ``train_attempts`` and dispatches ``_run_red_phase``
-        again (bypassing ``_phase_already_done``) so the append-only
-        ledger gains a fresh RED entry and the agent receives the
-        GREEN's ``test_defect`` rationale via ``session.train_feedback``.
+        """The first ``revert_before`` dispatches a second RED.
+
+        Escalate accounting increments ``red_attempts``, resets
+        ``green_attempts`` to 0, and injects a short escalate note into
+        ``session.train_feedback`` for the retry RED (AC-PLAN-004).
         """
         from deviate.cli.micro import (
             _run_tdd_cycle,
@@ -4264,6 +4259,12 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
         monkeypatch.chdir(root)
         monkeypatch.setattr(
             "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+        )
+        monkeypatch.setattr(
+            "deviate.cli.micro._run_pytest",
+            lambda *a, **k: subprocess.CompletedProcess(
+                args=["pytest"], returncode=1, stdout="1 failed", stderr=""
+            ),
         )
 
         ledger_dir = (
@@ -4294,12 +4295,24 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             session_path_arg = args[3]
             current = SessionState.load(session_path_arg)
             if call_log.count("RED") >= 2:
-                assert current.train_feedback == test_defect_rationale, (
-                    "Runner must inject GREEN's test_defect rationale "
-                    "into session.train_feedback before the retry RED; "
-                    f"got {current.train_feedback!r}"
+                assert "previous cycle failed because" in current.train_feedback, (
+                    "AC-PLAN-004/005: escalate RED must get a short "
+                    "'previous cycle failed because' note, not the GREEN "
+                    f"dump; got {current.train_feedback!r}"
+                )
+                assert test_defect_rationale not in current.train_feedback, (
+                    "AC-PLAN-004/005: escalate RED must omit the raw GREEN "
+                    f"rationale dump; got {current.train_feedback!r}"
                 )
                 assert current.pending_judge_action == "revert_before"
+                assert current.red_attempts >= 1, (
+                    "AC-PLAN-002: revert_before must increment red_attempts "
+                    f"before the retry RED; got {current.red_attempts!r}"
+                )
+                assert current.green_attempts == 0, (
+                    "AC-PLAN-002: revert_before must reset green_attempts "
+                    f"to 0; got {current.green_attempts!r}"
+                )
             return current
 
         def _green(*args, **kwargs):
@@ -4351,6 +4364,98 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             "JUDGE",
             "REFACTOR",
         ], f"Runner must restart RED on revert_before; got phase order {call_log!r}"
+
+    def test_revert_before_third_escalate_stops_with_train_exhausted(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A stub JUDGE that always ``revert_before``s stops after 3."""
+        import io
+
+        from rich.console import Console as RichConsole
+
+        from deviate.cli.micro import _run_tdd_cycle
+        from deviate.state.config import SessionState
+        from deviate.state.ledger import TaskRecord, append_task_transition
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        monkeypatch.setattr(
+            "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+        )
+        monkeypatch.setattr(
+            "deviate.cli.micro._run_pytest",
+            lambda *a, **k: subprocess.CompletedProcess(
+                args=["pytest"], returncode=1, stdout="1 failed", stderr=""
+            ),
+        )
+
+        ledger_dir = root / "specs" / "adhoc" / "017-two-counter-tdd-retry"
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        ledger_path = ledger_dir / "tasks.jsonl"
+        task = {
+            "id": "TSK-017-03",
+            "issue_id": "ISS-ADH-017",
+            "description": "Escalate on revert_before",
+            "execution_mode": "TDD",
+        }
+        append_task_transition(TaskRecord(**task), ledger_path)
+
+        session_path = root / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(active_issue_id="ISS-ADH-017").save(session_path)
+
+        call_log: list[str] = []
+        max_phases = 24
+
+        def _guard() -> None:
+            if len(call_log) > max_phases:
+                raise AssertionError(
+                    f"TDD loop did not stop after {max_phases} phases: {call_log!r}"
+                )
+
+        def _red(*args, **kwargs):
+            call_log.append("RED")
+            _guard()
+            return SessionState.load(args[3])
+
+        def _green(*args, **kwargs):
+            call_log.append("GREEN")
+            _guard()
+            return SessionState.load(args[3])
+
+        def _judge(*args, **kwargs):
+            call_log.append("JUDGE")
+            _guard()
+            session_path_arg = args[3]
+            current = SessionState.load(session_path_arg)
+            current.judge_rejected = True
+            current.pending_judge_action = "revert_before"
+            current.failure_kind = "test_defect"
+            current.save(session_path_arg)
+            return current
+
+        def _finish(*args, **kwargs):
+            call_log.append("REFACTOR")
+
+        monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+        monkeypatch.setattr("deviate.cli.micro._run_green_phase", _green)
+        monkeypatch.setattr("deviate.cli.micro._run_judge_phase", _judge)
+        monkeypatch.setattr("deviate.cli.micro._finish_tdd_cycle", _finish)
+
+        buf = io.StringIO()
+        console = RichConsole(file=buf, force_terminal=False, width=200)
+        with pytest.raises(PhaseFailedError, match="TRAIN_EXHAUSTED"):
+            _run_tdd_cycle(task, ledger_path, console)
+
+        assert call_log.count("RED") == 3, (
+            "AC-PLAN-002: third escalate must not dispatch a fourth "
+            f"_run_red_phase; got {call_log!r}"
+        )
+        assert "TRAIN_EXHAUSTED" in buf.getvalue(), (
+            f"AC-PLAN-002: runner must print TRAIN_EXHAUSTED; got {buf.getvalue()!r}"
+        )
 
 
 class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:

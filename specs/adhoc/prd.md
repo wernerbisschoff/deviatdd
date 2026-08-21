@@ -264,3 +264,35 @@
 2. AC-ADHOC-016-02 / AO-016-02: The drifted middle is reconciled to auto semantics; RED manual no longer emits `status:"FAIL"`/abort-on-passing-test, and GREEN manual matches "write only production code".
 3. AC-ADHOC-016-03 / AO-016-03: A drift-guard test fails when an auto middle body diverges from the derived manual middle.
 4. AC-ADHOC-016-04 / AO-016-04: The 15 commands-only prompts (no auto counterpart) are unchanged; `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` are updated in the same commit; CHANGELOG gains an `[Unreleased]` bullet.
+
+## FR-ADHOC-017: Two-Counter TDD Retry — GREEN Train vs RED Escalate
+
+- **Description**: Replace the single in-memory `train_attempts` loop counter in `deviate micro` with two session-persisted counters: `green_attempts` (max 3 per RED contract; exhaust escalates to a fresh RED) and `red_attempts` (max 3 per task; exhaust raises `TRAIN_EXHAUSTED` and returns to the human). `revert_to_red` trains GREEN only; `revert_before` / `test_defect` escalate immediately without burning the remaining GREEN budget.
+- **Preconditions**: Python 3.13. `SessionState` at `src/deviate/state/config.py` persists `.deviate/session.json` (gitignored). `_run_tdd_cycle` at `src/deviate/cli/micro.py` currently holds `train_attempts` as a local variable and zeros it on `revert_before`. `_coerce_judge_action` already maps `failure_kind` `test_defect` / `no_failing_test` on a violation to `revert_before`. Caps stay at 3/3.
+- **Inputs/Outputs**: Input — JUDGE `next_action` (`revert_to_red` / `revert_before`) and `failure_kind` (`test_defect` / `no_failing_test`). Output — `SessionState.green_attempts` and `SessionState.red_attempts` persisted on each increment; GREEN retries with existing `train_feedback`; RED retries with a short escalate note; `PhaseFailedError` carrying `TRAIN_EXHAUSTED` after three escalates.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-017-01: As a DeviaTDD operator running `deviate micro`, I want GREEN implementation retries capped at 3 against one RED contract so a wrong implementation trains GREEN without rewriting the test. *(Ref: FR-ADHOC-017)*
+  2. US-017-02: As a DeviaTDD operator, I want a wrong RED test (`revert_before` / `test_defect`) to escalate immediately to a fresh RED so the runner does not burn three GREEN tries on a defective contract. *(Ref: FR-ADHOC-017)*
+  3. US-017-03: As a DeviaTDD operator, I want three RED escalates on one task to stop with `TRAIN_EXHAUSTED` and return control to me so a stub JUDGE that always `revert_before`s cannot infinite-loop. *(Ref: FR-ADHOC-017)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-017-01 / AO-017-01: Three `revert_to_red` outcomes against one RED contract increment `green_attempts` to 3, keep `train_feedback`, retry GREEN, then escalate to a new RED rather than raise `TRAIN_EXHAUSTED` on that first cycle.
+  2. AC-ADHOC-017-02 / AO-017-02: A JUDGE that always emits `revert_before` (or `failure_kind: test_defect` coerced to `revert_before`) increments `red_attempts` per escalate, resets `green_attempts`, and after `red_attempts >= 3` raises `TRAIN_EXHAUSTED` / returns to the human without a fourth RED.
+  3. AC-ADHOC-017-03 / AO-017-03: Both counters persist on `SessionState` in `.deviate/session.json` so `git reset` of the worktree and a process crash mid-cycle resume the same counts.
+  4. AC-ADHOC-017-04 / AO-017-04: An escalate wipes GREEN `train_feedback` and injects a short escalate note into the next RED prompt (`previous cycle failed because …`), not the raw GREEN dump.
+  5. AC-ADHOC-017-05 / AO-017-05: Judge verb names, the `test_defect` / `no_failing_test` coerce-to-`revert_before` matrix, and the 3/3 caps stay unchanged; product/macro/meso surfaces are untouched.
+## FR-ADHOC-018: Stop Padding Epics — One User-Visible Shard, One Fail-to-Pass Task
+
+- **Description**: Shard Pass 1.5 emits as few independently shippable user-visible verticals as the PRD needs (1 is legal; hard cap 10 remains). Tasks stay one observable fail-to-pass contract per TDD task (Beck: exactly one item on the test list). The 30–90 minute figure names that unit; it is not a timer that splits a single behavior into RED-only vs GREEN-only tasks.
+- **Preconditions**: `deviate-shard` Pass 1.5 currently states "Target range: 4–8" with a hard ceiling of 10 (`src/deviate/prompts/commands/deviate-shard.md`, `src/deviate/prompts/auto/shard.md`). `deviate-tasks` and `auto/tasks.md` instruct "If a task takes < 30 min, merge it. If > 90 min, split it". `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` still advertise a 4–8 issue target and 4–8 tasks per issue.
+- **Inputs/Outputs**: Input — shard/tasks/micro-shared/refactor prompt wording plus API/architecture granularity sections. Output — Pass 1.5 with no floor (1 legal, cap 10), tasks wording that forbids fake splits, aligned specs, CHANGELOG `[Unreleased]` bullet. No runner/retry-loop code change.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-018-01: As a DeviaTDD operator sharding a one-behavior PRD, I want exactly one issue so I do not pay specify → plan → worktree → PR four times. *(Ref: FR-ADHOC-018)*
+  2. US-018-02: As a DeviaTDD operator writing `tasks.md`, I want one TDD task per fail-to-pass contract so micro does not run extra RED/GREEN/JUDGE cycles for the same AC. *(Ref: FR-ADHOC-018)*
+  3. US-018-03: As a DeviaTDD operator on an eight-vertical epic, I still want eight issues, and a mixed 10-file / >400 LOC GREEN packet still split, so large work stays reviewable. *(Ref: FR-ADHOC-018)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-018-01 / AO-018-01: Pass 1.5 has no 4–8 floor; a one-behavior PRD shards to one issue; count > 10 still halts with `SLICE_CAP_EXCEEDED`.
+  2. AC-ADHOC-018-02 / AO-018-02: Tasks prompts treat 30–90 min as "one observable behavior" and forbid RED-only vs GREEN-only vs "add the route" splits of the same AC.
+  3. AC-ADHOC-018-03 / AO-018-03: An eight-vertical PRD still emits eight issues; a GREEN that would bury the contract in a mixed 10-file / >400 LOC packet is still split.
+  4. AC-ADHOC-018-04 / AO-018-04: `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` drop the 4–8 floor in the same commit; CHANGELOG gains an `[Unreleased]` bullet; two-counter retry (ISS-ADH-017) is untouched.

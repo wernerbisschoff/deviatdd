@@ -178,6 +178,8 @@ class TestSessionState:
         assert session.active_issue_id is None
         assert session.last_command == ""
         assert session.timestamp is not None
+        assert session.green_attempts == 0
+        assert session.red_attempts == 0
 
     def test_valid_phases_accepted(self):
         for phase in [
@@ -271,3 +273,58 @@ class TestSessionState:
         session = SessionState(current_phase="SPECIFY")
         result = session.transition_to("SHARD")
         assert result.current_phase == "SHARD"
+
+    def test_json_round_trip_persists_retry_counters(self, tmp_path: Path) -> None:
+        session_path = tmp_path / ".deviate" / "session.json"
+        original = SessionState(green_attempts=2, red_attempts=1)
+        original.save(session_path)
+
+        loaded = SessionState.load(session_path)
+        assert loaded.green_attempts == 2
+        assert loaded.red_attempts == 1
+
+    def test_missing_counter_keys_load_as_zero(self, tmp_path: Path) -> None:
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True)
+        session_path.write_text(
+            json.dumps(
+                {
+                    "current_phase": "GREEN",
+                    "active_issue_id": "ISS-ADH-017",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = SessionState.load(session_path)
+        assert loaded.green_attempts == 0
+        assert loaded.red_attempts == 0
+        assert loaded.green_attempts is not None
+        assert loaded.red_attempts is not None
+
+    def test_transition_to_copies_retry_counters(self) -> None:
+        session = SessionState(
+            current_phase="GREEN",
+            green_attempts=2,
+            red_attempts=1,
+        )
+        result = session.transition_to("JUDGE")
+        assert result.green_attempts == 2
+        assert result.red_attempts == 1
+        assert result.current_phase == "JUDGE"
+
+    def test_force_transition_to_copies_retry_counters(self) -> None:
+        session = SessionState(
+            current_phase="GREEN",
+            green_attempts=3,
+            red_attempts=2,
+        )
+        result = session.force_transition_to("JUDGE")
+        assert result.green_attempts == 3
+        assert result.red_attempts == 2
+        assert result.current_phase == "JUDGE"
+
+    def test_missing_session_file_loads_zero_counters(self, tmp_path: Path) -> None:
+        loaded = SessionState.load(tmp_path / ".deviate" / "session.json")
+        assert loaded.green_attempts == 0
+        assert loaded.red_attempts == 0
