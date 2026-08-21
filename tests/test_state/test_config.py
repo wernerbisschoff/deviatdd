@@ -11,7 +11,7 @@ from deviate.state.config import (
     resolve_claim_remote,
     resolve_phase_model,
 )
-from deviate.cli.__init__ import resolve_graphite_config
+from deviate.cli.__init__ import resolve_graphite_config, resolve_base_branch
 
 
 class TestDeviateConfig:
@@ -20,6 +20,7 @@ class TestDeviateConfig:
         assert config.profile == "default"
         assert config.timeout_seconds == 1800
         assert config.agent_export_mode == "local"
+        assert config.base_branch == "main"
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
@@ -119,6 +120,28 @@ class TestDeviateConfig:
         assert resolve_graphite_config(tmp_path) is False
 
     def test_resolve_graphite_config_no_config(self, tmp_path: Path) -> None:
+        assert resolve_graphite_config(tmp_path) is False
+
+    def test_config_base_branch_round_trip(self):
+        config = DeviateConfig(base_branch="wb-dev")
+        data = json.loads(config.model_dump_json())
+        restored = DeviateConfig.model_validate(data)
+        assert restored.base_branch == "wb-dev"
+
+    def test_config_base_branch_empty_rejected(self):
+        with pytest.raises(ValidationError):
+            DeviateConfig(base_branch="")
+
+    def test_resolve_base_branch_from_toml(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text(
+            'base_branch = "wb-dev"\n', encoding="utf-8"
+        )
+        assert resolve_base_branch(tmp_path) == "wb-dev"
+
+    def test_resolve_base_branch_default(self, tmp_path: Path) -> None:
+        assert resolve_base_branch(tmp_path) == "main"
         assert resolve_graphite_config(tmp_path) is False
 
     def test_config_claim_remote_field_default(self) -> None:
