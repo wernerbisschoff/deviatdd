@@ -100,7 +100,11 @@ def _capture_green_prompt(
     *,
     session_feedback: str = "",
 ) -> str:
-    session = SessionState(current_phase="RED", train_feedback=session_feedback)
+    session = SessionState(
+        current_phase="RED",
+        train_feedback=session_feedback,
+        red_commit_sha="seed-red-boundary",
+    )
     session_path = root / ".deviate" / "session.json"
     session_path.parent.mkdir(parents=True, exist_ok=True)
     session.save(session_path)
@@ -271,6 +275,7 @@ class TestGreenAutoPromptFeedback:
             train_feedback=feedback,
             judge_rejected=True,
             pending_judge_action="revert_to_red",
+            red_commit_sha="seed-red-boundary",
         )
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
@@ -329,7 +334,8 @@ class TestGreenDiagnosticSurface:
     ) -> tuple[SessionState, Path, Path, dict]:
         dot_dir = root / ".deviate"
         dot_dir.mkdir(parents=True, exist_ok=True)
-        session = SessionState(current_phase="RED")
+        red_sha = _empty_commit(root, "test(TSK-006-09): RED phase - failing test")
+        session = SessionState(current_phase="RED", red_commit_sha=red_sha)
         session_path = dot_dir / "session.json"
         session.save(session_path)
         task = _make_task_record(

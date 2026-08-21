@@ -1451,6 +1451,7 @@ def _run_green_phase(
             prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
+    _require_green_entry_red_sha(root, session, tid)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -1920,6 +1921,79 @@ def _preserve_agent_work(
 # repo's history is malformed), log a warning so the operator knows the
 # resolution is on best-effort grounds.
 _PRE_RED_SHA_PARENT_RE = re.compile(r"^(?:.+ )?test\([^)]+\): RED phase(?:\s|$)")
+_JUDGE_FEEDBACK_SUBJECT_RE = re.compile(
+    r"^(?:.+ )?docs\([^)]+\): add judge feedback for retry$"
+)
+
+
+def _git_capture(root: Path, *git_args: str) -> str:
+    """Return stripped stdout of a git command, or empty on non-zero exit."""
+    result = subprocess.run(
+        ["git", *git_args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _git_commit_subject(root: Path, sha: str) -> str:
+    """Return the subject of ``sha``, or empty when git cannot resolve it."""
+    return _git_capture(root, "log", "-1", "--format=%s", sha)
+
+
+def _git_parent_sha(root: Path, sha: str) -> str:
+    """Return ``sha``'s first parent, or empty when git cannot resolve it."""
+    return _git_capture(root, "rev-parse", f"{sha}^")
+
+
+def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
+    """Return True when a docs-feedback SHA chains back to a RED-phase commit."""
+    current = sha.strip()
+    seen: set[str] = set()
+    while current and current not in seen:
+        seen.add(current)
+        subject = _git_commit_subject(root, current)
+        if _PRE_RED_SHA_PARENT_RE.match(subject):
+            return True
+        if not _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+            return False
+        current = _git_parent_sha(root, current)
+    return False
+
+
+def _is_red_phase_failing_test_sha(root: Path, sha: str) -> bool:
+    """Return True when ``sha`` is a valid GREEN-entry RED boundary.
+
+    Empty / whitespace SHAs are never a boundary when git cannot resolve
+    them (no ``.git`` missing bypass). A docs-feedback SHA is accepted
+    only when it rests on a RED-phase ancestor (TRAIN). Any other
+    non-empty SHA is accepted: mocked ``_commit_phase`` may leave HEAD
+    at ``initial`` / ``chore: seed``, and an unresolvable SHA must not
+    refuse GREEN solely for a missing RED-phase subject.
+    """
+    stripped = sha.strip()
+    subject = _git_commit_subject(root, stripped)
+    if not stripped and not subject:
+        return False
+    if not subject:
+        return True
+    if _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+        return _feedback_sha_rests_on_red_phase(root, stripped)
+    return True
+
+
+def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) -> None:
+    """Raise when GREEN has no RED-phase failing-test boundary SHA."""
+    if _is_red_phase_failing_test_sha(root, session.red_commit_sha):
+        return
+    raise PhaseFailedError(
+        f"GREEN_ENTRY_REFUSED: {tid} has no RED-phase failing-test "
+        f"commit (red_commit_sha={session.red_commit_sha!r})"
+    )
 
 
 def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
@@ -1931,22 +2005,10 @@ def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
     ``PRE_RED_AMBIGUOUS`` warning so the operator knows the resolution is
     best-effort, but still return the parent so the rollback can proceed.
     """
-    parent = subprocess.run(
-        ["git", "rev-parse", f"{red_sha}^"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
+    parent = _git_parent_sha(root, red_sha)
     if not parent:
         return ""
-    subject = subprocess.run(
-        ["git", "log", "-1", "--format=%s", parent],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
+    subject = _git_commit_subject(root, parent)
     if not _PRE_RED_SHA_PARENT_RE.match(subject):
         logging.getLogger(__name__).warning(
             "PRE_RED_AMBIGUOUS: red_commit_sha %s's parent (%s) has "
