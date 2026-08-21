@@ -16,6 +16,7 @@ from deviate.cli.meso import (
     _build_slim_prompt,
     _build_plan_digest,
     _discover_claimable_issue,
+    _effective_local,
     _meso_discover_and_sequence,
     _meso_run,
 )
@@ -552,6 +553,35 @@ class TestDiscoverClaimableIssue:
         with chdir(tmp_path):
             result = _discover_claimable_issue()
             assert result is None
+
+    def test_discover_local_returns_backlog_when_origin_branch_exists(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-005: local=True returns the first BACKLOG even if origin has the branch."""
+        _setup_minimal_workspace(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.meso.branch_exists_on_remote", return_value=True
+            ) as mock_remote:
+                result = _discover_claimable_issue(local=True)
+            assert result == "ISS-001-001"
+            mock_remote.assert_not_called()
+
+    def test_discover_config_false_does_not_skip_origin(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-005: claim_remote = false is effective local; leftover origin stays claimable."""
+        _setup_minimal_workspace(tmp_git_repo)
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = false\n", encoding="utf-8"
+        )
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.meso.branch_exists_on_remote", return_value=True
+            ) as mock_remote:
+                result = _discover_claimable_issue(local=_effective_local(False))
+            assert result == "ISS-001-001"
+            mock_remote.assert_not_called()
 
 
 class TestMesoRunStdoutSuppression:
