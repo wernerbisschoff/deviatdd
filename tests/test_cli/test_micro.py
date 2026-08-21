@@ -3509,6 +3509,7 @@ class TestTddCycleIntegration:
         }
         ledger_path = tmp_path / "tasks.jsonl"
         session = SessionState()
+        session.red_commit_sha = "abc123def"
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -4412,6 +4413,9 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             call_log.append("RED")
             session_path_arg = args[3]
             current = SessionState.load(session_path_arg)
+            if not current.red_commit_sha.strip():
+                current.red_commit_sha = "abc123def"
+                current.save(session_path_arg)
             if call_log.count("RED") >= 2:
                 assert "previous cycle failed because" in current.train_feedback, (
                     "AC-PLAN-004/005: escalate RED must get a short "
