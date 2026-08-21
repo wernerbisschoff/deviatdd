@@ -235,6 +235,102 @@ class TestSpecifySetup:
         assert result.exit_code == 0, result.output
         assert called["local"] is True
 
+    def test_specify_omitted_local_honors_claim_remote_false(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-PLAN-002: omitted --local with claim_remote=false is effective local."""
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+
+        (tmp_git_repo / ".deviate").mkdir()
+        (tmp_git_repo / ".deviate" / "session.json").write_text(
+            '{"current_phase": "IDLE", "active_issue_id": null}'
+        )
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = false\n", encoding="utf-8"
+        )
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\n"
+        )
+        ledger = specs_dir / "issues.jsonl"
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="First Backlog",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            ledger,
+        )
+        called: dict[str, object] = {}
+
+        def fake(record, **kwargs):
+            called["local"] = kwargs.get("local")
+            return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
+
+        monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["specify", "ISS-001-001"])
+        assert result.exit_code == 0, result.output
+        assert called.get("local") is True, (
+            f"omitted --local with claim_remote=false must forward local=True, "
+            f"got {called.get('local')}; output={result.output}"
+        )
+        assert "WORKTREE" in result.output
+
+    def test_specify_local_overrides_claim_remote_true(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-PLAN-003: --local wins when claim_remote is true."""
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+
+        (tmp_git_repo / ".deviate").mkdir()
+        (tmp_git_repo / ".deviate" / "session.json").write_text(
+            '{"current_phase": "IDLE", "active_issue_id": null}'
+        )
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = true\n", encoding="utf-8"
+        )
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\n"
+        )
+        ledger = specs_dir / "issues.jsonl"
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="First Backlog",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            ledger,
+        )
+        called: dict[str, object] = {}
+
+        def fake(record, **kwargs):
+            called["local"] = kwargs.get("local")
+            return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
+
+        monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["specify", "ISS-001-001", "--local"])
+        assert result.exit_code == 0, result.output
+        assert called.get("local") is True, (
+            f"--local must forward local=True when claim_remote=true, "
+            f"got {called.get('local')}; output={result.output}"
+        )
+        assert "WORKTREE" in result.output
+
     def test_specify_local_flag_short_circuits_when_branch_exists(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
