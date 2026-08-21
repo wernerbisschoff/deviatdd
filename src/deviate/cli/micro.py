@@ -2055,6 +2055,8 @@ _JUDGE_ACTIONS = frozenset(
         "proceed_to_refactor_no_diff",
     }
 )
+_MAX_GREEN_ATTEMPTS = 3
+_MAX_RED_ATTEMPTS = 3
 
 
 def _coerce_judge_action(
@@ -2890,6 +2892,136 @@ def _finish_tdd_cycle(
     return session
 
 
+def _rollback_pre_red_if_resolvable(
+    root: Path,
+    session: SessionState,
+    *,
+    task_id: str,
+    attempt: int,
+    reason: str,
+) -> None:
+    """Reset to the pre-RED SHA when git can resolve a full 40-char SHA."""
+    red_sha = session.red_commit_sha
+    if not red_sha or not re.fullmatch(r"[a-f0-9]{40}", red_sha):
+        return
+    pre_red = _resolve_pre_red_sha(root, red_sha)
+    if not pre_red or not re.fullmatch(r"[a-f0-9]{40}", pre_red):
+        return
+    _execute_rollback(
+        root,
+        boundary_sha=pre_red,
+        reason=reason,
+        phase="GREEN",
+        task_id=task_id,
+        attempt=attempt,
+    )
+
+
+def _escalate_to_new_red(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    *,
+    agent: str | None,
+    monitor: OrchestrationMonitor | None,
+    no_judge: bool,
+    root: Path,
+    reason: str,
+) -> SessionState:
+    """GREEN budget exhausted: reset green_attempts, bump red_attempts, new RED."""
+    tid = task.get("id", "?")
+    task_desc = task.get("description", "")
+    session.green_attempts = 0
+    session.red_attempts += 1
+    session.save(session_path)
+    _rollback_pre_red_if_resolvable(
+        root,
+        session,
+        task_id=tid,
+        attempt=session.red_attempts,
+        reason=reason,
+    )
+    _maybe_push_event(
+        monitor,
+        "phase_change",
+        task_id=tid,
+        phase="RED",
+        description=task_desc,
+    )
+    session = _run_red_phase(
+        task,
+        ledger_path,
+        session,
+        session_path,
+        c,
+        agent=agent,
+        monitor=monitor,
+        bypass_phase_done=True,
+        no_judge=no_judge,
+    )
+    session.judge_rejected = False
+    session.pending_judge_action = ""
+    session.save(session_path)
+    _log_run(
+        "PHASE_DECISION",
+        task_id=tid,
+        phase="CYCLE",
+        decision="escalate_to_red",
+        reason=reason,
+        red_attempts=session.red_attempts,
+    )
+    return session
+
+
+def _emit_green_train(c: Console, *, attempt: int, reason: str) -> None:
+    c.print(
+        TrainIndicator.render(
+            attempt=attempt,
+            maximum=_MAX_GREEN_ATTEMPTS,
+            phase="GREEN",
+        )
+    )
+    c.print(f"  [yellow]TRAIN ({attempt}/{_MAX_GREEN_ATTEMPTS}) \u2014 {reason}[/]")
+
+
+def _train_green_or_escalate(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    *,
+    agent: str | None,
+    monitor: OrchestrationMonitor | None,
+    no_judge: bool,
+    root: Path,
+) -> tuple[SessionState, bool]:
+    """Count one GREEN train. Escalate when ``green_attempts`` reaches 3.
+
+    Returns ``(session, True)`` after a new RED dispatch, or
+    ``(session, False)`` when GREEN should retry the standing RED contract.
+    """
+    session.green_attempts += 1
+    session.save(session_path)
+    if session.green_attempts < _MAX_GREEN_ATTEMPTS:
+        return session, False
+    session = _escalate_to_new_red(
+        task,
+        ledger_path,
+        session,
+        session_path,
+        c,
+        agent=agent,
+        monitor=monitor,
+        no_judge=no_judge,
+        root=root,
+        reason="green_budget_exhausted",
+    )
+    return session, True
+
+
 def _run_tdd_cycle(
     task: dict,
     ledger_path: Path,
@@ -2929,8 +3061,6 @@ def _run_tdd_cycle(
         )
         return
 
-    train_attempts = 0
-    max_train_attempts = 3
     # `no_judge` only skips the JUDGE phase — GREEN must still run. The
     # in-loop `if no_judge: judge_passed = True; break` below is the exit
     # path; initializing to `no_judge` here would skip the GREEN loop
@@ -2957,7 +3087,6 @@ def _run_tdd_cycle(
         # since a vacuous GREEN has nothing to implement. Forward verdicts
         # break out to _finish_tdd_cycle; revert_before re-dispatches RED.
         if session.pending_judge_action == "revert_before":
-            train_attempts = 0
             _maybe_push_event(
                 monitor,
                 "phase_change",
@@ -3002,26 +3131,23 @@ def _run_tdd_cycle(
 
         if session.train_feedback:
             if session.current_phase == "RED":
-                train_attempts += 1
-                if train_attempts >= max_train_attempts:
-                    c.print(
-                        f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
-                        f"after {max_train_attempts} attempts"
-                    )
-                    raise PhaseFailedError(
-                        f"GREEN phase post-cleanup failed for {task.get('id', '?')} "
-                        f"after {max_train_attempts} train attempts"
-                    )
-                c.print(
-                    TrainIndicator.render(
-                        attempt=train_attempts,
-                        maximum=max_train_attempts,
-                        phase="GREEN",
-                    )
+                session, escalated = _train_green_or_escalate(
+                    task,
+                    ledger_path,
+                    session,
+                    session_path,
+                    c,
+                    agent=agent,
+                    monitor=monitor,
+                    no_judge=no_judge,
+                    root=root,
                 )
-                c.print(
-                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                    f" \u2014 GREEN phase post-cleanup failed, retrying with feedback[/]"
+                if escalated:
+                    continue
+                _emit_green_train(
+                    c,
+                    attempt=session.green_attempts,
+                    reason=("GREEN phase post-cleanup failed, retrying with feedback"),
                 )
                 _log_run(
                     "PHASE_DECISION",
@@ -3029,7 +3155,8 @@ def _run_tdd_cycle(
                     phase="GREEN",
                     decision="reroute_to_green",
                     reason="post_cleanup_failed",
-                    attempt=train_attempts,
+                    attempt=session.green_attempts,
+                    max_red_attempts=_MAX_RED_ATTEMPTS,
                 )
                 continue
             _log_run(
@@ -3065,17 +3192,15 @@ def _run_tdd_cycle(
         # Revert-before branch: when JUDGE marked the RED test itself
         # wrong (``failure_kind == "test_defect"`` -> ``revert_before``),
         # the runner must re-author the failing test, not loop GREEN.
-        # Reset the train budget, dispatch RED with phase-done bypass
-        # so a fresh RED entry lands in the append-only ledger, and
-        # preserve the rationale on session.train_feedback so the
-        # agent sees it on the next prompt. The override matrix in
-        # ``_coerce_judge_action`` already routes test_defect verdicts
-        # here regardless of what next_action the agent declared.
+        # Dispatch RED with phase-done bypass so a fresh RED entry lands
+        # in the append-only ledger. GREEN train budget stays on the
+        # session; this branch does not increment green_attempts. The
+        # override matrix in ``_coerce_judge_action`` already routes
+        # test_defect verdicts here regardless of next_action.
         if (
             session.pending_judge_action == "revert_before"
             or session.failure_kind == "test_defect"
         ):
-            train_attempts = 0
             _maybe_push_event(
                 monitor,
                 "phase_change",
@@ -3122,45 +3247,40 @@ def _run_tdd_cycle(
         )
         still_failing = bool(green_tests_failed and not judge_passed_explicitly)
         if session.judge_rejected or session.train_feedback or still_failing:
-            train_attempts += 1
-            if train_attempts >= max_train_attempts:
-                c.print(
-                    f"  [red]TRAIN_EXHAUSTED[/] {task.get('id', '?')} "
-                    f"after {max_train_attempts} attempts"
-                )
-                raise PhaseFailedError(
-                    f"JUDGE phase rejected {task.get('id', '?')} "
-                    f"after {max_train_attempts} train attempts"
-                )
-                c.print(
-                    TrainIndicator.render(
-                        attempt=train_attempts,
-                        maximum=max_train_attempts,
-                        phase="GREEN",
-                    )
-                )
-                c.print(
-                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                    f" \u2014 re-running GREEN with judge feedback[/]"
-                )
-            else:
+            session, escalated = _train_green_or_escalate(
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                agent=agent,
+                monitor=monitor,
+                no_judge=no_judge,
+                root=root,
+            )
+            if escalated:
+                continue
+            if not session.train_feedback:
                 session.train_feedback = (
                     "GREEN implementation tests failed. "
                     "The implementation must be corrected to pass the test suite."
                 )
-                session = session.force_transition_to("GREEN")
-                session.save(session_path)
-                c.print(
-                    TrainIndicator.render(
-                        attempt=train_attempts,
-                        maximum=max_train_attempts,
-                        phase="GREEN",
-                    )
+            session = session.force_transition_to("GREEN")
+            session.save(session_path)
+            if (
+                session.pending_judge_action == "revert_to_red"
+                or session.judge_rejected
+            ):
+                train_reason = "re-running GREEN with judge feedback"
+            else:
+                train_reason = (
+                    "tests still failing, re-running GREEN with test feedback"
                 )
-                c.print(
-                    f"  [yellow]TRAIN ({train_attempts}/{max_train_attempts})"
-                    f" \u2014 tests still failing, re-running GREEN with test feedback[/]"
-                )
+            _emit_green_train(
+                c,
+                attempt=session.green_attempts,
+                reason=train_reason,
+            )
             session.judge_rejected = False
             session.save(session_path)
             _log_run(
@@ -3168,7 +3288,8 @@ def _run_tdd_cycle(
                 task_id=tid,
                 phase="JUDGE",
                 decision="reroute_to_green",
-                attempt=train_attempts,
+                attempt=session.green_attempts,
+                max_red_attempts=_MAX_RED_ATTEMPTS,
             )
             continue
         else:
