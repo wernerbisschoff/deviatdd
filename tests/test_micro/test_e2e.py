@@ -4,13 +4,20 @@ import json
 import subprocess
 from contextlib import chdir
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
-from deviate.cli.micro import _find_task_record, _resolve_issue_id_from_branch
+from deviate.cli.micro import (
+    _find_task_record,
+    _resolve_issue_id_from_branch,
+    _resolve_task_context,
+)
 
 runner = CliRunner()
 
@@ -251,6 +258,72 @@ class TestCrossIssueTaskIdCollision:
         md.parent.mkdir(parents=True, exist_ok=True)
         md.write_text("# Tasks\n\n- TSK-005-01: task\n", encoding="utf-8")
 
+    @staticmethod
+    def _append_issue(root: Path, issue_id: str, bucket: str, slug: str) -> None:
+        spec_dir = root / "specs"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        with (spec_dir / "issues.jsonl").open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "issue_id": issue_id,
+                        "source_file": f"specs/{bucket}/issues/{slug}.md",
+                    }
+                )
+                + "\n"
+            )
+
+    @staticmethod
+    def _write_tasks_md(root: Path, bucket: str, slug: str, body: str) -> None:
+        md = root / "specs" / bucket / slug / "tasks.md"
+        md.parent.mkdir(parents=True, exist_ok=True)
+        md.write_text(body, encoding="utf-8")
+
+    def _checkout(self, root: Path, branch: str) -> None:
+        subprocess.run(
+            ["git", "checkout", "-b", branch],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+    def _seed_empty_active_with_sibling_completed(
+        self,
+        root: Path,
+        *,
+        tasks_md_body: str,
+    ) -> None:
+        """Sibling COMPLETED TSK-001-04; active 001-002 has zero JSONL rows."""
+        sibling = {
+            "id": "TSK-001-04",
+            "issue_id": "001-001",
+            "description": "sibling already done",
+            "status": "COMPLETED",
+            "execution_mode": "TDD",
+        }
+        sibling_ledger = (
+            root / "specs" / "001-phone-to-pi-relay" / "001-handshake" / "tasks.jsonl"
+        )
+        sibling_ledger.parent.mkdir(parents=True, exist_ok=True)
+        sibling_ledger.write_text(json.dumps(sibling) + "\n", encoding="utf-8")
+        self._append_issue(root, "001-001", "001-phone-to-pi-relay", "001-handshake")
+        self._append_issue(
+            root,
+            "001-002",
+            "001-phone-to-pi-relay",
+            "002-node-pairing-and-presence",
+        )
+        self._write_tasks_md(
+            root,
+            "001-phone-to-pi-relay",
+            "002-node-pairing-and-presence",
+            tasks_md_body,
+        )
+        self._checkout(
+            root,
+            "feat/001-phone-to-pi-relay/002-node-pairing-and-presence",
+        )
+
     def test_find_task_record_prefers_branch_issue(self, tmp_git_repo: Path):
         # Active issue 005-001 owns its own TSK-005-01. A same-numbered task
         # in a later-sorting adhoc ledger by id-only dedup used to shadow it.
@@ -291,3 +364,75 @@ class TestCrossIssueTaskIdCollision:
                 f"found the shadow issue {rec.get('issue_id')}, expected 005-001"
             )
             assert "005-acceptance-gates" in str(ledger_file)
+
+    def test_find_task_record_empty_ledger_never_returns_sibling_completed(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-003: a known branch issue must not receive a sibling row.
+
+        Hole: sibling COMPLETED TSK-001-04 exists, active 001-002 has zero
+        JSONL rows. `_find_task_record` must return None or a 001-002 record,
+        never the sibling COMPLETED row.
+        """
+        self._seed_empty_active_with_sibling_completed(
+            tmp_git_repo,
+            tasks_md_body=("# Tasks\n\n- [ ] TSK-001-04: pair node presence\n"),
+        )
+
+        with chdir(tmp_git_repo):
+            branch_issue = _resolve_issue_id_from_branch(tmp_git_repo)
+            assert branch_issue == "001-002", f"got {branch_issue!r}"
+            hit = _find_task_record(tmp_git_repo, "TSK-001-04")
+
+        if hit is not None:
+            rec, _ = hit
+            assert rec.get("issue_id") == "001-002", (
+                "known active issue 001-002 must not receive sibling "
+                f"{rec.get('issue_id')} COMPLETED TSK-001-04"
+            )
+            assert rec.get("status") != "COMPLETED" or rec.get("issue_id") == (
+                "001-002"
+            )
+
+    def test_find_task_record_resolve_synthesizes_pending_for_branch_issue(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-003: pinned miss synthesizes this issue's PENDING task."""
+        self._seed_empty_active_with_sibling_completed(
+            tmp_git_repo,
+            tasks_md_body=("# Tasks\n\n- [ ] TSK-001-04: pair node presence\n"),
+        )
+
+        with chdir(tmp_git_repo):
+            task, _ledger = _resolve_task_context("TSK-001-04", tmp_git_repo)
+
+        assert task.get("id") == "TSK-001-04"
+        assert task.get("issue_id") == "001-002", (
+            "pinned resolve must synthesize PENDING for 001-002, "
+            f"got issue_id={task.get('issue_id')!r} status={task.get('status')!r}"
+        )
+        assert task.get("status") == "PENDING"
+
+    def test_find_task_record_TASK_NOT_FOUND_when_issue_omits_pin(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-004: omit the pin here → TASK_NOT_FOUND, not a sibling bind."""
+        self._seed_empty_active_with_sibling_completed(
+            tmp_git_repo,
+            tasks_md_body="# Tasks\n\n- [ ] TSK-001-01: other work\n",
+        )
+
+        printed: list[str] = []
+
+        def _capture(msg: object, *args: object, **kwargs: object) -> None:
+            printed.append(str(msg))
+
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.micro.console.print", side_effect=_capture):
+                with pytest.raises(typer.Exit) as excinfo:
+                    _resolve_task_context("TSK-001-04", tmp_git_repo)
+
+        assert excinfo.value.exit_code == 1
+        assert any("TASK_NOT_FOUND" in line for line in printed), (
+            f"expected TASK_NOT_FOUND, printed={printed!r}"
+        )

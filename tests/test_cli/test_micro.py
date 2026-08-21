@@ -2692,6 +2692,142 @@ class TestFindTaskRecord:
         )
 
 
+class TestFindTaskRecordIssueScopedPin:
+    """AC-PLAN-003 / AC-PLAN-002 / AC-PLAN-005: known branch issue is a namespace."""
+
+    def test_find_task_record_known_branch_skips_foreign_completed(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _find_task_record, _resolve_issue_id_from_branch
+
+        spec_dir = tmp_git_repo / "specs"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-014",
+                    "source_file": "specs/adhoc/issues/014-x.md",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "005-001",
+                    "source_file": (
+                        "specs/005-acceptance-gates/issues/001-verification.md"
+                    ),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        sibling = spec_dir / "adhoc" / "014-x" / "tasks.jsonl"
+        sibling.parent.mkdir(parents=True, exist_ok=True)
+        sibling.write_text(
+            json.dumps(
+                {
+                    "id": "TSK-005-07",
+                    "issue_id": "ISS-ADH-014",
+                    "description": "foreign completed",
+                    "status": "COMPLETED",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        active_md = spec_dir / "005-acceptance-gates" / "001-verification" / "tasks.md"
+        active_md.parent.mkdir(parents=True, exist_ok=True)
+        active_md.write_text(
+            "# Tasks\n\n- [ ] TSK-005-07: this issue still pending\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", "feat/005-acceptance-gates/001-verification"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        assert _resolve_issue_id_from_branch(tmp_git_repo) == "005-001"
+        hit = _find_task_record(tmp_git_repo, "TSK-005-07")
+        if hit is not None:
+            rec, _ = hit
+            assert rec.get("issue_id") == "005-001", (
+                "known branch issue 005-001 must not receive foreign "
+                f"{rec.get('issue_id')} row for TSK-005-07"
+            )
+
+    def test_find_task_record_bare_resolve_prefers_branch_pending_queue(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-002: bare resolve / pending scan ignore sibling ledgers."""
+        from deviate.cli.micro import _find_all_pending_tasks, _resolve_task_context
+
+        spec_dir = tmp_git_repo / "specs"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-014",
+                    "source_file": "specs/adhoc/issues/014-x.md",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "005-001",
+                    "source_file": (
+                        "specs/005-acceptance-gates/issues/001-verification.md"
+                    ),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        sibling = spec_dir / "adhoc" / "014-x" / "tasks.jsonl"
+        sibling.parent.mkdir(parents=True, exist_ok=True)
+        sibling.write_text(
+            json.dumps(
+                {
+                    "id": "TSK-005-07",
+                    "issue_id": "ISS-ADH-014",
+                    "description": "foreign completed",
+                    "status": "COMPLETED",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        active_dir = spec_dir / "005-acceptance-gates" / "001-verification"
+        active_dir.mkdir(parents=True, exist_ok=True)
+        (active_dir / "tasks.md").write_text(
+            "# Tasks\n\n- [ ] TSK-005-07: this issue still pending\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", "feat/005-acceptance-gates/001-verification"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        pending = _find_all_pending_tasks(tmp_git_repo, issue_id="005-001")
+        assert pending, "expected this issue's synthesized PENDING queue"
+        rec, _ = pending[0]
+        assert rec.get("issue_id") == "005-001"
+        assert rec.get("id") == "TSK-005-07"
+        assert rec.get("status") == "PENDING"
+
+        result = _resolve_task_context(None, tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task.get("issue_id") == "005-001"
+        assert task.get("id") == "TSK-005-07"
+        assert task.get("status") == "PENDING"
+
+
 ISSUE_005 = "ISS-ADH-005"
 SLUG_005 = "005-per-phase-model-configuration"
 
