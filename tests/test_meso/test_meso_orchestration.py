@@ -9,9 +9,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
 
 from tests.conftest import _git_env
 
+from deviate.cli import cli
 from deviate.cli.meso import (
     _build_slim_prompt,
     _build_plan_digest,
@@ -22,6 +24,8 @@ from deviate.cli.meso import (
 )
 from deviate.state.config import SessionState
 from deviate.state.ledger import IssueRecord, append_issue_transition
+
+runner = CliRunner()
 
 
 def _setup_minimal_workspace(
@@ -827,6 +831,206 @@ class TestMesoRunNoSetup:
             "SPECIFY must appear in PipelineBanner steps when "
             f"no_setup=False:\n{default_output}"
         )
+
+    def test_meso_run_command_local_forwards_local_true(
+        self,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-003: ``deviate meso run --local`` forwards ``local=True``.
+
+        The flag is a one-shot skip-push claim, not ``--no-setup``.
+        """
+        _setup_minimal_workspace(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.meso._meso_run", return_value=str(tmp_git_repo)
+            ) as mock_run:
+                result = runner.invoke(
+                    cli, ["meso", "run", "--local", "--issue", "ISS-001-001"]
+                )
+
+        assert result.exit_code == 0, result.output
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs.get("local") is True, (
+            "meso run --local must forward local=True into _meso_run; "
+            f"got kwargs={mock_run.call_args.kwargs}"
+        )
+        assert mock_run.call_args.kwargs.get("no_setup") is not True, (
+            "--local must not be treated as --no-setup; "
+            f"got kwargs={mock_run.call_args.kwargs}"
+        )
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_meso_run_omitted_flag_claim_remote_false_forwards_local_true(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-003: omitted ``--local`` plus ``claim_remote = false``
+        still forwards ``local=True`` into ``_specify_pre``.
+        """
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+        (tmp_git_repo / ".deviate" / "config.toml").write_text("claim_remote = false\n")
+
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        shutil.copytree(
+            str(tmp_git_repo / ".deviate"),
+            str(worktree_path / ".deviate"),
+            dirs_exist_ok=True,
+        )
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001")
+
+        mock_specify_pre.assert_called_once()
+        assert mock_specify_pre.call_args.kwargs.get("local") is True, (
+            "omitted --local with claim_remote=false must call "
+            "_specify_pre(..., local=True); "
+            f"got kwargs={mock_specify_pre.call_args.kwargs}"
+        )
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_meso_run_local_does_not_imply_no_setup(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-006: ``--local`` still runs SPECIFY (worktree + claim).
+
+        Local mode skips only the remote lock. It does not skip
+        ``_specify_pre``.
+        """
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        shutil.copytree(
+            str(tmp_git_repo / ".deviate"),
+            str(worktree_path / ".deviate"),
+            dirs_exist_ok=True,
+        )
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001", local=True)
+
+        mock_specify_pre.assert_called_once()
+        assert mock_specify_pre.call_args.kwargs.get("local") is True, (
+            "_meso_run(..., local=True) must call _specify_pre(..., local=True); "
+            f"got kwargs={mock_specify_pre.call_args.kwargs}"
+        )
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_meso_run_no_setup_with_local_skips_specify_pre(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-006: ``--no-setup --local`` still skips ``_specify_pre``.
+
+        Combined flags do not invent a third mode. ``--no-setup`` wins for
+        the worktree and ledger-claim skip.
+        """
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_specify_pre.side_effect = AssertionError(
+            "_specify_pre must not be called when no_setup=True, even with local=True"
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001", no_setup=True, local=True)
+
+        mock_specify_pre.assert_not_called()
+        mock_plan_post.assert_not_called()
+        mock_tasks_post.assert_not_called()
 
 
 class TestMesoArtifactEnforcement:
