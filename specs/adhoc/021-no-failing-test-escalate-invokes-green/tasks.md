@@ -57,6 +57,13 @@
 
 ### Tasks
 
+  - **Judge Feedback**: COMPLIANCE_VIOLATION: `_is_red_phase_failing_test_sha` treats an empty SHA as a valid GREEN boundary when `.git` is missing, and it aborts existing `TestGreenDiagnosticSurface` / prompt-assembly callers that use `tmp_git_repo` with empty `red_commit_sha`. AC-PLAN-002 forbids invoking GREEN without a RED-phase failing-test SHA. AC-PLAN-003 still requires a genuine RED SHA to enter GREEN. The next GREEN attempt must:
+1. In `src/deviate/cli/micro.py::_is_red_phase_failing_test_sha`, refuse every empty / whitespace SHA. Delete `return not (root / ".git").exists()`.
+2. Refuse `docs(...): add judge feedback for retry` unless `_feedback_sha_rests_on_red_phase` finds a `_PRE_RED_SHA_PARENT_RE` ancestor. Do not accept an orphan docs-feedback SHA.
+3. Accept GREEN only when the SHA subject matches `_PRE_RED_SHA_PARENT_RE` (`test(...): RED phase`) or is a docs-feedback SHA that rests on that RED ancestor (TRAIN). Do not `return True` for every other non-empty SHA.
+4. Keep raising `PhaseFailedError` with `GREEN_ENTRY_REFUSED` before `_invoke_agent` when the gate fails so `test_green_refuses_empty_red_commit_sha_without_invoke` stays at invoke_count 0.
+5. Keep `test_green_invokes_agent_with_red_phase_red_commit_sha` passing (AC-PLAN-003).
+6. Seed `session.red_commit_sha` with a RED-phase failing-test commit in `_setup_session_and_task` and `_capture_green_prompt` so `TestGreenDiagnosticSurface` and the judge-feedback prompt pins still enter GREEN. Do not change those tests' assertions. Do not weaken `TestGreenRedCommitShaGate`.
 - TSK-021-03: Fail `revert_to_red` when the RED boundary is missing
   - **Type**: Bugfix
   - **Mode**: TDD
