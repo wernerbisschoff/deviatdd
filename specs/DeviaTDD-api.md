@@ -774,13 +774,13 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     with `PhaseFailedError`. The feedback source precedence is `train_feedback`
     on the manifest → `_extract_judge_feedback(...)` from `tasks.md` → verbatim
     verdict / rationale.
-  * **JUDGE `next_action` routing:** The runner honors `HandoverManifest.next_action`
+  * **JUDGE `next_action` routing:** After the TDD mechanical evidence gate accepts a forward PASS, the runner honors `HandoverManifest.next_action`
     verbatim. See the **JUDGE `next_action` Routing Table** in this document for
     the five supported values (`revert_before`, `revert_to_red`,
     `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`), the
     rollback anchors and boundary-advance rules per route, and the runner
     fallbacks when the field is absent (default: `revert_to_red` on violation,
-    legacy behavior on pass).
+    legacy behavior on pass). EXECUTE and IMMEDIATE judge paths stay ungated.
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
     `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
@@ -849,9 +849,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **GREEN Stub-PASS Guard (REMOVED):** An earlier revision of this spec
   described a guard that rejected ``status: PASS`` manifests with zero
   observed source changes. That implementation was rolled back:
-  deciding whether a task is done is JUDGE's job (the JUDGE prompt's
-  edge case table emits ``COMPLIANCE_PASS`` with note ``NO_DIFF`` for
-  empty diffs), not GREEN's. GREEN's only invariant is "make tests
+  deciding whether a task is done is JUDGE's job (the TDD JUDGE
+  evidence gate requires a dirty-diff ``test_quote`` on
+  ``proceed_to_refactor_no_diff`` for empty GREEN), not GREEN's. GREEN's only invariant is "make tests
   pass"; a feature that already works (e.g. landed in a prior
   session, a docs/rename task) is a legitimate zero-change PASS. The
   field that remains is ``HandoverManifest.files: list[str] | None``
@@ -860,7 +860,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 * **JUDGE Failed-GREEN Worktree Visibility:** When GREEN leaves production changes uncommitted because its test command failed, JUDGE evaluates both the committed RED-parent-to-HEAD diff and the current staged, unstaged, and untracked worktree diff. Untracked files are rendered with `git diff --no-index /dev/null <path>`. This preserves the implementation for compliance assessment instead of presenting JUDGE with a false RED-only view.
 * **GREEN Rollback Retry Context:** After `revert_to_red`, the next GREEN prompt includes a `<rollback_context>` block stating that rollback discarded prior committed, uncommitted, and untracked GREEN artifacts. GREEN must verify referenced artifacts on disk and recreate missing files before reporting success.
 * **Resumable JUDGE Feedback Commit:** Before attempting the hook-enabled feedback-marker commit, the runner persists the exact task id, feedback text, and feedback source in `SessionState.pending_judge_feedback`. A failed or timed-out hook leaves `red_commit_sha` unchanged and retains this payload. The next explicit task run or `--all` drain selects the task even when its latest ledger status is `FAILED`, retries the same marker commit without rerunning JUDGE, clears the payload only after success, advances `red_commit_sha`, and resumes GREEN with the original feedback.
-* **GREEN Retry State-Drift Guard:** A first-pass zero-change GREEN remains valid and proceeds to JUDGE for `NO_DIFF` classification. On a JUDGE-directed retry, however, if the ledger already records GREEN, `train_feedback` is present, and `_commit_phase()` reports no new commit, `_run_green_phase()` raises `PhaseFailedError` with `GREEN_STATE_DRIFT`. This prevents JUDGE from evaluating feedback-only diffs and requires the operator to verify the existing implementation and reconcile the append-only task ledger.
+* **GREEN Retry State-Drift Guard:** A first-pass zero-change GREEN remains valid and proceeds to JUDGE for empty-GREEN `test_quote` classification. On a JUDGE-directed retry, however, if the ledger already records GREEN, `train_feedback` is present, and `_commit_phase()` reports no new commit, `_run_green_phase()` raises `PhaseFailedError` with `GREEN_STATE_DRIFT`. This prevents JUDGE from evaluating feedback-only diffs and requires the operator to verify the existing implementation and reconcile the append-only task ledger.
 * **GREEN Failure Diagnostic Payload:** When the GREEN phase raises
   ``PhaseFailedError`` because the agent emitted
   ``status ∈ {FAILURE, ERROR, FAIL}`` and the manifest's ``rationale``
@@ -1392,8 +1392,10 @@ candidate selection:
 #### JUDGE `next_action` Routing Table
 
 `HandoverManifest.next_action` (`src/deviate/core/agent.py`) carries the JUDGE agent's
-decision on how to route the runner. Five values, each honored verbatim by
-`_run_judge_phase` and the EXECUTE equivalent inside `_run_execute_phase`:
+decision on how to route the runner. Five values. TDD `_run_judge_phase` runs a
+mechanical evidence gate on forward PASS routes (`continue_refactor`,
+`skip_refactor`, `proceed_to_refactor_no_diff`, and legacy PASS) before it honors
+the action. EXECUTE `_run_execute_phase` and IMMEDIATE judge stay ungated.
 
 | `next_action` | Required verdict | Runner behavior |
 |---|---|---|
@@ -1403,7 +1405,9 @@ decision on how to route the runner. Five values, each honored verbatim by
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. |
 | `proceed_to_refactor_no_diff` | `COMPLIANCE_PASS` (or any) | Forward route for the empty-diff sign-off case. Set `pending_judge_action="proceed_to_refactor_no_diff"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. REFACTOR's commit + COMPLETED transition is the only way to terminate a slice whose git diff is empty (RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose production-code scope is intrinsically nil). Distinct from `continue_refactor` (signals a substantive refactor pass on a non-empty diff). |
 
-**Empty-diff sign-off:** `proceed_to_refactor_no_diff` (`src/deviate/cli/micro.py::_run_judge_phase`) is the forward-route escape for slices whose production-code scope is intrinsically nil — RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose `failure_kind: mechanical` rationale asserts "no production code expected." The runner honors the action verbatim; the JUDGE-side responsibility is to emit it on a `COMPLIANCE_PASS` verdict when the in-scope rationale is valid but the diff cannot grow. The action lands the task at REFACTOR's no-op commit + COMPLETED transition in one step; the GREEN-empty branch never enters the rejection cascade.
+**Empty-diff sign-off:** `proceed_to_refactor_no_diff` (`src/deviate/cli/micro.py::_run_judge_phase`) is the forward-route escape for slices whose production-code scope is intrinsically nil — RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose `failure_kind: mechanical` rationale asserts "no production code expected." The TDD evidence gate still requires a dirty-diff `test_quote` and omits `impl_quote`. The JUDGE-side responsibility is to emit the action on a `COMPLIANCE_PASS` verdict when the in-scope rationale is valid but the production diff cannot grow. The action lands the task at REFACTOR's no-op commit + COMPLETED transition in one step; unmatched empty-GREEN PASS does not COMPLETE.
+
+**TDD mechanical evidence gate:** `HandoverManifest.evidence` is a first-class list of nested citations (`ac`, `test_path`, `test_quote`, `impl_path`, `impl_quote`) in `src/deviate/core/agent.py`. After `_coerce_judge_action`, TDD `_run_judge_phase` (`src/deviate/cli/micro.py`) checks every injected `AC-PLAN-NNN` token from `<authoritative_acceptance_contract source="plan.md">` against those citations and the already-built `<diff>` (`git diff <red>^..HEAD` plus dirty `git diff HEAD` and untracked `--no-index` hunks). Missing, empty, or partial evidence, hallucinated paths, empty quotes, quotes below the uniqueness floor (≥ 12 non-whitespace characters, or the full added line if shorter), or quotes that are not exact substrings of the named file hunk rewrite the action to `revert_to_red` with runner-authored feedback in the `JUDGE_AGENT_NO_FEEDBACK` family. The task does not COMPLETE. `skip_refactor` on the already-exists path may quote HEAD file contents; a named test file absent on disk fails. Tasks with no `AC-PLAN-*` tokens may emit empty evidence. `COMPLIANCE_VIOLATION` skips the gate. EXECUTE and IMMEDIATE judge paths stay ungated.
 
 **Feedback-commit timeout:** The `revert_to_red` step's "append a feedback
 commit past RED" runs `_commit_judge_feedback_and_advance`

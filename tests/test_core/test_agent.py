@@ -108,6 +108,96 @@ class TestHandoverManifestModel:
         reloaded = HandoverManifest.model_validate(dumped)
         assert reloaded.files == ["src/watcher.py", "src/main.py"]
 
+    def test_handover_manifest_evidence_is_first_class_not_model_extra(self):
+        """AC-PLAN-001: evidence is a declared field the gate can read."""
+        from deviate.core.agent import HandoverManifest
+
+        assert "evidence" in HandoverManifest.model_fields
+
+    def test_handover_manifest_evidence_round_trips_from_yaml(self):
+        """AC-PLAN-001: YAML citations round-trip; unknown extra keys still parse."""
+        from deviate.core.agent import HandoverManifest
+
+        yaml_output = (
+            'phase: "JUDGE"\n'
+            'status: "PASS"\n'
+            'task_id: "TSK-020-01"\n'
+            "evidence:\n"
+            '  - ac: "AC-PLAN-001"\n'
+            '    test_path: "tests/example.py"\n'
+            '    test_quote: "assert increment(2) == 3"\n'
+            '    impl_path: "src/example.py"\n'
+            '    impl_quote: "return n + 1"\n'
+            'unknown_field: "x"\n'
+        )
+        manifest = AgentBackend.parse_output(yaml_output, "pi")
+        assert "evidence" not in (manifest.model_extra or {})
+        items = list(manifest.evidence)
+        assert len(items) == 1
+        item = items[0]
+
+        def citation_value(citation: object, key: str) -> str:
+            if isinstance(citation, dict):
+                return str(citation[key])
+            return str(getattr(citation, key))
+
+        assert citation_value(item, "ac") == "AC-PLAN-001"
+        assert citation_value(item, "test_path") == "tests/example.py"
+        assert citation_value(item, "test_quote") == "assert increment(2) == 3"
+        assert citation_value(item, "impl_path") == "src/example.py"
+        assert citation_value(item, "impl_quote") == "return n + 1"
+        assert getattr(manifest, "unknown_field") == "x"
+        assert "unknown_field" in (manifest.model_extra or {})
+
+        dumped = manifest.model_dump()
+        dumped_item = dumped["evidence"][0]
+        assert dumped_item["ac"] == "AC-PLAN-001"
+        assert dumped_item["test_path"] == "tests/example.py"
+        assert dumped_item["test_quote"] == "assert increment(2) == 3"
+        assert dumped_item["impl_path"] == "src/example.py"
+        assert dumped_item["impl_quote"] == "return n + 1"
+        reloaded = HandoverManifest.model_validate(dumped)
+        reloaded_item = list(reloaded.evidence)[0]
+        assert citation_value(reloaded_item, "ac") == "AC-PLAN-001"
+        assert citation_value(reloaded_item, "test_quote") == "assert increment(2) == 3"
+        assert citation_value(reloaded_item, "impl_quote") == "return n + 1"
+
+    def test_handover_manifest_omitted_evidence_parses_for_non_judge_phases(self):
+        """AC-PLAN-001: RED/GREEN YAML without evidence still parses as empty."""
+        from deviate.core.agent import HandoverManifest
+
+        manifest = HandoverManifest(phase="RED", status="TEST_WRITTEN_FAILING")
+        assert list(manifest.evidence) == []
+
+    def test_handover_manifest_empty_evidence_list_parses(self):
+        """AC-PLAN-001: empty evidence: [] parses for no-AC-PLAN tasks."""
+        from deviate.core.agent import HandoverManifest
+
+        manifest = HandoverManifest(phase="JUDGE", status="PASS", evidence=[])
+        assert list(manifest.evidence) == []
+        assert "evidence" not in (manifest.model_extra or {})
+
+    def test_handover_manifest_evidence_allows_empty_impl_fields(self):
+        """AC-PLAN-001: empty impl_path/impl_quote stay legal for empty-GREEN."""
+        yaml_output = (
+            'phase: "JUDGE"\n'
+            'status: "PASS"\n'
+            "evidence:\n"
+            '  - ac: "AC-PLAN-001"\n'
+            '    test_path: "tests/example.py"\n'
+            '    test_quote: "assert increment(2) == 3"\n'
+            '    impl_path: ""\n'
+            '    impl_quote: ""\n'
+        )
+        manifest = AgentBackend.parse_output(yaml_output, "pi")
+        item = list(manifest.evidence)[0]
+        if isinstance(item, dict):
+            assert item["impl_path"] in {"", None}
+            assert item["impl_quote"] in {"", None}
+        else:
+            assert getattr(item, "impl_path") in {"", None}
+            assert getattr(item, "impl_quote") in {"", None}
+
 
 class TestAgentBackendInvocation:
     def test_agent_successful_invocation(self):

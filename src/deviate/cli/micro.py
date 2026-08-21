@@ -10,7 +10,7 @@ import time
 import logging
 import sys
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import NoReturn
 from pathlib import Path, PurePosixPath
 
@@ -26,11 +26,13 @@ from deviate.core.agent import (
     AgentSubprocessError,
     AgentTimeoutError,
     EmptyOutputError,
+    EvidenceItem,
     HandoverManifest,
     MalformedHandoverManifestError,
     resolve_agent_to_backend,
 )
 from deviate.core.convention import format_commit_message
+from deviate.core.judge_evidence import evaluate_judge_evidence
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.tasks_ledger import resolve_execution_mode
 from deviate.core.profile import resolve_profile
@@ -2285,46 +2287,76 @@ def _resume_pending_judge_feedback(
     return session
 
 
-def _run_judge_phase(
-    task: dict,
-    ledger_path: Path,
-    session: SessionState,
-    session_path: Path,
-    c: Console,
-    agent: str | None = None,
-    monitor: OrchestrationMonitor | None = None,
-    red_baseline: list[str] | None = None,
-) -> SessionState:
-    tid = task.get("id", "?")
-    backend = agent or "pi"
-    root = Path.cwd()
+_TDD_EVIDENCE_GATE_ROUTES = frozenset(
+    {
+        "continue_refactor",
+        "skip_refactor",
+        "proceed_to_refactor_no_diff",
+    }
+)
 
-    # Span the RED→GREEN diff: use RED's parent as the baseline so the
-    # judge sees both the failing tests (committed in RED) and the
-    # implementation (committed in GREEN).  Without the parent anchor,
-    # `git diff red_sha..HEAD` would collapse to GREEN only — the tests
-    # already exist in `red_sha` and disappear from the diff — and the
-    # judge would (correctly, given its input) flag the missing tests.
-    # The fallback (no RED in this session) keeps the prior single-commit
-    # behavior so the diff still matches the GREEN/EXECUTE-only commit.
-    if session.red_commit_sha:
-        diff_base = f"{session.red_commit_sha}^"
+
+def _untracked_file_paths(root: Path, status_path: str) -> list[str]:
+    """Expand a ``git status --short`` untracked path to file paths."""
+    if not status_path:
+        return []
+    full = root / status_path
+    if full.is_file():
+        return [status_path]
+    if not full.is_dir():
+        return []
+    return sorted(
+        p.relative_to(root).as_posix() for p in full.rglob("*") if p.is_file()
+    )
+
+
+def _untracked_no_index_diffs(root: Path, status: str) -> list[str]:
+    """Return ``git diff --no-index`` hunks for untracked paths in *status*."""
+    parts: list[str] = []
+    for status_line in status.splitlines():
+        if not status_line.startswith("?? "):
+            continue
+        path = status_line[3:].strip().strip('"')
+        for rel in _untracked_file_paths(root, path):
+            parts.append(
+                subprocess.run(
+                    ["git", "diff", "--no-index", "--", "/dev/null", rel],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    env=_git_env(),
+                ).stdout
+            )
+    return parts
+
+
+def _assemble_judge_injected_diff(
+    root: Path,
+    *,
+    red_commit_sha: str,
+    red_baseline: list[str] | None,
+) -> str:
+    """Build RED-parent-to-HEAD plus dirty and untracked JUDGE diff.
+
+    RED's parent is the baseline so JUDGE sees failing tests (RED) and
+    implementation (GREEN). Without that parent, ``git diff red_sha..HEAD``
+    collapses to GREEN only. No RED commit keeps the prior ``HEAD~1``
+    single-commit behavior. The RED-adjudication path uses an empty
+    committed diff; uncommitted tests surface in dirty hunks.
+    """
+    if red_commit_sha:
         committed_diff = subprocess.run(
-            ["git", "diff", f"{diff_base}..HEAD"],
+            ["git", "diff", f"{red_commit_sha}^..HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
             env=_git_env(),
         ).stdout
     elif red_baseline is not None:
-        # RED-adjudication path: no RED commit exists, so there is no
-        # committed diff — the uncommitted RED test carries the change
-        # (surfaced via the dirty_parts scan below).
         committed_diff = ""
     else:
-        diff_base = "HEAD~1"
         committed_diff = subprocess.run(
-            ["git", "diff", f"{diff_base}..HEAD"],
+            ["git", "diff", "HEAD~1..HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -2339,26 +2371,116 @@ def _run_judge_phase(
     ).stdout
     dirty_parts: list[str] = []
     if status.strip():
-        worktree_diff = subprocess.run(
-            ["git", "diff", "HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout
-        dirty_parts.append(worktree_diff)
-        for status_line in status.splitlines():
-            if status_line.startswith("?? "):
-                path = status_line[3:]
-                untracked_diff = subprocess.run(
-                    ["git", "diff", "--no-index", "/dev/null", path],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                ).stdout
-                dirty_parts.append(untracked_diff)
-    diff = "\n".join(part for part in [committed_diff, *dirty_parts] if part)
+        dirty_parts.append(
+            subprocess.run(
+                ["git", "diff", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+            ).stdout
+        )
+        dirty_parts.extend(_untracked_no_index_diffs(root, status))
+    return "\n".join(part for part in [committed_diff, *dirty_parts] if part)
+
+
+def _git_show_head(root: Path, rel: str) -> str | None:
+    """Return HEAD text for a repo-relative path, or None if unsafe/missing."""
+    candidate = Path(rel)
+    if not rel or candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    if not (root / rel).is_file():
+        return None
+    shown = subprocess.run(
+        ["git", "show", f"HEAD:{rel}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if shown.returncode != 0:
+        return None
+    return shown.stdout
+
+
+def _evidence_head_contents(
+    root: Path, evidence: Sequence[EvidenceItem] | None
+) -> dict[str, str]:
+    """Read HEAD file text for paths named in evidence that exist on disk."""
+    contents: dict[str, str] = {}
+    for item in evidence or []:
+        for rel in (item.test_path, item.impl_path):
+            if not rel or rel in contents:
+                continue
+            text = _git_show_head(root, rel)
+            if text is not None:
+                contents[rel] = text
+    return contents
+
+
+def _attach_judge_runner_feedback(manifest: HandoverManifest, feedback: str) -> None:
+    """Write runner-authored feedback onto the manifest cascade fields."""
+    extra = manifest.model_extra
+    if extra is not None:
+        extra["train_feedback"] = feedback
+    manifest.train_feedback = feedback
+    manifest.rationale = feedback
+
+
+def _rewrite_unmatched_tdd_pass(
+    *,
+    root: Path,
+    task: dict,
+    manifest: HandoverManifest,
+    action: str | None,
+    injected_diff: str,
+) -> str | None:
+    """Force unmatched TDD PASS onto ``revert_to_red`` with runner feedback."""
+    if action is not None and action not in _TDD_EVIDENCE_GATE_ROUTES:
+        return action
+    head_contents = (
+        _evidence_head_contents(root, manifest.evidence)
+        if action == "skip_refactor"
+        else None
+    )
+    feedback = evaluate_judge_evidence(
+        plan_contract=_resolve_spec_md(root, task),
+        injected_diff=injected_diff,
+        evidence=manifest.evidence or [],
+        next_action=action,
+        head_contents=head_contents,
+    )
+    if not feedback:
+        return action
+    _attach_judge_runner_feedback(manifest, feedback)
+    _log_run(
+        "JUDGE_EVIDENCE_REJECTED",
+        task_id=task.get("id", "?"),
+        action=action or "",
+        feedback=feedback,
+    )
+    return "revert_to_red"
+
+
+def _run_judge_phase(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
+    red_baseline: list[str] | None = None,
+) -> SessionState:
+    tid = task.get("id", "?")
+    backend = agent or "pi"
+    root = Path.cwd()
+
+    diff = _assemble_judge_injected_diff(
+        root,
+        red_commit_sha=session.red_commit_sha,
+        red_baseline=red_baseline,
+    )
 
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
@@ -2425,6 +2547,13 @@ def _run_judge_phase(
         )
     verdict = getattr(manifest, "verdict", "")
     action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
+    action = _rewrite_unmatched_tdd_pass(
+        root=root,
+        task=task,
+        manifest=manifest,
+        action=action,
+        injected_diff=diff,
+    )
     session.last_judge_verdict = getattr(manifest, "verdict", "").upper()
 
     # ---- Violation routes ----------------------------------------------

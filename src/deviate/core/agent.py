@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from deviate.state.config import AgentConfig
 
@@ -47,6 +47,18 @@ def _truncate_prompt(prompt: str) -> str:
 BackendName = Literal["opencode", "claude", "droid", "pi", "omp", "stub"]
 
 
+class EvidenceItem(BaseModel):
+    """Per-AC citation the TDD JUDGE evidence gate can read."""
+
+    ac: str
+    test_path: str
+    test_quote: str
+    impl_path: str = Field(default="")
+    impl_quote: str = Field(default="")
+
+    model_config = {"extra": "ignore"}
+
+
 class HandoverManifest(BaseModel):
     phase: str = "UNKNOWN"
     status: str = "UNKNOWN"
@@ -69,6 +81,7 @@ class HandoverManifest(BaseModel):
         ]
     ] = None
     files: list[str] | None = None
+    evidence: list[EvidenceItem] = Field(default_factory=list)
     parse_errors: list[str] = []
 
     model_config = {"extra": "allow"}
