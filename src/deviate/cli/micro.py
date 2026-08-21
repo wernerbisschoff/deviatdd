@@ -689,19 +689,22 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
     """Look up the latest (current) record by its TSK-NNN-NN ID.
 
     A task ID is namespaced per issue (every issue reuses the same
-    ``TSK-NNN-NN`` numbering). When several issues carry the same id,
-    prefer the record that belongs to this worktree's branch issue so an
-    explicit ``deviate micro run <tid>`` targets the active slice rather than
-    a same-numbered task from an unrelated ledger.
+    ``TSK-NNN-NN`` numbering). When the active issue is known, return only
+    that issue's row — never a sibling ``preferred`` hit. When no issue
+    resolves (no feature branch, no resolvable session issue), fall back
+    to the first same-id record so unscoped unit tests keep working.
     """
-    branch_issue_id = _resolve_issue_id_from_branch(root) or ""
-    preferred = None
+    active_issue_id = _resolve_known_active_issue_id(root)
+    preferred: tuple[dict, Path] | None = None
     for rec, ledger_file in _collect_latest_task_records(root):
-        if rec.get("id") == task_id:
-            if rec.get("issue_id") == branch_issue_id:
+        if rec.get("id") != task_id:
+            continue
+        if active_issue_id:
+            if rec.get("issue_id") == active_issue_id:
                 return rec, ledger_file
-            if preferred is None:
-                preferred = (rec, ledger_file)
+            continue
+        if preferred is None:
+            preferred = (rec, ledger_file)
     return preferred
 
 
@@ -922,6 +925,75 @@ def _resolve_issue_id_from_branch(root: Path) -> str | None:
     return None
 
 
+def _load_session_active_issue_id(root: Path) -> str | None:
+    """Return session.active_issue_id, or None when unset or missing."""
+    session_path = root / ".deviate" / "session.json"
+    if not session_path.exists():
+        return None
+    return SessionState.load(session_path).active_issue_id or None
+
+
+def _issue_is_resolvable(root: Path, issue_id: str) -> bool:
+    """True when this checkout has a tasks.md or a ledger row for issue_id."""
+    if _find_tasks_md_for_issue(root, issue_id) is not None:
+        return True
+    return any(
+        rec.get("issue_id") == issue_id for rec, _ in _collect_latest_task_records(root)
+    )
+
+
+def _rekey_session_issue_to_branch(
+    root: Path, session_issue_id: str | None, branch_issue_id: str | None
+) -> str | None:
+    """Apply the GH-54 stale-session rule and return the authoritative issue.
+
+    When session and branch disagree and the session issue has no tasks
+    board in this checkout, the branch wins. Otherwise keep the session
+    issue when it is set; fall back to the branch.
+    """
+    if session_issue_id and branch_issue_id and branch_issue_id != session_issue_id:
+        if _find_tasks_md_for_issue(root, session_issue_id) is None:
+            _log(
+                f"stale session issue {session_issue_id}: no tasks board in this "
+                f"checkout; re-keying to branch issue {branch_issue_id}"
+            )
+            return branch_issue_id
+        return session_issue_id
+    if session_issue_id:
+        return session_issue_id
+    return branch_issue_id or session_issue_id
+
+
+def _resolve_known_active_issue_id(root: Path) -> str | None:
+    """Issue that scopes pinned TSK lookup, or None for unscoped fallback.
+
+    Branch slug is known whenever it maps through issues.jsonl. A session
+    ``active_issue_id`` is known only when it is resolvable here (tasks.md
+    or a ledger row). GH-54: when session and branch disagree and the
+    session issue has no tasks board, the branch wins.
+    """
+    branch_issue_id = _resolve_issue_id_from_branch(root)
+    issue_id = _rekey_session_issue_to_branch(
+        root, _load_session_active_issue_id(root), branch_issue_id
+    )
+    if not issue_id:
+        return None
+    if issue_id == branch_issue_id or _issue_is_resolvable(root, issue_id):
+        return issue_id
+    return None
+
+
+def _synthesize_pinned_pending(root: Path, task_id: str) -> tuple[dict, Path] | None:
+    """Return this issue's synthesized PENDING row for a pinned JSONL miss."""
+    active_issue_id = _resolve_known_active_issue_id(root)
+    if not active_issue_id:
+        return None
+    for rec, ledger in _find_all_pending_tasks(root, issue_id=active_issue_id):
+        if rec.get("id") == task_id:
+            return rec, ledger
+    return None
+
+
 def _append_status_transition(
     task_data: dict, new_status: str, ledger_path: Path
 ) -> None:
@@ -943,10 +1015,13 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
             )
             raise typer.Exit(code=1)
         result = _find_task_record(root, task_id)
-        if result is None:
-            console.print(f"[red]TASK_NOT_FOUND[/] No task matching {task_id}")
-            raise typer.Exit(code=1)
-        return result
+        if result is not None:
+            return result
+        synthesized = _synthesize_pinned_pending(root, task_id)
+        if synthesized is not None:
+            return synthesized
+        console.print(f"[red]TASK_NOT_FOUND[/] No task matching {task_id}")
+        raise typer.Exit(code=1)
 
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
@@ -954,27 +1029,12 @@ def _resolve_task_context(task_id: str | None, root: Path) -> tuple[dict, Path] 
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
 
-    issue_id = session.active_issue_id
-    branch_issue_id = _resolve_issue_id_from_branch(root)
-    if issue_id and branch_issue_id and branch_issue_id != issue_id:
-        # Stale-session guard (GH-54): a freshly claimed worktree can carry
-        # the *previous* issue's id in session.json while its branch points
-        # at the new issue. When the session issue has no tasks board in
-        # this checkout, the branch is authoritative — re-key so the scan
-        # does not silently emit NO_PENDING_TASKS for a queue that exists.
-        if _find_tasks_md_for_issue(root, issue_id) is None:
-            _log(
-                f"stale session issue {issue_id}: no tasks board in this "
-                f"checkout; re-keying to branch issue {branch_issue_id}"
-            )
-            issue_id = branch_issue_id
-    elif not issue_id:
-        # Session has no active issue (fresh checkout / no session.json).
-        # Fall back to the branch slug so the scan stays scoped to the
-        # issue the feature branch belongs to. Without this, an unscoped
-        # scan returns the first unchecked task in any tasks.md repo-wide
-        # (e.g. a stale slice task from an unrelated issue).
-        issue_id = branch_issue_id or issue_id
+    # GH-54: branch wins when the session issue has no tasks board here.
+    # Fresh checkouts with no session issue fall back to the branch slug
+    # so the scan stays scoped to the feature-branch issue.
+    issue_id = _rekey_session_issue_to_branch(
+        root, session.active_issue_id, _resolve_issue_id_from_branch(root)
+    )
 
     pending = _find_all_pending_tasks(root, issue_id=issue_id)
     if not pending:
