@@ -31,6 +31,31 @@
 
 ### Tasks
 
+  - **Judge Feedback**: GREEN scoped _find_task_record through _resolve_active_issue_id so any
+session.active_issue_id counts as a known issue. A stale ISS-999-999
+with no feature branch and no tasks board then makes a pinned lookup
+return None and _resolve_task_context raise TASK_NOT_FOUND. That
+violates AC-PLAN-005 (unscoped same-id hit when no resolvable issue)
+and breaks execute_pre override of a wrong session issue.
+The next GREEN attempt must:
+1. Keep the foreign-row ban when _resolve_issue_id_from_branch returns
+   an issue, including the existing GH-54 re-key when the session issue
+   has no tasks board and the branch issue differs.
+2. Treat session.active_issue_id as known only when it is resolvable
+   (a tasks.md or ledger row exists for that issue). If it is not
+   resolvable and there is no branch issue, return the preferred
+   same-id record from _collect_latest_task_records.
+3. Keep _resolve_task_context pinned-miss synthesis via
+   _find_all_pending_tasks(root, issue_id=active) and print
+   TASK_NOT_FOUND / exit 1 when this issue omits the pin.
+4. Do not rewrite _collect_latest_task_records, do not fork a second
+   tasks.md scanner, and do not edit tests/ or specs/.
+5. Re-run: uv run pytest tests/test_micro/test_e2e.py
+   tests/test_cli/test_micro.py -q -k "find_task_record or TASK_NOT_FOUND
+   or prefers_branch" and uv run pytest
+   tests/test_micro/test_execute.py::TestExecutePre::test_execute_pre_overrides_wrong_active_issue_id
+   tests/test_micro/test_execute.py::TestExecutePost::test_execute_pre_then_post_uses_session_context
+   tests/test_cli/test_micro.py::TestFindTaskRecord
 - TSK-023-02: Refuse TASK_ALREADY_DONE for a foreign COMPLETED pin
   - **Type**: Bugfix
   - **Mode**: TDD
