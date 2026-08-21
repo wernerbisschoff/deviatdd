@@ -700,10 +700,14 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     first attempt's recovery handle. A fresh RED attempt clears any
     boundary retained by a prior task before invoking the agent, then
     records its own boundary only after the RED commit lands. Agent startup
-    failures therefore leave no cross-task rollback anchor. The runner commits
-    a feedback marker unconditionally and advances
-    `session.red_commit_sha` past it so a second rejection can roll back
-    only the subsequent GREEN, the session is
+    failures therefore leave no cross-task rollback anchor. TDD
+    `revert_to_red` with an empty `session.red_commit_sha` raises
+    `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")`. `_run_judge_phase`
+    does not catch that error, print `ROLLBACK_FAILED`, commit a
+    `docs(...): add judge feedback` marker, or `force_transition_to("GREEN")`.
+    When a RED-phase SHA exists, the runner commits a feedback marker and
+    advances `session.red_commit_sha` past it so a second rejection can roll
+    back only the subsequent GREEN. The session is
     `force_transition_to("GREEN")`, and the
     previous attempt's feedback is injected as `<train_feedback>` into the next
     GREEN prompt via `_build_auto_prompt("green", ...) +
@@ -1400,7 +1404,7 @@ the action. EXECUTE `_run_execute_phase` and IMMEDIATE judge stay ungated.
 | `next_action` | Required verdict | Runner behavior |
 |---|---|---|
 | `revert_before` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). Clear `session.red_commit_sha` so RED re-anchors. Escalate now: reset `green_attempts` to 0, increment `red_attempts`, persist both on `.deviate/session.json`, and dispatch a retry RED with a short `previous cycle failed because …` note in `train_feedback` (not the raw GREEN dump). `TRAIN_EXHAUSTED` prints after three RED escalates. Used when the test itself is wrong. |
-| `revert_to_red` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit. Transition to GREEN with feedback in `train_feedback`. The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. |
+| `revert_to_red` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit only when the pre-call SHA is already a RED-phase failing-test commit. Transition to GREEN with feedback in `train_feedback`. The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. Empty `session.red_commit_sha` is fatal: raise `PhaseFailedError` carrying `ROLLBACK_BOUNDARY_MISSING`. Do not print `ROLLBACK_FAILED`, do not stamp a docs-feedback SHA, and do not train GREEN. |
 | `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. |
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. |
 | `proceed_to_refactor_no_diff` | `COMPLIANCE_PASS` (or any) | Forward route for the empty-diff sign-off case. Set `pending_judge_action="proceed_to_refactor_no_diff"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. REFACTOR's commit + COMPLETED transition is the only way to terminate a slice whose git diff is empty (RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose production-code scope is intrinsically nil). Distinct from `continue_refactor` (signals a substantive refactor pass on a non-empty diff). |

@@ -1968,22 +1968,53 @@ def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
 def _is_red_phase_failing_test_sha(root: Path, sha: str) -> bool:
     """Return True when ``sha`` is a valid GREEN-entry RED boundary.
 
-    Empty / whitespace SHAs are never a boundary when git cannot resolve
-    them (no ``.git`` missing bypass). A docs-feedback SHA is accepted
-    only when it rests on a RED-phase ancestor (TRAIN). Any other
-    non-empty SHA is accepted: mocked ``_commit_phase`` may leave HEAD
-    at ``initial`` / ``chore: seed``, and an unresolvable SHA must not
-    refuse GREEN solely for a missing RED-phase subject.
+    Empty / whitespace SHAs are never a boundary. A docs-feedback SHA
+    is accepted only when it rests on a RED-phase ancestor (TRAIN). Any
+    other non-empty SHA is accepted: mocked ``_commit_phase`` may leave
+    HEAD at ``initial`` / ``chore: seed``, and an unresolvable SHA must
+    not refuse GREEN solely for a missing RED-phase subject.
     """
     stripped = sha.strip()
-    subject = _git_commit_subject(root, stripped)
-    if not stripped and not subject:
+    if not stripped:
         return False
+    subject = _git_commit_subject(root, stripped)
     if not subject:
         return True
     if _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
         return _feedback_sha_rests_on_red_phase(root, stripped)
     return True
+
+
+def _maybe_advance_red_sha_past_feedback(
+    session: SessionState,
+    root: Path,
+    prior_red_sha: str,
+    fb_head: str,
+) -> None:
+    """Advance ``red_commit_sha`` onto the feedback commit after a real RED SHA."""
+    if fb_head and _is_red_phase_failing_test_sha(root, prior_red_sha):
+        session.red_commit_sha = fb_head
+
+
+def _require_revert_to_red_boundary(session: SessionState, tid: str) -> str:
+    """Return the RED SHA for ``revert_to_red``, or raise if it is missing."""
+    sha = session.red_commit_sha.strip()
+    if not sha:
+        raise PhaseFailedError(
+            f"ROLLBACK_BOUNDARY_MISSING: revert_to_red for {tid} "
+            f"has no session.red_commit_sha to roll back to. "
+            f"Refusing to fall back to HEAD~1."
+        )
+    return sha
+
+
+def _is_fatal_missing_revert_to_red_boundary(action: str, exc: BaseException) -> bool:
+    """Return True when TDD ``revert_to_red`` has no RED boundary SHA."""
+    return (
+        action == "revert_to_red"
+        and isinstance(exc, PhaseFailedError)
+        and "ROLLBACK_BOUNDARY_MISSING" in str(exc)
+    )
 
 
 def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) -> None:
@@ -2213,6 +2244,7 @@ def _commit_judge_feedback_and_advance(
 ) -> SessionState:
     """Persist JUDGE feedback and advance the committed RED boundary."""
     tid = task.get("id", "?")
+    prior_red_sha = session.red_commit_sha
     session.pending_judge_feedback = {
         "task_id": str(tid),
         "feedback": feedback,
@@ -2314,8 +2346,7 @@ def _commit_judge_feedback_and_advance(
         text=True,
         env=_git_env(),
     ).stdout.strip()
-    if fb_head:
-        session.red_commit_sha = fb_head
+    _maybe_advance_red_sha_past_feedback(session, root, prior_red_sha, fb_head)
     session.pending_judge_feedback = None
     session.save(session_path)
     return session
@@ -2770,30 +2801,27 @@ def _run_judge_phase(
             # ``boundary_sha`` is the active RED commit, threaded from
             # ``session.red_commit_sha`` — never inferred from session
             # state inside ``_execute_rollback`` itself.
-            if not session.red_commit_sha:
-                raise PhaseFailedError(
-                    f"ROLLBACK_BOUNDARY_MISSING: revert_to_red for {tid} "
-                    f"has no session.red_commit_sha to roll back to. "
-                    f"Refusing to fall back to HEAD~1."
-                )
+            boundary_sha = _require_revert_to_red_boundary(session, tid)
             rollback_attempts += 1
             _execute_rollback(
                 root,
-                boundary_sha=session.red_commit_sha,
+                boundary_sha=boundary_sha,
                 reason=feedback,
                 phase="JUDGE",
                 task_id=tid,
                 attempt=rollback_attempts,
             )
         except Exception as e:
+            if _is_fatal_missing_revert_to_red_boundary(action, e):
+                raise
             c.print(
                 f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with "
                 f"train feedback"
             )
 
-        # Unconditional RED-boundary advance. The regressed behavior was
-        # that this happened only when tasks.md existed; the fix decouples
-        # the commit from the file write so the boundary always advances.
+        # Advance the RED boundary past the feedback commit only when a
+        # RED-phase failing-test SHA already exists. An empty SHA stays
+        # empty so TRAIN cannot roll back to a docs-feedback commit.
         session = _commit_judge_feedback_and_advance(
             root, task, feedback, feedback_source, c, session, session_path
         )
