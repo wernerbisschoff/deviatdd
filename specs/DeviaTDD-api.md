@@ -679,7 +679,11 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   default; `--all` drains every PENDING task for the active issue (or all
   issues if no active issue is set).
 * **Single-Task (`deviate micro run <task-id>`):** Triggers the automated
-  execution cycle for a single task node. TDD mode runs the RED → GREEN →
+  execution cycle for a single task node. A pinned `task-id` stays in the
+  active issue's namespace when the branch or re-keyed session issue is
+  known. Same-number `TSK-NNN-NN` ids are a per-issue namespace. A sibling
+  COMPLETED row for the same number is not a hit and does not print
+  `TASK_ALREADY_DONE`. TDD mode runs the RED → GREEN →
   JUDGE → REFACTOR cycle. Non-TDD (`DIRECT` or `E2E`) runs `_run_execute_phase`,
   which commits the work, then optionally runs a JUDGE pass against `spec.md`
   and rolls back on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
