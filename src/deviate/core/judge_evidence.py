@@ -43,11 +43,24 @@ def evaluate_judge_evidence(
     evidence: Sequence[Any],
     next_action: str | None = None,
     head_contents: Mapping[str, str] | None = None,
+    declared_paths: Sequence[str] | None = None,
 ) -> str | None:
     """Return runner-authored feedback when citations fail; None on pass.
 
     Tokens come only from ``<authoritative_acceptance_contract source="plan.md">``.
+    Declared regression paths are checked even when the contract has no tokens.
     """
+    hunks = _map_diff_hunks(injected_diff)
+    head = dict(head_contents or {})
+    missing_path = _missing_declared_path(
+        declared_paths=declared_paths,
+        evidence=evidence,
+        hunks=hunks,
+        head=head,
+    )
+    if missing_path is not None:
+        return missing_path
+
     tokens = _extract_ac_plan_tokens(plan_contract)
     if not tokens:
         return None
@@ -56,8 +69,6 @@ def evaluate_judge_evidence(
     if missing:
         return _MISSING_TOKENS.format(tokens=", ".join(missing))
 
-    hunks = _map_diff_hunks(injected_diff)
-    head = dict(head_contents or {})
     use_head = next_action == _ALREADY_EXISTS_ACTION
     impl_required = next_action != _EMPTY_GREEN_ACTION
 
@@ -73,6 +84,32 @@ def evaluate_judge_evidence(
         )
         if failure is not None:
             return failure
+    return None
+
+
+def _normalized_paths(values: Sequence[Any] | None) -> list[str]:
+    """Return stripped, de-duplicated path strings from *values*."""
+    paths: list[str] = []
+    for raw in values or []:
+        text = str(raw).strip() if raw is not None else ""
+        if text:
+            paths.append(text)
+    return list(dict.fromkeys(paths))
+
+
+def _missing_declared_path(
+    *,
+    declared_paths: Sequence[str] | None,
+    evidence: Sequence[Any],
+    hunks: Mapping[str, str],
+    head: Mapping[str, str],
+) -> str | None:
+    """Fail closed when a declared test path is absent from diff and HEAD."""
+    evidence_tests = [_field(item, "test_path") for item in evidence]
+    snapshot = set(hunks) | set(head)
+    for path in _normalized_paths([*(declared_paths or []), *evidence_tests]):
+        if path not in snapshot:
+            return _UNKNOWN_PATH.format(kind="test", label=path)
     return None
 
 
