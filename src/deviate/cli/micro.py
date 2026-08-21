@@ -11,7 +11,7 @@ import logging
 import sys
 import warnings
 from collections.abc import Callable, Sequence
-from typing import NoReturn
+from typing import Literal, NoReturn
 from pathlib import Path, PurePosixPath
 
 import typer
@@ -1451,6 +1451,7 @@ def _run_green_phase(
             prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
+    _require_green_entry_red_sha(root, session, tid)
     manifest, timeout_ctx = _invoke_agent(
         prompt,
         c,
@@ -1920,6 +1921,110 @@ def _preserve_agent_work(
 # repo's history is malformed), log a warning so the operator knows the
 # resolution is on best-effort grounds.
 _PRE_RED_SHA_PARENT_RE = re.compile(r"^(?:.+ )?test\([^)]+\): RED phase(?:\s|$)")
+_JUDGE_FEEDBACK_SUBJECT_RE = re.compile(
+    r"^(?:.+ )?docs\([^)]+\): add judge feedback for retry$"
+)
+
+
+def _git_capture(root: Path, *git_args: str) -> str:
+    """Return stripped stdout of a git command, or empty on non-zero exit."""
+    result = subprocess.run(
+        ["git", *git_args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _git_commit_subject(root: Path, sha: str) -> str:
+    """Return the subject of ``sha``, or empty when git cannot resolve it."""
+    return _git_capture(root, "log", "-1", "--format=%s", sha)
+
+
+def _git_parent_sha(root: Path, sha: str) -> str:
+    """Return ``sha``'s first parent, or empty when git cannot resolve it."""
+    return _git_capture(root, "rev-parse", f"{sha}^")
+
+
+def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
+    """Return True when a docs-feedback SHA chains back to a RED-phase commit."""
+    current = sha.strip()
+    seen: set[str] = set()
+    while current and current not in seen:
+        seen.add(current)
+        subject = _git_commit_subject(root, current)
+        if _PRE_RED_SHA_PARENT_RE.match(subject):
+            return True
+        if not _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+            return False
+        current = _git_parent_sha(root, current)
+    return False
+
+
+def _is_red_phase_failing_test_sha(root: Path, sha: str) -> bool:
+    """Return True when ``sha`` is a valid GREEN-entry RED boundary.
+
+    Empty / whitespace SHAs are never a boundary. A docs-feedback SHA
+    is accepted only when it rests on a RED-phase ancestor (TRAIN). Any
+    other non-empty SHA is accepted: mocked ``_commit_phase`` may leave
+    HEAD at ``initial`` / ``chore: seed``, and an unresolvable SHA must
+    not refuse GREEN solely for a missing RED-phase subject.
+    """
+    stripped = sha.strip()
+    if not stripped:
+        return False
+    subject = _git_commit_subject(root, stripped)
+    if not subject:
+        return True
+    if _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+        return _feedback_sha_rests_on_red_phase(root, stripped)
+    return True
+
+
+def _maybe_advance_red_sha_past_feedback(
+    session: SessionState,
+    root: Path,
+    prior_red_sha: str,
+    fb_head: str,
+) -> None:
+    """Advance ``red_commit_sha`` onto the feedback commit after a real RED SHA."""
+    if fb_head and _is_red_phase_failing_test_sha(root, prior_red_sha):
+        session.red_commit_sha = fb_head
+
+
+def _require_revert_to_red_boundary(session: SessionState, tid: str) -> str:
+    """Return the RED SHA for ``revert_to_red``, or raise if it is missing."""
+    sha = session.red_commit_sha.strip()
+    if not sha:
+        raise PhaseFailedError(
+            f"ROLLBACK_BOUNDARY_MISSING: revert_to_red for {tid} "
+            f"has no session.red_commit_sha to roll back to. "
+            f"Refusing to fall back to HEAD~1."
+        )
+    return sha
+
+
+def _is_fatal_missing_revert_to_red_boundary(action: str, exc: BaseException) -> bool:
+    """Return True when TDD ``revert_to_red`` has no RED boundary SHA."""
+    return (
+        action == "revert_to_red"
+        and isinstance(exc, PhaseFailedError)
+        and "ROLLBACK_BOUNDARY_MISSING" in str(exc)
+    )
+
+
+def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) -> None:
+    """Raise when GREEN has no RED-phase failing-test boundary SHA."""
+    if _is_red_phase_failing_test_sha(root, session.red_commit_sha):
+        return
+    raise PhaseFailedError(
+        f"GREEN_ENTRY_REFUSED: {tid} has no RED-phase failing-test "
+        f"commit (red_commit_sha={session.red_commit_sha!r})"
+    )
 
 
 def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
@@ -1931,22 +2036,10 @@ def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
     ``PRE_RED_AMBIGUOUS`` warning so the operator knows the resolution is
     best-effort, but still return the parent so the rollback can proceed.
     """
-    parent = subprocess.run(
-        ["git", "rev-parse", f"{red_sha}^"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
+    parent = _git_parent_sha(root, red_sha)
     if not parent:
         return ""
-    subject = subprocess.run(
-        ["git", "log", "-1", "--format=%s", parent],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
+    subject = _git_commit_subject(root, parent)
     if not _PRE_RED_SHA_PARENT_RE.match(subject):
         logging.getLogger(__name__).warning(
             "PRE_RED_AMBIGUOUS: red_commit_sha %s's parent (%s) has "
@@ -2151,6 +2244,7 @@ def _commit_judge_feedback_and_advance(
 ) -> SessionState:
     """Persist JUDGE feedback and advance the committed RED boundary."""
     tid = task.get("id", "?")
+    prior_red_sha = session.red_commit_sha
     session.pending_judge_feedback = {
         "task_id": str(tid),
         "feedback": feedback,
@@ -2252,8 +2346,7 @@ def _commit_judge_feedback_and_advance(
         text=True,
         env=_git_env(),
     ).stdout.strip()
-    if fb_head:
-        session.red_commit_sha = fb_head
+    _maybe_advance_red_sha_past_feedback(session, root, prior_red_sha, fb_head)
     session.pending_judge_feedback = None
     session.save(session_path)
     return session
@@ -2708,30 +2801,27 @@ def _run_judge_phase(
             # ``boundary_sha`` is the active RED commit, threaded from
             # ``session.red_commit_sha`` — never inferred from session
             # state inside ``_execute_rollback`` itself.
-            if not session.red_commit_sha:
-                raise PhaseFailedError(
-                    f"ROLLBACK_BOUNDARY_MISSING: revert_to_red for {tid} "
-                    f"has no session.red_commit_sha to roll back to. "
-                    f"Refusing to fall back to HEAD~1."
-                )
+            boundary_sha = _require_revert_to_red_boundary(session, tid)
             rollback_attempts += 1
             _execute_rollback(
                 root,
-                boundary_sha=session.red_commit_sha,
+                boundary_sha=boundary_sha,
                 reason=feedback,
                 phase="JUDGE",
                 task_id=tid,
                 attempt=rollback_attempts,
             )
         except Exception as e:
+            if _is_fatal_missing_revert_to_red_boundary(action, e):
+                raise
             c.print(
                 f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with "
                 f"train feedback"
             )
 
-        # Unconditional RED-boundary advance. The regressed behavior was
-        # that this happened only when tasks.md existed; the fix decouples
-        # the commit from the file write so the boundary always advances.
+        # Advance the RED boundary past the feedback commit only when a
+        # RED-phase failing-test SHA already exists. An empty SHA stays
+        # empty so TRAIN cannot roll back to a docs-feedback commit.
         session = _commit_judge_feedback_and_advance(
             root, task, feedback, feedback_source, c, session, session_path
         )
@@ -3025,10 +3115,46 @@ def _reset_tdd_retry_budget(session: SessionState) -> None:
     session.red_attempts = 0
 
 
+def _has_red_commit_boundary(session: SessionState) -> bool:
+    """Return True when ``session.red_commit_sha`` is a non-empty SHA."""
+    return bool(session.red_commit_sha.strip())
+
+
+def _tdd_pre_green_decision(
+    session: SessionState,
+) -> Literal["escalate", "complete", "green"]:
+    """Choose the next TDD step before GREEN.
+
+    Precedence is fixed: ``revert_before`` re-authors RED; forward JUDGE
+    routes complete without GREEN; a missing RED SHA re-dispatches RED
+    so a cleared retry gate cannot fall through to GREEN.
+    """
+    pending = session.pending_judge_action
+    if pending == "revert_before":
+        return "escalate"
+    if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
+        return "complete"
+    if not _has_red_commit_boundary(session):
+        return "escalate"
+    return "green"
+
+
 def _clear_judge_retry_gate(session: SessionState) -> None:
     """Consume the one-shot JUDGE action so the next cycle cannot re-escalate."""
     session.pending_judge_action = ""
     session.judge_rejected = False
+
+
+def _consume_retry_gate_after_red(session: SessionState) -> None:
+    """Clear the JUDGE retry gate only after RED lands a failing-test SHA.
+
+    Ownership of the empty-SHA gate lives here so ``_clear_judge_retry_gate``
+    stays a pure consume. A retry RED that re-adjudicates ``revert_before``
+    or a forward route keeps ``pending_judge_action`` until a RED-phase
+    commit exists (or the TDD loop re-dispatches / completes).
+    """
+    if _has_red_commit_boundary(session):
+        _clear_judge_retry_gate(session)
 
 
 def _idle_after_tdd(
@@ -3172,7 +3298,7 @@ def _escalate_to_new_red(
         bypass_phase_done=True,
         no_judge=no_judge,
     )
-    _clear_judge_retry_gate(session)
+    _consume_retry_gate_after_red(session)
     session.save(session_path)
     _log_run(
         "PHASE_DECISION",
@@ -3319,14 +3445,11 @@ def _run_tdd_cycle(
         )
 
     while not judge_passed:
-        # RED's no-failing-test adjudication (RED → JUDGE direct route) may
-        # have already returned a verdict — honor it before GREEN runs,
-        # since a vacuous GREEN has nothing to implement. Forward verdicts
-        # break out to _finish_tdd_cycle; revert_before escalates to a new RED.
-        if session.pending_judge_action == "revert_before":
+        pre_green = _tdd_pre_green_decision(session)
+        if pre_green == "escalate":
             session = _escalate("no_failing_test_adjudicated")
             continue
-        if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+        if pre_green == "complete":
             judge_passed = True
             break
         _maybe_push_event(

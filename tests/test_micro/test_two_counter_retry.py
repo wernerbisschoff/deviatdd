@@ -401,6 +401,72 @@ def _install_always_revert_before_stubs(
     }
 
 
+def _install_empty_red_sha_revert_before_stubs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    """RED returns empty SHA + ``revert_before`` (``no_failing_test``).
+
+    GREEN is a counter so the pin can prove it is never dispatched.
+    """
+    call_log: list[str] = []
+    green_calls: list[str] = []
+
+    def _guard() -> None:
+        if len(call_log) > _MAX_PHASES:
+            raise AssertionError(
+                f"TDD loop did not terminate after {_MAX_PHASES} phases: {call_log!r}"
+            )
+
+    def _red(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("RED")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        current.red_commit_sha = ""
+        current.current_phase = "RED"
+        current.pending_judge_action = "revert_before"
+        current.failure_kind = "no_failing_test"
+        current.judge_rejected = True
+        current.save(session_path_arg)
+        return current
+
+    def _green(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("GREEN")
+        green_calls.append("GREEN")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        current.current_phase = "GREEN"
+        current.save(session_path_arg)
+        return current
+
+    def _judge(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("JUDGE")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        current.judge_rejected = True
+        current.pending_judge_action = "revert_before"
+        current.failure_kind = "no_failing_test"
+        current.save(session_path_arg)
+        return current
+
+    def _finish(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("REFACTOR")
+        session_arg = args[2]
+        assert isinstance(session_arg, SessionState)
+        return session_arg
+
+    monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+    monkeypatch.setattr("deviate.cli.micro._run_green_phase", _green)
+    monkeypatch.setattr("deviate.cli.micro._run_judge_phase", _judge)
+    monkeypatch.setattr("deviate.cli.micro._finish_tdd_cycle", _finish)
+    return {"call_log": call_log, "green_calls": green_calls}
+
+
 class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
     """AC-PLAN-002 / US-017-02 / US-017-03 / FR-ADHOC-017 / AC-ADHOC-017-02."""
 
@@ -495,6 +561,64 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
         assert final.red_attempts == 0, (
             "AC-PLAN-002: TRAIN_EXHAUSTED zeros red_attempts so the next "
             f"task starts at 0; got {final.red_attempts!r}"
+        )
+
+    def test_escalate_to_red_does_not_dispatch_green_without_red_sha(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-PLAN-001: empty red_commit_sha after escalate never calls GREEN.
+
+        ``_run_red_phase`` returns with empty ``session.red_commit_sha`` and
+        ``pending_judge_action == revert_before`` (no_failing_test
+        adjudicated). ``_run_green_phase`` is a counter. The loop re-invokes
+        RED or raises TRAIN_EXHAUSTED / PhaseFailedError. Caps stay 3.
+        """
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-021",
+            green_attempts=0,
+            red_attempts=0,
+        ).save(session_path)
+
+        traces = _install_empty_red_sha_revert_before_stubs(monkeypatch)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        with pytest.raises(PhaseFailedError) as excinfo:
+            _run_tdd_cycle(task, ledger_path, console)
+
+        output = buf.getvalue()
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        green_calls = traces["green_calls"]
+        assert isinstance(green_calls, list)
+
+        assert _MAX_RED_ATTEMPTS == 3, (
+            "AC-PLAN-001: _MAX_RED_ATTEMPTS stays 3 from ISS-ADH-017; "
+            f"got {_MAX_RED_ATTEMPTS!r}"
+        )
+        assert green_calls == [], (
+            "AC-PLAN-001: escalate_to_red / no_failing_test_adjudicated must "
+            "not dispatch GREEN when red_commit_sha is empty; "
+            f"got green_calls={green_calls!r} log={call_log!r}\n{output}"
+        )
+        assert "GREEN" not in call_log, (
+            "AC-PLAN-001: _run_green_phase must never run on the empty-SHA "
+            f"revert_before path; got {call_log!r}\n{output}"
+        )
+        assert "TRAIN_EXHAUSTED" in str(excinfo.value), (
+            "AC-PLAN-001: _account_red_escalate must still stop the loop at "
+            f"the existing cap; got {excinfo.value!r}\n{output}"
+        )
+        assert call_log.count("RED") == 3, (
+            "AC-PLAN-001: initial RED plus two escalates, then the third "
+            "escalate raises TRAIN_EXHAUSTED with no GREEN; "
+            f"got {call_log!r}\n{output}"
         )
 
     def test_finish_tdd_cycle_zeros_retry_counters_on_skip_refactor(

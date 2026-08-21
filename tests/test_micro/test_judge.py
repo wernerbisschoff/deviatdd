@@ -841,6 +841,7 @@ class TestJudgeFeedbackLogging:
         }
         ledger_path = tmp_path / "tasks.jsonl"
         session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -949,6 +950,7 @@ class TestJudgeFeedbackLogging:
         }
         ledger_path = tmp_path / "tasks.jsonl"
         session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1057,6 +1059,7 @@ class TestJudgeFeedbackLogging:
         }
         ledger_path = tmp_path / "tasks.jsonl"
         session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1152,6 +1155,7 @@ class TestJudgeFeedbackLogging:
         }
         ledger_path = tmp_path / "tasks.jsonl"
         session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
         session_path = tmp_path / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
