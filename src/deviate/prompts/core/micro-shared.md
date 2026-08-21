@@ -4,7 +4,7 @@ This phase operates inside the **MICRO LAYER** — the Red-Green-Refactor cycle 
 
 <rgr_cycle>
 
-Each task is a Logical Unit (30-90 min) that undergoes ONE complete R-G-R cycle:
+Each task is a Logical Unit (30-90 min) — one fail-to-pass contract, not a duration floor — that undergoes ONE complete R-G-R cycle:
 
 <item>
 **RED**: Write a failing test — verified to fail due to missing implementation, not syntax errors.

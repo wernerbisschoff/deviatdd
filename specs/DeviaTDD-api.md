@@ -257,12 +257,12 @@ The Product layer ships as **agent skills** (no dedicated CLI subcommands) — t
 
 * **Objective:** Decomposes the PRD into standalone, testable issue files.
 * **Granularity Guidelines:**
-  * **Target:** 4-8 issues per feature shard
+  * **Target:** as few independently shippable user-visible verticals as the PRD needs; min 1, max 10
   * **Each issue must be a vertical slice:** Delivers a complete, testable behavior end-to-end
   * **Independence:** Each issue should be independently implementable and testable
   * **Scope bounds:** No issue should require <1 task or >10 tasks
   * **Testability:** Each issue must have clear acceptance criteria
-  * **Enforcement:** The shard prompt owns all slicing rules. Pass 1 (Topological Layout + Flow Anchor) partitions by primary `FLOW-XX`, not by FR. Pass 1.5 (Slice Cap Gate) hard-enforces the 4–8 / max-10 cap with `SLICE_CAP_EXCEEDED`. Pass 3.5 (Merge Pass) collapses adjacent horizontal slices that share workstations or demo paths. The PRD prompt no longer carries §Issue Sharding Strategy; it shapes FRs via flow-segment authoring guidance only.
+  * **Enforcement:** The shard prompt owns all slicing rules. Pass 1 (Topological Layout + Flow Anchor) partitions by primary `FLOW-XX`, not by FR. Pass 1.5 (Slice Cap Gate) emits as few as needed (1 is legal) and hard-enforces the max-10 cap with `SLICE_CAP_EXCEEDED`. Pass 3.5 (Merge Pass) collapses adjacent horizontal slices that share workstations or demo paths. The PRD prompt no longer carries §Issue Sharding Strategy; it shapes FRs via flow-segment authoring guidance only.
 
 ---
 
@@ -665,8 +665,13 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   and rolls back on `COMPLIANCE_VIOLATION` (up to `max_judge_attempts = 3`).
   Implements `_run_single` / `_dispatch_task` from `src/deviate/cli/micro.py`.
   * **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the
-    GREEN → JUDGE pair in a `while not judge_passed` loop with up to
-    `max_train_attempts = 3`. On test failure or `COMPLIANCE_VIOLATION`,
+    GREEN → JUDGE pair in a `while not judge_passed` loop with two
+    persisted `SessionState` counters: `green_attempts` (max 3) and
+    `red_attempts` (max 3). `revert_to_red` trains GREEN against one
+    standing RED contract and increments `green_attempts`; when
+    `green_attempts` reaches 3 the runner escalates instead of printing
+    `TRAIN_EXHAUSTED`. `revert_before` escalates now. `TRAIN_EXHAUSTED`
+    prints only after three RED escalates. On test failure or `COMPLIANCE_VIOLATION`,
     `_execute_rollback()` runs `git reset --hard <boundary_sha>` against
     the boundary the caller threads in: TDD JUDGE's `revert_to_red`
     passes `session.red_commit_sha`, TDD JUDGE's `revert_before` resolves
@@ -798,8 +803,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   `timeout_seconds = 300` (`.deviate/config.toml`) for CI runs
   where short-deadline failure is preferable to a slow green.
 * **Train Retry Loop (per task):**
-  `_run_tdd_cycle` runs RED → GREEN → JUDGE → REFACTOR with up to
-  ``max_train_attempts = 3`` GREEN retries driven by JUDGE feedback.
+  Same two-counter contract as **Green → Judge → Green loop (TDD only)**
+  above. `_run_tdd_cycle` persists ``green_attempts`` (GREEN train,
+  max 3, then escalate) and ``red_attempts`` (RED escalate, max 3).
+  ``TRAIN_EXHAUSTED`` prints only after three RED escalates.
   The loop never invokes the agent twice in a row for the same
   phase; on the final failure it surfaces the captured manifest's
   ``rationale`` (with an attached agent-stdout tail when
@@ -1358,7 +1365,9 @@ candidate selection:
 | `current_phase` | `str` (default `"IDLE"`) | Current phase in the TDD cycle; one of `IDLE`, `RED`, `GREEN`, `JUDGE`, `REFACTOR` (see `_VALID_PHASES`) |
 | `active_issue_id` | `str` (optional) | Issue the session is bound to (`--issue` selection survives across `--all` runs) |
 | `last_command` | `str` (default `""`) | Last CLI command the user invoked (for resume/messaging) |
-| `train_feedback` | `str` (default `""`) | Last failure feedback injected as `<train_feedback>` into the next GREEN prompt |
+| `train_feedback` | `str` (default `""`) | Last failure feedback injected as `<train_feedback>` into the next GREEN prompt. Escalate RED receives a short `previous cycle failed because …` note, not the raw GREEN dump. |
+| `green_attempts` | `int` (default `0`) | GREEN-train count against the standing RED contract; max 3; persist via `save()` to `.deviate/session.json`; copied through `transition_to` / `force_transition_to` |
+| `red_attempts` | `int` (default `0`) | RED-escalate count for the current task; max 3; `TRAIN_EXHAUSTED` after three escalates; persist via `save()`; copied through transitions |
 | `failure_kind` | `Literal["", "mechanical", "test_defect"]` (default `""`) | Discriminator set by GREEN on failure-class routing; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong) |
 | `judge_rejected` | `bool` (default `False`) | `True` while the JUDGE verdict on the current cycle is a rejection |
 | `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_before`, `revert_to_red`, `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off |
@@ -1374,7 +1383,7 @@ decision on how to route the runner. Five values, each honored verbatim by
 
 | `next_action` | Required verdict | Runner behavior |
 |---|---|---|
-| `revert_before` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). Clear `session.red_commit_sha` so RED re-anchors. Transition to RED with the feedback in `train_feedback`. Used when the test itself is wrong. |
+| `revert_before` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). Clear `session.red_commit_sha` so RED re-anchors. Escalate now: reset `green_attempts` to 0, increment `red_attempts`, persist both on `.deviate/session.json`, and dispatch a retry RED with a short `previous cycle failed because …` note in `train_feedback` (not the raw GREEN dump). `TRAIN_EXHAUSTED` prints after three RED escalates. Used when the test itself is wrong. |
 | `revert_to_red` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit. Transition to GREEN with feedback in `train_feedback`. The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. |
 | `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. |
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. |
@@ -1409,12 +1418,15 @@ is wrong, the runner must restart RED with the GREEN's rationale injected, not
 loop back into GREEN with the same test. `_coerce_judge_action` accepts a
 keyword-only `failure_kind` parameter (default `""`) and is the single source of
 truth for the override; `_run_tdd_cycle` honours `pending_judge_action ==
-"revert_before"` (set by JUDGE or the override) by resetting `train_attempts`,
-dispatching `_run_red_phase(task, ..., bypass_phase_done=True)`, and `continue`-
-ing the loop. The bypass preserves the append-only ledger — a fresh RED record
-appends rather than rewriting the previous one — and the `session.train_feedback`
-that GREEN populated is threaded into the retry RED prompt so the agent sees
-the test_defect rationale. `revert_before` judgments on `COMPLIANCE_PASS`
+"revert_before"` (set by JUDGE or the override) by escalating now: reset
+`green_attempts` to 0, increment `red_attempts`, persist both on
+`.deviate/session.json`, dispatch `_run_red_phase(task, ..., bypass_phase_done=True)`,
+and `continue`-ing the loop. The bypass preserves the append-only ledger — a
+fresh RED record appends rather than rewriting the previous one — and a short
+`previous cycle failed because …` note in `session.train_feedback` is threaded
+into the retry RED prompt so the agent sees why the previous cycle failed, not
+the raw GREEN dump. `TRAIN_EXHAUSTED` prints only after three RED escalates.
+`revert_before` judgments on `COMPLIANCE_PASS`
 verdicts do NOT trigger the override; JUDGE's outcome is final on PASS.
 
 There is no interactive prompt; the manifest is the source of truth. A future `--judge-action`
