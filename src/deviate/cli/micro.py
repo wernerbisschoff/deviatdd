@@ -1106,6 +1106,49 @@ def _resolve_lint_command(root: Path) -> str:
 _NO_FAILING_TEST_FORWARD_ROUTES = frozenset(
     {"continue_refactor", "proceed_to_refactor_no_diff", "skip_refactor"}
 )
+_NON_TDD_EXECUTION_MODES = frozenset({"EXECUTE", "IMMEDIATE", "DIRECT"})
+_MISSING_REGRESSION_FILES = (
+    "without naming regression tests (files and test_file are empty). "
+    "Declare `files` and/or `test_file` on `failure_kind: already_satisfied`. "
+    "A passing suite with no named test files is not COMPLETE."
+)
+
+
+def _is_test_bearing_tdd(task: dict) -> bool:
+    """Return True when *task* is a test-bearing TDD slice.
+
+    EXECUTE / IMMEDIATE / DIRECT stay ungated by the declared-files
+    already_satisfied rule (AC-PLAN-003 / FR-ADHOC-022).
+    """
+    mode = str(task.get("execution_mode") or "TDD").strip().upper()
+    return mode not in _NON_TDD_EXECUTION_MODES
+
+
+def _declared_regression_paths(manifest: HandoverManifest) -> list[str]:
+    """Return unique non-empty ``files`` / ``test_file`` paths from *manifest*."""
+    paths: list[str] = []
+    for item in manifest.files or []:
+        if isinstance(item, str) and item.strip():
+            paths.append(item.strip())
+    test_file = (manifest.test_file or "").strip()
+    if test_file:
+        paths.append(test_file)
+    return list(dict.fromkeys(paths))
+
+
+def _require_tdd_declared_regression_files(
+    task: dict,
+    manifest: HandoverManifest,
+    *,
+    tid: str,
+    context: str,
+) -> None:
+    """Raise when a TDD already-exists / COMPLETE route names no tests."""
+    if not _is_test_bearing_tdd(task):
+        return
+    if _declared_regression_paths(manifest):
+        return
+    raise PhaseFailedError(f"RED phase for {tid} {context} {_MISSING_REGRESSION_FILES}")
 
 
 def _worktree_status_paths(root: Path) -> list[str]:
@@ -1306,8 +1349,20 @@ def _adjudicate_red_no_failing_test(
     JUDGE either rules the behavior already exists (``skip_refactor`` — the
     task is COMPLETED without landing the agent's passing test) or rules
     the test wrong (``revert_before`` — the agent's work is discarded and
-    RED re-authors a genuinely failing test)."""
+    RED re-authors a genuinely failing test).
+
+    On a TDD ``already_satisfied`` claim, or on a no-failing-test COMPLETE
+    route, ``_require_tdd_declared_regression_files`` owns the files gate.
+    Empty ``files`` / ``test_file`` raise ``PhaseFailedError``. EXECUTE,
+    IMMEDIATE, and DIRECT stay ungated."""
     tid = task.get("id", "?")
+    if (manifest.failure_kind or "") == "already_satisfied":
+        _require_tdd_declared_regression_files(
+            task,
+            manifest,
+            tid=tid,
+            context="declared `failure_kind: already_satisfied`",
+        )
     root = Path.cwd()
     rationale = (manifest.rationale or "").strip()
     declared = manifest.failure_kind
@@ -1377,6 +1432,12 @@ def _adjudicate_red_no_failing_test(
         session.pending_judge_action = "skip_refactor"
 
     if action in _NO_FAILING_TEST_FORWARD_ROUTES:
+        _require_tdd_declared_regression_files(
+            task,
+            manifest,
+            tid=tid,
+            context="is about to COMPLETE with no failing test",
+        )
         _restore_worktree_to_baseline(root, red_baseline)
         if action != "skip_refactor":
             session.pending_judge_action = "skip_refactor"
