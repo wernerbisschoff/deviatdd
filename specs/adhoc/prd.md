@@ -418,3 +418,18 @@
   1. AC-ADHOC-025-01 / AO-025-01: A streaming invoke whose only output is periodic stderr (no stdout) trips `STALL_DETECTED` / `AgentTimeoutError` at the configured stall budget; stderr lines do not reset the hard deadline.
   2. AC-ADHOC-025-02 / AO-025-02: GREEN `_invoke_agent` logs `AGENT_TIMEOUT` after a stdout-silent stall without requiring an outer ~1800s bash timeout to fire first.
   3. AC-ADHOC-025-03 / AO-025-03: EXECUTE still uses 3600s (GH-53). Periodic stdout still resets the 900s GREEN clock. A few minutes of stdout silence does not kill a healthy GREEN. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-026: Spawned Pi Uses a Lean Tool Set and Surfaces tool_count_limit
+
+- **Description**: `deviate micro run` must spawn `pi` with a lean tool schema (built-in coding tools plus the project-local `deviatdd` skill) instead of inheriting the operator's full extension/MCP/tool stack. Provider rejections (`400 tool_count_limit` / `unsupported_tool_schema`) must become harness-visible agent errors, not a silent "no manifest" hang.
+- **Preconditions**: Python 3.13. `AgentBackend.invoke` currently builds `pi -p` from `BACKEND_COMMANDS['pi']` or `PI_RPC_COMMAND` (`pi --mode rpc --no-session`) with no `--no-extensions`, `--tools`, or `--skill` flags, so the child loads the operator's global extensions, codebase-index, and MCP servers. `_invoke_agent` constructs a fresh `AgentConfig(backend=backend_name)` and collapses `AgentSubprocessError` / `EmptyOutputError` / missing manifests into `PhaseFailedError("agent returned no manifest")`. Pi CLI already exposes `--no-extensions`, `--tools`, `--skill`, and `--no-skills`.
+- **Inputs/Outputs**: Input — Pi spawn argv for print mode and RPC mode; child stderr/stdout containing provider schema errors. Output — argv that enable `read`/`bash`/`edit`/`write` plus the `deviatdd` skill and do not advertise the operator's full extension/MCP stack; `AGENT_ERROR` / phase failure text that names `tool_count_limit` or `unsupported_tool_schema` when those tokens appear.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-026-01: As a DeviaTDD operator, I want the spawned Pi child to load only built-in coding tools plus the `deviatdd` skill so the provider does not reject the tool schema. *(Ref: FR-ADHOC-026)*
+  2. US-026-02: As a DeviaTDD operator running RED/GREEN/REFACTOR, I want the child to keep `read`, `bash`, `edit`, and `write` so the TDD loop can still edit and verify code. *(Ref: FR-ADHOC-026)*
+  3. US-026-03: As a DeviaTDD operator, I want `tool_count_limit` / `unsupported_tool_schema` to appear as a harness-visible agent error from `deviate micro run` so I do not wait 50+ minutes for a missing manifest. *(Ref: FR-ADHOC-026)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-026-01 / AO-026-01: Both `pi -p` and `pi --mode rpc --no-session` spawn argv disable extension/MCP discovery by default and keep the lean coding-tool allowlist plus the project-local `deviatdd` skill.
+  2. AC-ADHOC-026-02 / AO-026-02: RED/GREEN/REFACTOR Pi children still expose `read`, `bash`, `edit`, and `write`.
+  3. AC-ADHOC-026-03 / AO-026-03: When the child emits `tool_count_limit` or `unsupported_tool_schema`, `deviate micro run` / `_invoke_agent` logs `AGENT_ERROR` and fails with those tokens visible; it does not hang until an outer timeout and then report only "no manifest". API + architecture + CHANGELOG land in the same implementation commit.

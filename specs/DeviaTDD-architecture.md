@@ -827,18 +827,28 @@ handing the manifest to the rest of the pipeline:
    pass a recovered manifest. `HandoverManifest` is imported by
    `scripts/verify_install.py` (the post-install smoke verifier)
    which checks the new constants and the recovery behaviour.
+6. **Schema-rejection fail-fast** — the first stderr or stdout line
+   that contains `tool_count_limit` or `unsupported_tool_schema`
+   kills the child. `invoke` raises `AgentSubprocessError` with those
+   tokens. This path does not wait for the 900s stall clock. It does
+   not start the 30s timeout retry or the `EmptyOutputError` manifest
+   retry. Schema tokens do not reset the stall clock. Stderr stays
+   diagnostic for stall liveness (ISS-ADH-025). EXECUTE stall stays
+   3600s (GH-53). `_invoke_agent` logs `AGENT_ERROR` with the tokens.
+   `deviate micro run` then raises `PhaseFailedError` that includes
+   the tokens instead of only `agent returned no manifest`.
 
 | :--- | :--- | :--- | :--- | :--- |
 | `opencode` | `opencode run` | Commands copied into `.opencode/commands/` (flat `.md`) | `--model <id>` flag | Default backend |
 | `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
 | `droid` | `droid exec` | Commands copied into `.factory/commands/` (flat `.md`) | `--model <id>` flag | Factory Droid IDE-owned commands dir |
-| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Native slash-command discovery via `.pi/prompts/`; opt-in RPC mode available |
+| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Lean spawn after `pi -p` / RPC `--no-session`: `--no-extensions`, `--tools read,bash,edit,write`, `--no-skills`, optional `--skill`; schema-limit tokens abort as `AGENT_ERROR` |
 
 Pi implements slash-command discovery natively — `pi -p` loads commands from
 `~/.pi/agent/`, `.pi/prompts/`, and `.agents/` on startup, parses the
 `name:` + `description:` YAML frontmatter from each `<name>.md` flat file,
 and registers them as slash commands. DeviaTDD integrates Pi on top of the
-standard `AgentBackend.invoke()` contract with three customisations:
+standard `AgentBackend.invoke()` contract with these customisations:
 
 1. **Command file-copy strategy (project-local, flat).** `deviate setup`
    file-copies each project command to `<workdir>/.pi/prompts/<name>.md`
@@ -887,6 +897,22 @@ standard `AgentBackend.invoke()` contract with three customisations:
    `.deviate/logs/run_<UTC>.log` (and the per-task
    `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`) is enriched with a
    observability across repeated phase invocations within the same session.
+5. **Lean tool policy.** After the print-mode prefix (`pi -p`) or the
+   RPC prefix (`pi --mode rpc --no-session`), `invoke` appends
+   `--no-extensions`, `--tools read,bash,edit,write`, and `--no-skills`.
+   When `.pi/skills/deviatdd/SKILL.md` exists under the invoke working
+   directory, `invoke` also appends `--skill` to that relative path. A
+   missing skill file still keeps the four coding tools. The child does
+   not load the operator's global extension or MCP stack.
+   `BACKEND_COMMANDS["pi"]` stays `pi -p`. RPC still includes
+   `--no-session`. `--model` injection stays on the print-mode path.
+6. **Schema-rejection abort.** If child stderr or stdout contains
+   `tool_count_limit` or `unsupported_tool_schema`, `invoke` kills the
+   child on the first matching line. It raises `AgentSubprocessError`
+   with those tokens. `_invoke_agent` logs `AGENT_ERROR` with the same
+   text. `deviate micro run` raises `PhaseFailedError` that includes
+   the tokens. This path does not wait 900s. It does not treat those
+   tokens as stall liveness. EXECUTE stall stays 3600s.
 
 ### 10.2.5 Project-Local `deviatdd` Skill (Single Skill, Write-Everywhere)
 

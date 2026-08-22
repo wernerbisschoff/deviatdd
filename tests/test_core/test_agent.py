@@ -11,6 +11,44 @@ from pydantic import ValidationError
 from deviate.core.agent import BACKEND_COMMANDS, AgentBackend
 from deviate.state.config import AgentConfig, DeviateConfig
 
+_CODING_TOOLS = ("read", "bash", "edit", "write")
+_DEVIATDD_SKILL_REL = Path(".pi") / "skills" / "deviatdd" / "SKILL.md"
+
+
+def _has_long_or_short(cmd: list[str], long_flag: str, short_flag: str) -> bool:
+    return long_flag in cmd or short_flag in cmd
+
+
+def _flag_value(cmd: list[str], flag: str) -> str | None:
+    for index, token in enumerate(cmd):
+        if token == flag and index + 1 < len(cmd):
+            return cmd[index + 1]
+        prefix = f"{flag}="
+        if token.startswith(prefix):
+            return token[len(prefix) :]
+    return None
+
+
+def _tools_allowlist(cmd: list[str]) -> set[str]:
+    raw = _flag_value(cmd, "--tools")
+    if raw is None:
+        raw = _flag_value(cmd, "-t")
+    if raw is None:
+        return set()
+    return {part for part in raw.split(",") if part}
+
+
+def _assert_pi_lean_coding_tools(cmd: list[str]) -> None:
+    allowlist = _tools_allowlist(cmd)
+    missing = [tool for tool in _CODING_TOOLS if tool not in allowlist]
+    assert not missing, (
+        f"Pi --tools must list {_CODING_TOOLS}, missing {missing} in {cmd}"
+    )
+    assert "--no-tools" not in cmd, f"Default Pi spawn must omit --no-tools (got {cmd})"
+    assert "--no-builtin-tools" not in cmd, (
+        f"Default Pi spawn must omit --no-builtin-tools (got {cmd})"
+    )
+
 
 class TestAgentConfigModel:
     def test_agent_config_defaults(self):
@@ -819,6 +857,129 @@ class TestAgentBackendErrors:
         assert issubclass(EmptyOutputError, Exception)
 
 
+def _assert_no_thirty_second_sleep(mock_sleep: MagicMock) -> None:
+    for call in mock_sleep.call_args_list:
+        if call.args and call.args[0] == 30:
+            pytest.fail("schema rejection must skip the 30s timeout retry")
+
+
+class TestSchemaRejectionFailFast:
+    """AC-PLAN-003: first tool_count_limit / unsupported_tool_schema line aborts."""
+
+    @pytest.mark.timeout(3)
+    def test_invoke_aborts_on_tool_count_limit_line(self) -> None:
+        """Streaming invoke kills the child on the first schema-rejection stderr line."""
+        from deviate.core.agent import AgentSubprocessError
+
+        release = threading.Event()
+        schema_line = "400 tool_count_limit unsupported_tool_schema"
+
+        class BlockingStdout:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release.wait()
+                raise StopIteration
+
+        class SchemaStderr:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if not getattr(self, "_emitted", False):
+                    self._emitted = True
+                    return f"{schema_line}\n".encode()
+                if release.wait(timeout=0.05):
+                    raise StopIteration
+                return b""
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BlockingStdout()
+        mock_proc.stderr = SchemaStderr()
+        mock_proc.returncode = None
+        mock_proc.kill.side_effect = release.set
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="tool_count_limit|unsupported_tool_schema",
+            ),
+        ):
+            AgentBackend().invoke(
+                "test prompt",
+                backend="pi",
+                output_callback=lambda _line: None,
+                stall_timeout=0.2,
+            )
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        _assert_no_thirty_second_sleep(mock_sleep)
+
+    def test_invoke_blocking_aborts_on_unsupported_tool_schema(self) -> None:
+        """Blocking invoke raises on schema tokens and skips EmptyOutput retry."""
+        from deviate.core.agent import AgentSubprocessError
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (
+            b"",
+            b"400 tool_count_limit\nunsupported_tool_schema\n",
+        )
+        mock_proc.returncode = 0
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="tool_count_limit|unsupported_tool_schema",
+            ),
+        ):
+            AgentBackend().invoke("test prompt", backend="pi")
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        _assert_no_thirty_second_sleep(mock_sleep)
+
+    def test_invoke_streaming_aborts_on_stdout_schema_token(self) -> None:
+        """AC-PLAN-003: schema tokens on stdout also abort before parse retry."""
+        from deviate.core.agent import AgentSubprocessError
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter((b"unsupported_tool_schema\n",))
+        mock_proc.stderr = iter(())
+        mock_proc.returncode = 0
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="unsupported_tool_schema",
+            ),
+        ):
+            AgentBackend().invoke(
+                "test prompt",
+                backend="pi",
+                output_callback=lambda _line: None,
+            )
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        _assert_no_thirty_second_sleep(mock_sleep)
+
+
 class TestAgentModelRouting:
     """AC-ADHOC-005-01 through AC-ADHOC-005-05: model parameter injection."""
 
@@ -984,6 +1145,69 @@ class TestPiBackendRegistration:
         assert "--model" in cmd, f"Expected --model in command, got {cmd}"
         idx = cmd.index("--model")
         assert cmd[idx + 1] == "anthropic/claude-sonnet-4-5"
+
+    def test_pi_print_mode_lean_spawn_flags(self, tmp_path: Path) -> None:
+        """AC-PLAN-001 / AC-PLAN-002: print-mode argv stays ``pi -p`` then lean flags.
+
+        When ``.pi/skills/deviatdd/SKILL.md`` exists under invoke ``cwd``,
+        argv also requests that skill. ``--model`` injection stays.
+        """
+        skill_path = tmp_path / _DEVIATDD_SKILL_REL
+        skill_path.parent.mkdir(parents=True)
+        skill_path.write_text("# deviatdd\n", encoding="utf-8")
+
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            config = AgentConfig(backend="pi")
+            backend = AgentBackend(config=config)
+            backend.invoke(
+                "test prompt",
+                cwd=str(tmp_path),
+                model="anthropic/claude-sonnet-4-5",
+            )
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[0] == "pi", f"Print-mode prefix must start with pi (got {cmd})"
+        assert cmd[1] == "-p", f"Print-mode prefix must keep -p (got {cmd})"
+        assert _has_long_or_short(cmd, "--no-extensions", "-ne"), (
+            f"Lean Pi spawn requires --no-extensions or -ne (got {cmd})"
+        )
+        assert _has_long_or_short(cmd, "--no-skills", "-ns"), (
+            f"Lean Pi spawn requires --no-skills or -ns (got {cmd})"
+        )
+        _assert_pi_lean_coding_tools(cmd)
+        skill_arg = _flag_value(cmd, "--skill")
+        assert skill_arg is not None, (
+            f"Expected --skill when skill file exists (got {cmd})"
+        )
+        assert Path(skill_arg) == skill_path or skill_arg.endswith(
+            str(_DEVIATDD_SKILL_REL)
+        ), f"--skill must point at {_DEVIATDD_SKILL_REL} (got {skill_arg!r})"
+        assert "--model" in cmd, f"Print-mode --model injection must stay (got {cmd})"
+        assert cmd[cmd.index("--model") + 1] == "anthropic/claude-sonnet-4-5"
+
+    def test_pi_lean_tools_remain_when_skill_missing(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: a missing skill file still keeps the four coding tools."""
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
+        mock_proc.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            config = AgentConfig(backend="pi")
+            backend = AgentBackend(config=config)
+            backend.invoke("test prompt", cwd=str(tmp_path))
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[:2] == ["pi", "-p"]
+        _assert_pi_lean_coding_tools(cmd)
+        assert _flag_value(cmd, "--skill") is None, (
+            f"Missing skill file must not add --skill (got {cmd})"
+        )
 
     def test_pi_backend_missing_binary(self):
         """Edge case: ``pi`` not on PATH → ``AgentBinaryNotFoundError``."""
