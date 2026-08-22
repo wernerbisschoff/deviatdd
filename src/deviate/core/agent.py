@@ -398,17 +398,20 @@ class AgentBackend:
         stall_partial: tuple[str, str] | None = None
 
         # Two-track stall detector (see diagnosis F2 in the README).
-        # ``stall_lock`` + ``stall_deadline`` reset on any stdout line and
-        # trip after STREAM_STALL_TIMEOUT_SECONDS of total silence. The new
-        # ``byte_samples`` window additionally tracks emit rate over the
-        # last STREAM_STALL_WINDOW_SECONDS — a stuck agent that trickles a
-        # few bytes per minute (e.g. a hung subprocess, an infinite tool
-        # loop) resets the line-timer on every emit but the byte-rate stays
-        # well below the floor for a real working invocation like
-        # ``mix precommit`` (~100 B/s during compile + tests).
+        # ``stall_lock`` + ``stall_deadline`` reset on stdout only and trip
+        # after STREAM_STALL_TIMEOUT_SECONDS of stdout silence. Stderr is
+        # diagnostic capture (partial_stderr) and must not refresh the hard
+        # clock or feed ``record_bytes``. The ``byte_samples`` window tracks
+        # stdout emit rate over STREAM_STALL_WINDOW_SECONDS — a stuck agent
+        # that trickles a few stdout bytes per minute resets the line-timer
+        # on every emit but the byte-rate stays well below the floor for a
+        # real working invocation like ``mix precommit`` (~100 B/s).
         stall_lock = threading.Lock()
         stall_deadline = [time.monotonic() + stall_timeout_secs]
         byte_samples: list[tuple[float, int]] = []
+
+        def captured_streams() -> tuple[str, str]:
+            return "\n".join(stdout_lines), "\n".join(stderr_lines)
 
         def record_bytes(num_bytes: int) -> None:
             now = time.monotonic()
@@ -431,6 +434,10 @@ class AgentBackend:
                 rate = total / window
                 return rate < STREAM_STALL_MIN_BYTES_PER_SECOND
 
+        def refresh_stall_deadline() -> None:
+            with stall_lock:
+                stall_deadline[0] = time.monotonic() + stall_timeout_secs
+
         def read_stdout() -> None:
             nonlocal stdout_done
             try:
@@ -439,27 +446,23 @@ class AgentBackend:
                     stdout_lines.append(line)
                     output_callback(line)
                     record_bytes(len(raw_line))
-                    with stall_lock:
-                        stall_deadline[0] = time.monotonic() + stall_timeout_secs
+                    refresh_stall_deadline()
             except (ValueError, OSError):
                 pass
             finally:
                 stdout_done = True
 
-        def read_stderr() -> None:
+        def capture_stderr_diagnostics() -> None:
             try:
                 for raw_line in proc.stderr:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stderr_lines.append(line)
-                    record_bytes(len(raw_line))
-                    with stall_lock:
-                        stall_deadline[0] = time.monotonic() + stall_timeout_secs
             except (ValueError, OSError, RuntimeError):
                 pass
 
         threads = [
             threading.Thread(target=read_stdout),
-            threading.Thread(target=read_stderr),
+            threading.Thread(target=capture_stderr_diagnostics),
         ]
         for t in threads:
             t.start()
@@ -468,16 +471,17 @@ class AgentBackend:
             with stall_lock:
                 return stall_deadline[0] - time.monotonic()
 
+        def snapshot_stall(reason: str) -> None:
+            nonlocal stall_reason, stall_partial
+            stall_reason = reason
+            stall_partial = captured_streams()
+
         while True:
             if stdout_done and not any(t.is_alive() for t in threads):
                 break
             if stall_deadline_remaining() <= 0:
-                stall_reason = (
+                snapshot_stall(
                     f"STALL_DETECTED: no agent output for {stall_timeout_secs}s"
-                )
-                stall_partial = (
-                    "\n".join(stdout_lines),
-                    "\n".join(stderr_lines),
                 )
                 break
             # Smart-stall gate: only trips when the rolling byte-rate over
@@ -490,15 +494,11 @@ class AgentBackend:
                 > stall_timeout_secs / 2
                 and byte_rate_below_floor()
             ):
-                stall_reason = (
+                snapshot_stall(
                     f"SMART_STALL_DETECTED: byte-rate dropped below "
                     f"{STREAM_STALL_MIN_BYTES_PER_SECOND} B/s for "
                     f"{STREAM_STALL_WINDOW_SECONDS}s while stdout was "
                     f"still emitting (likely hung subprocess)"
-                )
-                stall_partial = (
-                    "\n".join(stdout_lines),
-                    "\n".join(stderr_lines),
                 )
                 break
             time.sleep(0.05)
@@ -506,10 +506,11 @@ class AgentBackend:
             proc.kill()
             for t in threads:
                 t.join(timeout=5)
+            partial_stdout, partial_stderr = stall_partial or captured_streams()
             raise AgentTimeoutError(
                 stall_reason,
-                partial_stdout=(stall_partial or ("", ""))[0],
-                partial_stderr=(stall_partial or ("", ""))[1],
+                partial_stdout=partial_stdout,
+                partial_stderr=partial_stderr,
             )
 
         for t in threads:
@@ -519,45 +520,15 @@ class AgentBackend:
             proc.kill()
             for t in threads:
                 t.join(timeout=5)
+            partial_stdout, partial_stderr = captured_streams()
             raise AgentTimeoutError(
                 f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
-                partial_stdout="\n".join(stdout_lines),
-                partial_stderr="\n".join(stderr_lines),
+                partial_stdout=partial_stdout,
+                partial_stderr=partial_stderr,
             )
 
         proc.wait()
-        stdout = "\n".join(stdout_lines)
-        stderr = "\n".join(stderr_lines)
-
-        if proc.returncode != 0:
-            raise AgentSubprocessError(
-                message=stderr or f"Agent exited with code {proc.returncode}",
-                exit_code=proc.returncode,
-            )
-        return stdout, stderr
-
-        threads = [
-            threading.Thread(target=read_stdout),
-            threading.Thread(target=read_stderr),
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=timeout_secs)
-
-        if not stdout_done or any(t.is_alive() for t in threads):
-            proc.kill()
-            for t in threads:
-                t.join(timeout=5)
-            raise AgentTimeoutError(
-                f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
-                partial_stdout="\n".join(stdout_lines),
-                partial_stderr="\n".join(stderr_lines),
-            )
-
-        proc.wait()
-        stdout = "\n".join(stdout_lines)
-        stderr = "\n".join(stderr_lines)
+        stdout, stderr = captured_streams()
 
         if proc.returncode != 0:
             raise AgentSubprocessError(
