@@ -1154,13 +1154,36 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   review at HITL Gate 3. Computes the unified diff between the merge-base of `--base`
   (default: `main`) and `--branch` (default: `HEAD`), resolves the constitution path,
   resolves the PRD path from the branch name, and checks for existing review reports.
+  Runs a runner-owned plan-AC coverage scan (`evaluate_review_coverage` in
+  `src/deviate/core/review_coverage.py`) with no agent call. The scan reads this
+  issue's `plan.md` `AC-PLAN-NNN` set. It claims tokens from this-issue COMPLETED
+  rows via the same `resolve_task_ac_tokens` first-hit order used by JUDGE
+  (`acceptance_criteria` `criterion_id`s, else the `tasks.md` card, else none).
+  A persisted evidence row on a COMPLETED raw JSONL object also claims its token
+  when that row already carries it. PENDING, FAILED, and sibling-issue rows do not
+  claim. Missing `plan.md` or missing plan tokens are vacuously complete. An
+  unclaimed plan AC emits `status: COVERAGE_INCOMPLETE` with `coverage_complete: false`
+  and `uncovered` listing the miss, then exits 1. Adequacy review cannot override
+  the miss. Full claims emit `status: READY` and `coverage_complete: true`.
   Emits a JSON contract for consumption by the review skill (V4 Flash, single-pass).
   No report file is persisted — findings are surfaced in chat for human judgment.
 * **Input Parameters:**
   * `--base <branch>` (Base branch for merge-base computation; default: `main`)
   * `--branch <branch>` (Target branch for self-contained review; default: `HEAD`)
-* **Output Artifacts:** JSON contract with `diff`, `constitution_path`, `prd_path`,
-  `constitution_warning`, `prd_warning`, `base_branch`, `report_exists`, `timestamp`.
+* **Output Artifacts:** JSON contract with `status`, `diff`, `constitution_path`, `prd_path`,
+  `constitution_warning`, `prd_warning`, `base_branch`, `report_exists`, `timestamp`,
+  `uncovered`, `coverage_complete`.
+
+#### `deviate review post [content]`
+
+* **Source:** `src/deviate/cli/review.py`
+* **Description:** Persists a review report under `.deviate/review/reports/`.
+  Re-runs the same Gate 3 coverage scan as `deviate review pre`. When any
+  this-issue `plan.md` `AC-PLAN-NNN` is unclaimed, the command prints
+  `COVERAGE_INCOMPLETE` and exits 1. It does not write a PASS report over a miss.
+* **Input Parameters:**
+  * `content` (Optional markdown report. When omitted, the command reads stdin.)
+* **Output Artifacts:** A timestamped `review-report-*.md` file when coverage is complete.
 
 ---
 
@@ -1459,7 +1482,7 @@ the action. EXECUTE `_run_execute_phase` and IMMEDIATE judge stay ungated.
 
 **Empty-diff sign-off:** `proceed_to_refactor_no_diff` (`src/deviate/cli/micro.py::_run_judge_phase`) is the forward-route escape for slices whose production-code scope is intrinsically nil — RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose `failure_kind: mechanical` rationale asserts "no production code expected." The TDD evidence gate still requires a dirty-diff `test_quote` and omits `impl_quote`. The JUDGE-side responsibility is to emit the action on a `COMPLIANCE_PASS` verdict when the in-scope rationale is valid but the production diff cannot grow. The action lands the task at REFACTOR's no-op commit + COMPLETED transition in one step; unmatched empty-GREEN PASS does not COMPLETE.
 
-**TDD mechanical evidence gate:** `HandoverManifest.evidence` is a first-class list of nested citations (`ac`, `test_path`, `test_quote`, `impl_path`, `impl_quote`) in `src/deviate/core/agent.py`. After `_coerce_judge_action`, TDD `_run_judge_phase` (`src/deviate/cli/micro.py`) checks every injected `AC-PLAN-NNN` token from `<authoritative_acceptance_contract source="plan.md">` against those citations and the already-built `<diff>` (`git diff <red>^..HEAD` plus dirty `git diff HEAD` and untracked `--no-index` hunks). Missing, empty, or partial evidence, hallucinated paths, empty quotes, quotes below the uniqueness floor (≥ 12 non-whitespace characters, or the full added line if shorter), or quotes that are not exact substrings of the named file hunk rewrite the action to `revert_to_red` with runner-authored feedback in the `JUDGE_AGENT_NO_FEEDBACK` family. The task does not COMPLETE. `skip_refactor` on the already-exists path may quote HEAD file contents; a named test file absent on disk fails. On a test-bearing TDD already-exists claim, every declared `files` / `test_file` path (and evidence `test_path`) must appear in `_assemble_judge_injected_diff` or `_evidence_head_contents`. The membership check runs even when the plan has no `AC-PLAN-*` tokens. Empty declared files remain a RED defect, not a COMPLETE. Tasks with no `AC-PLAN-*` tokens may emit empty evidence quotes, but they still need named present test paths. `COMPLIANCE_VIOLATION` skips the quote gate. EXECUTE and IMMEDIATE judge paths stay ungated.
+**TDD mechanical evidence gate:** `HandoverManifest.evidence` is a first-class list of nested citations (`ac`, `test_path`, `test_quote`, `impl_path`, `impl_quote`) in `src/deviate/core/agent.py`. After `_coerce_judge_action`, TDD `_run_judge_phase` (`src/deviate/cli/micro.py`) resolves this task's required `AC-PLAN-NNN` tokens via `resolve_task_ac_tokens` (`src/deviate/core/judge_evidence.py`) and passes that list as `required_tokens` to `evaluate_judge_evidence`. First hit wins: non-empty `TaskRecord.acceptance_criteria` `criterion_id`s; else `AC-PLAN-NNN` tokens named in this task's `tasks.md` card; else no AC tokens. The gate does not fall back to every token in `<authoritative_acceptance_contract source="plan.md">`. Omitting a later-shard plan token is legal at JUDGE. Auto and manual judge prompts require `evidence` only for the resolved task tokens. Quotes must copy from the already-built `<diff>` (`git diff <red>^..HEAD` plus dirty `git diff HEAD` and untracked `--no-index` hunks) or allowed HEAD files. ISS-ADH-020 quote checks still apply to that task set: missing this-task tokens, empty quotes, hallucinated paths, quotes below the uniqueness floor (≥ 12 non-whitespace characters, or the full added line if shorter), or quotes that are not exact substrings of the named file hunk rewrite the action to `revert_to_red` with runner-authored feedback in the `JUDGE_AGENT_NO_FEEDBACK` family. The task does not COMPLETE. `skip_refactor` on the already-exists path may quote HEAD file contents for this-task tokens; a named test file absent on disk fails. On a test-bearing TDD already-exists claim, every declared `files` / `test_file` path (and evidence `test_path`) must appear in `_assemble_judge_injected_diff` or `_evidence_head_contents`. The membership check runs even when the resolved set has no `AC-PLAN-*` tokens. Empty declared files remain a RED defect, not a COMPLETE. Tasks with no resolved `AC-PLAN-*` tokens may emit empty evidence quotes, but they still need named present test paths. `COMPLIANCE_VIOLATION` skips the quote gate. EXECUTE, IMMEDIATE, and DIRECT judge paths stay ungated.
 
 **Feedback-commit timeout:** The `revert_to_red` step's "append a feedback
 commit past RED" runs `_commit_judge_feedback_and_advance`

@@ -160,7 +160,7 @@ with category `Security Violation` and the pattern name in the `detail` field.
 
 ### STEP_3: EMIT_VERDICT
 
-Cite every injected `AC-PLAN-NNN` in `evidence`. Empty `evidence` is not a pass when AC-PLAN tokens exist. Emit `COMPLIANCE_PASS` only when those citations match the injected `<diff>` (or HEAD on the already-exists `skip_refactor` path) and none of the eight Categories of Violations is present. Emit `COMPLIANCE_VIOLATION` only when one of the eight Categories of Violations above is genuinely present. Tasks with no `AC-PLAN-*` tokens may emit empty `evidence`. The empty-GREEN sign-off action requires a dirty-diff `test_quote` and omits `impl_quote`.
+Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's `acceptance_criteria` or the injected `<task_card source="tasks.md">`). Empty `evidence` is not a pass when those task tokens exist. Do not require later-shard or unassigned plan tokens in this verdict. Quotes must be copied from the injected `<diff>` or allowed HEAD files. Paraphrases, comments, and later-work sentences are illegal. Emit `COMPLIANCE_PASS` only when those citations match the injected `<diff>` (or HEAD on the already-exists `skip_refactor` path) and none of the eight Categories of Violations is present. Emit `COMPLIANCE_VIOLATION` only when one of the eight Categories of Violations above is genuinely present. Tasks with no resolved task `AC-PLAN-*` tokens may emit empty `evidence`. The empty-GREEN sign-off action requires a dirty-diff `test_quote` and omits `impl_quote`.
 
 **Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST:
 1. **State what GREEN did wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
@@ -272,7 +272,7 @@ diff_summary:
 |---|---|
 | `<failure_kind>mechanical</failure_kind>` present, and the slice is intrinsically RED-only (fixture file, migration script, generated types, doc-only slice — task description names no production code path for GREEN to write) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with a dirty-diff `test_quote` in `evidence` and no `impl_quote`. The runner routes to REFACTOR so its commit + COMPLETED transition can terminate the slice; the GREEN diff is intentionally empty (no production code to polish). Distinct from `continue_refactor` (which signals a substantive refactor pass on a non-empty diff); this is the empty-diff sign-off case. GREEN's rationale should be preserved in `summary` so the operator sees why GREEN had nothing to do, but no `train_feedback` is required. |
 | `<failure_kind>mechanical</failure_kind>` present otherwise — RED test cannot be satisfied via the library/API surface declared in scope | GREEN emitted `status: FAILURE` with a mechanical rationale. Do NOT attempt to satisfy the test yourself. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_before` (the RED test itself is wrong — re-run RED) or `next_action: revert_to_red` (the slice/scope is wrong — re-run GREEN with the rationale as feedback) or `next_action: skip_refactor` (the operator should intervene at the meso layer, e.g. widen the slice scope). Populate `train_feedback` with the GREEN rationale so the next iteration has the full conflict description. |
-| No production diff to evaluate (empty GREEN) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with `evidence` that cites a matching dirty-diff `test_quote` for every injected `AC-PLAN-NNN`. Omit `impl_quote`. Empty evidence is not a pass when AC-PLAN tokens exist. |
+| No production diff to evaluate (empty GREEN) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with `evidence` that cites a matching dirty-diff `test_quote` for each resolved task `AC-PLAN-NNN` token. Omit `impl_quote`. Empty evidence is not a pass when resolved task tokens exist. |
 | spec.md not found | Warn "NO_SPEC" and evaluate against constitution only |
 | Binary files in diff | Filter binary files from analysis, note in summary |
 | File rename in diff | Evaluate both old and new paths against allow-lists |
@@ -319,7 +319,7 @@ security hole, gate skip, flow break), never a refactor.
 
 <constraints>
 - Evaluate only the `git diff` scope — do not analyze pre-existing code.
-- Cite every injected `AC-PLAN-NNN` in `evidence`. Empty `evidence` is not a pass when AC-PLAN tokens exist.
+- Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence`. Empty `evidence` is not a pass when those task tokens exist. Do not require unassigned plan tokens in this verdict.
 - Emit COMPLIANCE_VIOLATION only for the eight Categories of Violations above.
 - Refactoring opportunities are NEVER blocking. Surface them as informational notes in `train_feedback` on a passing verdict, or omit them entirely.
 - Violations must be specific and actionable, citing FR-NN / AC-NN where applicable.
