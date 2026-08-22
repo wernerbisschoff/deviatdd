@@ -30,7 +30,7 @@
 - **Then**: Non-empty `criterion_id`s win; else the task card tokens win; else the set is empty.
 - **Verification Mode**: automated
 
-**Scenario AC-HOLD-003: Keep ISS-ADH-020 fail-closed on this-task tokens**
+**Scenario AC-PLAN-003: Keep ISS-ADH-020 fail-closed on this-task tokens**
 - **Source Outline**: `AO-028-02`
 - **Upstream Traceability**: `US-028-02`, `FR-ADHOC-028`, `AC-ADHOC-028-02`
 - **Current-Code Evidence**: `src/deviate/core/judge_evidence.py:_check_citation`
@@ -39,7 +39,7 @@
 - **Then**: The runner rewrites PASS to `revert_to_red` with runner-authored feedback and does not COMPLETE the task.
 - **Verification Mode**: automated
 
-**Scenario AC-HOLD-004: Require evidence only for resolved tokens and leave non-TDD ungated**
+**Scenario AC-PLAN-004: Require evidence only for resolved tokens and leave non-TDD ungated**
 - **Source Outline**: `AO-028-02`
 - **Upstream Traceability**: `US-028-02`, `FR-ADHOC-028`, `AC-ADHOC-028-02`
 - **Current-Code Evidence**: `src/deviate/prompts/auto/judge.md:STEP_3`
@@ -48,7 +48,7 @@
 - **Then**: Prompts require `evidence` only for resolved task tokens, and EXECUTE, IMMEDIATE, and DIRECT stay ungated.
 - **Verification Mode**: automated
 
-**Scenario AC-HOLD-005: Fail-close review when a plan AC is unclaimed**
+**Scenario AC-PLAN-005: Fail-close review when a plan AC is unclaimed**
 - **Source Outline**: `AO-028-03`
 - **Upstream Traceability**: `US-028-03`, `FR-ADHOC-028`, `AC-ADHOC-028-03`
 - **Current-Code Evidence**: `src/deviate/cli/review.py:pre`
@@ -57,7 +57,7 @@
 - **Then**: The runner exits non-zero or emits a non-PASS contract, and adequacy review cannot override the miss.
 - **Verification Mode**: automated
 
-**Scenario AC-HOLD-006: Pass review coverage when every plan token is claimed**
+**Scenario AC-PLAN-006: Pass review coverage when every plan token is claimed**
 - **Source Outline**: `AO-028-03`
 - **Upstream Traceability**: `US-028-03`, `FR-ADHOC-028`, `AC-ADHOC-028-03`
 - **Current-Code Evidence**: `src/deviate/cli/review.py:pre`
@@ -66,7 +66,7 @@
 - **Then**: Coverage is complete and the review contract may proceed or PASS.
 - **Verification Mode**: automated
 
-**Scenario AC-HOLD-007: Treat missing plan tokens as complete and ignore non-COMPLETED claims**
+**Scenario AC-PLAN-007: Treat missing plan tokens as complete and ignore non-COMPLETED claims**
 - **Source Outline**: `AO-028-03`
 - **Upstream Traceability**: `US-028-03`, `FR-ADHOC-028`, `AC-ADHOC-028-03`
 - **Current-Code Evidence**: `src/deviate/cli/_common.py:resolve_issue_id_from_branch`
@@ -141,7 +141,7 @@
 - **Phase 4**: Specs and changelog
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Update the mechanical evidence gate and `deviate review pre` contracts in the same implementation commit. Append one `[Unreleased]` bullet.
-  - **Verification**: Diff the named sections against AC-PLAN-001 through AC-HOLD-007.
+  - **Verification**: Diff the named sections against AC-PLAN-001 through AC-PLAN-007.
 
 ## Data Flow Analysis
 - JUDGE inputs are the live task dict, the `tasks.md` card, `plan.md` inside `_resolve_spec_md`, `HandoverManifest.evidence`, and the already-built injected diff.
