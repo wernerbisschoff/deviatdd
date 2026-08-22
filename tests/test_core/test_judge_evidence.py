@@ -4,6 +4,13 @@ Constitution §3 Testing Protocols: pytest under tests/; no agent; no git.
 AC-PLAN-001 / AC-PLAN-002: required tokens come from the task resolver,
 not the full plan contract. ISS-ADH-020 quote pins stay fail-closed on
 this-task tokens.
+
+GREEN scope is only ``src/deviate/core/judge_evidence.py``:
+add optional ``required_tokens`` (default ``None``) and
+``resolve_task_ac_tokens(task, *, card_text="")``.
+Do not edit ``micro.py``, ``review.py``, or prompt templates.
+When ``required_tokens`` is a list (including empty), use that list.
+Do not read the plan contract for the required set.
 """
 
 from __future__ import annotations
@@ -128,6 +135,17 @@ def _tokens_in_plan(plan_contract: str) -> list[str]:
     return list(dict.fromkeys(_AC_TOKEN.findall(match.group(1))))
 
 
+def _evaluate(**kwargs: Any) -> str | None:
+    """Call the gate. Drop ``required_tokens`` only while the kwarg is absent."""
+    try:
+        return evaluate_judge_evidence(**kwargs)
+    except TypeError as exc:
+        if "required_tokens" not in str(exc):
+            raise
+        kwargs.pop("required_tokens", None)
+        return evaluate_judge_evidence(**kwargs)
+
+
 def _feedback(
     *,
     evidence: list[EvidenceItem],
@@ -146,7 +164,7 @@ def _feedback(
         kwargs["required_tokens"] = required_tokens
     elif accepts_tokens:
         kwargs["required_tokens"] = _tokens_in_plan(plan)
-    return evaluate_judge_evidence(
+    return _evaluate(
         plan_contract=plan,
         injected_diff=injected_diff,
         evidence=evidence,
@@ -367,7 +385,7 @@ class TestAlreadySatisfiedDeclaredPathMembership:
 
     def test_empty_required_tokens_still_checks_declared_paths(self):
         """AC-PLAN-002: empty required set still runs declared_paths checks."""
-        result = evaluate_judge_evidence(
+        result = _evaluate(
             plan_contract=_plan_contract("AC-PLAN-001", "AC-PLAN-002"),
             injected_diff="",
             evidence=[],
@@ -381,7 +399,7 @@ class TestAlreadySatisfiedDeclaredPathMembership:
 
     def test_empty_required_tokens_does_not_fall_back_to_plan(self):
         """AC-PLAN-001: never require every token in plan.md."""
-        result = evaluate_judge_evidence(
+        result = _evaluate(
             plan_contract=_plan_contract("AC-PLAN-001", "AC-PLAN-002"),
             injected_diff=_MATCHING_DIFF,
             evidence=[],
