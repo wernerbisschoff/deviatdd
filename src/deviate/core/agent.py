@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
@@ -178,6 +179,22 @@ def resolve_agent_to_backend(agent: str) -> str:
 
 
 PI_RPC_COMMAND: list[str] = ["pi", "--mode", "rpc", "--no-session"]
+PI_CODING_TOOLS: tuple[str, ...] = ("read", "bash", "edit", "write")
+PI_DEVIATDD_SKILL = Path(".pi") / "skills" / "deviatdd" / "SKILL.md"
+
+
+def _pi_lean_flags(cwd: str | None) -> list[str]:
+    """Return the default lean Pi tool policy after the transport prefix."""
+    flags = [
+        "--no-extensions",
+        "--tools",
+        ",".join(PI_CODING_TOOLS),
+        "--no-skills",
+    ]
+    skill_root = Path(cwd) if cwd is not None else Path.cwd()
+    if (skill_root / PI_DEVIATDD_SKILL).is_file():
+        flags.extend(["--skill", str(PI_DEVIATDD_SKILL)])
+    return flags
 
 
 # Per-backend model-flag dispatch. ``None`` means the backend does not
@@ -636,6 +653,8 @@ class AgentBackend:
             if backend_name in PROMPT_AS_ARG_BACKENDS:
                 cmd.append(prompt)
                 prompt = ""
+        if backend_name == "pi":
+            cmd.extend(_pi_lean_flags(cwd))
         effective_timeout = timeout or self.config.timeout
 
         popen_kwargs: dict[str, Any] = dict(
