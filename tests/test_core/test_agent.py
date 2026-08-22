@@ -500,6 +500,85 @@ class TestAgentBackendErrors:
 
         assert stdout == "phase: RED\nstatus: PASS"
 
+    @pytest.mark.timeout(3)
+    def test_streaming_agent_stderr_only_noise_trips_stall(self):
+        """AC-PLAN-001 / AC-PLAN-002: stderr is diagnostic, not liveness."""
+        from deviate.core.agent import AgentTimeoutError
+
+        release = threading.Event()
+        diagnostic = "[codebase-index] Background reindex failed"
+
+        class BlockingStdout:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release.wait()
+                raise StopIteration
+
+        class PeriodicStderr:
+            def __init__(self) -> None:
+                self._emitted = False
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if not self._emitted:
+                    self._emitted = True
+                    return f"{diagnostic}\n".encode()
+                if release.wait(timeout=0.03):
+                    raise StopIteration
+                return f"{diagnostic}\n".encode()
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BlockingStdout()
+        mock_proc.stderr = PeriodicStderr()
+        mock_proc.kill.side_effect = release.set
+
+        stall_budget = 0.15
+        raised: list[BaseException] = []
+
+        def run() -> None:
+            try:
+                AgentBackend()._invoke_streaming(
+                    mock_proc,
+                    ["pi", "-p"],
+                    "prompt",
+                    timeout_secs=10,
+                    backend_name="pi",
+                    output_callback=lambda _line: None,
+                    stall_timeout=stall_budget,
+                )
+            except BaseException as exc:
+                raised.append(exc)
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        worker.join(timeout=1.0)
+        if worker.is_alive():
+            release.set()
+            worker.join(timeout=1.0)
+            pytest.fail(
+                "stderr-only noise kept the stall clock alive; "
+                "expected STALL_DETECTED at the patched budget"
+            )
+
+        assert raised, "streaming invoke returned without STALL_DETECTED"
+        exc = raised[0]
+        assert isinstance(exc, AgentTimeoutError)
+        assert "STALL_DETECTED" in str(exc)
+        assert f"{stall_budget}s" in str(exc)
+        assert diagnostic in exc.partial_stderr
+        assert exc.partial_stdout == ""
+
+    def test_stream_stall_timeout_seconds_is_900(self):
+        """AC-PLAN-005: GREEN default stall stays think-safe at 900s."""
+        from deviate.core.agent import STREAM_STALL_TIMEOUT_SECONDS
+
+        assert STREAM_STALL_TIMEOUT_SECONDS == 900
+
     @pytest.mark.parametrize(
         ("yaml_body", "expected_hint"),
         [
