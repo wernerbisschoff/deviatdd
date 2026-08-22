@@ -403,3 +403,18 @@
   1. AC-ADHOC-024-01 / AO-024-01: Bare `deviate micro run` in a worktree whose branch issue has unchecked `tasks.md` entries does not print `NO_PENDING_TASKS` or exit 0 solely because `session.active_issue_id` names a different issue.
   2. AC-ADHOC-024-02 / AO-024-02: When the branch-derived issue is known and differs from `session.active_issue_id`, the branch issue is authoritative (stale id is not sticky, including when the leftover issue still has a `tasks.md` in this checkout) and the worktree session is rewritten to that issue.
   3. AC-ADHOC-024-03 / AO-024-03: Meso worktree claim/copy and `MESO_ALREADY_COMPLETE` inside the worktree set `session.active_issue_id` to the claimed issue. ISS-ADH-023 issue-scoped pinned lookup stays composed. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-025: GREEN Stall Clock Ignores Stderr Noise and Surfaces AGENT_TIMEOUT
+
+- **Description**: Streaming `pi -p` GREEN treats stderr as diagnostic, not liveness. Periodic Pi stderr (for example `[codebase-index] Background reindex failed`) must not reset the 900s hard stall deadline. A hung GREEN with no meaningful stdout must raise `AgentTimeoutError` and log `AGENT_TIMEOUT` from the harness instead of waiting for an outer bash timeout.
+- **Preconditions**: Python 3.13. `AgentBackend._invoke_streaming` currently resets `stall_deadline` on every stdout *and* stderr line. Smart-stall needs `>=3` byte samples in a 60s window. `invoke()` sleeps 30s and retries after `AgentTimeoutError`. EXECUTE already passes `EXECUTE_STALL_TIMEOUT_SECONDS = 3600` (GH-53). Operator bash timeout is typically 1800s.
+- **Inputs/Outputs**: Input — streaming agent stdout/stderr, per-invocation `stall_timeout` (default 900s; EXECUTE 3600s). Output — `STALL_DETECTED` / `AgentTimeoutError` when stdout is silent for the stall budget; `_invoke_agent` logs `AGENT_TIMEOUT` with `partial_stderr=` / `partial_stdout=`; EXECUTE long-silent pipelines still allowed up to 3600s.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-025-01: As a DeviaTDD operator running GREEN via `pi -p`, I want periodic stderr noise not to keep the stall clock alive so a hung agent cannot run indefinitely. *(Ref: FR-ADHOC-025)*
+  2. US-025-02: As a DeviaTDD operator, I want a hung GREEN to log `AGENT_TIMEOUT` from the harness so I do not wait for an outer bash kill. *(Ref: FR-ADHOC-025)*
+  3. US-025-03: As a DeviaTDD operator, I want EXECUTE to keep its one-hour stall allowance and a healthy GREEN that is quiet while the model thinks for a few minutes to survive. *(Ref: FR-ADHOC-025)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-025-01 / AO-025-01: A streaming invoke whose only output is periodic stderr (no stdout) trips `STALL_DETECTED` / `AgentTimeoutError` at the configured stall budget; stderr lines do not reset the hard deadline.
+  2. AC-ADHOC-025-02 / AO-025-02: GREEN `_invoke_agent` logs `AGENT_TIMEOUT` after a stdout-silent stall without requiring an outer ~1800s bash timeout to fire first.
+  3. AC-ADHOC-025-03 / AO-025-03: EXECUTE still uses 3600s (GH-53). Periodic stdout still resets the 900s GREEN clock. A few minutes of stdout silence does not kill a healthy GREEN. API + architecture + CHANGELOG land in the same implementation commit.
