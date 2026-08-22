@@ -828,6 +828,7 @@ def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
         wt_path = Path(setup_result["worktree_path"])
         if dot_dir.exists():
             shutil.copytree(str(dot_dir), str(wt_path / ".deviate"), dirs_exist_ok=True)
+        _key_worktree_session_to_issue(wt_path, issue_id)
 
         console.print(f"[green]WORKTREE[/] setup at {wt_path}")
         console.print("[green]SESSION[/] advanced to PLAN")
@@ -1764,6 +1765,21 @@ def _phase_callout(
     )
 
 
+def _key_worktree_session_to_issue(worktree_path: Path, issue_id: str) -> None:
+    """Write claimed ``issue_id`` into ``worktree_path/.deviate/session.json``.
+
+    Meso claim (AC-PLAN-006) and ``MESO_ALREADY_COMPLETE`` (AC-PLAN-005)
+    both persist ``SessionState.active_issue_id`` so a leftover main-repo
+    id cannot stick in the worktree session (constitution §2).
+    """
+    session_path = worktree_path / ".deviate" / "session.json"
+    session = SessionState.load(session_path)
+    if session.active_issue_id == issue_id:
+        return
+    session.active_issue_id = issue_id
+    session.save(session_path)
+
+
 def _resolve_meso_worktree(
     issue_id: str | None,
     force: bool,
@@ -1888,11 +1904,15 @@ def _meso_run(
     dot_dir = _resolve_dot_deviate()
     session_path = (dot_dir / "session.json").resolve()
 
-    # Sync .deviate/ to worktree so downstream functions find the session
+    # Sync .deviate/ to worktree so downstream functions find the session.
+    # Write-then-copy keys the source session first; rewrite after copy
+    # when the copied file still names a previous issue (AC-PLAN-006).
     if dot_dir.exists() and not no_setup:
+        _key_worktree_session_to_issue(dot_dir.parent, issue_id)
         shutil.copytree(
             str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
         )
+        _key_worktree_session_to_issue(worktree_path, issue_id)
 
     # Build contract with absolute worktree paths so agent writes files
     # to the exact worktree location regardless of tool re-rooting.
@@ -1920,6 +1940,7 @@ def _meso_run(
     )
 
     if resume_state == "COMPLETE":
+        _key_worktree_session_to_issue(worktree_path, issue_id)
         console.print(
             f"[green]MESO_ALREADY_COMPLETE[/] {issue_id}: valid plan.md and "
             "tasks.md already exist"

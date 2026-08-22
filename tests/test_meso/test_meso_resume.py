@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from contextlib import chdir
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +8,7 @@ import pytest
 import typer
 
 from deviate.cli.meso import _meso_run, _resolve_meso_resume_state
+from deviate.state.config import SessionState
 
 from tests.test_meso.test_meso_orchestration import _setup_minimal_workspace
 
@@ -49,6 +51,42 @@ class TestMesoIdempotentResume:
         mock_plan_post.assert_not_called()
         mock_tasks_post.assert_not_called()
         assert "MESO_ALREADY_COMPLETE" in capsys.readouterr().out
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._invoke_agent_phase")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_already_complete_rekeys_leftover_session_to_claimed_issue(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """AC-PLAN-005: MESO_ALREADY_COMPLETE writes the claimed issue."""
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        _setup_minimal_workspace(tmp_git_repo, seed_plan=True, seed_tasks=True)
+        (tmp_git_repo / "specs/test-epic/iss-001/plan.md").write_text(VALID_PLAN)
+        leftover = tmp_git_repo / ".deviate" / "session.json"
+        SessionState(current_phase="IDLE", active_issue_id="ISS-001-000").save(leftover)
+
+        with chdir(tmp_git_repo):
+            result = _meso_run(issue_id="ISS-001-001", no_setup=True)
+
+        assert result == str(tmp_git_repo.resolve())
+        mock_invoke.assert_not_called()
+        mock_plan_post.assert_not_called()
+        mock_tasks_post.assert_not_called()
+        assert "MESO_ALREADY_COMPLETE" in capsys.readouterr().out
+        saved = SessionState.load(leftover)
+        assert saved.active_issue_id == "ISS-001-001", (
+            "MESO_ALREADY_COMPLETE must write the claimed issue, got "
+            f"{saved.active_issue_id!r}"
+        )
 
     @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
