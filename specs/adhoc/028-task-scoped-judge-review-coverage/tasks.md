@@ -30,6 +30,7 @@
 
 ### Tasks
 
+  - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-003, AC-PLAN-005, AC-PLAN-004, AC-PLAN-006, AC-PLAN-007
 - TSK-028-02: Gate TDD JUDGE on resolved task tokens and drop cite-every-plan wording
   - **Type**: Feature_Batch
   - **Mode**: TDD
