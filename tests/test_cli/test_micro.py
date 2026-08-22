@@ -5438,3 +5438,210 @@ class TestGreenStallHarnessSurface:
         _, invoke_kwargs = mock_invoke.call_args
         assert invoke_kwargs.get("stall_timeout") == EXECUTE_STALL_TIMEOUT_SECONDS
         assert invoke_kwargs.get("stall_timeout") == 3600
+
+
+_SCHEMA_REJECTION_TOKENS = ("tool_count_limit", "unsupported_tool_schema")
+_SCHEMA_REJECTION_MESSAGE = (
+    "400 tool_count_limit unsupported_tool_schema: provider rejected tool schema"
+)
+
+
+def _assert_schema_tokens(text: str) -> None:
+    """AC-PLAN-004: operator-visible text must carry the provider tokens."""
+    assert any(token in text for token in _SCHEMA_REJECTION_TOKENS), (
+        "expected tool_count_limit or unsupported_tool_schema in "
+        f"{text!r}, not only 'agent returned no manifest'"
+    )
+
+
+class TestSchemaLimitHarnessSurface:
+    """AC-PLAN-004: schema-limit tokens stay visible on deviate micro run."""
+
+    def test_invoke_agent_logs_schema_limit_tokens(self) -> None:
+        """_invoke_agent logs AGENT_ERROR with tool_count_limit tokens."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from deviate.cli.micro import _invoke_agent
+        from deviate.core.agent import AgentSubprocessError
+
+        schema_err = AgentSubprocessError(_SCHEMA_REJECTION_MESSAGE)
+        buf = StringIO()
+        console = Console(file=buf, force_terminal=True, width=160)
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._log_run") as mock_log,
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.side_effect = schema_err
+            try:
+                _invoke_agent(
+                    "test prompt",
+                    console,
+                    backend_name="pi",
+                    task_id="TSK-026-03",
+                    phase="GREEN",
+                )
+            except AgentSubprocessError:
+                pass
+            except PhaseFailedError:
+                pass
+
+        printed = buf.getvalue()
+        error_logs = [
+            call
+            for call in mock_log.call_args_list
+            if call.args and call.args[0] == "AGENT_ERROR"
+        ]
+        logged = "".join(str(call.kwargs.get("error", "")) for call in error_logs)
+        surface = printed + logged
+        assert "AGENT_ERROR" in printed or error_logs, (
+            "_invoke_agent must log or print AGENT_ERROR for schema rejection"
+        )
+        _assert_schema_tokens(surface)
+
+    def test_run_green_phase_surfaces_unsupported_tool_schema(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """GREEN PhaseFailedError carries schema tokens, not timeout or no-manifest."""
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_green_phase
+        from deviate.core.agent import AgentSubprocessError
+
+        monkeypatch.chdir(tmp_path)
+        task = {
+            "id": "TSK-026-03",
+            "issue_id": "ISS-ADH-026",
+            "description": "Surface schema tokens from deviate micro run",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path.write_text("", encoding="utf-8")
+        session = SessionState()
+        session.red_commit_sha = "abc123def"
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        schema_err = AgentSubprocessError(_SCHEMA_REJECTION_MESSAGE)
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._require_green_entry_red_sha"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._summarize_timeout_context") as mock_summary,
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.side_effect = schema_err
+            with pytest.raises(PhaseFailedError) as excinfo:
+                _run_green_phase(task, ledger_path, session, session_path, Console())
+
+        message = str(excinfo.value)
+        _assert_schema_tokens(message)
+        assert "timed out" not in message.lower()
+        mock_summary.assert_not_called()
+
+    def test_run_red_phase_surfaces_tool_count_limit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RED PhaseFailedError keeps tool_count_limit instead of no-manifest."""
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_red_phase
+        from deviate.core.agent import AgentSubprocessError
+
+        monkeypatch.chdir(tmp_path)
+        task = {
+            "id": "TSK-026-03",
+            "issue_id": "ISS-ADH-026",
+            "description": "Surface schema tokens from deviate micro run",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path.write_text("", encoding="utf-8")
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        schema_err = AgentSubprocessError(_SCHEMA_REJECTION_MESSAGE)
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._worktree_status_paths", return_value=[]),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="1 failed", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.side_effect = schema_err
+            with pytest.raises(PhaseFailedError) as excinfo:
+                _run_red_phase(task, ledger_path, session, session_path, Console())
+
+        _assert_schema_tokens(str(excinfo.value))
+
+    def test_run_refactor_phase_surfaces_unsupported_tool_schema(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """REFACTOR PhaseFailedError keeps unsupported_tool_schema tokens."""
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_refactor_phase
+        from deviate.core.agent import AgentSubprocessError
+
+        monkeypatch.chdir(tmp_path)
+        task = {
+            "id": "TSK-026-03",
+            "issue_id": "ISS-ADH-026",
+            "description": "Surface schema tokens from deviate micro run",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path.write_text("", encoding="utf-8")
+        session = SessionState()
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        schema_err = AgentSubprocessError(_SCHEMA_REJECTION_MESSAGE)
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.side_effect = schema_err
+            with pytest.raises(PhaseFailedError) as excinfo:
+                _run_refactor_phase(task, ledger_path, session, session_path, Console())
+
+        _assert_schema_tokens(str(excinfo.value))

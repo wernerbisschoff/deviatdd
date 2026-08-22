@@ -884,6 +884,8 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   `HandoverManifest.is_success` returns `False` so existing
   `manifest.status.upper() in (...)` success gates keep rejecting them.
   (6) **Stricter mapping fallback** — the `_YAML_MAPPING_START_RE` fallback (`src/deviate/core/agent.py`) routes the candidate text through a `_looks_like_manifest` helper that requires `yaml.safe_load(candidate)` to return a `dict` with at least 2 keys before accepting. Single-key dicts (e.g. a stray `Status: complete` line in a JUDGE verdict with a verification matrix) look like prose, not manifests; the fallback now rejects them and the parser raises `MalformedHandoverManifestError` with the existing "No YAML handover manifest detected in agent output" hint. Multi-key partial dicts still flow through to schema recovery unchanged, so the existing `test_missing_phase_and_status_recover_as_unknown` contract is preserved.
+  (7) **Lean Pi spawn** — `AgentBackend.invoke` appends a lean tool policy after the existing Pi transport prefix. Print mode keeps `BACKEND_COMMANDS["pi"]` as `pi -p` (AC-009-07). RPC keeps `PI_RPC_COMMAND` as `pi --mode rpc --no-session` (AC-009-10). The helper `_pi_lean_flags` then adds `--no-extensions`, `--tools read,bash,edit,write`, and `--no-skills`. When `.pi/skills/deviatdd/SKILL.md` exists under the invoke `cwd` (or `Path.cwd()`), it also adds `--skill` to that relative path. A missing skill file keeps the four coding tools. The argv omits `--no-tools` and `--no-builtin-tools`. Non-Pi backends skip these flags.
+  (8) **Schema-rejection fail-fast** — `_invoke_streaming`, `_invoke_blocking`, and `_invoke_rpc_blocking` scan each stderr and stdout line. The first line that contains `tool_count_limit` or `unsupported_tool_schema` kills the child. The helper raises `AgentSubprocessError` whose message carries those tokens. This path does not wait for `STREAM_STALL_TIMEOUT_SECONDS` (900s). It does not start the 30s timeout retry. It does not start the `EmptyOutputError` manifest retry. Schema tokens do not reset the stall clock. Stderr stays diagnostic for stall liveness (ISS-ADH-025). `_invoke_agent` logs `AGENT_ERROR` with the exception text. `_raise_schema_limit_phase_error` then raises `PhaseFailedError` so `deviate micro run` RED, GREEN, and REFACTOR include the tokens. The operator does not see only `agent returned no manifest`. EXECUTE stall stays 3600s (GH-53).
 * **GREEN Stub-PASS Guard (REMOVED):** An earlier revision of this spec
   described a guard that rejected ``status: PASS`` manifests with zero
   observed source changes. That implementation was rolled back:
@@ -1524,7 +1526,12 @@ The `AgentBackend` class (`src/deviate/core/agent.py`) supports `opencode`, `cla
 `droid`, and `pi` backends with configurable timeout. Output is parsed as YAML
 `HandoverManifest`. Pi uses print mode (`pi -p`) by default and accepts the
 `--model <id>` CLI flag (the `provider/model` string from `[models]` is passed
-verbatim). RPC mode (`pi --mode rpc --no-session`) is opt-in via `agent.pi_rpc = true` in
+verbatim). After that prefix, default Pi spawn adds `--no-extensions`,
+`--tools read,bash,edit,write`, `--no-skills`, and optional `--skill` to
+`.pi/skills/deviatdd/SKILL.md` when that file exists. The first
+`tool_count_limit` or `unsupported_tool_schema` line aborts the child.
+`_invoke_agent` logs `AGENT_ERROR` with those tokens. RPC mode
+(`pi --mode rpc --no-session`) is opt-in via `agent.pi_rpc = true` in
 `.deviate/config.toml` and streams JSONL events so `pi.session_stats`
 (`tokens.input`/`output`/`cacheRead`/`cacheWrite`) can be appended to the
 `AGENT_RESULT` event in `.deviate/logs/run_<UTC>.log` (and the per-task
