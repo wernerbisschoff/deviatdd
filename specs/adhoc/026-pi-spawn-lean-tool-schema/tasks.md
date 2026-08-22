@@ -31,6 +31,7 @@
 
 ### Tasks
 
+  - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-003, AC-PLAN-004
 - TSK-026-02: Abort the child on the first schema-rejection line
   - **Type**: Bugfix
   - **Mode**: TDD
