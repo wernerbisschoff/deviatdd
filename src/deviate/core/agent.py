@@ -104,6 +104,19 @@ class AgentTimeoutError(Exception):
         super().__init__(message)
 
 
+_STREAMING_STALL_TOKENS = ("STALL_DETECTED", "SMART_STALL_DETECTED")
+
+
+def _is_streaming_stall(error: BaseException) -> bool:
+    """Return True for a hard or smart streaming stall.
+
+    Those paths already killed the child. Blocking ``TimeoutExpired``
+    stays on the single 30s retry so AGENT_TIMEOUT can surface inside
+    the interactive budget (ISS-ADH-025 / GH-61).
+    """
+    return str(error).startswith(_STREAMING_STALL_TOKENS)
+
+
 class AgentSubprocessError(Exception):
     def __init__(self, message: str, exit_code: int = 1) -> None:
         self.exit_code = exit_code
@@ -660,7 +673,9 @@ class AgentBackend:
                 use_rpc,
                 stall_timeout=stall_timeout,
             )
-        except AgentTimeoutError:
+        except AgentTimeoutError as exc:
+            if _is_streaming_stall(exc):
+                raise
             time.sleep(30)
             retry_proc = subprocess.Popen(cmd, **popen_kwargs)
             stdout, stderr = self._dispatch_invocation(
