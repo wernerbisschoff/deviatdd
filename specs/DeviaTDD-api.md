@@ -809,13 +809,20 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     `REFACTOR` when invoked, the cycle resumes from that phase via the
     `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
 * **Queue Drain (`deviate micro run --all`):** **Issue-scoped** task sweep.
-  Resolves the active issue from `session.active_issue_id` (falling back to
-  branch-derived detection via the `feat/{epic}/{issue}` regex against
-  `specs/issues.jsonl`), then dispatches **every PENDING task for that issue**
-  sequentially. Each task gets up to **2 retry attempts**
-  (`_execute_task_with_retry`, `for attempt in range(2)`) before being marked
-  `FAILED` in the issue-scoped `tasks.jsonl`. The pipeline **halts on the first
-  failure** (`any_failed = True; break`) and exits with code `1`. If no
+  A known `feat/{bucket}/{slug}` issue from `specs/issues.jsonl` beats a leftover
+  `session.active_issue_id`. The leftover issue does not keep the queue even when
+  it still has a `tasks.md` in this checkout. The resolver writes the
+  authoritative id to the worktree `.deviate/session.json`. An empty session
+  falls back to the branch. When the branch does not resolve, a valid session
+  id stays in place. Bare `deviate micro run` uses the same rule. The runner
+  then dispatches **every PENDING task for that issue** sequentially. Each
+  task gets up to **2 retry attempts** (`_execute_task_with_retry`,
+  `for attempt in range(2)`) before being marked `FAILED` in the
+  issue-scoped `tasks.jsonl`. The pipeline **halts on the first failure**
+  (`any_failed = True; break`) and exits with code `1`. When the branch
+  issue has no PENDING tasks, the command prints `NO_PENDING_TASKS` and
+  exits `0`. Meso claim and `MESO_ALREADY_COMPLETE` rewrite the worktree
+  session to the claimed issue.
 * **Test-command deadline (`_run_test_cmd` → `_execute_test_command`):**
   Every test command is run through `run_safe_command(command, cwd,
   timeout=...)` (`src/deviate/cli/_safe_commands.py`). The deadline
@@ -972,7 +979,9 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
      calls `_tasks_post()` to validate `tasks.md`, commit it as
      `docs({epic}-{issue}): create tasks.md`, and `transition_to("IDLE")`.
 * **Side Effects:** `.deviate/session.json` is copied from the parent repo into the worktree
-  after claim so downstream phase functions find the session. The session is force-transitioned
+  after claim so downstream phase functions find the session. After that copy, the worktree
+  session `active_issue_id` is rewritten to the claimed issue so a leftover main-repo id
+  does not stick. The session is force-transitioned
   to `PLAN` (then `TASKS`, then `IDLE`) — the Meso pipeline uses `force_transition_to()`,
   bypassing `_MACRO_TRANSITION_MAP` validation.
 * **Input Parameters:**
@@ -1012,7 +1021,8 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   * No `plan.md`: run Plan and Tasks.
   * Valid `plan.md` and no `tasks.md`: emit `MESO_RESUME`, skip Plan, and run Tasks.
   * Valid `plan.md` and non-empty `tasks.md`: emit `MESO_ALREADY_COMPLETE`, skip both agents,
-    preserve ledger progress, and return the current worktree path.
+    rewrite worktree `session.active_issue_id` to the claimed issue, preserve ledger progress,
+    and return the current worktree path.
   * Existing `plan.md` valid only after repair: when the contract fails solely for a missing `**Verification Mode**:` line, it is auto-filled (`PLAN_MODE_REPAIR`) and treated as valid; a genuinely invalid `plan.md` (missing clauses, bad AO traceability, illegal/duplicated mode) emits `MESO_PLAN_INVALID` and stops without overwrite.
   * Existing empty `tasks.md`: emit `MESO_TASKS_INVALID` and stop without overwrite.
   A fresh claim does not use inherited main-branch artifacts as resume evidence. It runs Plan

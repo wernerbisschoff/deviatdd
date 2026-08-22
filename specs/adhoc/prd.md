@@ -389,3 +389,17 @@
   1. AC-ADHOC-023-01 / AO-023-01: Pinned `deviate micro run TSK-NNN-NN` in a worktree whose issue has no ledger row (or a non-terminal row) for that id does not print `TASK_ALREADY_DONE` and does not exit 0 solely because a sibling issue completed the same TSK id.
   2. AC-ADHOC-023-02 / AO-023-02: `_find_task_record` returns only a record whose `issue_id` matches the active branch/session issue when that issue is known; missing ledger row synthesizes PENDING from this issue's `tasks.md` or is `TASK_NOT_FOUND` for this issue.
   3. AC-ADHOC-023-03 / AO-023-03: `_run_single` applies `TASK_ALREADY_DONE` only when the resolved record's `issue_id` is the active issue and that issue's latest status is terminal. Bare `micro run` / `--all` remain issue-scoped. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-024: Worktree Session `active_issue_id` Follows the Claimed Branch
+
+- **Description**: Bare `deviate micro run` in a claimed feature worktree resolves the active issue from the current `feat/{epic}/{issue}` branch when `.deviate/session.json` still names a previous issue. Meso claim and `MESO_ALREADY_COMPLETE` key the worktree session to the claimed issue so operators never hand-edit `session.json` to unblock the queue.
+- **Preconditions**: Python 3.13. Linked worktree on `feat/{epic}/{issue}` whose `tasks.md` lists unchecked tasks. Worktree `.deviate/session.json` holds a leftover `active_issue_id` from a previous issue. `_rekey_session_issue_to_branch` already prefers the branch only when the session issue has no `tasks.md` here and does not persist the correction. `_meso_run` returns on `MESO_ALREADY_COMPLETE` before writing `session.active_issue_id`, and copies `.deviate/` into the worktree before any session write.
+- **Inputs/Outputs**: Input — current branch name, worktree `session.active_issue_id`, claimed `issue_id`. Output — pending-task dispatch for the branch issue (not `NO_PENDING_TASKS` when that issue has unchecked tasks); worktree `session.active_issue_id` equal to the claimed/branch issue.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-024-01: As a DeviaTDD operator, I want bare `deviate micro run` in a claimed worktree to consume the current branch's pending tasks even when the worktree session still names a previous issue so a leftover id cannot empty the queue. *(Ref: FR-ADHOC-024)*
+  2. US-024-02: As a DeviaTDD operator, I want meso claim and `MESO_ALREADY_COMPLETE` to write the claimed issue into the worktree session so I never hand-edit `.deviate/session.json`. *(Ref: FR-ADHOC-024)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-024-01 / AO-024-01: Bare `deviate micro run` in a worktree whose branch issue has unchecked `tasks.md` entries does not print `NO_PENDING_TASKS` or exit 0 solely because `session.active_issue_id` names a different issue.
+  2. AC-ADHOC-024-02 / AO-024-02: When the branch-derived issue is known and differs from `session.active_issue_id`, the branch issue is authoritative (stale id is not sticky, including when the leftover issue still has a `tasks.md` in this checkout) and the worktree session is rewritten to that issue.
+  3. AC-ADHOC-024-03 / AO-024-03: Meso worktree claim/copy and `MESO_ALREADY_COMPLETE` inside the worktree set `session.active_issue_id` to the claimed issue. ISS-ADH-023 issue-scoped pinned lookup stays composed. API + architecture + CHANGELOG land in the same implementation commit.
