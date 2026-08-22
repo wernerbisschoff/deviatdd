@@ -11,6 +11,10 @@ import typer
 
 from deviate.cli._common import console
 from deviate.core._shared import git_env as _git_env
+from deviate.core.review_coverage import (
+    evaluate_review_coverage,
+    resolve_review_issue_id,
+)
 from deviate.state.config import resolve_base_branch
 
 logger = logging.getLogger(__name__)
@@ -39,9 +43,13 @@ def pre(
     constitution_path = _resolve_constitution_path(repo)
     prd_path, prd_warning = _resolve_prd(branch_name, repo)
     report_exists = _check_existing_reports(repo)
+    coverage = evaluate_review_coverage(
+        repo, resolve_review_issue_id(repo, branch_name)
+    )
+    status = "READY" if coverage.complete else "COVERAGE_INCOMPLETE"
 
     contract = {
-        "status": "READY",
+        "status": status,
         "diff": diff,
         "constitution_path": constitution_path,
         "constitution_warning": constitution_path is None,
@@ -50,9 +58,13 @@ def pre(
         "base_branch": resolved_base,
         "report_exists": report_exists,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uncovered": coverage.uncovered,
+        "coverage_complete": coverage.complete,
     }
 
     print(json.dumps(contract, indent=2))
+    if not coverage.complete:
+        raise typer.Exit(code=1)
 
 
 def _get_current_branch(repo: Path) -> str | None:
@@ -165,6 +177,14 @@ def post(
         raise typer.Exit(code=0)
 
     repo = Path.cwd()
+    coverage = evaluate_review_coverage(
+        repo, resolve_review_issue_id(repo, _get_current_branch(repo))
+    )
+    if not coverage.complete:
+        tokens = ", ".join(coverage.uncovered)
+        console.print(f"[red]COVERAGE_INCOMPLETE[/] unclaimed plan AC tokens: {tokens}")
+        raise typer.Exit(code=1)
+
     reports_dir = _reports_dir(repo)
     reports_dir.mkdir(parents=True, exist_ok=True)
 

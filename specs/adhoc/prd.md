@@ -448,3 +448,19 @@
   1. AC-ADHOC-027-01 / AO-027-01: RED invoke that writes then never returns a manifest logs `AGENT_TIMEOUT` (or equivalent) and fails inside the harness budget; no outer ~1800s bash timeout is required. The operator-visible failure is not only `agent returned no manifest` after silence past `INVOKE_AGENT`.
   2. AC-ADHOC-027-02 / AO-027-02: After that harness failure, tracked (and untracked) files the hung RED child introduced are gone; the worktree matches the pre-invoke baseline; session/ledger do not claim RED completed; the task is retryable as PENDING (or an explicit non-success).
   3. AC-ADHOC-027-03 / AO-027-03: ISS-ADH-025 stderr-not-liveness and ISS-ADH-023 issue-scoped pinned lookup stay green. EXECUTE still uses 3600s. Close a leftover `TASK_ALREADY_DONE` hole only if the RED hang path still resolves a sibling COMPLETED or `_find_task_record` still returns a bare-id preferred hit when the active issue is known. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-028: Task-Scoped JUDGE Evidence and Gate 3 Plan AC Coverage
+
+- **Description**: TDD JUDGE mechanical evidence is required only for the AC tokens this task owns. `deviate review` (HITL Gate 3) fail-closes when any `AC-PLAN-NNN` in that issue's `plan.md` has no COMPLETED task claiming it. Exact-substring / path-in-diff matching stays fail-closed.
+- **Preconditions**: Python 3.13. TDD micro after ISS-ADH-020 (`evaluate_judge_evidence` extracts every `AC-PLAN-NNN` from the injected `plan.md` contract). `TaskRecord.acceptance_criteria` is often null. `deviate review pre` emits READY with no plan-AC coverage check. Campfire-shaped mid-epic tasks name a subset of plan ACs.
+- **Inputs/Outputs**: Input — task `acceptance_criteria` or `tasks.md` card tokens, injected `<diff>` / HEAD, issue `plan.md` AC-PLAN set, COMPLETED `tasks.jsonl` rows. Output — JUDGE PASS legal when this task's tokens have exact-substring evidence (later plan ACs omitted); `revert_to_red` on this-task quote/path failures; review non-success when any plan AC is unclaimed.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-028-01: As a DeviaTDD operator, I want a mid-plan TDD task to COMPLETE when evidence covers only that task's AC tokens with real diff quotes so later shards do not burn the two-counter budget. *(Ref: FR-ADHOC-028)*
+  2. US-028-02: As a DeviaTDD operator, I want paraphrase or missing citations for this task's tokens to still fail JUDGE so ISS-ADH-020 stays fail-closed. *(Ref: FR-ADHOC-028)*
+  3. US-028-03: As a DeviaTDD operator, I want `deviate review` to refuse PASS when any `plan.md` AC-PLAN token was never claimed by a COMPLETED task so issue-level completeness lives at Gate 3. *(Ref: FR-ADHOC-028)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-028-01 / AO-028-01: A task responsible only for AC-PLAN-001 on a plan that also lists AC-PLAN-002 COMPLETEs when evidence covers 001 with exact-substring quotes; omitting 002 is legal at JUDGE. Token resolution is acceptance_criteria (non-empty) else AC-PLAN tokens named in the task card else none. No fallback to every plan.md token.
+  2. AC-ADHOC-028-02 / AO-028-02: Missing this-task tokens, empty quotes, paths not in the injected diff/HEAD, and non-substring / paraphrase quotes still rewrite PASS to `revert_to_red` with runner-authored feedback. EXECUTE / IMMEDIATE / DIRECT stay ungated. Declared regression paths still apply when ISS-ADH-022 / #63 applies.
+  3. AC-ADHOC-028-03 / AO-028-03: `deviate review` fail-closes (non-zero or non-PASS contract) when any plan.md AC-PLAN-NNN has no COMPLETED task claiming it via acceptance_criteria or task-card tokens (and persisted #84 evidence if already present). Review does not implement #84. E2E / merge do not treat a coverage miss as optional. API + architecture + CHANGELOG land in the same implementation commit.
+

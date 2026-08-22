@@ -34,7 +34,7 @@ from deviate.core.agent import (
     resolve_agent_to_backend,
 )
 from deviate.core.convention import format_commit_message
-from deviate.core.judge_evidence import evaluate_judge_evidence
+from deviate.core.judge_evidence import evaluate_judge_evidence, resolve_task_ac_tokens
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.tasks_ledger import resolve_execution_mode
 from deviate.core.profile import resolve_profile
@@ -1194,6 +1194,12 @@ def _build_auto_prompt(
     source_file = _resolve_issue_source_file(root, issue_id) if issue_id else None
 
     spec_content = _resolve_spec_md(root, task)
+    if phase == "judge":
+        card = _task_card_text(root, task)
+        if card:
+            spec_content = (
+                f'{spec_content}\n\n<task_card source="tasks.md">\n{card}\n</task_card>'
+            )
 
     feature_slug = ""
     issue_slug = ""
@@ -1891,6 +1897,39 @@ def _resolve_tasks_md(root: Path, task: dict) -> Path | None:
     if not issue_id:
         return None
     return _find_tasks_md_for_issue(root, issue_id)
+
+
+def _task_card_text(root: Path, task: dict) -> str:
+    """Return this task's ``tasks.md`` card, or empty string."""
+    task_id = task.get("id", "")
+    if not task_id:
+        return ""
+    tasks_md = _resolve_tasks_md(root, task)
+    if tasks_md is None:
+        return ""
+    try:
+        lines = tasks_md.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    start = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if (head := _TASK_BULLET_HEAD_RE.match(line)) and head.group(1) == task_id
+        ),
+        None,
+    )
+    if start is None:
+        return ""
+    end = next(
+        (
+            i
+            for i in range(start + 1, len(lines))
+            if _TASK_BULLET_HEAD_RE.match(lines[i])
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start:end]).strip()
 
 
 _MAX_JUDGE_FEEDBACK = 3
@@ -2793,6 +2832,8 @@ def _rewrite_unmatched_tdd_pass(
     declared_paths: Sequence[str] | None = None,
 ) -> str | None:
     """Force unmatched TDD PASS onto ``revert_to_red`` with runner feedback."""
+    if not _is_test_bearing_tdd(task):
+        return action
     if action is not None and action not in _TDD_EVIDENCE_GATE_ROUTES:
         return action
     declared = _unique_relpaths(
@@ -2811,6 +2852,9 @@ def _rewrite_unmatched_tdd_pass(
         next_action=action,
         head_contents=head_contents,
         declared_paths=declared,
+        required_tokens=resolve_task_ac_tokens(
+            task, card_text=_task_card_text(root, task)
+        ),
     )
     if not feedback:
         return action

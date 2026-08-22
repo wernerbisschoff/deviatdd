@@ -1,12 +1,35 @@
-"""TSK-020-02: path, quote, and AC coverage in the JUDGE evidence helper.
+"""TSK-028-01: task-scoped JUDGE tokens via first-hit resolver.
 
 Constitution §3 Testing Protocols: pytest under tests/; no agent; no git.
+AC-PLAN-001 / AC-PLAN-002: required tokens come from the task resolver,
+not the full plan contract. ISS-ADH-020 quote pins stay fail-closed on
+this-task tokens.
+
+GREEN scope is only ``src/deviate/core/judge_evidence.py``:
+add optional ``required_tokens`` (default ``None``) and
+``resolve_task_ac_tokens(task, *, card_text="")``.
+Do not edit ``micro.py``, ``review.py``, or prompt templates.
+When ``required_tokens`` is a list (including empty), use that list.
+Do not read the plan contract for the required set.
 """
 
 from __future__ import annotations
 
+import inspect
+import re
+from typing import Any
+
 from deviate.core.agent import EvidenceItem
 from deviate.core.judge_evidence import evaluate_judge_evidence
+from deviate.state.ledger import CriterionLink, TaskRecord
+
+try:
+    from deviate.core.judge_evidence import resolve_task_ac_tokens
+except ImportError:  # RED: symbol lands in GREEN
+
+    def resolve_task_ac_tokens(*_args: Any, **_kwargs: Any) -> list[str]:
+        raise AssertionError("resolve_task_ac_tokens is not implemented")
+
 
 # Spec example quotes (ISS-ADH-020 / AC-PLAN-003).
 _TEST_QUOTE = "assert increment(2) == 3"
@@ -97,6 +120,32 @@ def _item(**overrides: str) -> EvidenceItem:
     return EvidenceItem(**fields)
 
 
+_PLAN_BLOCK = re.compile(
+    r'<authoritative_acceptance_contract\s+source="plan.md">(.*?)'
+    r"</authoritative_acceptance_contract>",
+    re.DOTALL,
+)
+_AC_TOKEN = re.compile(r"AC-PLAN-\d{3}")
+
+
+def _tokens_in_plan(plan_contract: str) -> list[str]:
+    match = _PLAN_BLOCK.search(plan_contract)
+    if match is None:
+        return []
+    return list(dict.fromkeys(_AC_TOKEN.findall(match.group(1))))
+
+
+def _evaluate(**kwargs: Any) -> str | None:
+    """Call the gate. Drop ``required_tokens`` only while the kwarg is absent."""
+    try:
+        return evaluate_judge_evidence(**kwargs)
+    except TypeError as exc:
+        if "required_tokens" not in str(exc):
+            raise
+        kwargs.pop("required_tokens", None)
+        return evaluate_judge_evidence(**kwargs)
+
+
 def _feedback(
     *,
     evidence: list[EvidenceItem],
@@ -104,13 +153,24 @@ def _feedback(
     injected_diff: str = _MATCHING_DIFF,
     next_action: str | None = "continue_refactor",
     head_contents: dict[str, str] | None = None,
+    required_tokens: list[str] | None = None,
 ) -> str | None:
-    return evaluate_judge_evidence(
-        plan_contract=plan_contract or _plan_contract("AC-PLAN-001"),
+    plan = plan_contract or _plan_contract("AC-PLAN-001")
+    kwargs: dict[str, Any] = {}
+    accepts_tokens = (
+        "required_tokens" in inspect.signature(evaluate_judge_evidence).parameters
+    )
+    if required_tokens is not None:
+        kwargs["required_tokens"] = required_tokens
+    elif accepts_tokens:
+        kwargs["required_tokens"] = _tokens_in_plan(plan)
+    return _evaluate(
+        plan_contract=plan,
         injected_diff=injected_diff,
         evidence=evidence,
         next_action=next_action,
         head_contents=head_contents,
+        **kwargs,
     )
 
 
@@ -122,13 +182,25 @@ class TestRejectUnmatchedCitations:
         assert result is not None
         assert "AC-PLAN-001" in result
 
-    def test_partial_coverage_fails_for_omitted_token(self):
+    def test_partial_coverage_passes_when_omitted_token_is_not_required(self):
+        """AC-PLAN-001: later-shard AC-PLAN-002 is legal at JUDGE."""
         result = _feedback(
-            evidence=[_item()],
+            evidence=[_item(ac="AC-PLAN-001")],
             plan_contract=_plan_contract("AC-PLAN-001", "AC-PLAN-002"),
+            required_tokens=["AC-PLAN-001"],
+        )
+        assert result is None
+
+    def test_missing_this_task_token_still_fails(self):
+        """ISS-ADH-020 / AC-PLAN-001: omitted required token stays fail-closed."""
+        result = _feedback(
+            evidence=[],
+            plan_contract=_plan_contract("AC-PLAN-001", "AC-PLAN-002"),
+            required_tokens=["AC-PLAN-001"],
         )
         assert result is not None
-        assert "AC-PLAN-002" in result
+        assert "AC-PLAN-001" in result
+        assert "AC-PLAN-002" not in result
 
     def test_hallucinated_test_path_fails(self):
         result = _feedback(
@@ -310,3 +382,101 @@ class TestAlreadySatisfiedDeclaredPathMembership:
         assert result is not None
         assert result.strip() != ""
         assert "tests/ghost_regression.py" in result
+
+    def test_empty_required_tokens_still_checks_declared_paths(self):
+        """AC-PLAN-002: empty required set still runs declared_paths checks."""
+        result = _evaluate(
+            plan_contract=_plan_contract("AC-PLAN-001", "AC-PLAN-002"),
+            injected_diff="",
+            evidence=[],
+            next_action="skip_refactor",
+            head_contents={},
+            declared_paths=["tests/ghost_regression.py"],
+            required_tokens=[],
+        )
+        assert result is not None
+        assert "tests/ghost_regression.py" in result
+
+    def test_empty_required_tokens_does_not_fall_back_to_plan(self):
+        """AC-PLAN-001: never require every token in plan.md."""
+        result = _evaluate(
+            plan_contract=_plan_contract("AC-PLAN-001", "AC-PLAN-002"),
+            injected_diff=_MATCHING_DIFF,
+            evidence=[],
+            required_tokens=[],
+        )
+        assert result is None
+
+
+def _criteria(
+    *ids: str,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "criterion_id": token,
+            "verification_mode": "automated",
+            "test_ref": "tests/example.py",
+        }
+        for token in ids
+    ]
+
+
+class TestResolveTaskAcTokens:
+    """AC-PLAN-002: first-hit order is criteria, then card, then none."""
+
+    def test_resolve_task_ac_tokens_criteria_then_card_then_none(self):
+        card_with_extra = (
+            "- TSK-028-01: Scope JUDGE tokens\n"
+            "  - **Rationale**: names AC-PLAN-001 and AC-PLAN-002.\n"
+            "  - **Details**: also names AC-PLAN-005.\n"
+        )
+        criteria_task: dict[str, Any] = {
+            "id": "TSK-028-01",
+            "acceptance_criteria": _criteria("AC-PLAN-001"),
+        }
+        assert resolve_task_ac_tokens(criteria_task, card_text=card_with_extra) == [
+            "AC-PLAN-001"
+        ]
+
+        empty_criteria_task: dict[str, Any] = {
+            "id": "TSK-028-01",
+            "acceptance_criteria": [],
+        }
+        card_named = "Rationale owns AC-PLAN-001. Details also name AC-PLAN-003.\n"
+        assert resolve_task_ac_tokens(empty_criteria_task, card_text=card_named) == [
+            "AC-PLAN-001",
+            "AC-PLAN-003",
+        ]
+
+        pending_without_field: dict[str, Any] = {
+            "id": "TSK-028-01",
+            "status": "PENDING",
+        }
+        assert resolve_task_ac_tokens(
+            pending_without_field, card_text="Card names AC-PLAN-001 only.\n"
+        ) == ["AC-PLAN-001"]
+
+        infra_card = "Enabling / infra task with no plan tokens.\n"
+        assert resolve_task_ac_tokens({"id": "TSK-028-01"}, card_text=infra_card) == []
+
+    def test_none_acceptance_criteria_uses_card_tokens(self):
+        task = {"id": "TSK-028-01", "acceptance_criteria": None}
+        assert resolve_task_ac_tokens(
+            task, card_text="Acceptance names AC-PLAN-002.\n"
+        ) == ["AC-PLAN-002"]
+
+    def test_task_record_criterion_ids_win_over_card(self):
+        record = TaskRecord(
+            id="TSK-028-01",
+            issue_id="ISS-ADH-028",
+            description="Scope JUDGE tokens to this task via first-hit resolver",
+            acceptance_criteria=[
+                CriterionLink(
+                    criterion_id="AC-PLAN-001",
+                    verification_mode="automated",
+                    test_ref="tests/test_core/test_judge_evidence.py",
+                )
+            ],
+        )
+        card = "Card also names AC-PLAN-002 and AC-PLAN-007.\n"
+        assert resolve_task_ac_tokens(record, card_text=card) == ["AC-PLAN-001"]
