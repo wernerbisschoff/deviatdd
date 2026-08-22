@@ -800,10 +800,15 @@ handing the manifest to the rest of the pipeline:
    where unbounded `plan_content` pushed the TASKS prompt past the
    agent's effective working window.
 2. **Streaming stall watchdog** — the streaming path polls
-   `time.monotonic()` between chunks and raises
-   `AgentTimeoutError(STALL_DETECTED)` once no output has arrived for
-   `STREAM_STALL_TIMEOUT_SECONDS = 60` (≤ 120 by spec). Periodic
-   stdout keeps the watchdog warm, so healthy agents are unaffected.
+   `time.monotonic()` between chunks. Only stdout resets the hard
+   stall clock. Stderr is diagnostic and does not reset the clock.
+   The default budget is `STREAM_STALL_TIMEOUT_SECONDS = 900`.
+   Periodic stdout keeps the watchdog warm. A few minutes of
+   stdout silence inside that 900s budget does not trip the
+   detector. EXECUTE passes `stall_timeout=3600`. A stdout-silent
+   stall raises `AgentTimeoutError(STALL_DETECTED)`. `invoke`
+   re-raises that error. `_invoke_agent` logs `AGENT_TIMEOUT`
+   for a hung GREEN.
 3. **Manifest retry-with-context** — `MalformedHandoverManifestError`
    and `EmptyOutputError` trigger one extra `subprocess.Popen` whose
    prompt embeds the previous parse error and an explicit
@@ -951,7 +956,7 @@ routing decisions and the final CYCLE outcome; interpret via
 (carries `status=`, `verdict=`, full `manifest=`; the manifest
 contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
 (full stdout in a single `raw_output=` field; stderr is NOT
-captured), `AGENT_TIMEOUT` (carries `error=` and `partial_stderr=`),
+captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and `partial_stdout=`; harness verdict for a hung GREEN),
 `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`, `JUDGE_REJECTED`,
 `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE` (carries `note=`,
 the refactor hint), `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`,
