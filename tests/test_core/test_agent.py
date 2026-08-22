@@ -857,6 +857,129 @@ class TestAgentBackendErrors:
         assert issubclass(EmptyOutputError, Exception)
 
 
+def _assert_no_thirty_second_sleep(mock_sleep: MagicMock) -> None:
+    for call in mock_sleep.call_args_list:
+        if call.args and call.args[0] == 30:
+            pytest.fail("schema rejection must skip the 30s timeout retry")
+
+
+class TestSchemaRejectionFailFast:
+    """AC-PLAN-003: first tool_count_limit / unsupported_tool_schema line aborts."""
+
+    @pytest.mark.timeout(3)
+    def test_invoke_aborts_on_tool_count_limit_line(self) -> None:
+        """Streaming invoke kills the child on the first schema-rejection stderr line."""
+        from deviate.core.agent import AgentSubprocessError
+
+        release = threading.Event()
+        schema_line = "400 tool_count_limit unsupported_tool_schema"
+
+        class BlockingStdout:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release.wait()
+                raise StopIteration
+
+        class SchemaStderr:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if not getattr(self, "_emitted", False):
+                    self._emitted = True
+                    return f"{schema_line}\n".encode()
+                if release.wait(timeout=0.05):
+                    raise StopIteration
+                return b""
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BlockingStdout()
+        mock_proc.stderr = SchemaStderr()
+        mock_proc.returncode = None
+        mock_proc.kill.side_effect = release.set
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="tool_count_limit|unsupported_tool_schema",
+            ),
+        ):
+            AgentBackend().invoke(
+                "test prompt",
+                backend="pi",
+                output_callback=lambda _line: None,
+                stall_timeout=0.2,
+            )
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        _assert_no_thirty_second_sleep(mock_sleep)
+
+    def test_invoke_blocking_aborts_on_unsupported_tool_schema(self) -> None:
+        """Blocking invoke raises on schema tokens and skips EmptyOutput retry."""
+        from deviate.core.agent import AgentSubprocessError
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.communicate.return_value = (
+            b"",
+            b"400 tool_count_limit\nunsupported_tool_schema\n",
+        )
+        mock_proc.returncode = 0
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="tool_count_limit|unsupported_tool_schema",
+            ),
+        ):
+            AgentBackend().invoke("test prompt", backend="pi")
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        _assert_no_thirty_second_sleep(mock_sleep)
+
+    def test_invoke_streaming_aborts_on_stdout_schema_token(self) -> None:
+        """AC-PLAN-003: schema tokens on stdout also abort before parse retry."""
+        from deviate.core.agent import AgentSubprocessError
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter((b"unsupported_tool_schema\n",))
+        mock_proc.stderr = iter(())
+        mock_proc.returncode = 0
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="unsupported_tool_schema",
+            ),
+        ):
+            AgentBackend().invoke(
+                "test prompt",
+                backend="pi",
+                output_callback=lambda _line: None,
+            )
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        _assert_no_thirty_second_sleep(mock_sleep)
+
+
 class TestAgentModelRouting:
     """AC-ADHOC-005-01 through AC-ADHOC-005-05: model parameter injection."""
 

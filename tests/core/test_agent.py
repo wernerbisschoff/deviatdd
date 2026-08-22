@@ -421,3 +421,35 @@ class TestPiRpcMode:
         assert "--mode" not in cmd, (
             f"Print mode must not contain --mode flag (got {cmd})"
         )
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_invoke_rpc_aborts_on_unsupported_tool_schema(
+        self, mock_popen: MagicMock
+    ) -> None:
+        """AC-PLAN-003: RPC blocking abort on first schema-rejection line."""
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (
+            b"",
+            b"unsupported_tool_schema tool_count_limit\n",
+        )
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        config = AgentConfig(backend="pi", pi_rpc=True)
+        backend = AgentBackend(config=config)
+        with (
+            patch("time.sleep", return_value=None) as mock_sleep,
+            pytest.raises(
+                AgentSubprocessError,
+                match="unsupported_tool_schema|tool_count_limit",
+            ),
+        ):
+            backend.invoke("test prompt")
+
+        mock_proc.kill.assert_called()
+        assert mock_popen.call_count == 1, (
+            "schema rejection must not start EmptyOutputError manifest retry"
+        )
+        for call in mock_sleep.call_args_list:
+            if call.args and call.args[0] == 30:
+                pytest.fail("schema rejection must skip the 30s timeout retry")
