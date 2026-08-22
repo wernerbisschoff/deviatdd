@@ -399,6 +399,42 @@ class TestAgentBackendErrors:
             or "timeout" in str(exc_info.value).lower()
         )
 
+    @pytest.mark.parametrize(
+        "stall_token",
+        ["STALL_DETECTED", "SMART_STALL_DETECTED"],
+    )
+    def test_invoke_streaming_stall_does_not_retry(self, stall_token: str) -> None:
+        """AC-PLAN-003: streaming stall re-raises with no 30s second budget."""
+        from deviate.core.agent import AgentTimeoutError
+
+        stall = AgentTimeoutError(
+            f"{stall_token}: no agent output for 0.05s",
+            partial_stdout="",
+            partial_stderr="[codebase-index] Background reindex failed",
+        )
+        mock_proc = MagicMock(spec=subprocess.Popen)
+
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", return_value=None) as mock_sleep,
+            patch.object(
+                AgentBackend,
+                "_dispatch_invocation",
+                side_effect=stall,
+            ) as mock_dispatch,
+        ):
+            backend = AgentBackend()
+            with pytest.raises(AgentTimeoutError, match=stall_token) as exc_info:
+                backend.invoke(
+                    "test prompt",
+                    output_callback=lambda _line: None,
+                )
+
+        assert exc_info.value is stall
+        assert mock_dispatch.call_count == 1
+        assert mock_popen.call_count == 1
+        mock_sleep.assert_not_called()
+
     def test_streaming_agent_detects_stdout_stall(self):
         from deviate.core.agent import AgentTimeoutError
 
