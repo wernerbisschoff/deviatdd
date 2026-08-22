@@ -2021,10 +2021,11 @@ class TestExecuteRollbackUntrackedCleanup:
 
 
 # ---------------------------------------------------------------------------
-# TSK-020-03: TDD `_run_judge_phase` mechanical evidence gate (AC-PLAN-002..
-# AC-PLAN-006). Constitution §3 Testing Protocols: pytest under tests/;
-# git isolation via tmp_git_repo + _git_env(); mock _invoke_agent and
-# _run_pytest. Flow References: [].
+# TSK-020-03 / TSK-028-02: TDD `_run_judge_phase` mechanical evidence gate.
+# TSK-028-02: required tokens come from the task card / criteria, not the
+# full plan set (AC-PLAN-001, AC-PLAN-003, AC-PLAN-004). Constitution §3:
+# pytest under tests/; git isolation via tmp_git_repo + _git_env(); mock
+# _invoke_agent and _run_pytest. Flow References: [].
 # ---------------------------------------------------------------------------
 
 _GATE_ISSUE_ID = "ISS-ADH-020"
@@ -2059,7 +2060,11 @@ def _gate_commit(repo: Path, message: str, *relpaths: str) -> str:
     return _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _seed_gate_issue(repo: Path, *acs: str) -> None:
+def _seed_gate_issue(
+    repo: Path,
+    *acs: str,
+    card_acs: tuple[str, ...] | None = None,
+) -> None:
     issues_dir = repo / "specs" / "adhoc" / "issues"
     issues_dir.mkdir(parents=True, exist_ok=True)
     (issues_dir / f"{_GATE_SLUG}.md").write_text(
@@ -2083,10 +2088,18 @@ def _seed_gate_issue(repo: Path, *acs: str) -> None:
     if not body:
         body = "No AC-PLAN tokens in this contract.\n"
     (plan_dir / "plan.md").write_text(body + "\n", encoding="utf-8")
-    (plan_dir / "tasks.md").write_text(
-        f"# Tasks\n\n- {_GATE_TASK_ID}: Rewrite unmatched TDD PASS\n",
-        encoding="utf-8",
-    )
+    # Default: this task owns the first plan token only so later-shard ACs
+    # stay unclaimed at JUDGE (TSK-028-02 / AC-PLAN-001). Empty plan → no
+    # card tokens (infra / enabling).
+    owned = card_acs if card_acs is not None else ((acs[0],) if acs else ())
+    card = f"# Tasks\n\n- {_GATE_TASK_ID}: Rewrite unmatched TDD PASS\n"
+    if owned:
+        named = ", ".join(owned)
+        card += (
+            f"  - **Acceptance Criteria**: {named}\n"
+            f"  - **Rationale**: this task owns {named}\n"
+        )
+    (plan_dir / "tasks.md").write_text(card, encoding="utf-8")
 
 
 def _write_gate_file(repo: Path, relpath: str, body: str) -> None:
@@ -2099,6 +2112,7 @@ def _seed_red_green(
     repo: Path,
     *,
     acs: tuple[str, ...] = ("AC-PLAN-001",),
+    card_acs: tuple[str, ...] | None = None,
     test_body: str = _GATE_TEST_BODY,
     impl_body: str | None = _GATE_IMPL_BODY,
     commit_test: bool = True,
@@ -2106,7 +2120,7 @@ def _seed_red_green(
 ) -> str:
     """Seed specs + optional RED/GREEN commits. Returns red_commit_sha."""
     (repo / ".gitignore").write_text(".deviate/\n", encoding="utf-8")
-    _seed_gate_issue(repo, *acs)
+    _seed_gate_issue(repo, *acs, card_acs=card_acs)
     _gate_commit(
         repo,
         "chore: seed issue and plan",
@@ -2449,7 +2463,7 @@ def _run_already_satisfied_cycle(
 
 
 class TestTddJudgeEvidenceGate:
-    """TSK-020-03: unmatched TDD PASS rewrites to revert_to_red (AC-PLAN-002..006).
+    """TSK-020-03 / TSK-028-02: TDD gate is task-scoped (AC-PLAN-001..004).
 
     Constitution §3 Testing Protocols. Flow References: [].
     """
@@ -2472,14 +2486,45 @@ class TestTddJudgeEvidenceGate:
         )
         _assert_reverted_to_red(session, ledger)
 
-    def test_partial_evidence_does_not_complete(self, tmp_git_repo: Path) -> None:
+    def test_mid_plan_this_task_evidence_completes(self, tmp_git_repo: Path) -> None:
+        """AC-PLAN-001 / AC-PLAN-004: omitting later-shard AC-PLAN-002 is legal.
+
+        Plan lists AC-PLAN-001 and AC-PLAN-002. The synthesized PENDING dict
+        omits acceptance_criteria. The tasks.md card names only AC-PLAN-001.
+        Matching this-task quotes COMPLETE. Constitution §3. Flow References: [].
+        """
         red_sha = _seed_red_green(
             tmp_git_repo,
             acs=("AC-PLAN-001", "AC-PLAN-002"),
+            card_acs=("AC-PLAN-001",),
         )
         session, _, ledger = _run_tdd_judge(
             tmp_git_repo,
-            _gate_manifest(evidence=[_gate_evidence()]),
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            red_sha,
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="skip_refactor",
+            completed=True,
+        )
+
+    def test_missing_this_task_token_does_not_complete_mid_plan(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-003: ISS-ADH-020 stays fail-closed on this-task tokens."""
+        red_sha = _seed_red_green(
+            tmp_git_repo,
+            acs=("AC-PLAN-001", "AC-PLAN-002"),
+            card_acs=("AC-PLAN-001",),
+        )
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(evidence=[]),
             red_sha,
         )
         _assert_reverted_to_red(session, ledger)
@@ -2760,8 +2805,9 @@ class TestTddJudgeEvidenceGate:
             completed=True,
         )
 
-    def test_execute_judge_stays_ungated(self, tmp_git_repo: Path) -> None:
-        """AC-PLAN-003 / FR-ADHOC-022: EXECUTE / DIRECT stay ungated by files."""
+    @pytest.mark.parametrize("mode", ["DIRECT", "IMMEDIATE", "EXECUTE"])
+    def test_non_tdd_judge_stays_ungated(self, tmp_git_repo: Path, mode: str) -> None:
+        """AC-PLAN-004: EXECUTE / IMMEDIATE / DIRECT stay outside the TDD gate."""
         from deviate.cli.micro import _run_execute_phase
         import io
 
@@ -2771,9 +2817,9 @@ class TestTddJudgeEvidenceGate:
         task = {
             "id": _GATE_TASK_ID,
             "issue_id": _GATE_ISSUE_ID,
-            "description": "EXECUTE judge stays ungated",
+            "description": f"{mode} judge stays ungated",
             "status": "PENDING",
-            "execution_mode": "DIRECT",
+            "execution_mode": mode,
         }
         ledger_path = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
         session_path = tmp_git_repo / ".deviate" / "session.json"
@@ -2811,12 +2857,14 @@ class TestTddJudgeEvidenceGate:
             _run_execute_phase(task, ledger_path, console)
         statuses = _ledger_statuses(ledger_path)
         assert "COMPLETED" in statuses, (
-            f"EXECUTE judge must stay ungated and COMPLETE, statuses={statuses!r}"
+            f"{mode} judge must stay ungated and COMPLETE, statuses={statuses!r}"
         )
 
 
 class TestJudgeEvidencePromptSchema:
-    """AC-PLAN-006: auto judge prompt requires evidence and omits default-pass."""
+    """AC-PLAN-004 / AC-PLAN-006: task-scoped evidence; no cite-every-plan."""
+
+    _CARD_MARKER = "TSK-028-02-CARD-MARKER"
 
     def _build_prompt(self, tmp_path: Path) -> str:
         from deviate.cli.micro import _build_auto_prompt
@@ -2834,6 +2882,20 @@ class TestJudgeEvidencePromptSchema:
                 }
             )
             + "\n",
+            encoding="utf-8",
+        )
+        plan_dir = tmp_path / "specs" / "adhoc" / "020-judge-evidence-prompt"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / "plan.md").write_text(
+            "**Scenario AC-PLAN-001: this task**\n"
+            "**Scenario AC-PLAN-002: later shard**\n",
+            encoding="utf-8",
+        )
+        (plan_dir / "tasks.md").write_text(
+            "# Tasks\n\n"
+            "- TSK-020-04: Verify judge evidence prompt schema\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001\n"
+            f"  - **Details**: {self._CARD_MARKER}\n",
             encoding="utf-8",
         )
         task = {
@@ -2866,4 +2928,49 @@ class TestJudgeEvidencePromptSchema:
         )
         assert "When in doubt, pass." not in prompt, (
             "Auto judge prompt must omit When in doubt, pass."
+        )
+
+    def test_auto_judge_prompt_does_not_cite_every_plan_ac(
+        self, tmp_path: Path
+    ) -> None:
+        """AC-PLAN-004: evidence is only for resolved task tokens."""
+        prompt = self._build_prompt(tmp_path)
+        lowered = prompt.lower()
+        assert "cite every injected" not in lowered, (
+            "Auto judge prompt must drop cite-every-injected plan AC wording"
+        )
+        assert "every injected `ac-plan-nnn`" not in lowered, (
+            "Auto judge prompt must not require every injected plan AC-PLAN-NNN"
+        )
+        assert "every plan scenario" not in lowered, (
+            "Auto judge prompt must not require every plan scenario in this verdict"
+        )
+
+    def test_auto_judge_prompt_injects_task_card_next_to_plan(
+        self, tmp_path: Path
+    ) -> None:
+        """AC-PLAN-004: inject the tasks.md card beside the plan contract."""
+        prompt = self._build_prompt(tmp_path)
+        assert self._CARD_MARKER in prompt, (
+            "JUDGE prompt must inject the tasks.md card next to the plan contract"
+        )
+        assert '<authoritative_acceptance_contract source="plan.md">' in prompt, (
+            "JUDGE prompt must still inject the plan acceptance contract"
+        )
+
+    def test_manual_judge_skill_does_not_cite_every_plan_ac(self) -> None:
+        """AC-PLAN-004: /deviate-judge mirrors the task-scoped evidence rule."""
+        from importlib.resources import files
+
+        text = (
+            files("deviate.prompts.commands")
+            .joinpath("deviate-judge.md")
+            .read_text(encoding="utf-8")
+        )
+        lowered = text.lower()
+        assert "cite every injected" not in lowered, (
+            "Manual judge skill must drop cite-every-injected plan AC wording"
+        )
+        assert "every injected `ac-plan-nnn`" not in lowered, (
+            "Manual judge skill must not require every injected plan AC-PLAN-NNN"
         )
