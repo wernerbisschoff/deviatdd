@@ -683,14 +683,20 @@ The orchestrator must maintain and enforce these structural constraints across a
 10. **The Issue-Scoped Resolution & Sweep:** task-resolution across micro, e2e, and meso is
     **issue-scoped**, not global. The active issue is resolved from `session.active_issue_id`,
     falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against
-    `specs/issues.jsonl`. This fallback is shared by `deviate micro run` (single-task and
-    `--all`), `deviate e2e pre`, and the meso `plan`/`tasks` pre/post contract emit, so every
-    command run inside a feature-branch worktree targets the branch's own issue even when
-    `.deviate/session.json` has no `active_issue_id`. If neither resolves, no micro tasks are
+    `specs/issues.jsonl`. A leftover session id that conflicts with a known feature-branch
+    issue yields to the branch, even when the leftover issue still has a `tasks.md` in this
+    checkout. The worktree `.deviate/session.json` is rewritten to that branch issue. An
+    unresolved non-`feat/` branch keeps a valid session id. This fallback is shared by
+    `deviate micro run` (single-task and `--all`), `deviate e2e pre`, and the meso
+    `plan`/`tasks` pre/post contract emit, so every command run inside a feature-branch
+    worktree targets the branch's own issue even when `.deviate/session.json` has no
+    `active_issue_id` or still names a previous issue. Meso claim and `MESO_ALREADY_COMPLETE`
+    write the claimed issue into the worktree session. If neither resolves, no micro tasks are
     dispatched (single-task and `--all` emit NO tasks; `e2e pre` and meso either emit an
     issue-less contract or raise `NO_ACTIVE_ISSUE`). Once the issue is
     resolved, only the PENDING tasks for that issue (`_find_all_pending_tasks(root,
-    issue_id=...)`) are swept. Tasks are dispatched sequentially; each task gets up to
+    issue_id=...)`) are swept. `NO_PENDING_TASKS` exit 0 is reserved for an empty
+    branch-issue queue. Tasks are dispatched sequentially; each task gets up to
     **2 retry attempts** (`_execute_task_with_retry`, `for attempt in range(2)`) before
     being marked `FAILED`. The pipeline **halts on the first failure** (`any_failed = True;
     break`) and exits with code `1`. When `.deviate/config.toml` contains `graphite = true`,

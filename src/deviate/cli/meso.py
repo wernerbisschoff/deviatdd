@@ -828,6 +828,7 @@ def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
         wt_path = Path(setup_result["worktree_path"])
         if dot_dir.exists():
             shutil.copytree(str(dot_dir), str(wt_path / ".deviate"), dirs_exist_ok=True)
+        _key_worktree_session_to_issue(wt_path, issue_id)
 
         console.print(f"[green]WORKTREE[/] setup at {wt_path}")
         console.print("[green]SESSION[/] advanced to PLAN")
@@ -1765,7 +1766,12 @@ def _phase_callout(
 
 
 def _key_worktree_session_to_issue(worktree_path: Path, issue_id: str) -> None:
-    """Write the claimed issue into worktree ``.deviate/session.json``."""
+    """Write claimed ``issue_id`` into ``worktree_path/.deviate/session.json``.
+
+    Meso claim (AC-PLAN-006) and ``MESO_ALREADY_COMPLETE`` (AC-PLAN-005)
+    both persist ``SessionState.active_issue_id`` so a leftover main-repo
+    id cannot stick in the worktree session (constitution §2).
+    """
     session_path = worktree_path / ".deviate" / "session.json"
     session = SessionState.load(session_path)
     if session.active_issue_id == issue_id:
@@ -1899,8 +1905,10 @@ def _meso_run(
     session_path = (dot_dir / "session.json").resolve()
 
     # Sync .deviate/ to worktree so downstream functions find the session.
-    # Rewrite the copied session when it still names a previous issue.
+    # Write-then-copy keys the source session first; rewrite after copy
+    # when the copied file still names a previous issue (AC-PLAN-006).
     if dot_dir.exists() and not no_setup:
+        _key_worktree_session_to_issue(dot_dir.parent, issue_id)
         shutil.copytree(
             str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
         )
