@@ -181,6 +181,10 @@ def resolve_agent_to_backend(agent: str) -> str:
 PI_RPC_COMMAND: list[str] = ["pi", "--mode", "rpc", "--no-session"]
 PI_CODING_TOOLS: tuple[str, ...] = ("read", "bash", "edit", "write")
 PI_DEVIATDD_SKILL = Path(".pi") / "skills" / "deviatdd" / "SKILL.md"
+SCHEMA_REJECTION_TOKENS: tuple[str, ...] = (
+    "tool_count_limit",
+    "unsupported_tool_schema",
+)
 
 
 def _pi_lean_flags(cwd: str | None) -> list[str]:
@@ -195,6 +199,48 @@ def _pi_lean_flags(cwd: str | None) -> list[str]:
     if (skill_root / PI_DEVIATDD_SKILL).is_file():
         flags.extend(["--skill", str(PI_DEVIATDD_SKILL)])
     return flags
+
+
+def _schema_rejection_token(text: str) -> str | None:
+    """Return the first schema-rejection token found in *text*."""
+    for token in SCHEMA_REJECTION_TOKENS:
+        if token in text:
+            return token
+    return None
+
+
+def _schema_rejection_message(text: str) -> str | None:
+    """Return the first line that carries a schema-rejection token."""
+    token = _schema_rejection_token(text)
+    if token is None:
+        return None
+    for line in text.splitlines():
+        if token in line:
+            return line
+    return text.strip()
+
+
+def _raise_schema_rejection(proc: subprocess.Popen[bytes], message: str) -> None:
+    """Kill *proc* and raise a token-bearing ``AgentSubprocessError``."""
+    proc.kill()
+    exit_code = proc.returncode if proc.returncode not in (None, 0) else 1
+    raise AgentSubprocessError(message=message, exit_code=exit_code)
+
+
+def _abort_on_schema_rejection(proc: subprocess.Popen[bytes], text: str) -> None:
+    """Kill *proc* and raise when *text* carries a schema-rejection token."""
+    message = _schema_rejection_message(text)
+    if message is None:
+        return
+    _raise_schema_rejection(proc, message)
+
+
+def _decode_stdio(
+    stdout_bytes: bytes | None, stderr_bytes: bytes | None
+) -> tuple[str, str]:
+    stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
+    stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+    return stdout, stderr
 
 
 # Per-backend model-flag dispatch. ``None`` means the backend does not
@@ -388,8 +434,8 @@ class AgentBackend:
                 partial_stdout=partial_out,
                 partial_stderr=partial_err,
             )
-        stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
-        stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+        stdout, stderr = _decode_stdio(stdout_bytes, stderr_bytes)
+        _abort_on_schema_rejection(proc, f"{stdout}\n{stderr}")
         if proc.returncode != 0:
             raise AgentSubprocessError(
                 message=stderr or f"Agent exited with code {proc.returncode}",
@@ -426,6 +472,7 @@ class AgentBackend:
         stdout_done = False
         stall_reason: str | None = None
         stall_partial: tuple[str, str] | None = None
+        schema_rejection_line: str | None = None
 
         # Two-track stall detector (see diagnosis F2 in the README).
         # ``stall_lock`` + ``stall_deadline`` reset on stdout only and trip
@@ -468,11 +515,22 @@ class AgentBackend:
             with stall_lock:
                 stall_deadline[0] = time.monotonic() + stall_timeout_secs
 
+        def note_schema_rejection(line: str) -> bool:
+            nonlocal schema_rejection_line
+            message = _schema_rejection_message(line)
+            if message is None:
+                return False
+            schema_rejection_line = message
+            proc.kill()
+            return True
+
         def read_stdout() -> None:
             nonlocal stdout_done
             try:
                 for raw_line in proc.stdout:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
+                    if note_schema_rejection(line):
+                        return
                     stdout_lines.append(line)
                     output_callback(line)
                     record_bytes(len(raw_line))
@@ -487,6 +545,8 @@ class AgentBackend:
                 for raw_line in proc.stderr:
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\n\r")
                     stderr_lines.append(line)
+                    if note_schema_rejection(line):
+                        return
             except (ValueError, OSError, RuntimeError):
                 pass
 
@@ -507,6 +567,8 @@ class AgentBackend:
             stall_partial = captured_streams()
 
         while True:
+            if schema_rejection_line is not None:
+                break
             if stdout_done and not any(t.is_alive() for t in threads):
                 break
             if stall_deadline_remaining() <= 0:
@@ -532,6 +594,10 @@ class AgentBackend:
                 )
                 break
             time.sleep(0.05)
+        if schema_rejection_line is not None:
+            for t in threads:
+                t.join(timeout=5)
+            _abort_on_schema_rejection(proc, schema_rejection_line)
         if stall_reason is not None:
             proc.kill()
             for t in threads:
@@ -559,6 +625,7 @@ class AgentBackend:
 
         proc.wait()
         stdout, stderr = captured_streams()
+        _abort_on_schema_rejection(proc, f"{stdout}\n{stderr}")
 
         if proc.returncode != 0:
             raise AgentSubprocessError(
@@ -592,8 +659,8 @@ class AgentBackend:
                 partial_stdout=partial_out,
                 partial_stderr=partial_err,
             )
-        stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
-        stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+        stdout, stderr = _decode_stdio(stdout_bytes, stderr_bytes)
+        _abort_on_schema_rejection(proc, f"{stdout}\n{stderr}")
         if proc.returncode != 0:
             raise AgentSubprocessError(
                 message=stderr or f"Agent exited with code {proc.returncode}",
