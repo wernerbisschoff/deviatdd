@@ -186,7 +186,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
   (full stdout in a single `raw_output=` field; stderr is NOT
   captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and
-  `partial_stdout=`; harness verdict for a hung GREEN), `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`,
+  `partial_stdout=`; harness verdict for a hung RED or hung GREEN), `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`,
   `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`,
   `JUDGE_REFACTOR_NOTE` (carries `note=`, the refactor hint),
   `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`, `TASKS_MD_SKIP`,
@@ -866,10 +866,18 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   GREEN, RED, JUDGE, and REFACTOR use that default. EXECUTE
   passes `stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS` (3600).
   A stdout-silent stall raises `AgentTimeoutError` with
-  `STALL_DETECTED`. `invoke` re-raises that error and does not
-  sleep 30s for a second stall budget. `_invoke_agent` logs
-  `AGENT_TIMEOUT` with `error=`, `partial_stderr=`, and
-  `partial_stdout=` for a hung GREEN. (3) **Manifest retry-with-context** — a malformed
+  `STALL_DETECTED`. The same poll loop also honors
+  `timeout_secs` from `AgentConfig.timeout` (default 600s).
+  A RED child that writes files or trickles stdout and never
+  returns a handover manifest still raises `AgentTimeoutError`
+  inside that wall-clock. `invoke` re-raises stall and
+  wall-clock timeout and does not sleep 30s for a second
+  budget. `_invoke_agent` logs `AGENT_TIMEOUT` with `error=`,
+  `partial_stderr=`, and `partial_stdout=` for a hung RED or
+  hung GREEN. `_run_red_phase` then restores `red_baseline` via
+  `_restore_worktree_to_baseline` and raises `PhaseFailedError`
+  that names timeout. The operator does not wait for an outer
+  ~1800s bash kill. (3) **Manifest retry-with-context** — a malformed
   or empty manifest triggers one additional `subprocess.Popen`
   whose prompt includes the previous parse error and an explicit
   `strict YAML block delimited by ```yaml ... ``` only` directive.
