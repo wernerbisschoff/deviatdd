@@ -30,6 +30,7 @@
 
 ### Tasks
 
+  - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-005, AC-PLAN-006
 - TSK-024-02: Key the worktree session on meso claim and already-complete
   - **Type**: Bugfix
   - **Mode**: TDD
