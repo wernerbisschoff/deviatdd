@@ -29,6 +29,7 @@ from deviate.core.agent import (
     EvidenceItem,
     HandoverManifest,
     MalformedHandoverManifestError,
+    is_schema_rejection,
     resolve_agent_to_backend,
 )
 from deviate.core.convention import format_commit_message
@@ -468,6 +469,17 @@ def _extract_pi_session_stats(stdout: str) -> dict[str, int] | None:
     return stats or None
 
 
+def _raise_schema_limit_phase_error(
+    exc: BaseException, phase: str, task_id: str
+) -> None:
+    """Raise token-bearing ``PhaseFailedError`` for schema-limit failures."""
+    if not is_schema_rejection(str(exc)):
+        return
+    label = phase or "agent"
+    tid = task_id or "?"
+    raise PhaseFailedError(f"{label} phase agent error for {tid}: {exc}") from exc
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -562,6 +574,7 @@ def _invoke_agent(
     ) as exc:
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
         _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
+        _raise_schema_limit_phase_error(exc, phase, task_id)
         return None, ""
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")

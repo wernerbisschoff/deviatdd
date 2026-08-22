@@ -209,6 +209,11 @@ def _schema_rejection_token(text: str) -> str | None:
     return None
 
 
+def is_schema_rejection(text: str) -> bool:
+    """Return whether *text* carries a provider schema-limit token."""
+    return _schema_rejection_token(text) is not None
+
+
 def _schema_rejection_message(text: str) -> str | None:
     """Return the first line that carries a schema-rejection token."""
     token = _schema_rejection_token(text)
