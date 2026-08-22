@@ -32,6 +32,13 @@
 
   - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-005, AC-PLAN-006
   - **Judge Feedback**: JUDGE evidence test_path is not in the injected diff or HEAD: tests/test_cli/test_micro.py
+  - **Judge Feedback**: COMPLIANCE_VIOLATION: The working-tree micro re-key in src/deviate/cli/micro.py already prefers a known branch issue over a leftover session id, persists that id, routes bare resolve / --all / pinned lookup through _rekey_session_issue_to_branch, and keeps NO_PENDING_TASKS exit 0 for an empty branch queue (AC-PLAN-001, AC-PLAN-002, AC-PLAN-003, AC-PLAN-004, AC-PLAN-007). The injected plan contract is still unmet for AC-PLAN-005 and AC-PLAN-006: src/deviate/cli/meso.py was not changed. _meso_run still copytree's .deviate/ and returns on MESO_ALREADY_COMPLETE before writing the claimed issue into the worktree session.
+The next GREEN attempt must:
+1. Keep the current working-tree src/deviate/cli/micro.py re-key and persist helper. Do not restore the old "re-key only when leftover issue has no tasks.md" rule.
+2. In src/deviate/cli/meso.py _meso_run, before printing MESO_ALREADY_COMPLETE and returning, set session.active_issue_id to the claimed issue and save the worktree .deviate/session.json (AC-PLAN-005).
+3. After _meso_run copies .deviate/ into the worktree, rewrite that worktree session.active_issue_id to the claimed issue when the copied file still names the previous issue (AC-PLAN-006). Keep _claim_and_setup write-then-copy.
+4. Add the TSK-024-02 RED pins: leftover active_issue_id plus MESO_ALREADY_COMPLETE must leave the worktree session on the claimed issue (tests/test_meso/test_meso_resume.py); after claim/copy the worktree session must equal the claimed issue, not the previous main-repo id (tests/test_meso/test_meso_orchestration.py). Mock deviate.cli.micro._run_pytest with subprocess.CompletedProcess.
+5. Do not weaken tests/test_cli/test_micro.py assertions. Leave that file with a dirty working-tree hunk (for example a one-line docstring restating AC-PLAN-003 persist) so git diff HEAD includes it. JUDGE evidence quotes are matched against the injected dirty diff, and red_commit_sha now points at the feedback commit rather than the RED test commit.
 - TSK-024-02: Key the worktree session on meso claim and already-complete
   - **Type**: Bugfix
   - **Mode**: TDD
