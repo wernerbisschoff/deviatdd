@@ -36,6 +36,18 @@ _QUOTE_TOO_GENERIC = (
 _SourceKind = Literal["diff", "head"]
 
 
+def resolve_task_ac_tokens(task: Any, *, card_text: str = "") -> list[str]:
+    """Return this task's required ``AC-PLAN-NNN`` tokens (first hit wins).
+
+    Order: non-empty ``acceptance_criteria`` ``criterion_id``s, else tokens
+    named in ``card_text``, else no AC tokens. Never reads ``plan.md``.
+    """
+    ids = _criterion_ids(_attr(task, "acceptance_criteria") or [])
+    if ids:
+        return ids
+    return _unique_ac_tokens(card_text or "")
+
+
 def evaluate_judge_evidence(
     *,
     plan_contract: str,
@@ -44,11 +56,15 @@ def evaluate_judge_evidence(
     next_action: str | None = None,
     head_contents: Mapping[str, str] | None = None,
     declared_paths: Sequence[str] | None = None,
+    required_tokens: Sequence[str] | None = None,
 ) -> str | None:
     """Return runner-authored feedback when citations fail; None on pass.
 
-    Tokens come only from ``<authoritative_acceptance_contract source="plan.md">``.
-    Declared regression paths are checked even when the contract has no tokens.
+    When ``required_tokens`` is a list (including empty), that list is the
+    required set. Do not read the plan contract for the required set.
+    ``required_tokens is None`` keeps the legacy plan-block extract for
+    callers that have not yet passed an explicit list.
+    Declared regression paths are checked even when the token set is empty.
     """
     hunks = _map_diff_hunks(injected_diff)
     head = dict(head_contents or {})
@@ -61,7 +77,7 @@ def evaluate_judge_evidence(
     if missing_path is not None:
         return missing_path
 
-    tokens = _extract_ac_plan_tokens(plan_contract)
+    tokens = _required_token_set(required_tokens, plan_contract)
     if not tokens:
         return None
 
@@ -113,11 +129,40 @@ def _missing_declared_path(
     return None
 
 
+def _required_token_set(
+    required_tokens: Sequence[str] | None, plan_contract: str
+) -> list[str]:
+    """Use the explicit list when provided; else extract from the plan block."""
+    if required_tokens is not None:
+        return list(dict.fromkeys(required_tokens))
+    return _extract_ac_plan_tokens(plan_contract)
+
+
 def _extract_ac_plan_tokens(plan_contract: str) -> list[str]:
     match = _CONTRACT_BLOCK.search(plan_contract)
     if match is None:
         return []
-    return list(dict.fromkeys(_AC_TOKEN.findall(match.group(1))))
+    return _unique_ac_tokens(match.group(1))
+
+
+def _unique_ac_tokens(text: str) -> list[str]:
+    """Return first-seen ``AC-PLAN-NNN`` tokens from *text* via ``_AC_TOKEN``."""
+    return list(dict.fromkeys(_AC_TOKEN.findall(text)))
+
+
+def _attr(obj: Any, name: str, default: Any = None) -> Any:
+    if isinstance(obj, Mapping):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _criterion_ids(criteria: Sequence[Any]) -> list[str]:
+    ids: list[str] = []
+    for item in criteria:
+        text = _field(item, "criterion_id").strip()
+        if text:
+            ids.append(text)
+    return list(dict.fromkeys(ids))
 
 
 def _uncovered_tokens(tokens: Sequence[str], evidence: Sequence[Any]) -> list[str]:
@@ -250,10 +295,7 @@ def _non_ws_len(value: str) -> int:
 
 
 def _field(item: Any, name: str) -> str:
-    if isinstance(item, Mapping):
-        value = item.get(name, "")
-    else:
-        value = getattr(item, name, "")
+    value = _attr(item, name, "")
     if value is None:
         return ""
     return str(value)
