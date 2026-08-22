@@ -653,6 +653,91 @@ class TestAgentBackendErrors:
 
         assert STREAM_STALL_TIMEOUT_SECONDS == 900
 
+    @pytest.mark.timeout(3)
+    def test_invoke_streaming_wall_clock_timeout_on_stdout_trickle(self) -> None:
+        """AC-PLAN-002: post-write stdout trickle still dies at timeout_secs."""
+        import time as time_mod
+
+        from deviate.core.agent import AgentTimeoutError
+
+        release = threading.Event()
+        early_chunk = "wrote tests/test_foo.py"
+        trickle_chunk = "still writing"
+
+        class TrickleStdout:
+            def __init__(self) -> None:
+                self._emitted = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                self._emitted += 1
+                if self._emitted == 1:
+                    return f"{early_chunk}\n".encode()
+                if release.wait(timeout=0.03):
+                    raise StopIteration
+                return f"{trickle_chunk}\n".encode()
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = TrickleStdout()
+        mock_proc.stderr = iter(())
+        mock_proc.returncode = None
+        mock_proc.kill.side_effect = release.set
+
+        wall_clock = 0.2
+        raised: list[BaseException] = []
+        sleep_30: list[float] = []
+        real_sleep = time_mod.sleep
+
+        def _sleep(seconds: float) -> None:
+            if seconds == 30:
+                sleep_30.append(seconds)
+                return
+            real_sleep(seconds)
+
+        def run() -> None:
+            try:
+                AgentBackend().invoke(
+                    "test prompt",
+                    backend="pi",
+                    timeout=wall_clock,
+                    output_callback=lambda _line: None,
+                )
+            except BaseException as exc:
+                raised.append(exc)
+
+        started = time_mod.monotonic()
+        with (
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep", side_effect=_sleep),
+        ):
+            worker = threading.Thread(target=run)
+            worker.start()
+            worker.join(timeout=1.5)
+            elapsed = time_mod.monotonic() - started
+            if worker.is_alive():
+                release.set()
+                worker.join(timeout=1.0)
+                pytest.fail(
+                    "stdout trickle kept the poll loop alive past "
+                    "AgentConfig.timeout; expected AgentTimeoutError "
+                    "at the patched wall-clock"
+                )
+
+        assert raised, "streaming invoke returned without AgentTimeoutError"
+        exc = raised[0]
+        assert isinstance(exc, AgentTimeoutError)
+        assert "STALL_DETECTED" not in str(exc)
+        assert "timeout" in str(exc).lower() or "timed out" in str(exc).lower()
+        assert early_chunk in exc.partial_stdout
+        assert elapsed < wall_clock + 1.0
+        assert not sleep_30, (
+            "invoke must not sleep 30s for a streaming wall-clock timeout"
+        )
+        assert mock_popen.call_count == 1
+
     @pytest.mark.parametrize(
         ("yaml_body", "expected_hint"),
         [
