@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-08-22
+
 ### Added
 - **The `deviatdd` skill now prepares Meso before it drains Micro.** It first runs idempotent `deviate meso run`, then runs bare `deviate micro run` per task. Inside a feature worktree, Meso skips valid completed phases. Valid Plan plus Tasks emits `MESO_ALREADY_COMPLETE`. Valid Plan without Tasks resumes at Tasks. Missing artifacts run Plan then Tasks. Invalid existing Plan or empty Tasks stop without overwrite. The separate `deviatdd-meso` skill was removed, so `deviate setup` continues to install one unified skill. Pinned by `tests/test_meso/test_meso_resume.py` and the setup skill tests.
 - **Acceptance-contract scenarios now require exactly one `**Verification Mode**` line.** Each `AC-PLAN-NNN` scenario in `plan.md` must carry a `**Verification Mode**: automated|manual|deferred` literal (case-insensitive). `validate_acceptance_contract` (`src/deviate/core/validation.py`) reports a named error — `missing Verification Mode`, `duplicate Verification Mode lines`, or `invalid Verification Mode '<value>'; expected one of automated|manual|deferred` — and `deviate plan post` / `deviate meso tasks pre` block with `PLAN_ACCEPTANCE_CONTRACT_INVALID`; meso-run resume blocks with `MESO_PLAN_INVALID`. Manual/deferred modes validate with no `test_ref` in the body. Pinned by `tests/test_core/test_validation.py::TestVerificationModeValidation` and the gate/resume regression tests in `tests/test_cli/test_meso_contracts.py` / `tests/test_meso/test_meso_resume.py`.
