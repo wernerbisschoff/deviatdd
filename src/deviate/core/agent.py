@@ -98,14 +98,26 @@ class HandoverManifest(BaseModel):
 
 class AgentTimeoutError(Exception):
     def __init__(
-        self, message: str, partial_stdout: str = "", partial_stderr: str = ""
+        self,
+        message: str,
+        partial_stdout: str = "",
+        partial_stderr: str = "",
+        *,
+        retryable: bool = True,
     ):
         self.partial_stdout = partial_stdout
         self.partial_stderr = partial_stderr
+        # Streaming stall / wall-clock already killed the child.
+        # Blocking ``TimeoutExpired`` stays retryable (default True).
+        self.retryable = retryable
         super().__init__(message)
 
 
 _STREAMING_STALL_TOKENS = ("STALL_DETECTED", "SMART_STALL_DETECTED")
+
+
+def _backend_timeout_message(backend_name: str, timeout_secs: int) -> str:
+    return f"Agent backend '{backend_name}' timed out after {timeout_secs}s"
 
 
 def _is_streaming_stall(error: BaseException) -> bool:
@@ -116,6 +128,18 @@ def _is_streaming_stall(error: BaseException) -> bool:
     the interactive budget (ISS-ADH-025 / GH-61).
     """
     return str(error).startswith(_STREAMING_STALL_TOKENS)
+
+
+def _skip_timeout_retry(error: BaseException) -> bool:
+    """Return True when invoke must not sleep 30s or start a second child.
+
+    Stall tokens and ``retryable=False`` (streaming wall-clock) already
+    killed the child. Blocking ``TimeoutExpired`` stays on the 30s retry
+    (ISS-ADH-027).
+    """
+    return _is_streaming_stall(error) or (
+        isinstance(error, AgentTimeoutError) and not error.retryable
+    )
 
 
 class AgentSubprocessError(Exception):
@@ -475,8 +499,8 @@ class AgentBackend:
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
         stdout_done = False
-        stall_reason: str | None = None
-        stall_partial: tuple[str, str] | None = None
+        poll_abort_reason: str | None = None
+        poll_abort_partial: tuple[str, str] | None = None
         schema_rejection_line: str | None = None
 
         # Two-track stall detector (see diagnosis F2 in the README).
@@ -489,7 +513,9 @@ class AgentBackend:
         # on every emit but the byte-rate stays well below the floor for a
         # real working invocation like ``mix precommit`` (~100 B/s).
         stall_lock = threading.Lock()
-        stall_deadline = [time.monotonic() + stall_timeout_secs]
+        invoke_started = time.monotonic()
+        wall_deadline = invoke_started + timeout_secs
+        stall_deadline = [invoke_started + stall_timeout_secs]
         byte_samples: list[tuple[float, int]] = []
 
         def captured_streams() -> tuple[str, str]:
@@ -566,18 +592,40 @@ class AgentBackend:
             with stall_lock:
                 return stall_deadline[0] - time.monotonic()
 
-        def snapshot_stall(reason: str) -> None:
-            nonlocal stall_reason, stall_partial
-            stall_reason = reason
-            stall_partial = captured_streams()
+        def wall_clock_remaining() -> float:
+            return wall_deadline - time.monotonic()
+
+        def capture_poll_abort(reason: str) -> None:
+            nonlocal poll_abort_reason, poll_abort_partial
+            poll_abort_reason = reason
+            poll_abort_partial = captured_streams()
+
+        def raise_nonretryable_timeout(
+            reason: str, streams: tuple[str, str] | None = None
+        ) -> None:
+            proc.kill()
+            for t in threads:
+                t.join(timeout=5)
+            partial_stdout, partial_stderr = streams or captured_streams()
+            raise AgentTimeoutError(
+                reason,
+                partial_stdout=partial_stdout,
+                partial_stderr=partial_stderr,
+                retryable=False,
+            )
 
         while True:
             if schema_rejection_line is not None:
                 break
             if stdout_done and not any(t.is_alive() for t in threads):
                 break
+            # One wall-clock exit, independent of stall / schema exits.
+            # Periodic stdout refreshes only stall_deadline.
+            if wall_clock_remaining() <= 0:
+                capture_poll_abort(_backend_timeout_message(backend_name, timeout_secs))
+                break
             if stall_deadline_remaining() <= 0:
-                snapshot_stall(
+                capture_poll_abort(
                     f"STALL_DETECTED: no agent output for {stall_timeout_secs}s"
                 )
                 break
@@ -591,7 +639,7 @@ class AgentBackend:
                 > stall_timeout_secs / 2
                 and byte_rate_below_floor()
             ):
-                snapshot_stall(
+                capture_poll_abort(
                     f"SMART_STALL_DETECTED: byte-rate dropped below "
                     f"{STREAM_STALL_MIN_BYTES_PER_SECOND} B/s for "
                     f"{STREAM_STALL_WINDOW_SECONDS}s while stdout was "
@@ -603,29 +651,15 @@ class AgentBackend:
             for t in threads:
                 t.join(timeout=5)
             _abort_on_schema_rejection(proc, schema_rejection_line)
-        if stall_reason is not None:
-            proc.kill()
-            for t in threads:
-                t.join(timeout=5)
-            partial_stdout, partial_stderr = stall_partial or captured_streams()
-            raise AgentTimeoutError(
-                stall_reason,
-                partial_stdout=partial_stdout,
-                partial_stderr=partial_stderr,
-            )
+        if poll_abort_reason is not None:
+            raise_nonretryable_timeout(poll_abort_reason, poll_abort_partial)
 
         for t in threads:
             t.join(timeout=timeout_secs)
 
         if not stdout_done or any(t.is_alive() for t in threads):
-            proc.kill()
-            for t in threads:
-                t.join(timeout=5)
-            partial_stdout, partial_stderr = captured_streams()
-            raise AgentTimeoutError(
-                f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
-                partial_stdout=partial_stdout,
-                partial_stderr=partial_stderr,
+            raise_nonretryable_timeout(
+                _backend_timeout_message(backend_name, timeout_secs)
             )
 
         proc.wait()
@@ -660,7 +694,7 @@ class AgentBackend:
             partial_out = e.output.decode("utf-8") if e.output else ""
             partial_err = e.stderr.decode("utf-8") if e.stderr else ""
             raise AgentTimeoutError(
-                f"Agent backend '{backend_name}' timed out after {timeout_secs}s",
+                _backend_timeout_message(backend_name, timeout_secs),
                 partial_stdout=partial_out,
                 partial_stderr=partial_err,
             )
@@ -765,7 +799,7 @@ class AgentBackend:
                 stall_timeout=stall_timeout,
             )
         except AgentTimeoutError as exc:
-            if _is_streaming_stall(exc):
+            if _skip_timeout_retry(exc):
                 raise
             time.sleep(30)
             retry_proc = subprocess.Popen(cmd, **popen_kwargs)
