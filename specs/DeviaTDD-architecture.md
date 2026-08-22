@@ -806,9 +806,15 @@ handing the manifest to the rest of the pipeline:
    Periodic stdout keeps the watchdog warm. A few minutes of
    stdout silence inside that 900s budget does not trip the
    detector. EXECUTE passes `stall_timeout=3600`. A stdout-silent
-   stall raises `AgentTimeoutError(STALL_DETECTED)`. `invoke`
-   re-raises that error. `_invoke_agent` logs `AGENT_TIMEOUT`
-   for a hung GREEN.
+   stall raises `AgentTimeoutError(STALL_DETECTED)`. The same
+   poll loop honors `timeout_secs` from `AgentConfig.timeout`
+   (default 600s) beside the stall detector. A RED child that
+   never returns a manifest raises `AgentTimeoutError` inside
+   that wall-clock. `invoke` re-raises stall and wall-clock
+   timeout. `_invoke_agent` logs `AGENT_TIMEOUT` for a hung RED
+   or hung GREEN. `_run_red_phase` restores `red_baseline` with
+   `_restore_worktree_to_baseline`. The operator does not wait
+   for an outer ~1800s bash kill.
 3. **Manifest retry-with-context** — `MalformedHandoverManifestError`
    and `EmptyOutputError` trigger one extra `subprocess.Popen` whose
    prompt embeds the previous parse error and an explicit
@@ -982,7 +988,7 @@ routing decisions and the final CYCLE outcome; interpret via
 (carries `status=`, `verdict=`, full `manifest=`; the manifest
 contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
 (full stdout in a single `raw_output=` field; stderr is NOT
-captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and `partial_stdout=`; harness verdict for a hung GREEN),
+captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and `partial_stdout=`; harness verdict for a hung RED or hung GREEN),
 `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`, `JUDGE_REJECTED`,
 `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE` (carries `note=`,
 the refactor hint), `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`,
