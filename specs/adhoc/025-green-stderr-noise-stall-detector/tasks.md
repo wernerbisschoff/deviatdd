@@ -58,6 +58,7 @@
 
 ### Tasks
 
+  - **Judge Feedback**: JUDGE evidence test_quote is not an exact substring of tests/test_core/test_agent.py
 - TSK-025-03: Document stdout-only stall liveness and the 900s / 3600s budgets
   - **Type**: Config
   - **Mode**: IMMEDIATE
