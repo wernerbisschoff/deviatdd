@@ -31,6 +31,7 @@
 ### Tasks
 
   - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-005, AC-PLAN-006
+  - **Judge Feedback**: JUDGE evidence test_path is not in the injected diff or HEAD: tests/test_cli/test_micro.py
 - TSK-024-02: Key the worktree session on meso claim and already-complete
   - **Type**: Bugfix
   - **Mode**: TDD
