@@ -200,6 +200,65 @@ class TestMesoOrchestration:
 
     @patch("deviate.cli.meso._plan_post")
     @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_worktree_claim_copy_keys_session_to_claimed_issue(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-006: worktree session after copy names the claimed issue."""
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo, issue_id="ISS-001-001")
+        SessionState(current_phase="IDLE", active_issue_id="ISS-001-000").save(
+            tmp_git_repo / ".deviate" / "session.json"
+        )
+
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001")
+
+        wt_session = SessionState.load(worktree_path / ".deviate" / "session.json")
+        assert wt_session.active_issue_id == "ISS-001-001", (
+            "Worktree session after claim/copy must name the claimed issue, "
+            f"not leftover {wt_session.active_issue_id!r}"
+        )
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
     @patch("deviate.core.agent.AgentBackend.invoke")
     @patch("deviate.cli.micro._run_pytest")
     def test_meso_issue_progress_reset(

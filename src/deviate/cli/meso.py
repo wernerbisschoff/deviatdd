@@ -1764,6 +1764,16 @@ def _phase_callout(
     )
 
 
+def _key_worktree_session_to_issue(worktree_path: Path, issue_id: str) -> None:
+    """Write the claimed issue into worktree ``.deviate/session.json``."""
+    session_path = worktree_path / ".deviate" / "session.json"
+    session = SessionState.load(session_path)
+    if session.active_issue_id == issue_id:
+        return
+    session.active_issue_id = issue_id
+    session.save(session_path)
+
+
 def _resolve_meso_worktree(
     issue_id: str | None,
     force: bool,
@@ -1888,11 +1898,13 @@ def _meso_run(
     dot_dir = _resolve_dot_deviate()
     session_path = (dot_dir / "session.json").resolve()
 
-    # Sync .deviate/ to worktree so downstream functions find the session
+    # Sync .deviate/ to worktree so downstream functions find the session.
+    # Rewrite the copied session when it still names a previous issue.
     if dot_dir.exists() and not no_setup:
         shutil.copytree(
             str(dot_dir), str(worktree_path / ".deviate"), dirs_exist_ok=True
         )
+        _key_worktree_session_to_issue(worktree_path, issue_id)
 
     # Build contract with absolute worktree paths so agent writes files
     # to the exact worktree location regardless of tool re-rooting.
@@ -1920,6 +1932,7 @@ def _meso_run(
     )
 
     if resume_state == "COMPLETE":
+        _key_worktree_session_to_issue(worktree_path, issue_id)
         console.print(
             f"[green]MESO_ALREADY_COMPLETE[/] {issue_id}: valid plan.md and "
             "tasks.md already exist"

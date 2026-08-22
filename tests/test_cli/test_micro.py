@@ -5052,6 +5052,7 @@ class TestResolveTaskContextUsesBranch:
 
         GH-54 only covered a leftover id with no board. This pin covers the
         leftover-with-board hole and requires worktree session.json rewrite.
+        Persist the branch issue so later meso/micro commands see B.
         """
         from deviate.cli.micro import _resolve_task_context
 
