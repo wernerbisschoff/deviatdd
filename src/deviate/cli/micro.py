@@ -10,7 +10,8 @@ import time
 import logging
 import sys
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 from typing import Literal, NoReturn
 from pathlib import Path, PurePosixPath
 
@@ -480,6 +481,40 @@ def _raise_schema_limit_phase_error(
     raise PhaseFailedError(f"{label} phase agent error for {tid}: {exc}") from exc
 
 
+@dataclass(frozen=True, slots=True)
+class _AgentInvokeResult:
+    """``(manifest, tail)`` payload that also records a harness timeout."""
+
+    manifest: HandoverManifest | None
+    tail: str
+    timed_out: bool = False
+
+    def __iter__(self) -> Iterator[HandoverManifest | None | str]:
+        yield self.manifest
+        yield self.tail
+
+    def __len__(self) -> int:
+        return 2
+
+    def __getitem__(self, index: int) -> HandoverManifest | None | str:
+        return (self.manifest, self.tail)[index]
+
+
+def _unpack_agent_invoke(
+    result: object,
+) -> tuple[HandoverManifest | None, str, bool]:
+    """Return ``(manifest, tail, timed_out)`` from ``_invoke_agent``.
+
+    A truthy tail is not enough: RED treats ``(None, "403 RegionError")`` as
+    a non-timeout skip. Empty ``partial_stdout`` still counts as timeout when
+    the invoke result carries ``timed_out=True``.
+    """
+    if isinstance(result, _AgentInvokeResult):
+        return result.manifest, result.tail, result.timed_out
+    manifest, tail = result  # type: ignore[misc]
+    return manifest, tail, bool(getattr(result, "timed_out", False))
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -489,7 +524,7 @@ def _invoke_agent(
     output_callback: Callable[[str], None] | None = None,
     model: str | None = None,
     stall_timeout: int | None = None,
-) -> tuple[HandoverManifest | None, str]:
+) -> _AgentInvokeResult:
     model_str = f" --model {model}" if model else ""
     c.print(
         f"  [green]INVOKE_AGENT[/] running '{backend_name}{model_str}' for [{phase}] phase"
@@ -546,7 +581,7 @@ def _invoke_agent(
         # by the phase runner as a fallback diagnostic when the
         # manifest's `rationale` is empty (the prior "unknown" symptom).
         tail_lines = [line for line in raw_lines if line.strip()][-50:]
-        return manifest, "\n".join(tail_lines)
+        return _AgentInvokeResult(manifest, "\n".join(tail_lines))
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
@@ -554,7 +589,7 @@ def _invoke_agent(
         _log_run(
             "AGENT_NOT_AVAILABLE", task_id=task_id, phase=phase, backend=backend_name
         )
-        return None, ""
+        return _AgentInvokeResult(None, "")
     except AgentTimeoutError as exc:
         partial_output = exc.partial_stdout or ""
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
@@ -566,7 +601,7 @@ def _invoke_agent(
             partial_stderr=exc.partial_stderr,
             partial_stdout=partial_output,
         )
-        return None, partial_output
+        return _AgentInvokeResult(None, partial_output, timed_out=True)
     except (
         AgentSubprocessError,
         MalformedHandoverManifestError,
@@ -575,10 +610,10 @@ def _invoke_agent(
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
         _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
         _raise_schema_limit_phase_error(exc, phase, task_id)
-        return None, ""
+        return _AgentInvokeResult(None, "")
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
-        return None, ""
+        return _AgentInvokeResult(None, "")
 
 
 _TIMEOUT_SUMMARY_PROMPT = """\
@@ -1309,10 +1344,11 @@ def _restore_worktree_to_baseline(
 ) -> None:
     """Discard worktree changes that appeared after *baseline* was captured.
 
-    Used by the RED no-failing-test adjudication to remove undeclared files
-    the RED agent produced without touching anything that was already
-    present when the phase started. Declared regression paths in
-    *keep_paths* stay on disk so COMPLETE cannot wipe the only copy.
+    Used by hung-RED timeout rollback and by the RED no-failing-test
+    adjudication to remove undeclared files the RED agent produced without
+    touching anything that was already present when the phase started.
+    Declared regression paths in *keep_paths* stay on disk so COMPLETE
+    cannot wipe the only copy.
     """
     baseline_set = set(baseline)
     keep = set(_unique_relpaths(keep_paths))
@@ -1340,6 +1376,12 @@ def _restore_worktree_to_baseline(
                 text=True,
                 env=_git_env(),
             )
+
+
+def _fail_red_on_agent_timeout(root: Path, baseline: list[str], tid: str) -> NoReturn:
+    """Restore ``red_baseline`` and fail RED as a named harness timeout."""
+    _restore_worktree_to_baseline(root, baseline)
+    raise PhaseFailedError(f"RED phase agent timeout for {tid}")
 
 
 def _is_no_tests_collected(proc: subprocess.CompletedProcess) -> bool:
@@ -1398,15 +1440,19 @@ def _run_red_phase(
     )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
     red_model = resolve_model_for_phase("RED", root, backend=backend)
-    manifest, agent_tail = _invoke_agent(
-        prompt,
-        c,
-        backend_name=backend,
-        task_id=tid,
-        phase="RED",
-        output_callback=agent_output_callback,
-        model=red_model,
+    manifest, agent_tail, timed_out = _unpack_agent_invoke(
+        _invoke_agent(
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="RED",
+            output_callback=agent_output_callback,
+            model=red_model,
+        )
     )
+    if manifest is None and timed_out:
+        _fail_red_on_agent_timeout(root, red_baseline, tid)
     if manifest is None:
         raise PhaseFailedError(
             f"RED phase agent error for {tid}: agent returned no manifest"
@@ -1663,16 +1709,18 @@ def _run_green_phase(
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
     _require_green_entry_red_sha(root, session, tid)
-    manifest, timeout_ctx = _invoke_agent(
-        prompt,
-        c,
-        backend_name=backend,
-        task_id=tid,
-        phase="GREEN",
-        output_callback=agent_output_callback,
-        model=green_model,
+    manifest, timeout_ctx, timed_out = _unpack_agent_invoke(
+        _invoke_agent(
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="GREEN",
+            output_callback=agent_output_callback,
+            model=green_model,
+        )
     )
-    if manifest is None and timeout_ctx:
+    if manifest is None and timed_out:
         c.print(
             "  [yellow]TIMEOUT[/] GREEN agent timed out \u2014 summarizing context for retry"
         )
