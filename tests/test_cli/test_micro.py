@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from deviate.cli.__init__ import cli
@@ -5037,3 +5038,297 @@ class TestResolveTaskContextUsesBranch:
             "Stale session issue ISS-006 must re-key to the branch's "
             f"ISS-007; got {task['issue_id']}"
         )
+
+    def _write_session(self, root: Path, issue_id: str) -> Path:
+        session_path = root / ".deviate" / "session.json"
+        session_path.parent.mkdir(exist_ok=True)
+        SessionState(active_issue_id=issue_id).save(session_path)
+        return session_path
+
+    def test_stale_session_with_board_rekeys_to_branch_and_persists(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-003: leftover issue A still has a tasks.md; branch B wins.
+
+        GH-54 only covered a leftover id with no board. This pin covers the
+        leftover-with-board hole and requires worktree session.json rewrite.
+        """
+        from deviate.cli.micro import _resolve_task_context
+
+        self._seed_issue(tmp_git_repo, "001-006", "001-forge-layer", "006-spawn-form")
+        self._seed_issue(
+            tmp_git_repo,
+            "001-007",
+            "001-forge-layer",
+            "007-inventory-inspection",
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+        session_path = self._write_session(tmp_git_repo, "001-006")
+
+        result = _resolve_task_context(None, tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task["issue_id"] == "001-007", (
+            "Leftover session 001-006 with a tasks.md must re-key to "
+            f"branch issue 001-007; got {task['issue_id']}"
+        )
+        assert task["id"] == "TSK-007-01"
+        saved = SessionState.load(session_path)
+        assert saved.active_issue_id == "001-007", (
+            "Worktree session.json must persist the branch issue 001-007, "
+            f"got {saved.active_issue_id!r}"
+        )
+
+    def test_stale_session_iss_form_with_board_rekeys_and_persists(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-003: ISS-* leftover with a board re-keys and persists."""
+        from deviate.cli.micro import _resolve_task_context
+
+        self._seed_issue(tmp_git_repo, "ISS-006", "001-forge-layer", "006-spawn-form")
+        self._seed_issue(
+            tmp_git_repo,
+            "ISS-007",
+            "001-forge-layer",
+            "007-inventory-inspection",
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+        session_path = self._write_session(tmp_git_repo, "ISS-006")
+
+        result = _resolve_task_context(None, tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task["issue_id"] == "ISS-007", (
+            "Leftover ISS-006 with a tasks.md must re-key to ISS-007; "
+            f"got {task['issue_id']}"
+        )
+        saved = SessionState.load(session_path)
+        assert saved.active_issue_id == "ISS-007", (
+            "session.json must persist ISS-007, got {saved.active_issue_id!r}"
+        )
+
+    def test_stale_session_bare_micro_run_does_not_print_NO_PENDING_TASKS(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-PLAN-001: bare `deviate micro run` consumes the branch queue."""
+        self._seed_issue(tmp_git_repo, "001-006", "001-forge-layer", "006-spawn-form")
+        self._seed_issue(
+            tmp_git_repo,
+            "001-007",
+            "001-forge-layer",
+            "007-inventory-inspection",
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+        self._write_session(tmp_git_repo, "001-006")
+        monkeypatch.chdir(tmp_git_repo)
+
+        result = runner.invoke(cli, ["micro", "run", "--dry-run"])
+
+        assert result.exit_code == 0, result.output
+        assert "NO_PENDING_TASKS" not in result.output, result.output
+        assert "TSK-007-01" in result.output, result.output
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_task_with_retry", return_value=True)
+    def test_stale_session_run_all_rekeys_to_branch_queue(
+        self,
+        mock_execute: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """AC-PLAN-001: `--all` scans the branch issue after re-key."""
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_all
+
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        self._seed_issue(tmp_git_repo, "001-006", "001-forge-layer", "006-spawn-form")
+        self._seed_issue(
+            tmp_git_repo,
+            "001-007",
+            "001-forge-layer",
+            "007-inventory-inspection",
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+        session_path = self._write_session(tmp_git_repo, "001-006")
+
+        _run_all(tmp_git_repo, Console())
+
+        assert mock_execute.called, "--all must dispatch the branch queue"
+        dispatched = [call.args[0] for call in mock_execute.call_args_list]
+        assert all(task.get("issue_id") == "001-007" for task in dispatched), (
+            "--all must dispatch only branch issue 001-007, got "
+            f"{[task.get('issue_id') for task in dispatched]}"
+        )
+        assert dispatched[0].get("id") == "TSK-007-01"
+        saved = SessionState.load(session_path)
+        assert saved.active_issue_id == "001-007", (
+            f"--all must persist branch issue 001-007, got {saved.active_issue_id!r}"
+        )
+
+    def test_stale_session_empty_branch_queue_prints_NO_PENDING_TASKS(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-PLAN-002: empty branch queue stays NO_PENDING_TASKS exit 0."""
+        from deviate.cli.micro import _resolve_task_context
+
+        self._seed_issue(tmp_git_repo, "001-006", "001-forge-layer", "006-spawn-form")
+        spec_dir = tmp_git_repo / "specs"
+        with open(spec_dir / "issues.jsonl", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "issue_id": "001-007",
+                        "source_file": (
+                            "specs/001-forge-layer/issues/007-inventory-inspection.md"
+                        ),
+                    }
+                )
+                + "\n"
+            )
+        done_dir = spec_dir / "001-forge-layer" / "007-inventory-inspection"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        (done_dir / "tasks.jsonl").write_text(
+            json.dumps(
+                {
+                    "id": "TSK-007-01",
+                    "issue_id": "001-007",
+                    "description": "done",
+                    "status": "COMPLETED",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (done_dir / "tasks.md").write_text(
+            "# Tasks\n\n- [x] TSK-007-01: done\n",
+            encoding="utf-8",
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+        session_path = self._write_session(tmp_git_repo, "001-006")
+        monkeypatch.chdir(tmp_git_repo)
+
+        try:
+            result = _resolve_task_context(None, tmp_git_repo)
+        except typer.Exit as exc:
+            assert exc.exit_code == 0
+        else:
+            got = result[0] if result else result
+            pytest.fail(
+                f"Empty branch queue must raise NO_PENDING_TASKS exit 0; got {got}"
+            )
+
+        result = runner.invoke(cli, ["micro", "run", "--dry-run"])
+        assert result.exit_code == 0, result.output
+        assert "NO_PENDING_TASKS" in result.output, result.output
+        saved = SessionState.load(session_path)
+        assert saved.active_issue_id == "001-007", (
+            f"Empty branch queue still persists 001-007, got {saved.active_issue_id!r}"
+        )
+
+    def test_rekey_keeps_session_when_branch_unresolved(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-004: unresolved branch keeps a valid session id."""
+        from deviate.cli.micro import (
+            _rekey_session_issue_to_branch,
+            _resolve_issue_id_from_branch,
+            _resolve_task_context,
+        )
+
+        self._seed_issue(tmp_git_repo, "001-006", "001-forge-layer", "006-spawn-form")
+        self._checkout(tmp_git_repo, "fix/unrelated-hotfix")
+        session_path = self._write_session(tmp_git_repo, "001-006")
+
+        assert _resolve_issue_id_from_branch(tmp_git_repo) is None
+        kept = _rekey_session_issue_to_branch(
+            tmp_git_repo, "001-006", _resolve_issue_id_from_branch(tmp_git_repo)
+        )
+        assert kept == "001-006"
+
+        result = _resolve_task_context(None, tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task["issue_id"] == "001-006"
+        saved = SessionState.load(session_path)
+        assert saved.active_issue_id == "001-006", (
+            "Unresolved branch must not rewrite session.json to a blank id, "
+            f"got {saved.active_issue_id!r}"
+        )
+
+    def test_pinned_lookup_uses_rekeyed_branch_not_stale_completed(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-007: pinned TSK uses the re-keyed branch issue.
+
+        Leftover A and branch B share TSK-007-01. A is COMPLETED. Lookup
+        must bind B's PENDING row, not A's COMPLETED row (ISS-ADH-023).
+        """
+        from deviate.cli.micro import (
+            _resolve_known_active_issue_id,
+            _resolve_task_context,
+        )
+
+        spec_dir = tmp_git_repo / "specs"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "001-006",
+                    "source_file": ("specs/001-forge-layer/issues/006-spawn-form.md"),
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "issue_id": "001-007",
+                    "source_file": (
+                        "specs/001-forge-layer/issues/007-inventory-inspection.md"
+                    ),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        leftover = spec_dir / "001-forge-layer" / "006-spawn-form"
+        leftover.mkdir(parents=True, exist_ok=True)
+        (leftover / "tasks.jsonl").write_text(
+            json.dumps(
+                {
+                    "id": "TSK-007-01",
+                    "issue_id": "001-006",
+                    "description": "leftover completed",
+                    "status": "COMPLETED",
+                    "execution_mode": "TDD",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (leftover / "tasks.md").write_text(
+            "# Tasks\n\n- [x] TSK-007-01: leftover completed\n",
+            encoding="utf-8",
+        )
+        branch_dir = spec_dir / "001-forge-layer" / "007-inventory-inspection"
+        branch_dir.mkdir(parents=True, exist_ok=True)
+        (branch_dir / "tasks.md").write_text(
+            "# Tasks\n\n- [ ] TSK-007-01: inspect inventory\n",
+            encoding="utf-8",
+        )
+        self._checkout(tmp_git_repo, "feat/001-forge-layer/007-inventory-inspection")
+        session_path = self._write_session(tmp_git_repo, "001-006")
+
+        assert _resolve_known_active_issue_id(tmp_git_repo) == "001-007"
+        result = _resolve_task_context("TSK-007-01", tmp_git_repo)
+        assert result is not None
+        task, _ = result
+        assert task["issue_id"] == "001-007", (
+            "Pinned TSK-007-01 must bind branch issue 001-007, not leftover "
+            f"001-006 COMPLETED; got {task['issue_id']}"
+        )
+        assert task["status"] == "PENDING"
+        saved = SessionState.load(session_path)
+        assert saved.active_issue_id == "001-007"
