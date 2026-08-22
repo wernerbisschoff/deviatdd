@@ -5333,3 +5333,108 @@ class TestResolveTaskContextUsesBranch:
         assert task["status"] == "PENDING"
         saved = SessionState.load(session_path)
         assert saved.active_issue_id == "001-007"
+
+
+class TestGreenStallHarnessSurface:
+    """AC-PLAN-003 / AC-PLAN-004: first-stall AGENT_TIMEOUT and EXECUTE 3600s."""
+
+    def test_invoke_agent_logs_agent_timeout_on_stall(self) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import _invoke_agent
+        from deviate.core.agent import AgentTimeoutError
+
+        stall = AgentTimeoutError(
+            "STALL_DETECTED: no agent output for 900s",
+            partial_stdout="partial out",
+            partial_stderr="[codebase-index] Background reindex failed",
+        )
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._log_run") as mock_log,
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.side_effect = stall
+            manifest, tail = _invoke_agent(
+                "test prompt",
+                Console(),
+                task_id="TSK-025-02",
+                phase="GREEN",
+            )
+
+        assert manifest is None
+        assert tail == "partial out"
+        timeout_calls = [
+            call
+            for call in mock_log.call_args_list
+            if call.args and call.args[0] == "AGENT_TIMEOUT"
+        ]
+        assert timeout_calls, "_invoke_agent must log AGENT_TIMEOUT on stall"
+        kwargs = timeout_calls[0].kwargs
+        assert kwargs["error"] == str(stall)
+        assert kwargs["partial_stderr"] == stall.partial_stderr
+        assert kwargs["partial_stdout"] == stall.partial_stdout
+
+    def test_execute_stall_timeout_seconds_is_3600(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import (
+            EXECUTE_STALL_TIMEOUT_SECONDS,
+            PhaseFailedError,
+            _run_execute_phase,
+        )
+
+        assert EXECUTE_STALL_TIMEOUT_SECONDS == 3600
+
+        monkeypatch.chdir(tmp_path)
+        task = {
+            "id": "TSK-025-02",
+            "issue_id": "ISS-ADH-025",
+            "description": "execute stall pin",
+            "status": "PENDING",
+            "execution_mode": "IMMEDIATE",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path.write_text("", encoding="utf-8")
+
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                return_value=(None, ""),
+            ) as mock_invoke,
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._resolve_spec_md", return_value="# Spec"),
+            patch(
+                "deviate.cli.micro.resolve_model_for_phase",
+                return_value="execute/model",
+            ),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch(
+                "deviate.cli.micro.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="abc123\n", stderr=""
+                ),
+            ),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            with pytest.raises(PhaseFailedError):
+                _run_execute_phase(task, ledger_path, Console())
+
+        assert mock_invoke.called
+        _, invoke_kwargs = mock_invoke.call_args
+        assert invoke_kwargs.get("stall_timeout") == EXECUTE_STALL_TIMEOUT_SECONDS
+        assert invoke_kwargs.get("stall_timeout") == 3600
