@@ -32,6 +32,7 @@
 ### Tasks
 
   - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-003, AC-PLAN-004
+  - **Judge Feedback**: JUDGE evidence test_path is not in the injected diff or HEAD: tests/test_core/test_agent.py
 - TSK-026-02: Abort the child on the first schema-rejection line
   - **Type**: Bugfix
   - **Mode**: TDD
