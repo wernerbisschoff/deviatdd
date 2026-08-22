@@ -122,9 +122,9 @@ Refactoring opportunities are NOT evaluation criteria for JUDGE — surface them
 
 ### STEP 3: EMIT_VERDICT
 
-Cite every injected `AC-PLAN-NNN` in `evidence`. Empty `evidence` is not a pass when AC-PLAN tokens exist. Tasks with no `AC-PLAN-*` tokens may emit empty `evidence`. `proceed_to_refactor_no_diff` requires a dirty-diff `test_quote` and omits `impl_quote`. This skill covers TDD JUDGE only.
+Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's `acceptance_criteria` or the injected `<task_card source="tasks.md">`). Empty `evidence` is not a pass when those task tokens exist. Do not require later-shard or unassigned plan tokens in this verdict. Quotes must be copied from the injected `<diff>` or allowed HEAD files. Paraphrases, comments, and later-work sentences are illegal. Tasks with no resolved task `AC-PLAN-*` tokens may emit empty `evidence`. `proceed_to_refactor_no_diff` requires a dirty-diff `test_quote` and omits `impl_quote`. This skill covers TDD JUDGE only.
 
-On approval (every injected `AC-PLAN-NNN` has matching `evidence` citations and no Category of Violation is present):
+On approval (each resolved task `AC-PLAN-NNN` has matching `evidence` citations and no Category of Violation is present):
 ```yaml
 phase: JUDGE
 status: PASS
@@ -282,7 +282,7 @@ security hole, gate skip, flow break), never a refactor.
 | Condition | Action |
 |---|---|
 | spec.md not found | Emit FAILURE with category "Spec Non-Compliance" and note "SPEC_NOT_FOUND" |
-| No production diff to evaluate (empty GREEN) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with a dirty-diff `test_quote` in `evidence`. Omit `impl_quote`. Empty evidence is not a pass when AC-PLAN tokens exist. |
+| No production diff to evaluate (empty GREEN) | Emit `verdict: COMPLIANCE_PASS` + `next_action: proceed_to_refactor_no_diff` with a dirty-diff `test_quote` in `evidence`. Omit `impl_quote`. Empty evidence is not a pass when resolved task tokens exist. |
 | Binary files in diff | Skip binary files, note in summary |
 | All changes are test-only without src changes | Flag as SUSPICIOUS — FAILURE with category "Test Integrity Violation". |
 | Pre-existing violations (not from this task) | Flag only violations introduced by this diff |
