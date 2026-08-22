@@ -5440,6 +5440,307 @@ class TestGreenStallHarnessSurface:
         assert invoke_kwargs.get("stall_timeout") == 3600
 
 
+class TestRedHangTimeoutRollback:
+    """TSK-027-02 / AC-PLAN-001, AC-PLAN-003, AC-PLAN-004, AC-PLAN-006."""
+
+    _TASK = {
+        "id": "TSK-027-02",
+        "issue_id": "ISS-ADH-027",
+        "description": "Surface RED timeout, restore red_baseline",
+        "status": "PENDING",
+        "execution_mode": "TDD",
+    }
+
+    def test_run_red_phase_timeout_restores_baseline_and_names_timeout(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from io import StringIO
+
+        from rich.console import Console
+
+        from deviate.cli import micro as micro_mod
+        from deviate.cli.micro import (
+            _run_red_phase,
+            _worktree_status_paths,
+        )
+        from deviate.core.agent import AgentTimeoutError
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+
+        tracked = root / "tracked.txt"
+        tracked.write_text("clean\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "tracked.txt"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "seed tracked file"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        pre_existing = root / "pre_existing.txt"
+        pre_existing.write_text("already dirty\n", encoding="utf-8")
+
+        ledger_path = root / "tasks.jsonl"
+        ledger_path.write_text("", encoding="utf-8")
+        session_path = root / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session = SessionState(current_phase="IDLE", red_commit_sha="")
+        session.save(session_path)
+
+        expected_baseline = _worktree_status_paths(root)
+        hung_untracked = root / "hung_new.py"
+        timeout_err = AgentTimeoutError(
+            "AGENT_TIMEOUT: wall-clock budget elapsed",
+            partial_stdout="",
+            partial_stderr="child still running",
+        )
+
+        def _hang_after_dirty(*_args: object, **_kwargs: object) -> None:
+            tracked.write_text("hung dirty\n", encoding="utf-8")
+            hung_untracked.write_text("# hung child wrote this\n", encoding="utf-8")
+            raise timeout_err
+
+        buf = StringIO()
+        console = Console(file=buf, force_terminal=True, width=160)
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch(
+                "deviate.cli.micro._restore_worktree_to_baseline",
+                wraps=micro_mod._restore_worktree_to_baseline,
+            ) as mock_restore,
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run") as mock_log,
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="1 failed", stderr=""
+                ),
+            ),
+            patch(
+                "deviate.cli.micro._run_test_cmd",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="1 failed", stderr=""
+                ),
+            ),
+            patch(
+                "deviate.cli.micro._run_format_cmd",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.side_effect = _hang_after_dirty
+            with pytest.raises(PhaseFailedError) as excinfo:
+                _run_red_phase(
+                    dict(self._TASK),
+                    ledger_path,
+                    session,
+                    session_path,
+                    console,
+                )
+
+        message = str(excinfo.value)
+        assert "timeout" in message.lower(), (
+            "AC-PLAN-001: PhaseFailedError must name timeout, not only "
+            f"'agent returned no manifest'; got {message!r}"
+        )
+        assert message != (
+            f"RED phase agent error for {self._TASK['id']}: agent returned no manifest"
+        ), (
+            "AC-PLAN-001: collapsing hung RED to only "
+            "'agent returned no manifest' is a failure"
+        )
+
+        timeout_calls = [
+            call
+            for call in mock_log.call_args_list
+            if call.args and call.args[0] == "AGENT_TIMEOUT"
+        ]
+        assert timeout_calls, (
+            "AC-PLAN-001: _invoke_agent must log AGENT_TIMEOUT with error=, "
+            "partial_stderr=, and partial_stdout="
+        )
+        timeout_kwargs = timeout_calls[0].kwargs
+        assert timeout_kwargs["error"] == str(timeout_err)
+        assert timeout_kwargs["partial_stderr"] == timeout_err.partial_stderr
+        assert timeout_kwargs["partial_stdout"] == timeout_err.partial_stdout
+
+        mock_restore.assert_called()
+        restore_args, restore_kwargs = mock_restore.call_args
+        assert restore_args[0] == root
+        assert list(restore_args[1]) == expected_baseline
+        assert restore_kwargs.get("keep_paths") in (None, [], ())
+
+        after = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.splitlines()
+        assert after == expected_baseline, (
+            "AC-PLAN-003: porcelain must match red_baseline after hung RED; "
+            f"expected {expected_baseline!r}, got {after!r}"
+        )
+        assert tracked.read_text(encoding="utf-8") == "clean\n"
+        assert pre_existing.read_text(encoding="utf-8") == "already dirty\n"
+        assert not hung_untracked.exists(), (
+            "AC-PLAN-003: hung-child untracked file must be cleaned"
+        )
+
+        ledger_text = ledger_path.read_text(encoding="utf-8")
+        statuses = []
+        for line in ledger_text.splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("id") == self._TASK["id"]:
+                statuses.append(row.get("status"))
+        assert "COMPLETED" not in statuses, (
+            f"AC-PLAN-004: hung RED must not append COMPLETED; got {statuses!r}"
+        )
+        assert "RED" not in statuses, (
+            f"AC-PLAN-004: hung RED must not append a successful RED row; "
+            f"got {statuses!r}"
+        )
+        persisted = SessionState.load(session_path)
+        assert persisted.red_commit_sha == "", (
+            "AC-PLAN-004: hung RED must not invent red_commit_sha; "
+            f"got {persisted.red_commit_sha!r}"
+        )
+
+    def test_run_red_phase_healthy_manifest_commits_and_records_sha(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_red_phase
+        from deviate.core.agent import HandoverManifest
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        tests_dir = root / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        test_file = tests_dir / "test_hung_red.py"
+
+        ledger_path = root / "tasks.jsonl"
+        ledger_path.write_text("", encoding="utf-8")
+        session_path = root / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session = SessionState(current_phase="IDLE", red_commit_sha="")
+        session.save(session_path)
+
+        def _return_manifest(*_args: object, **_kwargs: object):
+            test_file.write_text(
+                "def test_contract():\n    assert False\n",
+                encoding="utf-8",
+            )
+            return (
+                HandoverManifest(
+                    phase="RED",
+                    status="PASS",
+                    task_id=self._TASK["id"],
+                    test_file="tests/test_hung_red.py",
+                ),
+                "",
+            )
+
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                side_effect=_return_manifest,
+            ),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="1 failed", stderr=""
+                ),
+            ),
+            patch(
+                "deviate.cli.micro._run_test_cmd",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="1 failed", stderr=""
+                ),
+            ),
+            patch(
+                "deviate.cli.micro._run_format_cmd",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+        ):
+            result = _run_red_phase(
+                dict(self._TASK),
+                ledger_path,
+                session,
+                session_path,
+                Console(),
+            )
+
+        statuses = []
+        for line in ledger_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("id") == self._TASK["id"]:
+                statuses.append(row.get("status"))
+        assert "RED" in statuses, (
+            f"AC-PLAN-006: healthy RED must append a RED ledger row; got {statuses!r}"
+        )
+        assert result.red_commit_sha, (
+            "AC-PLAN-006: healthy RED must record session.red_commit_sha"
+        )
+        persisted = SessionState.load(session_path)
+        assert persisted.red_commit_sha == result.red_commit_sha
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert persisted.red_commit_sha == head
+        subject = subprocess.run(
+            ["git", "log", "-1", "--pretty=%s"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert "RED" in subject
+        committed_files = subprocess.run(
+            ["git", "show", "--pretty=", "--name-only", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.splitlines()
+        assert "tests/test_hung_red.py" in committed_files
+
+
 _SCHEMA_REJECTION_TOKENS = ("tool_count_limit", "unsupported_tool_schema")
 _SCHEMA_REJECTION_MESSAGE = (
     "400 tool_count_limit unsupported_tool_schema: provider rejected tool schema"
