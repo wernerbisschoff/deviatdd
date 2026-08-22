@@ -410,3 +410,271 @@ class TestReviewPreCore:
         assert result.exit_code == 0
         contract = json.loads(result.stdout)
         assert contract["report_exists"] is True
+
+
+_ISSUE_ID = "ISS-ADH-028"
+_SIBLING_ISSUE_ID = "ISS-ADH-099"
+_SLUG = "028-coverage"
+_BRANCH = f"feat/adhoc/{_SLUG}"
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args], cwd=repo, env=_git_env(), check=True, capture_output=True
+    )
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def _seed_review_issue(
+    repo: Path,
+    *,
+    plan_acs: tuple[str, ...] = ("AC-PLAN-001", "AC-PLAN-002"),
+    task_rows: list[dict] | None = None,
+    cards: dict[str, str] | None = None,
+    sibling_rows: list[dict] | None = None,
+) -> None:
+    _git(repo, "checkout", "-b", _BRANCH)
+    issues_dir = repo / "specs" / "adhoc" / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+    (issues_dir / f"{_SLUG}.md").write_text("# coverage issue\n", encoding="utf-8")
+    issue_rows = [
+        {
+            "issue_id": _ISSUE_ID,
+            "source_file": f"specs/adhoc/issues/{_SLUG}.md",
+        }
+    ]
+    if sibling_rows is not None:
+        issue_rows.append(
+            {
+                "issue_id": _SIBLING_ISSUE_ID,
+                "source_file": "specs/adhoc/issues/099-sibling.md",
+            }
+        )
+        sibling_dir = repo / "specs" / "adhoc" / "issues"
+        (sibling_dir / "099-sibling.md").write_text("# sibling\n", encoding="utf-8")
+    _write_jsonl(repo / "specs" / "issues.jsonl", issue_rows)
+
+    work = repo / "specs" / "adhoc" / _SLUG
+    work.mkdir(parents=True, exist_ok=True)
+    if plan_acs:
+        body = "\n".join(f"**Scenario {ac}: example**" for ac in plan_acs)
+    else:
+        body = "No AC-PLAN tokens.\n"
+    (work / "plan.md").write_text(body + "\n", encoding="utf-8")
+
+    card_lines = ["# Tasks\n"]
+    for task_id, named in (cards or {}).items():
+        card_lines.append(f"- {task_id}: card\n")
+        if named:
+            card_lines.append(f"  - **Acceptance Criteria**: {named}\n")
+            card_lines.append(f"  - **Rationale**: owns {named}\n")
+    (work / "tasks.md").write_text("".join(card_lines), encoding="utf-8")
+    _write_jsonl(work / "tasks.jsonl", task_rows or [])
+
+    if sibling_rows is not None:
+        sibling_work = repo / "specs" / "adhoc" / "099-sibling"
+        sibling_work.mkdir(parents=True, exist_ok=True)
+        _write_jsonl(sibling_work / "tasks.jsonl", sibling_rows)
+
+
+def _completed(
+    task_id: str,
+    *criterion_ids: str,
+    issue_id: str = _ISSUE_ID,
+    evidence: list[dict] | None = None,
+    status: str = "COMPLETED",
+) -> dict:
+    row: dict = {
+        "id": task_id,
+        "issue_id": issue_id,
+        "description": f"{task_id} {status}",
+        "status": status,
+        "execution_mode": "TDD",
+    }
+    if criterion_ids:
+        row["acceptance_criteria"] = [
+            {"criterion_id": token, "verification_mode": "manual"}
+            for token in criterion_ids
+        ]
+    if evidence is not None:
+        row["evidence"] = evidence
+    return row
+
+
+class TestReviewPlanAcCoverage:
+    """TSK-028-03: Gate 3 fail-closes when a plan AC has no COMPLETED claim."""
+
+    def test_review_pre_vacuous_ready_without_plan(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert contract["status"] == "READY"
+        assert contract.get("uncovered", []) == []
+
+    def test_review_pre_fail_closes_on_unclaimed_plan_ac(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[
+                _completed("TSK-028-01", "AC-PLAN-001"),
+            ],
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code != 0
+        contract = json.loads(result.stdout)
+        assert contract["status"] not in {"READY", "PASS"}
+        assert "AC-PLAN-002" in contract["uncovered"]
+        assert contract["coverage_complete"] is False
+
+    def test_review_post_fail_closes_and_skips_pass_report(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[_completed("TSK-028-01", "AC-PLAN-001")],
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(
+                cli, ["review", "post", "status: PASS\n\nAdequacy looks fine."]
+            )
+
+        assert result.exit_code != 0
+        reports_dir = tmp_git_repo / ".deviate" / "review" / "reports"
+        assert not reports_dir.exists() or not list(reports_dir.iterdir())
+        assert "COVERAGE_INCOMPLETE" in result.stdout
+
+    def test_review_pre_ready_when_completed_claims_cover_plan(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[
+                _completed("TSK-028-01", "AC-PLAN-001"),
+                _completed("TSK-028-02", "AC-PLAN-002"),
+            ],
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert contract["status"] == "READY"
+        assert contract["uncovered"] == []
+        assert contract["coverage_complete"] is True
+
+    def test_review_pre_ready_when_persisted_evidence_claims_token(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[
+                _completed("TSK-028-01", "AC-PLAN-001"),
+                _completed(
+                    "TSK-028-02",
+                    evidence=[{"ac": "AC-PLAN-002"}],
+                ),
+            ],
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert contract["status"] == "READY"
+        assert contract["uncovered"] == []
+
+    def test_pending_failed_and_sibling_rows_do_not_claim(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[
+                _completed("TSK-028-01", "AC-PLAN-001"),
+                _completed("TSK-028-02", "AC-PLAN-002", status="PENDING"),
+                _completed("TSK-028-03", "AC-PLAN-002", status="FAILED"),
+            ],
+            cards={
+                "TSK-028-02": "AC-PLAN-002",
+                "TSK-028-03": "AC-PLAN-002",
+            },
+            sibling_rows=[
+                _completed(
+                    "TSK-099-01",
+                    "AC-PLAN-002",
+                    issue_id=_SIBLING_ISSUE_ID,
+                )
+            ],
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code != 0
+        contract = json.loads(result.stdout)
+        assert "AC-PLAN-002" in contract["uncovered"]
+
+    def test_criteria_win_does_not_union_later_card_tokens(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[_completed("TSK-028-01", "AC-PLAN-001")],
+            cards={"TSK-028-01": "AC-PLAN-001 AC-PLAN-002"},
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code != 0
+        contract = json.loads(result.stdout)
+        assert "AC-PLAN-002" in contract["uncovered"]
+
+    def test_card_tokens_claim_when_criteria_absent(self, tmp_git_repo: Path) -> None:
+        _seed_review_issue(
+            tmp_git_repo,
+            task_rows=[
+                _completed("TSK-028-01"),
+                _completed("TSK-028-02"),
+            ],
+            cards={
+                "TSK-028-01": "AC-PLAN-001",
+                "TSK-028-02": "AC-PLAN-002",
+            },
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert contract["status"] == "READY"
+        assert contract["uncovered"] == []
+
+    def test_plan_without_tokens_is_vacuously_complete(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_review_issue(tmp_git_repo, plan_acs=())
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0
+        contract = json.loads(result.stdout)
+        assert contract["status"] == "READY"
+        assert contract["uncovered"] == []
