@@ -1,11 +1,50 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from deviate.core.agent import AgentBackend, AgentConfig, AgentSubprocessError
+
+_CODING_TOOLS = ("read", "bash", "edit", "write")
+_DEVIATDD_SKILL_REL = Path(".pi") / "skills" / "deviatdd" / "SKILL.md"
+
+
+def _has_long_or_short(cmd: list[str], long_flag: str, short_flag: str) -> bool:
+    return long_flag in cmd or short_flag in cmd
+
+
+def _flag_value(cmd: list[str], flag: str) -> str | None:
+    for index, token in enumerate(cmd):
+        if token == flag and index + 1 < len(cmd):
+            return cmd[index + 1]
+        prefix = f"{flag}="
+        if token.startswith(prefix):
+            return token[len(prefix) :]
+    return None
+
+
+def _tools_allowlist(cmd: list[str]) -> set[str]:
+    raw = _flag_value(cmd, "--tools")
+    if raw is None:
+        raw = _flag_value(cmd, "-t")
+    if raw is None:
+        return set()
+    return {part for part in raw.split(",") if part}
+
+
+def _assert_pi_lean_coding_tools(cmd: list[str]) -> None:
+    allowlist = _tools_allowlist(cmd)
+    missing = [tool for tool in _CODING_TOOLS if tool not in allowlist]
+    assert not missing, (
+        f"Pi --tools must list {_CODING_TOOLS}, missing {missing} in {cmd}"
+    )
+    assert "--no-tools" not in cmd, f"Default Pi spawn must omit --no-tools (got {cmd})"
+    assert "--no-builtin-tools" not in cmd, (
+        f"Default Pi spawn must omit --no-builtin-tools (got {cmd})"
+    )
 
 
 class TestAgentCommandModel:
@@ -155,6 +194,101 @@ class TestPiRpcMode:
         assert "-p" not in cmd, (
             f"Print-mode flag must not appear in RPC mode command (got {cmd})"
         )
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_pi_rpc_lean_spawn_flags(
+        self, mock_popen: MagicMock, tmp_path: Path
+    ) -> None:
+        """AC-PLAN-001 / AC-PLAN-002: RPC argv keeps AC-009-10 then lean flags."""
+        skill_path = tmp_path / _DEVIATDD_SKILL_REL
+        skill_path.parent.mkdir(parents=True)
+        skill_path.write_text("# deviatdd\n", encoding="utf-8")
+
+        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
+        jsonl_output = (
+            json.dumps({"type": "agent_start"})
+            + "\n"
+            + json.dumps({"type": "agent_end", "message": {"content": yaml_output}})
+            + "\n"
+        ).encode("utf-8")
+
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (jsonl_output, b"")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        config = AgentConfig(backend="pi", pi_rpc=True)
+        backend = AgentBackend(config=config)
+        backend.invoke("test prompt", cwd=str(tmp_path))
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[0] == "pi", f"Expected first argv 'pi', got {cmd[0]!r}"
+        assert cmd[1:4] == ["--mode", "rpc", "--no-session"], (
+            f"RPC prefix must stay pi --mode rpc --no-session (got {cmd})"
+        )
+        assert "-p" not in cmd, f"RPC argv must omit print-mode -p (got {cmd})"
+        assert _has_long_or_short(cmd, "--no-extensions", "-ne"), (
+            f"Lean Pi spawn requires --no-extensions or -ne (got {cmd})"
+        )
+        assert _has_long_or_short(cmd, "--no-skills", "-ns"), (
+            f"Lean Pi spawn requires --no-skills or -ns (got {cmd})"
+        )
+        _assert_pi_lean_coding_tools(cmd)
+        skill_arg = _flag_value(cmd, "--skill")
+        assert skill_arg is not None, (
+            f"Expected --skill when skill file exists (got {cmd})"
+        )
+        assert Path(skill_arg) == skill_path or skill_arg.endswith(
+            str(_DEVIATDD_SKILL_REL)
+        ), f"--skill must point at {_DEVIATDD_SKILL_REL} (got {skill_arg!r})"
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_pi_rpc_lean_tools_remain_when_skill_missing(
+        self, mock_popen: MagicMock, tmp_path: Path
+    ) -> None:
+        """AC-PLAN-002: missing skill file still lists the four coding tools on RPC."""
+        yaml_output = "phase: RED\nstatus: OK\n"
+        jsonl_output = (
+            json.dumps({"type": "agent_end", "message": {"content": yaml_output}})
+            + "\n"
+        ).encode("utf-8")
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (jsonl_output, b"")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        config = AgentConfig(backend="pi", pi_rpc=True)
+        backend = AgentBackend(config=config)
+        backend.invoke("test prompt", cwd=str(tmp_path))
+
+        cmd = mock_popen.call_args[0][0]
+        assert "--mode" in cmd and "rpc" in cmd and "--no-session" in cmd
+        _assert_pi_lean_coding_tools(cmd)
+        assert _flag_value(cmd, "--skill") is None, (
+            f"Missing skill file must not add --skill (got {cmd})"
+        )
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_claude_invoke_omits_pi_lean_tool_flags(
+        self, mock_popen: MagicMock
+    ) -> None:
+        """AC-PLAN-002: non-Pi backends keep their argv and skip Pi lean flags."""
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (b"phase: RED\nstatus: PASS\n", b"")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        backend = AgentBackend(config=AgentConfig(backend="claude"))
+        backend.invoke("test prompt")
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[:4] == ["claude", "-p", "--permission-mode", "auto"], (
+            f"Claude argv must stay unchanged (got {cmd})"
+        )
+        assert "--no-extensions" not in cmd and "-ne" not in cmd
+        assert "--no-skills" not in cmd and "-ns" not in cmd
+        assert "--tools" not in cmd and "-t" not in cmd
+        assert "--skill" not in cmd
 
     @patch("deviate.core.agent.subprocess.Popen")
     def test_pi_rpc_mode_sends_jsonl_prompt_over_stdin(
