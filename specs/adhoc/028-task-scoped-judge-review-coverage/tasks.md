@@ -60,6 +60,7 @@
 ### Tasks
 
   - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-005
+  - **Judge Feedback**: JUDGE evidence is missing, empty, or partial for injected acceptance tokens: AC-PLAN-002, AC-PLAN-005
 - TSK-028-03: Fail-close review when a plan AC has no COMPLETED claim
   - **Type**: Feature_Batch
   - **Mode**: TDD
