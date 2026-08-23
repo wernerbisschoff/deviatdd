@@ -5,16 +5,22 @@ import re
 from pathlib import Path
 
 
+def _prompts_dir(subdir: str) -> Path:
+    """Locate ``deviate.prompts/<subdir>`` in the package.
+
+    Falls back to the source tree for runs outside an installed
+    distribution (editable installs, worktrees).
+    """
+    try:
+        return Path(importlib.resources.files("deviate.prompts").joinpath(subdir))
+    except (ModuleNotFoundError, TypeError, FileNotFoundError):
+        return Path("src/deviate/prompts") / subdir
+
+
 def _resolve_commands_root(commands_root: Path | None = None) -> Path:
     if commands_root is not None:
         return commands_root
-    try:
-        return Path(importlib.resources.files("deviate.prompts").joinpath("commands"))
-    except (ModuleNotFoundError, TypeError, FileNotFoundError):
-        fallback = Path("src/deviate/prompts/commands")
-        if fallback.exists():
-            return fallback
-        return Path() / "src" / "deviate" / "prompts" / "commands"
+    return _prompts_dir("commands")
 
 
 def discover_commands(commands_root: Path | None = None) -> list[str]:
@@ -45,11 +51,79 @@ def _read_text(path: Path) -> str | None:
 
 
 def _resolve_core_dir() -> Path | None:
-    try:
-        return Path(importlib.resources.files("deviate.prompts").joinpath("core"))
-    except (ModuleNotFoundError, TypeError):
-        fallback = Path("src/deviate/prompts/core")
-        return fallback if fallback.exists() else None
+    core_dir = _prompts_dir("core")
+    return core_dir if core_dir.exists() else None
+
+
+# ---------------------------------------------------------------------------
+# Canonical auto core for manual slash-command derivation
+# ---------------------------------------------------------------------------
+
+# The 11 phases with a canonical ``auto/{phase}.md`` core. The manual
+# slash-command body is derived from this core plus a per-phase manual
+# overlay at install time — there is no hand-maintained duplicate middle
+# file to drift from the auto semantics. The 15 commands-only prompts
+# (adhoc, architecture, constitution, e2e, flows, hotfix, html, init,
+# merge, pr, prune, release, review, triage, walkthrough) have no auto
+# counterpart and stay hand-maintained.
+_OVERLAPPING_PHASES = frozenset(
+    {
+        "explore",
+        "research",
+        "prd",
+        "shard",
+        "plan",
+        "tasks",
+        "red",
+        "green",
+        "refactor",
+        "judge",
+        "execute",
+    }
+)
+
+
+def _manual_phase(name: str) -> str | None:
+    """Return the canonical auto phase for a manual command name.
+
+    Returns ``None`` for the commands-only prompts (no auto counterpart) and
+    for names outside the ``deviate-`` prefix namespace.
+    """
+    if not name.startswith("deviate-"):
+        return None
+    phase = name[len("deviate-") :]
+    return phase if phase in _OVERLAPPING_PHASES else None
+
+
+def _read_auto_body(phase: str) -> str | None:
+    """Read the canonical ``auto/{phase}.md`` core body."""
+    return _read_text(_prompts_dir("auto") / f"{phase}.md")
+
+
+def _derive_manual_body(name: str, raw: str) -> str | None:
+    """Derive the manual slash-command body from the canonical auto core.
+
+    For the 11 overlapping phases the command source carries only the
+    frontmatter and the per-phase manual overlay; the middle body comes from
+    ``auto/{phase}.md`` and is spliced verbatim so the installed middle stays
+    byte-identical to the auto core. Returns ``raw`` unchanged for the
+    commands-only prompts (no auto counterpart) and ``None`` when the auto
+    core is missing or the source has no YAML frontmatter.
+    """
+    phase = _manual_phase(name)
+    if phase is None:
+        return raw
+    auto_body = _read_auto_body(phase)
+    if auto_body is None:
+        return None
+    fm_match = _YAML_FM_RE.match(raw)
+    if not fm_match:
+        return None
+    derived = f"{fm_match.group(1)}\n\n{auto_body}"
+    overlay = raw[fm_match.end() :].strip()
+    if overlay:
+        derived = f"{derived}\n\n{overlay}"
+    return derived
 
 
 def compose_command_body(
@@ -146,21 +220,13 @@ def _emit_platform_frontmatter(agent: str, name: str, description: str) -> str:
     return body
 
 
-def _strip_deviate_frontmatter(frontmatter: str, name: str) -> tuple[str, str]:
-    """Pull `description` out of the source frontmatter and drop internal keys.
-
-    Returns ``(emitted_frontmatter_block, description)``. The emitted
-    block is passed to :func:`_emit_platform_frontmatter` to assemble
-    the on-disk frontmatter; the description drives ``description:`` in
-    every platform's slash-command UI.
-    """
-    description = ""
+def _extract_description(frontmatter: str) -> str:
+    """Pull the ``description`` value out of a source frontmatter block."""
     for line in frontmatter.splitlines():
         stripped = line.strip()
         if stripped.startswith("description:"):
-            description = stripped.split(":", 1)[1].strip().strip("'\"")
-            break
-    return "", description
+            return stripped.split(":", 1)[1].strip().strip("'\"")
+    return ""
 
 
 def _read_graphite_routing() -> str | None:
@@ -205,6 +271,13 @@ def install_command(
     if raw is None:
         return False
 
+    # The auto core enters the manual verbatim: the derived middle stays
+    # byte-identical to auto/{phase}.md (the drift-guard invariant).
+    derived = _derive_manual_body(name, raw)
+    if derived is None:
+        return False
+    raw = derived
+
     core_dir = _resolve_core_dir()
     if core_dir is None:
         return False
@@ -230,7 +303,7 @@ def install_command(
 
     fm_match = _YAML_FM_RE.match(composed)
     if fm_match:
-        _, description = _strip_deviate_frontmatter(fm_match.group(1), name)
+        description = _extract_description(fm_match.group(1))
         emitted_fm = _emit_platform_frontmatter(agent, name, description)
         composed = f"{emitted_fm}\n{composed[fm_match.end() :]}"
 
