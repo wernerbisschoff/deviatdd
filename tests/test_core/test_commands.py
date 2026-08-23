@@ -629,3 +629,115 @@ class TestComposeCommandBodyProductLayerLifecycle:
         assert composed is not None
         assert '<lifecycle mode="manual">' in composed
         assert '<lifecycle mode="product">' not in composed
+
+
+class TestManualDerivationFromAutoCore:
+    """AC-PLAN-001/003/004: the manual slash-command derives from the canonical
+    ``auto/{phase}.md`` core plus the per-phase manual overlay — never from a
+    hand-maintained duplicate middle file.
+
+    ``install_command`` must splice the auto core body verbatim into the installed
+    command. The overlay (frontmatter, manual lifecycle block, rich handover
+    manifest, ``<context><user_input>``) lives outside the shared middle, so the
+    middle region of the installed file stays byte-identical to ``auto/{phase}.md``.
+    """
+
+    _AUTO_ROOT = (
+        Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "auto"
+    )
+    _OVERLAPPING_PHASES = sorted(
+        [
+            "explore",
+            "research",
+            "prd",
+            "shard",
+            "plan",
+            "tasks",
+            "red",
+            "green",
+            "refactor",
+            "judge",
+            "execute",
+        ]
+    )
+
+    @staticmethod
+    def _read_auto(phase: str) -> str:
+        return (TestManualDerivationFromAutoCore._AUTO_ROOT / f"{phase}.md").read_text(
+            encoding="utf-8"
+        )
+
+    @staticmethod
+    def _installed(name: str, tmp_path: Path) -> str:
+        target = tmp_path / "agent" / "commands"
+        install_command(name, target)
+        return (target / f"{name}.md").read_text(encoding="utf-8")
+
+    def test_installed_red_embeds_auto_core(self, tmp_path):
+        """The canonical ``auto/red.md`` body appears verbatim in the installed manual.
+
+        Every overlapping phase body is composed from the auto core. A manual
+        command whose middle originates from the old hand-maintained duplicate
+        fails this check.
+        """
+        installed = self._installed("deviate-red", tmp_path)
+        assert self._read_auto("red") in installed
+
+    def test_installed_red_middle_is_byte_identical_to_auto(self, tmp_path):
+        """The installed middle region — from the first ``<system_instructions>``
+        tag, which every ``auto/{phase}.md`` opens with — must equal ``auto/red.md``
+        byte-for-byte. The overlay may add content only outside this region."""
+        installed = self._installed("deviate-red", tmp_path)
+        auto = self._read_auto("red")
+        start = installed.index("<system_instructions>")
+        assert installed[start : start + len(auto)] == auto
+
+    def test_all_11_phases_derive_identical_middle(self, tmp_path):
+        """Drift guard: every overlapping phase's derived manual middle is
+        byte-identical to its canonical ``auto/{phase}.md`` core."""
+        for phase in self._OVERLAPPING_PHASES:
+            installed = self._installed(f"deviate-{phase}", tmp_path)
+            auto = self._read_auto(phase)
+            start = installed.index("<system_instructions>")
+            assert installed[start : start + len(auto)] == auto, (
+                f"deviate-{phase}: derived manual middle diverged from auto/{phase}.md"
+            )
+
+    def test_derived_red_carries_no_manual_duplicate_middle(self, tmp_path):
+        """Hand-maintained duplicate content — the retry contract, the
+        ledger-wording drift, and abort-on-passing-test — must not reappear in
+        the derived output."""
+        installed = self._installed("deviate-red", tmp_path)
+        assert "Retry Contract (test_defect)" not in installed
+        assert "test has a PENDING status in the `tasks.jsonl` ledger" not in installed
+        assert "Abort — test must fail first" not in installed
+        assert not any(
+            line.strip() == 'status: "FAIL"' for line in installed.splitlines()
+        )
+
+    def test_derived_red_carries_auto_handover_semantics(self, tmp_path):
+        """Auto's ``status: "PASS"`` + ``failure_kind`` handover semantics
+        survive into the derived manual."""
+        installed = self._installed("deviate-red", tmp_path)
+        assert 'status: "PASS"' in installed
+        assert "failure_kind" in installed
+        assert "already_satisfied" in installed
+
+    def test_derived_green_carries_auto_role_language(self, tmp_path):
+        """GREEN derives auto's "write ONLY production code" instruction, not
+        the duplicate's "maintain existing functional signatures" wording."""
+        installed = self._installed("deviate-green", tmp_path)
+        assert "Write ONLY production code" in installed
+        assert (
+            "Maintain existing functional signatures — do not change test files"
+            not in installed
+        )
+
+    def test_derived_install_remains_idempotent(self, tmp_path):
+        """AC-PLAN-004: re-install with identical canonical resources returns
+        ``False`` and leaves the on-disk command unchanged."""
+        target = tmp_path / "agent" / "commands"
+        assert install_command("deviate-red", target) is True
+        first = (target / "deviate-red.md").read_text(encoding="utf-8")
+        assert install_command("deviate-red", target) is False
+        assert (target / "deviate-red.md").read_text(encoding="utf-8") == first

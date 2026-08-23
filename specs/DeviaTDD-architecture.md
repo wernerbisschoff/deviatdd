@@ -510,6 +510,25 @@ A rule and a structural constraint collide, the structural constraint wins. This
 STE100's controlled-vocabulary design: clear prose for humans, unambiguous fixed tokens
 for machines.
 
+**Single-source prompt derivation (v2.21.0):** the 11 overlapping phase bodies
+(`explore`, `research`, `prd`, `shard`, `plan`, `tasks`, `red`, `green`,
+`refactor`, `judge`, `execute`) live only in `src/deviate/prompts/auto/{phase}.md`, the
+canonical middle bodies. The manual slash commands in `commands/deviate-{phase}.md` were
+reduced to frontmatter plus a per-phase manual overlay (pre/post-script lifecycle steps,
+rich handover manifest, `<context><user_input>` block), deleting duplicated middle
+bodies that had drifted 17-68% from the auto semantics
+(`compose_command_body()` / `install_command()` in `src/deviate/core/commands.py`
+derive the installed manual body at setup time by splicing the canonical
+`auto/{phase}.md` middle verbatim between the platform frontmatter and the overlay —
+there is no hand-maintained duplicate middle file to drift from the auto semantics).
+`load_template()` (`src/deviate/prompts/assembly.py`, auto mode) keeps
+emitting the auto core only; the manual overlay never leaks into the auto path. The
+drift-guard tests `TestManualDerivationFromAutoCore` and `TestManualDerivationDriftGuard`
+pin the identical-middle invariant across all 11 overlapping phases. The 15
+commands-only prompts (adhoc, architecture, constitution, e2e, flows, hotfix, html,
+init, merge, pr, prune, release, review, triage, walkthrough) have no auto counterpart
+and stay hand-maintained.
+
 ### Model Routing & Cache Discipline (Guidance)
 
 The model routing table below is documented as a recommended strategy in the

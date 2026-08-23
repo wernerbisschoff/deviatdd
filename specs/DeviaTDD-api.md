@@ -39,6 +39,23 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`) is persisted to `[agent].backend` in
   `config.toml` for use by the meso/micro layers; it does **not** gate which agent
   directories receive commands.
+
+  **Single-source prompt derivation:** for each of the 11 overlapping phases
+  (`explore`, `research`, `prd`, `shard`, `plan`, `tasks`, `red`, `green`,
+  `refactor`, `judge`, `execute`) the installed manual slash-command body is
+  derived at install time from the canonical `auto/{phase}.md` middle body plus a
+  per-phase manual overlay — it is NOT a hand-maintained duplicate. The derivation
+  path is `compose_command_body()` / `install_command()` in
+  `src/deviate/core/commands.py`: `install_command` reads the canonical
+  `auto/{phase}.md` core, `compose_command_body` splices the platform frontmatter
+  and the core/layer/lifecycle-manual/style prefix around it, and the per-phase
+  manual overlay (pre/post-script lifecycle steps, rich handover manifest,
+  `<context><user_input>` block) is appended from the reduced
+  `commands/deviate-{phase}.md` source. `auto/{phase}.md` is the single source of
+  truth; the 15 commands-only prompts (adhoc, architecture, constitution, e2e,
+  flows, hotfix, html, init, merge, pr, prune, release, review, triage,
+  walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
+  pins the identical-middle invariant across all 11 phases (see section 2).
   **Agent-to-commands-directory mapping:** `.claude/` → `.claude/commands/`;
   `.opencode/` → `.opencode/commands/`; `.factory/` (shared by both `--agent
   factory` and `--agent droid` — the Factory Droid IDE owns that directory;
@@ -1321,12 +1338,12 @@ src/deviate/
 │   │   ├── macro-shared.md / meso-shared.md / micro-shared.md   # layer preambles
 │   │   ├── lifecycle-auto.md / lifecycle-manual.md             # mode lifecycle blocks
 │   │   └── style-ste.md        # ASD-STE100 Simplified Technical English directive
-│   ├── auto/                 # explore, research, prd, shard, specify, tasks, plan (planned)
+│   ├── auto/                 # canonical per-phase middle bodies — the single source of truth
 │   │   ├── explore.md, research.md, prd.md, shard.md, specify.md, tasks.md
-│   │   ├── red.md, green.md, judge.md, refactor.md
-│   │   └── plan.md (planned)
+│   │   ├── red.md, green.md, judge.md, refactor.md, plan.md, execute.md
+│   │   └── (11 overlapping phases above)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 24 DeviaTDD slash commands (flat *.md): deviate-{adhoc, architecture, constitution, e2e, execute, explore, flows, green, hotfix, html, init, judge, plan, pr, prd, prune, red, refactor, release, research, review, shard, tasks, triage} (24)
+│   └── commands/             # 26 DeviaTDD slash commands (flat *.md): 11 derive their body from auto/{phase}.md + a manual overlay ({execute, explore, green, judge, plan, prd, red, refactor, research, shard, tasks}); 15 hand-maintained commands-only prompts (adhoc, architecture, constitution, e2e, flows, hotfix, html, init, merge, pr, prune, release, review, triage, walkthrough)
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
     └── ledger.py             # IssueRecord, TaskRecord, append_issue_transition, append_task_transition
 ```

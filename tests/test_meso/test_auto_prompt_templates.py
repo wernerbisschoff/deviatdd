@@ -430,16 +430,103 @@ class TestReviewPromptSecurityTaxonomy:
 class TestVerificationBatchImmediateRouting:
     """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
 
-    def test_tasks_prompts_lock_verification_batch_to_immediate(self):
+    def test_auto_tasks_locks_verification_batch_to_immediate(self):
         repo = Path(__file__).resolve().parents[2]
-        paths = (
-            repo / "src" / "deviate" / "prompts" / "commands" / "deviate-tasks.md",
-            repo / "src" / "deviate" / "prompts" / "auto" / "tasks.md",
+        # Single-source invariant: the manual deviate-tasks.md derives its body
+        # from auto/tasks.md at install time, so the lock strings live only in
+        # the canonical auto core.
+        path = repo / "src" / "deviate" / "prompts" / "auto" / "tasks.md"
+        text = path.read_text(encoding="utf-8")
+        assert "Verification_Batch" in text
+        assert "never TDD" in text, (
+            f"{path.name}: must lock Verification_Batch so it cannot emit Mode: TDD"
         )
-        for path in paths:
-            text = path.read_text(encoding="utf-8")
-            assert "Verification_Batch" in text
-            assert "never TDD" in text, (
-                f"{path.name}: must lock Verification_Batch so it cannot emit Mode: TDD"
+        assert "Type→Mode lock" in text or "hard type→mode lock" in text
+
+
+class TestManualDerivationDriftGuard:
+    """Drift guards pinning the single-source invariant: the derived manual
+    middle must stay byte-identical to the canonical auto core, and the auto
+    handover semantics must survive into the derived manual output.
+
+    Every boundary test invokes ``install_command`` against an isolated
+    ``tmp_path`` so the installed ``deviate-{phase}.md`` exists on disk. The 15
+    commands-only prompts (no auto counterpart) are exempt.
+    """
+
+    _AUTO_ROOT = (
+        Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "auto"
+    )
+    _OVERLAPPING_PHASES = sorted(
+        [
+            "explore",
+            "research",
+            "prd",
+            "shard",
+            "plan",
+            "tasks",
+            "red",
+            "green",
+            "refactor",
+            "judge",
+            "execute",
+        ]
+    )
+
+    @staticmethod
+    def _read_auto(phase: str) -> str:
+        return (TestManualDerivationDriftGuard._AUTO_ROOT / f"{phase}.md").read_text(
+            encoding="utf-8"
+        )
+
+    @staticmethod
+    def _install(name: str, tmp_path: Path) -> str:
+        from deviate.core.commands import install_command
+
+        target = tmp_path / "agent" / "commands"
+        install_command(name, target)
+        return (target / f"{name}.md").read_text(encoding="utf-8")
+
+    def test_auto_and_manual_middle_identical(self, tmp_path):
+        """Every derived manual middle equals the canonical auto core byte-for-byte."""
+        for phase in self._OVERLAPPING_PHASES:
+            installed = self._install(f"deviate-{phase}", tmp_path)
+            auto = self._read_auto(phase)
+            start = installed.index("<system_instructions>")
+            middle = installed[start : start + len(auto)]
+            assert middle == auto, (
+                f"deviate-{phase}: derived manual middle diverged from auto/{phase}.md"
             )
-            assert "Type→Mode lock" in text or "hard type→mode lock" in text
+
+    def test_auto_red_uses_pass_failure_kind(self):
+        """The canonical auto RED carries ``status: \"PASS\"`` + ``failure_kind``."""
+        auto = self._read_auto("red")
+        assert 'status: "PASS"' in auto
+        assert "failure_kind" in auto
+        assert "already_satisfied" in auto
+        # The string can appear only in negative instructional form; there must
+        # be no standalone ``status: "FAIL"`` handover-manifest entry.
+        assert not any(line.strip() == 'status: "FAIL"' for line in auto.splitlines())
+
+    def test_manual_red_matches_auto_semantics(self, tmp_path):
+        """The derived manual RED must not emit ``status: \"FAIL\"`` or
+        abort-on-passing-test; it inherits auto's ``status: \"PASS\"`` +
+        ``failure_kind`` semantics."""
+        installed = self._install("deviate-red", tmp_path)
+        assert not any(
+            line.strip() == 'status: "FAIL"' for line in installed.splitlines()
+        )
+        assert "Abort — test must fail first" not in installed
+        assert 'status: "PASS"' in installed
+        assert "failure_kind" in installed
+
+    def test_manual_green_matches_auto_role_language(self, tmp_path):
+        """The derived manual GREEN inherits auto's "write ONLY production
+        code" role language, not the duplicate's "maintain existing functional
+        signatures" wording."""
+        installed = self._install("deviate-green", tmp_path)
+        assert "Write ONLY production code" in installed
+        assert (
+            "Maintain existing functional signatures — do not change test files"
+            not in installed
+        )
