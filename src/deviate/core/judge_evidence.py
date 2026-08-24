@@ -7,6 +7,10 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Literal
 
 _AC_TOKEN = re.compile(r"AC-PLAN-\d{3}")
+_JUDGE_FEEDBACK_LINE = re.compile(r"^\s*-\s+\*\*Judge Feedback\*\*:")
+_CARD_STRUCTURE_LINE = re.compile(
+    r"^(?:- (?:\[(?:x| )\]\s+)?TSK-\d{3}-\d{2}:|  - |#{1,6}\s)"
+)
 _CONTRACT_BLOCK = re.compile(
     r'<authoritative_acceptance_contract\s+source="plan.md">(.*?)'
     r"</authoritative_acceptance_contract>",
@@ -40,12 +44,13 @@ def resolve_task_ac_tokens(task: Any, *, card_text: str = "") -> list[str]:
     """Return this task's required ``AC-PLAN-NNN`` tokens (first hit wins).
 
     Order: non-empty ``acceptance_criteria`` ``criterion_id``s, else tokens
-    named in ``card_text``, else no AC tokens. Never reads ``plan.md``.
+    named in ``card_text`` after dropping ``**Judge Feedback**`` bullets and
+    their continuation lines, else no AC tokens. Never reads ``plan.md``.
     """
     ids = _criterion_ids(_attr(task, "acceptance_criteria") or [])
     if ids:
         return ids
-    return _unique_ac_tokens(card_text or "")
+    return _unique_ac_tokens(_strip_judge_feedback(card_text or ""))
 
 
 def evaluate_judge_evidence(
@@ -148,6 +153,21 @@ def _extract_ac_plan_tokens(plan_contract: str) -> list[str]:
 def _unique_ac_tokens(text: str) -> list[str]:
     """Return first-seen ``AC-PLAN-NNN`` tokens from *text* via ``_AC_TOKEN``."""
     return list(dict.fromkeys(_AC_TOKEN.findall(text)))
+
+
+def _strip_judge_feedback(text: str) -> str:
+    """Drop ``**Judge Feedback**`` bullets and their continuation lines."""
+    kept: list[str] = []
+    skipping = False
+    for line in text.splitlines():
+        if _JUDGE_FEEDBACK_LINE.match(line):
+            skipping = True
+            continue
+        if skipping and not _CARD_STRUCTURE_LINE.match(line):
+            continue
+        skipping = False
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def _attr(obj: Any, name: str, default: Any = None) -> Any:
