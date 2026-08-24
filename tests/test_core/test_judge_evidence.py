@@ -480,3 +480,15 @@ class TestResolveTaskAcTokens:
         )
         card = "Card also names AC-PLAN-002 and AC-PLAN-007.\n"
         assert resolve_task_ac_tokens(record, card_text=card) == ["AC-PLAN-001"]
+
+    def test_judge_feedback_quote_does_not_add_token(self):
+        """GH-89: runner feedback quoting AC-PLAN-001 is not a required token."""
+        task = {"id": "TSK-003-02"}
+        card = (
+            "- TSK-003-02: Booking harness\n"
+            "  - **Rationale**: Enable the sandbox without naming a plan token.\n"
+            "  - **Judge Feedback**: JUDGE evidence is missing... AC-PLAN-001\n"
+            "for injected acceptance tokens: AC-PLAN-001\n"
+            "  - **Files**: tests/test_booking.py\n"
+        )
+        assert resolve_task_ac_tokens(task, card_text=card) == []
