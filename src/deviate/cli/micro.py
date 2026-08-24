@@ -794,6 +794,7 @@ _TASK_LINE_RE = re.compile(r"^\s*-\s+(?:\[(x| )\]\s+)?(TSK-\d{3}-\d{2}):\s*(.*)"
 _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 _TYPE_LINE_RE = re.compile(r"^\s*-\s+\*\*Type\*\*:\s*(\S+)")
 _TASK_BULLET_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
+_MD_HEADING_RE = re.compile(r"^#{1,6}\s")
 _JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^  - \*\*Judge Feedback\*\*:\s*(.*)")
 
 # GH-53: DIRECT EXECUTE phases run deterministic long pipelines (clean-checkout
@@ -1962,7 +1963,7 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int |
         (
             i
             for i, line in enumerate(lines)
-            if task_id in line and line.startswith("- ")
+            if (head := _TASK_BULLET_HEAD_RE.match(line)) and head.group(1) == task_id
         ),
         None,
     )
@@ -1972,7 +1973,7 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int |
         (
             i
             for i in range(target_index + 1, len(lines))
-            if _TASK_BULLET_HEAD_RE.match(lines[i])
+            if _TASK_BULLET_HEAD_RE.match(lines[i]) or _MD_HEADING_RE.match(lines[i])
         ),
         len(lines),
     )
@@ -2932,7 +2933,9 @@ def _rewrite_unmatched_tdd_pass(
     )
     if not feedback:
         return action
-    _attach_judge_runner_feedback(manifest, feedback)
+    existing, _source = _judge_feedback_from_manifest(manifest)
+    if not existing:
+        _attach_judge_runner_feedback(manifest, feedback)
     _log_run(
         "JUDGE_EVIDENCE_REJECTED",
         task_id=task.get("id", "?"),
