@@ -121,6 +121,282 @@ class TestJudgePre:
             assert "details" in data
 
 
+class TestJudgePost:
+    """Manual ``deviate judge post`` applies auto-mode JUDGE side effects."""
+
+    _TASK_ID = "TSK-004-01"
+    _ISSUE_ID = "ISS-001-004"
+
+    def _rev_parse(self, root: Path, rev: str = "HEAD") -> str:
+        return subprocess.run(
+            ["git", "rev-parse", rev],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+
+    def _commit(self, root: Path, message: str) -> None:
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+    def _seed_judge_post_repo(self, root: Path) -> tuple[str, str, Path]:
+        """Seed meso artifacts, RED, GREEN, session, and ledger.
+
+        ``tasks.md`` is committed before RED so ``revert_to_red`` keeps
+        the card for the feedback commit.
+        """
+        subprocess.run(
+            ["git", "config", "core.fsmonitor", "false"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        source = "specs/004-micro-layer/issues/001-judge-post.md"
+        issue_md = root / source
+        issue_md.parent.mkdir(parents=True)
+        issue_md.write_text("# Judge post issue\n")
+        workspace = root / "specs" / "004-micro-layer" / "001-judge-post"
+        workspace.mkdir(parents=True)
+        tasks_md = workspace / "tasks.md"
+        tasks_md.write_text(f"- [ ] {self._TASK_ID}: Judge post task\n")
+        (root / "specs" / "issues.jsonl").write_text(
+            json.dumps({"issue_id": self._ISSUE_ID, "source_file": source}) + "\n",
+            encoding="utf-8",
+        )
+        (root / "specs" / "constitution.md").write_text("# constitution\n")
+        ledger_path = workspace / "tasks.jsonl"
+        _write_ledger(
+            ledger_path,
+            _make_task_record(
+                task_id=self._TASK_ID,
+                issue_id=self._ISSUE_ID,
+                status="GREEN",
+            ),
+        )
+        self._commit(root, "chore: seed meso artifacts")
+
+        (root / "feature.py").write_text("def feature(): pass\n")
+        self._commit(root, f"test({self._TASK_ID}): RED phase")
+        red_sha = self._rev_parse(root)
+
+        (root / "impl.py").write_text("def impl(): pass\n")
+        self._commit(root, f"feat({self._TASK_ID}): GREEN phase")
+        green_sha = self._rev_parse(root)
+
+        session = SessionState(
+            active_issue_id=self._ISSUE_ID,
+            current_phase="GREEN",
+            red_commit_sha=red_sha,
+        )
+        session.save(root / ".deviate" / "session.json")
+        return red_sha, green_sha, ledger_path
+
+    def _handover_yaml(
+        self,
+        *,
+        verdict: str,
+        next_action: str,
+        rationale: str = "GREEN drifted from the spec",
+        status: str = "PASS",
+    ) -> str:
+        return (
+            "phase: JUDGE\n"
+            f"status: {status}\n"
+            f"task_id: {self._TASK_ID}\n"
+            f'verdict: "{verdict}"\n'
+            f"next_action: {next_action}\n"
+            f'rationale: "{rationale}"\n'
+        )
+
+    def _invoke_judge_post(self, root: Path, yaml_text: str):
+        """Write the handover outside the repo and invoke ``judge post``."""
+        manifest = root.parent / "judge-handover.yaml"
+        manifest.write_text(yaml_text, encoding="utf-8")
+        with chdir(root):
+            return runner.invoke(cli, ["judge", "post", str(manifest)])
+
+    def test_manual_overlay_names_revert_and_feedback(self) -> None:
+        from importlib.resources import files
+
+        text = (
+            files("deviate.prompts.commands")
+            .joinpath("deviate-judge.md")
+            .read_text(encoding="utf-8")
+        )
+        assert "reverts GREEN" in text
+        assert "tasks.md" in text
+        assert "git reset" in text
+        assert "validates the verdict" not in text
+
+    def test_judge_post_is_registered_on_judge_app(self) -> None:
+        result = runner.invoke(cli, ["judge", "--help"])
+        assert result.exit_code == 0, result.output
+        assert "post" in result.output, result.output
+
+    def test_auto_judge_phase_does_not_shell_out_to_judge_post(self) -> None:
+        import inspect
+
+        from deviate.cli.micro import _apply_judge_verdict, _run_judge_phase
+
+        src = inspect.getsource(_run_judge_phase)
+        assert "judge_post" not in src
+        assert "_apply_judge_verdict" in src
+        assert callable(_apply_judge_verdict)
+
+    def test_revert_to_red_drops_green_keeps_red_and_commits_feedback(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha, _green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_to_red",
+                rationale="missing error path",
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "revert_to_red" in result.output, result.output
+        assert (tmp_git_repo / "feature.py").exists()
+        assert not (tmp_git_repo / "impl.py").exists()
+
+        tasks_md = (
+            tmp_git_repo / "specs" / "004-micro-layer" / "001-judge-post" / "tasks.md"
+        )
+        card = tasks_md.read_text(encoding="utf-8")
+        assert "**Judge Feedback**" in card
+        assert "missing error path" in card
+
+        subject = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert "add judge feedback" in subject, subject
+        head = self._rev_parse(tmp_git_repo)
+        assert head != red_sha
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.red_commit_sha == head
+        assert session.current_phase == "GREEN"
+        assert session.pending_judge_action == "revert_to_red"
+
+    def test_revert_before_drops_red_and_green(self, tmp_git_repo: Path) -> None:
+        red_sha, _green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_before",
+                rationale="RED test asserts the wrong contract",
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "revert_before" in result.output, result.output
+        assert not (tmp_git_repo / "feature.py").exists()
+        assert not (tmp_git_repo / "impl.py").exists()
+        head = self._rev_parse(tmp_git_repo)
+        pre_red = self._rev_parse(tmp_git_repo, f"{red_sha}^")
+        assert head == pre_red
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.red_commit_sha == ""
+        assert session.current_phase == "RED"
+        assert session.pending_judge_action == "revert_before"
+
+    def test_forward_route_does_not_reset(self, tmp_git_repo: Path) -> None:
+        _red_sha, green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_PASS",
+                next_action="continue_refactor",
+                rationale="",
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "continue_refactor" in result.output, result.output
+        assert (tmp_git_repo / "feature.py").exists()
+        assert (tmp_git_repo / "impl.py").exists()
+        assert self._rev_parse(tmp_git_repo) == green_sha
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.pending_judge_action == "continue_refactor"
+        assert session.current_phase == "JUDGE"
+        assert session.judge_rejected is False
+
+    def test_test_failure_remaps_forward_route_to_train(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha, green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
+        dump = (
+            "The test suite failed after GREEN implementation.\n\n"
+            "FAILED tests/test_feature.py::test_feature"
+        )
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        session.train_feedback = dump
+        session.failure_kind = ""
+        session.red_commit_sha = red_sha
+        session.save(tmp_git_repo / ".deviate" / "session.json")
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_PASS",
+                next_action="continue_refactor",
+                rationale="Polish naming after the suite is green.",
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "remap_to_train" in result.output, result.output
+        assert (tmp_git_repo / "impl.py").exists()
+        assert self._rev_parse(tmp_git_repo) == green_sha
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.current_phase == "GREEN"
+        assert session.pending_judge_action == ""
+        assert session.train_feedback.startswith(
+            "The test suite failed after GREEN implementation."
+        )
+        assert session.judge_rejected is False
+
+    def test_rejection_without_feedback_is_fatal(self, tmp_git_repo: Path) -> None:
+        self._seed_judge_post_repo(tmp_git_repo)
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_to_red",
+                rationale="",
+            ),
+        )
+
+        assert result.exit_code != 0, result.output
+        assert "JUDGE_AGENT_NO_FEEDBACK" in result.output, result.output
+        assert (tmp_git_repo / "impl.py").exists()
+
+    def test_reads_handover_from_stdin(self, tmp_git_repo: Path) -> None:
+        self._seed_judge_post_repo(tmp_git_repo)
+        yaml_text = self._handover_yaml(
+            verdict="COMPLIANCE_PASS",
+            next_action="continue_refactor",
+            rationale="",
+        )
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
+        assert result.exit_code == 0, result.output
+        assert "continue_refactor" in result.output, result.output
+
+
 class TestJudgePromptDiffSection:
     """JUDGE prompt diff handling (TSK-008-03).
 

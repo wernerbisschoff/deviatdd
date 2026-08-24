@@ -632,6 +632,11 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   lines, checks for compliance violations, and emits JSON verdict
   (`COMPLIANCE_VIOLATION` or `COMPLIANCE_PASS`).
 
+#### `deviate judge post [<manifest>]`
+
+* **Source:** `src/deviate/cli/micro.py` (`judge_post` on `judge_app`)
+* **Description:** Manual-mode counterpart to the auto JUDGE side effects. Reads the JUDGE handover (manifest path or stdin YAML) and applies the same post-verdict work `_run_judge_phase` owns after the agent returns. Coerces `next_action` via `_coerce_judge_action`, the unmatched-PASS rewrite, and the GREEN TEST_FAILURE remap from GH-100. `revert_to_red` rolls GREEN back to `session.red_commit_sha`; `revert_before` rolls RED+GREEN back to `red_commit_sha^`. Both reuse `_execute_rollback` / `_resolve_pre_red_sha` — there is no second rollback path. Train feedback is appended to the rejected task card in `tasks.md` and committed by `_commit_judge_feedback_and_advance`, which advances `red_commit_sha` past that feedback commit when a real RED SHA exists. Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) do not revert; they update session/ledger the same way auto does. Rejection without actionable feedback is `JUDGE_AGENT_NO_FEEDBACK`. A missing RED boundary on `revert_to_red` is fatal (`ROLLBACK_BOUNDARY_MISSING`). Prints the route and returns. The agent does not `git reset` or edit `tasks.md` itself. Auto `micro run` stays on `_run_judge_phase` and does not shell out to this command.
+
 #### `deviate refactor pre [--task <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
