@@ -201,8 +201,10 @@ class TestReleaseWorkflowContract:
     def test_dispatch_only_with_expected_inputs_and_permissions(self) -> None:
         text = _WORKFLOW.read_text(encoding="utf-8")
         data = yaml.safe_load(text)
-        assert set(data["on"]) == {"workflow_dispatch"}
-        inputs = data["on"]["workflow_dispatch"]["inputs"]
+        # PyYAML 1.1 treats the unquoted key `on` as boolean True.
+        on_block = data.get("on", data.get(True))
+        assert set(on_block) == {"workflow_dispatch"}
+        inputs = on_block["workflow_dispatch"]["inputs"]
         assert inputs["bump"]["default"] == "auto"
         assert set(inputs["bump"]["options"]) == {"auto", "patch", "minor", "major"}
         assert inputs["dry_run"]["type"] == "boolean"
