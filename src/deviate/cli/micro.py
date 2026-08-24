@@ -4971,7 +4971,7 @@ def _review_stdin_usable() -> bool:
 
 
 def _fail_review_requires_tty() -> NoReturn:
-    console.print("[red]REVIEW_REQUIRES_TTY[/]")
+    console.print("[red]REVIEW_REQUIRES_TTY[/]", highlight=False)
     raise ReviewRequiresTtyError("REVIEW_REQUIRES_TTY")
 
 
@@ -5008,7 +5008,7 @@ def _maybe_review_pause(phase: str | None, task_id: str | None = None) -> None:
     tid = (task_id or _review_task_id or "?").strip() or "?"
     if _review_json_mode or not _review_stdin_usable():
         _fail_review_requires_tty()
-    console.print(f"REVIEW_PAUSE {normalized} {tid}")
+    console.print(f"REVIEW_PAUSE {normalized} {tid}", highlight=False)
     _wait_for_review_confirmation()
 
 
@@ -6772,7 +6772,7 @@ def run_command(
         raise typer.Exit(code=0)
 
     if review and (json_mode or not _review_stdin_usable()):
-        console.print("[red]REVIEW_REQUIRES_TTY[/]")
+        console.print("[red]REVIEW_REQUIRES_TTY[/]", highlight=False)
         raise typer.Exit(code=1)
     _set_review_context(enabled=review, json_mode=json_mode, task_id=task_id or "")
 

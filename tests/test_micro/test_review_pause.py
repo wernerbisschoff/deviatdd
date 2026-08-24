@@ -86,10 +86,15 @@ def _tty_stdin(answers: list[str]) -> SimpleNamespace:
 
 
 class TestReviewFlag:
-    def test_micro_run_help_lists_review_flag(self) -> None:
-        result = runner.invoke(cli, ["micro", "run", "--help"])
-        assert result.exit_code == 0, result.output
-        assert "--review" in result.output
+    def test_micro_run_exposes_review_flag(self) -> None:
+        from typer.main import get_command
+
+        click_app = get_command(cli)
+        run = click_app.commands["micro"].commands["run"]
+        option_names = {
+            opt for param in run.params for opt in (*param.opts, *param.secondary_opts)
+        }
+        assert "--review" in option_names
 
     def test_review_plus_json_fails_closed_without_commit(
         self, tmp_git_repo: Path
@@ -220,7 +225,9 @@ class TestCommitPhaseReviewPause:
             SimpleNamespace(isatty=lambda: True, readline=readline),
         )
         buf = StringIO()
-        monkeypatch.setattr(micro, "console", Console(file=buf, force_terminal=True))
+        monkeypatch.setattr(
+            micro, "console", Console(file=buf, force_terminal=False, highlight=False)
+        )
         micro._set_review_context(enabled=True, task_id="TSK-101-01")
 
         committed = micro._commit_phase(
