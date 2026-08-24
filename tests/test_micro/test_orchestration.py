@@ -1934,43 +1934,58 @@ class TestMicroOrchestration:
                 f"Expected non-zero exit after retry exhaustion: {result.output}"
             )
 
+    @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._run_refactor_phase")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_micro_compliance_pass_judge_terminates_stale_green_retrain(
-        self, mock_agent, mock_verify, mock_run_test, tmp_git_repo, approve_gate2
+    def test_green_test_failure_compliance_pass_continue_refactor_retrains(
+        self,
+        mock_agent,
+        mock_refactor,
+        mock_verify,
+        mock_run_test,
+        mock_run_pytest,
+        tmp_git_repo,
+        approve_gate2,
     ):
-        """COMPLIANCE_PASS judge must terminate the TDD cycle even when the
-        preceding GREEN left the suite failing.
+        """GREEN TEST_FAILURE + JUDGE COMPLIANCE_PASS + continue_refactor
+        must retrain GREEN. It must not polish or mark COMPLETED.
 
-        Regression: `green_tests_failed` was snapshotted right after GREEN and
-        never re-evaluated after the JUDGE verdict. A judge that explicitly
-        approved the diff (verdict=COMPLIANCE_PASS, adjudicating residual
-        failures as acceptable) still hit the stale `True` and the runner
-        looped a correct slice into TRAIN_EXHAUSTED."""
-        # GREEN's test command fails on every attempt, so the pre-JUDGE
-        # `green_tests_failed` snapshot would be True.
-        mock_run_test.return_value = subprocess.CompletedProcess(
+        Implementation ran (GREEN agent SUCCESS); the suite stayed red.
+        JUDGE may still run and may emit a pass / continue_refactor /
+        JUDGE_REFACTOR_NOTE. Those are advisory. Only revert_to_red
+        (TRAIN) and revert_before (escalate RED) may change the route.
+        Mechanical / test_defect GREEN status:FAILURE is a different
+        path and is not this pin.
+        """
+        failing = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="1 failed", stderr=""
         )
+        mock_run_test.return_value = failing
+        mock_run_pytest.return_value = failing
+        call_log: list[str] = []
 
-        def _judge_pass(*args, **kwargs):
+        def _pass_then_continue_refactor(*args, **kwargs):
             phase = kwargs.get("phase", "")
-            tid = kwargs.get("task_id", "TSK-004-15")
+            tid = kwargs.get("task_id", "TSK-004-97")
+            call_log.append(phase)
             if phase == "JUDGE":
-                return HandoverManifest(
-                    phase="JUDGE",
-                    status="PASS",
-                    verdict="COMPLIANCE_PASS",
-                    task_id=tid,
-                    summary=(
-                        "Residual unresolved failures are pre-existing and fall",
-                        " outside this diff; the slice itself is compliant.",
+                return (
+                    HandoverManifest(
+                        phase="JUDGE",
+                        status="PASS",
+                        verdict="COMPLIANCE_PASS",
+                        task_id=tid,
+                        next_action="continue_refactor",
+                        train_feedback="Polish naming after the suite is green.",
+                        summary="Slice looks compliant; continue to refactor.",
                     ),
-                ), ""
+                    "",
+                )
             return HandoverManifest(phase=phase, status="SUCCESS", task_id=tid), ""
 
-        mock_agent.side_effect = _judge_pass
+        mock_agent.side_effect = _pass_then_continue_refactor
 
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
@@ -1979,9 +1994,9 @@ class TestMicroOrchestration:
             session.save(dot_dir / "session.json")
 
             task = _make_task_record(
-                task_id="TSK-004-15",
+                task_id="TSK-004-97",
                 issue_id="ISS-001-004",
-                description="Compliance pass terminates stale green retrain",
+                description="TEST_FAILURE must not complete via JUDGE pass",
                 status="PENDING",
             )
             ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
@@ -1989,25 +2004,29 @@ class TestMicroOrchestration:
             approve_gate2(tmp_git_repo, issue_id=task.issue_id)
             _seed_tracked_test_file(tmp_git_repo)
 
-            Path("README.md").write_text("# test\n")
-            subprocess.run(
-                ["git", "add", "."],
-                cwd=tmp_git_repo,
-                env=_git_env(),
-                check=True,
-            )
-            subprocess.run(
-                ["git", "commit", "-m", "chore: setup"],
-                cwd=tmp_git_repo,
-                env=_git_env(),
-                check=True,
-            )
+            result = runner.invoke(cli, ["micro", "run", "TSK-004-97"])
 
-            result = runner.invoke(cli, ["micro", "run", "TSK-004-15"])
-
-            assert "TRAIN_EXHAUSTED" not in result.output, result.output
-            assert "COMPLETED TSK-004-15" in result.output, result.output
-            assert result.exit_code == 0, result.output
+            assert "TEST_FAILURE" in result.output, result.output
+            assert call_log.count("GREEN") >= 2, (
+                f"TEST_FAILURE + COMPLIANCE_PASS + continue_refactor must "
+                f"retrain GREEN; phases={call_log}"
+            )
+            assert mock_refactor.call_count == 0, (
+                f"_run_refactor_phase must not run after a red GREEN; "
+                f"phases={call_log} output={result.output}"
+            )
+            assert "REFACTOR" not in call_log, (
+                f"REFACTOR agent must not run after a red GREEN; phases={call_log}"
+            )
+            statuses = _read_statuses(ledger_path)
+            assert "COMPLETED" not in statuses, (
+                f"Red GREEN must not be marked COMPLETED; statuses={statuses} "
+                f"output={result.output}"
+            )
+            assert "COMPLETED TSK-004-97" not in result.output, result.output
+            assert "TRAIN" in result.output, (
+                f"Expected TRAIN retry of GREEN with the test dump: {result.output}"
+            )
 
     @patch("deviate.cli.micro._verify_clean_worktree")
     def test_micro_run_empty_queue_exits_zero(
