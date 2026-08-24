@@ -43,30 +43,191 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+_REFACTOR_PRE_CONTRACT_KEYS = {
+    "status",
+    "task_id",
+    "task_title",
+    "task_type",
+    "test_command",
+    "lint_command",
+    "spec_dir",
+    "verification",
+    "repo_root",
+    "git_branch",
+    "timestamp",
+    "files_to_refactor",
+}
+
+_OUTBOX_PROD = "src/router/admin/webhook_outbox.py"
+_OUTBOX_TEST = "tests/outbox/test_admin_replay.py"
+_EXTRA_SRC = (
+    "src/binance/client.py",
+    "src/luno/client.py",
+    "src/grpc/server.py",
+)
+
+
+def _seed_refactor_pre_workspace(
+    root: Path,
+    *,
+    include_extra_src: bool = True,
+) -> None:
+    """Seed session, ledger, tasks.md, and issues.jsonl for TSK-003-03."""
+    spec_dir = root / "specs" / "001-feature" / "003-outbox"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    issues = root / "specs" / "issues.jsonl"
+    issues.parent.mkdir(parents=True, exist_ok=True)
+    issues.write_text(
+        json.dumps(
+            {
+                "issue_id": "ISS-001-003",
+                "source_file": "specs/001-feature/issues/003-outbox.md",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    extra_files = "\n".join(f"    - `{path}`" for path in _EXTRA_SRC)
+    (spec_dir / "tasks.md").write_text(
+        textwrap.dedent(
+            f"""\
+            # Tasks
+
+            - TSK-003-03: Replay admin webhook outbox
+              - **Type**: Feature_Batch
+              - **Mode**: TDD
+              - **Verification**: `pytest tests/outbox/test_admin_replay.py -v`
+              - **Files**:
+                - `{_OUTBOX_PROD}`
+                - `{_OUTBOX_TEST}`
+            {extra_files}
+            """
+        ),
+        encoding="utf-8",
+    )
+    task = _make_task_record(
+        task_id="TSK-003-03",
+        issue_id="ISS-001-003",
+        description="Replay admin webhook outbox",
+        status="GREEN",
+    )
+    _write_ledger(spec_dir / "tasks.jsonl", task)
+
+    dot_dir = root / ".deviate"
+    dot_dir.mkdir(parents=True, exist_ok=True)
+    session = SessionState(current_phase="GREEN", active_issue_id="ISS-001-003")
+    session.save(dot_dir / "session.json")
+
+    if include_extra_src:
+        for rel in _EXTRA_SRC:
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# extra production module\n", encoding="utf-8")
+
+
+def _git_commit(repo: Path, message: str) -> None:
+    subprocess.run(["git", "add", "."], cwd=repo, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+    )
+
+
+def _seed_red_green_slice(repo: Path) -> None:
+    """Two-commit RED+GREEN slice plus extra src files outside that range."""
+    _seed_refactor_pre_workspace(repo, include_extra_src=True)
+    _git_commit(repo, "chore: baseline with extra src")
+
+    test_file = repo / _OUTBOX_TEST
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text(
+        "def test_replay():\n    assert False\n",
+        encoding="utf-8",
+    )
+    _git_commit(repo, "test(TSK-003-03): RED")
+
+    prod = repo / _OUTBOX_PROD
+    prod.parent.mkdir(parents=True, exist_ok=True)
+    prod.write_text("def replay():\n    return True\n", encoding="utf-8")
+    test_file.write_text(
+        "def test_replay():\n    assert True\n",
+        encoding="utf-8",
+    )
+    _git_commit(repo, "feat(TSK-003-03): GREEN")
+
+
 class TestRefactorPre:
-    def test_refactor_pre_emits_contract(self, tmp_path: Path):
-        with chdir(tmp_path):
-            dot_dir = Path(".deviate")
-            dot_dir.mkdir(parents=True)
-            session = SessionState(current_phase="GREEN")
-            session.save(dot_dir / "session.json")
+    def test_refactor_pre_emits_red_green_production_files_and_contract_keys(
+        self, tmp_git_repo: Path
+    ):
+        """Extra src files plus a two-commit RED+GREEN slice list only
+        the production file(s) from that slice, plus the documented keys."""
+        _seed_red_green_slice(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["refactor", "pre", "--task", "TSK-003-03"])
 
-            task = _make_task_record(
-                task_id="TSK-004-01",
-                issue_id="ISS-001-004",
-                description="REFACTOR test task",
-                status="GREEN",
+        assert result.exit_code == 0, (
+            f"Expected exit 0, got {result.exit_code}: {result.output}"
+        )
+        data = json.loads(result.output)
+        missing = _REFACTOR_PRE_CONTRACT_KEYS - data.keys()
+        assert not missing, f"refactor pre missing contract keys: {sorted(missing)}"
+        assert data["status"] == "READY"
+        assert data["task_id"] == "TSK-003-03"
+        assert data["task_title"] == "Replay admin webhook outbox"
+        assert data["task_type"] == "Feature_Batch"
+        assert data["verification"] == "pytest tests/outbox/test_admin_replay.py -v"
+        assert data["files_to_refactor"] == [_OUTBOX_PROD]
+        for extra in _EXTRA_SRC:
+            assert extra not in data["files_to_refactor"]
+        assert _OUTBOX_TEST not in data["files_to_refactor"]
+
+    def test_refactor_pre_falls_back_to_task_files_minus_tests(
+        self, tmp_git_repo: Path
+    ):
+        """When git HEAD~2..HEAD is unavailable (only the fixture's
+        initial commit), use the task Files: list minus tests — never
+        glob every src/**/*.py."""
+        _seed_refactor_pre_workspace(tmp_git_repo, include_extra_src=True)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["refactor", "pre", "--task", "TSK-003-03"])
+
+        assert result.exit_code == 0, (
+            f"Expected exit 0, got {result.exit_code}: {result.output}"
+        )
+        data = json.loads(result.output)
+        missing = _REFACTOR_PRE_CONTRACT_KEYS - data.keys()
+        assert not missing, f"refactor pre missing contract keys: {sorted(missing)}"
+        assert _OUTBOX_TEST not in data["files_to_refactor"]
+        assert _OUTBOX_PROD in data["files_to_refactor"]
+        for extra in _EXTRA_SRC:
+            assert extra in data["files_to_refactor"]
+
+    def test_build_auto_prompt_scopes_refactor_to_red_green_production(
+        self, tmp_git_repo: Path
+    ):
+        """Auto assemble_prompt must inject the same RED+GREEN production
+        set — not a glob of every src file — and keep the HEAD~2 inspect."""
+        from deviate.cli.micro import _build_auto_prompt
+
+        _seed_red_green_slice(tmp_git_repo)
+        task = {
+            "id": "TSK-003-03",
+            "issue_id": "ISS-001-003",
+            "description": "Replay admin webhook outbox",
+            "status": "GREEN",
+            "execution_mode": "TDD",
+        }
+        prompt = _build_auto_prompt("refactor", task, tmp_git_repo)
+        assert "git log -2" in prompt
+        assert "git diff HEAD~2..HEAD" in prompt
+        assert _OUTBOX_PROD in prompt
+        for extra in _EXTRA_SRC:
+            assert extra not in prompt, (
+                f"auto refactor prompt must not list extra src file {extra}"
             )
-            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
-            _write_ledger(ledger_path, task)
-
-            result = runner.invoke(cli, ["refactor", "pre", "--task", "TSK-004-01"])
-
-            assert result.exit_code == 0, (
-                f"Expected exit 0, got {result.exit_code}: {result.output}"
-            )
-            data = json.loads(result.output)
-            assert "files_to_refactor" in data
 
 
 class TestRefactorPost:

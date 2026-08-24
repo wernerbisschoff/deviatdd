@@ -629,7 +629,15 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate refactor pre [--task <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Resolves task context, emits JSON contract with all `src/**/*.py` files.
+* **Description:** Resolves task context via `_resolve_task_context` and emits a JSON
+  contract. `files_to_refactor` is the production-file set from `HEAD~2..HEAD`
+  (the RED+GREEN commits). When that git range is empty or unavailable, it
+  falls back to the task `Files:` list minus tests. Test files are never
+  included. The contract also carries the documented handover fields:
+  `status`, `task_id`, `task_title`, `task_type`, `test_command`,
+  `lint_command`, `spec_dir`, `verification`, `repo_root`, `git_branch`,
+  `timestamp`. Auto `_build_auto_prompt("refactor")` injects the same scoped
+  list; it does not glob `src/**/*.py`.
 
 #### `deviate refactor post`
 

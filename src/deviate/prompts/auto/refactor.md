@@ -52,6 +52,12 @@ git log -2 --oneline --stat
 git diff HEAD~2..HEAD --stat
 ```
 
+The REFACTOR production scope (same set `deviate refactor pre` emits as `files_to_refactor`) is:
+```
+{files_to_refactor}
+```
+Do not expand scope beyond these production files. Tests are out of bounds.
+
 Then review the implementation produced across those commits against the refactoring strategy:
 1. Identify code smells in the implementation (duplication, complexity, contract violations, naming, coupling)
 2. Cross-reference with any technical_debt indicators from the task
