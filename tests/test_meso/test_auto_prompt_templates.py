@@ -447,7 +447,9 @@ class TestReviewPromptMinimality:
 
     def test_minimality_lines_are_not_critical_or_suggestion(self):
         prompt = self._read_prompt()
-        assert "Minimality lines must NOT be tagged [CRITICAL] or [SUGGESTION]" in prompt
+        assert (
+            "Minimality lines must NOT be tagged [CRITICAL] or [SUGGESTION]" in prompt
+        )
 
     def test_step4_does_not_apply_minimality_findings(self):
         prompt = self._read_prompt()
@@ -498,9 +500,9 @@ class TestPonytailConstraintsBlock:
     def test_constraints_restated_at_end_of_authored_spec(self):
         for name in self._SPEC_TEMPLATES:
             text = self._read(name)
-            assert "Restate the same filled `## Constraints` block at the end" in text, (
-                f"{name}: must restate the Constraints block at the end of the spec"
-            )
+            assert (
+                "Restate the same filled `## Constraints` block at the end" in text
+            ), f"{name}: must restate the Constraints block at the end of the spec"
 
     def test_constraints_are_not_the_seven_rung_ladder(self):
         for name in self._SPEC_TEMPLATES:
