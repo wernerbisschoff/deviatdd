@@ -62,6 +62,7 @@ def evaluate_judge_evidence(
     head_contents: Mapping[str, str] | None = None,
     declared_paths: Sequence[str] | None = None,
     required_tokens: Sequence[str] | None = None,
+    use_head: bool | None = None,
 ) -> str | None:
     """Return runner-authored feedback when citations fail; None on pass.
 
@@ -70,6 +71,9 @@ def evaluate_judge_evidence(
     ``required_tokens is None`` keeps the legacy plan-block extract for
     callers that have not yet passed an explicit list.
     Declared regression paths are checked even when the token set is empty.
+    ``use_head`` overrides the already-exists HEAD source: ``None`` keeps
+    ``next_action == skip_refactor`` as the only HEAD path (JUDGE gate);
+    ``True`` quotes HEAD at COMPLETED-write time (GH-84 durability).
     """
     hunks = _map_diff_hunks(injected_diff)
     head = dict(head_contents or {})
@@ -90,7 +94,9 @@ def evaluate_judge_evidence(
     if missing:
         return _MISSING_TOKENS.format(tokens=", ".join(missing))
 
-    use_head = next_action == _ALREADY_EXISTS_ACTION
+    head_mode = (
+        use_head if use_head is not None else next_action == _ALREADY_EXISTS_ACTION
+    )
     impl_required = next_action != _EMPTY_GREEN_ACTION
 
     for item in evidence:
@@ -100,7 +106,7 @@ def evaluate_judge_evidence(
             item,
             hunks=hunks,
             head=head,
-            use_head=use_head,
+            use_head=head_mode,
             impl_required=impl_required,
         )
         if failure is not None:
