@@ -138,9 +138,7 @@ class TestJudgePost:
         ).stdout.strip()
 
     def _commit(self, root: Path, message: str) -> None:
-        subprocess.run(
-            ["git", "add", "."], cwd=root, env=_git_env(), check=True
-        )
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
         subprocess.run(
             ["git", "commit", "-m", message],
             cwd=root,
@@ -154,6 +152,12 @@ class TestJudgePost:
         ``tasks.md`` is committed before RED so ``revert_to_red`` keeps
         the card for the feedback commit.
         """
+        subprocess.run(
+            ["git", "config", "core.fsmonitor", "false"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
         source = "specs/004-micro-layer/issues/001-judge-post.md"
         issue_md = root / source
         issue_md.parent.mkdir(parents=True)
@@ -163,8 +167,7 @@ class TestJudgePost:
         tasks_md = workspace / "tasks.md"
         tasks_md.write_text(f"- [ ] {self._TASK_ID}: Judge post task\n")
         (root / "specs" / "issues.jsonl").write_text(
-            json.dumps({"issue_id": self._ISSUE_ID, "source_file": source})
-            + "\n",
+            json.dumps({"issue_id": self._ISSUE_ID, "source_file": source}) + "\n",
             encoding="utf-8",
         )
         (root / "specs" / "constitution.md").write_text("# constitution\n")
@@ -212,6 +215,13 @@ class TestJudgePost:
             f'rationale: "{rationale}"\n'
         )
 
+    def _invoke_judge_post(self, root: Path, yaml_text: str):
+        """Write the handover outside the repo and invoke ``judge post``."""
+        manifest = root.parent / "judge-handover.yaml"
+        manifest.write_text(yaml_text, encoding="utf-8")
+        with chdir(root):
+            return runner.invoke(cli, ["judge", "post", str(manifest)])
+
     def test_manual_overlay_names_revert_and_feedback(self) -> None:
         from importlib.resources import files
 
@@ -244,18 +254,14 @@ class TestJudgePost:
         self, tmp_git_repo: Path
     ) -> None:
         red_sha, _green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
-        manifest = tmp_git_repo / "judge-handover.yaml"
-        manifest.write_text(
+        result = self._invoke_judge_post(
+            tmp_git_repo,
             self._handover_yaml(
                 verdict="COMPLIANCE_VIOLATION",
                 next_action="revert_to_red",
                 rationale="missing error path",
             ),
-            encoding="utf-8",
         )
-
-        with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["judge", "post", str(manifest)])
 
         assert result.exit_code == 0, result.output
         assert "revert_to_red" in result.output, result.output
@@ -287,14 +293,14 @@ class TestJudgePost:
 
     def test_revert_before_drops_red_and_green(self, tmp_git_repo: Path) -> None:
         red_sha, _green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
-        yaml_text = self._handover_yaml(
-            verdict="COMPLIANCE_VIOLATION",
-            next_action="revert_before",
-            rationale="RED test asserts the wrong contract",
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_before",
+                rationale="RED test asserts the wrong contract",
+            ),
         )
-
-        with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
 
         assert result.exit_code == 0, result.output
         assert "revert_before" in result.output, result.output
@@ -310,14 +316,14 @@ class TestJudgePost:
 
     def test_forward_route_does_not_reset(self, tmp_git_repo: Path) -> None:
         _red_sha, green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
-        yaml_text = self._handover_yaml(
-            verdict="COMPLIANCE_PASS",
-            next_action="continue_refactor",
-            rationale="",
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_PASS",
+                next_action="continue_refactor",
+                rationale="",
+            ),
         )
-
-        with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
 
         assert result.exit_code == 0, result.output
         assert "continue_refactor" in result.output, result.output
@@ -342,14 +348,14 @@ class TestJudgePost:
         session.failure_kind = ""
         session.red_commit_sha = red_sha
         session.save(tmp_git_repo / ".deviate" / "session.json")
-        yaml_text = self._handover_yaml(
-            verdict="COMPLIANCE_PASS",
-            next_action="continue_refactor",
-            rationale="Polish naming after the suite is green.",
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_PASS",
+                next_action="continue_refactor",
+                rationale="Polish naming after the suite is green.",
+            ),
         )
-
-        with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
 
         assert result.exit_code == 0, result.output
         assert "remap_to_train" in result.output, result.output
@@ -365,18 +371,30 @@ class TestJudgePost:
 
     def test_rejection_without_feedback_is_fatal(self, tmp_git_repo: Path) -> None:
         self._seed_judge_post_repo(tmp_git_repo)
-        yaml_text = self._handover_yaml(
-            verdict="COMPLIANCE_VIOLATION",
-            next_action="revert_to_red",
-            rationale="",
+        result = self._invoke_judge_post(
+            tmp_git_repo,
+            self._handover_yaml(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_to_red",
+                rationale="",
+            ),
         )
-
-        with chdir(tmp_git_repo):
-            result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
 
         assert result.exit_code != 0, result.output
         assert "JUDGE_AGENT_NO_FEEDBACK" in result.output, result.output
         assert (tmp_git_repo / "impl.py").exists()
+
+    def test_reads_handover_from_stdin(self, tmp_git_repo: Path) -> None:
+        self._seed_judge_post_repo(tmp_git_repo)
+        yaml_text = self._handover_yaml(
+            verdict="COMPLIANCE_PASS",
+            next_action="continue_refactor",
+            rationale="",
+        )
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
+        assert result.exit_code == 0, result.output
+        assert "continue_refactor" in result.output, result.output
 
 
 class TestJudgePromptDiffSection:

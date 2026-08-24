@@ -6022,8 +6022,7 @@ def _read_judge_handover(manifest_path: str | None) -> str:
         return path.read_text(encoding="utf-8")
     if sys.stdin.isatty():
         console.print(
-            "[red]MANIFEST_MISSING[/] provide a YAML path or pipe the "
-            "handover on stdin"
+            "[red]MANIFEST_MISSING[/] provide a YAML path or pipe the handover on stdin"
         )
         raise typer.Exit(code=1)
     return sys.stdin.read()
