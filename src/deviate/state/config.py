@@ -298,11 +298,11 @@ class SessionState(BaseModel):
     red_commit_sha: str = ""
     pending_judge_feedback: Optional[dict[str, str]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    # Verdict of the most recent JUDGE phase. The runner uses it to tell an
-    # explicit ``COMPLIANCE_PASS`` (which adjudicates residual test failures
-    # as acceptable) apart from an unadjudicated EMPTY verdict (where a
-    # failing GREEN suite must still drive a TRAIN retry). Empty = no judge
-    # has weighed in yet. Decides only the transient TRAIN-loop exit gate.
+    # Verdict of the most recent JUDGE phase. Used for diagnostics and for
+    # no_failing_test / mechanical forward-route handling. A COMPLIANCE_PASS
+    # after GREEN TEST_FAILURE does not complete the slice — the runner
+    # remaps that pass to TRAIN with the test dump. Empty = no judge has
+    # weighed in yet.
     last_judge_verdict: str = ""
     # Path of the ``specs/explore/<slug>.md`` source file that
     # ``deviate research pre`` moved into the numbered epic dir. Populated
