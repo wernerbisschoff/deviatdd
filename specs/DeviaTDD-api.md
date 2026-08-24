@@ -505,10 +505,13 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
   enables auto-merge on the PR.
 ---
 
-#### `deviate merge --issue <id> [--stage-only] [-m <msg> ...] [--delete-branch] [--delete-worktree]`
+#### `deviate merge [pre] [--issue <id>] [--stage-only] [-m <msg> ...] [--delete-branch] [--delete-worktree]`
 
-* **Source:** `src/deviate/cli/meso.py` (`_merge_run`)
-* **Description:** Marks an issue COMPLETED in the ledger with a full Pydantic-validated
+* **Source:** `src/deviate/cli/meso.py` (`_merge_pre`, `_merge_run`)
+* **Description:** `deviate merge pre` emits a JSON contract with `base_branch` resolved
+  from `resolve_base_branch` / `.deviate/config.toml` (default `main` when unset). The
+  `/deviate-merge` skill uses that value as the squash target. The run path (no `pre`
+  argument) marks an issue COMPLETED in the ledger with a full Pydantic-validated
   `IssueRecord`.  Two-phase squash-merge flow used by the `/deviate-merge` slash command:
 
   - `--stage-only` writes the COMPLETED transition to `specs/issues.jsonl` and `git add`-s
@@ -536,7 +539,7 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
     the remote is unreachable they print `PUSH_WARN` and local cleanup still
     proceeds. The archive tag is always created locally first, even when no
     remote is configured, because losing the squash-merged history is not
-    recoverable from `main` alone.
+    recoverable from the base branch alone.
   - `--delete-worktree` removes the worktree at `cwd` if the current directory is itself
     a linked worktree for the issue.
 
@@ -544,13 +547,13 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
   `LEDGER_UNCHANGED` and exits cleanly without leaving stray commits.
 
 - **`/deviate-merge` push behavior (v2.4.0):** after the squash-merge commit lands on
-  `main`, the slash command runs an inline copy of `.githooks/pre-push` (lint +
+  `{base_branch}`, the slash command runs an inline copy of `.githooks/pre-push` (lint +
   format-check + testmon-driven affected tests, with the warm-cache / full-suite
   fallback) as a `push_gate` step, then asks the operator whether to `git push` (which
   fires the real `pre-push` hook and re-runs the gate) or stop and push manually. The
   gate body must stay byte-equivalent to `.githooks/pre-push` — divergence is pinned by
   `tests/test_meso/test_auto_prompt_templates.py::TestMergePromptPushGate::test_hook_and_prompt_agree_on_gate_body`.
-  The squash-merge commit and the ledger transition inside it are durable on `main`
+  The squash-merge commit and the ledger transition inside it are durable on `{base_branch}`
   regardless of the push outcome; only the network push is opt-in. Failure states:
   `Push_Gate_Failed` (gate non-zero), `Push_Failed` (`git push` non-zero, raw stderr
   surfaced), `Push_Deferred` (user chose "Stop — I'll push manually").

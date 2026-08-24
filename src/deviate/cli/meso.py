@@ -2528,7 +2528,24 @@ def _merge_run(
         _save_session(session, session_path, "IDLE")
 
 
+def _merge_pre() -> None:
+    """Emit the merge pre-contract so ``/deviate-merge`` can squash onto
+    the configured trunk instead of a hardcoded ``main``.
+    """
+    repo = Path.cwd()
+    contract = {
+        "status": "READY",
+        "phase": "merge_pre",
+        "base_branch": resolve_base_branch(repo),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    print(json.dumps(contract, indent=2))
+
+
 def merge(
+    action: str | None = typer.Argument(
+        None, help="Action: pre (emit merge contract) or omit to run"
+    ),
     issue: str | None = typer.Option(
         None, "--issue", help="Issue ID to mark completed"
     ),
@@ -2553,6 +2570,12 @@ def merge(
     ),
 ) -> None:
     """Mark an issue COMPLETED after an external merge (e.g. squash-merge)."""
+    if action == "pre":
+        _merge_pre()
+        return
+    if action is not None:
+        console.print(f"[red]UNKNOWN_ACTION[/] '{action}'. Use 'pre' or omit.")
+        raise typer.Exit(code=1)
     _merge_run(
         issue_id=issue,
         delete_branch=delete_branch,
