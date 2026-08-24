@@ -107,8 +107,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 * **Input Parameters:**
   * `--agent-export-mode [local|global]` (Defaults to `local`)
   * `--agent [claude|opencode|droid|factory|pi]` (Override auto-detect)
-  * `--graphite` (Enable Graphite CLI integration; merges `graphite = true` into
-    existing `config.toml` and installs the Graphite governance block)
+  * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
   * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
@@ -497,12 +496,19 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
   `gather_git_state()`, derives PR metadata (title, body, base_branch), and emits JSON
   contract with branch_name and PR details.
 
-#### `deviate pr run --body-file <path> [--merge] [--auto-merge]`
+#### `deviate pr run --body-file <path> [--merge] [--auto-merge] [--no-pr] [--platform github|gitlab]`
 
 * **Source:** `src/deviate/cli/meso.py`
-* **Description:** Creates a GitHub PR via `gh pr create`. If `--merge` is passed, also
-  merges immediately and marks the issue as COMPLETED in `issues.jsonl`. If `--auto-merge`,
-  enables auto-merge on the PR.
+* **Description:** Appends the COMPLETED transition to `issues.jsonl`, stages and commits it
+  with the PR body, pushes the branch, then optionally opens a PR/MR. Platform is detected
+  from the `origin` remote hostname (`github` → `gh pr create`; `gitlab` → `git push`
+  `-o merge_request.create` push options). `--merge` / `--auto-merge` apply to GitHub only.
+  `--no-pr` marks COMPLETED and pushes without opening a PR/MR.
+  `--platform` forces `github` or `gitlab`.
+  No Graphite path exists.
+---
+
+
 ---
 
 #### `deviate merge [pre] [--issue <id>] [--stage-only] [-m <msg> ...] [--delete-branch] [--delete-worktree]`

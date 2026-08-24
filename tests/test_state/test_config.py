@@ -11,7 +11,7 @@ from deviate.state.config import (
     resolve_claim_remote,
     resolve_phase_model,
 )
-from deviate.cli.__init__ import resolve_graphite_config, resolve_base_branch
+from deviate.cli.__init__ import resolve_base_branch
 
 
 class TestDeviateConfig:
@@ -81,47 +81,6 @@ class TestDeviateConfig:
         restored = DeviateConfig.model_validate(data)
         assert restored.use_libref is True
 
-    def test_config_graphite_field_default(self):
-        config = DeviateConfig()
-        assert config.graphite is False
-
-    def test_config_graphite_field_explicit_true(self):
-        config = DeviateConfig(graphite=True)
-        assert config.graphite is True
-        dumped = config.model_dump()
-        assert "graphite" in dumped
-        assert dumped["graphite"] is True
-
-    def test_config_graphite_field_round_trip(self):
-        config = DeviateConfig(graphite=True)
-        data = json.loads(config.model_dump_json())
-        restored = DeviateConfig.model_validate(data)
-        assert restored.graphite is True
-
-    def test_resolve_graphite_config_true(self, tmp_path: Path) -> None:
-        dot_dir = tmp_path / ".deviate"
-        dot_dir.mkdir(parents=True)
-        config_path = dot_dir / "config.toml"
-        config_path.write_text("graphite = true\n", encoding="utf-8")
-        assert resolve_graphite_config(tmp_path) is True
-
-    def test_resolve_graphite_config_false(self, tmp_path: Path) -> None:
-        dot_dir = tmp_path / ".deviate"
-        dot_dir.mkdir(parents=True)
-        config_path = dot_dir / "config.toml"
-        config_path.write_text("graphite = false\n", encoding="utf-8")
-        assert resolve_graphite_config(tmp_path) is False
-
-    def test_resolve_graphite_config_key_absent(self, tmp_path: Path) -> None:
-        dot_dir = tmp_path / ".deviate"
-        dot_dir.mkdir(parents=True)
-        config_path = dot_dir / "config.toml"
-        config_path.write_text('profile = "default"\n', encoding="utf-8")
-        assert resolve_graphite_config(tmp_path) is False
-
-    def test_resolve_graphite_config_no_config(self, tmp_path: Path) -> None:
-        assert resolve_graphite_config(tmp_path) is False
-
     def test_config_base_branch_round_trip(self):
         config = DeviateConfig(base_branch="wb-dev")
         data = json.loads(config.model_dump_json())
@@ -142,7 +101,6 @@ class TestDeviateConfig:
 
     def test_resolve_base_branch_default(self, tmp_path: Path) -> None:
         assert resolve_base_branch(tmp_path) == "main"
-        assert resolve_graphite_config(tmp_path) is False
 
     def test_config_claim_remote_field_default(self) -> None:
         config = DeviateConfig()
