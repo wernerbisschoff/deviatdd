@@ -1264,6 +1264,21 @@ def _resolve_lint_command(root: Path) -> str:
 _NO_FAILING_TEST_FORWARD_ROUTES = frozenset(
     {"continue_refactor", "proceed_to_refactor_no_diff", "skip_refactor"}
 )
+_GREEN_TEST_FAILURE_PREFIX = "The test suite failed after GREEN implementation."
+
+
+def _is_green_test_failure(session: SessionState) -> bool:
+    """True when GREEN implemented and the suite is still red.
+
+    Distinct from mechanical / test_defect GREEN ``status: FAILURE``,
+    which set ``session.failure_kind`` and never ran the suite. Residual
+    dirty-worktree notes also use a different ``train_feedback`` prefix.
+    """
+    if session.failure_kind:
+        return False
+    return session.train_feedback.startswith(_GREEN_TEST_FAILURE_PREFIX)
+
+
 _NON_TDD_EXECUTION_MODES = frozenset({"EXECUTE", "IMMEDIATE", "DIRECT"})
 _MISSING_REGRESSION_FILES = (
     "without naming regression tests (files and test_file are empty). "
@@ -1818,7 +1833,7 @@ def _run_green_phase(
             f"  [yellow]TEST_FAILURE[/] {tid} \u2014 keeping implementation for JUDGE assessment"
         )
         session.train_feedback = (
-            "The test suite failed after GREEN implementation.\n\n"
+            f"{_GREEN_TEST_FAILURE_PREFIX}\n\n"
             f"<test_output>\n{failure_output}\n</test_output>"
         )
         session.save(session_path)
@@ -2892,6 +2907,9 @@ def _run_judge_phase(
         red_baseline=red_baseline,
     )
 
+    suite_still_red = _is_green_test_failure(session)
+    suite_test_dump = session.train_feedback if suite_still_red else ""
+
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
     if session.train_feedback:
@@ -3192,6 +3210,27 @@ def _run_judge_phase(
             action=action or "",
             note=refactor_note,
         )
+    if suite_still_red:
+        # GREEN TEST_FAILURE: implementation ran, suite still red.
+        # Honor only revert_to_red / revert_before (already returned above).
+        # continue_refactor / skip_refactor / proceed_to_refactor_no_diff /
+        # bare COMPLIANCE_PASS and JUDGE_REFACTOR_NOTE are advisory — remap
+        # to TRAIN with the test dump. Do not write COMPLETED or hand off
+        # to _finish_tdd_cycle.
+        session.pending_judge_action = ""
+        session.train_feedback = suite_test_dump
+        session.judge_rejected = False
+        session = session.force_transition_to("GREEN")
+        session.save(session_path)
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="JUDGE",
+            decision="remap_to_train",
+            reason="green_test_failure",
+            action=action or "",
+        )
+        return session
     if action == "continue_refactor":
         session.pending_judge_action = "continue_refactor"
         _log_run(
@@ -3361,9 +3400,23 @@ def _finish_tdd_cycle(
     no_refactor: bool,
     monitor: OrchestrationMonitor | None = None,
     agent: str | None = None,
+    green_test_failure: bool = False,
 ) -> SessionState:
     tid = task.get("id", "?")
     pending = session.pending_judge_action
+    if green_test_failure or _is_green_test_failure(session):
+        c.print(
+            f"  [yellow]TEST_FAILURE[/] {tid} \u2014 refusing REFACTOR/"
+            "COMPLETED (GREEN suite still red)"
+        )
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="CYCLE",
+            decision="refuse_complete",
+            reason="green_test_failure",
+        )
+        return session
 
     # JUDGE verdict-driven routing overrides the CLI's no_refactor flag:
     #   continue_refactor             → enter REFACTOR regardless of no_refactor.
@@ -3706,20 +3759,41 @@ def _run_tdd_cycle(
             phase="JUDGE",
             description=task_desc,
         )
+        suite_red = _is_green_test_failure(session)
+        suite_dump = session.train_feedback if suite_red else ""
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-
-        session = _finish_tdd_cycle(
-            task, ledger_path, session, session_path, c, no_refactor, agent=agent
-        )
-        return
+        if suite_red:
+            # TEST_FAILURE remapped to TRAIN (or revert_to_red / revert_before).
+            # Fall through into the GREEN train loop; do not complete.
+            if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+                session.pending_judge_action = ""
+            if (
+                not session.train_feedback
+                and session.pending_judge_action != "revert_to_red"
+            ):
+                session.train_feedback = suite_dump
+            start_phase = "GREEN"
+        else:
+            session = _finish_tdd_cycle(
+                task,
+                ledger_path,
+                session,
+                session_path,
+                c,
+                no_refactor,
+                agent=agent,
+                green_test_failure=False,
+            )
+            return
 
     # `no_judge` only skips the JUDGE phase — GREEN must still run. The
     # in-loop `if no_judge: judge_passed = True; break` below is the exit
     # path; initializing to `no_judge` here would skip the GREEN loop
     # entirely and mark the task COMPLETED with its test never implemented.
     judge_passed = False
+    green_test_failure = False
     if start_phase != "GREEN":
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
@@ -3776,9 +3850,8 @@ def _run_tdd_cycle(
         session = _run_green_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        green_tests_failed = bool(
-            session.train_feedback and session.current_phase == "GREEN"
-        )
+        green_test_failure = _is_green_test_failure(session)
+        green_test_dump = session.train_feedback if green_test_failure else ""
 
         if session.train_feedback:
             if session.current_phase == "RED":
@@ -3818,31 +3891,67 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        # Forward-route exit: JUDGE picked continue_refactor /
-        # proceed_to_refactor_no_diff / skip_refactor. The runner must leave
-        # the TRAIN retry loop without re-running GREEN — the forward-route
-        # verdict is the cycle's exit signal (clears train_feedback, sets
-        # pending_judge_action, and JUDGE has already cleaned up state).
-        if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
-            judge_passed = True
-            break
         # Honor coerced ``revert_before``. ``revert_to_red`` still trains
         # GREEN and keeps dump ``train_feedback``.
         if session.pending_judge_action == "revert_before":
             session = _escalate("test_defect")
             continue
-        # Decision gate. An explicit COMPLIANCE_PASS verdict adjudicates any
-        # residual suite failures as acceptable, so the pre-JUDGE GREEN-stall
-        # snapshot must not force a spurious TRAIN retry (which would loop a
-        # correct slice into TRAIN_EXHAUSTED). An unadjudicated (EMPTY) judge
-        # verdict leaves the pre-JUDGE snapshot authoritative: a genuinely
-        # failing GREEN suite still retrains to exhaustion.
-        judge_passed_explicitly = bool(
-            session.last_judge_verdict == "COMPLIANCE_PASS"
-            and not session.judge_rejected
-        )
-        still_failing = bool(green_tests_failed and not judge_passed_explicitly)
-        if session.judge_rejected or session.train_feedback or still_failing:
+        # GREEN TEST_FAILURE: implementation ran, suite still red. Forward
+        # routes and bare COMPLIANCE_PASS are advisory — remap to TRAIN
+        # with the pytest dump. Do not break out to _finish_tdd_cycle.
+        if green_test_failure:
+            if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+                session.pending_judge_action = ""
+            if (
+                not session.train_feedback
+                and session.pending_judge_action != "revert_to_red"
+                and not session.judge_rejected
+            ):
+                session.train_feedback = green_test_dump
+            session, escalated = _train()
+            if escalated:
+                continue
+            if not session.train_feedback:
+                session.train_feedback = green_test_dump or (
+                    "GREEN implementation tests failed. "
+                    "The implementation must be corrected to pass the test suite."
+                )
+            session = session.force_transition_to("GREEN")
+            session.save(session_path)
+            if (
+                session.pending_judge_action == "revert_to_red"
+                or session.judge_rejected
+            ):
+                train_reason = "re-running GREEN with judge feedback"
+            else:
+                train_reason = (
+                    "tests still failing, re-running GREEN with test feedback"
+                )
+            _emit_green_train(
+                c,
+                attempt=session.green_attempts,
+                reason=train_reason,
+            )
+            session.judge_rejected = False
+            session.save(session_path)
+            _log_run(
+                "PHASE_DECISION",
+                task_id=tid,
+                phase="JUDGE",
+                decision="reroute_to_green",
+                reason="green_test_failure",
+                attempt=session.green_attempts,
+                max_red_attempts=_MAX_RED_ATTEMPTS,
+            )
+            continue
+        # Forward-route exit: JUDGE picked continue_refactor /
+        # proceed_to_refactor_no_diff / skip_refactor on a non-TEST_FAILURE
+        # path (mechanical / no_failing_test / green suite). Leave the
+        # TRAIN retry loop without re-running GREEN.
+        if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
+            judge_passed = True
+            break
+        if session.judge_rejected or session.train_feedback:
             session, escalated = _train()
             if escalated:
                 continue
@@ -3890,6 +3999,7 @@ def _run_tdd_cycle(
         no_refactor,
         monitor=monitor,
         agent=agent,
+        green_test_failure=green_test_failure,
     )
 
 
