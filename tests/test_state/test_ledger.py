@@ -303,6 +303,71 @@ class TestTaskRecord:
                 unknown_field="should_fail",
             )
 
+    def test_task_record_legacy_row_without_evidence_parses(self):
+        """GH-84: old ledger rows stay valid when evidence is absent."""
+        legacy = {
+            "id": "TSK-084-01",
+            "issue_id": "ISS-ADH-084",
+            "description": "Legacy COMPLETED row from before GH-84",
+            "status": "COMPLETED",
+            "execution_mode": "TDD",
+            "created_at": "2026-08-01T00:00:00Z",
+        }
+        record = TaskRecord.model_validate(legacy)
+        assert record.evidence is None
+
+    def test_task_record_evidence_bundle_round_trip(self):
+        """GH-84: COMPLETED evidence citations + SHAs persist on TaskRecord."""
+        from deviate.state.ledger import TaskEvidenceBundle, TaskEvidenceItem
+
+        record = TaskRecord(
+            id="TSK-084-02",
+            issue_id="ISS-ADH-084",
+            description="Completed with persisted judge evidence",
+            status="COMPLETED",
+            evidence=TaskEvidenceBundle(
+                items=[
+                    TaskEvidenceItem(
+                        ac="AC-PLAN-001",
+                        test_path="tests/example.py",
+                        test_quote="assert increment(2) == 3",
+                        impl_path="src/example.py",
+                        impl_quote="return n + 1",
+                    )
+                ],
+                red="aaa111",
+                green="bbb222",
+                head="bbb222",
+            ),
+        )
+        data = json.loads(record.model_dump_json())
+        restored = TaskRecord.model_validate(data)
+        assert restored.evidence is not None
+        assert restored.evidence.red == "aaa111"
+        assert restored.evidence.green == "bbb222"
+        assert restored.evidence.head == "bbb222"
+        assert restored.evidence.items[0].ac == "AC-PLAN-001"
+        assert restored.evidence.items[0].test_path == "tests/example.py"
+        assert restored.evidence.items[0].test_quote == "assert increment(2) == 3"
+        assert restored.evidence.items[0].impl_path == "src/example.py"
+        assert restored.evidence.items[0].impl_quote == "return n + 1"
+
+    def test_task_record_evidence_accepts_legacy_list_shape(self):
+        """GH-84: a raw list of citations (review fixtures) still parses."""
+        record = TaskRecord.model_validate(
+            {
+                "id": "TSK-084-03",
+                "issue_id": "ISS-ADH-084",
+                "description": "List-shaped evidence from Gate 3 fixtures",
+                "status": "COMPLETED",
+                "execution_mode": "TDD",
+                "evidence": [{"ac": "AC-PLAN-002", "test_path": "tests/x.py"}],
+            }
+        )
+        assert record.evidence is not None
+        assert record.evidence.items[0].ac == "AC-PLAN-002"
+        assert record.evidence.items[0].test_path == "tests/x.py"
+
 
 class TestCriterionLink:
     def test_accepts_manual_link_without_test_ref(self):

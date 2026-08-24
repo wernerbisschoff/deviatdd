@@ -306,6 +306,9 @@ class SessionState(BaseModel):
     # field is empty (the manual-escape-hatch path where research_pre
     # never ran).
     research_explore_source: str = ""
+    # Transient carrier for runner-validated JUDGE citations until the
+    # COMPLETED ledger row is written. Not the proof store (GH-84).
+    validated_evidence: list[dict] = Field(default_factory=list)
 
     @field_validator("current_phase")
     @classmethod

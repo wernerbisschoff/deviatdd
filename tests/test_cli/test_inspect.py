@@ -982,3 +982,70 @@ class TestInspectById:
             )
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["id"] == "TSK-013-02"
+
+    def test_tasks_show_prints_persisted_evidence_when_present(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-84: inspect tasks show displays COMPLETED evidence after session is gone."""
+        bucket = "adhoc"
+        slug = "084-persist-judge-evidence"
+        issues = tmp_path / "specs" / "issues.jsonl"
+        issues.parent.mkdir(parents=True, exist_ok=True)
+        issues.write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-084",
+                    "type": "feature",
+                    "title": "Persist evidence",
+                    "status": "SPECIFIED",
+                    "source_file": f"specs/{bucket}/issues/{slug}.md",
+                    "blocked_by": [],
+                    "coordinates_with": [],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        tasks = tmp_path / "specs" / bucket / slug / "tasks.jsonl"
+        tasks.parent.mkdir(parents=True, exist_ok=True)
+        tasks.write_text(
+            json.dumps(
+                {
+                    "id": "TSK-084-01",
+                    "issue_id": "ISS-ADH-084",
+                    "description": "Completed with evidence",
+                    "status": "COMPLETED",
+                    "execution_mode": "TDD",
+                    "evidence": {
+                        "items": [
+                            {
+                                "ac": "AC-PLAN-001",
+                                "test_path": "tests/example.py",
+                                "test_quote": "assert increment(2) == 3",
+                                "impl_path": "src/example.py",
+                                "impl_quote": "return n + 1",
+                            }
+                        ],
+                        "red": "aaa111",
+                        "green": "bbb222",
+                        "head": "bbb222",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["inspect", "tasks", "show", "TSK-084-01", "--json"]
+            )
+        assert result.exit_code == 0, result.output
+        shown = json.loads(result.stdout)
+        evidence = shown["evidence"]
+        items = evidence["items"] if isinstance(evidence, dict) else evidence
+        assert items[0]["ac"] == "AC-PLAN-001"
+        assert items[0]["test_quote"] == "assert increment(2) == 3"
+        if isinstance(evidence, dict):
+            assert evidence["red"] == "aaa111"
+            assert evidence["head"] == "bbb222"
