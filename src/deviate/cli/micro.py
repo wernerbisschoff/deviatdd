@@ -12,6 +12,7 @@ import sys
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Literal, NoReturn
 from pathlib import Path, PurePosixPath
 
@@ -1243,6 +1244,8 @@ def _build_auto_prompt(
         "next_phase": "",
         "train_feedback": train_feedback,
     }
+    if phase == "refactor":
+        context["files_to_refactor"] = "\n".join(_resolve_files_to_refactor(root, task))
     return assemble_prompt(
         template_name=phase, context=context, constitution_path=const_path
     )
@@ -5399,6 +5402,154 @@ def _changed_source_paths(root: Path) -> list[str]:
     )
 
 
+def _normalize_repo_relpath(path: str) -> str:
+    return path.replace("\\", "/").lstrip("./")
+
+
+def _is_test_path(path: str) -> bool:
+    """Return True when *path* is under a test tree (REFACTOR must not touch it)."""
+    posix = _normalize_repo_relpath(path)
+    return (
+        posix == "tests"
+        or posix.startswith("tests/")
+        or posix == "test"
+        or posix.startswith("test/")
+    )
+
+
+def _is_production_path(path: str) -> bool:
+    posix = _normalize_repo_relpath(path)
+    if _is_test_path(posix):
+        return False
+    return any(posix.startswith(prefix) for prefix in _SOURCE_TRACK_PREFIXES)
+
+
+def _git_name_only_range(root: Path, base: str, head: str = "HEAD") -> list[str]:
+    """Return repo-relative paths from ``git diff --name-only base..head``.
+
+    Empty when the range is unavailable (not a git repo, missing commits,
+    or *root* is not the repository toplevel — so a nested tmp dir does
+    not inherit a parent checkout's history).
+    """
+    env = _git_env()
+    discovered = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if discovered.returncode != 0:
+        return []
+    try:
+        toplevel = Path(discovered.stdout.strip()).resolve()
+    except OSError:
+        return []
+    if toplevel != root.resolve():
+        return []
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{base}..{head}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return []
+    return [
+        _normalize_repo_relpath(line)
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+
+
+_TASK_FIELD_RE = re.compile(r"^\s*-\s+\*\*([^*]+)\*\*:\s*(.*)$")
+_TASK_FILE_ITEM_RE = re.compile(r"^\s+-\s+`?([^`]+?)`?\s*$")
+
+
+def _parse_files_from_task_card(card: str) -> list[str]:
+    """Parse the ``**Files**`` list from a ``tasks.md`` card."""
+    files: list[str] = []
+    capturing = False
+    for line in card.splitlines():
+        field = _TASK_FIELD_RE.match(line)
+        if field:
+            name, rest = field.group(1).strip(), field.group(2).strip()
+            if name.lower() == "files":
+                capturing = True
+                if rest:
+                    for part in rest.split(","):
+                        cleaned = part.strip().strip("`")
+                        if cleaned:
+                            files.append(_normalize_repo_relpath(cleaned))
+                continue
+            if capturing:
+                break
+        if capturing:
+            item = _TASK_FILE_ITEM_RE.match(line)
+            if item:
+                files.append(_normalize_repo_relpath(item.group(1).strip()))
+    return list(dict.fromkeys(files))
+
+
+def _task_type_from_card(card: str) -> str:
+    for line in card.splitlines():
+        type_m = _TYPE_LINE_RE.match(line)
+        if type_m:
+            return type_m.group(1)
+    return ""
+
+
+def _resolve_files_to_refactor(root: Path, task: dict | None) -> list[str]:
+    """Production files from ``HEAD~2..HEAD``, else task ``Files:`` minus tests.
+
+    Does not glob ``src/**/*.py``. Test paths are never returned — REFACTOR
+    must not modify tests.
+    """
+    from_git = [
+        path
+        for path in _git_name_only_range(root, "HEAD~2")
+        if _is_production_path(path)
+    ]
+    if from_git:
+        return sorted(dict.fromkeys(from_git))
+
+    card = _task_card_text(root, task or {})
+    if not card and task and task.get("id"):
+        found = _find_task_record(root, task["id"])
+        if found is not None:
+            sibling = found[1].parent / "tasks.md"
+            if sibling.exists():
+                try:
+                    lines = sibling.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    lines = []
+                start = next(
+                    (
+                        i
+                        for i, line in enumerate(lines)
+                        if (head := _TASK_BULLET_HEAD_RE.match(line))
+                        and head.group(1) == task["id"]
+                    ),
+                    None,
+                )
+                if start is not None:
+                    end = next(
+                        (
+                            i
+                            for i in range(start + 1, len(lines))
+                            if _TASK_BULLET_HEAD_RE.match(lines[i])
+                        ),
+                        len(lines),
+                    )
+                    card = "\n".join(lines[start:end]).strip()
+    return [
+        path
+        for path in _parse_files_from_task_card(card)
+        if path and not _is_test_path(path)
+    ]
+
+
 @red_app.command(name="post")
 def red_post() -> None:
     root = Path.cwd()
@@ -5692,11 +5843,25 @@ def refactor_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
 ) -> None:
     root = Path.cwd()
-    _resolve_task_context(task, root)
+    task_data, ledger_path = _resolve_task_context(task, root)
 
-    src_files = [str(f) for f in _find_source_files(root)]
-
-    contract = {"files_to_refactor": src_files}
+    spec_dir = str(ledger_path.parent)
+    test_commands = _test_command_candidates(root, task_data)
+    card = _task_card_text(root, task_data)
+    contract = {
+        "status": "READY",
+        "task_id": task_data.get("id", ""),
+        "task_title": task_data.get("description", ""),
+        "task_type": _task_type_from_card(card),
+        "test_command": test_commands[0][0] if test_commands else "",
+        "lint_command": _resolve_lint_command(root) or "mise run lint",
+        "spec_dir": spec_dir,
+        "verification": _task_verification_command(root, task_data),
+        "repo_root": str(root.resolve()),
+        "git_branch": _git_branch(root),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "files_to_refactor": _resolve_files_to_refactor(root, task_data),
+    }
     print(json.dumps(contract, ensure_ascii=False))
     raise typer.Exit(code=0)
 

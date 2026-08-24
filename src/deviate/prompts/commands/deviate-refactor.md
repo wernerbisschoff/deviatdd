@@ -19,7 +19,12 @@ derived from the canonical `auto/refactor.md` core — the single source of
 truth for the REFACTOR instructions.
 
 1. Run `deviate refactor pre` to allocate the active TDD task and emit the
-   JSON contract on stdout.
+   JSON contract on stdout. The contract carries `status`, `task_id`,
+   `task_title`, `task_type`, `test_command`, `lint_command`, `spec_dir`,
+   `verification`, `repo_root`, `git_branch`, `timestamp`, and
+   `files_to_refactor` — the RED+GREEN production set (`HEAD~2..HEAD`, or
+   the task `Files:` list minus tests when that range is empty). Scope
+   cleanup to those production files; do not modify tests.
 2. Execute the REFACTOR (structural cleanup) work described in the core body.
 3. Run `deviate refactor post` after the cleanup. The command stages the
    changed files, runs pre-commit hooks (lint, format-check, tests), updates
