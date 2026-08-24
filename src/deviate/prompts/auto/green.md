@@ -62,7 +62,7 @@ task will fail permanently.**
 
 <traceability_and_compliance_mandates>
 1. **Contract Validation & Upstream Ingestion**: Extract the target `{TASK_ID}`, functional requirements (`FR-[ID]`), and acceptance criteria (`AC-[ID]`) from the preceding RED phase handover manifest context block. Validate these structural goals directly against `<spec_content>` and `<data_model_content>` above.
-2. **Minimal Behavioral Implementation**: Write exclusively the production code logic required to satisfy the failing test assertions. Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
+2. **Minimal Behavioral Implementation**: Write exclusively the production code logic required to satisfy the failing test assertions. Prefer reuse of existing code, the stdlib, or an already-installed dependency. Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
 3. **Scope Boundary (mechanical)**: GREEN implements ONLY production code under `src/`, `lib/`, or `app/` to make the RED test pass via the library/API surface declared in scope. Two failure classes are routable through JUDGE:
    - **Mechanical**: the RED test cannot be satisfied within that mechanical scope — it exercises a CLI surface that is out of scope, requires a tool that the slice does not own, or depends on a fixture not in the workspace. Emit `status: FAILURE` with `rationale:` naming the exact test path and why, plus `failure_kind: mechanical`.
    - **Test defect**: the RED test itself is wrong — it asserts behavior the spec does not require, exercises the wrong abstraction, or encodes an assumption that contradicts `<spec_content>` / `<data_model_content>`. Emit `status: FAILURE` with `rationale:` naming the specific assertion and citing the FR/AC it contradicts, plus `failure_kind: test_defect`. This routes to RED via `revert_before`, not back to GREEN.
@@ -88,7 +88,7 @@ task will fail permanently.**
 <step id="implementation">
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
 2. Write ONLY production code — leave all `tests/` files untouched
-3. Add only the production code required — no speculative features
+3. Add only the production code required — no speculative features, and no file or dependency the task did not name
 4. **Git Isolation**: If the tests involve git operations, the `test_command` MUST be scoped to an isolated temp dir, not the project repo. Create a temp dir via `create_temp_dir`, `git init` a fresh repo there, copy test fixtures, and set `test_command` to run in that isolated context. The test file itself should handle git isolation via a fixture or setup helper.
 5. Run the `test_command` to verify the tests pass:
    ```bash
