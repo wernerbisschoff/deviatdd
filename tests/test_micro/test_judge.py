@@ -771,6 +771,70 @@ class TestJudgeFeedbackLogging:
         assert "nested" in "\n".join(lines)
         assert "untouched" in "\n".join(lines)
 
+    def test_append_judge_feedback_stays_under_rejected_card_across_phase_header(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-102: feedback stays under TSK-004-01, not Phase 2 ``### Tasks``."""
+        from deviate.cli.micro import _TASK_BULLET_HEAD_RE, _append_judge_feedback
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "## Phase 1: Serialize UUID payloads\n"
+            "### Tasks\n"
+            "- TSK-004-01: UUID serialization\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Rationale**: AC-PLAN-001\n"
+            "\n"
+            "## Phase 2: Wire existing admin force-notify route\n"
+            "### Tasks\n"
+            "- TSK-004-02: Admin force-notify route mentions TSK-004-01\n"
+            "  - **Type**: Feature_Batch\n",
+            encoding="utf-8",
+        )
+
+        added = _append_judge_feedback(
+            tasks_md,
+            "TSK-004-01",
+            "UUID is not JSON-serializable (AC-PLAN-001)",
+        )
+
+        assert added == 1, f"Expected one feedback line, got {added}"
+        lines = tasks_md.read_text(encoding="utf-8").splitlines()
+        idx_01 = next(
+            i
+            for i, line in enumerate(lines)
+            if (head := _TASK_BULLET_HEAD_RE.match(line))
+            and head.group(1) == "TSK-004-01"
+        )
+        idx_phase2 = next(
+            i for i, line in enumerate(lines) if line.startswith("## Phase 2")
+        )
+        idx_phase2_tasks = next(
+            i
+            for i, line in enumerate(lines)
+            if i > idx_phase2 and line.startswith("### Tasks")
+        )
+        idx_02 = next(
+            i
+            for i, line in enumerate(lines)
+            if (head := _TASK_BULLET_HEAD_RE.match(line))
+            and head.group(1) == "TSK-004-02"
+        )
+        fb_idxs = [i for i, line in enumerate(lines) if "**Judge Feedback**" in line]
+        assert fb_idxs, f"GH-102: expected a Judge Feedback bullet; lines={lines!r}"
+        assert len(fb_idxs) == 1, (
+            "GH-102: exactly one Judge Feedback bullet under TSK-004-01; "
+            f"lines={lines!r}"
+        )
+        assert idx_01 < fb_idxs[0] < idx_phase2 < idx_phase2_tasks < idx_02, (
+            "GH-102: the Judge Feedback bullet must sit under TSK-004-01 "
+            f"before the Phase 2 heading; lines={lines!r}"
+        )
+        assert not any(idx_phase2_tasks < i < idx_02 for i in fb_idxs), (
+            "GH-102: feedback must not land under Phase 2 ### Tasks / TSK-004-02; "
+            f"lines={lines!r}"
+        )
+
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
     @patch("deviate.cli.micro.resolve_model_for_phase")
@@ -2325,6 +2389,8 @@ def _gate_manifest(
     status: str = "PASS",
     files: list[str] | None = None,
     test_file: str | None = None,
+    train_feedback: str = "",
+    violations: list[dict[str, str]] | None = None,
 ) -> HandoverManifest:
     kwargs: dict = {
         "phase": phase,
@@ -2332,7 +2398,7 @@ def _gate_manifest(
         "task_id": _GATE_TASK_ID,
         "verdict": verdict,
         "rationale": "",
-        "train_feedback": "",
+        "train_feedback": train_feedback,
     }
     if next_action is not None:
         kwargs["next_action"] = next_action
@@ -2342,6 +2408,8 @@ def _gate_manifest(
         kwargs["files"] = files
     if test_file is not None:
         kwargs["test_file"] = test_file
+    if violations is not None:
+        kwargs["violations"] = violations
     return HandoverManifest(**kwargs)
 
 
@@ -2759,6 +2827,86 @@ class TestTddJudgeEvidenceGate:
             red_sha,
         )
         _assert_reverted_to_red(session, ledger)
+
+    def test_rewritten_pass_keeps_judge_train_feedback(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-102: evidence-gate rewrite must not replace judge train_feedback."""
+        red_sha = _seed_red_green(tmp_git_repo)
+        judge_fb = (
+            "UUID is not JSON-serializable for AC-PLAN-001. "
+            f"See {_GATE_TEST_PATH}:12. "
+            "The next GREEN attempt must: dump UUID as str."
+        )
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="continue_refactor",
+                evidence=[],
+                train_feedback=judge_fb,
+            ),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+        assert "UUID is not JSON-serializable" in session.train_feedback, (
+            "GH-102: persist the judge train_feedback after the evidence-gate "
+            f"rewrite; got {session.train_feedback!r}"
+        )
+        assert f"{_GATE_TEST_PATH}:12" not in session.train_feedback, (
+            "GH-102: GH-103 citation strip still applies on the revert route; "
+            f"got {session.train_feedback!r}"
+        )
+        assert "JUDGE evidence is missing" not in session.train_feedback, (
+            "GH-102: generic evidence-gate string must not replace judge "
+            f"train_feedback; got {session.train_feedback!r}"
+        )
+        tasks_md = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
+        body = tasks_md.read_text(encoding="utf-8")
+        assert "UUID is not JSON-serializable" in body, (
+            f"GH-102: tasks.md must keep judge train_feedback; got {body!r}"
+        )
+        assert "JUDGE evidence is missing" not in body, (
+            f"GH-102: tasks.md must not persist the generic gate string; got {body!r}"
+        )
+
+    def test_rewritten_pass_keeps_judge_violations(self, tmp_git_repo: Path) -> None:
+        """GH-102: evidence-gate rewrite must persist judge violations."""
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="continue_refactor",
+                evidence=[],
+                violations=[
+                    {
+                        "category": "Acceptance",
+                        "detail": "UUID is not JSON-serializable (AC-PLAN-001)",
+                        "severity": "HIGH",
+                        "file": _GATE_IMPL_PATH,
+                    }
+                ],
+            ),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+        assert (
+            "UUID is not JSON-serializable (AC-PLAN-001)" in session.train_feedback
+        ), (
+            "GH-102: persist formatted judge violations after the evidence-gate "
+            f"rewrite; got {session.train_feedback!r}"
+        )
+        assert "JUDGE evidence is missing" not in session.train_feedback, (
+            "GH-102: generic evidence-gate string must not replace judge "
+            f"violations; got {session.train_feedback!r}"
+        )
+        tasks_md = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
+        body = tasks_md.read_text(encoding="utf-8")
+        assert "UUID is not JSON-serializable (AC-PLAN-001)" in body, (
+            f"GH-102: tasks.md must keep judge violations; got {body!r}"
+        )
+        assert "JUDGE evidence is missing" not in body, (
+            f"GH-102: tasks.md must not persist the generic gate string; got {body!r}"
+        )
 
     def test_mid_plan_this_task_evidence_completes(self, tmp_git_repo: Path) -> None:
         """AC-PLAN-001 / AC-PLAN-004: omitting later-shard AC-PLAN-002 is legal.
