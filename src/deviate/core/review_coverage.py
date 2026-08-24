@@ -137,6 +137,8 @@ def _task_cards(tasks_md: Path) -> dict[str, str]:
 
 def _persisted_evidence_tokens(row: Mapping[str, Any]) -> list[str]:
     evidence = row.get("evidence")
+    if isinstance(evidence, Mapping):
+        evidence = evidence.get("items") or []
     if not isinstance(evidence, list):
         return []
     found: list[str] = []

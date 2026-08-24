@@ -5,7 +5,7 @@ import re
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -113,6 +113,29 @@ class CriterionLink(BaseModel):
         return self
 
 
+class TaskEvidenceItem(BaseModel):
+    """Per-AC citation copied from a validated JUDGE handover onto COMPLETED."""
+
+    ac: str
+    test_path: str = ""
+    test_quote: str = ""
+    impl_path: str = ""
+    impl_quote: str = ""
+
+    model_config = {"extra": "ignore"}
+
+
+class TaskEvidenceBundle(BaseModel):
+    """COMPLETED-row proof: citations plus runner commit provenance (GH-84)."""
+
+    items: list[TaskEvidenceItem] = Field(default_factory=list)
+    red: str = ""
+    green: str = ""
+    head: str = ""
+
+    model_config = {"extra": "ignore"}
+
+
 class TaskRecord(BaseModel):
     id: str
     issue_id: str
@@ -131,6 +154,7 @@ class TaskRecord(BaseModel):
 
     security_profile: SecurityProfile | None = None
     acceptance_criteria: list[CriterionLink] | None = None
+    evidence: TaskEvidenceBundle | None = None
     model_config = {"extra": "forbid"}
 
     @field_validator("id")
@@ -138,6 +162,17 @@ class TaskRecord(BaseModel):
     def _validate_task_id(cls, v: str) -> str:
         if not re.match(r"^TSK-\d{3}-\d{2}$", v):
             raise ValueError(f"Invalid task ID format: {v}")
+        return v
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, TaskEvidenceBundle):
+            return v
+        if isinstance(v, list):
+            return {"items": v}
         return v
 
 
@@ -214,9 +249,17 @@ def append_issue_transition(record: IssueRecord, ledger_path: Path) -> bool:
     )
 
 
+def _task_record_json(record: TaskRecord) -> str:
+    """Serialize a task row, omitting absent ``evidence`` so earlier rows stay lean."""
+    exclude = set()
+    if record.evidence is None:
+        exclude.add("evidence")
+    return record.model_dump_json(exclude=exclude)
+
+
 def append_task_record(record: TaskRecord, ledger_path: Path) -> bool:
     return _append_record(
-        record_json=record.model_dump_json(),
+        record_json=_task_record_json(record),
         record_id=record.id,
         id_field="id",
         ledger_path=ledger_path,
@@ -231,7 +274,7 @@ def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
     are all recorded, but re-running the same transition is safe.
     """
     return _append_with_compound_key(
-        record_json=record.model_dump_json(),
+        record_json=_task_record_json(record),
         key_fields=["id", "status"],
         ledger_path=ledger_path,
     )

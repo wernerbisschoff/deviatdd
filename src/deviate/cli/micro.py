@@ -10,10 +10,10 @@ import time
 import logging
 import sys
 import warnings
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, NoReturn
+from typing import Any, Literal, NoReturn
 from pathlib import Path, PurePosixPath
 
 import typer
@@ -71,6 +71,7 @@ from deviate.cli._safe_commands import (
 )
 from deviate.state.ledger import (
     RollbackSnapshot,
+    TaskEvidenceBundle,
     TaskRecord,
     append_rollback_snapshot,
     append_task_transition,
@@ -1118,15 +1119,135 @@ def _exit_if_already_done(
     raise typer.Exit(code=0)
 
 
+def _rev_parse_head(root: Path) -> str:
+    """Return ``HEAD`` SHA, or ``""`` when git is unavailable."""
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _load_session_if_present(root: Path) -> SessionState | None:
+    session_path = root / ".deviate" / "session.json"
+    if not session_path.exists():
+        return None
+    try:
+        return SessionState.load(session_path)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+
+
+def _evidence_items_as_dicts(items: Sequence[Any] | None) -> list[dict]:
+    dumped: list[dict] = []
+    for item in items or []:
+        if hasattr(item, "model_dump"):
+            dumped.append(item.model_dump())
+        elif isinstance(item, Mapping):
+            dumped.append(dict(item))
+    return dumped
+
+
+def _stash_validated_evidence(
+    session: SessionState, items: Sequence[Any] | None
+) -> None:
+    """Hold runner-validated citations until the COMPLETED row is written."""
+    session.validated_evidence = _evidence_items_as_dicts(items)
+
+
+def _completed_evidence_bundle(
+    task_data: dict,
+    session: SessionState | None,
+    root: Path,
+) -> TaskEvidenceBundle | None:
+    raw_items: list[Any] = []
+    if session and session.validated_evidence:
+        raw_items = list(session.validated_evidence)
+    else:
+        existing = task_data.get("evidence")
+        if isinstance(existing, Mapping):
+            raw_items = list(existing.get("items") or [])
+        elif isinstance(existing, list):
+            raw_items = existing
+    head = _rev_parse_head(root)
+    red = (session.red_commit_sha if session else "") or ""
+    if not raw_items and not red and not head:
+        return None
+    return TaskEvidenceBundle(items=raw_items, red=red, green=head, head=head)
+
+
+def _require_tdd_completed_evidence(
+    task_data: dict,
+    bundle: TaskEvidenceBundle | None,
+    session: SessionState | None,
+    root: Path,
+) -> None:
+    """Fail closed on TDD COMPLETE when AC tokens lack persisted evidence."""
+    if not _is_test_bearing_tdd(task_data):
+        return
+    tokens = resolve_task_ac_tokens(
+        task_data, card_text=_task_card_text(root, task_data)
+    )
+    if not tokens:
+        return
+    items = list(bundle.items) if bundle is not None else []
+    pending = (session.pending_judge_action if session else "") or "skip_refactor"
+    typed_items: list[EvidenceItem] = []
+    for item in items:
+        data = item.model_dump() if hasattr(item, "model_dump") else dict(item)
+        typed_items.append(EvidenceItem.model_validate(data))
+    head_contents = _evidence_head_contents(root, typed_items)
+    for item in typed_items:
+        for rel in (item.test_path, item.impl_path):
+            if not rel or rel in head_contents:
+                continue
+            candidate = Path(rel)
+            if candidate.is_absolute() or ".." in candidate.parts:
+                continue
+            path = root / rel
+            if path.is_file():
+                try:
+                    head_contents[rel] = path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+    feedback = evaluate_judge_evidence(
+        plan_contract="",
+        injected_diff="",
+        evidence=typed_items,
+        next_action=pending,
+        head_contents=head_contents,
+        required_tokens=tokens,
+        use_head=True,
+    )
+    if not typed_items or feedback:
+        detail = feedback or (
+            "JUDGE evidence is missing, empty, or partial for injected "
+            f"acceptance tokens: {', '.join(tokens)}"
+        )
+        raise PhaseFailedError(f"COMPLETED_EVIDENCE_MISSING: {detail}")
+
+
 def _append_status_transition(
     task_data: dict, new_status: str, ledger_path: Path
 ) -> None:
+    root = Path.cwd()
+    bundle = None
+    if new_status == "COMPLETED":
+        session = _load_session_if_present(root)
+        bundle = _completed_evidence_bundle(task_data, session, root)
+        _require_tdd_completed_evidence(task_data, bundle, session, root)
     record = TaskRecord(
         id=task_data["id"],
         issue_id=task_data.get("issue_id", ""),
         description=task_data.get("description", ""),
         status=new_status,
         execution_mode=task_data.get("execution_mode", "TDD"),
+        evidence=bundle,
     )
     append_task_transition(record, ledger_path)
 
@@ -1687,6 +1808,8 @@ def _adjudicate_red_no_failing_test(
         _restore_worktree_to_baseline(root, red_baseline, keep_paths=declared)
         if action != "skip_refactor":
             session.pending_judge_action = "skip_refactor"
+        session.save(session_path)
+        _append_status_transition(task, "COMPLETED", ledger_path)
         c.print(
             f"  [green]COMPLETED (adjudicated)[/] {tid} \u2014 "
             "behavior already exists, no implementation needed"
@@ -3100,6 +3223,10 @@ def _apply_judge_verdict(
         declared_paths=declared_paths,
     )
     session.last_judge_verdict = getattr(manifest, "verdict", "").upper()
+    if action is None or action in _TDD_EVIDENCE_GATE_ROUTES:
+        _stash_validated_evidence(session, manifest.evidence)
+    else:
+        session.validated_evidence = []
 
     # ---- Violation routes ----------------------------------------------
     if action in {"revert_to_red", "revert_before"}:
@@ -3403,6 +3530,8 @@ def _apply_judge_verdict(
         session.save(session_path)
         try:
             _append_status_transition(task, "COMPLETED", ledger_path)
+        except PhaseFailedError:
+            raise
         except Exception as e:  # pragma: no cover - ledger robustness
             c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
         return session
@@ -3479,9 +3608,9 @@ def _run_refactor_phase(
     _run_format_cmd(root)
 
     try:
-        record = TaskRecord.model_validate(task)
-        record.status = "COMPLETED"
-        append_task_transition(record, ledger_path)
+        _append_status_transition(task, "COMPLETED", ledger_path)
+    except PhaseFailedError:
+        raise
     except Exception as e:
         raise PhaseFailedError(f"REFACTOR phase ledger update failed for {tid}: {e}")
 
@@ -3549,6 +3678,8 @@ def _finish_tdd_cycle(
     if pending == "skip_refactor":
         try:
             _append_status_transition(task, "COMPLETED", ledger_path)
+        except PhaseFailedError:
+            raise
         except Exception as e:
             c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
         c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
@@ -3591,6 +3722,8 @@ def _finish_tdd_cycle(
     # no_refactor (CLI flag) with no JUDGE override.
     try:
         _append_status_transition(task, "COMPLETED", ledger_path)
+    except PhaseFailedError:
+        raise
     except Exception as e:
         c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
@@ -3654,6 +3787,7 @@ def _idle_after_tdd(
     session = session.force_transition_to("IDLE")
     session.train_feedback = ""
     session.judge_rejected = False
+    session.validated_evidence = []
     _reset_tdd_retry_budget(session)
     session.save(session_path)
     return session

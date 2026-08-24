@@ -287,16 +287,18 @@ def _tasks_list(
             # (this issue) was appended after the prior issue, so it wins.
             by_task[tid] = latest
 
-    rows = [
-        {
+    rows = []
+    for t in by_task.values():
+        row = {
             "id": t["id"],
             "issue_id": t.get("issue_id", ""),
             "description": t.get("description", ""),
             "status": t.get("status", ""),
             "execution_mode": t.get("execution_mode", ""),
         }
-        for t in by_task.values()
-    ]
+        if t.get("evidence"):
+            row["evidence"] = t["evidence"]
+        rows.append(row)
     if status_filter:
         rows = [r for r in rows if r.get("status") == status_filter]
     rows.sort(key=lambda r: r.get("id") or "")
