@@ -1308,6 +1308,160 @@ class TestJudgeFeedbackLogging:
         assert _format_violations_as_feedback([]) == ""
 
 
+_GH103_CITATION = "tests/foo.py:121"
+_GH103_FEEDBACK = (
+    "COMPLIANCE_VIOLATION: RED test is defective. "
+    f"{_GH103_CITATION} and :153 assert "
+    "row.payload['data']['status'] == live['status'] where live is "
+    "charge.as_dict() (ChargeStatus enum) and payload is JSONB.\n"
+    "The next GREEN attempt must: not proceed. revert_before and re-run RED.\n"
+    "The next RED attempt must: compare payload['data']['status'] "
+    "to a JSON-safe value."
+)
+
+
+class TestRevertFeedbackStripsLineCitations:
+    """GH-103: revert-route feedback must not persist discarded file:line cites.
+
+    After ``revert_before`` / ``revert_to_red`` the cited RED/GREEN lines
+    no longer exist. The runner strips ``path:line`` tokens before writing
+    ``session.train_feedback`` or ``tasks.md``, and keeps the durable
+    rewrite contract ("The next RED/GREEN attempt must: …").
+    """
+
+    def test_strip_helper_removes_file_line_keeps_behavior(self) -> None:
+        from deviate.cli.micro import _strip_revert_line_citations
+
+        result = _strip_revert_line_citations(_GH103_FEEDBACK)
+        assert _GH103_CITATION not in result, (
+            f"strip must drop the discarded citation {_GH103_CITATION!r}; "
+            f"got {result!r}"
+        )
+        assert "The next RED attempt must:" in result, (
+            f"strip must keep the behavioral rewrite contract; got {result!r}"
+        )
+        assert "JSON-safe value" in result
+        assert "COMPLIANCE_VIOLATION:" in result, (
+            "non-citation colons (verdict labels) must survive the strip"
+        )
+
+    @pytest.mark.parametrize("next_action", ["revert_before", "revert_to_red"])
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_persisted_feedback_omits_discarded_file_line(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+        next_action: str,
+    ) -> None:
+        """Feedback with ``tests/foo.py:121`` is stored without that citation."""
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        specs_dir = tmp_path / "specs"
+        (specs_dir / "adhoc" / "001-test-issue-pad-name").mkdir(parents=True)
+        (specs_dir / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-ADH-001",
+                    "source_file": ("specs/adhoc/issues/001-test-issue-pad-name.md"),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        tasks_md = specs_dir / "adhoc" / "001-test-issue-pad-name" / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n- TSK-001-01: Sample task\n",
+            encoding="utf-8",
+        )
+
+        mock_agent.return_value = (
+            HandoverManifest(
+                phase="JUDGE",
+                status="SUCCESS",
+                verdict="COMPLIANCE_VIOLATION",
+                task_id="TSK-001-01",
+                rationale="",
+                train_feedback=_GH103_FEEDBACK,
+                next_action=next_action,
+            ),
+            "",
+        )
+
+        task = {
+            "id": "TSK-001-01",
+            "issue_id": "ISS-ADH-001",
+            "description": "GH-103 strip discarded file:line citations",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        result = _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        assert _GH103_CITATION not in result.train_feedback, (
+            f"{next_action}: session.train_feedback must drop "
+            f"{_GH103_CITATION!r} after rollback; got {result.train_feedback!r}"
+        )
+        assert "The next RED attempt must:" in result.train_feedback, (
+            f"{next_action}: session.train_feedback must keep the "
+            f"behavioral rewrite contract; got {result.train_feedback!r}"
+        )
+        persisted = SessionState.load(session_path)
+        assert _GH103_CITATION not in persisted.train_feedback, (
+            f"{next_action}: saved session must also drop {_GH103_CITATION!r}; "
+            f"got {persisted.train_feedback!r}"
+        )
+        if next_action == "revert_to_red":
+            tasks_body = tasks_md.read_text(encoding="utf-8")
+            assert _GH103_CITATION not in tasks_body, (
+                f"{next_action}: tasks.md must drop {_GH103_CITATION!r}; "
+                f"got {tasks_body!r}"
+            )
+            assert "The next RED attempt must:" in tasks_body, (
+                f"{next_action}: tasks.md must keep the behavioral contract; "
+                f"got {tasks_body!r}"
+            )
+
+
 class TestJudgeRefactorNoteOnPass:
     """COMPLIANCE_PASS surfaces `REFACTOR NOTE:` observations as informational logs.
 
