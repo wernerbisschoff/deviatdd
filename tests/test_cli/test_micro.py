@@ -5440,6 +5440,62 @@ class TestGreenStallHarnessSurface:
         assert invoke_kwargs.get("stall_timeout") == 3600
 
 
+class TestInvokeAgentConfigTimeout:
+    """GH-87: micro phase agents honor ``[agent].timeout`` from config.toml."""
+
+    def test_invoke_agent_passes_config_timeout_to_agent_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A worktree ``[agent].timeout`` other than 600 reaches AgentConfig."""
+        from rich.console import Console
+
+        from deviate.cli.micro import _invoke_agent
+        from deviate.state.config import AgentConfig
+
+        monkeypatch.chdir(tmp_path)
+        config_dir = tmp_path / ".deviate"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(
+            '[agent]\nbackend = "pi"\ntimeout = 1800\n',
+            encoding="utf-8",
+        )
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._log_run"),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.return_value = HandoverManifest(
+                phase="GREEN", status="SUCCESS"
+            )
+            _invoke_agent(
+                "test prompt",
+                Console(),
+                backend_name="pi",
+                task_id="TSK-003-02",
+                phase="GREEN",
+            )
+
+        assert mock_backend_cls.called, "_invoke_agent must construct AgentBackend"
+        config = mock_backend_cls.call_args.kwargs.get("config")
+        if config is None:
+            args = mock_backend_cls.call_args.args
+            config = args[0] if args else None
+        assert isinstance(config, AgentConfig), (
+            "_invoke_agent must pass AgentConfig into AgentBackend"
+        )
+        assert config.timeout == 1800, (
+            "GH-87: [agent].timeout from the worktree config must reach "
+            f"AgentConfig; got {config.timeout} (600 is the unset default)"
+        )
+        assert config.backend == "pi"
+
+
 class TestRedHangTimeoutRollback:
     """TSK-027-02 / AC-PLAN-001, AC-PLAN-003, AC-PLAN-004, AC-PLAN-006."""
 
