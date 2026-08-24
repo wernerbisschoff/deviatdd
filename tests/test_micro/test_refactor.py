@@ -87,22 +87,17 @@ def _seed_refactor_pre_workspace(
         + "\n",
         encoding="utf-8",
     )
-    extra_files = "\n".join(f"    - `{path}`" for path in _EXTRA_SRC)
+    file_lines = "\n".join(
+        f"    - `{path}`" for path in (_OUTBOX_PROD, _OUTBOX_TEST, *_EXTRA_SRC)
+    )
     (spec_dir / "tasks.md").write_text(
-        textwrap.dedent(
-            f"""\
-            # Tasks
-
-            - TSK-003-03: Replay admin webhook outbox
-              - **Type**: Feature_Batch
-              - **Mode**: TDD
-              - **Verification**: `pytest tests/outbox/test_admin_replay.py -v`
-              - **Files**:
-                - `{_OUTBOX_PROD}`
-                - `{_OUTBOX_TEST}`
-            {extra_files}
-            """
-        ),
+        "# Tasks\n\n"
+        "- TSK-003-03: Replay admin webhook outbox\n"
+        "  - **Type**: Feature_Batch\n"
+        "  - **Mode**: TDD\n"
+        "  - **Verification**: `pytest tests/outbox/test_admin_replay.py -v`\n"
+        "  - **Files**:\n"
+        f"{file_lines}\n",
         encoding="utf-8",
     )
     task = _make_task_record(
