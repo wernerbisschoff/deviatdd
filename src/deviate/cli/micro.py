@@ -2517,11 +2517,33 @@ def _coerce_judge_action(
     return None
 
 
+# ``path/to/file.ext:123`` (optional ``:col``) from a discarded commit.
+# Extension must start with a letter so ``python3.13:1`` is not a hit.
+_FILE_LINE_CITATION_RE = re.compile(
+    r"((?:[\w.-]+/)*[\w.-]+\.[A-Za-z][A-Za-z0-9]{0,7}):\d+(?::\d+)?\b"
+)
+# ``tests/foo.py:121 and :153`` leftover after the first citation is reduced.
+_BARE_AND_LINE_RE = re.compile(r"\s+and\s+:\d+\b")
+
+
+def _strip_revert_line_citations(feedback: str) -> str:
+    """Remove discarded-commit ``path:line`` tokens from revert-route feedback.
+
+    After ``revert_before`` / ``revert_to_red`` those lines no longer exist.
+    Keep the surrounding behavioral rewrite contract.
+    """
+    if not feedback:
+        return feedback
+    stripped = _FILE_LINE_CITATION_RE.sub(r"\1", feedback)
+    return _BARE_AND_LINE_RE.sub("", stripped)
+
+
 def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]:
     """Return ``(feedback_text, feedback_source)`` from a judge manifest.
 
     Used by both rejection routes (``revert_to_red`` and ``revert_before``)
-    so they share the same feedback source cascade.
+    so they share the same feedback source cascade. File:line citations
+    from the discarded commit are stripped before persist (GH-103).
     """
     train_feedback_fb = _coerce_feedback_text(
         getattr(manifest, "train_feedback", None)
@@ -2541,14 +2563,16 @@ def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]
         or []
     )
     if train_feedback_fb:
-        return train_feedback_fb, "train_feedback"
-    if violations_fb:
-        return violations_fb, "violations"
-    if rationale_fb:
-        return rationale_fb, "rationale"
-    if summary_fb:
-        return summary_fb, "summary"
-    return "", ""
+        text, source = train_feedback_fb, "train_feedback"
+    elif violations_fb:
+        text, source = violations_fb, "violations"
+    elif rationale_fb:
+        text, source = rationale_fb, "rationale"
+    elif summary_fb:
+        text, source = summary_fb, "summary"
+    else:
+        return "", ""
+    return _strip_revert_line_citations(text), source
 
 
 def _commit_judge_feedback_and_advance(

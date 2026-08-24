@@ -167,6 +167,7 @@ Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's
 2. **Tell the next GREEN what to do instead** — concrete, actionable steps starting with "The next GREEN attempt must:"
 3. **Be instruction, not observation** — GREEN must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
 4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
+5. **On `next_action: revert_before` or `revert_to_red`**: do NOT cite `path:line` locations from the commit that rollback will discard. Write a durable rewrite contract (behavior + forbidden assertion + required proof). Those line numbers will not exist for the next agent. The runner also strips leftover `file:line` tokens on these routes.
 
 Do NOT write operator-directed observations in `train_feedback` (e.g. "Observational note for the operator: ..."). Those belong in `summary`.
 
