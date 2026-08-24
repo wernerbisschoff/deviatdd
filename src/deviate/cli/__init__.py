@@ -10,7 +10,6 @@ from rich.console import Console
 from rich.prompt import Prompt
 
 from deviate.state.config import DeviateConfig, SessionState
-from deviate.state.config import resolve_graphite_config as resolve_graphite_config  # noqa: F401
 from deviate.state.config import resolve_base_branch as resolve_base_branch  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
 from deviate.cli.flow_commands import flows_app as flows_app  # noqa: F401
@@ -107,7 +106,6 @@ _CONFIG_TOML_COMMENTS: dict[str, str] = {
     "agent": "Agent backend configuration",
     "models": "Per-phase model overrides; key = phase name, value = model ID",
     "use_libref": "Enable the libref CLI for offline documentation lookups",
-    "graphite": "Enable Graphite CLI integration for stacked changes",
     "base_branch": "Trunk branch for worktrees, PR base, and review diffs",
     "claim_remote": "Push the claim branch as a distributed lock (default true)",
 }
@@ -311,7 +309,7 @@ def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
     """Surgically upsert ``[agent]\nbackend = "<value>"`` in *config_path*.
 
     Preserves every other key/table in the file (similar in spirit to
-    :func:`_merge_flag_keys` for the boolean ``graphite`` / ``use_libref``
+    :func:`_merge_flag_keys` for the boolean ``use_libref``
     / ``claim_remote`` keys, but for the nested ``[agent]`` table).
 
     Returns ``True`` when the file was modified, ``False`` when the
@@ -453,22 +451,19 @@ def _upsert_toml_bool(content: str, key: str, value: bool) -> str:
 def _merge_flag_keys(
     config_path: Path,
     *,
-    graphite: bool,
     use_libref: bool,
     claim_remote: bool = True,
 ) -> None:
     """Surgically update flag keys in an existing TOML.
 
-    Upserts ``graphite``, ``use_libref``, and ``claim_remote``.
+    Upserts ``use_libref`` and ``claim_remote``.
     Preserves every other key/table (e.g. user-customised ``[models]``).
-    Used when ``setup --graphite``, ``setup --libref``, or
-    ``setup --no-claim-remote`` is re-run on a workspace whose
+    Used when ``setup --libref`` or
     ``.deviate/config.toml`` already exists — the idempotency guard in
     ``_write_if_missing`` would otherwise silently drop the new flag values.
     """
     content = config_path.read_text(encoding="utf-8")
     for key, value in (
-        ("graphite", graphite),
         ("use_libref", use_libref),
         ("claim_remote", claim_remote),
     ):
@@ -480,7 +475,6 @@ def _scaffold_dotfiles(
     workdir: Path,
     agent_export_mode: str,
     use_libref: bool = False,
-    graphite: bool = False,
     claim_remote: bool = True,
     force_update_flags: bool = False,
     agent_backend: str | None = None,
@@ -494,7 +488,7 @@ def _scaffold_dotfiles(
         console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     elif config_path.exists():
         # Existing config: only touch the keys the caller asked us to touch.
-        # `use_libref`, `graphite`, and `claim_remote` are only ever upserted
+        # `use_libref` and `claim_remote` are only ever upserted
         # when the corresponding flag was passed (force_update_flags).
         # `agent_backend` is always upserted when provided so `--agent factory`
         # can overwrite a previously persisted backend.
@@ -502,7 +496,6 @@ def _scaffold_dotfiles(
         if force_update_flags:
             _merge_flag_keys(
                 config_path,
-                graphite=graphite,
                 use_libref=use_libref,
                 claim_remote=claim_remote,
             )
@@ -519,7 +512,6 @@ def _scaffold_dotfiles(
         config = DeviateConfig(
             agent_export_mode=agent_export_mode,
             use_libref=use_libref,
-            graphite=graphite,
             claim_remote=claim_remote,
         )
         if agent_backend is not None:
@@ -571,7 +563,7 @@ def _linkify_governance_files(workdir: Path) -> None:
     console.print("  [green]LINK[/]  CLAUDE.md -> AGENTS.md")
 
 
-def _apply_governance(workdir: Path, graphite: bool = False) -> None:
+def _apply_governance(workdir: Path) -> None:
     # NOTE: claudemd_seed.md and agents_seed.md are intentionally empty — the
     # former ``## 🛠 DeviaTDD Phase Architecture`` block was project-internal
     # guidance that did not help consuming projects. An empty seed (read
@@ -606,12 +598,6 @@ def _apply_governance(workdir: Path, graphite: bool = False) -> None:
     if libref_content:
         for t in targets:
             _upsert_governance_block(t, libref_content)
-
-    if graphite:
-        content = _read_seed(_GOVERNANCE_MODULE, "graphite_seed.md")
-        if content:
-            for t in targets:
-                _upsert_governance_block(t, content)
 
 
 def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
@@ -762,9 +748,6 @@ def setup(
     agent_export_mode: str = typer.Option(
         "local", "--agent-export-mode", help="Export mode for agent commands"
     ),
-    graphite: bool = typer.Option(
-        False, "--graphite", help="Enable Graphite CLI integration for stacked changes"
-    ),
     libref: bool = typer.Option(
         False,
         "--libref",
@@ -814,13 +797,12 @@ def setup(
         workdir,
         agent_export_mode,
         use_libref=use_libref_val,
-        graphite=graphite,
         claim_remote=claim_remote_val,
-        force_update_flags=graphite or libref or no_claim_remote,
+        force_update_flags=libref or no_claim_remote,
         agent_backend=backend,
     )
 
-    _apply_governance(workdir, graphite=graphite)
+    _apply_governance(workdir)
 
     # DeviaTDD commands are installed into ALL agent directories regardless
     # of ``--agent``. ``--agent`` only drives the ``[agent].backend`` value

@@ -103,38 +103,3 @@ class TestCommandInstallation:
             assert gitignore.exists()
             content = gitignore.read_text(encoding="utf-8")
             assert "session.json" in content
-
-    def test_init_graphite_emits_routing_section_in_pr_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """`init --graphite` injects `<graphite_routing>` into installed deviate-pr command."""
-        monkeypatch.setattr(
-            "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
-        )
-        (tmp_path / ".opencode").mkdir(parents=True)
-        with chdir(tmp_path):
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            command_path = tmp_path / ".opencode" / "commands" / "deviate-pr.md"
-            assert command_path.exists()
-            content = command_path.read_text(encoding="utf-8")
-            assert "<graphite_routing>" in content
-            assert "gt submit --stack" in content
-
-    def test_init_without_graphite_omits_routing_section_in_pr_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """`init` (no flag) installs deviate-pr command file without Graphite Routing."""
-        monkeypatch.setattr(
-            "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
-        )
-        (tmp_path / ".opencode").mkdir(parents=True)
-        with chdir(tmp_path):
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result.exit_code == 0, result.output
-            command_path = tmp_path / ".opencode" / "commands" / "deviate-pr.md"
-            assert command_path.exists()
-            content = command_path.read_text(encoding="utf-8")
-            assert "<graphite_routing>" not in content

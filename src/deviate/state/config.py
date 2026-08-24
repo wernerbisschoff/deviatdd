@@ -175,8 +175,6 @@ class DeviateConfig(BaseModel):
     models: dict[str, str] = Field(default_factory=dict)
     # Enable the libref CLI for offline documentation lookups
     use_libref: bool = False
-    # Enable Graphite CLI integration for stacked changes
-    graphite: bool = Field(default=False)
     # Git branch used as trunk for worktrees, PR base, and review diffs
     base_branch: str = Field(default="main", min_length=1)
     # Push the claim branch as a distributed lock
@@ -243,11 +241,6 @@ def _resolve_toml_bool(root: Path, key: str, default: bool) -> bool:
         return default
     value = data.get(key, default)
     return value if isinstance(value, bool) else default
-
-
-def resolve_graphite_config(root: Path) -> bool:
-    """Check whether the Graphite integration is enabled in `.deviate/config.toml`."""
-    return _resolve_toml_bool(root, "graphite", False)
 
 
 def resolve_claim_remote(root: Path) -> bool:

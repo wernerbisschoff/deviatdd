@@ -52,7 +52,6 @@ from deviate.state.config import (
     SessionState,
     _load_deviate_config_toml,
     resolve_claim_remote,
-    resolve_graphite_config,
     resolve_base_branch,
     resolve_model_for_phase,
 )
@@ -1343,67 +1342,6 @@ def _pr_pre() -> None:
     print(json.dumps(contract, indent=2))
 
 
-def _run_gt_submit(repo_root: Path, title: str, body_file: Path) -> None:
-    try:
-        result = subprocess.run(
-            ["gt", "submit", "--stack", "--no-edit"],
-            capture_output=True,
-            text=True,
-            cwd=repo_root,
-            env=_git_env(),
-        )
-    except FileNotFoundError:
-        console.print(
-            "[red]GT_SUBMIT_FAILED[/] Graphite CLI (gt) not found on PATH.\n"
-            "See https://graphite.dev/docs/cli for installation instructions."
-        )
-        raise typer.Exit(code=1)
-    if result.returncode != 0:
-        console.print(
-            f"[red]GT_SUBMIT_FAILED[/] {result.stderr.strip()}\n"
-            "See https://graphite.dev/docs/cli for installation instructions."
-        )
-        raise typer.Exit(code=1)
-    console.print(f"[green]GT_SUBMIT[/] {result.stdout.strip()}")
-    _update_gt_prs(result.stdout, title, body_file, repo_root)
-
-
-def _update_gt_prs(output: str, title: str, body_file: Path, repo_root: Path) -> None:
-    for line in output.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        pr_url_match = re.search(r"(https://github\.com/\S+/pull/\d+)", line)
-        if not pr_url_match:
-            continue
-        pr_url = pr_url_match.group(1)
-        pr_num_match = re.search(r"/(\d+)$", pr_url)
-        if not pr_num_match:
-            continue
-        pr_number = pr_num_match.group(1)
-        try:
-            subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "edit",
-                    pr_number,
-                    "--title",
-                    title,
-                    "--body-file",
-                    str(body_file),
-                ],
-                capture_output=True,
-                text=True,
-                cwd=repo_root,
-                env=_git_env(),
-                check=True,
-            )
-            console.print(f"[green]PR_UPDATED[/] #{pr_number}")
-        except subprocess.CalledProcessError as e:
-            console.print(f"[yellow]PR_EDIT_WARN[/] #{pr_number}: {e.stderr.strip()}")
-
-
 def _run_gh_pr_create(
     title: str,
     body_file: Path,
@@ -1426,10 +1364,53 @@ def _run_gh_pr_create(
     console.print(f"[green]PR_CREATED[/] {pr_url}")
 
 
+def _resolve_pr_platform(repo: Path, override: str | None = None) -> str:
+    """Return 'github' or 'gitlab' for PR/MR creation.
+
+    An explicit ``override`` wins. Otherwise the hostname of the ``origin``
+    remote decides; an unknown or missing remote defaults to GitHub.
+    """
+    if override in ("github", "gitlab"):
+        return override
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except Exception:
+        return "github"
+    url = (result.stdout or "").strip().lower()
+    return "gitlab" if "gitlab" in url else "github"
+
+
+def _gitlab_push_options(title: str, body: str, base_branch: str) -> list[str]:
+    """Build the ``git push -o`` arguments that create a GitLab merge request.
+
+    Uses GitLab push options so no separate MR CLI is required.
+    """
+    opts = [
+        "-o",
+        "merge_request.create",
+        "-o",
+        f"merge_request.target={base_branch}",
+        "-o",
+        f"merge_request.title={title}",
+    ]
+    if body.strip():
+        opts += ["-o", f"merge_request.description={body.strip()}"]
+    return opts
+
+
 def _pr_run(
-    body_file: Path,
+    body_file: Path | None,
     merge: bool = False,
     auto_merge: bool = False,
+    no_pr: bool = False,
+    platform: str | None = None,
 ) -> None:
     session, session_path = _load_session_accept("TASKS", "IDLE")
     issue_id = session.active_issue_id or resolve_issue_id_from_branch(Path.cwd())
@@ -1441,14 +1422,16 @@ def _pr_run(
     if record is None:
         console.print(f"[red]ISSUE_NOT_FOUND[/] {issue_id}")
         raise typer.Exit(code=1)
-    if not body_file.exists():
+    if body_file is not None and not body_file.exists():
         console.print(f"[red]BODY_FILE_NOT_FOUND[/] {body_file}")
         raise typer.Exit(code=1)
 
     repo_root = Path.cwd()
+    pr_platform = _resolve_pr_platform(repo_root, platform)
+    base_branch = resolve_base_branch(repo_root)
     title = _pr_title(issue_id, record.title, record.type)
 
-    # 1. Record COMPLETED in the ledger before PR creation
+    # 1. Record COMPLETED in the ledger before push and PR/MR creation
     completed = record.model_copy(
         update={
             "status": "COMPLETED",
@@ -1463,9 +1446,12 @@ def _pr_run(
             f"[yellow]LEDGER_IDEMPOTENT[/] COMPLETED for {issue_id} already recorded"
         )
 
-    # 2. Stage the ledger and PR body file, then commit together
+    # 2. Stage the ledger and (when present) the PR body, then commit together
     staged = False
-    for path in (str(ledger_path), str(body_file)):
+    paths = [str(ledger_path)]
+    if body_file is not None:
+        paths.append(str(body_file))
+    for path in paths:
         try:
             subprocess.run(
                 ["git", "add", path],
@@ -1504,9 +1490,16 @@ def _pr_run(
     else:
         console.print("[yellow]LEDGER_UNCHANGED[/] no files staged for commit")
 
+    # 3. Push the branch; for GitLab, carry the MR push options
+    push_cmd = ["git", "push", "-u", "origin", "HEAD"]
+    if pr_platform == "gitlab" and not no_pr:
+        body_text = (
+            body_file.read_text(encoding="utf-8") if body_file is not None else ""
+        )
+        push_cmd += _gitlab_push_options(title, body_text, base_branch)
     try:
         subprocess.run(
-            ["git", "push", "-u", "origin", "HEAD"],
+            push_cmd,
             cwd=repo_root,
             env=_git_env(),
             check=True,
@@ -1523,15 +1516,25 @@ def _pr_run(
         else:
             console.print(f"[yellow]PUSH_WARN[/] {stderr}")
 
-    # 3. Create (and optionally merge) the PR
-    if resolve_graphite_config(repo_root):
+    # 4. Open the PR/MR unless the operator chose push-only
+    if no_pr:
+        console.print(
+            "[yellow]PR_SKIPPED[/] --no-pr: issue COMPLETED and branch pushed; "
+            "no PR/MR opened"
+        )
+    elif pr_platform == "gitlab":
         if merge or auto_merge:
             console.print(
-                "[yellow]GRAPHITE_MERGE_FLAGS_IGNORED[/] "
-                "Graphite handles merge flow internally via `gt submit --stack`."
+                "[yellow]GITLAB_MERGE_FLAGS_IGNORED[/] GitLab push options do not "
+                "merge after creation; the MR was opened for review"
             )
-        _run_gt_submit(repo_root, title, body_file)
+        console.print("[green]MR_CREATED[/] via git push options")
     else:
+        if body_file is None:
+            console.print(
+                "[red]BODY_FILE_REQUIRED[/] GitHub PR creation needs --body-file"
+            )
+            raise typer.Exit(code=1)
         _run_gh_pr_create(title, body_file, merge, auto_merge, cwd=repo_root)
 
     _save_session(session, session_path, "TASKS")
@@ -2168,21 +2171,41 @@ def tasks(
 
 
 def pr(
-    action: str = typer.Argument(..., help="Action: pre (validate) or run (create PR)"),
+    action: str = typer.Argument(
+        ..., help="Action: pre (validate) or run (create PR/MR)"
+    ),
     body_file: Path | None = typer.Option(
         None, "--body-file", help="Path to PR body file"
     ),
     merge: bool = typer.Option(False, "--merge", help="Merge after PR creation"),
     auto_merge: bool = typer.Option(False, "--auto-merge", help="Enable auto-merge"),
+    no_pr: bool = typer.Option(
+        False,
+        "--no-pr",
+        help="Mark COMPLETED and push, but do not open a PR/MR",
+    ),
+    platform: str | None = typer.Option(
+        None,
+        "--platform",
+        help="Force platform: github or gitlab (default: detect from remote)",
+    ),
 ) -> None:
-    """PR phase: pre (validate) or run (create PR)"""
+    """PR phase: pre (validate) or run (create PR/MR with optional push-only)."""
     if action == "pre":
         _pr_pre()
     elif action == "run":
-        if body_file is None:
-            console.print("[red]MISSING_BODY_FILE[/] --body-file is required for 'run'")
+        if body_file is None and not no_pr:
+            console.print(
+                "[red]MISSING_BODY_FILE[/] --body-file is required for 'run' unless --no-pr"
+            )
             raise typer.Exit(code=1)
-        _pr_run(body_file, merge=merge, auto_merge=auto_merge)
+        _pr_run(
+            body_file,
+            merge=merge,
+            auto_merge=auto_merge,
+            no_pr=no_pr,
+            platform=platform,
+        )
     else:
         console.print(f"[red]UNKNOWN_ACTION[/] '{action}'. Use 'pre' or 'run'")
         raise typer.Exit(code=1)

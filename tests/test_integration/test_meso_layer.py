@@ -241,3 +241,143 @@ class TestPrRun:
                 assert len(completed) >= 1, (
                     "expected COMPLETED event for ISS-001-001 with --merge"
                 )
+
+    def test_pr_run_no_pr_skips_gh_and_marks_completed(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """--no-pr marks COMPLETED and pushes without opening a PR (no gh call)."""
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001-001")
+            session.save(dot_dir / "session.json")
+            spec_root = Path("specs")
+            spec_root.mkdir(parents=True)
+            (spec_root / "constitution.md").write_text("# Constitution\n")
+            record = IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="PR test issue",
+                status="BACKLOG",
+                source_file="specs/test-pr/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            )
+            ledger = spec_root / "issues.jsonl"
+            ledger.write_text(record.model_dump_json() + "\n")
+            readme = Path("README.md")
+            readme.write_text("change\n")
+            subprocess.run(
+                ["git", "add", "README.md"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "feat: test change"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            original_run = subprocess.run
+            with patch("subprocess.run") as mock_run:
+
+                def side_effect(args, **kwargs):
+                    return original_run(args, **kwargs)
+
+                mock_run.side_effect = side_effect
+                result = runner.invoke(cli, ["pr", "run", "--no-pr"])
+                assert result.exit_code == 0, result.output
+                assert "PR_SKIPPED" in result.output
+                gh_calls = [
+                    c
+                    for c in mock_run.call_args_list
+                    if isinstance(c.args[0], list) and "gh" in c.args[0]
+                ]
+                assert gh_calls == [], "expected no gh subprocess calls with --no-pr"
+                lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+                completed = [
+                    json.loads(line)
+                    for line in lines
+                    if json.loads(line).get("issue_id") == "ISS-001-001"
+                    and json.loads(line).get("status") == "COMPLETED"
+                ]
+                assert len(completed) == 1
+
+    def test_pr_run_gitlab_uses_push_options(self, tmp_git_repo: Path) -> None:
+        """GitLab remote routes MR creation through `git push -o merge_request.create`."""
+        body_file = tmp_git_repo.parent / "pr-body.md"
+        body_file.write_text("PR description\n")
+        with chdir(tmp_git_repo):
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "set-url",
+                    "origin",
+                    "https://gitlab.com/owner/repo.git",
+                ],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="TASKS", active_issue_id="ISS-001-001")
+            session.save(dot_dir / "session.json")
+            spec_root = Path("specs")
+            spec_root.mkdir(parents=True)
+            (spec_root / "constitution.md").write_text("# Constitution\n")
+            record = IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="PR test issue",
+                status="BACKLOG",
+                source_file="specs/test-pr/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            )
+            ledger = spec_root / "issues.jsonl"
+            ledger.write_text(record.model_dump_json() + "\n")
+            readme = Path("README.md")
+            readme.write_text("change\n")
+            subprocess.run(
+                ["git", "add", "README.md"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "feat: test change"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+
+            original_run = subprocess.run
+            with patch("subprocess.run") as mock_run:
+
+                def side_effect(args, **kwargs):
+                    return original_run(args, **kwargs)
+
+                mock_run.side_effect = side_effect
+                result = runner.invoke(
+                    cli, ["pr", "run", "--body-file", str(body_file)]
+                )
+                assert result.exit_code == 0, result.output
+                push_calls = [
+                    c.args[0]
+                    for c in mock_run.call_args_list
+                    if isinstance(c.args[0], list)
+                    and "git" in c.args[0]
+                    and "push" in c.args[0]
+                ]
+                assert any(
+                    "-o" in cmd and "merge_request.create" in cmd for cmd in push_calls
+                ), f"expected gitlab push options, got: {push_calls}"
+                gh_calls = [
+                    c.args[0]
+                    for c in mock_run.call_args_list
+                    if isinstance(c.args[0], list) and "gh" in c.args[0]
+                ]
+                assert gh_calls == [], "GitLab path must not call gh"
+                assert "MR_CREATED" in result.output

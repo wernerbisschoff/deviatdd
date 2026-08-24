@@ -53,7 +53,6 @@ from deviate.state.config import (
     PytestReportConfig,
     SessionState,
     _load_deviate_config_toml,
-    resolve_graphite_config,
     resolve_phase_model,
 )
 from deviate.ui.monitor import OrchestrationMonitor
@@ -4566,8 +4565,6 @@ def _run_all(
         board=_board,
     )
 
-    graphite = resolve_graphite_config(root)
-
     any_failed = False
     try:
         with monitor:
@@ -4592,25 +4589,6 @@ def _run_all(
                     )
                     break
 
-                if graphite and idx < len(pending) - 1:
-                    next_task = pending[idx + 1][0]
-                    next_id = next_task.get("id", "?")
-                    next_desc = next_task.get("description", "")
-                    msg = f"feat({next_id}): {next_desc}"
-                    try:
-                        subprocess.run(
-                            ["gt", "create", "-m", msg],
-                            capture_output=True,
-                            text=True,
-                            cwd=root,
-                            env=_git_env(),
-                            check=True,
-                        )
-                        c.print(f"  [dim]gt create → stacked branch for {next_id}[/]")
-                    except subprocess.CalledProcessError as e:
-                        c.print(f"  [yellow]GT_CREATE_WARN[/] {e.stderr.strip()}")
-                    except FileNotFoundError:
-                        c.print("  [yellow]GT_CREATE_WARN[/] gt not found on PATH")
     except KeyboardInterrupt:
         monitor.signal_keyboard_interrupt()
         raise typer.Exit(code=130)

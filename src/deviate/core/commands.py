@@ -229,29 +229,6 @@ def _extract_description(frontmatter: str) -> str:
     return ""
 
 
-def _read_graphite_routing() -> str | None:
-    """Read the conditional `## Graphite Routing` block for deviate-pr."""
-    try:
-        path = Path(
-            importlib.resources.files("deviate.prompts").joinpath(
-                "extras/deviate-pr-graphite-routing.md"
-            )
-        )
-        return path.read_text(encoding="utf-8")
-    except (ModuleNotFoundError, FileNotFoundError, OSError):
-        return None
-
-
-def _graphite_enabled(workdir: Path) -> bool:
-    """Late-bound import to keep `core` free of `state` deps at module load."""
-    from deviate.state.config import resolve_graphite_config
-
-    try:
-        return resolve_graphite_config(workdir)
-    except Exception:
-        return False
-
-
 def install_command(
     name: str,
     target_dir: Path,
@@ -295,11 +272,6 @@ def install_command(
     composed = compose_command_body(raw, core_dir, constitution_path=constitution_path)
     if composed is None:
         return False
-
-    if name == "deviate-pr" and workdir is not None and _graphite_enabled(workdir):
-        routing = _read_graphite_routing()
-        if routing:
-            composed = f"{composed}\n\n{routing.rstrip()}"
 
     fm_match = _YAML_FM_RE.match(composed)
     if fm_match:
