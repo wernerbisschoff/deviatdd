@@ -36,7 +36,7 @@ Reconcile every AO-NNN against current code. Emit complete `AC-PLAN-NNN` scenari
 </step>
 
 <step id="write_plan">
-Write the plan to `{plan_path}` following the output format schema. Write exactly the plan content — no preamble, no postamble. The `## Product Layer Anchors` section records flow traceability only; it MUST NOT turn Product-layer documents, DeviaTDD skills, or agent command directories into implementation workstations.
+Write the plan to `{plan_path}` following the output format schema. Write exactly the plan content — no preamble, no postamble. The `## Product Layer Anchors` section records flow traceability only; it MUST NOT turn Product-layer documents, DeviaTDD skills, or agent command directories into implementation workstations. Emit the three-bullet `## Constraints` block (not the 7-rung Ponytail ladder) and restate the same filled block at the end of the authored plan.md.
 </step>
 
 <step id="post_orchestrated">
@@ -135,6 +135,13 @@ Constraints: <green-phase constraints, e.g. "no new dependencies without checksu
 - **Testing**: <test framework, approach, and coverage considerations>
 - **Git Isolation**: <how git isolation invariants apply>
 - **Product Layer**: <how the implemented application behavior preserves or extends the existing user-visible flows named in `## Product Layer Anchors`; this is traceability, not a Product-layer deliverable>
+
+**Ponytail Constraints (exactly three bullets — not the 7-rung ladder)**: Emit this block in `plan.md`. Files is guidance for the authoring agent — do not treat extra files as a runner or JUDGE hard-fail. Leave carve-outs in global AGENTS.md; do not copy them into the spec. Restate the same filled `## Constraints` block at the end of the authored plan.md.
+
+## Constraints
+- Behavior: {one observable fail-to-pass}
+- Files: {explicit paths or one glob}
+- No extra deps, no extra files
 
 </output_format_schemas>
 

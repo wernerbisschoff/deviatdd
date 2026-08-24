@@ -73,7 +73,7 @@ For each workstation cluster:
 </step>
 
 <step id="write_tasks">
-Write the task decomposition to `{tasks_target}` following the output format schema. Write exactly the tasks content — no preamble, no postamble.
+Write the task decomposition to `{tasks_target}` following the output format schema. Write exactly the tasks content — no preamble, no postamble. Emit the three-bullet `## Constraints` block (not the 7-rung Ponytail ladder) and restate the same filled block at the end of the authored tasks.md.
 </step>
 
 <step id="post_orchestrated">
@@ -169,6 +169,13 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 ## Universal API Design Constraint (ALL CORE MODULES)
 
 Every git-interacting function in core modules MUST accept an optional `repo_path: Path | None = None` parameter. When `None`, default to `Path.cwd()`.
+
+**Ponytail Constraints (exactly three bullets — not the 7-rung ladder)**: Emit this block in `tasks.md`. Files is guidance for the authoring agent — do not treat extra files as a runner or JUDGE hard-fail. Leave carve-outs in global AGENTS.md; do not copy them into the spec. Restate the same filled `## Constraints` block at the end of the authored tasks.md.
+
+## Constraints
+- Behavior: {one observable fail-to-pass}
+- Files: {explicit paths or one glob}
+- No extra deps, no extra files
 
 **Write the entire content directly to `<tasks_target>`** as the file's full content. No wrapping tags, no preamble, no postamble. The post-script reads the file and commits it.
 

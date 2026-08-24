@@ -220,6 +220,14 @@ Format:
 ## Opportunities
 - [OPPORTUNITY|Low Confidence] Extract the duplicated validation block (src/mod.py:50-65 and src/mod.py:80-95) into a shared helper
 
+## Minimality (list only — do not apply)
+<file>:L<start>-<end>: <offspec|delete|stdlib|native|yagni|shrink>: …
+net: -<N> lines possible vs spec file list.
+
+If nothing: `Lean already.`
+
+Minimality lines must NOT be tagged [CRITICAL] or [SUGGESTION]. STEP 4 MUST NOT apply Minimality findings (TRIM: self-rewrite enlarges patches). Keep ## Opportunities deferred; do not promote helper-extraction to SUGGESTION. STEP 4 already skips [OPPORTUNITY] — keep that. The existing Cross-task over-engineering sniff stays; Minimality is the list form.
+
 ## Compliance Matrix
 | Domain | Status | Notes |
 |--------|--------|-------|
@@ -284,12 +292,13 @@ If all seven domains are CLEAN with no findings:
 
 ### STEP 4: APPLY — Autonomous Fix Application + Commit
 
-Apply every `[CRITICAL]` and `[SUGGESTION]` fix from the Quick Fix Summary deterministically — no user prompt, no HITL selection. `[OPPORTUNITY]` items stay deferred to a future slice. After all selected fixes land, commit the result on the current branch.
+Apply every `[CRITICAL]` and `[SUGGESTION]` fix from the Quick Fix Summary deterministically — no user prompt, no HITL selection. `[OPPORTUNITY]` items stay deferred to a future slice. STEP 4 MUST NOT apply Minimality findings (TRIM: self-rewrite enlarges patches). After all selected fixes land, commit the result on the current branch.
 
 **Selection rule** (deterministic — no `ask` tool, no question prompt):
 - Apply every `[CRITICAL]` entry (must-fix: security, data loss, broken builds, flow breakage).
 - Apply every `[SUGGESTION]` entry (worth fixing: clean code, idiomacy, minor issues).
-- Skip every `[OPPORTUNITY]` entry — defer to a future slice.
+- Skip every `[OPPORTUNITY]` entry — defer to a future slice. Keep `## Opportunities` deferred; do not promote helper-extraction to SUGGESTION.
+- Do not apply Minimality findings. Minimality lines must NOT be tagged [CRITICAL] or [SUGGESTION].
 - If both lists are empty → emit `No CRITICAL or SUGGESTION items in this review — nothing to apply, nothing to commit.` and exit before applying or committing.
 
 **Per-fix protocol**:

@@ -62,6 +62,12 @@ For each vertical slice, write a shard issue markdown file to `<issues_dir>/<NNN
 - `## Upstream Requirement Tracing`
 - `## Multi-Tiered Verification Targets`
 - `## Demonstration Path`
+- `## Constraints` (exactly three bullets — not the 7-rung Ponytail ladder). Files is guidance for the authoring agent — do not treat extra files as a runner or JUDGE hard-fail. Leave carve-outs in global AGENTS.md; do not copy them into the spec. Restate the same filled `## Constraints` block at the end of the authored issue file.
+
+## Constraints
+- Behavior: {one observable fail-to-pass}
+- Files: {explicit paths or one glob}
+- No extra deps, no extra files
 </step>
 <step id="manifest_writing">
 Write execution manifest JSON to `plan_target` (absolute path from contract).

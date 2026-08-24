@@ -427,6 +427,97 @@ class TestReviewPromptSecurityTaxonomy:
         )
 
 
+class TestReviewPromptMinimality:
+    """Gate 3 STEP 3 must emit a list-only Minimality section that STEP 4
+    never applies. Helper-extraction stays deferred under Opportunities."""
+
+    @staticmethod
+    def _read_prompt() -> str:
+        return TestReviewPromptSecurityTaxonomy._read_prompt()
+
+    def test_step3_emits_list_only_minimality_section(self):
+        prompt = self._read_prompt()
+        assert "## Minimality (list only — do not apply)" in prompt
+        assert (
+            "<file>:L<start>-<end>: <offspec|delete|stdlib|native|yagni|shrink>:"
+            in prompt
+        )
+        assert "net: -<N> lines possible vs spec file list." in prompt
+        assert "Lean already." in prompt
+
+    def test_minimality_lines_are_not_critical_or_suggestion(self):
+        prompt = self._read_prompt()
+        assert "Minimality lines must NOT be tagged [CRITICAL] or [SUGGESTION]" in prompt
+
+    def test_step4_does_not_apply_minimality_findings(self):
+        prompt = self._read_prompt()
+        assert "STEP 4 MUST NOT apply Minimality findings" in prompt
+        assert "TRIM: self-rewrite enlarges patches" in prompt
+
+    def test_opportunities_stay_deferred_not_promoted(self):
+        prompt = self._read_prompt()
+        assert "## Opportunities" in prompt
+        assert "do not promote helper-extraction to SUGGESTION" in prompt
+        assert "Skip every `[OPPORTUNITY]` entry" in prompt
+
+    def test_cross_task_over_engineering_sniff_stays(self):
+        prompt = self._read_prompt()
+        assert "**Cross-task over-engineering**" in prompt
+        assert "Minimality is the list form" in prompt
+
+
+class TestPonytailConstraintsBlock:
+    """Spec-generation prompts emit the three-bullet Constraints block
+    (Ponytail as short guidance) and restate it at the end of the spec.
+    Manual /deviate-plan /deviate-tasks /deviate-shard overlays splice
+    these auto cores at install time — do not duplicate the block there.
+    """
+
+    _AUTO_ROOT = (
+        Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "auto"
+    )
+    _SPEC_TEMPLATES = ("plan.md", "tasks.md", "shard.md")
+    _CONSTRAINTS_BLOCK = (
+        "## Constraints\n"
+        "- Behavior: {one observable fail-to-pass}\n"
+        "- Files: {explicit paths or one glob}\n"
+        "- No extra deps, no extra files"
+    )
+
+    def _read(self, name: str) -> str:
+        return (self._AUTO_ROOT / name).read_text(encoding="utf-8")
+
+    def test_auto_spec_templates_emit_three_bullet_constraints(self):
+        for name in self._SPEC_TEMPLATES:
+            text = self._read(name)
+            assert self._CONSTRAINTS_BLOCK in text, (
+                f"{name}: must emit the exact three-bullet ## Constraints block"
+            )
+            assert text.count("- Behavior: {one observable fail-to-pass}") >= 1
+
+    def test_constraints_restated_at_end_of_authored_spec(self):
+        for name in self._SPEC_TEMPLATES:
+            text = self._read(name)
+            assert "Restate the same filled `## Constraints` block at the end" in text, (
+                f"{name}: must restate the Constraints block at the end of the spec"
+            )
+
+    def test_constraints_are_not_the_seven_rung_ladder(self):
+        for name in self._SPEC_TEMPLATES:
+            text = self._read(name)
+            assert "not the 7-rung" in text, (
+                f"{name}: must forbid pasting the 7-rung Ponytail ladder"
+            )
+
+    def test_files_bullet_is_guidance_not_a_runner_fail(self):
+        for name in self._SPEC_TEMPLATES:
+            text = self._read(name)
+            assert "Files is guidance for the authoring agent" in text, (
+                f"{name}: Files must be guidance, not a JUDGE/runner hard-fail"
+            )
+            assert "JUDGE" in text
+
+
 class TestVerificationBatchImmediateRouting:
     """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
 
