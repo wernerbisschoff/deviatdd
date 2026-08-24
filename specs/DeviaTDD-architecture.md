@@ -148,10 +148,12 @@ to build codebase comprehension and surface hidden trade-offs.
   * **Granularity:** One fail-to-pass contract per task (one observable behavior the JUDGE can still see). Avoid "create one file" granularity —
     group related functions into a cohesive unit. Enforce bounds: minimum 1 task per issue,
     maximum 10 tasks per issue. Split a mixed 10-file / >400 LOC GREEN packet; keep the JUDGE packet default ≲2 files / ≲3 hunks / ≲30 production LOC with review ceiling <200 LOC typical / 400 max.
-* **PR (`deviate pr pre` / `deviate pr run`):** Creates a GitHub pull request from the current
-  worktree branch. The `pre` subcommand validates PR metadata; the `run` subcommand executes
-  `gh pr create` and optionally merges upon completion. PR titles are generated in
-  conventional-commit format for squash-merge compatibility.
+* **PR (`deviate pr pre` / `deviate pr run`):** Marks the issue COMPLETED in the ledger, pushes the
+  worktree branch, then optionally opens a GitHub pull request (`gh pr create`) or GitLab merge
+  request (`git push -o merge_request.create`). The `pre` subcommand validates PR metadata; the
+  `run` subcommand executes the ledger update + push, opening a PR/MR unless `--no-pr` is set.
+  Platform is auto-detected from the `origin` remote and overridable via `--platform`.
+  PR titles use conventional-commit format for squash-merge compatibility. There is no Graphite path.
 * **Merge (`deviate merge` / `deviate merge pre` + `/deviate-merge` skill):** Final meso-layer gate that performs
   the squash-merge into the configured `base_branch` (from `resolve_base_branch` / `.deviate/config.toml`; default `main`) and writes a full Pydantic-validated `IssueRecord` (not a
   bare transition). `deviate merge pre` emits a JSON contract with `base_branch` so the skill
@@ -727,9 +729,9 @@ The orchestrator must maintain and enforce these structural constraints across a
     branch-issue queue. Tasks are dispatched sequentially; each task gets up to
     **2 retry attempts** (`_execute_task_with_retry`, `for attempt in range(2)`) before
     being marked `FAILED`. The pipeline **halts on the first failure** (`any_failed = True;
-    break`) and exits with code `1`. When `.deviate/config.toml` contains `graphite = true`,
-    the runner invokes `gt create -m "feat({TSK}): {description}"` between tasks to spin
-    up a stacked branch for the next pending task.
+    break`) and exits with code `1`.
+
+
 
 11. **The Pipeline Output Discipline:** `_run_all` constructs an `OrchestrationMonitor`
     (`src/deviate/ui/monitor.py`) with `total_tasks` set to the pending count. In TTY mode

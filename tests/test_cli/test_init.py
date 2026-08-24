@@ -10,7 +10,6 @@ import yaml
 from typer.testing import CliRunner
 
 from deviate.cli import cli
-from deviate.cli.__init__ import resolve_graphite_config
 from deviate.core.commands import _resolve_commands_root
 from deviate.state.config import resolve_claim_remote
 from tests.conftest import _git_env
@@ -186,19 +185,6 @@ class TestInitCommand:
             content = config_path.read_text()
             assert "use_libref = true" in content
 
-    def test_init_graphite_key_at_toml_top_level(self, tmp_path: Path):
-        """--graphite persists `graphite` at TOML top-level, not nested under [models]."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            config_path = workdir / ".deviate" / "config.toml"
-            parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("graphite") is True, (
-                f"graphite missing at top-level; got keys: {list(parsed.keys())} / "
-                f"models={parsed.get('models')}"
-            )
-
     def test_init_use_libref_key_at_toml_top_level(self, tmp_path: Path):
         """--libref persists `use_libref` at TOML top-level, not nested under [models]."""
         with chdir(tmp_path):
@@ -215,48 +201,6 @@ class TestInitCommand:
                 f"use_libref missing at top-level; got keys: {list(parsed.keys())} / "
                 f"models={parsed.get('models')}"
             )
-
-    def test_init_graphite_and_libref_combined(self, tmp_path: Path):
-        """--graphite --libref together: both flags at top-level AND both governance sections."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            with patch("shutil.which") as mock_which:
-                mock_which.return_value = None
-                result = runner.invoke(
-                    cli, ["setup", "--agent", "opencode", "--graphite", "--libref"]
-                )
-            assert result.exit_code == 0, result.output
-
-            config_path = workdir / ".deviate" / "config.toml"
-            parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("graphite") is True
-            assert parsed.get("use_libref") is True
-
-            for fname in ["CLAUDE.md", "AGENTS.md"]:
-                content = (workdir / fname).read_text()
-                assert "## Graphite Stacked Changes Workflow" in content
-                assert "## 📚 Offline Documentation (libref)" in content
-
-    def test_resolve_graphite_config_round_trip_after_init(self, tmp_path: Path):
-        """init --graphite produces a config that resolve_graphite_config() reads as True."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            assert resolve_graphite_config(workdir) is True
-
-    def test_init_graphite_updates_existing_config(self, tmp_path: Path):
-        """Re-running init --graphite on existing repo persists graphite = true."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            runner.invoke(cli, ["setup", "--agent", "opencode"])
-            config_path = workdir / ".deviate" / "config.toml"
-            assert "graphite = false" in config_path.read_text()
-
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("graphite") is True
 
     def test_init_libref_updates_existing_config(self, tmp_path: Path):
         """Re-running init --libref on existing repo persists use_libref = true."""
@@ -275,25 +219,6 @@ class TestInitCommand:
             parsed = tomllib.loads(config_path.read_text())
             assert parsed.get("use_libref") is True
 
-    def test_init_graphite_preserves_other_config_keys(self, tmp_path: Path):
-        """init --graphite on existing config preserves user [models] section."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            dot_dir = workdir / ".deviate"
-            dot_dir.mkdir()
-            config_path = dot_dir / "config.toml"
-            config_path.write_text(
-                'profile = "custom"\n\n[models]\ndefault = "opencode/deepseek-v4-flash"\n',
-                encoding="utf-8",
-            )
-
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            parsed = tomllib.loads(config_path.read_text())
-            assert parsed.get("graphite") is True
-            assert parsed.get("profile") == "custom"
-            assert parsed["models"]["default"] == "opencode/deepseek-v4-flash"
-
     def test_init_no_flags_preserves_existing_config(self, tmp_path: Path):
         """init (no flags) on existing config does NOT touch the file."""
         with chdir(tmp_path):
@@ -307,30 +232,6 @@ class TestInitCommand:
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             assert config_path.read_text() == original
-
-    def test_resolve_graphite_config_true(self, tmp_path: Path) -> None:
-        dot_dir = tmp_path / ".deviate"
-        dot_dir.mkdir(parents=True)
-        config_path = dot_dir / "config.toml"
-        config_path.write_text("graphite = true\n", encoding="utf-8")
-        assert resolve_graphite_config(tmp_path) is True
-
-    def test_resolve_graphite_config_false(self, tmp_path: Path) -> None:
-        dot_dir = tmp_path / ".deviate"
-        dot_dir.mkdir(parents=True)
-        config_path = dot_dir / "config.toml"
-        config_path.write_text("graphite = false\n", encoding="utf-8")
-        assert resolve_graphite_config(tmp_path) is False
-
-    def test_resolve_graphite_config_key_absent(self, tmp_path: Path) -> None:
-        dot_dir = tmp_path / ".deviate"
-        dot_dir.mkdir(parents=True)
-        config_path = dot_dir / "config.toml"
-        config_path.write_text('profile = "default"\n', encoding="utf-8")
-        assert resolve_graphite_config(tmp_path) is False
-
-    def test_resolve_graphite_config_no_config(self, tmp_path: Path) -> None:
-        assert resolve_graphite_config(tmp_path) is False
 
     def test_init_creates_product_layer_skills(self) -> None:
         """TSK-010-01: three Product-layer SKILL.md templates exist with canonical
@@ -507,101 +408,7 @@ class TestInitCommand:
         )
 
 
-class TestInitGraphiteFlag:
-    """RED phase tests for TSK-007-02: --graphite flag on deviate init."""
-
-    def test_init_with_graphite_flag(self, tmp_path: Path):
-        """AC-ADHOC-007-01: --graphite flag writes graphite = true in config.toml."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            config_path = workdir / ".deviate" / "config.toml"
-            assert config_path.exists()
-            content = config_path.read_text()
-            assert "graphite = true" in content
-
-    def test_init_without_graphite_flag(self, tmp_path: Path):
-        """AC-ADHOC-007-02: Default init either omits graphite or sets false."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result.exit_code == 0, result.output
-            config_path = workdir / ".deviate" / "config.toml"
-            assert config_path.exists()
-            content = config_path.read_text()
-            if "graphite" in content:
-                assert "graphite = false" in content
-
-    def test_init_graphite_governance_section(self, tmp_path: Path):
-        """AC-ADHOC-007-03: Graphite section appears in governance seeds when enabled."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--graphite"])
-            assert result.exit_code == 0, result.output
-            for fname in ["CLAUDE.md", "AGENTS.md"]:
-                fpath = workdir / fname
-                assert fpath.exists()
-                content = fpath.read_text()
-                assert "## Graphite Stacked Changes Workflow" in content
-
-    def test_init_graphite_governance_absent_when_disabled(self, tmp_path: Path):
-        """AC-ADHOC-007-04: No Graphite section when graphite disabled."""
-        with chdir(tmp_path):
-            workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result.exit_code == 0, result.output
-            for fname in ["CLAUDE.md", "AGENTS.md"]:
-                fpath = workdir / fname
-                assert fpath.exists()
-                content = fpath.read_text()
-                assert "## Graphite Stacked Changes Workflow" not in content
-
-    def test_scaffold_dotfiles_with_graphite_true(self, tmp_path: Path):
-        """_scaffold_dotfiles(graphite=True) writes graphite = true."""
-        from deviate.cli import _scaffold_dotfiles
-
-        _scaffold_dotfiles(tmp_path, "local", graphite=True)
-        config_path = tmp_path / ".deviate" / "config.toml"
-        assert config_path.exists()
-        content = config_path.read_text()
-        assert "graphite = true" in content
-
-    def test_scaffold_dotfiles_with_graphite_false(self, tmp_path: Path):
-        """_scaffold_dotfiles(graphite=False) omits graphite or sets false."""
-        from deviate.cli import _scaffold_dotfiles
-
-        _scaffold_dotfiles(tmp_path, "local", graphite=False)
-        config_path = tmp_path / ".deviate" / "config.toml"
-        assert config_path.exists()
-        content = config_path.read_text()
-        if "graphite" in content:
-            assert "graphite = false" in content
-
-    def test_apply_governance_with_graphite(self, tmp_path: Path):
-        """_apply_governance(graphite=True) emits Graphite section."""
-        from deviate.cli import _apply_governance
-
-        _apply_governance(tmp_path, graphite=True)
-        for fname in ["CLAUDE.md", "AGENTS.md"]:
-            fpath = tmp_path / fname
-            assert fpath.exists()
-            content = fpath.read_text()
-            assert "## Graphite Stacked Changes Workflow" in content
-            assert "gt create -am" in content
-            assert "gt submit --stack" in content
-
-    def test_apply_governance_without_graphite(self, tmp_path: Path):
-        """_apply_governance(graphite=False) omits Graphite section."""
-        from deviate.cli import _apply_governance
-
-        _apply_governance(tmp_path, graphite=False)
-        for fname in ["CLAUDE.md", "AGENTS.md"]:
-            fpath = tmp_path / fname
-            assert fpath.exists()
-            content = fpath.read_text()
-            assert "## Graphite Stacked Changes Workflow" not in content
-
+class TestSetupConstitutionScaffolding:
     def test_setup_does_not_scaffold_constitution(self, tmp_path: Path):
         """`deviate setup` no longer scaffolds ``specs/constitution.md`` — the macro-layer
         ``research pre`` owns that bootstrap. Constitution absence here is intentional,
@@ -610,7 +417,6 @@ class TestInitGraphiteFlag:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
-
             const_path = tmp_path / "specs" / "constitution.md"
             assert not const_path.exists()
 
@@ -628,48 +434,6 @@ class TestInitGraphiteFlag:
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             assert const_path.read_text() == original
-
-    def test_init_graphite_governance_section_present(self, tmp_path: Path):
-        """AC-ADHOC-007-03: Graphite section present via _apply_governance."""
-        from deviate.cli import _apply_governance
-
-        _apply_governance(tmp_path, graphite=True)
-        for fname in ["CLAUDE.md", "AGENTS.md"]:
-            fpath = tmp_path / fname
-            assert fpath.exists()
-            content = fpath.read_text()
-            assert "## Graphite Stacked Changes Workflow" in content
-
-    def test_init_graphite_governance_section_absent(self, tmp_path: Path):
-        """AC-ADHOC-007-04: Graphite section absent via _apply_governance."""
-        from deviate.cli import _apply_governance
-
-        _apply_governance(tmp_path, graphite=False)
-        for fname in ["CLAUDE.md", "AGENTS.md"]:
-            fpath = tmp_path / fname
-            assert fpath.exists()
-            content = fpath.read_text()
-            assert "## Graphite Stacked Changes Workflow" not in content
-
-    def test_init_graphite_governance_idempotent(self, tmp_path: Path):
-        """Re-running _apply_governance updates existing Graphite section."""
-        from deviate.cli import _apply_governance
-
-        _apply_governance(tmp_path, graphite=True)
-        claude_path = tmp_path / "CLAUDE.md"
-        original = claude_path.read_text()
-        assert "## Graphite Stacked Changes Workflow" in original
-
-        outdated_section = "\n\n## Graphite Stacked Changes Workflow\n\nOutdated content\n\n## Unrelated\nKept\n"
-        claude_path.write_text(outdated_section, encoding="utf-8")
-
-        _apply_governance(tmp_path, graphite=True)
-        updated = claude_path.read_text()
-        assert "Outdated content" not in updated
-        assert "gt create -am" in updated
-        assert "gt submit --stack" in updated
-        assert "## Unrelated" in updated
-        assert "Kept" in updated
 
 
 class TestSetupClaimRemoteFlag:

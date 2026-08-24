@@ -13,7 +13,7 @@ JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS: int = 300
 def git_env() -> dict[str, str]:
     """Return os.environ with GIT_* and GH_* stripped.
 
-    Production code MUST pass this as the `env` of every `git`/`gh`/`gt`
+    Production code MUST pass this as the `env` of every `git`/`gh`
     subprocess call so child processes don't inherit the parent's git
     identity, remotes, or auth state. Prefer creating branch refs
     (`git branch <name>`) over `git checkout -b` in non-interactive code;
