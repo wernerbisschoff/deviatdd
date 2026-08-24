@@ -283,6 +283,8 @@ class TestPrRun:
             with patch("subprocess.run") as mock_run:
 
                 def side_effect(args, **kwargs):
+                    if isinstance(args, list) and "git" in args and "push" in args:
+                        return subprocess.CompletedProcess(args, returncode=0)
                     return original_run(args, **kwargs)
 
                 mock_run.side_effect = side_effect
@@ -357,6 +359,8 @@ class TestPrRun:
             with patch("subprocess.run") as mock_run:
 
                 def side_effect(args, **kwargs):
+                    if isinstance(args, list) and "git" in args and "push" in args:
+                        return subprocess.CompletedProcess(args, returncode=0)
                     return original_run(args, **kwargs)
 
                 mock_run.side_effect = side_effect
