@@ -717,6 +717,22 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   (RED → GREEN → JUDGE → REFACTOR) or to the execute phase. Single-task by
   default; `--all` drains every PENDING task for the active issue (or all
   issues if no active issue is set).
+* **`--review` (optional per-phase commit pause, GH-101):** After the agent
+  finishes a phase and tests/lint have run, `deviate micro run --review`
+  (and `--all --review`) halt **before** `_commit_phase` /
+  `_commit_phase_with_recovery` (`git add -A`). The runner prints
+  `REVIEW_PAUSE <phase> <task_id>`, leaves the worktree dirty for
+  herdr/hunk, and waits for TTY confirmation (`Enter` / yes). Then it
+  commits as today and continues. Pause applies to RED, GREEN, REFACTOR,
+  and EXECUTE. JUDGE feedback commits (`_commit_judge_feedback_and_advance`)
+  are not paused. After REFACTOR is reviewed and committed the task is
+  marked COMPLETED; `--all` pauses the same way on the next task. RED is
+  still committed before GREEN so `session.red_commit_sha` is available
+  for JUDGE `revert_to_red`. Non-TTY / `--json` / missing stdin fail
+  closed with `REVIEW_REQUIRES_TTY` and never auto-commit past the flag.
+  Off by default; no config key in this slice. The pause lives in one
+  helper (`_maybe_review_pause`) in front of `_commit_phase`, not copied
+  into each phase.
 * **Single-Task (`deviate micro run <task-id>`):** Triggers the automated
   execution cycle for a single task node. A pinned `task-id` stays in the
   active issue's namespace when the branch or re-keyed session issue is

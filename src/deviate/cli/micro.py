@@ -81,6 +81,28 @@ _verbose: bool = False
 
 _cli_model_override: str | None = None
 
+# ``deviate micro run --review``: optional per-phase HITL pause before
+# ``_commit_phase`` / ``_commit_phase_with_recovery``. Off by default;
+# no config key in this slice (GH-101).
+_review_mode: bool = False
+_review_json_mode: bool = False
+_review_task_id: str = ""
+_REVIEW_PAUSE_PHASES = frozenset({"RED", "GREEN", "REFACTOR", "EXECUTE"})
+_REVIEW_CONFIRM_YES = frozenset({"", "y", "yes"})
+
+
+def _set_review_context(
+    *,
+    enabled: bool,
+    json_mode: bool = False,
+    task_id: str = "",
+) -> None:
+    """Set or clear the ``--review`` pause context for this process."""
+    global _review_mode, _review_json_mode, _review_task_id
+    _review_mode = enabled
+    _review_json_mode = json_mode
+    _review_task_id = task_id
+
 
 def resolve_model_for_phase(
     phase: str, root: Path, *, backend: str | None = None
@@ -1532,6 +1554,7 @@ def _run_red_phase(
         root,
         no_verify=True,
         phase="red",
+        task_id=tid,
     )
 
     head_sha = subprocess.run(
@@ -1856,6 +1879,7 @@ def _run_green_phase(
         root,
         no_verify=True,
         phase="green",
+        task_id=tid,
     )
     if is_feedback_retry and not committed:
         raise PhaseFailedError(
@@ -1876,6 +1900,7 @@ def _run_green_phase(
             root,
             no_verify=True,
             phase="green",
+            task_id=tid,
         )
         if residual_committed:
             c.print(f"  [green]Residual files committed[/] for {tid}")
@@ -3465,6 +3490,7 @@ def _run_refactor_phase(
         root,
         no_verify=True,
         phase="refactor",
+        task_id=tid,
     )
 
     session = session.force_transition_to("IDLE")
@@ -4332,6 +4358,14 @@ class PhaseFailedError(Exception):
     pass
 
 
+class ReviewRequiresTtyError(PhaseFailedError):
+    """``--review`` cannot proceed without an interactive TTY.
+
+    Raised when the flag is on and stdin is not a TTY, is missing, or
+    ``--json`` is set. Fail-closed: never auto-commit past ``--review``.
+    """
+
+
 class HitlEscalationError(PhaseFailedError):
     """Raised when an agent manifest carries structured HITL escalation.
 
@@ -4406,6 +4440,8 @@ def _dispatch_task(
     monitor: OrchestrationMonitor | None = None,
     start_phase: str | None = None,
 ) -> None:
+    global _review_task_id
+    _review_task_id = task.get("id", "?")
     mode = task.get("execution_mode", "TDD")
 
     if mode == "TDD" and batch_mode:
@@ -4542,6 +4578,8 @@ def _execute_task_with_retry(
                     status="completed",
                 )
                 return True
+            except (typer.Exit, ReviewRequiresTtyError):
+                raise
             except HitlEscalationError as exc:
                 # Structured HITL escalation — deterministic non-answer.
                 # Don't retry; mark HITL_PENDING and halt the chain.
@@ -4918,6 +4956,62 @@ class CommitFailedError(PhaseFailedError):
         super().__init__(f"COMMIT_FAILED: {reason}")
 
 
+def _review_stdin_usable() -> bool:
+    """True when ``sys.stdin`` exists and reports a TTY."""
+    stdin = getattr(sys, "stdin", None)
+    if stdin is None:
+        return False
+    isatty = getattr(stdin, "isatty", None)
+    if not callable(isatty):
+        return False
+    try:
+        return bool(isatty())
+    except Exception:
+        return False
+
+
+def _fail_review_requires_tty() -> NoReturn:
+    console.print("[red]REVIEW_REQUIRES_TTY[/]")
+    raise ReviewRequiresTtyError("REVIEW_REQUIRES_TTY")
+
+
+def _wait_for_review_confirmation() -> None:
+    """Block until the operator confirms (Enter / yes) on a TTY."""
+    stdin = getattr(sys, "stdin", None)
+    readline = getattr(stdin, "readline", None) if stdin is not None else None
+    if not callable(readline):
+        _fail_review_requires_tty()
+    while True:
+        try:
+            answer = readline()
+        except Exception:
+            _fail_review_requires_tty()
+        if answer == "":
+            _fail_review_requires_tty()
+        if answer.strip().lower() in _REVIEW_CONFIRM_YES:
+            return
+
+
+def _maybe_review_pause(phase: str | None, task_id: str | None = None) -> None:
+    """Halt before ``git add -A`` when ``--review`` is on.
+
+    Single hook used by ``_commit_phase`` and
+    ``_commit_phase_with_recovery``. JUDGE feedback commits do not go
+    through either helper, so they are never paused. Non-TTY / ``--json``
+    / missing stdin fail closed with ``REVIEW_REQUIRES_TTY``.
+    """
+    if not _review_mode:
+        return
+    normalized = (phase or "").strip().upper()
+    if normalized not in _REVIEW_PAUSE_PHASES:
+        return
+    tid = (task_id or _review_task_id or "?").strip() or "?"
+    if _review_json_mode or not _review_stdin_usable():
+        _fail_review_requires_tty()
+    console.print(f"REVIEW_PAUSE {normalized} {tid}")
+    _wait_for_review_confirmation()
+
+
 def _commit_phase_with_recovery(
     message: str,
     root: Path,
@@ -4955,6 +5049,7 @@ def _commit_phase_with_recovery(
     worktree was already clean (``nothing to commit``) — a legitimate
     no-op EXECUTE outcome treated as success.
     """
+    _maybe_review_pause(phase, task_id)
     formatted = format_commit_message(message, root, phase=phase)
     cmd = ["git", "commit", "-m", formatted]
     result = subprocess.run(
@@ -5142,7 +5237,10 @@ def _commit_phase(
     root: Path,
     no_verify: bool = False,
     phase: str | None = None,
+    *,
+    task_id: str | None = None,
 ) -> bool:
+    _maybe_review_pause(phase, task_id)
     staged = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=root, env=_git_env()
     )
@@ -6602,6 +6700,14 @@ def run_command(
             "the queue drains."
         ),
     ),
+    review: bool = typer.Option(
+        False,
+        "--review",
+        help=(
+            "Pause before each RED/GREEN/REFACTOR/EXECUTE commit so a human "
+            "can review the dirty worktree. Requires a TTY. Off by default."
+        ),
+    ),
 ) -> None:
     """Use `deviate micro run --all` to drain the queue."""
     global _verbose, _cli_model_override
@@ -6665,6 +6771,11 @@ def run_command(
                     console.print("[yellow]No task resolved[/]")
         raise typer.Exit(code=0)
 
+    if review and (json_mode or not _review_stdin_usable()):
+        console.print("[red]REVIEW_REQUIRES_TTY[/]")
+        raise typer.Exit(code=1)
+    _set_review_context(enabled=review, json_mode=json_mode, task_id=task_id or "")
+
     skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
     run_logger = RunLogger(root)
     _log_run(
@@ -6697,3 +6808,4 @@ def run_command(
     finally:
         run_logger.close()
         set_run_logger(None)
+        _set_review_context(enabled=False, json_mode=False)
