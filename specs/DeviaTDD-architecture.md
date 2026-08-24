@@ -242,8 +242,8 @@ phase (`deviate judge pre`) performs compliance verification by comparing change
 against protected modules declared in `spec.md` `Module:` declarations.
 
 Manual phase execution is supported via individual `pre`/`post` subcommands:
-`deviate red pre/post`, `deviate green pre/post`, etc. These are used for interactive
-or agent-driven TDD where full automation is not desired.
+`deviate red pre/post`, `deviate green pre/post`, `deviate judge pre/post`, etc. These are used for interactive
+or agent-driven TDD where full automation is not desired. `deviate judge post [<manifest>]` reads the JUDGE handover and applies the same rollback / `tasks.md` feedback / session-ledger updates as `_run_judge_phase` (`_apply_judge_verdict`); auto `micro run` does not shell out to the new CLI.
 
 All `pre` subcommands accept `--json` (emit the phase contract as JSON to stdout) and
 `--quiet` (suppress rich console diagnostic output). These flags enable programmatic

@@ -2966,9 +2966,6 @@ def _run_judge_phase(
         red_baseline=red_baseline,
     )
 
-    suite_still_red = _is_green_test_failure(session)
-    suite_test_dump = session.train_feedback if suite_still_red else ""
-
     prompt = _build_auto_prompt("judge", task, root)
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
     if session.train_feedback:
@@ -3032,6 +3029,41 @@ def _run_judge_phase(
         raise PhaseFailedError(
             f"JUDGE phase agent error for {tid}: agent returned no manifest"
         )
+    return _apply_judge_verdict(
+        task,
+        ledger_path,
+        session,
+        session_path,
+        c,
+        manifest,
+        injected_diff=diff,
+        declared_paths=declared_paths,
+        red_baseline=red_baseline,
+    )
+
+
+def _apply_judge_verdict(
+    task: dict,
+    ledger_path: Path,
+    session: SessionState,
+    session_path: Path,
+    c: Console,
+    manifest: HandoverManifest,
+    injected_diff: str,
+    declared_paths: Sequence[str] | None = None,
+    red_baseline: list[str] | None = None,
+) -> SessionState:
+    """Apply JUDGE handover side effects shared by auto and ``judge post``.
+
+    Coerces ``next_action``, rewrites unmatched TDD PASS, remaps GREEN
+    TEST_FAILURE, then rolls back / persists feedback / updates session
+    the same way auto ``_run_judge_phase`` always has. Does not invoke
+    an agent and is not reached by shelling out from ``micro run``.
+    """
+    tid = task.get("id", "?")
+    root = Path.cwd()
+    suite_still_red = _is_green_test_failure(session)
+    suite_test_dump = session.train_feedback if suite_still_red else ""
     verdict = getattr(manifest, "verdict", "")
     action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
     action = _rewrite_unmatched_tdd_pass(
@@ -3039,7 +3071,7 @@ def _run_judge_phase(
         task=task,
         manifest=manifest,
         action=action,
-        injected_diff=diff,
+        injected_diff=injected_diff,
         declared_paths=declared_paths,
     )
     session.last_judge_verdict = getattr(manifest, "verdict", "").upper()
@@ -5977,6 +6009,91 @@ def judge_pre() -> None:
         "details": violations,
     }
     print(json.dumps(verdict, ensure_ascii=False))
+    raise typer.Exit(code=0)
+
+
+def _read_judge_handover(manifest_path: str | None) -> str:
+    """Return JUDGE handover YAML from a path or stdin."""
+    if manifest_path:
+        path = Path(manifest_path)
+        if not path.exists():
+            console.print(f"[red]MANIFEST_NOT_FOUND[/] {manifest_path}")
+            raise typer.Exit(code=1)
+        return path.read_text(encoding="utf-8")
+    if sys.stdin.isatty():
+        console.print(
+            "[red]MANIFEST_MISSING[/] provide a YAML path or pipe the handover on stdin"
+        )
+        raise typer.Exit(code=1)
+    return sys.stdin.read()
+
+
+def _resolve_judge_post_task(
+    root: Path, manifest: HandoverManifest, session: SessionState
+) -> tuple[dict, Path]:
+    """Resolve the task ledger row for ``deviate judge post``."""
+    tid = (manifest.task_id or "").strip()
+    if tid:
+        result = _find_task_record(root, tid)
+        if result is not None:
+            return result
+        console.print(f"[red]TASK_NOT_FOUND[/] {tid}")
+        raise typer.Exit(code=1)
+    issue_id = session.active_issue_id or ""
+    result = _resolve_latest_task(root, issue_id, "GREEN")
+    if result is None:
+        result = _resolve_latest_task(root, issue_id, "JUDGE")
+    if result is None:
+        console.print("[red]TASK_NOT_FOUND[/] no GREEN/JUDGE task for judge post")
+        raise typer.Exit(code=1)
+    return result
+
+
+@judge_app.command(name="post")
+def judge_post(
+    manifest: str | None = typer.Argument(
+        None, help="Path to JUDGE handover YAML (stdin when omitted)"
+    ),
+) -> None:
+    """Apply JUDGE verdict side effects: revert, tasks.md feedback, commit."""
+    root = Path.cwd()
+    yaml_text = _read_judge_handover(manifest)
+    try:
+        handover = AgentBackend.parse_output(yaml_text, "cli")
+    except (MalformedHandoverManifestError, EmptyOutputError) as exc:
+        console.print(f"[red]MANIFEST_INVALID[/] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    session_path = root / ".deviate" / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    task, ledger_path = _resolve_judge_post_task(root, handover, session)
+    injected_diff = _assemble_judge_injected_diff(
+        root,
+        red_commit_sha=session.red_commit_sha,
+        red_baseline=None,
+    )
+    try:
+        session = _apply_judge_verdict(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            console,
+            handover,
+            injected_diff=injected_diff,
+        )
+    except PhaseFailedError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+
+    route = session.pending_judge_action
+    if not route and _is_green_test_failure(session):
+        route = "remap_to_train"
+    if not route:
+        route = "pass"
+    console.print(f"[green]JUDGE_POST_OK[/] route={route}")
     raise typer.Exit(code=0)
 
 
