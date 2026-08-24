@@ -389,6 +389,39 @@ class TestMergePromptPushGate:
         )
 
 
+class TestMergePromptBaseBranch:
+    """GH-93: /deviate-merge squash-merges onto configured base_branch,
+    not a hardcoded ``main``. Operational checkout / log / diff / refuse
+    instructions must use the ``{base_branch}`` contract token.
+    """
+
+    @staticmethod
+    def _read_prompt() -> str:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-merge.md"
+        ).read_text(encoding="utf-8")
+
+    def test_merge_prompt_targets_configured_base_branch(self):
+        prompt = self._read_prompt()
+        assert "git checkout {base_branch}" in prompt
+        assert "git log {base_branch}.." in prompt
+        assert "git diff {base_branch}..." in prompt
+        assert "git checkout main" not in prompt
+        assert "git log main.." not in prompt
+        assert "git diff main..." not in prompt
+
+    def test_merge_prompt_resolves_base_branch_from_pre_contract(self):
+        prompt = self._read_prompt()
+        assert "deviate merge pre" in prompt
+        assert "base_branch" in prompt
+        assert "if not `{base_branch}`" in prompt or "if not {base_branch}" in prompt
+
+
 class TestReviewPromptSecurityTaxonomy:
     """The review prompt's cross-task Security section must align with the
     OWASP/NIST/LLM taxonomy so aggregation findings cite the same baseline as

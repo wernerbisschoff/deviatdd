@@ -152,26 +152,27 @@ to build codebase comprehension and surface hidden trade-offs.
   worktree branch. The `pre` subcommand validates PR metadata; the `run` subcommand executes
   `gh pr create` and optionally merges upon completion. PR titles are generated in
   conventional-commit format for squash-merge compatibility.
-* **Merge (`deviate merge` + `/deviate-merge` skill):** Final meso-layer gate that performs
-  the squash-merge into `main` and writes a full Pydantic-validated `IssueRecord` (not a
-  bare transition). The CLI is intentionally two-phase: `--stage-only` writes the COMPLETED
+* **Merge (`deviate merge` / `deviate merge pre` + `/deviate-merge` skill):** Final meso-layer gate that performs
+  the squash-merge into the configured `base_branch` (from `resolve_base_branch` / `.deviate/config.toml`; default `main`) and writes a full Pydantic-validated `IssueRecord` (not a
+  bare transition). `deviate merge pre` emits a JSON contract with `base_branch` so the skill
+  does not hardcode `main`. The CLI run path is intentionally two-phase: `--stage-only` writes the COMPLETED
   transition to `specs/issues.jsonl` and stages it; `-m <subject> -m <body>` then commits
   the feature changes + ledger in a single atomic commit. The transition write is idempotent
   so re-running `--stage-only` before `--message` is safe. `--delete-branch` owns the full
 
-  * **Push gate + opt-in push (v2.4.0):** after the squash-merge commit lands on `main`,
+  * **Push gate + opt-in push (v2.4.0):** after the squash-merge commit lands on `{base_branch}`,
     the `/deviate-merge` skill runs an inline copy of `.githooks/pre-push` (lint + format-check
     + testmon-driven affected tests, with the warm-cache / full-suite fallback) as a
     `push_gate` step, then asks the operator whether to `git push` (which fires the real
     `pre-push` hook and re-runs the gate) or stop and push manually. The gate body must stay
     byte-equivalent to `.githooks/pre-push` — divergence is pinned by
     `tests/test_meso/test_auto_prompt_templates.py::TestMergePromptPushGate::test_hook_and_prompt_agree_on_gate_body`.
-    The squash-merge commit and the ledger transition inside it are durable on `main`
+    The squash-merge commit and the ledger transition inside it are durable on `{base_branch}`
     regardless of the push outcome; only the network push is opt-in.
 
   post-merge lifecycle in a single call: tags the pre-squash branch tip with
   `archive/{ISSUE_ID}/{YYYY-MM-DD}` (preserving the per-commit graph that
-  `git merge --squash` collapses into a single main commit), pushes the tag to `origin`,
+  `git merge --squash` collapses into a single squash commit), pushes the tag to `origin`,
   `git push origin --delete <branch>`-es the remote, removes any active worktree that holds
   the branch, and runs `git branch -D`. Tag push and remote branch delete are best-effort:
   no `origin` → silent skip; unreachable remote → `PUSH_WARN` and local cleanup proceeds,
