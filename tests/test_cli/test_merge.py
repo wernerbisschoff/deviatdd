@@ -14,6 +14,7 @@ merge:
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from contextlib import chdir
@@ -1071,3 +1072,38 @@ def test_merge_repeat_call_is_idempotent_on_flow_ledger(
     # Exactly one confirmation event — the second call deduped.
     assert len(confirmations) == 1
     assert confirmations[0]["flow_id"] == "FLOW-01"
+
+
+# ---------------------------------------------------------------------------
+# GH-93: merge pre-contract emits configured base_branch
+# ---------------------------------------------------------------------------
+
+
+def _extract_json_contract(output: str) -> dict:
+    start = output.index("{")
+    end = output.rindex("}") + 1
+    return json.loads(output[start:end])
+
+
+def test_merge_pre_emits_default_base_branch(tmp_path: Path) -> None:
+    """Unset config keeps the merge target at ``main``."""
+    runner = CliRunner()
+    with chdir(tmp_path):
+        result = runner.invoke(cli, ["merge", "pre"])
+    assert result.exit_code == 0, result.output
+    contract = _extract_json_contract(result.output)
+    assert contract["base_branch"] == "main"
+
+
+def test_merge_pre_emits_configured_base_branch(tmp_path: Path) -> None:
+    """Custom ``base_branch`` from ``.deviate/config.toml`` is the merge target."""
+    (tmp_path / ".deviate").mkdir(parents=True)
+    (tmp_path / ".deviate" / "config.toml").write_text(
+        'base_branch = "wb-dev"\n', encoding="utf-8"
+    )
+    runner = CliRunner()
+    with chdir(tmp_path):
+        result = runner.invoke(cli, ["merge", "pre"])
+    assert result.exit_code == 0, result.output
+    contract = _extract_json_contract(result.output)
+    assert contract["base_branch"] == "wb-dev"

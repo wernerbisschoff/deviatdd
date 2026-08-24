@@ -1,8 +1,8 @@
 ---
 name: deviate-merge
-description: Squash-merge a feature branch into main with a conventional-commit message, then update the ledger with a full IssueRecord.
+description: Squash-merge a feature branch into the configured base branch with a conventional-commit message, then update the ledger with a full IssueRecord.
 category: deviatdd-meso-layer
-version: 2.4.0
+version: 2.5.0
 aliases:
   - merge
   - /deviate-merge
@@ -11,10 +11,10 @@ aliases:
 
 <system_instructions>
 
-This is the final gate in the DeviaTDD meso workflow. It performs a **squash merge** of a completed feature branch into `main`, generates a conventional-commit message synthesised from the branch's full commit history, and writes a **full IssueRecord** (not a bare transition) — with the ledger update folded into the same commit as the feature code.
+This is the final gate in the DeviaTDD meso workflow. It performs a **squash merge** of a completed feature branch into `{base_branch}` (from `deviate merge pre` / `.deviate/config.toml` `base_branch`; default `main` when unset), generates a conventional-commit message synthesised from the branch's full commit history, and writes a **full IssueRecord** (not a bare transition) — with the ledger update folded into the same commit as the feature code.
 
 Key invariant — single commit, end-to-end:
-1. **Does the git merge**: squash-merge the feature branch into main
+1. **Does the git merge**: squash-merge the feature branch into `{base_branch}`
 2. **Generates the commit message**: synthesised from branch history, following DeviaTDD conventional-commit format
 3. **Stages the ledger entry**: calls ``deviate merge --stage-only`` to write a full Pydantic-validated IssueRecord
 4. **Single commit**: ``git commit`` bundles both the feature changes and the ledger update
@@ -28,19 +28,21 @@ The ledger is never written by hand — it always goes through the CLI (``deviat
 
 Validate preconditions:
 
+0. **Resolve `{base_branch}`**: run `deviate merge pre` and parse `base_branch` from the JSON contract. That value comes from `resolve_base_branch` / `.deviate/config.toml` `base_branch` and defaults to `main` when unset. Use it as the squash target for every checkout, log, diff, and integration-branch check below.
+
 1. **Detached HEAD check**: `git branch --show-current` — if empty, halt with `Failure_State: Detached_HEAD`
 2. **Clean working tree**: `git status --porcelain` — if non-empty, halt with `Failure_State: Working_Tree_Not_Clean`
 
 3. **Resolve the feature branch** (first-match wins):
    - From `<user_input>` if explicitly provided (branch name or fragment)
    - From the session's `active_issue_id` → branch pattern `feat/{bucket}/{slug}`
-   - From the current branch (if not `main`)
+   - From the current branch (if not `{base_branch}`)
 
 4. **Resolve the issue ID** (first-match wins):
    - From `--issue` argument in `<user_input>` (e.g. `--issue 002-001`)
    - From the session's `active_issue_id` (read via `deviate session` or `.deviate/session.json`)
 
-5. **Branch resolution check**: If the resolved feature branch is empty or still points to `main`, halt with `Failure_State: No_Feature_Branch_Specified`
+5. **Branch resolution check**: If the resolved feature branch is empty or still points to `{base_branch}`, halt with `Failure_State: No_Feature_Branch_Specified`
 
 </step>
 
@@ -49,10 +51,10 @@ Validate preconditions:
 Capture the full change context from the feature branch:
 
 ```bash
-git log main..{FEATURE_BRANCH} --oneline --no-decorate
-git log main..{FEATURE_BRANCH} --format="%H|%s|%an" --no-decorate
-git diff main...{FEATURE_BRANCH} --stat
-git diff main...{FEATURE_BRANCH} --diff-filter=AM --name-only
+git log {base_branch}..{FEATURE_BRANCH} --oneline --no-decorate
+git log {base_branch}..{FEATURE_BRANCH} --format="%H|%s|%an" --no-decorate
+git diff {base_branch}...{FEATURE_BRANCH} --stat
+git diff {base_branch}...{FEATURE_BRANCH} --diff-filter=AM --name-only
 ```
 
 Analyse:
@@ -124,7 +126,7 @@ Present the full merge plan to the user:
 
 ```
 Feature branch: {FEATURE_BRANCH}
-Base:           main
+Base:           {base_branch}
 Commits:        {N} commits
 Files changed:  {N} files, {N}+ / {N}-
 
@@ -142,9 +144,9 @@ If the user chooses **Edit commit message**, collect the revised message and re-
 
 <step id="execution">
 
-1. **Switch to main**:
+1. **Switch to `{base_branch}`**:
    ```bash
-   git checkout main
+   git checkout {base_branch}
    git pull --ff-only
    ```
 
@@ -288,9 +290,9 @@ If the user chooses **Edit commit message**, collect the revised message and re-
 
    - `GIT_DIR` unset + trap is a no-op for non-hook subprocesses but is
      preserved verbatim so the byte-equivalence claim holds.
-   - On a freshly-squashed `main`, `@{u}` typically does not exist yet
+   - On a freshly-squashed `{base_branch}`, `@{u}` typically does not exist yet
      (the user has not pushed since the squash), so the script falls through
-     to `HEAD~1` — exactly the prior tip of `main`. That is the correct
+     to `HEAD~1` — exactly the prior tip of `{base_branch}`. That is the correct
      base: the diff captures everything the squash introduced.
    - After the operator pushes and the real `pre-push` hook fires on a
      future merge, `@{u}` will resolve and the hook will switch to the
@@ -300,7 +302,7 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    On non-zero exit from any of the three commands (`ruff check`,
    `ruff format --check`, `mise run test[-affected]`) halt with
    `Failure_State: Push_Gate_Failed` and the tool's stderr verbatim — the
-   squash-merge commit has already landed on `main`, so the user will need to
+   squash-merge commit has already landed on `{base_branch}`, so the user will need to
    either fix the gate failure (`git reset --soft HEAD~1` to recover the
    staged changes, fix, recommit) or proceed past it manually. Do NOT amend
    or auto-fix the commit; the operator decides.
@@ -319,7 +321,7 @@ If the user chooses **Edit commit message**, collect the revised message and re-
      and a one-line next-step hint ("Run `git push` from the repo root when
      ready. The pre-push hook will re-run the gate.").
 
-   In either case, the squash-merge commit is already on `main` — the ledger
+   In either case, the squash-merge commit is already on `{base_branch}` — the ledger
    transition inside it is durable regardless of the push outcome.
 
 
@@ -342,7 +344,7 @@ deviate merge --issue {ISSUE_ID} --delete-branch [--delete-worktree]
 1. **Archive tag** — creates ``archive/{ISSUE_ID}/{YYYY-MM-DD}`` pointing at
    the branch tip (UTC date). The pre-squash commit history is preserved on
    the tag because ``git merge --squash`` collapses every feature commit into
-   one main commit; the tag is the only way back to the per-commit graph.
+   one squash commit; the tag is the only way back to the per-commit graph.
    Prints ``ARCHIVE_TAG`` on success, ``ARCHIVE_TAG_SKIP`` if the branch is
    already gone.
 2. **Tag push (best-effort)** — ``git push origin <tag>``. Skipped silently
@@ -382,12 +384,12 @@ operations succeeded).
 |-------|--------|
 | Detached HEAD | Fail with `Failure_State: Detached_HEAD` |
 | Dirty working tree | Fail with `Failure_State: Working_Tree_Not_Clean` |
-| On main, no branch specified | Fail with `Failure_State: No_Feature_Branch_Specified` |
+| On `{base_branch}`, no branch specified | Fail with `Failure_State: No_Feature_Branch_Specified` |
 | Unstaged files after squash + ledger staging (`git diff --quiet` reports changes; staged tree empty via `git diff --cached --quiet`; untracked files via `git ls-files --others --exclude-standard`) | Fail with `Failure_State: Unstaged_Files_Post_Merge`, `Nothing_To_Stage`, or `Untracked_Files_Post_Merge` respectively. Dual-channel diagnostic: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` message body so the operator sees it regardless of how the framework renders failures. Do NOT silently `git add` or `--amend` — operator decides whether to investigate, drop, or commit strays |
 | Issue not found in ledger | Proceed with merge anyway (the branch may have been created outside DeviaTDD). Pass `deviate merge --issue {ISSUE_ID}` — it will fail cleanly with `ISSUE_NOT_FOUND` |
 | Issue already COMPLETED | The ledger step is idempotent — `deviate merge` exits cleanly with `ALREADY_COMPLETED` |
-| `git push` fails (diverged / rejected) | Halt with `Failure_State: Push_Failed`. The squash-merge commit and the ledger transition inside it are already on `main`; only the network push is blocked. Surface the raw `git push` stderr so the operator can resolve (pull --rebase + retry, force-with-lease, or leave the commit local). Do NOT amend the commit, do NOT retry automatically. |
-| User chooses **Stop — I'll push manually** | Halt with `Failure_State: Push_Deferred`. The squash-merge commit is already on `main`; only the network push is deferred. Operator runs `git push` later; the real `pre-push` hook fires at that point. |
+| `git push` fails (diverged / rejected) | Halt with `Failure_State: Push_Failed`. The squash-merge commit and the ledger transition inside it are already on `{base_branch}`; only the network push is blocked. Surface the raw `git push` stderr so the operator can resolve (pull --rebase + retry, force-with-lease, or leave the commit local). Do NOT amend the commit, do NOT retry automatically. |
+| User chooses **Stop — I'll push manually** | Halt with `Failure_State: Push_Deferred`. The squash-merge commit is already on `{base_branch}`; only the network push is deferred. Operator runs `git push` later; the real `pre-push` hook fires at that point. |
 | `push_gate` (inline `pre-push` mirror) fails | Halt with `Failure_State: Push_Gate_Failed`. The squash-merge commit has already landed. Operator decides whether to fix forward, `git reset --soft HEAD~1` and recommit, or push without the gate (`git push --no-verify`). |
 
 </edge_cases>
