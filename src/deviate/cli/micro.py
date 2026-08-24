@@ -2314,6 +2314,32 @@ def _maybe_advance_red_sha_past_feedback(
         session.red_commit_sha = fb_head
 
 
+def _resolve_judge_diff_base(root: Path, red_commit_sha: str) -> str:
+    """Walk docs-feedback SHAs back to the RED-phase failing-test commit.
+
+    ``session.red_commit_sha`` may point at a
+    ``docs(...): add judge feedback for retry`` commit so rollback and
+    GREEN entry keep a valid TRAIN boundary. The injected JUDGE diff
+    must still start at the real RED-phase commit (GH-88 / GH-90).
+    """
+    current = red_commit_sha.strip()
+    seen: set[str] = set()
+    while current and current not in seen:
+        seen.add(current)
+        subject = _git_commit_subject(root, current)
+        if not subject:
+            return red_commit_sha.strip()
+        if _PRE_RED_SHA_PARENT_RE.match(subject):
+            return current
+        if not _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+            return current
+        parent = _git_parent_sha(root, current)
+        if not parent:
+            break
+        current = parent
+    return red_commit_sha.strip()
+
+
 def _require_revert_to_red_boundary(session: SessionState, tid: str) -> str:
     """Return the RED SHA for ``revert_to_red``, or raise if it is missing."""
     sha = session.red_commit_sha.strip()
@@ -2775,13 +2801,17 @@ def _assemble_judge_injected_diff(
 
     RED's parent is the baseline so JUDGE sees failing tests (RED) and
     implementation (GREEN). Without that parent, ``git diff red_sha..HEAD``
-    collapses to GREEN only. No RED commit keeps the prior ``HEAD~1``
-    single-commit behavior. The RED-adjudication path uses an empty
-    committed diff; uncommitted tests surface in dirty hunks.
+    collapses to GREEN only. When ``red_commit_sha`` is a docs-feedback
+    TRAIN commit, the base walks back to the real RED-phase commit
+    (``_resolve_judge_diff_base``) so the RED test stays in range.
+    No RED commit keeps the prior ``HEAD~1`` single-commit behavior.
+    The RED-adjudication path uses an empty committed diff; uncommitted
+    tests surface in dirty hunks.
     """
     if red_commit_sha:
+        diff_base = _resolve_judge_diff_base(root, red_commit_sha)
         committed_diff = subprocess.run(
-            ["git", "diff", f"{red_commit_sha}^..HEAD"],
+            ["git", "diff", f"{diff_base}^..HEAD"],
             cwd=root,
             capture_output=True,
             text=True,

@@ -2616,6 +2616,126 @@ def _run_already_satisfied_cycle(
     return _ledger_statuses(ledger_path), call_log, buf.getvalue(), ledger_path
 
 
+def _append_docs_feedback_commits(repo: Path, count: int = 2) -> str:
+    """Stack ``docs(...): add judge feedback for retry`` commits on HEAD."""
+    tasks_rel = f"specs/adhoc/{_GATE_SLUG}/tasks.md"
+    tasks_md = repo / tasks_rel
+    sha = ""
+    for index in range(count):
+        tasks_md.write_text(
+            tasks_md.read_text(encoding="utf-8")
+            + f"  - **Judge Feedback**: retry {index + 1}\n",
+            encoding="utf-8",
+        )
+        sha = _gate_commit(
+            repo,
+            f"docs({_GATE_TASK_ID}): add judge feedback for retry",
+            tasks_rel,
+        )
+    return sha
+
+
+def _seed_train_feedback_on_red(
+    repo: Path, *, feedback_count: int = 2, recommit_green: bool = True
+) -> tuple[str, str]:
+    """TRAIN topology: discard GREEN, stack docs-feedback on RED, retry GREEN."""
+    red_sha = _seed_red_green(repo)
+    _gate_git(repo, "reset", "--hard", red_sha)
+    fb_sha = _append_docs_feedback_commits(repo, count=feedback_count)
+    if recommit_green:
+        _write_gate_file(repo, _GATE_IMPL_PATH, _GATE_IMPL_BODY)
+        _gate_commit(
+            repo,
+            f"feat({_GATE_TASK_ID}): GREEN phase - implementation",
+            _GATE_IMPL_PATH,
+        )
+    return red_sha, fb_sha
+
+
+class TestJudgeDiffBaseWalksPastFeedback:
+    """GH-88 / GH-90: docs-feedback ``red_commit_sha`` must not hide the RED test.
+
+    ``_maybe_advance_red_sha_past_feedback`` keeps the feedback commit as the
+    GREEN-entry / ``revert_to_red`` boundary. The injected JUDGE diff must
+    still start at the real RED-phase failing-test commit.
+    """
+
+    def test_injected_diff_keeps_red_test_when_red_sha_is_feedback(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _assemble_judge_injected_diff
+
+        red_sha, fb_sha = _seed_train_feedback_on_red(tmp_git_repo)
+        assert fb_sha != red_sha
+
+        raw_feedback_range = _gate_git(tmp_git_repo, "diff", f"{fb_sha}^..HEAD").stdout
+        assert _GATE_TEST_PATH not in raw_feedback_range, (
+            "Precondition: docs-feedback^..HEAD must omit the RED test file"
+        )
+
+        injected = _assemble_judge_injected_diff(
+            tmp_git_repo,
+            red_commit_sha=fb_sha,
+            red_baseline=None,
+        )
+        assert _GATE_TEST_PATH in injected, (
+            "GH-88/GH-90: injected JUDGE diff must still include the RED "
+            f"test file {_GATE_TEST_PATH} when session.red_commit_sha is "
+            "a docs-feedback commit"
+        )
+        assert _GATE_IMPL_PATH in injected, (
+            "injected JUDGE diff must still include the GREEN implementation"
+        )
+
+    def test_evidence_gate_does_not_false_reject_feedback_red_sha(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _, fb_sha = _seed_train_feedback_on_red(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="continue_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            fb_sha,
+        )
+        assert "test_path is not in the injected diff" not in session.train_feedback, (
+            "GH-88/GH-90: evidence gate must not false-reject because the "
+            f"RED test dropped out of a docs-only range; "
+            f"feedback={session.train_feedback!r}"
+        )
+        assert "missing, empty, or partial" not in session.train_feedback, (
+            "GH-88/GH-90: evidence gate must not report missing AC tokens "
+            f"solely because the RED test is absent from a docs-only range; "
+            f"feedback={session.train_feedback!r}"
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="continue_refactor",
+            completed=False,
+        )
+
+    def test_green_entry_and_advance_keep_feedback_boundary(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import (
+            _maybe_advance_red_sha_past_feedback,
+            _require_green_entry_red_sha,
+        )
+
+        red_sha, fb_sha = _seed_train_feedback_on_red(
+            tmp_git_repo, feedback_count=1, recommit_green=False
+        )
+        session = SessionState(current_phase="GREEN", red_commit_sha=red_sha)
+        _maybe_advance_red_sha_past_feedback(session, tmp_git_repo, red_sha, fb_sha)
+        assert session.red_commit_sha == fb_sha, (
+            "rollback / TRAIN must still advance red_commit_sha onto the "
+            "docs-feedback commit"
+        )
+        _require_green_entry_red_sha(tmp_git_repo, session, _GATE_TASK_ID)
+
+
 class TestTddJudgeEvidenceGate:
     """TSK-020-03 / TSK-028-02: TDD gate is task-scoped (AC-PLAN-001..004).
 
