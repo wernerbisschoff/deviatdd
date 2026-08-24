@@ -218,7 +218,7 @@ Format:
 
 
 ## Opportunities
-- [OPPORTUNITY|Low Confidence] Extract the duplicated validation block (src/mod.py:50-65 and src/mod.py:80-95) into a shared helper
+- [OPPORTUNITY|Low Confidence] Unused extra wrapper in src/mod.py:50-65 — delete later if still unused
 
 ## Compliance Matrix
 | Domain | Status | Notes |
@@ -275,7 +275,7 @@ Each item is tagged with category, severity, and confidence:
 - `[SUGGESTION|Med]` **src/mod.py:2** — remove unused import `os`
 
 ### Opportunities
-- `[OPPORTUNITY|Low]` **src/mod.py:50-65** — extract duplicated validation block
+- `[OPPORTUNITY|Low]` **src/mod.py:50-65** — unused extra wrapper; delete later if still unused
 
 If all seven domains are CLEAN with no findings:
 ```

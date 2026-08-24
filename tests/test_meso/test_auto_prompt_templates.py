@@ -427,6 +427,54 @@ class TestReviewPromptSecurityTaxonomy:
         )
 
 
+class TestSmallestChangeFoldedIntoExistingPrompts:
+    """GH-92 (rescoped): Ponytail smallest-change lives in existing GREEN /
+    REFACTOR / review lines — no new Constraints or Minimality heading.
+    """
+
+    @staticmethod
+    def _read_review() -> str:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-review.md"
+        ).read_text(encoding="utf-8")
+
+    def test_green_prefers_reuse_and_named_files_only(self):
+        text = _read_template("green.md")
+        assert "Minimal Behavioral Implementation" in text
+        assert "stdlib" in text
+        assert "already-installed" in text
+        assert "no speculative features" in text
+        assert "did not name" in text
+        assert "## Constraints" not in text
+        assert "## Minimality" not in text
+
+    def test_refactor_is_in_place_clarity_not_helper_extraction(self):
+        text = _read_template("refactor.md")
+        assert "in place" in text
+        assert "unrequested helpers" in text
+        assert (
+            "decompose large logical blocks into focused single-purpose functions"
+            not in text
+        )
+        assert "Extract Function/Method" not in text
+        assert "## Constraints" not in text
+        assert "## Minimality" not in text
+
+    def test_review_keeps_overengineering_and_does_not_promote_helpers(self):
+        text = self._read_review()
+        assert "Cross-task over-engineering" in text
+        assert "into a shared helper" not in text
+        assert "Extract the duplicated validation block" not in text
+        assert "Skip every `[OPPORTUNITY]`" in text
+        assert "## Constraints" not in text
+        assert "## Minimality" not in text
+
+
 class TestVerificationBatchImmediateRouting:
     """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
 
