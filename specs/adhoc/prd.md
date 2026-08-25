@@ -493,3 +493,16 @@
   1. AC-ADHOC-030-01 / AO-030-01: `deviate setup` provisions a root `.gitignore` and/or `.deviate/.gitignore` entry that makes `.deviate/` untracked by default for consumers. `git check-ignore .deviate/` resolves after setup.
   2. AC-ADHOC-030-02 / AO-030-02: `setup --agent opencode` writes commands and skills only under the opencode directory; `setup` with no `--agent` installs only to detected installed agents. Unknown or uninstalled agent names fail closed.
   3. AC-ADHOC-030-03 / AO-030-03: The `config.toml` surface is Graphite-free with a single consolidated timeout; `DeviateConfig` rejects a stale `graphite` key via `extra="forbid"`. `[models]` routing order (phase key → `default` → backend-native) is unchanged. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-031: Micro Judge already-exists COMPLIANCE_PASS must complete instead of hard-crashing with ROLLBACK_BOUNDARY_MISSING
+
+- **Description**: On the RED `no_failing_test` already-exists path, the runner routes a judge `COMPLIANCE_PASS` to a graceful COMPLETE route instead of `revert_to_red`, so it never raises `ROLLBACK_BOUNDARY_MISSING` and keeps the task's regression-pin tests.
+- **Preconditions**: Python 3.13. `src/deviate/cli/micro.py::_apply_judge_verdict` calls `_require_revert_to_red_boundary`, which raises `ROLLBACK_BOUNDARY_MISSING` when `session.red_commit_sha` is empty. `_rewrite_unmatched_tdd_pass` rewrites a `no_failing_test` `COMPLIANCE_PASS` to `revert_to_red` on incomplete evidence. Observed on `TSK-029-02` (ISS-ADH-029), DeviaTDD v2.22.1.
+- **Inputs/Outputs**: Input — `SessionState` with `failure_kind == "no_failing_test"`, `red_commit_sha == ""`, judge verdict `COMPLIANCE_PASS` (`next_action` null or `skip_refactor`). Output — task COMPLETES via `skip_refactor`; declared regression-pin test files stay on disk; no `ROLLBACK_BOUNDARY_MISSING` traceback.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-031-01: As a DeviaTDD operator, I want a judge `COMPLIANCE_PASS` on the already-exists path to complete the task and keep its regression-pin tests, so `deviate micro run` never hard-crashes with `ROLLBACK_BOUNDARY_MISSING`. *(Ref: FR-ADHOC-031)*
+  2. US-031-02: As a DeviaTDD operator, I want a real `no_failing_test` violation (wrong test) to still route to `revert_before` for RED re-author, so the fail-closed contract stays intact. *(Ref: FR-ADHOC-031)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-031-01 / AO-031-01: On `failure_kind == "no_failing_test"` with judge verdict `COMPLIANCE_PASS`, the runner completes the task through `_NO_FAILING_TEST_FORWARD_ROUTES` and keeps declared regression-pin test files on disk. Missing regression `test_file` / `files` still fails closed. A genuine test-bearing RED with a failing test still routes to `revert_to_red`.
+  2. AC-ADHOC-031-02 / AO-031-02: A `no_failing_test` `COMPLIANCE_VIOLATION` still routes to `revert_before` so RED re-authors the test. The runner never raises `ROLLBACK_BOUNDARY_MISSING` on the already-exists pass path. `_require_revert_to_red_boundary` is only reached for a genuine `revert_to_red` with a real RED commit. API + architecture + CHANGELOG land in the same implementation commit.
