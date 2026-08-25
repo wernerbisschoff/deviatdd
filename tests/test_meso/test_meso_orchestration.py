@@ -22,6 +22,7 @@ from deviate.cli.meso import (
     _meso_discover_and_sequence,
     _meso_run,
 )
+from deviate.core.worktree import create_worktree
 from deviate.state.config import SessionState
 from deviate.state.ledger import IssueRecord, append_issue_transition
 
@@ -645,6 +646,56 @@ class TestDiscoverClaimableIssue:
                 result = _discover_claimable_issue(local=_effective_local(False))
             assert result == "ISS-001-001"
             mock_remote.assert_not_called()
+
+    def test_skips_issues_with_local_worktree(self, tmp_git_repo: Path) -> None:
+        """Skips a BACKLOG issue that already has a local claim worktree.
+
+        A ``deviate meso run`` / ``deviate specify`` continues to show the issue
+        as BACKLOG in the main checkout's ledger (the SPECIFIED row lives on the
+        feature branch), so auto-discover must skip it when ``feat/...`` already has
+        a local worktree — otherwise two parallel terminals re-claim the same issue."""
+        _setup_minimal_workspace(tmp_git_repo)
+
+        ledger = tmp_git_repo / "specs" / "issues.jsonl"
+        second = IssueRecord(
+            issue_id="ISS-001-002",
+            type="feature",
+            title="Second Unblocked",
+            status="BACKLOG",
+            source_file="specs/test-epic/issues/iss-002.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        append_issue_transition(second, ledger)
+        (tmp_git_repo / "specs" / "test-epic" / "issues" / "iss-002.md").write_text(
+            "# Test Issue\n\nFR-002: do another thing\n"
+        )
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "add second issue"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+        # A prior claim already registered a worktree for the first issue.
+        create_worktree(
+            branch="feat/test-epic/iss-001",
+            path=tmp_git_repo / ".worktrees" / "feat-test-epic-iss-001",
+            repo=tmp_git_repo,
+        )
+
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.meso.branch_exists_on_remote", return_value=False):
+                result = _discover_claimable_issue()
+            assert result == "ISS-001-002", (
+                "Expected ISS-001-002 (skipping ISS-001-001 which has a local ",
+                f"claim worktree), got {result}",
+            )
 
 
 class TestMesoRunStdoutSuppression:

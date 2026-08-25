@@ -436,7 +436,10 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
   claims that specific issue. With **no argument**, auto-discovers the next claimable
   BACKLOG issue via `_discover_claimable_issue()` (the same discovery `deviate meso run`
   uses) and claims it. Default discovery skips issues whose `feat/{epic}/{issue}` branch
-  already exists on remote (treated as claimed elsewhere). Local mode does not skip those
+  already exists on remote (treated as claimed elsewhere). In any mode it also skips
+  issues whose `feat/{epic}/{issue}` branch already has a local worktree (treated as claimed
+  here) — that local-worktree guard is what lets two parallel terminals claim two different
+  BACKLOG issues without re-claiming the same one. Local mode does not skip those
   origin branches. Stops after the worktree is created and the claim is committed — does
   NOT advance session state and does NOT run plan or tasks. To continue, run
   ``deviate plan pre`` or invoke the ``/deviate-plan`` slash command inside the new
