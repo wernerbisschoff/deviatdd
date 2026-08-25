@@ -91,7 +91,12 @@ def _git_env() -> dict[str, str]:
 @pytest.fixture
 def tmp_git_repo(tmp_path: Path) -> Path:
     """Provide an isolated git repo for tests (git config user.name is Test Runner)."""
-    subprocess.run(["git", "init"], cwd=tmp_path, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "init", "--initial-branch", "main"],
+        cwd=tmp_path,
+        env=_git_env(),
+        check=True,
+    )
     subprocess.run(
         ["git", "config", "user.email", "runner@test.local"],
         cwd=tmp_path,
