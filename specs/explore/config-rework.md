@@ -6,12 +6,16 @@ Slug: `config-rework`
 
 ## Problem Definition
 
-[Statement]: Rework the DeviaTDD configuration system. The `.deviate/` directory should be git-ignored by default. The `.dv8` path should be added to the root `.gitignore`. The obsolete Graphite configuration is no longer relevant and should be removed. The `config.toml` file should be streamlined and made more user-friendly. Two separate timeout settings currently exist and should be consolidated. The `setup --agent` behavior should install skills only for the specified agent; when no agent is supplied, the system should detect which agents are installed and install skills accordingly.
+[Statement]: Rework the DeviaTDD configuration system so it streamlines the CLI and its setup provisioning — not just this repository. The `deviate setup` command must git-ignore `.deviate/` by default for consumer projects (provision a root `.gitignore` and/or `.deviate/.gitignore` entry). The obsolete Graphite configuration is no longer relevant and should be removed. The `config.toml` file should be streamlined and made more user-friendly. Two separate timeout settings currently exist and should be consolidated. The `setup --agent` behavior should install skills only for the specified agent; when no agent is supplied, the system should detect which agents are installed and install accordingly. The `.deviate/` directory is the target of the git-ignore change (no `.dv8` artifact exists; the reference was a typo).
 
 [Scope]: In-scope structural components verified across the scan:
 - `.deviate/config.toml` — the persisted configuration profile with top-level keys (`profile`, `timeout_seconds`, `agent_export_mode`, `graphite`, `use_context`, `use_libref`), `[agent]` block, and `[models]` block.
-- `deviate setup` command — the `--agent` flag handling and the install-to-all-agents dispatch.
-- `.gitignore` / `.deviate/.gitignore` — current ignore rules and tracked `.deviate/` files.
+- CLI provisioning in `src/deviate/cli/__init__.py`:
+  - `_scaffold_dotfiles` — writes governance seeds and the `[agent]` block.
+  - `_ensure_gitignore` — writes `.deviate/.gitignore` entries (does not ignore `.deviate/` itself).
+  - `_ensure_root_gitignore` — writes root `.gitignore` entries (does not ignore `.deviate/`).
+  - `_ensure_root_gitattributes` and `DEVIATE_GITATTRIBUTES_SEED` — union-merge rules.
+- `deviate setup` command — the `--agent` flag handling, install-to-all-agents dispatch, and `setup` auto-detect gap.
 - `DeviateConfig` / `AgentConfig` models in `src/deviate/state/config.py`.
 - The two timeout fields: top-level `timeout_seconds` and `[agent] timeout`.
 
@@ -29,6 +33,7 @@ Slug: `config-rework`
 ### Ghost Dependencies
 - `gt` (Graphite CLI): Referenced in `AGENTS.md` line 96-98 as the branch/PR management CLI when `graphite = true`. Not declared in `pyproject.toml` and not referenced in `src/`. `CHANGELOG.md` records that Graphite CLI integration was removed from active code, prompts, and specs. This is a declarative finding only.
 - `droid` (Factory Droid IDE binary): Referenced in `src/deviate/core/agent.py` as the backend binary for the `factory`/`droid` agent. Not declared as an installation dependency (runtime-only, out of tree).
+- No `.dv8` artifact exists anywhere in the tree. The `.dv8` reference in the problem statement was a typo for `.deviate`.
 
 ### Manifest Files Observed
 - `.deviate/config.toml`: The DeviaTDD persisted configuration profile (TOML).
@@ -48,6 +53,7 @@ Slug: `config-rework`
 ### Manifest-Constitution Divergence
 - Constitution §2 Tooling states: "Task runner: `mise` (see `mise.toml` for all tasks)". The actual task-runner file in the repo is `mise.toml`. `AGENTS.md` and the `.mise.toml` reference in `AGENTS.md` header do not match this filename, but the constitution's quoted `mise.toml` matches the observed file. No adjudication.
 - Constitution §1 Model Tiering and the `AGENTS.md` Graphite workflow both reference `.deviate/config.toml` keys. `AGENTS.md` line 96 still documents a `graphite = true` workflow while `CHANGELOG.md` records Graphite removal from active code. Both quoted verbatim; no adjudication.
+- Constitution §2 Database states config and session state live under `.deviate/` without requiring the directory be committed. The `deviate setup` provisioning currently writes a `.deviate/.gitignore` and a root `.gitignore` but does not ignore `.deviate/` itself. Quoted verbatim; no adjudication.
 
 ## Constitution Quotes
 
@@ -68,9 +74,9 @@ Constitution excerpts quoted verbatim from `specs/constitution.md` (Version 0.9.
   _install_commands_to_agents(workdir, list(active_agents))
   _install_deviatdd_skill(workdir, list(active_agents))
   ```
-- **Infrastructure & Operations**: `.gitattributes` declares union-merge rules for append-only JSONL ledgers, provisioned by `deviate setup` via `_ensure_root_gitattributes`. `mise.toml` `[tasks.setup]` runs `uv sync --extra dev && git config core.hooksPath .githooks`.
-- **Data & State Management**: Configuration is a single TOML file parsed by `_load_deviate_config_toml` (`src/deviate/state/config.py`) into `DeviateConfig`. Session state and runtime logs live under `.deviate/` and are excluded by `.deviate/.gitignore`.
-- **Quality, Safety & Observability**: Tests use `typer.testing.CliRunner` invoking the `cli` group. The skill-installation test mocks `_get_agent_command_dir` to redirect agent directories into a temp path.
+- **Infrastructure & Operations**: `_ensure_root_gitignore` writes root `.gitignore` entries for commands, prompts, the `deviatdd` skill, and `.worktrees/`. `_ensure_gitignore` writes `.deviate/.gitignore` entries for `session.json` and runtime state. Neither ignores `.deviate/` itself. `.gitattributes` declares union-merge rules for append-only JSONL ledgers provisioned by `_ensure_root_gitattributes` / `DEVIATE_GITATTRIBUTES_SEED`.
+- **Data & State Management**: Configuration is a single TOML file parsed by `_load_deviate_config_toml` (`src/deviate/state/config.py`) into `DeviateConfig`. Session state and runtime logs live under `.deviate/` and are excluded by `.deviate/.gitignore`. In this repo, `.deviate/config.toml` and `.deviate/.gitignore` are currently tracked by git.
+- **Quality, Safety & Observability**: Tests use `typer.testing.CliRunner` invoking the `cli` group. The skill-installation test mocks `_get_agent_command_dir` to redirect agent directories into a temp path. `specs/DeviaTDD-api.md` documents `setup` provisioning behavior that must be kept spec-aligned.
 - **External Integrations**: The `droid`/`factory` backend maps to the Factory Droid IDE; `omp` is an independent backend. `AGENTS.md` still documents a Graphite (`gt`) integration that `CHANGELOG.md` records as removed from active code.
 
 ## Ecosystem Research
@@ -88,13 +94,14 @@ Constitution excerpts quoted verbatim from `specs/constitution.md` (Version 0.9.
 | Path (Strictly Relative to Repo Root) | Type | Purpose | Verbatim Snippet (≤10 lines) |
 | :--- | :--- | :--- | :--- |
 | `.deviate/config.toml` | Config | The persisted config profile; top-level keys, `[agent]`, `[models]`; the subject of the rework. | `profile = "default"` `timeout_seconds = 1800` `agent_export_mode = "local"` `graphite = false` `use_context = true` `use_libref = true` `[agent]` `backend = "pi"` `transport = "cli"` `pi_rpc = false` `timeout = 1800` |
-| `.deviate/.gitignore` | Config | Local ignore rules for `.deviate/` runtime state; `config.toml` is NOT ignored here. | `session.json` `artifacts/` `prompts.log` `reports/` `rollback.jsonl` `logs/` |
-| `.gitignore` | Config | Project-root ignore rules; `.deviate/` only partially ignored; `.dv8` absent. | `.deviate/session.json` `.deviate/artifacts/` `.deviate/logs/` `.deviate/review/` |
+| `.deviate/.gitignore` | Config | Local ignore rules for `.deviate/` runtime state; `config.toml` is NOT ignored here. Provisioned by `_ensure_gitignore`. | `session.json` `artifacts/` `prompts.log` `reports/` `rollback.jsonl` `logs/` |
+| `.gitignore` | Config | Project-root ignore rules provisioned by `_ensure_root_gitignore`; ignores four subpaths of `.deviate/`, not the whole directory. | `.deviate/session.json` `.deviate/artifacts/` `.deviate/logs/` `.deviate/review/` |
 | `.gitattributes` | Config | Union-merge rules for append-only JSONL ledgers. | `specs/issues.jsonl merge=union` `specs/**/tasks.jsonl merge=union` `specs/_product/flows.jsonl merge=union` |
 | `pyproject.toml` | Manifest | Package manifest declaring runtime dependencies and the `deviate` entry point. | `dependencies = [` `"typer>=0.12",` `"rich>=13.0",` `"pydantic>=2.0",` `"pyyaml>=6.0.3",` `]` |
 | `mise.toml` | Manifest | Task runner definition; `[tasks.setup]` installs deps and hooks. | `[tasks.setup]` `run = "uv sync --extra dev && git config core.hooksPath .githooks"` |
 | `src/deviate/cli/__init__.py` | Codebase_File | `deviate setup` dispatch; installs commands/skills to ALL active agents regardless of `--agent`. | `active_agents = ("claude", "opencode", "factory", "pi", "omp")` `_install_commands_to_agents(workdir, list(active_agents))` `_install_deviatdd_skill(workdir, list(active_agents))` |
-| `src/deviate/cli/__init__.py` | Codebase_File | `_ensure_gitignore` writes entries to `.deviate/.gitignore`. | `entries = [` `"session.json",` `"artifacts/",` `"reports/",` `"rollback.jsonl",` `"logs/",` `]` |
+| `src/deviate/cli/__init__.py` | Codebase_File | `_ensure_gitignore` writes entries to `.deviate/.gitignore`; does not ignore `.deviate/` itself. | `def _ensure_gitignore(workdir: Path) -> None:` `dot_dir = workdir / ".deviate"` `gitignore = dot_dir / ".gitignore"` `entries = [` `"session.json",` `"artifacts/",` `"reports/",` `"rollback.jsonl",` `"logs/",` `]` |
+| `src/deviate/cli/__init__.py` | Codebase_File | `_ensure_root_gitignore` writes root `.gitignore` entries; the touch point for ignore-by-default provisioning. | `entries = (` `"*/commands/deviate-*.md",` `"*/prompts/deviate-*.md",` `"*/skills/deviatdd/",` `".worktrees/",` `)` |
 | `src/deviate/cli/__init__.py` | Codebase_File | `_get_agent_command_dir` maps each agent to its slash-command directory. | `if agent_name in ("claude", "opencode", "factory"):` `return workdir / f".{agent_name}" / "commands"` `if agent_name == "pi":` `return workdir / ".pi" / "prompts"` `if agent_name == "omp":` `return workdir / ".omp" / "prompts"` |
 | `src/deviate/state/config.py` | Codebase_File | `DeviateConfig` model; top-level `timeout_seconds`; no `graphite` field; `extra = "forbid"`. | `profile: str = "default"` `timeout_seconds: int = Field(default=1800, gt=0)` `agent_export_mode: Literal["local", "global"] = "local"` `agent: AgentConfig = Field(default_factory=AgentConfig)` `models: dict[str, str] = Field(default_factory=dict)` `use_libref: bool = False` `base_branch: str = Field(default="main", min_length=1)` |
 | `src/deviate/state/config.py` | Codebase_File | `AgentConfig` model; `[agent] timeout` is the second timeout field. | `backend: Literal["opencode", "claude", "droid", "pi", "omp"] = "pi"` `timeout: int = Field(default=600, gt=0)` `pi_rpc: bool = Field(default=False, ...)` |
@@ -109,12 +116,12 @@ Constitution excerpts quoted verbatim from `specs/constitution.md` (Version 0.9.
 | Metric | Value |
 | :--- | :--- |
 | Estimated Complexity | High |
-| Files Likely Modified | 9+ — `.deviate/config.toml`, `.gitignore`, `.deviate/.gitignore`, `.gitattributes`, `src/deviate/cli/__init__.py`, `src/deviate/state/config.py`, `src/deviate/core/agent.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `AGENTS.md`, `CHANGELOG.md`, plus tests |
+| Files Likely Modified | 9+ — `src/deviate/cli/__init__.py`, `src/deviate/state/config.py`, `src/deviate/core/agent.py`, `.deviate/config.toml`, `.gitignore`, `.deviate/.gitignore`, `.gitattributes`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `AGENTS.md`, `CHANGELOG.md`, plus tests |
 | New Modules Required | Yes — agent auto-detection helper for `setup` when `--agent` is omitted |
-| New Persistence / Data Models | Yes — reworked `DeviateConfig` / timeout schema |
+| New Persistence / Data Models | Yes — reworked `DeviateConfig` / timeout schema, and the `.gitignore` provisioning entry for `.deviate/` |
 | New External Integrations | No |
-| Upstream / Cross-Cutting Concerns | Config schema changes affect model routing, agent dispatch, and all config consumers; `.deviate/` untracking affects currently tracked files; spec alignment (api + architecture) and `CHANGELOG.md` are mandatory |
-| Rationale | The rework touches 3+ source modules, the config data model, git ignore rules, and mandatory spec/CHANGELOG updates. The two-timeout consolidation and `.deviate` untracking are cross-cutting changes that ripple through config consumers and tracked-file state. |
+| Upstream / Cross-Cutting Concerns | The change is in the CLI provisioning layer, so it affects every consumer project `deviate setup` configures — not just this repo. Config schema changes affect model routing, agent dispatch, and all config consumers. Untracking `.deviate/` affects currently tracked files. Spec alignment (api + architecture) and `CHANGELOG.md` are mandatory. |
+| Rationale | The rework changes the CLI provisioning functions (`_ensure_root_gitignore` / `_ensure_gitignore` / `_scaffold_dotfiles`) to git-ignore `.deviate/` by default for consumers, reworks the config data model and the two timeout fields, and adds agent auto-detection. These are cross-cutting changes spanning 3+ source modules, required spec/CHANGELOG updates, and all consumer setups. |
 
 ## Status Summary
 
