@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: SemVer bump (auto from conventional commits, or explicit)
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+      dry_run:
+        description: Print the computed version and skip commit, tag, and publish
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Cut and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse non-default branch unless dry_run
+        if: ${{ github.ref_name != github.event.repository.default_branch && inputs.dry_run != true }}
+        run: |
+          echo "Refusing to release from '${GITHUB_REF_NAME}'."
+          echo "Default branch is '${{ github.event.repository.default_branch }}'."
+          echo "Re-run with dry_run=true to preview, or run from the default branch."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Compute next version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION="$(uv run --no-project python scripts/next_version.py --bump "${{ inputs.bump }}")"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Computed next version: ${VERSION}"
+
+      - name: Dry run complete
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "dry_run=true — skipping commit, tag, and publish for ${{ steps.version.outputs.version }}"
+
+      - name: Apply version bump
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          uv run --no-project python scripts/next_version.py --bump "${{ inputs.bump }}" --write
+
+      - name: Commit, tag, and push
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock
+          git commit -m "chore(release): version ${VERSION}"
+          git tag "v${VERSION}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "v${VERSION}"
+
+      - name: Publish to PyPI
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          uv build
+          uv publish --trusted-publishing always

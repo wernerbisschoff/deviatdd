@@ -258,10 +258,34 @@ do require the same traceability.
 
 ## Release process (for maintainers)
 
-1. Update `CHANGELOG.md` — move `[Unreleased]` bullets into a dated
-   `[X.Y.Z]` section.
-2. Bump `version` in `pyproject.toml`.
-3. `git tag -s vX.Y.Z -m "Release vX.Y.Z"` (signed tag).
-4. `git push origin main --follow-tags`.
-5. CI publishes to PyPI via trusted publishing once the workflow is
-   enabled.
+Leave `CHANGELOG.md` under `## [Unreleased]`. The Release workflow does
+not rewrite the changelog (tests pin bullets there).
+
+1. On PyPI, add a **pending trusted publisher** for project `deviatdd`
+   ([Publishing → Trusted publishers](https://pypi.org/manage/account/publishing/)):
+   - Owner / org: `wernerbisschoff`
+   - Repository: `deviatdd`
+   - Workflow: `release.yml`
+   - Environment: leave empty (this workflow does not use a GitHub
+     Environment)
+   The first successful `uv publish` from that workflow promotes the
+   pending publisher. No GitHub secret is required.
+2. On GitHub, open **Actions → Release → Run workflow** on the default
+   branch (`main`).
+   - `bump`: `auto` (default) computes the next SemVer from conventional
+     commits since the commit that set the current `pyproject.toml`
+     version (`feat` → minor, `fix` → patch, `BREAKING CHANGE` /
+     `feat!` / `fix!` → major). Only `chore` / `docs` / `test` / `ci` /
+     `style` / `refactor` still bumps patch so a manual cut always
+     produces a new version. Choose `patch` / `minor` / `major` to
+     force a level.
+   - `dry_run`: print the computed version and skip commit, tag, and
+     publish. Dry-run is allowed from a non-default branch; a real cut
+     is not.
+3. The job writes `version = "X.Y.Z"` in `pyproject.toml` and the
+   matching `name = "deviatdd"` version in `uv.lock`, commits
+   `chore(release): version X.Y.Z` on the ref the workflow ran on,
+   tags `vX.Y.Z`, pushes commit + tag, then runs `uv build` and
+   `uv publish --trusted-publishing always` (GitHub OIDC; no token).
+4. Local fallback (no bump, no tag): `mise run publish` still builds
+   and uploads using `PYPI_API_TOKEN` from `.env`.
