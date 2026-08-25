@@ -65,10 +65,12 @@ def branch_exists_on_remote(
 def resolve_start_point(base_branch: str, repo: Path | None = None) -> str:
     """Pick a git start-point for a new feature branch.
 
-    Prefer ``origin/<base>``, then local ``<base>``, then ``HEAD``.
+    Prefer local ``<base>`` (the operator's working trunk, which always
+    contains locally-authored issues) over ``origin/<base>`` (which may be
+    behind and miss unpushed issues), then ``HEAD``.
     """
     repo = repo or Path.cwd()
-    for candidate in (f"origin/{base_branch}", base_branch):
+    for candidate in (base_branch, f"origin/{base_branch}"):
         result = subprocess.run(
             ["git", "rev-parse", "--verify", "--quiet", candidate],
             cwd=repo,
