@@ -1638,23 +1638,29 @@ def _meso_discover_and_sequence() -> str | None:
     return issue.issue_id
 
 
+def _branch_for_candidate(candidate: IssueRecord) -> str:
+    return (
+        f"feat/{_resolve_bucket_dir(candidate.source_file)}"
+        f"/{_source_stem(candidate.source_file)}"
+    )
+
+
 def _origin_holds_claim_branch(
     candidate: IssueRecord, repo_root: Path, remote: str
 ) -> bool:
     """True when ``feat/{epic}/{issue}`` already exists on *remote*."""
-    branch = (
-        f"feat/{_resolve_bucket_dir(candidate.source_file)}"
-        f"/{_source_stem(candidate.source_file)}"
+    return branch_exists_on_remote(
+        _branch_for_candidate(candidate), repo=repo_root, remote=remote
     )
-    return branch_exists_on_remote(branch, repo=repo_root, remote=remote)
 
 
 def _discover_claimable_issue(local: bool = False) -> str | None:
     """Return the next unblocked BACKLOG issue this operator can claim.
 
-    Default mode skips candidates whose ``feat/{epic}/{issue}`` branch already
-    exists on origin (claimed elsewhere). Local mode skips that origin filter
-    so leftover personal branches stay claimable, and does not call
+    Skips candidates whose ``feat/{epic}/{issue}`` branch already has a local
+    worktree (claimed here) and, in default mode, whose branch already exists
+    on origin (claimed elsewhere). Local mode skips that origin filter so
+    leftover personal branches stay claimable, and does not call
     ``branch_exists_on_remote``.
 
     Returns the first claimable ``issue_id``, or ``None`` if none available.
@@ -1668,6 +1674,15 @@ def _discover_claimable_issue(local: bool = False) -> str | None:
     remote = None if local else _origin_remote(repo_root)
     for candidate in candidates:
         if _is_issue_completed(candidate.issue_id, ledger_path):
+            continue
+        if (
+            find_worktree_for_branch(_branch_for_candidate(candidate), repo=repo_root)
+            is not None
+        ):
+            console.print(
+                f"[yellow]SKIP[/] {candidate.issue_id} — "
+                f"local worktree already exists (claimed here)"
+            )
             continue
         if remote and _origin_holds_claim_branch(candidate, repo_root, remote):
             console.print(
