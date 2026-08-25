@@ -268,8 +268,25 @@ orchestration layer is broken:
 
 ### How to file a deviatdd issue
 
-When you identify a harness bug, file an issue in the deviatdd
-repository. The deviatdd repo is the current working directory
+When you identify a harness bug, check for an existing OPEN issue
+BEFORE creating a new one. Search the deviatdd repo's own issue
+tracker `wernerbisschoff/deviatdd` for a match on the same failure:
+
+```bash
+# Search open issues for the same harness failure:
+gh issue list --repo wernerbisschoff/deviatdd --state open --search "<short description>"
+```
+
+If an open issue already matches, do NOT create a duplicate. Comment
+the new evidence and task context on the existing issue instead:
+
+```bash
+# Comment the new evidence on the matching issue (use its number):
+gh issue comment <ISSUE_NUMBER> --repo wernerbisschoff/deviatdd --body "<evidence + task context>"
+```
+
+Only when no open issue matches do you create a new one. The deviatdd
+repo is the current working directory
 (`/Users/werner/Projects/tools/deviatdd`).
 
 ```bash
@@ -277,9 +294,9 @@ repository. The deviatdd repo is the current working directory
 TASK_LOG=".deviate/logs/$(ls -t .deviate/logs/*/*.log 2>/dev/null | head -1)"
 TASK_LOG_CONTENT=$(cat "$TASK_LOG" 2>/dev/null)
 
-# Create a GitHub issue for deviatdd:
+# Create a GitHub issue for deviatdd (only after the search above finds no match):
 gh issue create \
-  --repo werner/deviatdd \
+  --repo wernerbisschoff/deviatdd \
   --title "bug: <short description of the harness failure>" \
   --label bug \
   --body "## Description
@@ -304,7 +321,7 @@ gh issue create \
 If the log is very large, truncate to the relevant section and note
 that the full log is available at the path shown.
 
-After filing the issue, decide whether to:
+After filing (or commenting on) the issue, decide whether to:
 
 1. **Continue** — if the bug is isolated to one task, skip that task
    via the ledgers and proceed to the next.
