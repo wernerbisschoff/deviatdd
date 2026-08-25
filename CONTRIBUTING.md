@@ -261,10 +261,15 @@ do require the same traceability.
 Leave `CHANGELOG.md` under `## [Unreleased]`. The Release workflow does
 not rewrite the changelog (tests pin bullets there).
 
-1. Add `PYPI_API_TOKEN` under repository secrets (Settings → Secrets
-   and variables → Actions). Use a PyPI API token scoped to `deviatdd`.
-   The workflow file does not require the secret to exist; a missing
-   token fails only the publish step with `PYPI_API_TOKEN missing`.
+1. On PyPI, add a **pending trusted publisher** for project `deviatdd`
+   ([Publishing → Trusted publishers](https://pypi.org/manage/account/publishing/)):
+   - Owner / org: `wernerbisschoff`
+   - Repository: `deviatdd`
+   - Workflow: `release.yml`
+   - Environment: leave empty (this workflow does not use a GitHub
+     Environment)
+   The first successful `uv publish` from that workflow promotes the
+   pending publisher. No GitHub secret is required.
 2. On GitHub, open **Actions → Release → Run workflow** on the default
    branch (`main`).
    - `bump`: `auto` (default) computes the next SemVer from conventional
@@ -281,7 +286,6 @@ not rewrite the changelog (tests pin bullets there).
    matching `name = "deviatdd"` version in `uv.lock`, commits
    `chore(release): version X.Y.Z` on the ref the workflow ran on,
    tags `vX.Y.Z`, pushes commit + tag, then runs `uv build` and
-   `uv publish` with `UV_PUBLISH_TOKEN` from `PYPI_API_TOKEN`. The
-   token is never printed.
+   `uv publish --trusted-publishing always` (GitHub OIDC; no token).
 4. Local fallback (no bump, no tag): `mise run publish` still builds
    and uploads using `PYPI_API_TOKEN` from `.env`.

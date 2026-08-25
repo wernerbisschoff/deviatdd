@@ -209,12 +209,15 @@ class TestReleaseWorkflowContract:
         assert set(inputs["bump"]["options"]) == {"auto", "patch", "minor", "major"}
         assert inputs["dry_run"]["type"] == "boolean"
         assert inputs["dry_run"]["default"] is False
-        assert data["permissions"] == {"contents": "write"}
-        assert "id-token" not in text
+        assert data["permissions"] == {
+            "contents": "write",
+            "id-token": "write",
+        }
         assert "python-semantic-release" not in text
-        assert "PYPI_API_TOKEN missing" in text
-        assert "UV_PUBLISH_TOKEN" in text
-        assert "secrets.PYPI_API_TOKEN" in text
+        assert "PYPI_API_TOKEN" not in text
+        assert "UV_PUBLISH_TOKEN" not in text
+        assert "secrets." not in text
+        assert "--trusted-publishing always" in text
         assert "default_branch" in text
         assert "chore(release): version" in text
         assert "uv build" in text
