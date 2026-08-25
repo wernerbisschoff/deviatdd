@@ -478,3 +478,18 @@
   1. AC-ADHOC-029-01 / AO-029-01: The review prompt scans for over-engineered and excessive code and prescribes a minimal-code disposition through the ponytail pre-write ladder (YAGNI → stdlib → platform → installed dep → one line → minimum that works). It folds into `/deviate-review`; no `/deviate-ponytail` command and no new `## Minimality` / `## Constraints` heading. The pin for `Cross-task over-engineering` stays.
   2. AC-ADHOC-029-02 / AO-029-02: Review keeps the existing over-engineering signal and does not promote helper extraction or systematic helper-promotion refactors. Pruning is limited to real, removable excess; it never breaks a passing tested behavior.
   3. AC-ADHOC-029-03 / AO-029-03: `/deviate-pr` produces a PR/MR title matching the conventional-commit template and a body that can serve as the squash-merge commit body (`{SUMMARY}` / `{CHANGES}` / `{CLOSES}`), verified against `specs/constitution.md` §4 and `CONTRIBUTING.md`. Any discovered gap is fixed in `src/deviate/cli/meso.py` + tests.
+
+## FR-ADHOC-030: Rework DeviaTDD Configuration and setup Provisioning
+
+- **Description**: `deviate setup` git-ignores `.deviate/` by default for consumer projects, installs skills only for a specified `--agent` (or auto-detects installed agents when omitted), removes the obsolete Graphite configuration surface, and consolidates the two timeout fields into one user-friendly `config.toml`.
+- **Preconditions**: Python 3.13. `.deviate/config.toml` currently has a top-level `graphite` key, top-level `timeout_seconds`, and `[agent] timeout`. `deviate setup` (`src/deviate/cli/__init__.py`) installs to all active agents and `_ensure_gitignore` / `_ensure_root_gitignore` do not ignore `.deviate/`. `DeviateConfig` (`extra="forbid"`) has no `graphite` field. `CHANGELOG.md` records Graphite removal from active code.
+- **Inputs/Outputs**: Input — `deviate setup` flags, `.deviate/config.toml`, installed-agent detection, `_ensure_root_gitignore` / `_ensure_gitignore` / `_scaffold_dotfiles`. Output — git-ignored `.deviate/`, per-agent skill install with auto-detect, single-timeout Graphite-free `config.toml`, updated `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` / `CHANGELOG.md`.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-030-01: As a consumer-project operator, I want `deviate setup` to git-ignore `.deviate/` by default so runtime state and local config do not get committed. *(Ref: FR-ADHOC-030)*
+  2. US-030-02: As a consumer-project operator, I want `setup --agent <name>` to install only that agent and an omitted `--agent` to auto-detect installed agents so setup targets exactly the used CLI. *(Ref: FR-ADHOC-030)*
+  3. US-030-03: As a DeviaTDD operator, I want one consolidated timeout and a Graphite-free readable `config.toml` so the config surface is unambiguous. *(Ref: FR-ADHOC-030)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-030-01 / AO-030-01: `deviate setup` provisions a root `.gitignore` and/or `.deviate/.gitignore` entry that makes `.deviate/` untracked by default for consumers. `git check-ignore .deviate/` resolves after setup.
+  2. AC-ADHOC-030-02 / AO-030-02: `setup --agent opencode` writes commands and skills only under the opencode directory; `setup` with no `--agent` installs only to detected installed agents. Unknown or uninstalled agent names fail closed.
+  3. AC-ADHOC-030-03 / AO-030-03: The `config.toml` surface is Graphite-free with a single consolidated timeout; `DeviateConfig` rejects a stale `graphite` key via `extra="forbid"`. `[models]` routing order (phase key → `default` → backend-native) is unchanged. API + architecture + CHANGELOG land in the same implementation commit.
