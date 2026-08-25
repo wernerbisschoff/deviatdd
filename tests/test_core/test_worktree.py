@@ -98,6 +98,51 @@ class TestCreateWorktree:
     def test_resolve_start_point_falls_back_to_head(self, tmp_git_repo: Path):
         assert resolve_start_point("does-not-exist", repo=tmp_git_repo) == "HEAD"
 
+    def test_resolve_start_point_prefers_local_base_over_stale_origin(
+        self, tmp_git_repo: Path
+    ):
+        """Local trunk wins when origin/<base> is an ancestor (local-only issues).
+
+        Meso discovers issues from the local ledger, so the worktree base must
+        come from the local trunk even when origin/<base> exists but is behind.
+        """
+        import subprocess
+
+        from deviate.core._shared import git_env as _git_env
+
+        (tmp_git_repo / "local.txt").write_text("local-only\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "local.txt"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "local trunk ahead"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        # Point origin/main at the parent commit so it lacks local.txt.
+        parent = subprocess.run(
+            ["git", "rev-parse", "HEAD~1"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "update-ref", "refs/remotes/origin/main", parent],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        assert resolve_start_point("main", repo=tmp_git_repo) == "main"
+
 
 class TestDetectWorktree:
     def test_detect_worktree_no_worktrees(self, tmp_git_repo: Path):
