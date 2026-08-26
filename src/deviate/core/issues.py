@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from deviate.state.ledger import IssueRecord, resolve_issue_record
+from deviate.state.ledger import (
+    IssueRecord,
+    append_issue_transition,
+    resolve_issue_record,
+)
 
 
 def _resolve_ledger(path: Path | None = None) -> Path:
@@ -25,10 +29,7 @@ def claim_issue(issue_id: str, ledger_path: Path | None = None) -> bool:
             "timestamp": datetime.now(timezone.utc),
         }
     )
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    with ledger_path.open("a", encoding="utf-8") as f:
-        f.write(claimed.model_dump_json() + "\n")
-    return True
+    return append_issue_transition(claimed, ledger_path)
 
 
 def read_issue_body(issue_id: str, ledger_path: Path | None = None) -> str:

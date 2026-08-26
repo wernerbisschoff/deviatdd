@@ -16,6 +16,7 @@ from deviate.state.ledger import (
     append_flow_event,
     append_flow_record,
     append_issue_record,
+    append_issue_transition,
     append_task_record,
     load_flow_coverage,
     resolve_issue_record,
@@ -146,6 +147,74 @@ class TestAppendIssueRecord:
         assert result is True
         assert ledger_path.exists()
         assert ledger_path.stat().st_size > 0
+
+    def test_append_separates_when_last_line_lacks_newline(self, tmp_path: Path):
+        """GH-117: a last line without ``\\n`` must not fuse with the next record."""
+        ledger_path = tmp_path / "issues.jsonl"
+        existing = IssueRecord(
+            issue_id="ISS-ADH-030",
+            type="feature",
+            title="Backlog row without trailing newline",
+            status="BACKLOG",
+            source_file="specs/adhoc/issues/030-config-rework.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        ledger_path.write_text(existing.model_dump_json(), encoding="utf-8")
+        assert not ledger_path.read_bytes().endswith(b"\n")
+
+        incoming = IssueRecord(
+            issue_id="ISS-ADH-031",
+            type="feature",
+            title="Appended after missing newline",
+            status="BACKLOG",
+            source_file="specs/adhoc/issues/031-next.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        result = append_issue_record(incoming, ledger_path)
+        assert result is True
+
+        raw = ledger_path.read_text(encoding="utf-8")
+        assert raw.endswith("\n")
+        lines = raw.splitlines()
+        assert len(lines) == 2
+        assert json.loads(lines[0])["issue_id"] == "ISS-ADH-030"
+        assert json.loads(lines[1])["issue_id"] == "ISS-ADH-031"
+
+
+class TestAppendIssueTransition:
+    def test_append_transition_separates_when_last_line_lacks_newline(
+        self, tmp_path: Path
+    ):
+        """GH-117: compound-key appender must also isolate a newline-less last line."""
+        ledger_path = tmp_path / "issues.jsonl"
+        existing = IssueRecord(
+            issue_id="ISS-ADH-030",
+            type="feature",
+            title="Backlog row without trailing newline",
+            status="BACKLOG",
+            source_file="specs/adhoc/issues/030-config-rework.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        ledger_path.write_text(existing.model_dump_json(), encoding="utf-8")
+        assert not ledger_path.read_bytes().endswith(b"\n")
+
+        claimed = existing.model_copy(
+            update={
+                "status": "SPECIFIED",
+                "timestamp": datetime.now(timezone.utc),
+            }
+        )
+        result = append_issue_transition(claimed, ledger_path)
+        assert result is True
+
+        raw = ledger_path.read_text(encoding="utf-8")
+        assert raw.endswith("\n")
+        lines = raw.splitlines()
+        assert len(lines) == 2
+        assert json.loads(lines[0])["status"] == "BACKLOG"
+        assert json.loads(lines[1])["status"] == "SPECIFIED"
+        assert json.loads(lines[0])["issue_id"] == "ISS-ADH-030"
+        assert json.loads(lines[1])["issue_id"] == "ISS-ADH-030"
 
 
 class TestTaskRecord:
