@@ -55,8 +55,18 @@ _GOVERNANCE_MODULE = "deviate.prompts.governance"
 
 # User-facing agent platform choices (selectable via --agent and the
 # interactive init prompt). Order is intentional: factory/droid (Droid
-# ecosystem) come first, then the third-party CLIs.
-AGENT_CHOICES: tuple[str, ...] = ("factory", "droid", "claude", "opencode", "pi", "omp")
+# ecosystem) come first, then the third-party CLIs. ``codex`` is the
+# ChatGPT Codex CLI — a first-class meso/micro backend that installs
+# skills under ``.agents/skills/`` rather than ``.codex/prompts``.
+AGENT_CHOICES: tuple[str, ...] = (
+    "factory",
+    "droid",
+    "claude",
+    "opencode",
+    "pi",
+    "omp",
+    "codex",
+)
 
 # Map a user-facing agent name to the underlying backend that meso/micro
 # layers invoke. ``factory`` is the Factory Droid IDE — the meso/micro
@@ -600,12 +610,25 @@ def _apply_governance(workdir: Path) -> None:
             _upsert_governance_block(t, libref_content)
 
 
+def _normalize_install_agent(agent: str) -> str:
+    """Map a user-facing agent name to the install-directory identity.
+
+    ``droid`` and ``factory`` both write ``.factory/``. ``codex`` and
+    every other name pass through unchanged.
+    """
+    if agent == "droid":
+        return "factory"
+    return agent
+
+
 def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     """Resolve the slash-command directory for a given agent platform.
 
     Factory, Claude, OpenCode discover slash commands from
     ``<workdir>/.{agent}/commands/`` (flat top-level only). Pi and OMP use
     ``<workdir>/.{agent}/prompts/`` per their platform conventions.
+    Codex CLI 0.117+ dropped custom prompts — return ``None`` so setup
+    never writes ``.codex/prompts`` or ``.codex/commands``.
     """
     if agent_name in ("claude", "opencode", "factory"):
         return workdir / f".{agent_name}" / "commands"
@@ -617,17 +640,19 @@ def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
 
 
 def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
-    """Install the command library into every supported agent directory.
+    """Install the command library into the selected agent directories.
 
     Output is aggregated per-agent — one summary line per agent instead of
     one line per (command × agent) — to keep ``deviate setup`` output
-    readable when 32 commands are written to four agent directories
-    (128 lines per invocation under the legacy per-command format).
+    readable when 32 commands are written to a single selected agent.
     """
     commands = discover_commands()
     if not commands:
         return
     for agent in agents:
+        if agent == "codex":
+            _install_codex_command_skills(workdir)
+            continue
         target_dir = _get_agent_command_dir(agent, workdir)
         if target_dir is None:
             console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
@@ -649,6 +674,41 @@ def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
             )
 
 
+def _install_codex_command_skills(workdir: Path) -> None:
+    """Install each packaged slash command as a Codex project skill.
+
+    Codex CLI 0.117+ dropped ``~/.codex/prompts`` and ``/prompts:``.
+    Official project-local discovery is ``.agents/skills/<name>/SKILL.md``
+    (scanned from CWD up to the repo root). Reuse the composed command
+    bodies via :func:`install_command` — do not invent new prompt text.
+    """
+    commands = discover_commands()
+    if not commands:
+        return
+    installed = 0
+    skipped = 0
+    skills_root = workdir / ".agents" / "skills"
+    for command_name in commands:
+        if install_command(
+            command_name,
+            skills_root / command_name,
+            workdir=workdir,
+            agent="codex",
+            target_filename="SKILL.md",
+        ):
+            installed += 1
+        else:
+            skipped += 1
+    if installed and not skipped:
+        console.print(f"  [green]INSTALL[/] {installed} commands → codex")
+    elif skipped and not installed:
+        console.print(f"  [yellow]SKIP[/] {skipped} commands → codex")
+    else:
+        console.print(
+            f"  [green]INSTALL[/] {installed}, [yellow]SKIP[/] {skipped} → codex"
+        )
+
+
 def _resolve_skill_source() -> str | None:
     """Load the deviatdd SKILL.md body from package resources."""
     try:
@@ -666,11 +726,10 @@ def _resolve_skill_source() -> str | None:
 def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
     """Return the project-local skills directory for *agent*.
 
-    Mirrors ``_install_commands_to_agents``'s "write everywhere" pattern:
-    every agent platform that ``deviate setup`` provisions commands
-    for also receives the ``deviatdd`` skill at
-    ``<workdir>/.<agent>/skills/deviatdd/SKILL.md``. The skill body is
-    identical across platforms — only the destination directory differs.
+    Setup installs the ``deviatdd`` skill only for the selected agent
+    (``droid`` is normalized to ``factory`` before this helper runs).
+    The skill body is identical across platforms — only the destination
+    directory differs.
 
     Auto-discovery status per platform:
 
@@ -690,16 +749,19 @@ def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
       user-level ``~/.omp/agent/managed-skills/<name>/SKILL.md`` and
       via a settings-driven ``skills`` array, with no project-local
       auto-discovery. The file is still written to
-      ``<workdir>/.omp/skills/deviatdd/SKILL.md`` for consistency with
-      the other four platforms; operators can register it via
-      OMP's ``skills`` array in settings or copy it to the user-level
-      path.
+      ``<workdir>/.omp/skills/deviatdd/SKILL.md`` so operators can
+      register it via OMP's ``skills`` array in settings or copy it
+      to the user-level path.
+    - ``codex`` — official project-local discovery is
+      ``<workdir>/.agents/skills/<name>/SKILL.md``. Codex CLI 0.117+
+      dropped ``.codex/prompts`` / ``/prompts:``.
     - ``droid`` — normalized to ``factory`` at the command-install
       layer; not iterated separately here.
 
-    Returns ``None`` only for unknown agent names not in the
-    ``active_agents`` set.
+    Returns ``None`` for unknown agent names.
     """
+    if agent == "codex":
+        return workdir / ".agents" / "skills"
     if agent in ("claude", "opencode", "factory", "pi", "omp"):
         return workdir / f".{agent}" / "skills"
     return None
@@ -713,6 +775,9 @@ def _install_deviatdd_skill(workdir: Path, agents: list[str]) -> None:
         return
     for agent in agents:
         target_dir = _get_agent_skill_dir(workdir, agent)
+        if target_dir is None:
+            console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
+            continue
         target = target_dir / "deviatdd" / "SKILL.md"
         if target.exists() and target.read_text(encoding="utf-8") == body:
             console.print(f"  [yellow]SKIP[/] {target.relative_to(workdir)}")
@@ -756,7 +821,7 @@ def setup(
     agent: str | None = typer.Option(
         None,
         "--agent",
-        help="Override auto-detected agent platform",
+        help="Agent platform to install and persist as [agent].backend",
         callback=_validate_agent_choice,
     ),
     no_claim_remote: bool = typer.Option(
@@ -804,21 +869,19 @@ def setup(
 
     _apply_governance(workdir)
 
-    # DeviaTDD commands are installed into ALL agent directories regardless
-    # of ``--agent``. ``--agent`` only drives the ``[agent].backend`` value
-    # written to ``.deviate/config.toml`` — that value is consumed by the
-    # meso/micro layers to dispatch agent invocations, never to gate which
-    # agents receive commands. ``droid`` is normalised to ``factory`` —
-    # both names map to the Factory Droid IDE commands directory
-    # (``.factory/commands/``); ``droid`` is the underlying backend binary.
-    # ``pi`` uses ``.pi/prompts/`` per the platform's documented convention;
-    # ``omp`` uses ``.omp/prompts/`` per the OMP platform convention; the
-    # other three use ``commands/``. No global ``~/.pi/agent/`` writes,
+    # Install commands + the packaged skill only for the selected agent.
+    # ``--agent`` (or the existing ``[agent].backend``, or the interactive
+    # prompt) is the install target as well as the meso/micro backend.
+    # ``droid`` is normalised to ``factory`` so both names write
+    # ``.factory/``. Codex is a first-class backend that writes skills
+    # under ``.agents/skills/`` (Codex CLI 0.117+ dropped custom prompts).
+    # ``pi`` uses ``.pi/prompts/``; ``omp`` uses ``.omp/prompts/``; the
+    # remaining CLIs use ``commands/``. No global ``~/.pi/agent/`` writes,
     # no ``settings.json`` generation — the operator's Pi config is out of
     # scope.
-    active_agents = ("claude", "opencode", "factory", "pi", "omp")
-    _install_commands_to_agents(workdir, list(active_agents))
-    _install_deviatdd_skill(workdir, list(active_agents))
+    install_agent = _normalize_install_agent(selected_agent)
+    _install_commands_to_agents(workdir, [install_agent])
+    _install_deviatdd_skill(workdir, [install_agent])
 
     _ensure_gitignore(workdir)
     _ensure_root_gitignore(workdir)
@@ -885,16 +948,18 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
     artifacts and worktrees across all agent platforms.
-    Three artifact families are installed and must not be committed:
+    Artifact families are installed and must not be committed:
     - ``deviate-*`` commands under ``<agent>/commands/`` and
       ``<agent>/prompts/`` — the core DeviaTDD command library.
     - The ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
+    - Codex per-command skills under ``.agents/skills/deviate-*/``.
     - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
     """
     entries = (
         "*/commands/deviate-*.md",
         "*/prompts/deviate-*.md",
         "*/skills/deviatdd/",
+        "*/skills/deviate-*/",
         ".worktrees/",
     )
     gitignore_path = workdir / ".gitignore"

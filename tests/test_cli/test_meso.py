@@ -32,10 +32,11 @@ class TestSyncWorktreeAssets:
     """Regression: worktrees must receive every supported agent skill dir.
 
     The tuple `_AGENT_DIRS` must stay aligned with the agent platforms that
-    `deviate setup` writes into (``active_agents`` in ``cli/__init__.py`` and
-    ``detect_agents`` in ``core/commands.py``). Previously `.pi` and `.omp`
-    were missing from the sync list, so worktrees created by
-    `deviate meso run` lacked those skill directories on those platforms.
+    `deviate setup` can write into (selected-agent install in
+    ``cli/__init__.py`` and ``detect_agents`` in ``core/commands.py``).
+    Previously `.pi` and `.omp` were missing from the sync list, so
+    worktrees created by `deviate meso run` lacked those skill directories
+    on those platforms.
     """
 
     def test_copies_every_supported_agent_dir_when_present(self, tmp_path):

@@ -45,7 +45,7 @@ def _truncate_prompt(prompt: str) -> str:
     return f"{prompt[:head_size]}{marker}{prompt[-tail_size:]}"
 
 
-BackendName = Literal["opencode", "claude", "droid", "pi", "omp", "stub"]
+BackendName = Literal["opencode", "claude", "droid", "pi", "omp", "codex", "stub"]
 
 
 class EvidenceItem(BaseModel):
@@ -170,6 +170,15 @@ BACKEND_COMMANDS: dict[str, str] = {
     # as a first-class backend, not an alias for ``pi`` — model flag,
     # timeout, and YAML manifest extraction all apply.
     "omp": "omp -p",
+    # ChatGPT Codex CLI (non-interactive). Official ``codex exec`` reads
+    # the prompt from stdin when no positional prompt is given — omit the
+    # ``-`` sentinel so ``MODEL_FLAGS`` can append ``--model`` at the end
+    # without it being swallowed as prompt text. Default ``codex exec``
+    # sandbox is read-only; ``--sandbox workspace-write`` plus
+    # ``--ask-for-approval never`` is the documented unattended analog of
+    # ``claude -p --permission-mode auto``. Do not use ``--full-auto``
+    # (deprecated) or ``--dangerously-bypass-approvals-and-sandbox``.
+    "codex": "codex exec --sandbox workspace-write --ask-for-approval never",
     "stub": "stub",
 }
 
@@ -186,6 +195,7 @@ AGENT_TO_BACKEND: dict[str, str] = {
     "opencode": "opencode",
     "pi": "pi",
     "omp": "omp",
+    "codex": "codex",
 }
 
 
@@ -193,8 +203,8 @@ def resolve_agent_to_backend(agent: str) -> str:
     """Return the canonical backend for *agent*.
 
     User-facing aliases (``factory``) are mapped to their underlying
-    backend binary. Already-canonical names (``opencode``, ``claude``,
-    ``droid``, ``pi``, ``omp``) pass through unchanged. Unknown values
+    backend binary.     Already-canonical names (``opencode``, ``claude``,
+    ``droid``, ``pi``, ``omp``, ``codex``) pass through unchanged. Unknown values
     are returned unchanged so the caller can surface a validation error
     against :class:`~deviate.state.config.AgentConfig`'s ``backend``
     Literal.
@@ -283,6 +293,7 @@ MODEL_FLAGS: dict[str, list[str] | None] = {
     "opencode": ["--model"],
     "droid": ["--model"],
     "omp": ["--model"],
+    "codex": ["--model"],
 }
 
 # Backends whose CLI expects the prompt as a positional argument rather
