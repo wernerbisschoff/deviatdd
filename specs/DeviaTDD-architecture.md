@@ -863,7 +863,15 @@ handing the manifest to the rest of the pipeline:
    pass a recovered manifest. `HandoverManifest` is imported by
    `scripts/verify_install.py` (the post-install smoke verifier)
    which checks the new constants and the recovery behaviour.
-6. **Schema-rejection fail-fast** — the first stderr or stdout line
+6. **Unescaped evidence-quote recovery (GH-116)** — when
+   `yaml.safe_load` fails because an evidence `quote` /
+   `test_quote` / `impl_quote` double-quoted scalar embeds raw
+   `"`, `_safe_load_handover_yaml` rewrites those lines as `|`
+   block scalars and reloads. Well-formed YAML is unchanged.
+   Truly malformed YAML still raises
+   `MalformedHandoverManifestError`. Verdict and evidence
+   semantics are unchanged.
+7. **Schema-rejection fail-fast** — the first stderr or stdout line
    that contains `tool_count_limit` or `unsupported_tool_schema`
    kills the child. `invoke` raises `AgentSubprocessError` with those
    tokens. This path does not wait for the 900s stall clock. It does

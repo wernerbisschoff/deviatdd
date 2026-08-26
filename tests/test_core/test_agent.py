@@ -236,6 +236,71 @@ class TestHandoverManifestModel:
             assert getattr(item, "impl_path") in {"", None}
             assert getattr(item, "impl_quote") in {"", None}
 
+    def test_parse_output_recovers_unescaped_quotes_in_evidence_fields(self):
+        """GH-116: raw " inside evidence quote scalars must not abort parse."""
+        yaml_output = (
+            'phase: "JUDGE"\n'
+            'status: "PASS"\n'
+            'task_id: "TSK-029-01"\n'
+            "evidence:\n"
+            '  - ac: "AC-PLAN-001"\n'
+            '    test_path: "tests/example.py"\n'
+            '    test_quote: "assert "YAGNI" in text"\n'
+            '    impl_path: "src/example.py"\n'
+            '    impl_quote: "return tokens(task, card_text=card) == ["AC-PLAN-002"]"\n'
+        )
+        manifest = AgentBackend.parse_output(yaml_output, "pi")
+        assert manifest.phase == "JUDGE"
+        assert manifest.status == "PASS"
+        item = list(manifest.evidence)[0]
+        assert item.test_quote == 'assert "YAGNI" in text'
+        assert (
+            item.impl_quote == 'return tokens(task, card_text=card) == ["AC-PLAN-002"]'
+        )
+
+    def test_parse_output_recovers_unescaped_quotes_in_fenced_manifest(self):
+        """GH-116: the same broken quotes recover inside a fenced YAML block."""
+        yaml_output = (
+            "```yaml\n"
+            'phase: "JUDGE"\n'
+            'status: "PASS"\n'
+            "evidence:\n"
+            '  - ac: "AC-PLAN-001"\n'
+            '    test_path: "tests/example.py"\n'
+            '    test_quote: "check = subprocess.run(["git", "check-ignore"])"\n'
+            '    impl_path: ""\n'
+            '    impl_quote: ""\n'
+            "```\n"
+        )
+        manifest = AgentBackend.parse_output(yaml_output, "pi")
+        item = list(manifest.evidence)[0]
+        assert item.test_quote == 'check = subprocess.run(["git", "check-ignore"])'
+
+    def test_parse_output_well_formed_evidence_quotes_unchanged(self):
+        """GH-116: valid double-quoted, escaped, and block-scalar quotes stay as-is."""
+        yaml_output = (
+            'phase: "JUDGE"\n'
+            'status: "PASS"\n'
+            "evidence:\n"
+            '  - ac: "AC-PLAN-001"\n'
+            '    test_path: "tests/example.py"\n'
+            '    test_quote: "assert increment(2) == 3"\n'
+            '    impl_path: "src/example.py"\n'
+            '    impl_quote: "return n + 1"\n'
+            '  - ac: "AC-PLAN-002"\n'
+            '    test_path: "tests/example.py"\n'
+            '    test_quote: "assert \\"YAGNI\\" in text"\n'
+            '    impl_path: ""\n'
+            "    impl_quote: |\n"
+            '      assert result == ["AC-PLAN-002"]\n'
+        )
+        manifest = AgentBackend.parse_output(yaml_output, "pi")
+        first, second = list(manifest.evidence)
+        assert first.test_quote == "assert increment(2) == 3"
+        assert first.impl_quote == "return n + 1"
+        assert second.test_quote == 'assert "YAGNI" in text'
+        assert second.impl_quote == 'assert result == ["AC-PLAN-002"]'
+
 
 class TestAgentBackendInvocation:
     def test_agent_successful_invocation(self):
