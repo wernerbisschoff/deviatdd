@@ -597,9 +597,16 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   in the injected ``<diff>`` or HEAD (constitution §3 Testing Protocols; §5 Definition of Done).
   Empty ``files`` / ``test_file`` is a RED defect (``PhaseFailedError``); the ledger writes no
   COMPLETED row. JUDGE ``skip_refactor`` / bare ``COMPLIANCE_PASS`` keeps those declared tests
-  on disk via ``_restore_worktree_to_baseline(..., keep_paths=declared)``. A declared path
-  missing from the snapshot rewrites PASS to ``revert_before`` / ``revert_to_red``. JUDGE still
-  rules a wrong test as ``revert_before`` so RED re-authors a genuinely failing test. EXECUTE,
+  on disk via ``_restore_worktree_to_baseline(..., keep_paths=declared)``. On the already-exists
+  route (``session.red_commit_sha == ''``), a ``no_failing_test`` ``COMPLIANCE_PASS`` with any
+  ``next_action`` completes via ``skip_refactor`` even when the evidence cites only part of the
+  task's ``AC-PLAN-NNN`` tokens: ``_apply_judge_verdict`` skips the unmatched-PASS rewrite for
+  this route, and ``_require_tdd_completed_evidence`` relaxes the AC-token citation check while
+  keeping the declared regression-path presence gate. ``ROLLBACK_BOUNDARY_MISSING`` applies only
+  to a genuine TDD ``revert_to_red`` with an empty ``red_commit_sha`` — never on the
+  already-exists pass path. A declared path missing from the snapshot rewrites PASS to
+  ``revert_before`` / ``revert_to_red``. JUDGE still rules a wrong test as ``revert_before`` so
+  RED re-authors a genuinely failing test. EXECUTE,
   IMMEDIATE, and DIRECT stay ungated by this files rule. After ``revert_before`` / cycle
   ``no_failing_test_adjudicated``, the next ``INVOKE_AGENT`` is RED, or the loop raises
   ``TRAIN_EXHAUSTED`` / ``PhaseFailedError``. It never invokes GREEN while

@@ -1193,6 +1193,10 @@ def _require_tdd_completed_evidence(
     tokens = resolve_task_ac_tokens(
         task_data, card_text=_task_card_text(root, task_data)
     )
+    if session is not None and session.failure_kind == "no_failing_test":
+        # Already-exists COMPLETE: partial AC evidence is legal; the
+        # declared regression-path presence check below still applies.
+        tokens = []
     if not tokens:
         return
     items = list(bundle.items) if bundle is not None else []
@@ -3053,6 +3057,7 @@ def _rewrite_unmatched_tdd_pass(
     action: str | None,
     injected_diff: str,
     declared_paths: Sequence[str] | None = None,
+    skip_token_citation: bool = False,
 ) -> str | None:
     """Force unmatched TDD PASS onto ``revert_to_red`` with runner feedback."""
     if not _is_test_bearing_tdd(task):
@@ -3075,8 +3080,10 @@ def _rewrite_unmatched_tdd_pass(
         next_action=action,
         head_contents=head_contents,
         declared_paths=declared,
-        required_tokens=resolve_task_ac_tokens(
-            task, card_text=_task_card_text(root, task)
+        required_tokens=(
+            []
+            if skip_token_citation
+            else resolve_task_ac_tokens(task, card_text=_task_card_text(root, task))
         ),
     )
     if not feedback:
@@ -3213,7 +3220,16 @@ def _apply_judge_verdict(
     suite_still_red = _is_green_test_failure(session)
     suite_test_dump = session.train_feedback if suite_still_red else ""
     verdict = getattr(manifest, "verdict", "")
+    no_failing_pass = (
+        session.failure_kind == "no_failing_test"
+        and verdict.upper() == "COMPLIANCE_PASS"
+    )
     action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
+    if no_failing_pass and (action is None or action in _TDD_EVIDENCE_GATE_ROUTES):
+        # Already-exists route: JUDGE ruled the behavior exists at HEAD and
+        # there is no RED commit to roll back to. Coerce the forward route
+        # to skip_refactor so _require_revert_to_red_boundary is never hit.
+        action = "skip_refactor"
     action = _rewrite_unmatched_tdd_pass(
         root=root,
         task=task,
@@ -3221,6 +3237,7 @@ def _apply_judge_verdict(
         action=action,
         injected_diff=injected_diff,
         declared_paths=declared_paths,
+        skip_token_citation=no_failing_pass,
     )
     session.last_judge_verdict = getattr(manifest, "verdict", "").upper()
     if action is None or action in _TDD_EVIDENCE_GATE_ROUTES:
@@ -3348,6 +3365,25 @@ def _apply_judge_verdict(
                     # baseline.
                     _restore_worktree_to_baseline(root, red_baseline)
                 else:
+                    if session.failure_kind == "no_failing_test":
+                        # Already-exists rejection: no RED boundary was ever
+                        # landed, so there is nothing to reset. Re-dispatch
+                        # RED directly instead of raising.
+                        session.red_commit_sha = ""
+                        session.pending_judge_action = "revert_before"
+                        session.train_feedback = feedback
+                        session.judge_rejected = True
+                        session = session.force_transition_to("RED")
+                        _log_run(
+                            "PHASE_DECISION",
+                            task_id=tid,
+                            phase="JUDGE",
+                            decision="rejected",
+                            reroute="RED",
+                            action=action,
+                        )
+                        session.save(session_path)
+                        return session
                     # No pre-RED anchor AND no RED boundary in session.
                     # The runner no longer falls back to ``HEAD~1``; raise
                     # so the operator can see why rollback was refused

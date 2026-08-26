@@ -3672,3 +3672,139 @@ class TestJudgeEvidencePromptSchema:
         assert "every injected `ac-plan-nnn`" not in lowered, (
             "Manual judge skill must not require every injected plan AC-PLAN-NNN"
         )
+
+
+# ---------------------------------------------------------------------------
+# ISS-ADH-031 / TSK-031-01: a no_failing_test already-exists COMPLIANCE_PASS
+# must complete via skip_refactor instead of being rewritten to revert_to_red
+# (which raises ROLLBACK_BOUNDARY_MISSING because red_commit_sha is empty).
+# AC-PLAN-001..006. Constitution §3: pytest under tests/; git isolation via
+# tmp_git_repo + _git_env(); mock _invoke_agent and _run_pytest.
+# Flow References: [].
+# ---------------------------------------------------------------------------
+
+
+def _run_no_failing_test_judge(
+    repo: Path,
+    manifest: HandoverManifest,
+) -> tuple[SessionState, str, Path]:
+    """Drive _run_judge_phase on the already-exists no_failing_test shape.
+
+    Mirrors the production state after `_adjudicate_red_no_failing_test`
+    sets `failure_kind="no_failing_test"`: no RED commit exists
+    (`red_commit_sha == ""`) and the declared regression paths come from
+    the manifest.
+    """
+    import io
+
+    from deviate.cli.micro import (
+        _declared_regression_paths,
+        _run_judge_phase,
+    )
+
+    task = {
+        "id": _GATE_TASK_ID,
+        "issue_id": _GATE_ISSUE_ID,
+        "description": "Adjudicate RED phase with no failing test",
+        "status": "RED",
+        "execution_mode": "TDD",
+    }
+    ledger_path = repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+    session = SessionState(
+        current_phase="RED",
+        red_commit_sha="",
+        active_issue_id=_GATE_ISSUE_ID,
+        failure_kind="no_failing_test",
+    )
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=200)
+    mock_pytest = patch(
+        "deviate.cli.micro._run_pytest",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        ),
+    )
+    with (
+        chdir(repo),
+        patch(
+            "deviate.cli.micro._invoke_agent",
+            return_value=(manifest, ""),
+        ),
+        patch(
+            "deviate.cli.micro._build_auto_prompt",
+            return_value="test prompt",
+        ),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        mock_pytest,
+    ):
+        session_out = _run_judge_phase(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            console,
+            declared_paths=_declared_regression_paths(manifest),
+        )
+    return session_out, buf.getvalue(), ledger_path
+
+
+class TestNoFailingTestAlreadyExistsPass:
+    """AC-PLAN-001/002/005/006: guarded already-exists PASS route."""
+
+    def test_partial_evidence_pass_completes_without_red_sha(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """AC-PLAN-002/006: partial evidence must not rewrite to revert_to_red.
+
+        The judge cites only some required AC tokens, the session carries
+        no RED commit (`red_commit_sha == ""`), and the declared
+        regression-pin test file exists at HEAD. The runner must COMPLETE
+        via skip_refactor; `ROLLBACK_BOUNDARY_MISSING` is never raised.
+        """
+        _seed_already_exists(tmp_git_repo)
+        session, output, ledger = _run_no_failing_test_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[],
+                files=[_GATE_TEST_PATH],
+                test_file=_GATE_TEST_PATH,
+            ),
+        )
+        assert "ROLLBACK_BOUNDARY_MISSING" not in output
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
+        assert Path(tmp_git_repo, _GATE_TEST_PATH).is_file(), (
+            "AC-PLAN-001: declared regression-pin test file must stay on disk"
+        )
+
+    def test_bare_pass_without_next_action_completes(self, tmp_git_repo: Path) -> None:
+        """AC-PLAN-001: legacy bare COMPLIANCE_PASS coerces to skip_refactor."""
+        _seed_already_exists(tmp_git_repo)
+        session, _, ledger = _run_no_failing_test_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action=None,
+                evidence=[_gate_evidence()],
+                files=[_GATE_TEST_PATH],
+                test_file=_GATE_TEST_PATH,
+            ),
+        )
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
+
+    def test_violation_still_routes_revert_before(self, tmp_git_repo: Path) -> None:
+        """AC-PLAN-005: genuine COMPLIANCE_VIOLATION stays fail-closed."""
+        _seed_already_exists(tmp_git_repo)
+        session, _, ledger = _run_no_failing_test_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_before",
+                evidence=[_gate_evidence()],
+                train_feedback="The authored test is tautological.",
+            ),
+        )
+        assert session.pending_judge_action == "revert_before"
+        statuses = _ledger_statuses(ledger)
+        assert "COMPLETED" not in statuses
