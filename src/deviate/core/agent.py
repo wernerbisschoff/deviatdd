@@ -299,6 +299,75 @@ _YAML_HANDOVER_MARKER_RE = re.compile(
 )
 
 
+_QUOTE_FIELD_LINE_RE = re.compile(r"^(\s*)(quote|test_quote|impl_quote):\s+(.*)$")
+
+
+def _unwrap_double_quoted_value(raw: str) -> str:
+    """Strip a surrounding pair of double quotes, or a leading opener."""
+    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+        return raw[1:-1]
+    if raw.startswith('"'):
+        return raw[1:]
+    return raw
+
+
+def _is_broken_double_quoted_scalar(key: str, raw: str) -> bool:
+    """Return True when *raw* is a double-quoted scalar ``yaml.safe_load`` rejects."""
+    if not raw.startswith('"'):
+        return False
+    try:
+        parsed = yaml.safe_load(f"{key}: {raw}\n")
+    except yaml.YAMLError:
+        return True
+    return not isinstance(parsed, dict) or key not in parsed
+
+
+def _repair_unescaped_quote_scalars(text: str) -> str:
+    """Rewrite broken evidence-quote double-quoted scalars as ``|`` block scalars.
+
+    Models emit citations such as ``test_quote: "assert "YAGNI" in text"``
+    without escaping the inner quotes. Convert those lines so
+    ``yaml.safe_load`` can recover the intended text. Well-formed values
+    are left unchanged (GH-116).
+    """
+    if not text:
+        return text
+    repaired: list[str] = []
+    for line in text.splitlines(keepends=True):
+        ending = ""
+        body = line
+        if body.endswith("\r\n"):
+            ending = "\r\n"
+            body = body[:-2]
+        elif body.endswith("\n"):
+            ending = "\n"
+            body = body[:-1]
+        match = _QUOTE_FIELD_LINE_RE.match(body)
+        if match is None:
+            repaired.append(line)
+            continue
+        indent, key, raw = match.groups()
+        if not _is_broken_double_quoted_scalar(key, raw):
+            repaired.append(line)
+            continue
+        content = _unwrap_double_quoted_value(raw)
+        block_ending = ending or "\n"
+        repaired.append(f"{indent}{key}: |{block_ending}")
+        repaired.append(f"{indent}  {content}{ending}")
+    return "".join(repaired)
+
+
+def _safe_load_handover_yaml(text: str) -> object:
+    """Load handover YAML, recovering unescaped quotes in evidence fields."""
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        repaired = _repair_unescaped_quote_scalars(text)
+        if repaired == text:
+            raise
+        return yaml.safe_load(repaired)
+
+
 def _looks_like_manifest(yaml_text: str) -> bool:
     """Return True iff *yaml_text* parses to a dict with at least 2 keys.
 
@@ -309,7 +378,7 @@ def _looks_like_manifest(yaml_text: str) -> bool:
     that should flow through schema recovery.
     """
     try:
-        parsed = yaml.safe_load(yaml_text)
+        parsed = _safe_load_handover_yaml(yaml_text)
     except yaml.YAMLError:
         return False
     return isinstance(parsed, dict) and len(parsed) >= 2
@@ -390,7 +459,7 @@ class AgentBackend:
             )
 
         try:
-            data = yaml.safe_load(yaml_text)
+            data = _safe_load_handover_yaml(yaml_text)
         except yaml.YAMLError as e:
             hint = AgentBackend._yaml_error_hint(stdout)
             raise MalformedHandoverManifestError(
