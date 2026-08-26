@@ -324,7 +324,7 @@ security hole, gate skip, flow break), never a refactor.
 - Emit COMPLIANCE_VIOLATION only for the eight Categories of Violations above.
 - Refactoring opportunities are NEVER blocking. Surface them as informational notes in `train_feedback` on a passing verdict, or omit them entirely.
 - Violations must be specific and actionable, citing FR-NN / AC-NN where applicable.
-- Each `test_quote` and `impl_quote` must be an exact substring of the named file's hunk in the injected `<diff>` (or HEAD file contents when `next_action` is `skip_refactor` on the already-exists path). Quotes need ≥ 12 non-whitespace characters, or the full added line if that line is shorter.
+- Each `test_quote` and `impl_quote` must be an exact substring of the named file's hunk in the injected `<diff>` (or HEAD file contents when `next_action` is `skip_refactor` on the already-exists path). Quotes need ≥ 12 non-whitespace characters, or the full added line if that line is shorter. When a quote contains `"`, emit it as a `|` block scalar — do not wrap the snippet in a double-quoted YAML string.
 - `proceed_to_refactor_no_diff` requires a dirty-diff `test_quote` and omits `impl_quote`.
 - "Implementation is correct + tests pass + spec satisfied + matching evidence + no security/governance/scope/flow issues" → COMPLIANCE_PASS.
 - Verdict is advisory — orchestrator decides whether to abort or continue. The TDD runner still fail-closes unmatched PASS.
