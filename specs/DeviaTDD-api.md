@@ -1493,7 +1493,11 @@ All state transitions are append-only. No existing line is ever modified or over
 - `append_issue_transition()`: Idempotent on `(issue_id, status)` compound key
 - `append_task_transition()`: Idempotent on `(id, status)` compound key
 - `_append_record()` / `_append_with_compound_key()`: Use `fcntl.flock` for file-level
-  locking on platforms that support it
+  locking on platforms that support it. If the ledger is non-empty and the last
+  line has no trailing newline, a leading `\n` is written before the new record
+  so two JSON objects never share a line. Every successful write leaves a trailing
+  newline. `claim_issue` writes through `append_issue_transition` (not a raw `"a"`
+  append).
 - Canonical state: Issues derived bottom-up (latest entry per `issue_id`); tasks derived
   sequentially (latest entry per `(id, status)` compound key)
 

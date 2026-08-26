@@ -5,7 +5,7 @@ import re
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TextIO
 
 from pydantic import (
     BaseModel,
@@ -176,6 +176,21 @@ class TaskRecord(BaseModel):
         return v
 
 
+def _write_jsonl_record(f: TextIO, record_json: str) -> None:
+    """Write ``record_json`` as its own JSONL line.
+
+    If the file is non-empty and does not already end in ``\\n``, a leading
+    newline is written first so the new record is not concatenated onto the
+    previous line. The write always leaves a trailing newline.
+    """
+    f.seek(0, 2)
+    if f.tell() > 0:
+        f.seek(f.tell() - 1)
+        if f.read(1) != "\n":
+            f.write("\n")
+    f.write(record_json + "\n")
+
+
 def _append_record(
     record_json: str,
     record_id: str,
@@ -198,7 +213,7 @@ def _append_record(
                         return False
                 except json.JSONDecodeError:
                     continue
-            f.write(record_json + "\n")
+            _write_jsonl_record(f, record_json)
         finally:
             if HAS_FCNTL:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -228,7 +243,7 @@ def _append_with_compound_key(
                         return False
                 except json.JSONDecodeError:
                     continue
-            f.write(record_json + "\n")
+            _write_jsonl_record(f, record_json)
         finally:
             if HAS_FCNTL:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
