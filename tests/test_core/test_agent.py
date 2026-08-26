@@ -254,7 +254,9 @@ class TestHandoverManifestModel:
         assert manifest.status == "PASS"
         item = list(manifest.evidence)[0]
         assert item.test_quote == 'assert "YAGNI" in text'
-        assert item.impl_quote == 'return tokens(task, card_text=card) == ["AC-PLAN-002"]'
+        assert (
+            item.impl_quote == 'return tokens(task, card_text=card) == ["AC-PLAN-002"]'
+        )
 
     def test_parse_output_recovers_unescaped_quotes_in_fenced_manifest(self):
         """GH-116: the same broken quotes recover inside a fenced YAML block."""
@@ -289,7 +291,7 @@ class TestHandoverManifestModel:
             '    test_path: "tests/example.py"\n'
             '    test_quote: "assert \\"YAGNI\\" in text"\n'
             '    impl_path: ""\n'
-            '    impl_quote: |\n'
+            "    impl_quote: |\n"
             '      assert result == ["AC-PLAN-002"]\n'
         )
         manifest = AgentBackend.parse_output(yaml_output, "pi")

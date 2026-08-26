@@ -352,7 +352,7 @@ def _repair_unescaped_quote_scalars(text: str) -> str:
             continue
         content = _unwrap_double_quoted_value(raw)
         block_ending = ending or "\n"
-        repaired.append(f"{indent}{key}: |{block_ending}")
+        repaired.append(f"{indent}{key}: |-{block_ending}")
         repaired.append(f"{indent}  {content}{ending}")
     return "".join(repaired)
 
