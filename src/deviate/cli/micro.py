@@ -35,7 +35,11 @@ from deviate.core.agent import (
     resolve_agent_to_backend,
 )
 from deviate.core.convention import format_commit_message
-from deviate.core.judge_evidence import evaluate_judge_evidence, resolve_task_ac_tokens
+from deviate.core.judge_evidence import (
+    _strip_judge_feedback,
+    evaluate_judge_evidence,
+    resolve_task_ac_tokens,
+)
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.tasks_ledger import resolve_execution_mode
 from deviate.core.profile import resolve_profile
@@ -1346,7 +1350,9 @@ def _build_auto_prompt(
 
     spec_content = _resolve_spec_md(root, task)
     if phase == "judge":
-        card = _task_card_text(root, task)
+        # Same strip resolve_task_ac_tokens uses (#89) so prior-round
+        # Judge-Feedback prose cannot bias the next judge (GH-118).
+        card = _strip_judge_feedback(_task_card_text(root, task))
         if card:
             spec_content = (
                 f'{spec_content}\n\n<task_card source="tasks.md">\n{card}\n</task_card>'
