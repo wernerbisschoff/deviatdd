@@ -41,11 +41,11 @@ deviate --version                # confirm install
 
 # Bootstrap a new project + install slash commands into your agent of
 # choice. Does it all in one shot: scaffolds .deviate/, specs/constitution.md,
-# governance blocks, and installs /deviate-* slash commands for every
-# supported agent. The --agent flag picks the default backend persisted
-# to .deviate/config.toml (slash commands themselves are installed to all
-# supported agent directories regardless).
-deviate setup --agent claude     # or: opencode | pi | droid | factory | omp
+# governance blocks, and installs /deviate-* slash commands for the
+# selected agent only. The --agent flag picks the backend persisted to
+# .deviate/config.toml and is the only install target (`droid` writes
+# `.factory/`; `codex` writes `.agents/skills/`).
+deviate setup --agent claude     # or: opencode | pi | droid | factory | omp | codex
 ```
 
 Once setup is done, drive the entire lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the two gates) pauses for human review.

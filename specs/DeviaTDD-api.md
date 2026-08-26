@@ -31,14 +31,15 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   constitution. `deviate init pre` continues to scaffold the constitution independently.
   slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
   — 25 flat `.md` files total in the Factory install; 24 in every other agent
-  `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land in all agent
-  directories — `.claude/commands/`, `.opencode/commands/`,
-  `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/` — in a single invocation, regardless of which agent was passed
-  via `--agent`. Each command is a flat `<name>.md` file with a minimal YAML
-  frontmatter (`name:` + `description:`). The agent backend selected via `--agent`
-  (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`) is persisted to `[agent].backend` in
-  `config.toml` for use by the meso/micro layers; it does **not** gate which agent
-  directories receive commands.
+  `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land only in the
+  selected agent's directory — `.claude/commands/`, `.opencode/commands/`,
+  `.factory/commands/` (`--agent factory` and `--agent droid`), `.pi/prompts/`,
+  `.omp/prompts/`, or Codex skills under `.agents/skills/<name>/SKILL.md`.
+  Each command is a flat `<name>.md` file (or a Codex `SKILL.md`) with a
+  minimal YAML frontmatter (`name:` + `description:`). The agent selected via
+  `--agent` (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`, `codex`)
+  is persisted to `[agent].backend` in `config.toml` and is the only install
+  target.
 
   **Single-source prompt derivation:** for each of the 11 overlapping phases
   (`explore`, `research`, `prd`, `shard`, `plan`, `tasks`, `red`, `green`,
@@ -84,8 +85,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   duplicates rules), preserves user-authored `.gitattributes` content,
   and stages the file via `deviate init post` alongside the other
   scaffolded artifacts.
-* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi]` to override
-  auto-detect. If omitted, the persisted value is reused; if no persisted value exists and
+* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi|omp|codex]` to override
+  the persisted backend. If omitted, the persisted value is reused; if no persisted value exists and
   the session is interactive, a Rich `Prompt.ask` menu is shown. In non-interactive mode
   the command halts with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
 * **Execution Modes:**
@@ -106,7 +107,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `${VARIABLE}` resolver described in earlier revisions of this spec has been removed.
 * **Input Parameters:**
   * `--agent-export-mode [local|global]` (Defaults to `local`)
-  * `--agent [claude|opencode|droid|factory|pi]` (Override auto-detect)
+  * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Override persisted backend)
   * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
@@ -134,9 +135,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `specs/constitution.md` — Resolved boilerplate constitution
   * `AGENTS.md` — Symlink to `CLAUDE.md` (or vice-versa if only `AGENTS.md`
     existed pre-setup). Created by `_linkify_governance_files`; idempotent.
-  * `.claude/commands/`, `.opencode/commands/`, `.factory/commands/`,
-    supported agent (24 `deviate-*` + 1 standalone `tools-mcp-servers`
-    for Factory = 25 flat `.md` files total in that one directory)
+  * Selected-agent command install only: `.claude/commands/`,
+    `.opencode/commands/`, `.factory/commands/`, `.pi/prompts/`,
+    `.omp/prompts/`, or `.agents/skills/<name>/SKILL.md` for Codex.
+    Factory also receives the standalone `tools-mcp-servers` command.
 
 #### `deviatdd` Skill (Project-Local Single Skill)
 
@@ -147,21 +149,19 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `src/deviate/cli/__init__.py`, called from `setup()` after
   `_install_commands_to_agents(...)`. Idempotent (content-equality skip
   mirrors `install_command`'s contract).
-* **Install targets (all five `active_agents`):** the skill is written
-  to `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for every agent
-  platform that `setup` provisions commands for, regardless of whether
-  each platform documents a project-local skills convention. Mirrors
-  `_install_commands_to_agents`'s write-everywhere policy — every
-  operator using `--agent <platform>` gets the skill at the canonical
-  skills directory for their platform, ready to be picked up if/when
-  that platform ships a discovery convention.
+* **Install target (selected agent only):** the skill is written to
+  `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for the agent passed to
+  `--agent` (or the persisted backend / interactive prompt). `droid`
+  normalizes to `factory`. Codex writes
+  `<workdir>/.agents/skills/deviatdd/SKILL.md` and does **not** write
+  `.codex/prompts` or `.codex/commands`.
   * `claude` -> `<workdir>/.claude/skills/deviatdd/SKILL.md`
     (verified — same form as user-level `~/.claude/skills/<name>/SKILL.md`).
   * `opencode` -> `<workdir>/.opencode/skills/deviatdd/SKILL.md`
     (no documented project-local skills convention; file on disk for
     forward-compat).
   * `factory` -> `<workdir>/.factory/skills/deviatdd/SKILL.md`
-    (same as opencode).
+    (same as opencode; `--agent droid` uses this path).
   * `pi` -> `<workdir>/.pi/skills/deviatdd/SKILL.md`
     (verified — `pi@latest` docs at
     `packages/coding-agent/docs/skills.md` list `.pi/skills/` as a
@@ -171,6 +171,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     `~/.omp/agent/managed-skills/<name>/SKILL.md` and via a
     settings-driven `skills` array; operators can register the
     project-local file via OMP's settings).
+  * `codex` -> `<workdir>/.agents/skills/deviatdd/SKILL.md`
+    (Codex CLI 0.117+ official project-local discovery). Each packaged
+    slash command is also installed as `.agents/skills/<name>/SKILL.md`.
 * **Scope:** Unified Meso and Micro orchestration. The skill first runs
   `deviate meso run`. In an existing feature worktree, the runner validates
   `plan.md` and `tasks.md`, skips completed phases, and resumes at Tasks when
@@ -218,14 +221,17 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 * **`.gitignore` exclusions:** `_ensure_root_gitignore` adds
   `*/skills/deviatdd/` to the entries tuple alongside
   `*/commands/deviate-*.md` and `*/prompts/deviate-*.md`. The
-  single-level wildcard covers all five agent platforms
-  (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`) with one
-  pattern. The single-level prefix (`*/`, not `**/`) is critical: it
+  single-level wildcard covers every selected-agent skill install
+  (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
+  with one pattern. `*/skills/deviate-*/` covers Codex per-command
+  skill dirs. The single-level prefix (`*/`, not `**/`) is critical: it
   scopes the pattern to the project root, never matching the
   source-of-truth at `src/deviate/prompts/skills/deviatdd/` (three
   directories deep).
-* **Tests:** `TestInstallDeviatddSkill` (8 tests) in
-  `tests/test_cli/test_init.py` covers install-to-all-five-agents,
+* **Tests:** `TestInstallDeviatddSkill` in
+  `tests/test_cli/test_init.py` and `TestSetupSelectedAgentIsolation` /
+  `TestSetupCodex` in `tests/test_cli/test_setup.py` cover
+  selected-agent-only install, Codex skills + `backend = "codex"`,
   idempotence, gitignore entry presence + idempotence, safety-gate
   fragments in the SKILL.md body, well-formed frontmatter, and the
   dispatch table's canonical slash-command references.
@@ -257,7 +263,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 
 ### 1.5 Product Layer *(optional, sits above Macro)*
 
-The Product layer ships as **agent skills** (no dedicated CLI subcommands) — the prompts live at `src/deviate/prompts/commands/deviate-{flows,architecture,release}.md` and are installed to all four agent directories alongside the rest. They are **not** wired into the `deviate` CLI's `pre`/`post` subcommand pattern: the agent invokes them directly as `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, and the conversation produces the artifact. The CLI's only involvement is installing the skill files during `deviate setup` and (via `deviate-shard` / `deviate-adhoc`) consuming the `flow_refs:` frontmatter those artifacts emit.
+The Product layer ships as **agent skills** (no dedicated CLI subcommands) — the prompts live at `src/deviate/prompts/commands/deviate-{flows,architecture,release}.md` and are installed to the selected agent directory alongside the rest. They are **not** wired into the `deviate` CLI's `pre`/`post` subcommand pattern: the agent invokes them directly as `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, and the conversation produces the artifact. The CLI's only involvement is installing the skill files during `deviate setup` and (via `deviate-shard` / `deviate-adhoc`) consuming the `flow_refs:` frontmatter those artifacts emit.
 
 | Command | Source skill | Artifact committed | Notes |
 |---------|--------------|--------------------|-------|

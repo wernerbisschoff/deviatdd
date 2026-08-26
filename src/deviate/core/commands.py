@@ -235,14 +235,17 @@ def install_command(
     commands_root: Path | None = None,
     workdir: Path | None = None,
     agent: str = "claude",
+    target_filename: str | None = None,
 ) -> bool:
-    """Install a command as a flat .md file at ``target_dir/<name>.md``.
+    """Install a command as a flat file at ``target_dir/<name>.md``.
 
-    Returns ``True`` when the file was created or rewritten, ``False``
-    when the on-disk copy already matches the composed output.
+    Pass ``target_filename`` to override the basename (Codex skills use
+    ``SKILL.md``). Returns ``True`` when the file was created or
+    rewritten, ``False`` when the on-disk copy already matches the
+    composed output.
     """
     command_path = resolve_command(name, commands_root)
-    target_path = target_dir / f"{name}.md"
+    target_path = target_dir / (target_filename or f"{name}.md")
 
     raw = _read_text(command_path)
     if raw is None:

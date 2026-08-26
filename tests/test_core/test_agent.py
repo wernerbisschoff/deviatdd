@@ -1740,7 +1740,7 @@ class TestAgentToBackendResolution:
     def test_resolve_canonical_passthrough(self) -> None:
         from deviate.core.agent import resolve_agent_to_backend
 
-        for canonical in ("opencode", "claude", "droid", "pi", "omp"):
+        for canonical in ("opencode", "claude", "droid", "pi", "omp", "codex"):
             assert resolve_agent_to_backend(canonical) == canonical
 
     def test_resolve_omp_is_identity_not_alias(self) -> None:
@@ -1847,3 +1847,75 @@ class TestOmpBackendRegistration:
         from deviate.cli.micro import _resolve_agent_config
 
         assert _resolve_agent_config(Path.cwd(), "omp") == "omp"
+
+
+class TestCodexBackendRegistration:
+    """``codex`` is a first-class CLI backend (ChatGPT Codex ``codex exec``).
+
+    Thin map addition: ``BackendName``, ``AGENT_TO_BACKEND``,
+    ``BACKEND_COMMANDS``, ``MODEL_FLAGS``, and ``AgentConfig.backend``.
+    Transport stays ``cli``; prompt goes via the existing stdin path.
+    """
+
+    def test_agent_config_literal_accepts_codex(self) -> None:
+        config = AgentConfig(backend="codex")
+        assert config.backend == "codex"
+        assert config.transport == "cli"
+
+    def test_resolve_agent_to_backend_codex_identity(self) -> None:
+        from deviate.core.agent import resolve_agent_to_backend
+
+        assert resolve_agent_to_backend("codex") == "codex"
+
+    def test_backend_commands_includes_codex_exec(self) -> None:
+        assert BACKEND_COMMANDS["codex"] == (
+            "codex exec --sandbox workspace-write --ask-for-approval never"
+        )
+
+    def test_codex_supports_model_flag(self) -> None:
+        from deviate.core.agent import MODEL_FLAGS
+
+        assert MODEL_FLAGS["codex"] == ["--model"]
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_codex_dispatch_spawns_exec_with_stdin(self, mock_popen: MagicMock) -> None:
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (
+            b"phase: RED\nstatus: TEST_WRITTEN_FAILING\ntask_id: T\n",
+            b"",
+        )
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        backend = AgentBackend(config=AgentConfig(backend="codex"))
+        backend.invoke("test prompt")
+
+        args, kwargs = mock_popen.call_args
+        cmd = args[0]
+        assert cmd[:2] == ["codex", "exec"], f"unexpected argv prefix: {cmd}"
+        sandbox_idx = cmd.index("--sandbox")
+        assert cmd[sandbox_idx + 1] == "workspace-write"
+        approval_idx = cmd.index("--ask-for-approval")
+        assert cmd[approval_idx + 1] == "never"
+        assert "--yolo" not in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+        assert "--full-auto" not in cmd
+        assert kwargs.get("stdin") is not None
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_codex_model_flag_appended(self, mock_popen: MagicMock) -> None:
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (
+            b"phase: RED\nstatus: TEST_WRITTEN_FAILING\ntask_id: T\n",
+            b"",
+        )
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        backend = AgentBackend(config=AgentConfig(backend="codex"))
+        backend.invoke("test prompt", model="gpt-5")
+
+        cmd = mock_popen.call_args[0][0]
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "gpt-5"
+        assert cmd[-1] != "-", "stdin sentinel must not follow --model"
