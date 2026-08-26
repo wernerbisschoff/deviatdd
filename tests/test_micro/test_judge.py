@@ -3808,3 +3808,145 @@ class TestNoFailingTestAlreadyExistsPass:
         assert session.pending_judge_action == "revert_before"
         statuses = _ledger_statuses(ledger)
         assert "COMPLETED" not in statuses
+
+
+# ---------------------------------------------------------------------------
+# GH-118: JUDGE <task_card> must omit runner-appended **Judge Feedback**
+# so a prior fail-close cannot bias the next judge into under-citing owned
+# tokens. Token resolution already strips via _strip_judge_feedback (#89);
+# the injected prompt card must use the same strip. Constitution §3:
+# pytest under tests/; no agent; no git.
+# ---------------------------------------------------------------------------
+
+
+class TestJudgePromptStripsJudgeFeedback:
+    """GH-118: injected JUDGE task card drops prior-round Judge Feedback."""
+
+    _TASK_ID = "TSK-118-01"
+    _ISSUE_ID = "ISS-ADH-118"
+    _SLUG = "118-judge-feedback-prompt-strip"
+    _FALSE_OWNERSHIP = "AC-PLAN-003 belongs to a later task"
+    _RATIONALE = "This task owns AC-PLAN-001 through AC-PLAN-004."
+
+    def _seed_card(self, tmp_path: Path, *, with_feedback: bool) -> dict:
+        spec_dir = tmp_path / "specs" / "adhoc" / "issues"
+        spec_dir.mkdir(parents=True)
+        spec_file = spec_dir / f"{self._SLUG}.md"
+        spec_file.write_text("# Stub Spec\n", encoding="utf-8")
+        (tmp_path / "specs" / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": self._ISSUE_ID,
+                    "source_file": f"specs/adhoc/issues/{self._SLUG}.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        plan_dir = tmp_path / "specs" / "adhoc" / self._SLUG
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / "plan.md").write_text(
+            "**Scenario AC-PLAN-001: first owned token**\n"
+            "**Scenario AC-PLAN-002: second owned token**\n"
+            "**Scenario AC-PLAN-003: third owned token**\n"
+            "**Scenario AC-PLAN-004: fourth owned token**\n",
+            encoding="utf-8",
+        )
+        card = (
+            f"- {self._TASK_ID}: Cite evidence for every owned plan token\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001, AC-PLAN-002, "
+            "AC-PLAN-003, AC-PLAN-004\n"
+            f"  - **Rationale**: {self._RATIONALE}\n"
+        )
+        if with_feedback:
+            card += (
+                "  - **Judge Feedback**: JUDGE evidence is missing, empty, "
+                "or partial for injected acceptance tokens: AC-PLAN-002, "
+                f"AC-PLAN-003, AC-PLAN-004\n{self._FALSE_OWNERSHIP}\n"
+                "  - **Files**: tests/test_example.py\n"
+            )
+        else:
+            card += "  - **Files**: tests/test_example.py\n"
+        (plan_dir / "tasks.md").write_text("# Tasks\n\n" + card, encoding="utf-8")
+        return {
+            "id": self._TASK_ID,
+            "issue_id": self._ISSUE_ID,
+            "description": "Cite evidence for every owned plan token",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+
+    def test_judge_prompt_omits_appended_feedback_keeps_owned_acs(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-118: <task_card> drops Judge Feedback, keeps owned ACs."""
+        import re
+
+        from deviate.cli.micro import _build_auto_prompt, _task_card_text
+
+        task = self._seed_card(tmp_path, with_feedback=True)
+        raw = _task_card_text(tmp_path, task)
+        assert "**Judge Feedback**" in raw, (
+            "GH-118: raw card must still carry the appended feedback bullet"
+        )
+        assert self._FALSE_OWNERSHIP in raw, (
+            "GH-118: raw card must still carry the false ownership continuation"
+        )
+
+        prompt = _build_auto_prompt("judge", task, tmp_path)
+        match = re.search(
+            r'<task_card source="tasks.md">(.*?)</task_card>',
+            prompt,
+            re.DOTALL,
+        )
+        assert match is not None, (
+            'JUDGE prompt must inject <task_card source="tasks.md">'
+        )
+        injected = match.group(1)
+
+        assert "**Judge Feedback**" not in injected, (
+            "GH-118: injected JUDGE <task_card> must omit **Judge Feedback** bullets"
+        )
+        assert self._FALSE_OWNERSHIP not in injected, (
+            "GH-118: injected JUDGE <task_card> must omit prior-round "
+            "false-ownership continuation lines"
+        )
+        assert self._RATIONALE in injected, (
+            "GH-118: injected JUDGE <task_card> must keep the real Rationale"
+        )
+        for token in (
+            "AC-PLAN-001",
+            "AC-PLAN-002",
+            "AC-PLAN-003",
+            "AC-PLAN-004",
+        ):
+            assert token in injected, (
+                f"GH-118: injected JUDGE <task_card> must keep owned token {token}"
+            )
+
+    def test_judge_prompt_keeps_card_without_feedback_unchanged(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-118: a card that never had Judge Feedback is injected as-is."""
+        import re
+
+        from deviate.cli.micro import _build_auto_prompt, _task_card_text
+
+        task = self._seed_card(tmp_path, with_feedback=False)
+        raw = _task_card_text(tmp_path, task)
+        prompt = _build_auto_prompt("judge", task, tmp_path)
+        match = re.search(
+            r'<task_card source="tasks.md">(.*?)</task_card>',
+            prompt,
+            re.DOTALL,
+        )
+        assert match is not None, (
+            'JUDGE prompt must inject <task_card source="tasks.md">'
+        )
+        injected = match.group(1).strip()
+        assert injected == raw.strip(), (
+            "GH-118: stripping a card with no Judge Feedback must be a no-op"
+        )
+        assert self._RATIONALE in injected
+        assert "AC-PLAN-001" in injected
+        assert "**Judge Feedback**" not in injected
