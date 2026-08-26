@@ -6002,3 +6002,132 @@ class TestSchemaLimitHarnessSurface:
                 _run_refactor_phase(task, ledger_path, session, session_path, Console())
 
         _assert_schema_tokens(str(excinfo.value))
+
+
+class TestNoFailingTestAlreadyExistsCliCompletes:
+    """AC-ADHOC-031-01: ``deviate micro run`` completes an already-exists
+    ``no_failing_test`` task via ``skip_refactor`` instead of crashing with
+    ``ROLLBACK_BOUNDARY_MISSING`` (the TSK-029-02 crash shape).
+
+    Drives the real RED → JUDGE routing through ``_run_tdd_cycle`` with
+    ``_run_pytest`` mocked to exit 0 and ``_invoke_agent`` returning an
+    ``already_satisfied`` RED manifest followed by a ``COMPLIANCE_PASS``
+    judge verdict. Flow References: [].
+    """
+
+    _ISSUE_ID = "ISS-ADH-031"
+    _TASK_ID = "TSK-031-02"
+    _TEST_PATH = "tests/test_feature.py"
+
+    def test_already_exists_no_failing_test_completes(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import _run_tdd_cycle
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        monkeypatch.setattr(
+            "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+        )
+
+        test_file = root / self._TEST_PATH
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("def test_feature() -> None:\n    assert True\n")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "chore: seed regression-pin test"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+
+        ledger_dir = root / "specs" / "adhoc" / "031-judge-revert-boundary"
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        ledger_path = ledger_dir / "tasks.jsonl"
+        task = {
+            "id": self._TASK_ID,
+            "issue_id": self._ISSUE_ID,
+            "description": "already-exists behavior",
+            "execution_mode": "TDD",
+        }
+        append_task_transition(TaskRecord(**task), ledger_path)
+
+        session_path = root / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(active_issue_id=self._ISSUE_ID).save(session_path)
+
+        red_manifest = HandoverManifest(
+            phase="RED",
+            status="SUCCESS",
+            task_id=self._TASK_ID,
+            failure_kind="already_satisfied",
+            rationale="behavior already exists at HEAD",
+            files=[self._TEST_PATH],
+            test_file=self._TEST_PATH,
+        )
+        judge_manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_PASS",
+            rationale="quoted HEAD behavior matches the RED contract",
+            next_action="skip_refactor",
+        )
+
+        def _invoke(*args: object, **kwargs: object) -> tuple[HandoverManifest, str]:
+            prompt = str(args[0])
+            if "JUDGE" in prompt or kwargs.get("phase") == "JUDGE":
+                return judge_manifest, ""
+            return red_manifest, ""
+
+        import io
+
+        captured = io.StringIO()
+
+        with (
+            patch("deviate.cli.micro._invoke_agent", side_effect=_invoke),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="1 passed", stderr=""
+                ),
+            ),
+        ):
+            _run_tdd_cycle(
+                task,
+                ledger_path,
+                Console(file=captured, width=200),
+                no_refactor=True,
+            )
+
+        statuses = []
+        for line in ledger_path.read_text(encoding="utf-8").splitlines():
+            record = json.loads(line)
+            if record.get("id") == self._TASK_ID:
+                statuses.append(record["status"])
+        assert statuses[-1] == "COMPLETED", (
+            f"already-exists no_failing_test must COMPLETE; got {statuses!r}"
+        )
+        assert "ROLLBACK_BOUNDARY_MISSING" not in ledger_path.read_text(
+            encoding="utf-8"
+        )
+
+        output = captured.getvalue()
+        assert "ROLLBACK_BOUNDARY_MISSING" not in output, (
+            "already-exists pass path must never print ROLLBACK_BOUNDARY_MISSING; "
+            f"got {output!r}"
+        )
+
+        session_after = SessionState.load(session_path)
+        assert session_after.failure_kind == "", (
+            "completed adjudicated task must clear failure_kind; got "
+            f"{session_after.failure_kind!r}"
+        )
+        assert test_file.is_file(), (
+            "declared regression-pin test file must remain on disk"
+        )
