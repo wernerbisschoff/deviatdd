@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class AgentConfig(BaseModel):
-    # Agent backend: "opencode", "claude", "droid", "pi", or "omp"
-    backend: Literal["opencode", "claude", "droid", "pi", "omp"] = "pi"
+    # Agent backend: "opencode", "claude", "droid", "pi", "omp", or "codex"
+    backend: Literal["opencode", "claude", "droid", "pi", "omp", "codex"] = "pi"
     # Agent invocation timeout in seconds (must be > 0)
     timeout: int = Field(default=600, gt=0)
     # Opt-in RPC mode for Pi — spawns `pi --mode rpc --no-session` instead of `pi -p`
@@ -169,7 +169,7 @@ class DeviateConfig(BaseModel):
     timeout_seconds: int = Field(default=1800, gt=0)
     # Agent export mode: "local" (project .claude/) or "global" (~/.claude/)
     agent_export_mode: Literal["local", "global"] = "local"
-    # Agent backend config (opencode, claude, or droid)
+    # Agent backend config (opencode, claude, droid, pi, omp, or codex)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # Per-phase model overrides, e.g. default = "opencode/deepseek-v4-flash"
     models: dict[str, str] = Field(default_factory=dict)

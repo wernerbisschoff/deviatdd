@@ -618,28 +618,25 @@ class TestInitAgentFlag:
             assert "*/prompts/deviate-*.md" in root_gi
             assert ".worktrees/" in root_gi
 
-    def test_init_installs_commands_to_all_agent_dirs(self, tmp_path: Path):
-        """``deviate setup --agent <x>`` installs the command library into
-        EVERY agent's command directory, not just the one selected.
-
-        ``--agent`` is the meso/micro backend selector; command installation
-        is intentionally unconditional so a single ``setup`` run prepares
-        the workspace for any of the supported agents.
+    def test_init_installs_commands_only_for_selected_agent(self, tmp_path: Path):
+        """``deviate setup --agent <x>`` installs the command library only
+        into the selected agent's directory.
         """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
+            assert (tmp_path / ".opencode" / "commands" / "deviate-red.md").exists()
             for agent_dir, sub in (
                 (".claude", "commands"),
-                (".opencode", "commands"),
                 (".factory", "commands"),
                 (".pi", "prompts"),
+                (".omp", "prompts"),
             ):
                 sample = tmp_path / agent_dir / sub / "deviate-red.md"
-                assert sample.exists(), (
-                    f"Expected {sample} to exist — setup installs into ALL "
-                    f"agent dirs regardless of --agent"
+                assert not sample.exists(), (
+                    f"Did not expect {sample} — setup installs only the selected agent"
                 )
+            assert not (tmp_path / ".agents").exists()
 
     def test_init_root_gitignore_preserves_user_content(self, tmp_path: Path):
         """User-authored entries in the root ``.gitignore`` are preserved when
@@ -848,6 +845,7 @@ class TestInitAgentFlag:
             "opencode",
             "pi",
             "omp",
+            "codex",
         }
 
     def test_init_agent_to_backend_mapping(self):
@@ -861,6 +859,7 @@ class TestInitAgentFlag:
         # spawns its own binary (``pi -p`` / ``omp -p``).
         assert AGENT_TO_BACKEND["pi"] == "pi"
         assert AGENT_TO_BACKEND["omp"] == "omp"
+        assert AGENT_TO_BACKEND["codex"] == "codex"
 
 
 class TestInitPiBackend:
@@ -1059,18 +1058,10 @@ class TestInstallDeviatddSkill:
     """Tests for the project-local ``deviatdd`` skill provisioned by
     ``deviate setup``.
 
-    The skill is the ONLY skill — there are no siblings. It is installed
-    to ``<workdir>/.<agent>/skills/deviatdd/SKILL.md`` for every active
-    agent platform (``claude``, ``opencode``, ``factory``, ``pi``,
-    ``omp``) — write-everywhere, regardless of whether each platform
-    documents a project-local skills convention. Mirrors the
-    ``_install_commands_to_agents`` write-everywhere policy.
-
-    Auto-discovery status per platform (informational, does not gate
-    the install): Claude and Pi document the convention and auto-
-    discover; OpenCode and Factory have no documented convention
-    (file on disk for forward-compat); OMP documents only user-level
-    skills (operators register via OMP's settings.skills array).
+    The skill is the ONLY packaged skill. It is installed to
+    ``<workdir>/.<agent>/skills/deviatdd/SKILL.md`` for the *selected*
+    agent only (``droid`` → ``.factory/``; ``codex`` →
+    ``.agents/skills/deviatdd/SKILL.md``).
 
     The project-root ``.gitignore`` excludes the skill install dir
     via a single ``*/skills/deviatdd/`` wildcard — mirrors the
@@ -1078,69 +1069,22 @@ class TestInstallDeviatddSkill:
     single-level patterns.
     """
 
-    def test_setup_installs_deviatdd_skill_for_claude_and_pi(
+    def test_setup_installs_deviatdd_skill_only_for_selected_agent(
         self, tmp_path: Path
     ) -> None:
-        """``deviate setup`` writes the deviatdd skill to BOTH
-        ``.claude/skills/deviatdd/SKILL.md`` and
-        ``.pi/skills/deviatdd/SKILL.md`` regardless of which ``--agent``
-        was selected (skill is platform-agnostic and the install is
-        unconditional)."""
+        """``deviate setup --agent claude`` writes the skill only under
+        ``.claude/skills/`` and does not provision other agent trees."""
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "claude"])
             assert result.exit_code == 0, result.output
 
         claude_skill = tmp_path / ".claude" / "skills" / "deviatdd" / "SKILL.md"
-        pi_skill = tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md"
-
         assert claude_skill.is_file(), f"Claude skill not installed: {claude_skill}"
-        assert pi_skill.is_file(), f"Pi skill not installed: {pi_skill}"
-        assert claude_skill.read_text() == pi_skill.read_text(), (
-            "Claude and Pi skill copies diverged — installer must "
-            "emit identical content for both platforms"
-        )
-
-        # Both install log lines must appear.
         assert ".claude/skills/deviatdd/SKILL.md" in result.output
-        assert ".pi/skills/deviatdd/SKILL.md" in result.output
-
-    def test_setup_installs_deviatdd_skill_for_all_five_active_agents(
-        self, tmp_path: Path
-    ) -> None:
-        """All five ``active_agents`` (``claude``, ``opencode``,
-        ``factory``, ``pi``, ``omp``) get the deviatdd skill installed
-        at ``<workdir>/.<agent>/skills/deviatdd/SKILL.md`` regardless of
-        whether each platform's documented skills convention auto-
-        discovers from that path. Mirrors
-        ``_install_commands_to_agents``'s write-everywhere policy.
-
-        Content must be byte-identical across all five destinations --
-        the skill body is single-source-of-truth at
-        ``src/deviate/prompts/skills/deviatdd/SKILL.md``.
-        """
-        with chdir(tmp_path):
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
-            assert result.exit_code == 0, result.output
-
-        bodies: dict[str, str] = {}
-        for agent in ("claude", "opencode", "factory", "pi", "omp"):
-            skill_path = tmp_path / f".{agent}" / "skills" / "deviatdd" / "SKILL.md"
-            assert skill_path.is_file(), (
-                f"{agent} should have a project-local skill installed at "
-                f"{skill_path} (write-everywhere policy)"
-            )
-            assert f".{agent}/skills/deviatdd/SKILL.md" in result.output, (
-                f"Missing INSTALL log for {agent}; got:\n{result.output}"
-            )
-            bodies[agent] = skill_path.read_text()
-
-        # All five copies must be byte-identical.
-        first_agent, first_body = next(iter(bodies.items()))
-        for agent, body in bodies.items():
-            assert body == first_body, (
-                f"Skill copy for {agent} differs from {first_agent} -- "
-                f"the installer must emit identical content for every "
-                f"agent platform"
+        for other in (".pi", ".opencode", ".factory", ".omp", ".agents"):
+            other_skill = tmp_path / other / "skills" / "deviatdd" / "SKILL.md"
+            assert not other_skill.exists(), (
+                f"{other} should not receive a skill when --agent claude"
             )
 
     def test_setup_deviatdd_skill_idempotent(self, tmp_path: Path) -> None:
@@ -1154,9 +1098,8 @@ class TestInstallDeviatddSkill:
             second = runner.invoke(cli, ["setup", "--agent", "claude"])
             assert second.exit_code == 0, second.output
 
-        # Both targets SKIP on the second run.
         assert "SKIP .claude/skills/deviatdd/SKILL.md" in second.output
-        assert "SKIP .pi/skills/deviatdd/SKILL.md" in second.output
+        assert "SKIP .pi/skills/deviatdd/SKILL.md" not in second.output
 
     def test_setup_deviatdd_skill_gitignore_entries(self, tmp_path: Path) -> None:
         """Root ``.gitignore`` excludes the project-local skill install
@@ -1175,12 +1118,14 @@ class TestInstallDeviatddSkill:
             assert result.exit_code == 0, result.output
 
         gi = (tmp_path / ".gitignore").read_text()
-        # Single `*/skills/deviatdd/` wildcard covers all five
-        # agent platforms (claude, opencode, factory, pi, omp) —
-        # mirrors the existing `*/commands/` and `*/prompts/`
-        # single-level patterns in `_ensure_root_gitignore`.
+        # Single `*/skills/deviatdd/` wildcard covers selected-agent
+        # skill installs (including `.agents/skills/deviatdd/`).
+        # `*/skills/deviate-*/` covers Codex per-command skill dirs.
         assert "*/skills/deviatdd/" in gi, (
             f"Expected '*/skills/deviatdd/' in root .gitignore; got:\n{gi}"
+        )
+        assert "*/skills/deviate-*/" in gi, (
+            f"Expected '*/skills/deviate-*/' in root .gitignore; got:\n{gi}"
         )
 
         # The five old per-platform entries must NOT be present —

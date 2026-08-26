@@ -125,7 +125,7 @@ class TestResolveAgentConfigBackendAlias:
         """Canonical backend names pass through unchanged."""
         from deviate.cli.micro import _resolve_agent_config
 
-        for canonical in ("opencode", "claude", "droid", "pi", "omp"):
+        for canonical in ("opencode", "claude", "droid", "pi", "omp", "codex"):
             assert _resolve_agent_config(tmp_path, canonical) == canonical
 
     def test_config_toml_omp_passes_through_as_canonical(self, tmp_path: Path) -> None:
@@ -155,7 +155,7 @@ class TestResolveAgentConfigBackendAlias:
         dot = tmp_path / ".deviate"
         dot.mkdir()
 
-        for canonical in ("opencode", "claude", "droid", "pi", "omp"):
+        for canonical in ("opencode", "claude", "droid", "pi", "omp", "codex"):
             (dot / "config.toml").write_text(f'[agent]\nbackend = "{canonical}"\n')
             assert _resolve_agent_config(tmp_path, None) == canonical
 

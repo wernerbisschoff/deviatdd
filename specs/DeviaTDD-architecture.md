@@ -887,6 +887,7 @@ handing the manifest to the rest of the pipeline:
 | `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
 | `droid` | `droid exec` | Commands copied into `.factory/commands/` (flat `.md`) | `--model <id>` flag | Factory Droid IDE-owned commands dir |
 | `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Lean spawn after `pi -p` / RPC `--no-session`: `--no-extensions`, `--tools read,bash,edit,write`, `--no-skills`, optional `--skill`; schema-limit tokens abort as `AGENT_ERROR` |
+| `codex` | `codex exec --sandbox workspace-write --ask-for-approval never` | Skills written to `<workdir>/.agents/skills/<name>/SKILL.md` (Codex CLI 0.117+ dropped `.codex/prompts`). Packaged `deviatdd` skill plus one skill folder per slash command. | `--model <id>` flag | CLI transport only (no Codex RPC). Prompt via stdin. Do not use `--full-auto` or `--dangerously-bypass-approvals-and-sandbox`. |
 
 Pi implements slash-command discovery natively — `pi -p` loads commands from
 `~/.pi/agent/`, `.pi/prompts/`, and `.agents/` on startup, parses the
@@ -958,18 +959,18 @@ standard `AgentBackend.invoke()` contract with these customisations:
    the tokens. This path does not wait 900s. It does not treat those
    tokens as stall liveness. EXECUTE stall stays 3600s.
 
-### 10.2.5 Project-Local `deviatdd` Skill (Single Skill, Write-Everywhere)
+### 10.2.5 Project-Local `deviatdd` Skill (Single Skill, Selected Agent)
 
 In addition to the 25 `deviate-*` slash commands under
 `<workdir>/.<agent>/commands/` and `<workdir>/.pi/prompts/`, `deviate setup`
 provisions exactly **one** project-local skill named `deviatdd` at
-`<workdir>/.<agent>/skills/deviatdd/SKILL.md` for every agent platform
-in `active_agents` (`claude`, `opencode`, `factory`, `pi`, `omp`).
-This mirrors `_install_commands_to_agents`'s write-everywhere policy:
-the skill body is identical across platforms, only the destination
-directory differs, and the write is unconditional — every operator
-using `--agent <platform>` gets the skill at the canonical skills
-directory for their platform.
+`<workdir>/.<agent>/skills/deviatdd/SKILL.md` for the selected agent
+only (`claude`, `opencode`, `factory`/`droid`, `pi`, `omp`). Codex
+receives the same skill at `<workdir>/.agents/skills/deviatdd/SKILL.md`
+plus one `.agents/skills/<command>/SKILL.md` per packaged slash command.
+`--agent` gates both command and skill install; `droid` normalizes to
+`.factory/`. The skill body is identical across platforms — only the
+destination directory differs.
 
 **Auto-discovery status per platform (informational, does not gate the
 write):**
@@ -987,6 +988,9 @@ write):**
   `~/.omp/agent/managed-skills/<name>/SKILL.md` and via a
   settings-driven `skills` array. Operators register the
   project-local file via OMP's `skills` array in settings.
+- `codex` — official project-local discovery is
+  `.agents/skills/<name>/SKILL.md`. Codex CLI 0.117+ dropped
+  `.codex/prompts` and `/prompts:`.
 
 **Source of truth:** `src/deviate/prompts/skills/deviatdd/SKILL.md`
 (package resource, loaded via `importlib.resources`).
@@ -1044,18 +1048,21 @@ field schemas live in `micro.py` itself, not duplicated here.
 **`.gitignore` exclusions:** `_ensure_root_gitignore` adds
 `*/skills/deviatdd/` to the entries tuple alongside
 `*/commands/deviate-*.md` and `*/prompts/deviate-*.md`. The
-single-level wildcard covers all five agent platforms (`.claude/`,
-`.opencode/`, `.factory/`, `.pi/`, `.omp/`) with one pattern. The
-single-level prefix (`*/`, not `**/`) is critical: it scopes the
-pattern to the project root, never matching the deviatdd project's
-own source at `src/deviate/prompts/skills/deviatdd/` (three
-directories deep).
+single-level wildcard covers every selected-agent skill install
+(`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
+with one pattern. `*/skills/deviate-*/` covers Codex per-command
+skill dirs. The single-level prefix (`*/`, not `**/`) is critical: it
+scopes the pattern to the project root, never matching the
+deviatdd project's own source at
+`src/deviate/prompts/skills/deviatdd/` (three directories deep).
 
-**Tests:** `TestInstallDeviatddSkill` (8 tests) in
-`tests/test_cli/test_init.py` covers install-to-all-five-agents,
-idempotence, gitignore entry presence + idempotence, the safety-gate
-fragments in the SKILL.md body, well-formed frontmatter, and the
-dispatch table's canonical slash-command references.
+**Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py`
+and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` in
+`tests/test_cli/test_setup.py` cover selected-agent-only install,
+Codex skills + `backend = "codex"`, idempotence, gitignore entry
+presence + idempotence, the safety-gate fragments in the SKILL.md
+body, well-formed frontmatter, and the dispatch table's canonical
+slash-command references.
 
 
 ### 10.3 Pi Sandbox Boundary
