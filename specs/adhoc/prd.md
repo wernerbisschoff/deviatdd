@@ -522,7 +522,7 @@
 
 ## FR-ADHOC-033: Redefine /deviate-prune as post-COMPLETED spec+test cleanup
 
-- **Description**: `/deviate-prune` becomes the single post-COMPLETED cleanup surface: keep honeycomb test thinning (drop spy/impl, keep public behavioral contracts) and delete that COMPLETED issue's cycle markdown. JSONL ledgers stay append-only and are never compacted.
+- **Description**: `/deviate-prune` becomes the single post-COMPLETED cleanup surface: keep honeycomb test thinning (drop spy/impl, keep public behavioral contracts) and delete that COMPLETED issue's drop-safe cycle markdown (`plan.md`, `tasks.md`, leftover per-issue design/data-model). Keep epic `explore.md` / `prd.md` and `issues/*.md`. JSONL ledgers stay append-only and are never compacted.
 - **Preconditions**: Python 3.13. `src/deviate/prompts/commands/deviate-prune.md` is test-only PRUNE and calls missing `deviate prune pre` / `post`. `SKILL.md` / README describe prune as stale-test thinning. Cycle markdown remains after COMPLETED. Ledgers use merge=union.
 - **Inputs/Outputs**: Input — a COMPLETED issue id (or current COMPLETED context) plus its test suite. Output — deleted cycle markdown for that issue, thinned spy/impl tests, unchanged ledger bytes, updated prune prompt and docs.
 - **Flow Refs**: `[]`
@@ -531,6 +531,6 @@
   2. US-033-02: As a DeviaTDD operator, I want JSONL ledgers left untouched so the audit trail cannot be compacted or rewritten by prune. *(Ref: FR-ADHOC-033)*
   3. US-033-03: As a DeviaTDD operator, I want prune to halt if plan ACs are not yet encoded as behavioral tests, so deleting `plan.md` cannot orphan the contract. *(Ref: FR-ADHOC-033)*
 - **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
-  1. AC-ADHOC-033-01 / AO-033-01: `/deviate-prune` on a COMPLETED issue removes that issue's cycle markdown and thins spy/impl tests while keeping behavioral / `ac` tests. In-flight issues are a no-op for spec deletion.
+  1. AC-ADHOC-033-01 / AO-033-01: `/deviate-prune` on a COMPLETED issue removes that issue's `plan.md` / `tasks.md` (and leftover per-issue design/data-model) and thins spy/impl tests while keeping behavioral / `ac` tests. Epic explore/prd and the issue md stay. In-flight issues are a no-op for spec deletion.
   2. AC-ADHOC-033-02 / AO-033-02: `specs/issues.jsonl`, `specs/**/tasks.jsonl`, and `specs/_product/flows.jsonl` are byte-identical after prune. A compact/squash/rewrite request is rejected.
   3. AC-ADHOC-033-03 / AO-033-03: `plan.md` is not deleted until its ACs exist as behavioral / `ac` tests. Missing ACs halt with unmatched tokens; no cycle-markdown deletes land. API + architecture + CHANGELOG land in the same implementation commit.
