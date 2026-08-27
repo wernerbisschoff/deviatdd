@@ -439,7 +439,7 @@ and a one-line "use this when..." description.
 | `/deviate-pr` | The branch is merged locally and you need to open / merge the PR. |
 | `/deviate-execute` | A non-TDD task is blocking the queue and needs DIRECT execution. |
 | `/deviate-hotfix` | A production-grade bug needs a one-shot fix outside the normal task flow. |
-| `/deviate-prune` | You suspect a stale test in `tests/` is causing false REDs. |
+| `/deviate-prune` | A COMPLETED issue still has leftover `plan.md` / `tasks.md` or spy/impl tests. Single post-COMPLETED spec+test cleanup surface. |
 | `/deviate-inspect` | You need a read-only query of the ledger / session / tasks. |
 
 This skill never invokes these on its own — it tells the operator which

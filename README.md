@@ -215,8 +215,9 @@ style Ex fill:#f5e1e1
 | **Micro · Run** *(agent-internal drain)* | `deviate micro run [task-id] --all` | Completed task commits per the cycle | Agent-internal dispatch — `deviate micro run <task-id>` runs a single task; `deviate micro run --all` drains every PENDING task. Top-level `deviate run` invokes this with `--all` inside the worktree the meso step just created. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json`. |
 | **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
 | **Release** *(Gate 3)* | `/deviate-review` | Final PR scan | **Gate 3**: merge or request changes. |
+| **Cleanup** | `/deviate-prune` | Drop-safe cycle markdown gone; spy/impl tests thinned; JSONL ledgers unchanged | Post-COMPLETED spec+test cleanup for **one** issue. Drops `spy` / `impl` tests; keeps `behavioral` / `ac`. Deletes that issue's `plan.md` / `tasks.md` / leftover `design.md` / `data-model.md`. Never touches `issues.jsonl`, `tasks.jsonl`, or `flows.jsonl`. Epic `explore.md` / `prd.md` and `issues/*.md` stay. |
 
-Operational tools (no gate, no commit): `/deviate-triage`, `/deviate-constitution`, `/deviate-hotfix`, `/deviate-prune`.
+Operational tools (no gate): `/deviate-triage`, `/deviate-constitution`, `/deviate-hotfix`. `/deviate-prune` is the post-COMPLETED spec+test cleanup surface (thin CLI `deviate prune pre` / `post`; the slash command commits the cleanup).
 
 ---
 
