@@ -45,6 +45,7 @@ from deviate.cli.feature import feature_app
 from deviate.cli.inspect import inspect_app
 from deviate.cli.init import init_app
 from deviate.cli.review import review_app
+from deviate.cli.prune import prune_app
 from deviate.cli.walkthrough import walkthrough_app
 from deviate.cli._html import html_app
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
@@ -1192,6 +1193,12 @@ cli.add_typer(
     name="review",
     rich_help_panel=_AGENT_PANEL,
     help="Final PR review (Gate 3)",
+)
+cli.add_typer(
+    prune_app,
+    name="prune",
+    rich_help_panel=_AGENT_PANEL,
+    help="Post-COMPLETED spec+test cleanup",
 )
 cli.add_typer(
     walkthrough_app,
