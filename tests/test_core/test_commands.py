@@ -5,9 +5,14 @@ from pathlib import Path
 import yaml
 
 from deviate.core.commands import (
+    UnknownPackError,
+    classify_packaged_stems,
+    commands_for_packs,
     compose_command_body,
     discover_commands,
     install_command,
+    parse_optional_packs,
+    redact_libref,
     resolve_command,
 )
 
@@ -632,3 +637,30 @@ class TestManualDerivationFromAutoCore:
         first = (target / "deviate-red.md").read_text(encoding="utf-8")
         assert install_command("deviate-red", target) is False
         assert (target / "deviate-red.md").read_text(encoding="utf-8") == first
+
+
+class TestCommandPacks:
+    def test_every_packaged_stem_is_classified(self) -> None:
+        assert classify_packaged_stems() == []
+
+    def test_default_packs_include_red_not_pr(self) -> None:
+        stems = commands_for_packs()
+        assert "deviate-red" in stems
+        assert "deviate-pr" not in stems
+
+    def test_parse_optional_packs_names(self) -> None:
+        assert parse_optional_packs("none") == ()
+        assert parse_optional_packs("pr,review") == ("pr", "review")
+        assert "pr" in parse_optional_packs("all-optional")
+
+    def test_parse_unknown_pack_raises(self) -> None:
+        try:
+            parse_optional_packs("graphite")
+        except UnknownPackError:
+            return
+        raise AssertionError("expected UnknownPackError")
+
+    def test_redact_libref_drops_matching_lines(self) -> None:
+        text = "keep\nuse libref query foo\nkeep2\n"
+        assert "libref" not in redact_libref(text).lower()
+        assert "keep" in redact_libref(text)

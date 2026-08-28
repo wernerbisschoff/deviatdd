@@ -12,7 +12,7 @@
 
 6. **Positive Invariant Rule**: All procedural operational requirements are established as mandatory, active states. Do not formulate instructions via negations.
 
-7. **Offline Documentation Mandate**: All agents MUST use `libref query <library> <topic>` as the primary documentation lookup mechanism. Run `libref list` first to discover available documentation packages. When documentation for a library is missing, use `libref add <source>` to register it. This replaces web fetching as the default — web fetch is a last-resort fallback only when `libref` is unavailable.
+7. **Documentation Lookup**: Prefer version-pinned project docs and local references. Use web fetch only when those sources do not answer the question.
 
 8. **Product Context Is Read-Only**: Consumer repositories assume the DeviaTDD CLI, its agent skills, and the repository's Product-layer flow catalog are already installed and available. Read existing `specs/_product/` flow artifacts as context and propagate their `flow_refs` from issue frontmatter through `plan.md`, `tasks.md`, tests, implementation, and PRs. Issue, plan, and task artifacts contain only the requested product behavior and its directly required application support. DeviaTDD setup, agent-skill installation, flow authoring or index synchronization, release scaffolding, and workflow-ledger maintenance are preconditions rather than deliverables: do not list them as files, acceptance criteria, tasks, or implementation phases; if they are the only requested work, halt with `META_WORK_NOT_ALLOWED`.
 
