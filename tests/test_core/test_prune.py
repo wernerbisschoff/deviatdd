@@ -1,4 +1,4 @@
-"""Keep/drop pins for post-COMPLETED ``/deviate-prune`` (FR-ADHOC-033)."""
+"""Keep/drop pins for manual ``/deviate-prune`` honeycomb thinning (FR-ADHOC-033)."""
 
 from __future__ import annotations
 
@@ -14,15 +14,54 @@ from deviate.core.prune import (
 )
 
 
-def test_classify_test_keeps_behavioral_and_ac_over_spy() -> None:
+def test_classify_test_prefers_marks_and_name_tags() -> None:
     assert classify_test("test_behavioral_returns_ok") == "keep"
     assert classify_test("test_ac_adhoc_033_01") == "keep"
     assert classify_test("test_spy_internal_method") == "drop"
     assert classify_test("test_impl_calls_helper") == "drop"
-    assert classify_test("test_impact_is_public") == "keep"
     assert classify_test("test_public_contract", {"spy"}) == "drop"
     assert classify_test("test_spy_wrapped", {"behavioral"}) == "keep"
     assert classify_test("test_spy_wrapped", {"ac"}) == "keep"
+
+
+def test_classify_test_untagged_does_not_auto_keep() -> None:
+    assert classify_test("test_impact_is_public") == "drop"
+    assert classify_test("test_something_generic") == "drop"
+    assert classify_test("test_foo", body="def test_foo():\n    pass\n") == "drop"
+
+
+def test_classify_test_untagged_body_drops_internal_probes() -> None:
+    spy_body = "def test_foo():\n    helper.assert_called_with(1)\n"
+    assert classify_test("test_foo", body=spy_body) == "drop"
+    private_body = "def test_foo():\n    assert obj._state == 1\n"
+    assert classify_test("test_foo", body=private_body) == "drop"
+    patch_private = (
+        "def test_foo():\n"
+        "    with patch('mod._helper') as mocked:\n"
+        "        mocked.return_value = 1\n"
+    )
+    assert classify_test("test_foo", body=patch_private) == "drop"
+    mocker_spy = "def test_foo(mocker):\n    mocker.spy(mod, 'helper')\n"
+    assert classify_test("test_foo", body=mocker_spy) == "drop"
+
+
+def test_classify_test_untagged_body_keeps_public_io_and_ac() -> None:
+    ac_body = (
+        "def test_foo():\n"
+        "    # AC-ADHOC-033-01 public contract\n"
+        "    assert public_api(1) == 2\n"
+    )
+    assert classify_test("test_foo", body=ac_body) == "keep"
+    public_io = (
+        "def test_foo():\n"
+        "    result = public_api(input_value)\n"
+        "    assert result == expected\n"
+    )
+    assert classify_test("test_foo", body=public_io) == "keep"
+    raises_io = (
+        "def test_foo():\n    with pytest.raises(ValueError):\n        public_api(-1)\n"
+    )
+    assert classify_test("test_foo", body=raises_io) == "keep"
 
 
 def test_extract_plan_ac_tokens_reads_plan_and_adhoc_forms() -> None:
@@ -71,48 +110,70 @@ def _seed_completed_issue(root: Path, *, encode_ac: bool = True) -> Path:
     tests.mkdir()
     if encode_ac:
         keep_body = (
-            "def test_behavioral_ac_adhoc_099_01():\n"
+            "import pytest\n\n"
+            "@pytest.mark.behavioral\n"
+            "def test_public_ac_adhoc_099_01():\n"
             "    # ISS-ADH-099 public contract AC-ADHOC-099-01\n"
             "    assert True\n"
         )
     else:
         keep_body = (
-            "def test_behavioral_public_surface():\n"
+            "import pytest\n\n"
+            "@pytest.mark.behavioral\n"
+            "def test_public_surface():\n"
             "    # ISS-ADH-099 public contract without the plan token\n"
             "    assert True\n"
         )
-    (tests / "test_099_behavioral.py").write_text(keep_body, encoding="utf-8")
+    (tests / "test_099_keep.py").write_text(keep_body, encoding="utf-8")
     (tests / "test_099_spy.py").write_text(
-        "def test_spy_internal_call():\n"
+        "import pytest\n\n"
+        "@pytest.mark.spy\n"
+        "def test_internal_call():\n"
         "    # ISS-ADH-099 implementation probe\n"
-        "    assert True\n",
+        "    helper.assert_called_with(1)\n",
+        encoding="utf-8",
+    )
+    (tests / "test_099_untagged_spy.py").write_text(
+        "def test_untagged_private_state():\n"
+        "    # ISS-ADH-099 untagged private probe\n"
+        "    assert widget._state == 1\n",
+        encoding="utf-8",
+    )
+    (tests / "test_099_untagged_keep.py").write_text(
+        "def test_untagged_public_io():\n"
+        "    # ISS-ADH-099 untagged public input to output\n"
+        "    result = public_api(1)\n"
+        "    assert result == 2\n",
         encoding="utf-8",
     )
     return issue_dir
 
 
-def test_completed_issue_drops_cycle_markdown_and_spies(tmp_path: Path) -> None:
+def test_apply_prune_thins_tests_and_never_unlinks_specs(tmp_path: Path) -> None:
     issue_dir = _seed_completed_issue(tmp_path)
     before = snapshot_ledgers(tmp_path)
     plan = build_prune_plan(tmp_path, "ISS-ADH-099")
     assert plan.status == "READY"
+    assert plan.spec_deletes == []
     apply_prune(tmp_path, plan)
 
-    assert not (issue_dir / "plan.md").exists()
-    assert not (issue_dir / "tasks.md").exists()
-    assert not (issue_dir / "design.md").exists()
-    assert not (issue_dir / "data-model.md").exists()
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
+    assert (issue_dir / "design.md").is_file()
+    assert (issue_dir / "data-model.md").is_file()
     assert (issue_dir / "tasks.jsonl").is_file()
     assert (tmp_path / "specs" / "adhoc" / "explore.md").is_file()
     assert (tmp_path / "specs" / "adhoc" / "prd.md").is_file()
     assert (tmp_path / "specs" / "adhoc" / "issues" / "099-prune-fixture.md").is_file()
     assert not (tmp_path / "tests" / "test_099_spy.py").exists()
-    assert (tmp_path / "tests" / "test_099_behavioral.py").is_file()
+    assert not (tmp_path / "tests" / "test_099_untagged_spy.py").exists()
+    assert (tmp_path / "tests" / "test_099_keep.py").is_file()
+    assert (tmp_path / "tests" / "test_099_untagged_keep.py").is_file()
     assert snapshot_ledgers(tmp_path) == before
     assert not (tmp_path / "specs" / "_product" / "flows.jsonl").exists()
 
 
-def test_in_flight_issue_is_noop_for_spec_deletion(tmp_path: Path) -> None:
+def test_in_flight_issue_still_thins_tests_and_keeps_specs(tmp_path: Path) -> None:
     issue_dir = _seed_completed_issue(tmp_path)
     ledger = tmp_path / "specs" / "issues.jsonl"
     ledger.write_text(
@@ -121,40 +182,34 @@ def test_in_flight_issue_is_noop_for_spec_deletion(tmp_path: Path) -> None:
     )
     plan = build_prune_plan(tmp_path, "ISS-ADH-099")
     assert plan.status == "IN_FLIGHT"
+    assert plan.spec_deletes == []
     apply_prune(tmp_path, plan)
     assert (issue_dir / "plan.md").is_file()
     assert (issue_dir / "tasks.md").is_file()
     assert not (tmp_path / "tests" / "test_099_spy.py").exists()
-    assert (tmp_path / "tests" / "test_099_behavioral.py").is_file()
+    assert (tmp_path / "tests" / "test_099_keep.py").is_file()
 
 
-def test_unmatched_plan_acs_halt_without_spec_deletes(tmp_path: Path) -> None:
+def test_unmatched_plan_acs_do_not_block_or_delete_specs(tmp_path: Path) -> None:
     issue_dir = _seed_completed_issue(tmp_path, encode_ac=False)
     before = snapshot_ledgers(tmp_path)
     plan = build_prune_plan(tmp_path, "ISS-ADH-099")
-    assert plan.status == "ACS_NOT_ENCODED"
-    assert plan.unmatched_acs == ["AC-ADHOC-099-01"]
+    assert plan.status != "ACS_NOT_ENCODED"
     apply_prune(tmp_path, plan)
     assert (issue_dir / "plan.md").is_file()
     assert (issue_dir / "tasks.md").is_file()
+    assert not (tmp_path / "tests" / "test_099_spy.py").exists()
     assert snapshot_ledgers(tmp_path) == before
 
 
-def test_completed_without_plan_skips_ac_gate(tmp_path: Path) -> None:
-    issue_dir = _seed_completed_issue(tmp_path)
-    (issue_dir / "plan.md").unlink()
-    plan = build_prune_plan(tmp_path, "ISS-ADH-099")
-    assert plan.status == "READY"
-    apply_prune(tmp_path, plan)
-    assert not (issue_dir / "tasks.md").exists()
-
-
-def test_empty_issue_dir_is_removed_after_deletes(tmp_path: Path) -> None:
+def test_ready_does_not_remove_issue_dir(tmp_path: Path) -> None:
     issue_dir = _seed_completed_issue(tmp_path)
     (issue_dir / "tasks.jsonl").unlink()
     plan = build_prune_plan(tmp_path, "ISS-ADH-099")
     apply_prune(tmp_path, plan)
-    assert not issue_dir.exists()
+    assert issue_dir.is_dir()
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
 
 
 def test_compact_intent_rejects_without_mutations(tmp_path: Path) -> None:

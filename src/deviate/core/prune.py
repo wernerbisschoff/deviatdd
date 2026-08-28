@@ -1,7 +1,8 @@
-"""Post-COMPLETED spec+test cleanup for ``/deviate-prune``.
+"""Manual honeycomb test thinning for ``/deviate-prune``.
 
-Deterministic keep/drop list: honeycomb tags on tests, drop-safe cycle
-markdown under one issue folder, and a hard refusal to touch JSONL ledgers.
+Deterministic keep/drop list: pytest marks and name tags first, then
+body heuristics for untagged tests. Spec files and JSONL ledgers are
+never unlinked.
 """
 
 from __future__ import annotations
@@ -16,21 +17,29 @@ from typing import Literal
 from deviate.core.issues import resolve_issue, resolve_issue_artifact_path
 from deviate.state.config import SessionState
 
-DROP_CYCLE_FILES = frozenset({"plan.md", "tasks.md", "design.md", "data-model.md"})
 DROP_TEST_TAGS = frozenset({"spy", "impl"})
 KEEP_TEST_TAGS = frozenset({"behavioral", "ac"})
-PROTECTED_BASENAMES = frozenset({"explore.md", "prd.md", "constitution.md"})
+PROTECTED_BASENAMES = frozenset(
+    {"explore.md", "prd.md", "constitution.md", "plan.md", "tasks.md"}
+)
 LEDGER_REWRITE_RE = re.compile(r"\b(compact|squash|rewrite)\b", re.IGNORECASE)
 AC_TOKEN_RE = re.compile(r"\bAC-(?:PLAN-\d{3}|[A-Z]+-\d{3}-\d{2})\b")
 TAG_SEGMENT_RE = re.compile(
     r"(?:^|[_-])(spy|impl|behavioral|ac)(?:$|[_-])", re.IGNORECASE
 )
 ISSUE_ID_RE = re.compile(r"\bISS-(?:ADH-)?\d{3}(?:-\d{3})?\b")
+SPY_ASSERT_RE = re.compile(
+    r"\b(?:assert_called|assert_called_once|assert_called_with|"
+    r"assert_called_once_with|assert_not_called|assert_has_calls|"
+    r"assert_any_call|call_count|mock_calls|mocker\.spy)\b"
+)
+PRIVATE_ATTR_RE = re.compile(r"\._[A-Za-z]\w*")
+PATCH_PRIVATE_RE = re.compile(r"patch(?:\.object)?\([^)]*['\"]_[A-Za-z]")
+PUBLIC_IO_RE = re.compile(r"\b(?:assert|raises)\b")
 
 PruneStatus = Literal[
     "READY",
     "IN_FLIGHT",
-    "ACS_NOT_ENCODED",
     "LEDGER_REWRITE_REJECTED",
     "NO_ISSUE",
     "ONE_ISSUE_ONLY",
@@ -83,14 +92,22 @@ def extract_plan_ac_tokens(plan_text: str) -> list[str]:
     return list(dict.fromkeys(AC_TOKEN_RE.findall(plan_text or "")))
 
 
-def classify_test(name: str, markers: set[str] | None = None) -> TestKind:
-    """Keep ``behavioral`` / ``ac``; drop ``spy`` / ``impl``; else keep."""
+def classify_test(
+    name: str,
+    markers: set[str] | None = None,
+    body: str | None = None,
+) -> TestKind:
+    """Keep ``behavioral`` / ``ac``; drop ``spy`` / ``impl``.
+
+    Untagged tests are classified from *body* (honeycomb). Absence of
+    marks or name tags is not an auto-keep.
+    """
     tags = {tag.lower() for tag in (markers or set())} | _name_tags(name)
     if tags & KEEP_TEST_TAGS:
         return "keep"
     if tags & DROP_TEST_TAGS:
         return "drop"
-    return "keep"
+    return _classify_body(body or "")
 
 
 def resolve_prune_issue_id(root: Path, issue_id: str | None) -> str | None:
@@ -117,7 +134,7 @@ def build_prune_plan(
     *,
     intent: str = "",
 ) -> PrunePlan:
-    """Inventory one issue and decide whether spec deletes may land."""
+    """Inventory one issue's tests. Never schedules spec deletes."""
     if is_ledger_rewrite_request(intent):
         return PrunePlan(
             status="LEDGER_REWRITE_REJECTED",
@@ -165,7 +182,6 @@ def build_prune_plan(
         else []
     )
     unmatched = _unmatched_acs(plan_tokens, keep_tests)
-    deletes = inventory_cycle_markdown(issue_dir)
 
     if record.status != "COMPLETED":
         return PrunePlan(
@@ -179,24 +195,7 @@ def build_prune_plan(
             unmatched_acs=unmatched,
             reason=(
                 f"IN_FLIGHT: {resolved} is {record.status}; "
-                "spec deletion is a no-op until COMPLETED"
-            ),
-            issue_dir=issue_dir,
-        )
-
-    if unmatched:
-        return PrunePlan(
-            status="ACS_NOT_ENCODED",
-            issue_id=resolved,
-            issue_status=record.status,
-            spec_deletes=[],
-            spec_keeps=keeps,
-            test_drop=drop_tests,
-            test_keep=keep_tests,
-            unmatched_acs=unmatched,
-            reason=(
-                "ACS_NOT_ENCODED: plan ACs are not yet behavioral / ac tests: "
-                + ", ".join(unmatched)
+                "prune still thins tests and never deletes spec files"
             ),
             issue_dir=issue_dir,
         )
@@ -205,25 +204,13 @@ def build_prune_plan(
         status="READY",
         issue_id=resolved,
         issue_status=record.status,
-        spec_deletes=deletes,
+        spec_deletes=[],
         spec_keeps=keeps,
         test_drop=drop_tests,
         test_keep=keep_tests,
-        unmatched_acs=[],
+        unmatched_acs=unmatched,
         issue_dir=issue_dir,
     )
-
-
-def inventory_cycle_markdown(issue_dir: Path) -> list[Path]:
-    """Return drop-safe cycle markdown under one per-issue folder."""
-    if not issue_dir.is_dir():
-        return []
-    found: list[Path] = []
-    for name in sorted(DROP_CYCLE_FILES):
-        path = issue_dir / name
-        if path.is_file():
-            found.append(path)
-    return found
 
 
 def discover_issue_tests(root: Path, issue_id: str, source_file: str) -> list[TestItem]:
@@ -248,32 +235,14 @@ def discover_issue_tests(root: Path, issue_id: str, source_file: str) -> list[Te
 
 
 def apply_prune(root: Path, plan: PrunePlan) -> None:
-    """Apply honeycomb test thinning and, when READY, cycle-markdown deletes.
-
-    Never creates, rewrites, or deletes JSONL ledgers. In-flight and
-    unmatched-AC plans skip spec deletes. A ledger-rewrite request is a
-    no-op for every mutation.
-    """
+    """Apply honeycomb test thinning. Never unlinks spec files or ledgers."""
     if plan.status in {"LEDGER_REWRITE_REJECTED", "NO_ISSUE", "ONE_ISSUE_ONLY"}:
         return
     _thin_tests(root, plan.test_drop)
-    if plan.status != "READY":
-        return
-    for path in plan.spec_deletes:
-        if not path.is_file():
-            continue
-        if is_protected_spec(path, root):
-            continue
-        path.unlink()
-    if plan.issue_dir is not None and plan.issue_dir.is_dir():
-        try:
-            next(plan.issue_dir.iterdir())
-        except StopIteration:
-            plan.issue_dir.rmdir()
 
 
 def is_protected_spec(path: Path, root: Path) -> bool:
-    """Return True for ledgers, epic explore/prd, issue md, and Product/flows."""
+    """Return True for ledgers, cycle markdown, epic explore/prd, and issue md."""
     try:
         rel = path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
@@ -286,7 +255,7 @@ def is_protected_spec(path: Path, root: Path) -> bool:
         return True
     if "/issues/" in rel and rel.endswith(".md"):
         return True
-    return False
+    return True
 
 
 def ledger_paths(root: Path) -> list[Path]:
@@ -337,9 +306,14 @@ def _protected_keeps(root: Path, source_file: str) -> list[Path]:
     if issue_md.is_file():
         keeps.append(issue_md)
     epic = PurePosixPath(source_file).parent.parent.name
-    for name in ("explore.md", "prd.md"):
+    for name in ("explore.md", "prd.md", "plan.md", "tasks.md"):
         candidate = root / "specs" / epic / name
-        if candidate.is_file():
+        if candidate.is_file() and candidate not in keeps:
+            keeps.append(candidate)
+    issue_dir = resolve_issue_artifact_path(root, source_file, "plan.md").parent
+    for name in ("plan.md", "tasks.md", "design.md", "data-model.md"):
+        candidate = issue_dir / name
+        if candidate.is_file() and candidate not in keeps:
             keeps.append(candidate)
     shared_prd = root / "specs" / "adhoc" / "prd.md"
     if shared_prd.is_file() and shared_prd not in keeps:
@@ -354,6 +328,18 @@ def _unmatched_acs(tokens: list[str], keep_tests: list[TestItem]) -> list[str]:
 
 def _name_tags(name: str) -> set[str]:
     return {match.group(1).lower() for match in TAG_SEGMENT_RE.finditer(name)}
+
+
+def _classify_body(body: str) -> TestKind:
+    if not body.strip():
+        return "drop"
+    if SPY_ASSERT_RE.search(body) or PRIVATE_ATTR_RE.search(body):
+        return "drop"
+    if PATCH_PRIVATE_RE.search(body):
+        return "drop"
+    if AC_TOKEN_RE.search(body) or PUBLIC_IO_RE.search(body):
+        return "keep"
+    return "drop"
 
 
 def _decorator_tail(node: ast.expr) -> str | None:
@@ -387,7 +373,7 @@ def _parse_test_items(rel: Path, text: str) -> list[TestItem]:
         tree = ast.parse(text)
     except SyntaxError:
         return []
-    file_kind = classify_test(rel.stem)
+    file_drop = bool(_name_tags(rel.stem) & DROP_TEST_TAGS)
     items: list[TestItem] = []
     lines = text.splitlines()
     for node in ast.walk(tree):
@@ -396,15 +382,15 @@ def _parse_test_items(rel: Path, text: str) -> list[TestItem]:
         if not node.name.startswith("test_"):
             continue
         markers = _marker_names(node)
-        kind = classify_test(node.name, markers)
+        start, end = _node_span(node)
+        source = "\n".join(lines[start - 1 : end])
+        kind = classify_test(node.name, markers, source)
         if (
             kind == "keep"
-            and file_kind == "drop"
+            and file_drop
             and not (_name_tags(node.name) & KEEP_TEST_TAGS or markers & KEEP_TEST_TAGS)
         ):
             kind = "drop"
-        start, end = _node_span(node)
-        source = "\n".join(lines[start - 1 : end])
         items.append(TestItem(path=rel, name=node.name, kind=kind, source=source))
     return items
 

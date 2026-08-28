@@ -64,7 +64,8 @@ The `<authoritative_acceptance_contract source="plan.md">` block is authoritativ
 1. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in tasks.md and the plan acceptance contract.
 2. **Gherkin Execution**: Translate only the assigned `AC-PLAN-NNN` Given/When/Then scenarios into observable failing tests; preserve AO and upstream FR/AC lineage.
 3. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Implement sociable component orchestration paths over solitary configurations. Restrict mocking structures exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (e.g., system epoch timers, cryptographic entropy paths).
-4. **Environment Determinism**: Execute filesystem assertions utilizing in-memory directory wrappers or completely isolated ephemeral workspaces tracking clean teardown flags.
+4. **Honeycomb mark stamp**: Every new test MUST carry exactly one of `@pytest.mark.behavioral`, `@pytest.mark.spy`, or `@pytest.mark.impl`. Most RED tests are `@pytest.mark.behavioral` (public input-to-output / AC). Use `@pytest.mark.spy` only for internal call probes. Use `@pytest.mark.impl` only for implementation-coupled helpers. Never leave a new test untagged — prune will not auto-keep untagged tests.
+5. **Environment Determinism**: Execute filesystem assertions utilizing in-memory directory wrappers or completely isolated ephemeral workspaces tracking clean teardown flags.
 </traceability_mandates>
 
 <few_shot_examples>
@@ -100,7 +101,7 @@ task_id: "TASK-104"
 </step>
 
 <step id="test_writing">
-1. Write the physical test file within the repository's native test structure using project-specific frameworks
+1. Write the physical test file within the repository's native test structure using project-specific frameworks. Stamp each new test with `@pytest.mark.behavioral` (default), `@pytest.mark.spy`, or `@pytest.mark.impl`. Most RED tests are behavioral.
 2. Ensure all code interfaces required for the test compilation are structurally present; declare dummy interfaces or minimal stub structures if the target module does not yet exist
 3. Run the `test_command` to verify the test fails:
    ```bash

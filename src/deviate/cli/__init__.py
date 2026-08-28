@@ -1198,7 +1198,7 @@ cli.add_typer(
     prune_app,
     name="prune",
     rich_help_panel=_AGENT_PANEL,
-    help="Post-COMPLETED spec+test cleanup",
+    help="Manual honeycomb test thinning",
 )
 cli.add_typer(
     walkthrough_app,
