@@ -194,8 +194,8 @@ class DeviateConfig(BaseModel):
     use_libref: bool = False
     # Git branch used as trunk for worktrees, PR base, and review diffs
     base_branch: str = Field(default="main", min_length=1)
-    # Push the claim branch as a distributed lock
-    claim_remote: bool = Field(default=True)
+    # Push the claim branch as a distributed lock (opt-in)
+    claim_remote: bool = Field(default=False)
 
     model_config = {"extra": "forbid"}
 
@@ -284,10 +284,10 @@ def _resolve_toml_bool(root: Path, key: str, default: bool) -> bool:
 def resolve_claim_remote(root: Path) -> bool:
     """Resolve whether claim should push a lock branch to the remote.
 
-    Returns True when the config file is absent, the key is absent, or the
-    value is not a bool.
+    Returns False when the config file is absent, the key is absent, or the
+    value is not a bool. Existing ``claim_remote = true`` configs still push.
     """
-    return _resolve_toml_bool(root, "claim_remote", True)
+    return _resolve_toml_bool(root, "claim_remote", False)
 
 
 def resolve_execution_profile(root: Path) -> str:

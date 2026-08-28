@@ -441,7 +441,7 @@ class TestSetupConstitutionScaffolding:
 
 
 class TestSetupClaimRemoteFlag:
-    """AC-PLAN-004: persist claim_remote through deviate setup --no-claim-remote."""
+    """AC-PLAN-004: persist claim_remote through deviate setup flags."""
 
     def test_setup_no_claim_remote_writes_false(self, tmp_git_repo: Path) -> None:
         """`--no-claim-remote` writes top-level `claim_remote = false`."""
@@ -459,18 +459,62 @@ class TestSetupClaimRemoteFlag:
             )
             assert resolve_claim_remote(tmp_git_repo) is False
 
-    def test_setup_fresh_writes_claim_remote_true(self, tmp_git_repo: Path) -> None:
-        """Fresh setup without `--no-claim-remote` writes `claim_remote = true`."""
+    def test_setup_fresh_writes_claim_remote_false(self, tmp_git_repo: Path) -> None:
+        """Fresh setup without `--claim-remote` writes `claim_remote = false`."""
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             config_path = tmp_git_repo / ".deviate" / "config.toml"
             assert config_path.exists()
             parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+            assert parsed.get("claim_remote") is False, (
+                f"claim_remote missing or not false at top-level; "
+                f"got keys: {list(parsed.keys())} / models={parsed.get('models')}"
+            )
+            assert resolve_claim_remote(tmp_git_repo) is False
+
+    def test_setup_claim_remote_writes_true(self, tmp_git_repo: Path) -> None:
+        """`--claim-remote` writes top-level `claim_remote = true`."""
+        with chdir(tmp_git_repo):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--claim-remote"]
+            )
+            assert result.exit_code == 0, result.output
+            config_path = tmp_git_repo / ".deviate" / "config.toml"
+            parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
             assert parsed.get("claim_remote") is True, (
                 f"claim_remote missing or not true at top-level; "
                 f"got keys: {list(parsed.keys())} / models={parsed.get('models')}"
             )
+            assert resolve_claim_remote(tmp_git_repo) is True
+
+    def test_setup_claim_remote_upserts_existing_false(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """Re-run `--claim-remote` upserts true without dropping other keys."""
+        with chdir(tmp_git_repo):
+            dot_dir = tmp_git_repo / ".deviate"
+            dot_dir.mkdir()
+            config_path = dot_dir / "config.toml"
+            config_path.write_text(
+                "timeout_seconds = 999\n"
+                "claim_remote = false\n\n"
+                "[models]\n"
+                'default = "opencode/deepseek-v4-flash"\n\n'
+                "[agent]\n"
+                'backend = "opencode"\n',
+                encoding="utf-8",
+            )
+
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--claim-remote"]
+            )
+            assert result.exit_code == 0, result.output
+            parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+            assert parsed.get("claim_remote") is True
+            assert parsed.get("timeout_seconds") == 999
+            assert parsed["models"]["default"] == "opencode/deepseek-v4-flash"
+            assert parsed["agent"]["backend"] == "opencode"
             assert resolve_claim_remote(tmp_git_repo) is True
 
     def test_setup_no_claim_remote_preserves_models_timeout_agent(
@@ -501,6 +545,42 @@ class TestSetupClaimRemoteFlag:
             assert parsed["models"]["default"] == "opencode/deepseek-v4-flash"
             assert parsed["agent"]["backend"] == "opencode"
             assert resolve_claim_remote(tmp_git_repo) is False
+
+    def test_setup_claim_remote_flags_are_mutually_exclusive(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """`--claim-remote` and `--no-claim-remote` together fail closed."""
+        with chdir(tmp_git_repo):
+            result = runner.invoke(
+                cli,
+                [
+                    "setup",
+                    "--agent",
+                    "opencode",
+                    "--claim-remote",
+                    "--no-claim-remote",
+                ],
+            )
+        assert result.exit_code != 0
+        assert "CONFLICT" in result.output
+        assert not (tmp_git_repo / ".deviate" / "config.toml").exists()
+
+    def test_prompt_claim_remote_defaults_to_no(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TTY prompt default is no so a bare Enter stays local-only."""
+        from deviate.cli import _prompt_claim_remote
+
+        captured: dict[str, object] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        assert _prompt_claim_remote() is False
+        assert captured.get("default") == "no"
 
 
 class TestInitAgentFlag:

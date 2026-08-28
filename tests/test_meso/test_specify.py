@@ -102,6 +102,9 @@ class TestSpecifySetup:
         (tmp_git_repo / ".deviate" / "session.json").write_text(
             '{"current_phase": "IDLE", "active_issue_id": null}'
         )
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = true\n", encoding="utf-8"
+        )
         specs_dir = tmp_git_repo / "specs"
         specs_dir.mkdir()
         (specs_dir / "constitution.md").write_text(
@@ -283,6 +286,51 @@ class TestSpecifySetup:
         )
         assert "WORKTREE" in result.output
 
+    def test_specify_omitted_local_honors_absent_claim_remote(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Absent claim_remote key is effective local (no origin push)."""
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+
+        (tmp_git_repo / ".deviate").mkdir()
+        (tmp_git_repo / ".deviate" / "session.json").write_text(
+            '{"current_phase": "IDLE", "active_issue_id": null}'
+        )
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\n"
+        )
+        ledger = specs_dir / "issues.jsonl"
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="First Backlog",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            ledger,
+        )
+        called: dict[str, object] = {}
+
+        def fake(record, **kwargs):
+            called["local"] = kwargs.get("local")
+            return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
+
+        monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["specify", "ISS-001-001"])
+        assert result.exit_code == 0, result.output
+        assert called.get("local") is True, (
+            f"omitted --local with absent claim_remote must forward local=True, "
+            f"got {called.get('local')}; output={result.output}"
+        )
+        assert "WORKTREE" in result.output
+
     def test_specify_local_overrides_claim_remote_true(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -330,6 +378,53 @@ class TestSpecifySetup:
             f"got {called.get('local')}; output={result.output}"
         )
         assert "WORKTREE" in result.output
+
+    def test_specify_omitted_local_honors_claim_remote_true(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Existing claim_remote=true still pushes when --local is omitted."""
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+
+        (tmp_git_repo / ".deviate").mkdir()
+        (tmp_git_repo / ".deviate" / "session.json").write_text(
+            '{"current_phase": "IDLE", "active_issue_id": null}'
+        )
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = true\n", encoding="utf-8"
+        )
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\n"
+        )
+        ledger = specs_dir / "issues.jsonl"
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="First Backlog",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            ledger,
+        )
+        called: dict[str, object] = {}
+
+        def fake(record, **kwargs):
+            called["local"] = kwargs.get("local")
+            return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
+
+        monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["specify", "ISS-001-001"])
+        assert result.exit_code == 0, result.output
+        assert called.get("local") is False, (
+            f"omitted --local with claim_remote=true must forward local=False, "
+            f"got {called.get('local')}; output={result.output}"
+        )
 
     def test_specify_local_flag_short_circuits_when_branch_exists(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -435,10 +530,14 @@ class TestSpecifyCollisionRetryKeepsRemoteClaim:
         from tests.test_cli.test_meso import seed_adhoc_018_origin_rejecting_name
 
         seed_adhoc_018_origin_rejecting_name(tmp_git_repo)
+        (tmp_git_repo / ".deviate").mkdir(exist_ok=True)
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = true\n", encoding="utf-8"
+        )
         monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
 
         assert resolve_claim_remote(tmp_git_repo) is True, (
-            "claim_remote default must stay true; collision retry is not an opt-out"
+            "collision retry requires claim_remote=true; it is not an opt-out"
         )
 
         with chdir(tmp_git_repo):

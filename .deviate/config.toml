@@ -8,7 +8,7 @@ agent_export_mode = "local"
 use_libref = true
 # Trunk branch for worktrees, PR base, and review diffs
 base_branch = "main"
-# Push the claim branch as a distributed lock (default true)
+# Push the claim branch as a distributed lock (default false)
 claim_remote = true
 
 # Agent backend configuration

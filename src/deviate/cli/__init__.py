@@ -126,7 +126,7 @@ _CONFIG_TOML_COMMENTS: dict[str, str] = {
     "models": "Per-phase model overrides; key = phase name, value = model ID",
     "use_libref": "Enable the libref CLI for offline documentation lookups",
     "base_branch": "Trunk branch for worktrees, PR base, and review diffs",
-    "claim_remote": "Push the claim branch as a distributed lock (default true)",
+    "claim_remote": "Push the claim branch as a distributed lock (default false)",
 }
 
 
@@ -436,8 +436,8 @@ def _prompt_claim_remote() -> bool | None:
     """Ask whether to push claim branches as a remote lock.
 
     Returns ``False`` when the operator disables push-as-lock,
-    ``True`` when they keep it, and ``None`` when the session is not
-    interactive so the caller keeps the ``claim_remote = true`` default.
+    ``True`` when they enable it, and ``None`` when the session is not
+    interactive so the caller keeps the ``claim_remote = false`` default.
     """
     if not is_interactive():
         return None
@@ -445,14 +445,14 @@ def _prompt_claim_remote() -> bool | None:
         selected = Prompt.ask(
             "Push claim branches to the remote as a lock",
             choices=["yes", "no"],
-            default="yes",
+            default="no",
             console=console,
         )
     except (EOFError, KeyboardInterrupt):
         return None
-    if selected == "no":
-        return False
-    return True
+    if selected == "yes":
+        return True
+    return False
 
 
 def _prompt_pack_selection() -> tuple[str, ...] | None:
@@ -607,20 +607,24 @@ def _config_dump_dict(
 
 def _resolve_setup_claim_remote(
     *,
+    claim_remote: bool,
     no_claim_remote: bool,
     config_exists: bool,
 ) -> bool:
     """Decide the ``claim_remote`` value written by ``deviate setup``.
 
-    ``--no-claim-remote`` always writes false. A fresh workspace without
-    the flag may prompt on a TTY. Non-interactive sessions and re-runs
-    against an existing config keep the true default.
+    ``--claim-remote`` always writes true. ``--no-claim-remote`` always
+    writes false. A fresh workspace without either flag may prompt on a
+    TTY (default no). Non-interactive sessions and re-runs against an
+    existing config keep the false default.
     """
     if no_claim_remote:
         return False
-    if config_exists:
+    if claim_remote:
         return True
-    return _prompt_claim_remote() is not False
+    if config_exists:
+        return False
+    return _prompt_claim_remote() is True
 
 
 def _validate_agent_choice(value: str | None) -> str | None:
@@ -670,7 +674,8 @@ def _merge_flag_keys(
     """Surgically update flag keys in an existing TOML.
 
     Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` only
-    when the caller explicitly passed a value (``--no-claim-remote``).
+    when the caller explicitly passed a value (``--claim-remote`` or
+    ``--no-claim-remote``).
     Preserves every other key/table (e.g. user-customised ``[models]``).
     """
     content = config_path.read_text(encoding="utf-8")
@@ -687,7 +692,7 @@ def _scaffold_dotfiles(
     workdir: Path,
     agent_export_mode: str,
     use_libref: bool = False,
-    claim_remote: bool = True,
+    claim_remote: bool = False,
     force_update_flags: bool = False,
     agent_backend: str | None = None,
     update_claim_remote: bool = False,
@@ -1043,6 +1048,11 @@ def setup(
         help="Agent platform to install and persist as [agent].backend",
         callback=_validate_agent_choice,
     ),
+    claim_remote: bool = typer.Option(
+        False,
+        "--claim-remote",
+        help="Enable push-as-lock; write claim_remote = true",
+    ),
     no_claim_remote: bool = typer.Option(
         False,
         "--no-claim-remote",
@@ -1080,7 +1090,14 @@ def setup(
                 raise typer.Exit(code=1)
 
     backend = _resolve_agent_to_backend(selected_agent)
+    if claim_remote and no_claim_remote:
+        console.print(
+            "[red]CONFLICT[/] --claim-remote and --no-claim-remote are "
+            "mutually exclusive."
+        )
+        raise typer.Exit(code=1)
     claim_remote_val = _resolve_setup_claim_remote(
+        claim_remote=claim_remote,
         no_claim_remote=no_claim_remote,
         config_exists=config_path.exists(),
     )
@@ -1091,9 +1108,9 @@ def setup(
         agent_export_mode,
         use_libref=use_libref_val,
         claim_remote=claim_remote_val,
-        force_update_flags=libref or no_claim_remote,
+        force_update_flags=libref or no_claim_remote or claim_remote,
         agent_backend=backend,
-        update_claim_remote=no_claim_remote,
+        update_claim_remote=no_claim_remote or claim_remote,
     )
 
     _apply_governance(workdir, use_libref=use_libref_val)

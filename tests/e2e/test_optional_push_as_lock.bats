@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 #
 # Optional push-as-lock CLI surface — verifies that the installed `deviate`
-# binary exposes `--local` on specify / meso run / run, `--no-claim-remote`
-# on setup, keeps `--no-setup` as a distinct meso-run flag, and rejects
-# `--no-local`. Behavioral claim/push tests live in pytest.
+# binary exposes `--local` on specify / meso run / run, `--claim-remote`
+# and `--no-claim-remote` on setup, keeps `--no-setup` as a distinct
+# meso-run flag, and rejects `--no-local`. Behavioral claim/push tests
+# live in pytest.
 #
 # Each test starts in a fresh tmpdir so `deviate` does not pick up the host
 # repo's `.deviate/session.json` or `specs/` state.
@@ -46,9 +47,10 @@ _plain() {
     [[ "$(_plain)" == *"--local"* ]]
 }
 
-@test "deviate setup --help exits 0 and prints --no-claim-remote" {
+@test "deviate setup --help exits 0 and prints --claim-remote and --no-claim-remote" {
     run deviate setup --help
     [ "$status" -eq 0 ]
+    [[ "$(_plain)" == *"--claim-remote"* ]]
     [[ "$(_plain)" == *"--no-claim-remote"* ]]
 }
 
