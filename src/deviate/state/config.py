@@ -178,7 +178,7 @@ def normalize_task_id(ref: str) -> str:
 class DeviateConfig(BaseModel):
     # Micro-run default when ``deviate micro run --profile`` is omitted.
     # Must be a real execution profile — never the unused string "default".
-    profile: Literal["full", "fast", "judge"] = "full"
+    profile: Literal["full", "fast"] = "full"
     # Default 1800s accommodates legitimate long-running test commands
     # (e.g. Rust workspace `cargo test` first builds); the orchestrator
     # still enforces a hard deadline via SIGTERM/SIGKILL on the process
@@ -294,8 +294,8 @@ def resolve_execution_profile(root: Path) -> str:
     """Return the micro-run profile from ``.deviate/config.toml``.
 
     Missing, empty, ``"default"``, or any value outside
-    ``full`` / ``fast`` / ``judge`` coerces to ``full``.
-    Legacy ``"secure"`` coerces to ``judge``.
+    ``full`` / ``fast`` coerces to ``full``.
+    Legacy ``"secure"`` is kept as an internal alias (JUDGE on, REFACTOR off).
     """
     data = _load_deviate_config_toml(root)
     if data is None:
@@ -303,7 +303,7 @@ def resolve_execution_profile(root: Path) -> str:
     value = data.get("profile", "full")
     if isinstance(value, str):
         name = canonicalize_profile(value.strip())
-        if name in {"full", "fast", "judge"}:
+        if name in {"full", "fast", "secure"}:
             return name
     return "full"
 
@@ -326,7 +326,7 @@ class PytestReportConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    default: Literal["full", "fast", "judge"] = "full"
+    default: Literal["full", "fast"] = "full"
 
     model_config = {"extra": "forbid"}
 
