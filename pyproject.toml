@@ -65,6 +65,12 @@ target-version = "py313"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "behavioral: public input-to-output / AC contract",
+    "spy: internal call or spy probe",
+    "impl: implementation-coupled test",
+    "ac: acceptance-criteria encoding",
+]
 
 [dependency-groups]
 dev = [
