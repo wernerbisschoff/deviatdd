@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from deviate.core.profile import resolve_profile
+from deviate.core.profile import canonicalize_profile, resolve_profile
 
 
 class TestResolveProfile:
@@ -10,7 +10,19 @@ class TestResolveProfile:
         result = resolve_profile("fast")
         assert result == (True, True)
 
-    def test_secure_with_explicit_no_refactor_false(self):
+    def test_judge_skips_refactor_only(self):
+        result = resolve_profile("judge")
+        assert result == (False, True)
+
+    def test_judge_with_explicit_no_refactor_false(self):
+        result = resolve_profile("judge", no_refactor=False)
+        assert result == (False, False)
+
+    def test_legacy_secure_coerces_to_judge(self):
+        assert canonicalize_profile("secure") == "judge"
+        assert resolve_profile("secure") == resolve_profile("judge")
+
+    def test_legacy_secure_with_explicit_no_refactor_false(self):
         result = resolve_profile("secure", no_refactor=False)
         assert result == (False, False)
 
@@ -20,7 +32,8 @@ class TestResolveProfile:
         msg = str(exc.value).lower()
         assert "full" in msg
         assert "fast" in msg
-        assert "secure" in msg
+        assert "judge" in msg
+        assert "secure" not in msg
 
     def test_explicit_flag_overrides_profile_default(self):
         result = resolve_profile("fast", no_judge=False)

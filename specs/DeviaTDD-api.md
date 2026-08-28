@@ -1052,10 +1052,11 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   * `[task-id]` (Positional: `TSK-NNN-NN` format; omit to auto-select the first
     PENDING task for the active issue; mutually exclusive with `--all`)
   * `--all` (Drain every PENDING task for the active issue)
-  * `--profile [full|fast|secure]` (Defaults to `full`):
+  * `--profile [full|fast|judge]` (Defaults to `full`):
     * `full` — RED + GREEN + JUDGE + REFACTOR (complete cycle)
     * `fast` — RED + GREEN only (skip JUDGE + REFACTOR)
-    * `secure` — RED + GREEN + JUDGE (skip REFACTOR)
+    * `judge` — RED + GREEN + JUDGE (skip REFACTOR)
+    * Legacy `--profile secure` and `profile = "secure"` coerce to `judge`
     * Boolean flags `--no-judge` / `--no-refactor` retained as composable overrides
   * `--agent <name>` (Override agent backend; falls back to `[agent].backend` in
     `.deviate/config.toml`)
@@ -1423,7 +1424,7 @@ src/deviate/
 │   ├── issues.py             # claim_issue
 │   ├── prune.py              # manual honeycomb keep/drop inventory + apply
 │   ├── prd.py                # extract_prd_requirements
-│   ├── profile.py            # ExecutionProfile (full/fast/secure), resolve_profile()
+│   ├── profile.py            # ExecutionProfile (full/fast/judge), resolve_profile()
 │   ├── repo.py               # find_repo_root, gather_git_state
 │   ├── skills.py             # detect_agents, discover_skills, install_skill
 │   ├── validation.py         # validate_artifact, validate_gherkin, YAML frontmatter

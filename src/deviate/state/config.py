@@ -8,6 +8,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from deviate.core.profile import canonicalize_profile
+
 CODEX_DEFAULT_MODEL = "gpt-5.6-luna"
 CODEX_DEFAULT_REASONING_EFFORT = "high"
 ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
@@ -176,7 +178,7 @@ def normalize_task_id(ref: str) -> str:
 class DeviateConfig(BaseModel):
     # Micro-run default when ``deviate micro run --profile`` is omitted.
     # Must be a real execution profile — never the unused string "default".
-    profile: Literal["full", "fast", "secure"] = "full"
+    profile: Literal["full", "fast", "judge"] = "full"
     # Default 1800s accommodates legitimate long-running test commands
     # (e.g. Rust workspace `cargo test` first builds); the orchestrator
     # still enforces a hard deadline via SIGTERM/SIGKILL on the process
@@ -292,14 +294,17 @@ def resolve_execution_profile(root: Path) -> str:
     """Return the micro-run profile from ``.deviate/config.toml``.
 
     Missing, empty, ``"default"``, or any value outside
-    ``full`` / ``fast`` / ``secure`` coerces to ``full``.
+    ``full`` / ``fast`` / ``judge`` coerces to ``full``.
+    Legacy ``"secure"`` coerces to ``judge``.
     """
     data = _load_deviate_config_toml(root)
     if data is None:
         return "full"
     value = data.get("profile", "full")
-    if isinstance(value, str) and value.strip() in {"full", "fast", "secure"}:
-        return value.strip()
+    if isinstance(value, str):
+        name = canonicalize_profile(value.strip())
+        if name in {"full", "fast", "judge"}:
+            return name
     return "full"
 
 
@@ -321,7 +326,7 @@ class PytestReportConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    default: Literal["full", "fast", "secure"] = "full"
+    default: Literal["full", "fast", "judge"] = "full"
 
     model_config = {"extra": "forbid"}
 
