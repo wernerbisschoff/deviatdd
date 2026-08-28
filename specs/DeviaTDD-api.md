@@ -114,17 +114,19 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 * **Input Parameters:**
   * `--agent-export-mode [local|global]` (Defaults to `local`)
   * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Override persisted backend)
-  * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
+  * `--claim-remote` (Enable push-as-lock; merges `claim_remote = true` into
+    `config.toml` without dropping `[models]`, `timeout_seconds`, or `[agent]`.)
   * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
     `config.toml` without dropping `[models]`, `timeout_seconds`, or `[agent]`.
-    Fresh setup without the flag writes `claim_remote = true`. An interactive TTY
-    session with the flag omitted may prompt; a non-interactive session keeps `true`.)
+    Fresh setup without either flag writes `claim_remote = false`. An interactive TTY
+    session with the flags omitted may prompt (default no); a non-interactive session
+    keeps `false`.)
 * **Output Artifacts:**
   * `.deviate/config.toml` — Persisted configuration profile (includes
     `[agent].backend` set from `--agent` for meso/micro dispatch, and
-    `claim_remote` default `true`). Codex setup also seeds
+    `claim_remote` default `false`). Codex setup also seeds
     `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"`
     when missing/empty so spawned `codex exec` receives `--model gpt-5.6-luna`
     and `-c model_reasoning_effort=high` without a repo-wide `.codex/config.toml`.
@@ -460,7 +462,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
   NOT advance session state and does NOT run plan or tasks. To continue, run
   ``deviate plan pre`` or invoke the ``/deviate-plan`` slash command inside the new
   worktree.
-* `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `true`; absent file or absent key resolves to `true`). Explicit `--local` always wins over `claim_remote = true`. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim. When default claim mode is on and `git push` of `feat/<epic>/<NNN>-*` or `feat/adhoc/<NNN>-*` is rejected because the name exists, `_try_claim_issue` increments the ordinal and retries the push, at most 3 times. Collision retry does not set `--local`. Non-name-collision push errors still print `PUSH_STDERR` and follow `--force` or rollback.
+* `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `false`; absent file or absent key resolves to `false`). Explicit `--local` always wins over `claim_remote = true`. Existing `claim_remote = true` configs still push. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim. When push-as-lock is on (`claim_remote = true`, no `--local`) and `git push` of `feat/<epic>/<NNN>-*` or `feat/adhoc/<NNN>-*` is rejected because the name exists, `_try_claim_issue` increments the ordinal and retries the push, at most 3 times. Collision retry does not set `--local`. Non-name-collision push errors still print `PUSH_STDERR` and follow `--force` or rollback.
 
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 
@@ -1093,12 +1095,14 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
      `.factory/`, `.pi/`, `.omp/` agent skill directories and `.env` (if present) into the
      worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
      during setup), claims the issue via `claim_issue()`, and commits the claim to the
-     worktree's `specs/issues.jsonl`. Default claim (`claim_remote = true`, no `--local`)
-     then pushes the branch to origin as a distributed lock. If that push is rejected because
-     the `feat/.../NNN-*` name exists, `_try_claim_issue` increments the ordinal and retries
-     (cap 3). Collision retry does not set `--local`. Non-name-collision push errors still
-     print `PUSH_STDERR` and follow `--force` or rollback. Local mode (`--local` or
-     `claim_remote = false`) keeps that worktree and ledger claim and skips the remote-branch
+     worktree's `specs/issues.jsonl`. Default claim (`claim_remote = false` / absent key,
+     no `--local`) stays local-only and does not `git push`. When push-as-lock is on
+     (`claim_remote = true`, no `--local`) the branch is pushed to origin as a distributed
+     lock. If that push is rejected because the `feat/.../NNN-*` name exists,
+     `_try_claim_issue` increments the ordinal and retries (cap 3). Collision retry does
+     not set `--local`. Non-name-collision push errors still print `PUSH_STDERR` and
+     follow `--force` or rollback. Local mode (`--local` or `claim_remote = false` /
+     absent key) keeps that worktree and ledger claim and skips the remote-branch
      pre-check and `git push`. `_specify_pre` resolves effective local as `--local` OR
      `claim_remote = false`, so `deviate plan pre` outside a worktree inherits the same rule.
   2. **Plan:** `chdir`s into the worktree, calls `_plan_pre()` (emits a `plan_pre` JSON
@@ -1135,7 +1139,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     setup skipping.
   * `--local` *(optional)* — Claim locally only. Creates the worktree, writes the ledger
     claim, and commits. Skips the remote-branch pre-check and `git push`. Omitted
-    `--local` honors `.deviate/config.toml` `claim_remote` (default `true`). Explicit
+    `--local` honors `.deviate/config.toml` `claim_remote` (default `false`). Explicit
     `--local` always wins over `claim_remote = true`. Auto-discovery in local mode does
     not treat an origin `feat/{epic}/{issue}` branch as claimed-elsewhere.
 * **Worktree Auto-Detect:** When invoked from inside a linked git worktree (``.git``

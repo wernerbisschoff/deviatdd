@@ -255,7 +255,7 @@ class TestSetupConfigAllowlist:
         parsed = tomllib.loads(text)
         assert parsed["profile"] == "full"
         assert parsed["base_branch"] == "main"
-        assert parsed["claim_remote"] is True
+        assert parsed["claim_remote"] is False
         assert "use_libref" not in parsed
         assert "libref" not in text.lower()
         agent = parsed["agent"]
