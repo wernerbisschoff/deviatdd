@@ -9,7 +9,7 @@ from deviate.prompts.assembly import inject_constitution, load_template
 
 class TestLoadTemplate:
     def test_load_template_success(self):
-        content = load_template("specify")
+        content = load_template("plan")
         assert content
         assert "<system_instructions>" in content
 
