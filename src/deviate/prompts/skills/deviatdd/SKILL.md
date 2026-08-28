@@ -439,7 +439,7 @@ and a one-line "use this when..." description.
 | `/deviate-pr` | The branch is merged locally and you need to open / merge the PR. |
 | `/deviate-execute` | A non-TDD task is blocking the queue and needs DIRECT execution. |
 | `/deviate-hotfix` | A production-grade bug needs a one-shot fix outside the normal task flow. |
-| `/deviate-prune` | You suspect a stale test in `tests/` is causing false REDs. |
+| `/deviate-prune` | Manual honeycomb pass: classify and thin spy/impl tests for one issue. Never auto-run after COMPLETED, `--all`, or this skill's success loop. Does not delete plan.md / tasks.md. |
 | `/deviate-inspect` | You need a read-only query of the ledger / session / tasks. |
 
 This skill never invokes these on its own — it tells the operator which
@@ -472,6 +472,9 @@ contract stays intact and individually testable.
 - Never pass `--review` or `--all` to `deviate micro run` from this
   skill. Review mode is the skill argument `review` in `$ARGUMENTS`,
   not a runner flag.
+- Never invoke `/deviate-prune` from the success loop, after COMPLETED,
+  or from `--all`. Prune is manual invoke only and never deletes
+  `plan.md` / `tasks.md`.
 
 ## Output contract
 
