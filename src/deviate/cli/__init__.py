@@ -119,7 +119,7 @@ def main(
 # before their corresponding key in .deviate/config.toml.  These are the
 # primary documentation surface for end users editing config by hand.
 _CONFIG_TOML_COMMENTS: dict[str, str] = {
-    "profile": 'Micro-run default when --profile is omitted: "full", "fast", or "secure"',
+    "profile": 'Micro-run default when --profile is omitted: "full", "fast", or "judge"',
     "timeout_seconds": "CLI inactivity timeout in seconds (must be > 0)",
     "agent_export_mode": 'Agent export mode: "local" (project) or "global" (~/.claude/)',
     "agent": "Agent backend configuration",

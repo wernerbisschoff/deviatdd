@@ -42,7 +42,7 @@ from deviate.core.judge_evidence import (
 )
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.tasks_ledger import resolve_execution_mode
-from deviate.core.profile import resolve_profile
+from deviate.core.profile import canonicalize_profile, resolve_profile
 from deviate.core.run_logger import (
     RunLogger,
     TaskLogger,
@@ -6808,7 +6808,7 @@ def _validate_profile(value: str | None) -> str | None:
         resolve_profile(value)
     except ValueError as e:
         raise typer.BadParameter(str(e)) from e
-    return value
+    return canonicalize_profile(value)
 
 
 def _run_auto_agent(root: Path, agent: str | None, model: str | None) -> None:
@@ -6859,7 +6859,7 @@ def run_command(
         None,
         "--profile",
         callback=_validate_profile,
-        help="Execution profile: full, fast, secure (default: config or full)",
+        help="Execution profile: full, fast, judge (default: config or full)",
     ),
     no_judge: bool | None = typer.Option(None, "--no-judge", help="Skip JUDGE phase"),
     no_refactor: bool | None = typer.Option(
