@@ -416,6 +416,95 @@ class TestSpecifyLocalFlag:
         output = "\n".join(printed)
         assert "LOCAL_ONLY" in output, output
 
+    def test_specify_pre_absent_claim_remote_skips_remote_lock(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Absent claim_remote key skips the remote lock (local default)."""
+        import json
+        import subprocess
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _specify_pre
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+        from tests.conftest import _git_env
+
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir()
+        ledger = specs_dir / "issues.jsonl"
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-LOC",
+                type="feature",
+                title="Test local default",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001-loc.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            ledger,
+        )
+        subprocess.run(
+            ["git", "add", "specs/issues.jsonl"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "seed backlog"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+
+        push_calls: list[list[str]] = []
+        real_run = subprocess.run
+
+        def recording(argv, *args, **kwargs):
+            argv_list = list(argv)
+            if len(argv_list) >= 2 and argv_list[:2] == ["git", "push"]:
+                push_calls.append(argv_list)
+                return subprocess.CompletedProcess(argv_list, 0, stdout="", stderr="")
+            return real_run(argv, *args, **kwargs)
+
+        monkeypatch.setattr("deviate.cli.meso.subprocess.run", recording)
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+
+        printed: list[str] = []
+        monkeypatch.setattr(
+            "deviate.cli.meso.console.print",
+            lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
+        )
+
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.meso.branch_exists_on_remote") as mock_remote,
+        ):
+            result = _specify_pre(issue_id="ISS-001-LOC", local=False)
+
+        mock_remote.assert_not_called()
+        assert push_calls == [], (
+            f"absent claim_remote must not invoke git push: {push_calls}"
+        )
+
+        worktree = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001-loc"
+        assert worktree.is_dir(), f"worktree missing at {worktree}"
+        assert result is not None
+        assert Path(result["worktree_path"]).resolve() == worktree.resolve()
+
+        wt_ledger = worktree / "specs" / "issues.jsonl"
+        assert wt_ledger.is_file()
+        statuses = [
+            json.loads(line).get("status")
+            for line in wt_ledger.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert "SPECIFIED" in statuses
+
+        output = "\n".join(printed)
+        assert "LOCAL_ONLY" in output, output
+
 
 class TestSpecifyPushFailure:
     """Regression: `git push` failure must surface the real reason.
