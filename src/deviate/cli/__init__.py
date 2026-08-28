@@ -1123,6 +1123,12 @@ def setup(
     _ensure_root_gitignore(workdir)
     _ensure_root_gitattributes(workdir)
 
+    console.print(
+        "\nNext: run [bold]/deviate-init[/bold] as the first prompt in your "
+        "agent (Codex: the [bold]deviate-init[/bold] skill). "
+        "It is a no-op if the repo is already scaffolded."
+    )
+
 
 # Canonical ``.gitattributes`` content provisioned by ``deviate setup``.
 # Marked as a module constant so the deviatdd repo's own ``.gitattributes``

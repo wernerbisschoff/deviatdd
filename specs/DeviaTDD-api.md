@@ -29,6 +29,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `specs/constitution.md` — that bootstrap is owned by `deviate research pre` (see below),
   so a fresh project reports `is_greenfield=true` until `/research` populates the
   constitution. `deviate init pre` continues to scaffold the constitution independently.
+  Successful `deviate setup` prints a next-step hint to run `/deviate-init` as the
+  first agent prompt (Codex: the `deviate-init` skill) and notes that init is a
+  no-op if the repo is already scaffolded.
   slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
   — 25 flat `.md` files total in the Factory install; 24 in every other agent
   `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land only in the
