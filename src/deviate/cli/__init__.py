@@ -9,7 +9,12 @@ import typer
 from rich.console import Console
 from rich.prompt import Prompt
 
-from deviate.state.config import DeviateConfig, SessionState
+from deviate.state.config import (
+    CODEX_DEFAULT_MODEL,
+    CODEX_DEFAULT_REASONING_EFFORT,
+    DeviateConfig,
+    SessionState,
+)
 from deviate.state.config import resolve_base_branch as resolve_base_branch  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
 from deviate.cli.flow_commands import flows_app as flows_app  # noqa: F401
@@ -315,6 +320,75 @@ def _read_agent_backend_from_config(config_path: Path) -> str | None:
     return backend if isinstance(backend, str) and backend else None
 
 
+def _toml_table_string(content: str, table: str, key: str) -> str | None:
+    """Return the string value of ``[table].key``, or ``None`` if absent."""
+    try:
+        import tomllib
+
+        data = tomllib.loads(content)
+    except Exception:
+        return None
+    section = data.get(table)
+    if not isinstance(section, dict):
+        return None
+    raw = section.get(key)
+    return raw if isinstance(raw, str) else None
+
+
+def _next_toml_table_index(content: str, start: int) -> int:
+    """Return the index of the next ``[table]`` header after *start*, or EOF."""
+    match = re.search(r"^\[", content[start:], re.MULTILINE)
+    return start + match.start() if match else len(content)
+
+
+def _upsert_toml_table_string_if_empty(
+    content: str, table: str, key: str, value: str
+) -> tuple[str, bool]:
+    """Insert or fill ``[table].key = "value"`` when the key is missing/empty.
+
+    A non-empty existing string is left untouched. Returns
+    ``(new_content, changed)``.
+    """
+    current = _toml_table_string(content, table, key)
+    if current is not None and current.strip():
+        return content, False
+
+    new_line = f'{key} = "{value}"'
+    header_re = re.compile(rf"^\[{re.escape(table)}\]\s*$", re.MULTILINE)
+    header = header_re.search(content)
+    if header is None:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        content += f"\n[{table}]\n{new_line}\n"
+        return content, True
+
+    table_end = _next_toml_table_index(content, header.end())
+    table_body = content[header.end() : table_end]
+    key_re = re.compile(rf"^{re.escape(key)}\s*=\s*.*$", re.MULTILINE)
+    if key_re.search(table_body):
+        table_body = key_re.sub(new_line, table_body, count=1)
+    else:
+        if table_body and not table_body.endswith("\n"):
+            table_body += "\n"
+        table_body = f"{table_body}{new_line}\n"
+    return content[: header.end()] + table_body + content[table_end:], True
+
+
+def _apply_codex_setup_defaults(config_path: Path) -> bool:
+    """Seed Codex Luna + high thinking when those keys are missing/empty."""
+    content = config_path.read_text(encoding="utf-8")
+    content, changed_model = _upsert_toml_table_string_if_empty(
+        content, "models", "default", CODEX_DEFAULT_MODEL
+    )
+    content, changed_effort = _upsert_toml_table_string_if_empty(
+        content, "agent", "reasoning_effort", CODEX_DEFAULT_REASONING_EFFORT
+    )
+    if not (changed_model or changed_effort):
+        return False
+    config_path.write_text(content, encoding="utf-8")
+    return True
+
+
 def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
     """Surgically upsert ``[agent]\nbackend = "<value>"`` in *config_path*.
 
@@ -514,6 +588,8 @@ def _scaffold_dotfiles(
             changed = (
                 _write_agent_block_to_config(config_path, agent_backend) or changed
             )
+            if agent_backend == "codex":
+                changed = _apply_codex_setup_defaults(config_path) or changed
         if changed:
             console.print(f"  [green]UPDATE[/] {config_path.name} flags merged")
         else:
@@ -525,9 +601,15 @@ def _scaffold_dotfiles(
             claim_remote=claim_remote,
         )
         if agent_backend is not None:
+            agent_update: dict[str, object] = {"backend": agent_backend}
+            extra: dict[str, object] = {}
+            if agent_backend == "codex":
+                agent_update["reasoning_effort"] = CODEX_DEFAULT_REASONING_EFFORT
+                extra["models"] = {"default": CODEX_DEFAULT_MODEL}
             config = config.model_copy(
                 update={
-                    "agent": config.agent.model_copy(update={"backend": agent_backend})
+                    "agent": config.agent.model_copy(update=agent_update),
+                    **extra,
                 }
             )
         _write_if_missing(

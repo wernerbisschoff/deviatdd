@@ -8,6 +8,10 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+CODEX_DEFAULT_MODEL = "gpt-5.6-luna"
+CODEX_DEFAULT_REASONING_EFFORT = "high"
+ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
+
 
 class AgentConfig(BaseModel):
     # Agent backend: "opencode", "claude", "droid", "pi", "omp", or "codex"
@@ -25,6 +29,9 @@ class AgentConfig(BaseModel):
     transport: Literal["rpc", "cli"] = Field(default="cli")
     # Optional RPC URI override (e.g., "stdio://pi --mode rpc --no-session")
     rpc_uri: Optional[str] = Field(default=None)
+    # Codex-only: forwarded as ``codex exec -c model_reasoning_effort=<value>``.
+    # Official values are minimal|low|medium|high|xhigh. Other backends ignore it.
+    reasoning_effort: Optional[ReasoningEffort] = Field(default=None)
 
     @model_validator(mode="before")
     @classmethod
@@ -46,6 +53,13 @@ class AgentConfig(BaseModel):
                 else:
                     data["transport"] = "cli"
         return data
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def _empty_reasoning_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     model_config = {"extra": "forbid"}
 
@@ -212,6 +226,27 @@ def resolve_phase_model(phase: str, models: dict[str, str]) -> str | None:
     if "default" in lookup:
         return lookup["default"]
     return None
+
+
+def resolve_reasoning_effort(root: Path) -> str | None:
+    """Return ``[agent].reasoning_effort`` from `.deviate/config.toml`.
+
+    Returns ``None`` when the file, table, or key is absent, or when the
+    value is not a non-empty string. Callers construct
+    :class:`AgentConfig` which validates the official Codex set
+    (``minimal|low|medium|high|xhigh``).
+    """
+    data = _load_deviate_config_toml(root)
+    if not isinstance(data, dict):
+        return None
+    agent = data.get("agent", {})
+    if not isinstance(agent, dict):
+        return None
+    raw = agent.get("reasoning_effort")
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
 
 
 def resolve_model_for_phase(phase: str, root: Path) -> str | None:

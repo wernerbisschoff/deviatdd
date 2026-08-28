@@ -278,3 +278,44 @@ class TestMesoInvokeAgentPhaseBackendAliasResolution:
             f"expected canonical backend 'droid' after factory resolution, "
             f"got {cfg.backend!r}"
         )
+
+    @patch("deviate.cli.meso.Path.cwd")
+    @patch("deviate.cli.meso.AgentBackend.invoke")
+    @patch("deviate.cli.meso._build_slim_prompt")
+    def test_codex_reasoning_effort_reaches_agent_config(
+        self,
+        mock_build: MagicMock,
+        mock_invoke: MagicMock,
+        mock_cwd: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """``[agent].reasoning_effort`` is forwarded on the Codex meso path."""
+        with patch("deviate.cli.meso.AgentBackend") as MockBackend:
+            mock_inst = MagicMock()
+            mock_inst.invoke.return_value = MagicMock(status="PASS")
+            MockBackend.return_value = mock_inst
+            from deviate.cli.meso import _invoke_agent_phase
+
+            mock_cwd.return_value = tmp_path
+            mock_build.return_value = "test prompt"
+
+            dot = tmp_path / ".deviate"
+            dot.mkdir(parents=True)
+            (dot / "config.toml").write_text(
+                '[agent]\nbackend = "codex"\nreasoning_effort = "high"\n',
+                encoding="utf-8",
+            )
+
+            _invoke_agent_phase(
+                "PLAN",
+                {
+                    "issue_id": "ISS-001-001",
+                    "issue_title": "Test",
+                    "epic_slug": "test-epic",
+                },
+            )
+
+        _, call_kwargs = MockBackend.call_args
+        cfg = call_kwargs["config"]
+        assert cfg.backend == "codex"
+        assert cfg.reasoning_effort == "high"
