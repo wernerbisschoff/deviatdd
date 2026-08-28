@@ -55,6 +55,15 @@ class TestAgentConfigModel:
         config = AgentConfig()
         assert config.backend == "pi"
         assert config.timeout == 600
+        assert config.reasoning_effort is None
+
+    def test_agent_config_accepts_codex_reasoning_effort(self):
+        config = AgentConfig(backend="codex", reasoning_effort="high")
+        assert config.reasoning_effort == "high"
+
+    def test_agent_config_rejects_invalid_reasoning_effort(self):
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="codex", reasoning_effort="max")
 
     def test_agent_config_custom_values(self):
         config = AgentConfig(backend="claude", timeout=300)
@@ -1919,3 +1928,44 @@ class TestCodexBackendRegistration:
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "gpt-5"
         assert cmd[-1] != "-", "stdin sentinel must not follow --model"
+        assert "-c" not in cmd
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_codex_reasoning_effort_appended(self, mock_popen: MagicMock) -> None:
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (
+            b"phase: RED\nstatus: TEST_WRITTEN_FAILING\ntask_id: T\n",
+            b"",
+        )
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        backend = AgentBackend(
+            config=AgentConfig(backend="codex", reasoning_effort="high")
+        )
+        backend.invoke("test prompt", model="gpt-5.6-luna")
+
+        cmd = mock_popen.call_args[0][0]
+        c_idx = cmd.index("-c")
+        assert cmd[c_idx + 1] == "model_reasoning_effort=high"
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "gpt-5.6-luna"
+
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_pi_does_not_pass_reasoning_effort(self, mock_popen: MagicMock) -> None:
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (
+            b"phase: RED\nstatus: TEST_WRITTEN_FAILING\ntask_id: T\n",
+            b"",
+        )
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        backend = AgentBackend(
+            config=AgentConfig(backend="pi", reasoning_effort="high")
+        )
+        backend.invoke("test prompt")
+
+        cmd = mock_popen.call_args[0][0]
+        assert "-c" not in cmd
+        assert "model_reasoning_effort=high" not in cmd

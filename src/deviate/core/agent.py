@@ -832,6 +832,10 @@ class AgentBackend:
             model_flag = MODEL_FLAGS.get(backend_name, ["--model"])
             if model is not None and model_flag is not None:
                 cmd.extend([model_flag[0], model])
+            if backend_name == "codex" and self.config.reasoning_effort:
+                cmd.extend(
+                    ["-c", f"model_reasoning_effort={self.config.reasoning_effort}"]
+                )
             # Backends that expect the prompt as a positional CLI argument
             # (e.g. ``omp -p "prompt"``) get the prompt appended to the
             # command. The ``prompt`` variable is then cleared so the
