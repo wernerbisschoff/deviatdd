@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.resources
 import re
-import shutil
 from pathlib import Path
 
 import typer
@@ -12,7 +11,6 @@ from rich.prompt import Prompt
 from deviate.state.config import (
     CODEX_DEFAULT_MODEL,
     CODEX_DEFAULT_REASONING_EFFORT,
-    DeviateConfig,
     SessionState,
 )
 from deviate.state.config import resolve_base_branch as resolve_base_branch  # noqa: F401
@@ -51,7 +49,12 @@ from deviate.cli._html import html_app
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
 
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
-from deviate.core.commands import discover_commands, install_command
+from deviate.core.commands import (
+    UnknownPackError,
+    commands_for_packs,
+    install_command,
+    parse_optional_packs,
+)
 from deviate.ui.render import is_interactive
 
 cli = typer.Typer(no_args_is_help=True)
@@ -116,7 +119,7 @@ def main(
 # before their corresponding key in .deviate/config.toml.  These are the
 # primary documentation surface for end users editing config by hand.
 _CONFIG_TOML_COMMENTS: dict[str, str] = {
-    "profile": 'Preset config group: "default", "full", "fast", or "secure"',
+    "profile": 'Micro-run default when --profile is omitted: "full", "fast", or "secure"',
     "timeout_seconds": "CLI inactivity timeout in seconds (must be > 0)",
     "agent_export_mode": 'Agent export mode: "local" (project) or "global" (~/.claude/)',
     "agent": "Agent backend configuration",
@@ -293,10 +296,6 @@ def _upsert_governance_block(target_path: Path, seed_content: str) -> None:
         _upsert_section(target_path, section)
 
 
-def _detect_libref() -> bool:
-    return shutil.which("libref") is not None
-
-
 # ---------------------------------------------------------------------------
 # Agent selection
 # ---------------------------------------------------------------------------
@@ -391,38 +390,17 @@ def _apply_codex_setup_defaults(config_path: Path) -> bool:
 
 
 def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
-    """Surgically upsert ``[agent]\nbackend = "<value>"`` in *config_path*.
+    """Rewrite ``[agent]`` to persist *backend* with backend-correct keys.
 
-    Preserves every other key/table in the file (similar in spirit to
-    :func:`_merge_flag_keys` for the boolean ``use_libref``
-    / ``claim_remote`` keys, but for the nested ``[agent]`` table).
-
-    Returns ``True`` when the file was modified, ``False`` when the
-    existing ``[agent].backend`` already matches the requested value.
+    Non-pi/omp backends drop ``pi_rpc`` and ``transport``. Pi/OMP keep
+    ``transport`` (default ``rpc``) and never write ``pi_rpc``. Other
+    tables in the file are preserved.
     """
     content = config_path.read_text(encoding="utf-8")
-    new_line = f'backend = "{backend}"'
-
-    block_pattern = re.compile(
-        r"^\[agent\]\s*\n(?:backend\s*=\s*.*\n?)+",
-        re.MULTILINE,
-    )
-    match = block_pattern.search(content)
-    if match:
-        if f'backend = "{backend}"' in match.group(0):
-            return False
-        content = block_pattern.sub(f"[agent]\n{new_line}\n", content)
-    else:
-        table_match = re.search(r"^\[.*\]\s*$", content, re.MULTILINE)
-        new_block = f"\n[agent]\n{new_line}\n"
-        if table_match:
-            idx = table_match.start()
-            content = content[:idx] + new_block.lstrip("\n") + "\n" + content[idx:]
-        else:
-            if content and not content.endswith("\n"):
-                content += "\n"
-            content += new_block
-    config_path.write_text(content, encoding="utf-8")
+    new_content, changed = _rewrite_agent_table(content, backend)
+    if not changed:
+        return False
+    config_path.write_text(new_content, encoding="utf-8")
     return True
 
 
@@ -475,6 +453,156 @@ def _prompt_claim_remote() -> bool | None:
     if selected == "no":
         return False
     return True
+
+
+def _prompt_pack_selection() -> tuple[str, ...] | None:
+    """Ask which optional command packs to install.
+
+    Returns ``()`` for the default-only set, a tuple of optional pack
+    names when the operator selects some, and ``None`` when the session
+    is not interactive so the caller keeps default-only.
+    """
+    if not is_interactive():
+        return None
+    try:
+        selected = Prompt.ask(
+            "Optional command packs (comma-separated, or none / all-optional)",
+            default="none",
+            console=console,
+        )
+    except (EOFError, KeyboardInterrupt):
+        return None
+    try:
+        return parse_optional_packs(selected)
+    except UnknownPackError as exc:
+        console.print(f"[red]UNKNOWN_PACK[/] {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+def _resolve_setup_optional_packs(packs: str | None) -> tuple[str, ...]:
+    """Resolve optional packs from ``--packs`` or a TTY prompt."""
+    if packs is not None:
+        try:
+            return parse_optional_packs(packs)
+        except UnknownPackError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    prompted = _prompt_pack_selection()
+    return prompted if prompted is not None else ()
+
+
+def _agent_table_for_backend(
+    backend: str,
+    *,
+    timeout: int = 600,
+    reasoning_effort: str | None = None,
+    transport: str | None = None,
+) -> dict[str, object]:
+    """Return the persistable ``[agent]`` keys for *backend*."""
+    table: dict[str, object] = {"backend": backend, "timeout": timeout}
+    if backend in ("pi", "omp"):
+        table["transport"] = transport or "rpc"
+    if backend == "codex" and reasoning_effort:
+        table["reasoning_effort"] = reasoning_effort
+    return table
+
+
+def _parse_existing_agent_table(content: str) -> dict[str, object]:
+    try:
+        import tomllib
+
+        data = tomllib.loads(content)
+    except Exception:
+        return {}
+    agent = data.get("agent")
+    return dict(agent) if isinstance(agent, dict) else {}
+
+
+def _replace_toml_table(content: str, table: str, body_lines: list[str]) -> str:
+    """Replace or append a ``[table]`` section with *body_lines*."""
+    header_re = re.compile(rf"^\[{re.escape(table)}\]\s*$", re.MULTILINE)
+    header = header_re.search(content)
+    block = f"[{table}]\n" + "\n".join(body_lines)
+    if not block.endswith("\n"):
+        block += "\n"
+    if header is None:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        if content and not content.endswith("\n\n"):
+            content += "\n"
+        return content + block
+    table_end = _next_toml_table_index(content, header.end())
+    prefix = content[: header.start()]
+    suffix = content[table_end:]
+    return prefix + block + suffix
+
+
+def _rewrite_agent_table(content: str, backend: str) -> tuple[str, bool]:
+    """Rewrite ``[agent]`` to the backend allowlist; strip dead Pi keys.
+
+    A matching backend with no disallowed keys is left byte-identical so
+    re-running setup does not invent ``timeout`` on a hand-edited file.
+    """
+    existing = _parse_existing_agent_table(content)
+    dead = {"pi_rpc"} if backend in ("pi", "omp") else {"pi_rpc", "transport"}
+    extras = {key for key in existing if key in dead}
+    if existing.get("backend") == backend and not extras:
+        return content, False
+    timeout = existing.get("timeout", 600)
+    if not isinstance(timeout, int) or timeout <= 0:
+        timeout = 600
+    reasoning = existing.get("reasoning_effort")
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        reasoning = None
+    transport = existing.get("transport")
+    if not isinstance(transport, str):
+        transport = None
+    table = _agent_table_for_backend(
+        backend,
+        timeout=timeout,
+        reasoning_effort=reasoning,
+        transport=transport,
+    )
+    body = []
+    for key, value in table.items():
+        line = _serialize_value(key, value)
+        if line:
+            body.append(line)
+    new_content = _replace_toml_table(content, "agent", body)
+    return new_content, new_content != content
+
+
+def _config_dump_dict(
+    *,
+    agent_export_mode: str,
+    claim_remote: bool,
+    use_libref: bool,
+    agent_backend: str | None,
+) -> dict[str, object]:
+    """Allowlist payload for a fresh ``config.toml``."""
+    backend = agent_backend or "pi"
+    agent_update: dict[str, object] = {"backend": backend}
+    extra: dict[str, object] = {}
+    if backend == "codex":
+        agent_update["reasoning_effort"] = CODEX_DEFAULT_REASONING_EFFORT
+        extra["models"] = {"default": CODEX_DEFAULT_MODEL}
+    agent = _agent_table_for_backend(
+        backend,
+        reasoning_effort=str(agent_update["reasoning_effort"])
+        if "reasoning_effort" in agent_update
+        else None,
+    )
+    payload: dict[str, object] = {
+        "profile": "full",
+        "timeout_seconds": 1800,
+        "agent_export_mode": agent_export_mode,
+        "base_branch": "main",
+        "claim_remote": claim_remote,
+        "agent": agent,
+    }
+    if use_libref:
+        payload["use_libref"] = True
+    payload.update(extra)
+    return payload
 
 
 def _resolve_setup_claim_remote(
@@ -537,23 +665,22 @@ def _merge_flag_keys(
     config_path: Path,
     *,
     use_libref: bool,
-    claim_remote: bool = True,
+    claim_remote: bool | None = None,
 ) -> None:
     """Surgically update flag keys in an existing TOML.
 
-    Upserts ``use_libref`` and ``claim_remote``.
+    Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` only
+    when the caller explicitly passed a value (``--no-claim-remote``).
     Preserves every other key/table (e.g. user-customised ``[models]``).
-    Used when ``setup --libref`` or
-    ``.deviate/config.toml`` already exists — the idempotency guard in
-    ``_write_if_missing`` would otherwise silently drop the new flag values.
     """
     content = config_path.read_text(encoding="utf-8")
-    for key, value in (
-        ("use_libref", use_libref),
-        ("claim_remote", claim_remote),
-    ):
-        content = _upsert_toml_bool(content, key, value)
-    config_path.write_text(content, encoding="utf-8")
+    original = content
+    if claim_remote is not None:
+        content = _upsert_toml_bool(content, "claim_remote", claim_remote)
+    if use_libref:
+        content = _upsert_toml_bool(content, "use_libref", True)
+    if content != original:
+        config_path.write_text(content, encoding="utf-8")
 
 
 def _scaffold_dotfiles(
@@ -563,6 +690,7 @@ def _scaffold_dotfiles(
     claim_remote: bool = True,
     force_update_flags: bool = False,
     agent_backend: str | None = None,
+    update_claim_remote: bool = False,
 ) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
@@ -582,7 +710,7 @@ def _scaffold_dotfiles(
             _merge_flag_keys(
                 config_path,
                 use_libref=use_libref,
-                claim_remote=claim_remote,
+                claim_remote=claim_remote if update_claim_remote else None,
             )
             changed = True
         if agent_backend is not None:
@@ -596,26 +724,15 @@ def _scaffold_dotfiles(
         else:
             console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     else:
-        config = DeviateConfig(
+        payload = _config_dump_dict(
             agent_export_mode=agent_export_mode,
-            use_libref=use_libref,
             claim_remote=claim_remote,
+            use_libref=use_libref,
+            agent_backend=agent_backend,
         )
-        if agent_backend is not None:
-            agent_update: dict[str, object] = {"backend": agent_backend}
-            extra: dict[str, object] = {}
-            if agent_backend == "codex":
-                agent_update["reasoning_effort"] = CODEX_DEFAULT_REASONING_EFFORT
-                extra["models"] = {"default": CODEX_DEFAULT_MODEL}
-            config = config.model_copy(
-                update={
-                    "agent": config.agent.model_copy(update=agent_update),
-                    **extra,
-                }
-            )
         _write_if_missing(
             config_path,
-            _dict_to_toml(config.model_dump(), comments=_CONFIG_TOML_COMMENTS),
+            _dict_to_toml(payload, comments=_CONFIG_TOML_COMMENTS),
         )
 
     session = SessionState()
@@ -656,7 +773,7 @@ def _linkify_governance_files(workdir: Path) -> None:
     console.print("  [green]LINK[/]  CLAUDE.md -> AGENTS.md")
 
 
-def _apply_governance(workdir: Path) -> None:
+def _apply_governance(workdir: Path, use_libref: bool = False) -> None:
     # NOTE: claudemd_seed.md and agents_seed.md are intentionally empty — the
     # former ``## 🛠 DeviaTDD Phase Architecture`` block was project-internal
     # guidance that did not help consuming projects. An empty seed (read
@@ -687,10 +804,11 @@ def _apply_governance(workdir: Path) -> None:
         for t in targets:
             _upsert_governance_block(t, agents_content)
 
-    libref_content = _read_seed(_GOVERNANCE_MODULE, "libref_seed.md")
-    if libref_content:
-        for t in targets:
-            _upsert_governance_block(t, libref_content)
+    if use_libref:
+        libref_content = _read_seed(_GOVERNANCE_MODULE, "libref_seed.md")
+        if libref_content:
+            for t in targets:
+                _upsert_governance_block(t, libref_content)
 
 
 def _normalize_install_agent(agent: str) -> str:
@@ -722,19 +840,26 @@ def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     return None
 
 
-def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
-    """Install the command library into the selected agent directories.
+def _install_commands_to_agents(
+    workdir: Path,
+    agents: list[str],
+    command_names: list[str] | None = None,
+    use_libref: bool = False,
+) -> None:
+    """Install the selected command packs into the selected agent directories.
 
     Output is aggregated per-agent — one summary line per agent instead of
     one line per (command × agent) — to keep ``deviate setup`` output
-    readable when 32 commands are written to a single selected agent.
+    readable when many commands are written to a single selected agent.
     """
-    commands = discover_commands()
+    commands = command_names if command_names is not None else commands_for_packs()
     if not commands:
         return
     for agent in agents:
         if agent == "codex":
-            _install_codex_command_skills(workdir)
+            _install_codex_command_skills(
+                workdir, command_names=commands, use_libref=use_libref
+            )
             continue
         target_dir = _get_agent_command_dir(agent, workdir)
         if target_dir is None:
@@ -743,7 +868,13 @@ def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
         installed = 0
         skipped = 0
         for command_name in commands:
-            if install_command(command_name, target_dir, workdir=workdir, agent=agent):
+            if install_command(
+                command_name,
+                target_dir,
+                workdir=workdir,
+                agent=agent,
+                use_libref=use_libref,
+            ):
                 installed += 1
             else:
                 skipped += 1
@@ -757,15 +888,19 @@ def _install_commands_to_agents(workdir: Path, agents: list[str]) -> None:
             )
 
 
-def _install_codex_command_skills(workdir: Path) -> None:
-    """Install each packaged slash command as a Codex project skill.
+def _install_codex_command_skills(
+    workdir: Path,
+    command_names: list[str] | None = None,
+    use_libref: bool = False,
+) -> None:
+    """Install selected packaged slash commands as Codex project skills.
 
     Codex CLI 0.117+ dropped ``~/.codex/prompts`` and ``/prompts:``.
     Official project-local discovery is ``.agents/skills/<name>/SKILL.md``
     (scanned from CWD up to the repo root). Reuse the composed command
     bodies via :func:`install_command` — do not invent new prompt text.
     """
-    commands = discover_commands()
+    commands = command_names if command_names is not None else commands_for_packs()
     if not commands:
         return
     installed = 0
@@ -778,6 +913,7 @@ def _install_codex_command_skills(workdir: Path) -> None:
             workdir=workdir,
             agent="codex",
             target_filename="SKILL.md",
+            use_libref=use_libref,
         ):
             installed += 1
         else:
@@ -899,7 +1035,7 @@ def setup(
     libref: bool = typer.Option(
         False,
         "--libref",
-        help="Force-enable offline libref CLI integration (overrides PATH detection)",
+        help="Enable offline libref CLI integration in generated config, prompts, and skills",
     ),
     agent: str | None = typer.Option(
         None,
@@ -911,6 +1047,15 @@ def setup(
         False,
         "--no-claim-remote",
         help="Disable push-as-lock; write claim_remote = false",
+    ),
+    packs: str | None = typer.Option(
+        None,
+        "--packs",
+        help=(
+            "Optional command packs to install on top of the default "
+            "product+macro+meso+micro set. Comma-separated names, "
+            "'none', or 'all-optional'."
+        ),
     ),
 ) -> None:
     """Bootstrap a new project with DeviaTDD (start here)."""
@@ -940,7 +1085,7 @@ def setup(
         config_exists=config_path.exists(),
     )
 
-    use_libref_val = True if libref else _detect_libref()
+    use_libref_val = bool(libref)
     _scaffold_dotfiles(
         workdir,
         agent_export_mode,
@@ -948,9 +1093,10 @@ def setup(
         claim_remote=claim_remote_val,
         force_update_flags=libref or no_claim_remote,
         agent_backend=backend,
+        update_claim_remote=no_claim_remote,
     )
 
-    _apply_governance(workdir)
+    _apply_governance(workdir, use_libref=use_libref_val)
 
     # Install commands + the packaged skill only for the selected agent.
     # ``--agent`` (or the existing ``[agent].backend``, or the interactive
@@ -963,7 +1109,14 @@ def setup(
     # no ``settings.json`` generation — the operator's Pi config is out of
     # scope.
     install_agent = _normalize_install_agent(selected_agent)
-    _install_commands_to_agents(workdir, [install_agent])
+    optional_packs = _resolve_setup_optional_packs(packs)
+    command_names = commands_for_packs(optional_packs)
+    _install_commands_to_agents(
+        workdir,
+        [install_agent],
+        command_names=command_names,
+        use_libref=use_libref_val,
+    )
     _install_deviatdd_skill(workdir, [install_agent])
 
     _ensure_gitignore(workdir)

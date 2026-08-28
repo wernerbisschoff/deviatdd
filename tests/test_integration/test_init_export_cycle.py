@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.core.commands import _resolve_commands_root
-from deviate.core.commands import discover_commands
+from deviate.core.commands import commands_for_packs
 
 runner = CliRunner()
 
@@ -105,7 +105,7 @@ class TestFullInitCycle:
             assert not const_path.exists()
 
             config_text = config_path.read_text()
-            assert 'profile = "default"' in config_text
+            assert 'profile = "full"' in config_text
 
             session_data = json.loads(session_path.read_text())
             assert session_data["current_phase"] == "IDLE"
@@ -113,13 +113,13 @@ class TestFullInitCycle:
 
             claude_text = claude_path.read_text()
             # Phase Architecture block was removed (project-internal, did not
-            # help consuming projects). The libref block is still seeded.
+            # help consuming projects). Libref is opt-in via --libref.
             assert "## 🛠 DeviaTDD Phase Architecture" not in claude_text
-            assert "## 📚 Offline Documentation (libref)" in claude_text
+            assert "libref" not in claude_text.lower()
 
             agents_text = agents_path.read_text()
             assert "## 🛠 DeviaTDD Phase Architecture" not in agents_text
-            assert "## 📚 Offline Documentation (libref)" in agents_text
+            assert "libref" not in agents_text.lower()
 
     def test_full_init_structure_valid_toml(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -130,7 +130,7 @@ class TestFullInitCycle:
             config_path = workdir / ".deviate" / "config.toml"
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)
-            assert data.get("profile") == "default"
+            assert data.get("profile") == "full"
             assert data.get("timeout_seconds") == 1800
             assert data.get("agent_export_mode") == "local"
 
@@ -213,14 +213,19 @@ class TestFullInitCycle:
             existing_agents = "# Existing AGENTS content\n"
             agents_path.write_text(existing_agents)
 
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
 
-            assert config_path.read_text() == original_config
+            parsed = tomllib.loads(config_path.read_text())
+            assert parsed["profile"] == "custom"
+            assert parsed["agent"]["backend"] == "opencode"
+            assert parsed["use_libref"] is True
+            assert "timeout" not in parsed["agent"]
+            assert "claim_remote" not in parsed
             assert session_path.read_text() == original_session
             assert claude_path.exists()
             content = claude_path.read_text()
-            # Pre-existing libref section is replaced by fresh seed; unrelated
+            # --libref replaces a pre-existing libref section; unrelated
             # sections stay untouched. Phase Architecture is no longer seeded.
             assert "Existing docs content" not in content
             assert "Preserved content" in content
@@ -258,7 +263,7 @@ class TestProductLayerSkillExportCycle:
 
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "claude"])
+            result = runner.invoke(cli, ["setup", "--agent", "claude", "--libref"])
             assert result.exit_code == 0, result.output
 
             commands_root = _resolve_commands_root()
@@ -281,7 +286,7 @@ class TestProductLayerSkillExportCycle:
 
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
 
             commands_root = _resolve_commands_root()
@@ -353,8 +358,8 @@ class TestFullInitCyclePiBackend:
         fake_home = tmp_path / "fake-home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
-        skills = discover_commands()
-        assert skills, "Test invariant violated: no skills discovered"
+        skills = commands_for_packs()
+        assert skills, "Test invariant violated: no default-pack commands"
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
@@ -418,7 +423,7 @@ class TestFullInitCyclePiBackend:
         also stays within 500ms.
         """
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        skills = discover_commands()
+        skills = commands_for_packs()
 
         with chdir(tmp_path):
             r1 = runner.invoke(cli, ["setup", "--agent", "pi"])
@@ -464,7 +469,7 @@ class TestFullInitCyclePiBackend:
         actually registers each skill.
         """
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        skills = discover_commands()
+        skills = commands_for_packs()
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])

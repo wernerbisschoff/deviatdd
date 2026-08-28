@@ -9,6 +9,7 @@ from deviate.state.config import (
     ProfileConfig,
     SessionState,
     resolve_claim_remote,
+    resolve_execution_profile,
     resolve_phase_model,
     resolve_reasoning_effort,
 )
@@ -18,7 +19,7 @@ from deviate.cli.__init__ import resolve_base_branch
 class TestDeviateConfig:
     def test_default_values(self):
         config = DeviateConfig()
-        assert config.profile == "default"
+        assert config.profile == "full"
         assert config.timeout_seconds == 1800
         assert config.agent_export_mode == "local"
         assert config.base_branch == "main"
@@ -39,7 +40,7 @@ class TestDeviateConfig:
 
     def test_json_round_trip(self):
         config = DeviateConfig(
-            profile="test",
+            profile="fast",
             timeout_seconds=60,
             agent_export_mode="global",
         )
@@ -154,6 +155,25 @@ class TestDeviateConfig:
             'claim_remote = "false"\n', encoding="utf-8"
         )
         assert resolve_claim_remote(tmp_path) is True
+
+    def test_profile_rejects_default_string(self):
+        with pytest.raises(ValidationError):
+            DeviateConfig(profile="default")
+
+    def test_resolve_execution_profile_coerces_default(self, tmp_path: Path) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text('profile = "default"\n', encoding="utf-8")
+        assert resolve_execution_profile(tmp_path) == "full"
+
+    def test_resolve_execution_profile_reads_fast(self, tmp_path: Path) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text('profile = "fast"\n', encoding="utf-8")
+        assert resolve_execution_profile(tmp_path) == "fast"
+
+    def test_resolve_execution_profile_missing_file(self, tmp_path: Path) -> None:
+        assert resolve_execution_profile(tmp_path) == "full"
 
 
 class TestProfileConfig:
