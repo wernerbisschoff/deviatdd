@@ -324,3 +324,45 @@ class TestSetupLibrefOptIn:
         )
         assert parsed["use_libref"] is True
         assert "libref" in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8").lower()
+
+
+class TestSetupNextStepHint:
+    """Successful setup must tell a new user to run ``/deviate-init`` next."""
+
+    def test_successful_setup_prints_deviate_init_hint(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert "/deviate-init" in result.output
+        assert "no-op" in result.output
+        assert "already scaffolded" in result.output
+
+    def test_failed_setup_omits_init_hint(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup"])
+        assert result.exit_code != 0
+        assert "NO_AGENT_SELECTED" in result.output
+        assert "/deviate-init" not in result.output
+
+
+class TestReadmeNewUserPath:
+    """README Quickstart must match the two-step setup → ``/deviate-init`` path."""
+
+    def test_quickstart_names_setup_then_deviate_init(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        quickstart = readme.split("## Quickstart", 1)[1].split("\n## ", 1)[0]
+        assert "deviate setup" in quickstart
+        assert "/deviate-init" in quickstart
+        assert "first prompt" in quickstart.lower()
+        assert "deviate-init" in quickstart
+        assert "one shot" not in quickstart.lower()
+        assert "scaffolds .deviate/, specs/constitution.md" not in quickstart
+
+    def test_readme_does_not_claim_setup_scaffolds_constitution(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        assert "scaffolds .deviate/, specs/constitution.md" not in readme
+        bootstrap = next(
+            line for line in readme.splitlines() if line.startswith("| **Bootstrap")
+        )
+        assert "specs/constitution.md" not in bootstrap
+        assert "/deviate-init" in readme

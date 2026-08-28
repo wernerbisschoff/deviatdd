@@ -39,16 +39,19 @@ Most AI coding agents stop at "write code that passes." DeviaTDD goes further �
 uv tool install deviatdd
 deviate --version                # confirm install
 
-# Bootstrap a new project + install slash commands into your agent of
-# choice. Does it all in one shot: scaffolds .deviate/, specs/constitution.md,
-# governance blocks, and installs /deviate-* slash commands for the
-# selected agent only. The --agent flag picks the backend persisted to
-# .deviate/config.toml and is the only install target (`droid` writes
-# `.factory/`; `codex` writes `.agents/skills/`).
+# Step 1 — bootstrap DeviaTDD into this repo.
+# Writes .deviate/, persists the agent, installs default packs
+# (including deviate-init) and the shared deviatdd skill for the
+# selected agent only. Does not write specs/constitution.md,
+# mise.toml, or specs/issues.jsonl — that is /deviate-init.
+# A TTY session prompts for the agent; --agent skips the prompt
+# (`droid` writes `.factory/`; `codex` writes `.agents/skills/`).
 deviate setup --agent claude     # or: opencode | pi | droid | factory | omp | codex
 ```
 
-Once setup is done, drive the entire lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the two gates) pauses for human review.
+Once setup finishes, open your agent and run **`/deviate-init` as the first prompt**. That scaffolds `specs/constitution.md`, `mise.toml`, and `specs/issues.jsonl`, skipping anything already present. Codex uses the same prompt, installed as the `deviate-init` skill.
+
+Then drive the rest of the lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the two gates) pauses for human review.
 
 **Product layer** *(optional, for cross-product framing — skip if your repo only ships single features):*
 
@@ -195,7 +198,8 @@ style Ex fill:#f5e1e1
 
 | Phase | Slash command | Artifact committed | What the human reviews / decides |
 |-------|---------------|--------------------|----------------------------------|
-| **Bootstrap** | `deviate setup --agent <name>` | `.deviate/config.toml`, `specs/constitution.md`, governance blocks, installed `/deviate-*` slash commands | Sanity-check the constitution and the agent skills list; commit. |
+| **Bootstrap · Setup** | `deviate setup [--agent <name>]` | `.deviate/config.toml`, default packs (including `deviate-init`), shared `deviatdd` skill, selected-agent `/deviate-*` commands | Confirm the agent install. TTY prompts for the agent when `--agent` is omitted. |
+| **Bootstrap · Init** | `/deviate-init` | `specs/constitution.md`, `mise.toml`, `specs/issues.jsonl` (skips files already present) | **First prompt after setup.** Codex: the `deviate-init` skill. No-op if the repo is already scaffolded. |
 | **Product · Flows** | `/deviate-flows` | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Confirm the actor, job-to-be-done, and trigger are right; commit the flow file when asked. |
 | **Product · Architecture** | `/deviate-architecture` | `specs/_product/architecture.md`, `specs/_product/domain-model.md` | Reads existing flows; classify the change as Local / Context-Bridging / Context-Creating; commit when satisfied. |
 | **Product · Release** | `/deviate-release` | `specs/_product/release-next.md` (overrides previous) | Supply a release-goal sentence; confirm the Included Flows / Included Work / Acceptance tables reflect that goal; commit. |

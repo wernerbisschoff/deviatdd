@@ -100,7 +100,12 @@ Breaks a business goal down into standard development project containers.
   validation, so a brand-new repo is greenfield exactly once (through explore) and
   becomes governed at the first research invocation. `deviate setup` deliberately does
   NOT scaffold the constitution — keeping setup constitution-agnostic preserves the
-  greenfield signal for the orchestrator and downstream phases.
+  greenfield signal for the orchestrator and downstream phases. The new-user path is
+  two steps: `deviate setup` (writes `.deviate/`, persists the agent, installs default
+  packs including `deviate-init` and the shared `deviatdd` skill) then `/deviate-init`
+  as the first agent prompt (Codex: the `deviate-init` skill). `/deviate-init` runs
+  `deviate init pre` / `deviate init post` and scaffolds `specs/constitution.md`,
+  `mise.toml`, and `specs/issues.jsonl`, skipping anything already present.
 
 * **Active Domain Discipline (HITL gates):** `/deviate-research` Gate 1 and `/deviate-prd` Ambiguity Interrogation actively challenge terms and edge cases. Plan + Tasks produce the current acceptance contract and decomposition; the system auto-advances from Tasks into Micro with no human-approval step.
 
