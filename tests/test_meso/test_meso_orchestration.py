@@ -647,9 +647,7 @@ class TestDiscoverClaimableIssue:
             assert result == "ISS-001-001"
             mock_remote.assert_not_called()
 
-    def test_discover_absent_key_does_not_skip_origin(
-        self, tmp_git_repo: Path
-    ) -> None:
+    def test_discover_absent_key_does_not_skip_origin(self, tmp_git_repo: Path) -> None:
         """Absent claim_remote key is effective local; leftover origin stays claimable."""
         _setup_minimal_workspace(tmp_git_repo)
         with chdir(tmp_git_repo):
