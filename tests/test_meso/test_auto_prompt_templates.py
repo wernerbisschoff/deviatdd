@@ -17,7 +17,6 @@ SLIM_TEMPLATES = [
     "research.md",
     "prd.md",
     "shard.md",
-    "specify.md",
     "tasks.md",
 ]
 
@@ -27,21 +26,20 @@ _CONTEXT_MAP = {
     "research": "<context>",
     "prd": "<context>",
     "shard": "<context>",
-    "specify": "<context>",
     "plan": "<context>",
     "tasks": "<context>",
 }
 
 
 class TestSlimPromptTemplatesExist:
-    def test_all_six_template_files_exist(self):
+    def test_all_slim_template_files_exist(self):
         ref = files("deviate.prompts.auto")
         with as_file(ref) as auto_dir:
             md_files = {p.name for p in Path(auto_dir).glob("*.md")}
         for name in SLIM_TEMPLATES:
             assert name in md_files, f"Missing template: {name}"
 
-    def test_all_six_templates_have_nonempty_content(self):
+    def test_all_slim_templates_have_nonempty_content(self):
         for name in SLIM_TEMPLATES:
             content = _read_template(name)
             assert content, f"{name} should not be empty"
@@ -83,7 +81,6 @@ class TestPromptComposition:
         "research": "<macro_layer_model>",
         "prd": "<macro_layer_model>",
         "shard": "<macro_layer_model>",
-        "specify": "<macro_layer_model>",
         "plan": "<meso_layer_model>",
         "tasks": "<meso_layer_model>",
         "red": "<micro_layer_model>",
@@ -165,10 +162,6 @@ class TestSlimPromptConstraints:
 
     def test_no_placeholders_in_shard(self):
         content = _read_template("shard.md")
-        assert "${" not in content or "<context>" in content
-
-    def test_no_placeholders_in_specify(self):
-        content = _read_template("specify.md")
         assert "${" not in content or "<context>" in content
 
     def test_no_placeholders_in_tasks(self):
