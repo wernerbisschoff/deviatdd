@@ -30,6 +30,106 @@ def discover_commands(commands_root: Path | None = None) -> list[str]:
     return sorted(p.stem for p in root.glob("*.md") if p.is_file())
 
 
+DEFAULT_LAYER_PACKS: dict[str, tuple[str, ...]] = {
+    "product": ("deviate-flows", "deviate-architecture", "deviate-release"),
+    "macro": (
+        "deviate-explore",
+        "deviate-research",
+        "deviate-prd",
+        "deviate-shard",
+        "deviate-adhoc",
+        "deviate-constitution",
+        "deviate-init",
+    ),
+    "meso": ("deviate-plan", "deviate-tasks"),
+    "micro": (
+        "deviate-red",
+        "deviate-green",
+        "deviate-judge",
+        "deviate-refactor",
+        "deviate-execute",
+    ),
+}
+OPTIONAL_PACKS: dict[str, tuple[str, ...]] = {
+    "merge": ("deviate-merge",),
+    "pr": ("deviate-pr",),
+    "review": ("deviate-review",),
+    "walkthrough": ("deviate-walkthrough",),
+    "html": ("deviate-html",),
+    "hotfix": ("deviate-hotfix",),
+    "triage": ("deviate-triage",),
+    "prune": ("deviate-prune",),
+    "e2e": ("deviate-e2e",),
+}
+DEFAULT_PACK_NAMES: tuple[str, ...] = ("product", "macro", "meso", "micro")
+OPTIONAL_PACK_NAMES: tuple[str, ...] = tuple(OPTIONAL_PACKS)
+
+
+class UnknownPackError(ValueError):
+    """Raised when ``--packs`` names a pack that is not optional."""
+
+
+def command_pack_index() -> dict[str, str]:
+    """Map each command stem to ``default:<layer>`` or ``optional:<pack>``."""
+    index: dict[str, str] = {}
+    for name, commands in DEFAULT_LAYER_PACKS.items():
+        for command in commands:
+            index[command] = f"default:{name}"
+    for name, commands in OPTIONAL_PACKS.items():
+        for command in commands:
+            index[command] = f"optional:{name}"
+    return index
+
+
+def classify_packaged_stems(commands_root: Path | None = None) -> list[str]:
+    """Return unclassified packaged stems (empty when the map is complete)."""
+    index = command_pack_index()
+    return [stem for stem in discover_commands(commands_root) if stem not in index]
+
+
+def parse_optional_packs(raw: str | None) -> tuple[str, ...]:
+    """Parse a ``--packs`` value into optional pack names.
+
+    ``None`` means the caller should prompt or use the default-only set.
+    ``none`` / empty → no optional packs. ``all-optional`` → every optional pack.
+    """
+    if raw is None:
+        return ()
+    token = raw.strip().lower()
+    if not token or token == "none":
+        return ()
+    if token in {"all-optional", "all"}:
+        return OPTIONAL_PACK_NAMES
+    names = tuple(part.strip().lower() for part in token.split(",") if part.strip())
+    unknown = [name for name in names if name not in OPTIONAL_PACKS]
+    if unknown:
+        raise UnknownPackError(
+            f"Unknown pack(s): {', '.join(unknown)}. "
+            f"Optional packs: {', '.join(OPTIONAL_PACK_NAMES)}"
+        )
+    return names
+
+
+def commands_for_packs(optional_packs: tuple[str, ...] = ()) -> list[str]:
+    """Return command stems for default layer packs plus selected optional packs."""
+    stems: list[str] = []
+    for commands in DEFAULT_LAYER_PACKS.values():
+        stems.extend(commands)
+    for name in optional_packs:
+        stems.extend(OPTIONAL_PACKS[name])
+    return stems
+
+
+def redact_libref(text: str) -> str:
+    """Drop lines that mention libref so default installs stay clean."""
+    lines = []
+    for line in text.splitlines(keepends=True):
+        if "libref" in line.lower():
+            continue
+        lines.append(line)
+    return "".join(lines)
+
+
 def resolve_command(name: str, commands_root: Path | None = None) -> Path:
     root = _resolve_commands_root(commands_root)
     command_path = root / f"{name}.md"
@@ -130,6 +230,7 @@ def compose_command_body(
     raw: str,
     core_dir: Path,
     constitution_path: Path | None = None,
+    use_libref: bool = True,
 ) -> str | None:
     """Compose a command body by prepending core.md, layer-shared.md, and lifecycle-manual.md.
 
@@ -203,7 +304,10 @@ def compose_command_body(
     if prefix:
         body = f"{prefix}\n\n{body}"
 
-    return f"{frontmatter}\n\n{body}"
+    composed = f"{frontmatter}\n\n{body}"
+    if not use_libref:
+        composed = redact_libref(composed)
+    return composed
 
 
 def _emit_platform_frontmatter(agent: str, name: str, description: str) -> str:
@@ -236,6 +340,7 @@ def install_command(
     workdir: Path | None = None,
     agent: str = "claude",
     target_filename: str | None = None,
+    use_libref: bool = True,
 ) -> bool:
     """Install a command as a flat file at ``target_dir/<name>.md``.
 
@@ -272,7 +377,9 @@ def install_command(
         if candidate.is_file():
             constitution_path = candidate
 
-    composed = compose_command_body(raw, core_dir, constitution_path=constitution_path)
+    composed = compose_command_body(
+        raw, core_dir, constitution_path=constitution_path, use_libref=use_libref
+    )
     if composed is None:
         return False
 

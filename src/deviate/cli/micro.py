@@ -53,6 +53,7 @@ from deviate.core.run_logger import (
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import (
+    resolve_execution_profile,
     AgentConfig,
     PytestReportConfig,
     SessionState,
@@ -6799,8 +6800,10 @@ def _resolve_agent_config(root: Path, agent: str | None) -> str | None:
         return None
 
 
-def _validate_profile(value: str) -> str:
+def _validate_profile(value: str | None) -> str | None:
     """Typer callback: validate profile via resolve_profile, emit Typer error."""
+    if value is None:
+        return None
     try:
         resolve_profile(value)
     except ValueError as e:
@@ -6852,11 +6855,11 @@ def run_command(
         None, help="Task ID (TNNN or TSK-NNN-NN format)"
     ),
     all_tasks: bool = typer.Option(False, "--all", help="Run all PENDING tasks"),
-    profile: str = typer.Option(
-        "full",
+    profile: str | None = typer.Option(
+        None,
         "--profile",
         callback=_validate_profile,
-        help="Execution profile: full, fast, secure",
+        help="Execution profile: full, fast, secure (default: config or full)",
     ),
     no_judge: bool | None = typer.Option(None, "--no-judge", help="Skip JUDGE phase"),
     no_refactor: bool | None = typer.Option(
@@ -6960,7 +6963,8 @@ def run_command(
         raise typer.Exit(code=1)
     _set_review_context(enabled=review, json_mode=json_mode, task_id=task_id or "")
 
-    skip_judge, skip_refactor = resolve_profile(profile, no_judge, no_refactor)
+    resolved_profile = profile or resolve_execution_profile(root)
+    skip_judge, skip_refactor = resolve_profile(resolved_profile, no_judge, no_refactor)
     run_logger = RunLogger(root)
     _log_run(
         "RUN_START",

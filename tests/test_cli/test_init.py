@@ -37,9 +37,9 @@ class TestInitCommand:
             assert claude_path.exists()
             content = claude_path.read_text()
             # Phase Architecture block was removed (project-internal, did not
-            # help consuming projects). The libref block is still seeded.
+            # help consuming projects). Libref is opt-in via --libref.
             assert "## 🛠 DeviaTDD Phase Architecture" not in content
-            assert "## 📚 Offline Documentation (libref)" in content
+            assert "libref" not in content.lower()
 
     def test_init_replaces_governance_block_in_place(self, tmp_path: Path):
         """Existing governance block is replaced without duplication; unrelated sections are preserved."""
@@ -55,7 +55,7 @@ class TestInitCommand:
             )
             claude_path.write_text(existing_content)
 
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
 
             content = claude_path.read_text()
@@ -78,7 +78,7 @@ class TestInitCommand:
             )
             claude_path.write_text(existing_content)
 
-            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--libref"])
             assert result.exit_code == 0, result.output
 
             content = claude_path.read_text()
@@ -123,7 +123,8 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_libref = true" in content
+            assert "use_libref" not in content
+            assert "libref" not in content.lower()
 
     def test_init_missing_libref(self, tmp_path: Path):
         with chdir(tmp_path):
@@ -134,14 +135,17 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             config_path = workdir / ".deviate" / "config.toml"
             content = config_path.read_text()
-            assert "use_libref = false" in content
+            assert "use_libref" not in content
+            assert "libref" not in content.lower()
 
     def test_init_libref_governance_block(self, tmp_path: Path):
         with chdir(tmp_path):
             workdir = tmp_path
             with patch("shutil.which") as mock_which:
                 mock_which.return_value = "/usr/local/bin/libref"
-                result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+                result = runner.invoke(
+                    cli, ["setup", "--agent", "opencode", "--libref"]
+                )
             assert result.exit_code == 0, result.output
 
             claude_path = workdir / "CLAUDE.md"
@@ -209,7 +213,7 @@ class TestInitCommand:
             with patch("shutil.which", return_value=None):
                 runner.invoke(cli, ["setup", "--agent", "opencode"])
             config_path = workdir / ".deviate" / "config.toml"
-            assert "use_libref = false" in config_path.read_text()
+            assert "use_libref" not in config_path.read_text()
 
             with patch("shutil.which", return_value=None):
                 result = runner.invoke(
@@ -912,10 +916,10 @@ class TestInitPiBackend:
         — the flat-file convention Pi discovers natively per its
         documented slash-command convention.
         """
-        from deviate.core.commands import discover_commands
+        from deviate.core.commands import commands_for_packs
 
-        skills = discover_commands()
-        assert skills, "No skills discovered — test invariant violated"
+        skills = commands_for_packs()
+        assert skills, "No default-pack commands — test invariant violated"
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
@@ -1014,10 +1018,10 @@ class TestInitPiBackend:
         writing, so re-running setup with identical source skills is a no-op
         at the file level. The ``.pi/prompts/`` directory layout is preserved.
         """
-        from deviate.core.commands import discover_commands
+        from deviate.core.commands import commands_for_packs
 
-        skills = discover_commands()
-        assert skills, "No skills discovered — test invariant violated"
+        skills = commands_for_packs()
+        assert skills, "No default-pack commands — test invariant violated"
 
         with chdir(tmp_path):
             r1 = runner.invoke(cli, ["setup", "--agent", "pi"])
