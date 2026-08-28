@@ -172,6 +172,25 @@ class TestDeviateConfig:
         (dot / "config.toml").write_text('profile = "fast"\n', encoding="utf-8")
         assert resolve_execution_profile(tmp_path) == "fast"
 
+    def test_resolve_execution_profile_keeps_legacy_secure(
+        self, tmp_path: Path
+    ) -> None:
+        from deviate.core.profile import resolve_profile
+
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text('profile = "secure"\n', encoding="utf-8")
+        assert resolve_execution_profile(tmp_path) == "secure"
+        assert resolve_profile(resolve_execution_profile(tmp_path)) == (False, True)
+
+    def test_resolve_execution_profile_unknown_judge_coerces_to_full(
+        self, tmp_path: Path
+    ) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text('profile = "judge"\n', encoding="utf-8")
+        assert resolve_execution_profile(tmp_path) == "full"
+
     def test_resolve_execution_profile_missing_file(self, tmp_path: Path) -> None:
         assert resolve_execution_profile(tmp_path) == "full"
 
