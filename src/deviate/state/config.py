@@ -174,8 +174,9 @@ def normalize_task_id(ref: str) -> str:
 
 
 class DeviateConfig(BaseModel):
-    # Profile name — defines preset config groups (default, full, fast, secure)
-    profile: str = "default"
+    # Micro-run default when ``deviate micro run --profile`` is omitted.
+    # Must be a real execution profile — never the unused string "default".
+    profile: Literal["full", "fast", "secure"] = "full"
     # Default 1800s accommodates legitimate long-running test commands
     # (e.g. Rust workspace `cargo test` first builds); the orchestrator
     # still enforces a hard deadline via SIGTERM/SIGKILL on the process
@@ -285,6 +286,21 @@ def resolve_claim_remote(root: Path) -> bool:
     value is not a bool.
     """
     return _resolve_toml_bool(root, "claim_remote", True)
+
+
+def resolve_execution_profile(root: Path) -> str:
+    """Return the micro-run profile from ``.deviate/config.toml``.
+
+    Missing, empty, ``"default"``, or any value outside
+    ``full`` / ``fast`` / ``secure`` coerces to ``full``.
+    """
+    data = _load_deviate_config_toml(root)
+    if data is None:
+        return "full"
+    value = data.get("profile", "full")
+    if isinstance(value, str) and value.strip() in {"full", "fast", "secure"}:
+        return value.strip()
+    return "full"
 
 
 def resolve_base_branch(root: Path) -> str:

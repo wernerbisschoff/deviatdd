@@ -7,7 +7,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from deviate.cli import cli
-from deviate.core.commands import discover_commands
+from deviate.core.commands import commands_for_packs
 
 runner = CliRunner()
 
@@ -73,8 +73,8 @@ class TestSetupCodex:
     """ChatGPT Codex is a first-class backend that installs skills only."""
 
     def test_setup_codex_writes_skills_and_backend(self, tmp_path: Path) -> None:
-        commands = discover_commands()
-        assert commands, "No commands discovered — test invariant violated"
+        commands = commands_for_packs()
+        assert commands, "No default-pack commands — test invariant violated"
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "codex"])
@@ -89,6 +89,9 @@ class TestSetupCodex:
             assert body.startswith("---\n"), f"{command_name} missing YAML frontmatter"
             assert f"name: {command_name}" in body
             assert "description:" in body
+        assert not (
+            tmp_path / ".agents" / "skills" / "deviate-pr" / "SKILL.md"
+        ).exists()
 
         _assert_only_agent_trees(tmp_path, ".agents")
         assert not (tmp_path / ".codex").exists()
@@ -197,3 +200,127 @@ class TestSetupCodex:
         assert "reasoning_effort" not in parsed.get("agent", {})
         models = parsed.get("models") or {}
         assert models.get("default") != "gpt-5.6-luna"
+
+
+class TestSetupPacks:
+    def test_default_setup_installs_layer_packs_only(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-red.md").is_file()
+        assert (commands / "deviate-explore.md").is_file()
+        assert (commands / "deviate-plan.md").is_file()
+        assert (commands / "deviate-flows.md").is_file()
+        assert (tmp_path / ".opencode" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        for optional in (
+            "deviate-pr",
+            "deviate-merge",
+            "deviate-review",
+            "deviate-walkthrough",
+            "deviate-html",
+            "deviate-hotfix",
+            "deviate-triage",
+            "deviate-prune",
+            "deviate-e2e",
+        ):
+            assert not (commands / f"{optional}.md").exists(), optional
+
+    def test_packs_pr_review_adds_only_those(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--packs", "pr,review"]
+            )
+            assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-pr.md").is_file()
+        assert (commands / "deviate-review.md").is_file()
+        assert not (commands / "deviate-merge.md").exists()
+
+    def test_unknown_pack_fails_closed(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--packs", "graphite"]
+            )
+        assert result.exit_code != 0
+        assert not (tmp_path / ".opencode" / "commands" / "deviate-red.md").exists()
+
+
+class TestSetupConfigAllowlist:
+    def test_fresh_claude_config_is_tidy(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert result.exit_code == 0, result.output
+        text = (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(text)
+        assert parsed["profile"] == "full"
+        assert parsed["base_branch"] == "main"
+        assert parsed["claim_remote"] is True
+        assert "use_libref" not in parsed
+        assert "libref" not in text.lower()
+        agent = parsed["agent"]
+        assert agent["backend"] == "claude"
+        assert "timeout" in agent
+        assert "pi_rpc" not in agent
+        assert "transport" not in agent
+
+    def test_pi_writes_transport_not_pi_rpc(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(
+            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert parsed["agent"]["backend"] == "pi"
+        assert parsed["agent"].get("transport") == "rpc"
+        assert "pi_rpc" not in parsed["agent"]
+
+    def test_switch_pi_to_codex_strips_dead_keys(self, tmp_path: Path) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            "[agent]\n"
+            'backend = "pi"\n'
+            "timeout = 1800\n"
+            "pi_rpc = false\n"
+            'transport = "rpc"\n',
+            encoding="utf-8",
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "codex"])
+            assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["agent"]["backend"] == "codex"
+        assert parsed["agent"]["timeout"] == 1800
+        assert "pi_rpc" not in parsed["agent"]
+        assert "transport" not in parsed["agent"]
+        assert parsed["agent"]["reasoning_effort"] == "high"
+        assert parsed["models"]["default"] == "gpt-5.6-luna"
+
+
+class TestSetupLibrefOptIn:
+    def test_no_libref_flag_omits_every_mention(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+        config = (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        assert "libref" not in config.lower()
+        for path in (
+            tmp_path / "CLAUDE.md",
+            tmp_path / "AGENTS.md",
+            tmp_path / ".opencode" / "commands" / "deviate-red.md",
+            tmp_path / ".opencode" / "skills" / "deviatdd" / "SKILL.md",
+        ):
+            text = path.read_text(encoding="utf-8")
+            assert "libref" not in text.lower(), path
+
+    def test_libref_flag_writes_key_and_seed(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--libref"])
+            assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(
+            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert parsed["use_libref"] is True
+        assert "libref" in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8").lower()

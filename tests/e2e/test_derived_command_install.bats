@@ -3,9 +3,12 @@
 # E2E smoke suite — TSK-016-05. Verifies the single-source prompt derivation
 # end-to-end through the real CLI install path:
 #
-#   1. `deviate setup` installs the derived manual slash commands whose middle
-#      body stays byte-identical to the canonical `auto/{phase}.md` core.
-#   2. Re-running `deviate setup` rewrites nothing (idempotency contract).
+#   1. `deviate setup --libref` installs the derived manual slash commands
+#      whose middle body stays byte-identical to the canonical `auto/{phase}.md`
+#      core (including libref lines in explore/research).
+#   2. `deviate setup` without `--libref` still installs explore (macro is a
+#      default pack) and redacts every libref mention.
+#   3. Re-running `deviate setup` rewrites nothing (idempotency contract).
 #
 # Repo-level drift guards re-invoking `install_command` live in
 # `tests/test_meso/test_auto_prompt_templates.py`; this suite adds no pytest.
@@ -30,8 +33,8 @@ teardown() {
     fi
 }
 
-@test "deviate setup installs derived commands whose middle equals the auto core" {
-    run deviate setup --agent claude
+@test "deviate setup --libref installs derived commands whose middle equals the auto core" {
+    run deviate setup --agent claude --libref
     [ "$status" -eq 0 ]
     [ -f .claude/commands/deviate-red.md ]
 
@@ -54,6 +57,16 @@ teardown() {
         :
     else
         echo "deviate-red.md emits a standalone status: \"FAIL\" handover line"
+        false
+    fi
+}
+
+@test "deviate setup without --libref installs explore with no libref" {
+    run deviate setup --agent claude
+    [ "$status" -eq 0 ]
+    [ -f .claude/commands/deviate-explore.md ]
+    if grep -qi libref .claude/commands/deviate-explore.md; then
+        echo "default setup leaked libref into deviate-explore.md"
         false
     fi
 }
