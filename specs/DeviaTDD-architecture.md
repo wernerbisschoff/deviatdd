@@ -221,7 +221,7 @@ The executor agent targets a task by looking up its current state in `tasks.json
 ledger is pure — only event type, worker, and timestamp are stored. The agent is trapped inside
 a strict state machine governed by Git, deterministic parsing, and defensive operational
 safeguards. **Task execution type determines the applicable phase gates and file-write
-boundaries.** Execution profile (`--profile [full|fast|secure]`) determines which phases are
+boundaries.** Execution profile (`--profile [full|fast]`) determines which phases are
 enforced, replacing the older `--no-judge`/`--no-refactor` boolean flags (retained as
 composable overrides).
 
@@ -705,10 +705,9 @@ The orchestrator must maintain and enforce these structural constraints across a
 
 6. **The Elastic Governance Rule:** The `deviate micro run` command (and the
    top-level `deviate run` orchestrator, which forwards the flag) supports
-   `--profile [full|fast|secure]` to control which phases execute. `full` runs
+   `--profile [full|fast]` to control which phases execute. `full` runs
    the complete RED → GREEN → JUDGE → REFACTOR cycle. `fast` runs RED + GREEN
-   only (skip JUDGE + REFACTOR). `secure` runs RED + GREEN + JUDGE (skip
-   REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as
+   only (skip JUDGE + REFACTOR). Boolean `--no-judge`/`--no-refactor` flags are retained as
    composable overrides that take precedence over profile defaults. Execution
    profiles and agent backends are configured via `DeviateConfig.agent.backend`.
 
