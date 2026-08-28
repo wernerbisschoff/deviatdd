@@ -534,3 +534,22 @@
   1. AC-ADHOC-033-01 / AO-033-01: `/deviate-prune` on a COMPLETED issue removes that issue's `plan.md` / `tasks.md` (and leftover per-issue design/data-model) and thins spy/impl tests while keeping behavioral / `ac` tests. Epic explore/prd and the issue md stay. In-flight issues are a no-op for spec deletion.
   2. AC-ADHOC-033-02 / AO-033-02: `specs/issues.jsonl`, `specs/**/tasks.jsonl`, and `specs/_product/flows.jsonl` are byte-identical after prune. A compact/squash/rewrite request is rejected.
   3. AC-ADHOC-033-03 / AO-033-03: `plan.md` is not deleted until its ACs exist as behavioral / `ac` tests. Missing ACs halt with unmatched tokens; no cycle-markdown deletes land. API + architecture + CHANGELOG land in the same implementation commit.
+
+## FR-ADHOC-034: Interactive Setup Packs and Production Config Tidy
+
+- **Description**: `deviate setup` becomes interactive for backend and command-pack choice when flags are omitted, installs default layer packs only, and writes a production-clean `config.toml` (truthful `profile`, libref only with `--libref`, backend-correct `[agent]` keys) while keeping Codex Luna + high-reasoning if-empty defaults.
+- **Preconditions**: Python 3.13. `discover_commands()` installs every packaged stem. `DeviateConfig.profile` defaults to `"default"` which `resolve_profile` rejects. `_detect_libref()` and `_apply_governance` emit libref without `--libref`. `DeviateConfig.model_dump()` writes `pi_rpc` and `transport` for every backend. ISS-ADH-030 remains BACKLOG.
+- **Inputs/Outputs**: Input — `deviate setup` flags (`--agent`, `--packs`, `--libref`, `--no-claim-remote`), TTY answers, existing `.deviate/config.toml`. Output — selected-pack command/skill files, allowlist `config.toml`, gated libref seed/overlay, updated tests and `CHANGELOG.md` `[Unreleased]`.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-034-01: As a consumer-project operator, I want `deviate setup` without `--agent` / `--packs` to ask which backend and which optional packs to install so the workspace matches the tools I actually use. *(Ref: FR-ADHOC-034)*
+  2. US-034-02: As a consumer-project operator, I want default setup to install only product + macro + meso + micro plus `deviatdd`, so optional commands stay off until I select them. *(Ref: FR-ADHOC-034)*
+  3. US-034-03: As a consumer-project operator, I want a tidy `config.toml` whose `profile` is a real micro default and whose `[agent]` block has no dead Pi keys. *(Ref: FR-ADHOC-034)*
+  4. US-034-04: As a consumer-project operator, I want setup without `--libref` to mention libref nowhere in generated config, prompts, or installed skills. *(Ref: FR-ADHOC-034)*
+  5. US-034-05: As a Codex operator, I want Luna + high reasoning seeded only when those keys are empty. *(Ref: FR-ADHOC-034)*
+- **Acceptance Outline** (implementation-independent; final Gherkin owned by `/deviate-plan`):
+  1. AC-ADHOC-034-01 / AO-034-01: Setup without `--agent` on a TTY prompts for a backend and persists it; setup without `--packs` on a TTY prompts for optional packs (default: none). Non-interactive without `--packs` installs default packs only. Unknown names fail closed.
+  2. AC-ADHOC-034-02 / AO-034-02: Default install writes the four-layer command set plus `deviatdd` and does not write optional-pack files. `--packs pr,review` adds only those two. Pack membership is the code-owned map.
+  3. AC-ADHOC-034-03 / AO-034-03: Fresh config writes `profile` as `full`/`fast`/`secure` (never `"default"`), `base_branch`, and `claim_remote`. Non-pi/omp `[agent]` has no `pi_rpc` or `transport`. `micro run` without `--profile` uses the config value; legacy `"default"` coerces to `full`.
+  4. AC-ADHOC-034-04 / AO-034-04: Setup without `--libref` emits no libref mention in config, governance seeds, or installed bodies even when `libref` is on PATH. `--libref` opts in.
+  5. AC-ADHOC-034-05 / AO-034-05: Codex setup seeds Luna + high reasoning when empty and does not clobber user-set models or effort.
