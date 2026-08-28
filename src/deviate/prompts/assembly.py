@@ -17,7 +17,6 @@ _LAYER_MAP: dict[str, str | None] = {
     "research": "macro",
     "prd": "macro",
     "shard": "macro",
-    "specify": "macro",
     # Meso layer — shared preamble
     "plan": "meso",
     "tasks": "meso",
