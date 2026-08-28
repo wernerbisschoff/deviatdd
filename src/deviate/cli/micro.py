@@ -6859,7 +6859,7 @@ def run_command(
         None,
         "--profile",
         callback=_validate_profile,
-        help="Execution profile: full, fast, judge (default: config or full)",
+        help="Execution profile: full, fast (default: config or full)",
     ),
     no_judge: bool | None = typer.Option(None, "--no-judge", help="Skip JUDGE phase"),
     no_refactor: bool | None = typer.Option(
