@@ -8,13 +8,13 @@ Epic `006-setup-interactive-config` · Feature Slug `setup-interactive-config` �
 
 Pack membership is a code-owned map keyed by command stem, not the buggy frontmatter `category` strings. Default packs are the four layers: product (`deviate-flows`, `deviate-architecture`, `deviate-release`), macro (`deviate-explore`, `deviate-research`, `deviate-prd`, `deviate-shard`, `deviate-adhoc`, `deviate-constitution`, `deviate-init`), meso (`deviate-plan`, `deviate-tasks`), micro (`deviate-red`, `deviate-green`, `deviate-judge`, `deviate-refactor`, `deviate-execute`). Optional packs are one command each: `merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`, `e2e`. Optional packs stay uninstalled unless the operator selects them (interactive prompt or `--packs`). Non-interactive setup without `--packs` installs only the default set.
 
-Generated `.deviate/config.toml` becomes an allowlist dump, not `DeviateConfig.model_dump()` of every field. Always persist `base_branch` and `claim_remote`. Top-level `profile` becomes a real micro default: `Literal["full", "fast", "secure"]` with default `"full"`. `deviate micro run --profile` keeps its CLI override; when the flag is omitted, the runner reads the config value (invalid or legacy `"default"` coerces to `"full"`). Do not persist `"default"` as a fourth profile. `use_libref` is omitted from generated config, governance seeds, and composed command bodies unless setup was invoked with `--libref`. PATH detection no longer auto-enables libref. The `[agent]` table always writes `backend` (and `timeout`); it writes `transport` only for `pi` / `omp`; it never writes `pi_rpc` on a fresh dump; Codex still seeds `[models].default = gpt-5.6-luna` and `[agent].reasoning_effort = high` when those keys are empty.
+Generated `.deviate/config.toml` becomes an allowlist dump, not `DeviateConfig.model_dump()` of every field. Always persist `base_branch` and `claim_remote`. Top-level `profile` becomes a real micro default: `Literal["full", "fast", "judge"]` with default `"full"`. `deviate micro run --profile` keeps its CLI override; when the flag is omitted, the runner reads the config value (invalid or legacy `"default"` coerces to `"full"`; legacy `"secure"` coerces to `"judge"`). Do not persist `"default"` as a fourth profile. `use_libref` is omitted from generated config, governance seeds, and composed command bodies unless setup was invoked with `--libref`. PATH detection no longer auto-enables libref. The `[agent]` table always writes `backend` (and `timeout`); it writes `transport` only for `pi` / `omp`; it never writes `pi_rpc` on a fresh dump; Codex still seeds `[models].default = gpt-5.6-luna` and `[agent].reasoning_effort = high` when those keys are empty.
 
 ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`, Graphite removal, timeout consolidation, or install-to-all-agents. Per-agent install and Graphite deletion already shipped on `main` (2.23.1 / CHANGELOG). A new adhoc issue owns this slice and lists `coordinates_with: [ISS-ADH-030]`.
 
 **Module Surface:**
 - **Modify** `src/deviate/cli/__init__.py` — pack prompt + `--packs`; allowlist TOML dump; libref gated on `--libref` only; `[agent]` key filter by backend; stop `_apply_governance` libref upsert unless opted in.
-- **Modify** `src/deviate/state/config.py` — `DeviateConfig.profile` becomes `Literal["full","fast","secure"] = "full"`; keep `use_libref` as an in-memory optional (default False) that is not serialized unless True and opted in.
+- **Modify** `src/deviate/state/config.py` — `DeviateConfig.profile` becomes `Literal["full","fast","judge"] = "full"`; keep `use_libref` as an in-memory optional (default False) that is not serialized unless True and opted in.
 - **Modify** `src/deviate/core/commands.py` — pack map + `discover_commands(packs=...)` / filter helper. Do not rewrite frontmatter `category` strings in this slice.
 - **Modify** `src/deviate/cli/micro.py` — `--profile` default resolution reads config when the CLI value is the implicit default.
 - **Modify** `src/deviate/prompts/core/core.md` — move invariant 7 (libref mandate) behind a compose-time overlay so default installs carry no libref token.
@@ -30,7 +30,7 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 
 | Option | Complexity | Testability | Constitutional Alignment | Reversibility | Blast Radius | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Option A: Rich-only interactive (agent + optional-pack Prompt) + code-owned pack map + allowlist TOML dump + `profile` as micro default `full\|fast\|secure` + `--libref`-only libref | M | H | Aligned | Easy | Module | Recommended |
+| Option A: Rich-only interactive (agent + optional-pack Prompt) + code-owned pack map + allowlist TOML dump + `profile` as micro default `full\|fast\|judge` + `--libref`-only libref | M | H | Aligned | Easy | Module | Recommended |
 | Option B: Add `questionary` checkbox UI + persist `[packs]` in config.toml + nest `[profile] default` | H | M | Tension | Hard | System | Rejected |
 | Option C: Trust frontmatter `category`/`layer` to decide packs; keep `DeviateConfig.model_dump()` | L | L | Tension | Easy | Module | Rejected |
 | Option D: Remove `profile` key entirely; keep install-all; only strip Pi keys | L | M | Tension | Easy | Local | Rejected |
@@ -49,7 +49,7 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 | Default packs always on; optional packs off unless selected | Smaller default install vs. "batteries included" | Operator: "Do not install optional packs unless the user selects them" |
 | Rich `Prompt.ask` for optional packs (`none` / comma-separated / `all-optional`) | No new dependency vs. checkbox UX | Constitution §2 Typer+Rich; existing `_prompt_agent_selection` already uses `Prompt.ask` |
 | `--packs` flag for non-interactive selection | Scriptable CI vs. another prompt | Typer prompt tutorial prefers options so scripts stay non-interactive |
-| `profile` kept and typed `full\|fast\|secure` (default `full`) | Truthful config vs. deleting the key | Operator allowed either; making it the micro default reuses `resolve_profile` and the unused `ProfileConfig` value set |
+| `profile` kept and typed `full\|fast\|judge` (default `full`) | Truthful config vs. deleting the key | Operator allowed either; making it the micro default reuses `resolve_profile` and the unused `ProfileConfig` value set |
 | Legacy `profile = "default"` coerces to `full` at read time | Tolerant load vs. hard fail | Existing `.deviate/config.toml` in this repo still has `profile = "default"`; loaders use raw TOML, not `DeviateConfig.model_validate` |
 | `use_libref` omitted unless `--libref` | Clean consumer config vs. PATH auto-detect convenience | Operator: "If setup is run WITHOUT `--libref`, there must be no libref mention" |
 | Libref mandate extracted from always-on `core.md` into a compose overlay | Default installs have no libref token vs. one-line core invariant | `compose_command_body` prepends `core.md` to every installed command (`src/deviate/core/commands.py`) |
@@ -96,7 +96,7 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 
 | Decision ID | Question | Context | Impact | Recommended Resolution | Status |
 |---|---|---|---|---|---|
-| `HITL-001` | Keep top-level `profile` as the micro default (`full`/`fast`/`secure`) instead of deleting the key? | Explore: `DeviateConfig.profile` is `"default"` and `resolve_profile` rejects it. Operator allowed either remove or make it mean the micro default. | Delete = CLI-only `--profile`. Keep = config drives `micro run` default. | Keep and type as `full\|fast\|secure`, default `full`; coerce legacy `"default"` to `full`. | `RESOLVED` |
+| `HITL-001` | Keep top-level `profile` as the micro default (`full`/`fast`/`judge`) instead of deleting the key? | Explore: `DeviateConfig.profile` is `"default"` and `resolve_profile` rejects it. Operator allowed either remove or make it mean the micro default. | Delete = CLI-only `--profile`. Keep = config drives `micro run` default. | Keep and type as `full\|fast\|judge`, default `full`; coerce legacy `"default"` to `full` and `"secure"` to `judge`. | `RESOLVED` |
 | `HITL-002` | Is `release` a default product command or an optional pack? | Operator listed `release` once under optional packs and once under product (flows, architecture, release). | Changes whether `deviate-release.md` is installed by default. | Default product pack (layer-intent list). | `RESOLVED` |
 | `HITL-003` | Leave ISS-ADH-030 BACKLOG and file a new issue? | 030 ACs cover gitignore-all-of-`.deviate`, Graphite, timeout consolidation, install-to-all-agents — Graphite gone, per-agent install shipped. | Reopening 030 would pull stale ACs into this PR. | New adhoc issue; `coordinates_with: [ISS-ADH-030]`. | `RESOLVED` |
 | `HITL-004` | Disable PATH auto-detect for libref so only `--libref` opts in? | `_detect_libref()` currently sets `use_libref` when `libref` is on PATH. | Machines with `libref` installed would stop getting the key/seed unless they pass `--libref`. | `--libref` is the only opt-in. | `RESOLVED` |
@@ -110,7 +110,7 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 | SRC-001 | Explore_MD | `specs/006-setup-interactive-config/explore.md` | Factual inventory of setup, config, packs, profile, libref |
 | SRC-002 | Codebase_File | `src/deviate/cli/__init__.py` | `setup`, `_scaffold_dotfiles`, `_apply_governance`, install helpers |
 | SRC-003 | Codebase_File | `src/deviate/state/config.py` | `DeviateConfig`, `AgentConfig`, unused `ProfileConfig` |
-| SRC-004 | Codebase_File | `src/deviate/core/profile.py` | `resolve_profile` full/fast/secure |
+| SRC-004 | Codebase_File | `src/deviate/core/profile.py` | `resolve_profile` full/fast/judge |
 | SRC-005 | Codebase_File | `src/deviate/core/commands.py` | `discover_commands` unfiltered glob |
 | SRC-006 | Codebase_File | `src/deviate/prompts/core/core.md` | Always-on libref mandate |
 | SRC-007 | Constitution | `specs/constitution.md` | Four-layer architecture; Typer+Rich; TOML config; Codex seeding |

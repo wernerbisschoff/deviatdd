@@ -1,4 +1,4 @@
-# Micro-run default when --profile is omitted: "full", "fast", or "judge"
+# Preset config group: "default", "full", "fast", or "secure"
 profile = "default"
 # CLI inactivity timeout in seconds (must be > 0)
 timeout_seconds = 1800
