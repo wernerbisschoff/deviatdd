@@ -58,6 +58,7 @@ from deviate.state.config import (
     SessionState,
     _load_deviate_config_toml,
     resolve_phase_model,
+    resolve_reasoning_effort,
 )
 from deviate.ui.monitor import OrchestrationMonitor
 from deviate.ui.pipeline import (
@@ -566,8 +567,15 @@ def _invoke_agent(
     )
     try:
         timeout = _resolve_agent_timeout(Path.cwd())
+        reasoning_effort = (
+            resolve_reasoning_effort(Path.cwd()) if backend_name == "codex" else None
+        )
         backend = AgentBackend(
-            config=AgentConfig(backend=backend_name, timeout=timeout)
+            config=AgentConfig(
+                backend=backend_name,
+                timeout=timeout,
+                reasoning_effort=reasoning_effort,
+            )
         )
         output_handler = _make_output_handler(c, verbose=_verbose)
         raw_lines: list[str] = []
