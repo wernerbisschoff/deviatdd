@@ -106,7 +106,7 @@ class TestDeviateConfig:
 
     def test_config_claim_remote_field_default(self) -> None:
         config = DeviateConfig()
-        assert config.claim_remote is True
+        assert config.claim_remote is False
 
     def test_config_claim_remote_round_trip(self) -> None:
         true_config = DeviateConfig(claim_remote=True)
@@ -143,10 +143,10 @@ class TestDeviateConfig:
         dot_dir = tmp_path / ".deviate"
         dot_dir.mkdir(parents=True)
         (dot_dir / "config.toml").write_text('profile = "default"\n', encoding="utf-8")
-        assert resolve_claim_remote(tmp_path) is True
+        assert resolve_claim_remote(tmp_path) is False
 
     def test_resolve_claim_remote_no_file(self, tmp_path: Path) -> None:
-        assert resolve_claim_remote(tmp_path) is True
+        assert resolve_claim_remote(tmp_path) is False
 
     def test_resolve_claim_remote_non_bool(self, tmp_path: Path) -> None:
         dot_dir = tmp_path / ".deviate"
@@ -154,7 +154,7 @@ class TestDeviateConfig:
         (dot_dir / "config.toml").write_text(
             'claim_remote = "false"\n', encoding="utf-8"
         )
-        assert resolve_claim_remote(tmp_path) is True
+        assert resolve_claim_remote(tmp_path) is False
 
     def test_profile_rejects_default_string(self):
         with pytest.raises(ValidationError):

@@ -647,6 +647,19 @@ class TestDiscoverClaimableIssue:
             assert result == "ISS-001-001"
             mock_remote.assert_not_called()
 
+    def test_discover_absent_key_does_not_skip_origin(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """Absent claim_remote key is effective local; leftover origin stays claimable."""
+        _setup_minimal_workspace(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.meso.branch_exists_on_remote", return_value=True
+            ) as mock_remote:
+                result = _discover_claimable_issue(local=_effective_local(False))
+            assert result == "ISS-001-001"
+            mock_remote.assert_not_called()
+
     def test_skips_issues_with_local_worktree(self, tmp_git_repo: Path) -> None:
         """Skips a BACKLOG issue that already has a local claim worktree.
 
@@ -1032,6 +1045,68 @@ class TestMesoRunNoSetup:
         mock_specify_pre.assert_called_once()
         assert mock_specify_pre.call_args.kwargs.get("local") is True, (
             "omitted --local with claim_remote=false must call "
+            "_specify_pre(..., local=True); "
+            f"got kwargs={mock_specify_pre.call_args.kwargs}"
+        )
+
+    @patch("deviate.cli.meso._plan_post")
+    @patch("deviate.cli.meso._tasks_post")
+    @patch("deviate.cli.meso._try_claim_issue")
+    @patch("deviate.cli.meso._specify_pre")
+    @patch("deviate.core.agent.AgentBackend.invoke")
+    @patch("deviate.cli.micro._run_pytest")
+    def test_meso_run_omitted_flag_absent_claim_remote_forwards_local_true(
+        self,
+        mock_pytest: MagicMock,
+        mock_invoke: MagicMock,
+        mock_specify_pre: MagicMock,
+        mock_try_claim_issue: MagicMock,
+        mock_tasks_post: MagicMock,
+        mock_plan_post: MagicMock,
+        tmp_git_repo: Path,
+    ) -> None:
+        """Omitted ``--local`` plus absent ``claim_remote`` key is local."""
+        mock_invoke.return_value = MagicMock(
+            status="PASS",
+            phase="tasks",
+            next_phase="/deviate-green",
+        )
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+
+        _setup_minimal_workspace(tmp_git_repo)
+
+        worktree_path = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001"
+        subprocess.run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                "feat/test-epic/iss-001",
+                str(worktree_path),
+            ],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        shutil.copytree(
+            str(tmp_git_repo / ".deviate"),
+            str(worktree_path / ".deviate"),
+            dirs_exist_ok=True,
+        )
+        worktree_dict = {"worktree_path": str(worktree_path)}
+        mock_specify_pre.return_value = worktree_dict
+        mock_try_claim_issue.return_value = worktree_dict
+
+        with chdir(tmp_git_repo):
+            with patch("subprocess.run", _make_mock_subprocess()):
+                _meso_run(issue_id="ISS-001-001")
+
+        mock_specify_pre.assert_called_once()
+        assert mock_specify_pre.call_args.kwargs.get("local") is True, (
+            "omitted --local with absent claim_remote must call "
             "_specify_pre(..., local=True); "
             f"got kwargs={mock_specify_pre.call_args.kwargs}"
         )

@@ -86,6 +86,45 @@ def test_top_level_run_forwards_local(tmp_git_repo: Path) -> None:
     mock_run_all.assert_called_once()
 
 
+def test_top_level_run_omitted_local_absent_config_is_effective_local(
+    tmp_git_repo: Path,
+) -> None:
+    """Omitted ``--local`` plus absent ``claim_remote`` is local-only.
+
+    The top-level command still forwards the raw flag (``local=False``)
+    into ``_meso_run``; effective locality is resolved there.
+    """
+    from deviate.cli.meso import _effective_local
+    from deviate.state.config import SessionState, resolve_claim_remote
+
+    worktree_path = tmp_git_repo / ".worktrees" / "feat" / "demo" / "demo"
+    worktree_path.mkdir(parents=True, exist_ok=True)
+    (worktree_path / ".deviate").mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="IDLE", active_issue_id="ISS-001").save(
+        worktree_path / ".deviate" / "session.json"
+    )
+
+    assert resolve_claim_remote(tmp_git_repo) is False
+    assert _effective_local(False, tmp_git_repo) is True
+
+    with chdir(tmp_git_repo):
+        with (
+            patch(
+                "deviate.cli._meso_run", return_value=str(worktree_path)
+            ) as mock_meso,
+            patch("deviate.cli._run_all") as mock_run_all,
+        ):
+            result = runner.invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    mock_meso.assert_called_once()
+    assert mock_meso.call_args.kwargs.get("local") is not True, (
+        "omitted --local must forward the raw flag as false; "
+        f"got kwargs={mock_meso.call_args.kwargs}"
+    )
+    mock_run_all.assert_called_once()
+
+
 def test_top_level_run_chains_into_micro_after_meso(tmp_git_repo: Path) -> None:
     """The top-level command must chain meso into micro automatically —
     Gate 2 is gone, so ``deviate run`` no longer halts for human approval."""
