@@ -1441,7 +1441,7 @@ src/deviate/
 │   │   ├── lifecycle-auto.md / lifecycle-manual.md             # mode lifecycle blocks
 │   │   └── style-ste.md        # ASD-STE100 Simplified Technical English directive
 │   ├── auto/                 # canonical per-phase middle bodies — the single source of truth
-│   │   ├── explore.md, research.md, prd.md, shard.md, specify.md, tasks.md
+│   │   ├── explore.md, research.md, prd.md, shard.md, tasks.md
 │   │   ├── red.md, green.md, judge.md, refactor.md, plan.md, execute.md
 │   │   └── (11 overlapping phases above)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
