@@ -714,35 +714,34 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate prune pre [--issue <id>] [intent…]`
 
 * **Source:** `src/deviate/cli/prune.py` (`prune_app`), engine `src/deviate/core/prune.py`
-* **Description:** Inventory contract for `/deviate-prune`, the single post-COMPLETED
-  spec+test cleanup surface. Resolves **one** issue (`--issue`, else
-  `session.active_issue_id`). Classifies issue-scoped tests tagged `spy` / `impl`
-  (name segment or pytest marker) as drop and `behavioral` / `ac` as keep.
-  Lists drop-safe cycle markdown under that issue folder (`plan.md`, `tasks.md`,
-  leftover `design.md` / `data-model.md`). Promotes the AC gate: if `plan.md`
-  still has AC tokens that are not encoded in a keep test, status is
-  `ACS_NOT_ENCODED` and `spec_deletes` is empty. In-flight (non-COMPLETED)
-  issues emit `IN_FLIGHT` and skip spec deletion. Compact / squash / rewrite
-  intent is `LEDGER_REWRITE_REJECTED`. JSONL ledgers are never listed for
-  delete. Missing `specs/_product/flows.jsonl` is skipped, not created.
+* **Description:** Inventory contract for `/deviate-prune`, the manual honeycomb
+  test-thinning surface. Resolves **one** issue (`--issue`, else
+  `session.active_issue_id`). Classifies issue-scoped tests: prefer pytest
+  marks and name tags (`spy` / `impl` drop, `behavioral` / `ac` keep). Untagged
+  tests are classified from the body (drop internal spies/mocks/private state;
+  keep public input-to-output / AC) and must not auto-keep. `spec_deletes` is
+  always empty — prune never schedules deletion of `plan.md`, `tasks.md`,
+  `explore.md`, `prd.md`, issue md, or ledgers. In-flight (non-COMPLETED)
+  issues emit `IN_FLIGHT` and still classify tests. Compact / squash / rewrite
+  intent is `LEDGER_REWRITE_REJECTED`. Manual invoke only: not hooked into
+  micro COMPLETED, `--all`, or the `deviatdd` skill success loop. Missing
+  `specs/_product/flows.jsonl` is skipped, not created.
 * **Input Parameters:**
   * `--issue <id>` (optional; one issue per invocation)
   * trailing `intent` words (rejected when they ask to compact/squash/rewrite)
 * **Output Artifacts:** JSON contract with `status`, `issue_id`, `issue_status`,
-  `spec_deletes`, `spec_keeps`, `test_drop`, `test_keep`, `unmatched_acs`,
-  `ledger_untouched`, `reason`, `repo_root`.
+  `spec_deletes` (always `[]`), `spec_keeps`, `test_drop`, `test_keep`,
+  `unmatched_acs`, `ledger_untouched`, `reason`, `repo_root`.
 
 #### `deviate prune post [--issue <id>] [intent…]`
 
 * **Source:** `src/deviate/cli/prune.py`
 * **Description:** Applies honeycomb thinning (deletes tagged `spy` / `impl`
-  tests; keeps `behavioral` / `ac`). When status is `READY`, deletes that
-  COMPLETED issue's drop-safe cycle markdown and removes the issue folder if
-  empty. Does not delete epic `explore.md`, epic `prd.md`, shared
-  `specs/adhoc/prd.md`, `specs/**/issues/*.md`, constitution, Product/flows, or
-  any JSONL ledger. `ACS_NOT_ENCODED` exits 1 with no spec deletes.
-  `IN_FLIGHT` exits 0 after test thinning only. Does not commit — the slash
-  command commits the cleanup.
+  tests and untagged internal probes; keeps `behavioral` / `ac` and public
+  I/O). Never unlinks `plan.md`, `tasks.md`, `explore.md`, `prd.md`,
+  `specs/**/issues/*.md`, leftover cycle markdown, constitution, Product/flows,
+  or any JSONL ledger. READY and `IN_FLIGHT` both thin tests and leave specs
+  in place. Does not commit — the slash command commits the cleanup.
 * **Input Parameters:** Same as `deviate prune pre`.
 * **Output Artifacts:** Same JSON contract; filesystem mutations as above.
 
@@ -1406,7 +1405,7 @@ src/deviate/
 │   ├── macro.py              # explore, research, prd, shard (pre/post), macro run
 │   ├── meso.py               # specify, tasks, pr (pre/post/run), meso run
 │   ├── micro.py              # red, green, judge, refactor, execute, e2e, hotfix, run
-│   ├── prune.py              # prune pre/post (post-COMPLETED spec+test cleanup)
+│   ├── prune.py              # prune pre/post (manual honeycomb test thinning)
 │   ├── adhoc.py              # adhoc pre/post (complexity gate, ad-hoc issues)
 │   ├── feature.py            # feature create (slug, branch, directory)
 │   └── inspect.py            # (planned) tasks list, issues list
@@ -1419,7 +1418,7 @@ src/deviate/
 │   ├── contract.py           # emit_contract, load_contract
 │   ├── epic.py               # allocate_feature_bucket, discover_epic, remote-aware feat ordinals
 │   ├── issues.py             # claim_issue
-│   ├── prune.py              # post-COMPLETED keep/drop inventory + apply
+│   ├── prune.py              # manual honeycomb keep/drop inventory + apply
 │   ├── prd.py                # extract_prd_requirements
 │   ├── profile.py            # ExecutionProfile (full/fast/secure), resolve_profile()
 │   ├── repo.py               # find_repo_root, gather_git_state

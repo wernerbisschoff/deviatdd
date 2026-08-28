@@ -1,4 +1,4 @@
-"""CLI + prompt pins for ``deviate prune`` / ``/deviate-prune`` (FR-ADHOC-033)."""
+"""CLI + prompt pins for manual ``deviate prune`` / ``/deviate-prune``."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ runner = CliRunner()
 
 _PROMPT = Path("src/deviate/prompts/commands/deviate-prune.md")
 _SKILL = Path("src/deviate/prompts/skills/deviatdd/SKILL.md")
+_AUTO_RED = Path("src/deviate/prompts/auto/red.md")
+_MANUAL_RED = Path("src/deviate/prompts/commands/deviate-red.md")
+_MICRO = Path("src/deviate/cli/micro.py")
 
 
 def _seed_completed_issue(root: Path) -> None:
@@ -45,8 +48,10 @@ def _seed_completed_issue(root: Path) -> None:
     )
     tests = root / "tests"
     tests.mkdir()
-    (tests / "test_099_behavioral.py").write_text(
-        "def test_behavioral_ac_adhoc_099_01():\n"
+    (tests / "test_099_keep.py").write_text(
+        "import pytest\n\n"
+        "@pytest.mark.behavioral\n"
+        "def test_public_ac_adhoc_099_01():\n"
         "    # ISS-ADH-099 public contract AC-ADHOC-099-01\n"
         "    assert True\n",
         encoding="utf-8",
@@ -61,7 +66,7 @@ def _seed_completed_issue(root: Path) -> None:
     )
 
 
-def test_prune_post_completed_fixture_enforces_keep_drop(tmp_path: Path) -> None:
+def test_prune_post_thins_tests_and_keeps_cycle_markdown(tmp_path: Path) -> None:
     _seed_completed_issue(tmp_path)
     before = snapshot_ledgers(tmp_path)
     with chdir(tmp_path):
@@ -69,21 +74,24 @@ def test_prune_post_completed_fixture_enforces_keep_drop(tmp_path: Path) -> None
     assert result.exit_code == 0, result.output
     contract = json.loads(result.stdout)
     assert contract["status"] == "READY"
+    assert contract["spec_deletes"] == []
     assert contract["ledger_untouched"] is True
     issue_dir = tmp_path / "specs" / "adhoc" / "099-prune-fixture"
-    assert not (issue_dir / "plan.md").exists()
-    assert not (issue_dir / "tasks.md").exists()
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
     assert (issue_dir / "tasks.jsonl").is_file()
     assert (tmp_path / "specs" / "adhoc" / "explore.md").is_file()
     assert (tmp_path / "specs" / "adhoc" / "prd.md").is_file()
     assert (tmp_path / "specs" / "adhoc" / "issues" / "099-prune-fixture.md").is_file()
     assert not (tmp_path / "tests" / "test_099_spy.py").exists()
-    assert (tmp_path / "tests" / "test_099_behavioral.py").is_file()
+    assert (tmp_path / "tests" / "test_099_keep.py").is_file()
     assert snapshot_ledgers(tmp_path) == before
     assert not (tmp_path / "specs" / "_product" / "flows.jsonl").exists()
 
 
-def test_prune_pre_in_flight_reports_noop(tmp_path: Path) -> None:
+def test_prune_pre_in_flight_reports_and_lists_no_spec_deletes(
+    tmp_path: Path,
+) -> None:
     _seed_completed_issue(tmp_path)
     ledger = tmp_path / "specs" / "issues.jsonl"
     ledger.write_text(
@@ -113,27 +121,56 @@ def test_prune_post_rejects_ledger_compaction(tmp_path: Path) -> None:
     assert snapshot_ledgers(tmp_path) == before
 
 
-def test_prune_prompt_names_spec_test_cleanup_and_forbids_ledgers() -> None:
+def test_prune_prompt_is_manual_honeycomb_and_forbids_spec_deletes() -> None:
     text = _PROMPT.read_text(encoding="utf-8")
-    assert "post-completed spec+test cleanup" in text.lower()
+    assert "manual" in text.lower()
     assert "spy" in text and "impl" in text
     assert "behavioral" in text
     assert "ac" in text
-    assert "plan.md" in text and "tasks.md" in text
+    assert "pytest.mark" in text
+    assert "untagged" in text.lower() or "no mark" in text.lower()
     assert "issues.jsonl" in text
     assert "never" in text.lower() or "must not" in text.lower()
     assert "compact" in text.lower()
     assert "explore.md" in text
-    assert "issues/*.md" in text or "issues/<" in text
+    assert "plan.md" in text and "tasks.md" in text
+    assert "must not delete" in text.lower() or "do not delete" in text.lower()
+    assert "do not hook" in text.lower() or "manual invoke" in text.lower()
     fm = text.split("---\n", 2)[1]
-    assert "post-completed" in fm.lower()
     assert "stale test" not in fm
+    assert "delete" not in fm.lower() or "cycle markdown" not in fm.lower()
 
 
-def test_skill_and_readme_describe_post_completed_cleanup() -> None:
+def test_skill_and_readme_describe_manual_prune_not_auto_loop() -> None:
     skill = _SKILL.read_text(encoding="utf-8")
     row = next(line for line in skill.splitlines() if "| `/deviate-prune`" in line)
     assert "stale test" not in row
-    assert "COMPLETED" in row
+    assert "leftover `plan.md`" not in row
+    assert "manual" in row.lower()
+    success_loop = skill.split("## What NOT to do")[0]
+    assert "deviate prune" not in success_loop
+    assert (
+        "/deviate-prune" not in success_loop.split("## Dispatch to slash commands")[0]
+    )
+    not_to_do = skill.split("## What NOT to do", 1)[1]
+    assert "prune" in not_to_do.lower()
     readme = Path("README.md").read_text(encoding="utf-8")
-    assert "post-COMPLETED spec+test cleanup" in readme
+    assert "plan.md" in readme
+    assert "manual" in readme.lower()
+
+
+def test_red_prompts_stamp_honeycomb_marks() -> None:
+    auto = _AUTO_RED.read_text(encoding="utf-8")
+    assert "@pytest.mark.behavioral" in auto
+    assert "@pytest.mark.spy" in auto
+    assert "@pytest.mark.impl" in auto
+    assert "Most RED tests" in auto or "most RED tests" in auto
+    manual = _MANUAL_RED.read_text(encoding="utf-8")
+    assert "auto/red.md" in manual
+
+
+def test_micro_and_all_do_not_auto_invoke_prune() -> None:
+    micro = _MICRO.read_text(encoding="utf-8")
+    assert "apply_prune" not in micro
+    assert "prune_app" not in micro
+    assert "deviate prune" not in micro
