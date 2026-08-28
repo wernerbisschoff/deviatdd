@@ -54,6 +54,7 @@ from deviate.state.config import (
     resolve_claim_remote,
     resolve_base_branch,
     resolve_model_for_phase,
+    resolve_reasoning_effort,
 )
 from deviate.state.ledger import (
     FlowConfirmationResult,
@@ -1592,9 +1593,13 @@ def _invoke_agent_phase(
                 # the Pydantic ``backend`` Literal only accepts canonical
                 # names (``opencode`` / ``claude`` / ``droid`` / ``pi``).
                 backend_name = resolve_agent_to_backend(agent_data["backend"])
+        reasoning_effort = (
+            resolve_reasoning_effort(root) if backend_name == "codex" else None
+        )
         agent_cfg = AgentConfig(
             backend=backend_name,
             timeout=(data.get("agent", {}).get("timeout", 600) if data else 600),
+            reasoning_effort=reasoning_effort,
         )
         backend = AgentBackend(config=agent_cfg)
         model_str = f" --model {model}" if model else ""

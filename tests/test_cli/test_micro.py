@@ -5496,6 +5496,55 @@ class TestInvokeAgentConfigTimeout:
         assert config.backend == "pi"
 
 
+class TestInvokeAgentCodexReasoning:
+    """Codex setup's ``[agent].reasoning_effort`` reaches AgentConfig."""
+
+    def test_invoke_agent_passes_codex_reasoning_effort(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rich.console import Console
+
+        from deviate.cli.micro import _invoke_agent
+        from deviate.state.config import AgentConfig
+
+        monkeypatch.chdir(tmp_path)
+        config_dir = tmp_path / ".deviate"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(
+            '[agent]\nbackend = "codex"\nreasoning_effort = "high"\n',
+            encoding="utf-8",
+        )
+
+        with (
+            patch("deviate.cli.micro.AgentBackend") as mock_backend_cls,
+            patch("deviate.cli.micro._log_run"),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+        ):
+            mock_backend_cls.return_value.invoke.return_value = HandoverManifest(
+                phase="RED", status="TEST_WRITTEN_FAILING"
+            )
+            _invoke_agent(
+                "test prompt",
+                Console(),
+                backend_name="codex",
+                task_id="TSK-001-01",
+                phase="RED",
+            )
+
+        config = mock_backend_cls.call_args.kwargs.get("config")
+        if config is None:
+            args = mock_backend_cls.call_args.args
+            config = args[0] if args else None
+        assert isinstance(config, AgentConfig)
+        assert config.backend == "codex"
+        assert config.reasoning_effort == "high"
+
+
 class TestRedHangTimeoutRollback:
     """TSK-027-02 / AC-PLAN-001, AC-PLAN-003, AC-PLAN-004, AC-PLAN-006."""
 

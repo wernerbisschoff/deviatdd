@@ -887,7 +887,7 @@ handing the manifest to the rest of the pipeline:
 | `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
 | `droid` | `droid exec` | Commands copied into `.factory/commands/` (flat `.md`) | `--model <id>` flag | Factory Droid IDE-owned commands dir |
 | `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Lean spawn after `pi -p` / RPC `--no-session`: `--no-extensions`, `--tools read,bash,edit,write`, `--no-skills`, optional `--skill`; schema-limit tokens abort as `AGENT_ERROR` |
-| `codex` | `codex exec --sandbox workspace-write --ask-for-approval never` | Skills written to `<workdir>/.agents/skills/<name>/SKILL.md` (Codex CLI 0.117+ dropped `.codex/prompts`). Packaged `deviatdd` skill plus one skill folder per slash command. | `--model <id>` flag | CLI transport only (no Codex RPC). Prompt via stdin. Do not use `--full-auto` or `--dangerously-bypass-approvals-and-sandbox`. |
+| `codex` | `codex exec --sandbox workspace-write --ask-for-approval never` | Skills written to `<workdir>/.agents/skills/<name>/SKILL.md` (Codex CLI 0.117+ dropped `.codex/prompts`). Packaged `deviatdd` skill plus one skill folder per slash command. | `--model <id>` flag; when `[agent].reasoning_effort` is set, also `-c model_reasoning_effort=<value>` (official values `minimal\|low\|medium\|high\|xhigh`). `deviate setup --agent codex` seeds `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"` if those keys are missing/empty, and does not clobber a user-set default or thinking level. No repo-wide `.codex/config.toml`. | CLI transport only (no Codex RPC). Prompt via stdin. Do not use `--full-auto` or `--dangerously-bypass-approvals-and-sandbox`. |
 
 Pi implements slash-command discovery natively — `pi -p` loads commands from
 `~/.pi/agent/`, `.pi/prompts/`, and `.agents/` on startup, parses the
@@ -1059,7 +1059,8 @@ deviatdd project's own source at
 **Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py`
 and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` in
 `tests/test_cli/test_setup.py` cover selected-agent-only install,
-Codex skills + `backend = "codex"`, idempotence, gitignore entry
+Codex skills + `backend = "codex"` + Luna/`reasoning_effort` upsert,
+idempotence, gitignore entry
 presence + idempotence, the safety-gate fragments in the SKILL.md
 body, well-formed frontmatter, and the dispatch table's canonical
 slash-command references.

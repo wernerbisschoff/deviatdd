@@ -39,7 +39,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   minimal YAML frontmatter (`name:` + `description:`). The agent selected via
   `--agent` (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`, `codex`)
   is persisted to `[agent].backend` in `config.toml` and is the only install
-  target.
+  target. `--agent codex` additionally seeds `[models].default = "gpt-5.6-luna"`
+  and `[agent].reasoning_effort = "high"` when those keys are missing or
+  empty; a user-set `[models].default` or `[agent].reasoning_effort` is
+  left untouched. Non-Codex setup does not write Luna or a reasoning key.
 
   **Single-source prompt derivation:** for each of the 11 overlapping phases
   (`explore`, `research`, `prd`, `shard`, `plan`, `tasks`, `red`, `green`,
@@ -118,7 +121,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 * **Output Artifacts:**
   * `.deviate/config.toml` — Persisted configuration profile (includes
     `[agent].backend` set from `--agent` for meso/micro dispatch, and
-    `claim_remote` default `true`)
+    `claim_remote` default `true`). Codex setup also seeds
+    `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"`
+    when missing/empty so spawned `codex exec` receives `--model gpt-5.6-luna`
+    and `-c model_reasoning_effort=high` without a repo-wide `.codex/config.toml`.
   * `.deviate/session.json` — Current session state snapshot
   * `.deviate/.gitignore` — Excludes session.json and runtime state
     directories from version control
@@ -232,6 +238,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `tests/test_cli/test_init.py` and `TestSetupSelectedAgentIsolation` /
   `TestSetupCodex` in `tests/test_cli/test_setup.py` cover
   selected-agent-only install, Codex skills + `backend = "codex"`,
+  Luna + `reasoning_effort = "high"` upsert (fresh, existing, no-clobber),
   idempotence, gitignore entry presence + idempotence, safety-gate
   fragments in the SKILL.md body, well-formed frontmatter, and the
   dispatch table's canonical slash-command references.

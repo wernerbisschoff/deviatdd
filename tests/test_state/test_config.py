@@ -10,6 +10,7 @@ from deviate.state.config import (
     SessionState,
     resolve_claim_remote,
     resolve_phase_model,
+    resolve_reasoning_effort,
 )
 from deviate.cli.__init__ import resolve_base_branch
 
@@ -339,3 +340,26 @@ class TestSessionState:
         loaded = SessionState.load(tmp_path / ".deviate" / "session.json")
         assert loaded.green_attempts == 0
         assert loaded.red_attempts == 0
+
+
+class TestResolveReasoningEffort:
+    def test_missing_config_returns_none(self, tmp_path: Path) -> None:
+        assert resolve_reasoning_effort(tmp_path) is None
+
+    def test_reads_agent_reasoning_effort(self, tmp_path: Path) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text(
+            '[agent]\nbackend = "codex"\nreasoning_effort = "high"\n',
+            encoding="utf-8",
+        )
+        assert resolve_reasoning_effort(tmp_path) == "high"
+
+    def test_empty_reasoning_effort_returns_none(self, tmp_path: Path) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        (dot / "config.toml").write_text(
+            '[agent]\nbackend = "codex"\nreasoning_effort = ""\n',
+            encoding="utf-8",
+        )
+        assert resolve_reasoning_effort(tmp_path) is None
