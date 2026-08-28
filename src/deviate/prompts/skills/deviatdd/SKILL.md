@@ -1,6 +1,6 @@
 ---
 name: deviatdd
-description: Prepare missing Meso artifacts with idempotent deviate meso run, then run deviate micro run one task at a time until NO_PENDING_TASKS; inspect and triage each result
+description: Prepare missing Meso artifacts with idempotent deviate meso run, then run deviate micro run one task at a time until NO_PENDING_TASKS; inspect and triage each result. Optional review argument pauses after each successful task for a human look.
 category: deviatdd-tooling
 version: 3.0.0
 ---
@@ -8,6 +8,8 @@ version: 3.0.0
 # deviatdd — Per-task micro orchestrator
 
 This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner picks the next unchecked task from `tasks.md` and runs it; the agent re-invokes the same command on each iteration. **Do NOT use `deviate micro run --all`** — that flag is intentionally off-limits here so the agent can stop and react on each failure. The loop terminates when the runner exits with `NO_PENDING_TASKS`. When a failure escapes micro's scope, the skill points you at the canonical slash command (see **Dispatch to slash commands** below) — it does not act inline.
+
+**Default invoke** (no skill argument): after exit 0, immediately re-invoke `deviate micro run` until `NO_PENDING_TASKS`. **Review invoke** when `$ARGUMENTS` contains the token `review`, or the operator said `/deviatdd review` / "deviatdd with review": after each successful `deviate micro run`, STOP. Show the task id and the commits just made. Wait for the human to continue. Then run the next `deviate micro run`. Never pass `--review` or `--all` to the runner — this skill's `review` argument is an agent loop policy, not a CLI flag. Failure-path triage is the same in both modes.
 
 The default posture is **repeat stepping**: the agent runs the bare `deviate micro run` on repeat, with the bash tool's `timeout` parameter set (see **Step 1: Run the next task**). Each invocation consumes one unchecked task from `tasks.md`; the loop terminates when the runner exits with `NO_PENDING_TASKS`. A single task boundary keeps the queue inspectable and prevents one bad task from cascading into the next.
 
@@ -37,7 +39,7 @@ Stop if Meso exits non-zero. Report `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, o
 Do not start Micro after a Meso failure.
 
 After Meso succeeds or emits `MESO_ALREADY_COMPLETE`, run `deviate micro run` in the returned worktree.
-The runner picks the next unchecked task from `tasks.md`. Re-run it after each successful task.
+The runner picks the next unchecked task from `tasks.md`. Default invoke: re-run it after each successful task. Review invoke: stop after each success, show the task id and the commits just made, and wait for the human.
 
 Do not waste turns on pre-run code exploration. Meso owns preparation.
 Micro owns RED, GREEN, JUDGE, and REFACTOR.
@@ -53,7 +55,7 @@ Do NOT edit the project's `src/`, `tests/`, `specs/`, or any other code the acti
 
 ## Per-task stepping loop
 
-Instead of `--all`, run tasks one at a time and **loop until the queue is empty**. The canonical command is the **bare** `deviate micro run` (no task ID) — the runner resolves the next unchecked task from `tasks.md` and runs it. Re-invoke the same command; it picks the next task each time. The loop terminates when the runner exits with `NO_PENDING_TASKS` (exit 1). An exit-0 from `deviate micro run` only means ONE task completed — it does NOT mean the queue is drained. The agent stops inspecting only when a task fails, behaves unexpectedly, or the runner emits `NO_PENDING_TASKS`.
+Instead of `--all`, run tasks one at a time. **Default invoke** (no argument) **loops until the queue is empty**. **Review invoke** (`review` in `$ARGUMENTS`, `/deviatdd review`, or "deviatdd with review") stops after each successful task for a human look, then continues on the human's go-ahead. The canonical command is the **bare** `deviate micro run` (no task ID) — the runner resolves the next unchecked task from `tasks.md` and runs it. Re-invoke the same command; it picks the next task each time. The loop terminates when the runner exits with `NO_PENDING_TASKS` (exit 1). An exit-0 from `deviate micro run` only means ONE task completed — it does NOT mean the queue is drained. On the default path the agent MUST re-invoke; on the review path the agent STOPS after exit 0. Failure-path triage is unchanged. The agent also stops inspecting when a task fails, behaves unexpectedly, or the runner emits `NO_PENDING_TASKS`.
 
 ### Source of truth: `tasks.md` (NOT the ledger)
 
@@ -84,7 +86,10 @@ Set a **decent timeout** on the bash invocation of `deviate micro run`. The CLI 
 If the timeout fires, the task is still in the ledger; the next repeat invocation picks it up from the same phase state. Do NOT bypass with `kill -9` unless the runner left session state corrupted (then run the **Clean-slate retry** gate).
 ### Step 2: Check the result
 
-If the command exits successfully (exit code 0), this task COMPLETED. **Do NOT stop the loop here** — re-invoke `deviate micro run` to consume the next unchecked task. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1).
+If the command exits successfully (exit code 0), this task COMPLETED.
+
+- **Default invoke (no `review` argument):** **Do NOT stop the loop here** — re-invoke `deviate micro run` to consume the next unchecked task. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1).
+- **Review invoke (`review` in `$ARGUMENTS` / `/deviatdd review` / "deviatdd with review"):** STOP. Report the completed task id and the commits just made (`git log` / `git show` for the SHAs this task produced). Wait for the human to continue. Do not re-invoke until they say so. Then run the next `deviate micro run` (still bare — never `--review` / `--all`).
 
 If the command exits non-zero, inspect the per-task transcript before
 deciding how to proceed:
@@ -108,7 +113,8 @@ Key signals:
 
 | After-task state | Next action |
 |---|---|
-| Exited 0 (COMPLETED) | **Step 4** — re-invoke `deviate micro run` to consume the next unchecked task. Do NOT stop here. |
+| Exited 0 (COMPLETED), default invoke | **Step 4** — re-invoke `deviate micro run` to consume the next unchecked task. Do NOT stop here. |
+| Exited 0 (COMPLETED), review invoke | STOP. Show the task id and the commits just made. Wait for the human to continue, then run the next `deviate micro run`. Do not pass `--review` or `--all`. |
 | Task FAILED (test/code issue) | Inspect the log. Retry the same task once, or skip and fix manually via `/deviate-red`/`/deviate-green`. |
 | Task FAILED (harness/git/ledger issue) | This is a deviatdd bug. See **Filing deviatdd issues** below before retrying. |
 | Agent timeout / model rate-limit | Retry once with the same task ID. |
@@ -119,7 +125,7 @@ Key signals:
 
 ### Step 4: Loop until the queue is empty
 
-After every successful task (or after Step 3 decides to retry), re-invoke `deviate micro run`. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1):
+**Default invoke only.** After every successful task (or after Step 3 decides to retry), re-invoke `deviate micro run`. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1):
 
 ```bash
 # Termination check — the runner emits NO_PENDING_TASKS when tasks.md has no unchecked `[ ]` tasks.
@@ -131,6 +137,8 @@ deviate micro run
 - If the runner exits 0, the task completed — re-invoke `deviate micro run` to consume the next unchecked task. Repeat indefinitely.
 
 **Why this matters:** a single `deviate micro run` invocation runs ONE task's full cycle and exits 0 on success. That exit means only this task is done, not the queue. The agent MUST re-invoke the command, otherwise it will stop after one task while `tasks.md` still has unchecked work. The runner's `NO_PENDING_TASKS` exit is the only authoritative "no more work" signal — do NOT use `deviate inspect tasks list --status PENDING` to gate the loop (that reads the ledger, not `tasks.md`, and will give false negatives).
+
+**Review invoke does not use this step after a success.** After exit 0, the agent already stopped in Step 2 / Step 3 for the human. Resume here only when the human continues (or when Step 3 decided to retry a failure — failure-path triage is unchanged).
 
 ---
 ---
@@ -206,6 +214,21 @@ slash command in the **Dispatch** table.
 
 ## Canonical invocation
 
+This skill accepts an optional **skill argument** (not a CLI flag). Detect review mode when `$ARGUMENTS` contains the token `review`, or when the operator invoked `/deviatdd review` / "deviatdd with review".
+
+```text
+# Skill invoke — default (no argument): auto-continue after each success.
+/deviatdd
+# or: the skill with empty $ARGUMENTS
+
+# Skill invoke — review: pause after each successful task for a human look.
+/deviatdd review
+# or: $ARGUMENTS contains the token `review`
+# or: the operator said "deviatdd with review"
+```
+
+The spawned runner command is **always** the bare `deviate micro run` (optional runner flags from the list below). **Do not pass `--review` or `--all` into the runner.** `--review` is a different, runner-owned pause before each phase commit. This skill's `review` argument only changes the agent's after-success loop policy.
+
 ```bash
 # Default: bare command, on repeat. The runner picks the next unchecked task from tasks.md.
 deviate micro run
@@ -217,7 +240,7 @@ deviate micro run --profile fast
 deviate micro run <TASK_ID>
 ```
 
-The per-task stepping loop is the default mode. **Do NOT use `--all`** — it is reserved for the `deviate run` meso driver that chains meso into micro end-to-end. Here, every PENDING task gets its own invocation so the agent can inspect the result and decide whether to advance.
+The per-task stepping loop is the default mode. **Do NOT use `--all`** — it is reserved for the `deviate run` meso driver that chains meso into micro end-to-end. Here, every PENDING task gets its own invocation so the agent can inspect the result and decide whether to advance. Review invoke still uses one bare `deviate micro run` per task; it only changes whether the agent waits for a human after exit 0.
 
 ## Error triage table
 
@@ -446,6 +469,9 @@ contract stays intact and individually testable.
 - Never file a deviatdd issue for `TASK_FAILED` errors whose root
   cause is the task's own RED/GREEN/JUDGE logic. Verify the triage
   table first.
+- Never pass `--review` or `--all` to `deviate micro run` from this
+  skill. Review mode is the skill argument `review` in `$ARGUMENTS`,
+  not a runner flag.
 
 ## Output contract
 

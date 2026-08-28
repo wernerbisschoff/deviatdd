@@ -1235,6 +1235,40 @@ class TestInstallDeviatddSkill:
         ):
             assert instruction in body
 
+    def test_deviatdd_skill_optional_review_argument(self) -> None:
+        """Optional ``review`` skill argument pauses after each success;
+        default invoke still auto-continues. Spawned ``deviate micro run``
+        never gains ``--review`` or ``--all``.
+        """
+        import re
+
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+
+        # Default path language must stay (auto-continue until NO_PENDING_TASKS).
+        assert "Do NOT stop here" in body
+        assert "MUST re-invoke" in body
+
+        # Review is a skill argument, not a runner flag.
+        assert "$ARGUMENTS" in body
+        assert "/deviatdd review" in body
+        assert "deviatdd with review" in body
+
+        # Bash examples the agent is told to run stay bare (no --review / --all).
+        for block in re.findall(r"```bash\n(.*?)```", body, re.DOTALL):
+            for raw_line in block.splitlines():
+                stripped = raw_line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if "deviate micro run" not in stripped:
+                    continue
+                assert "--review" not in stripped, (
+                    f"spawned runner gained --review: {stripped}"
+                )
+                assert "--all" not in stripped, (
+                    f"spawned runner gained --all: {stripped}"
+                )
+
     def test_deviatdd_skill_troubleshooting_section_matches_logger(
         self,
     ) -> None:
