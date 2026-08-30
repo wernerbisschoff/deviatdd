@@ -527,11 +527,13 @@ def _mock_agent_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Route command and skill installs into the isolated temp tree."""
     monkeypatch.setattr(
         "deviate.cli._get_agent_command_dir",
-        lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+        lambda agent, _workdir, _export_mode="local": (
+            tmp_path / f".{agent}" / "commands"
+        ),
     )
     monkeypatch.setattr(
         "deviate.cli._get_agent_skill_dir",
-        lambda _workdir, agent: tmp_path / f".{agent}" / "skills",
+        lambda _workdir, agent, _export_mode="local": tmp_path / f".{agent}" / "skills",
     )
 
 
@@ -891,3 +893,44 @@ class TestSetupExportModeAndBaseBranch:
         )
         assert "agent_export_mode" not in parsed
         assert not (fake_home / ".pi" / "agent").exists()
+
+    def test_agent_export_mode_global_pi_writes_agent_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Global pi install targets `~/.pi/agent/prompts` + `~/.pi/agent/skills`.
+
+        The installed prompt must stay project-agnostic: it must not embed a
+        constitution even when the source project has one."""
+        fake_home = tmp_path / "homeuser"
+        project = tmp_path / "proj"
+        fake_home.mkdir()
+        project.mkdir()
+        (project / "specs").mkdir()
+        (project / "specs" / "constitution.md").write_text(
+            "# Project Constitution\n\nVersion: 1.0.0\n", encoding="utf-8"
+        )
+        monkeypatch.setattr("deviate.cli._user_home", lambda: fake_home)
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr(
+            "deviate.cli._prompt_claim_remote", lambda default=False: False
+        )
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(project):
+            result = runner.invoke(
+                cli,
+                ["setup", "--agent", "pi", "--agent-export-mode", "global"],
+            )
+        assert result.exit_code == 0, result.output
+        assert (fake_home / ".pi" / "agent" / "prompts" / "deviate-red.md").is_file()
+        assert (
+            fake_home / ".pi" / "agent" / "skills" / "deviatdd" / "SKILL.md"
+        ).is_file()
+        assert not (fake_home / ".pi" / "prompts").exists()
+        assert not (fake_home / ".pi" / "skills").exists()
+        assert not (project / ".pi" / "prompts" / "deviate-red.md").exists()
+        # Constitution must NOT be baked into a global (project-agnostic) prompt.
+        red_body = (
+            fake_home / ".pi" / "agent" / "prompts" / "deviate-red.md"
+        ).read_text(encoding="utf-8")
+        assert "Project Constitution" not in red_body
+        assert "Version: 1.0.0" not in red_body

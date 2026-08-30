@@ -69,6 +69,21 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   flows, hotfix, html, init, merge, pr, prune, release, review, triage,
   walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
   pins the identical-middle invariant across all 11 phases (see section 2).
+
+  **Constitution embedding is install-mode-dependent:** project-local installs
+  bake `<workdir>/specs/constitution.md` verbatim into each prompt (tier 0,
+  when the file exists) for parity with the auto path. Global installs
+  (`--agent-export-mode global`) never embed a constitution — the prompt is
+  project-agnostic and shared across every repo, so the core block's
+  Constitution Compliance Mandate (invariant #10) directs the agent to read
+  `specs/constitution.md` at runtime instead.
+  manual overlay (pre/post-script lifecycle steps, rich handover manifest,
+  `<context><user_input>` block) is appended from the reduced
+  `commands/deviate-{phase}.md` source. `auto/{phase}.md` is the single source of
+  truth; the 15 commands-only prompts (adhoc, architecture, constitution, e2e,
+  flows, hotfix, html, init, merge, pr, prune, release, review, triage,
+  walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
+  pins the identical-middle invariant across all 11 phases (see section 2).
   **Agent-to-commands-directory mapping:** `.claude/` → `.claude/commands/`;
   `.opencode/` → `.opencode/commands/`; `.factory/` (shared by both `--agent
   factory` and `--agent droid` — the Factory Droid IDE owns that directory;
@@ -78,9 +93,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   per the platform's documented convention; DeviaTDD file-copies the project
   command vault `src/deviate/prompts/commands/<name>.md` into
   `<workdir>/.pi/prompts/<name>.md`, so the project vault remains the single
-  source of truth. DeviaTDD does **not** write to `~/.pi/agent/` and does **not**
-  generate a `settings.json` — model/provider selection is the operator's
-  responsibility via Pi's own configuration mechanism); `.omp/` →
+  source of truth. In project-local mode DeviaTDD does **not** write to
+  `~/.pi/agent/` and does **not** generate a `settings.json` — model/provider
+  selection is the operator's responsibility via Pi's own configuration
+  mechanism); `.omp/` →
   `.omp/prompts/` (OMP is an extensible wrapper around the Pi executor; it
   discovers slash commands from `.omp/prompts/`). All five command
   directories are excluded from version control via the project-root
@@ -108,8 +124,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   install `[l]ocal/[g]lobal` (default `l`; this-run only, not persisted),
   claim-remote `[y]es/[n]o`, then the
   optional-pack checkbox. `global` installs commands/skills under the user-level
-  tree (`~/.{agent}/commands|prompts` + `skills`; Codex `~/.agents/skills`); `local`
-  stays project-local. DeviaTDD still does not write `~/.pi/agent/`.
+  tree. Pi's global prompt templates live at `~/.pi/agent/prompts/` and its
+  global skills at `~/.pi/agent/skills/` (per `pi@latest` `getPromptsDir()` /
+  `getAgentDir()`); the other agents use `~/.{agent}/commands|prompts` +
+  `skills` (Codex `~/.agents/skills`); `local` stays project-local.
 * **Optional pack selection:** `--packs none|all-optional|<comma-separated names>` selects
   optional command packs for scripts. Default layer packs are the execution layers only
   (`macro` + `meso` + `micro`, including `/deviate-init`). Product is not a default layer:
@@ -217,7 +235,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `pi` -> `<workdir>/.pi/skills/deviatdd/SKILL.md`
     (verified — `pi@latest` docs at
     `packages/coding-agent/docs/skills.md` list `.pi/skills/` as a
-    project-local skill discovery path).
+    project-local skill discovery path; global mode writes
+    `~/.pi/agent/skills/deviatdd/SKILL.md`).
   * `omp` -> `<workdir>/.omp/skills/deviatdd/SKILL.md`
     (libref documents omp skills at user-level
     `~/.omp/agent/managed-skills/<name>/SKILL.md` and via a

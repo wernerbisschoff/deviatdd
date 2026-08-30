@@ -258,7 +258,9 @@ class TestProductLayerSkillExportCycle:
         """
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
@@ -283,7 +285,9 @@ class TestProductLayerSkillExportCycle:
         """
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         (tmp_path / ".opencode").mkdir(parents=True, exist_ok=True)
 
@@ -311,7 +315,9 @@ class TestProductLayerSkillExportCycle:
         """
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 

@@ -20,7 +20,9 @@ class TestCommandInstallation:
         """US-005-COMMANDS Scenario 2: command .md copied to detected agent paths."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         (tmp_path / ".claude").mkdir(parents=True)
         (tmp_path / ".opencode").mkdir(parents=True)
@@ -35,7 +37,9 @@ class TestCommandInstallation:
         """US-005-COMMANDS Scenario 3: skip when content matches."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         (tmp_path / ".claude").mkdir(parents=True)
         (tmp_path / ".opencode").mkdir(parents=True)
@@ -54,7 +58,9 @@ class TestCommandInstallation:
         """US-005-COMMANDS Scenario 4: overwrite when content differs."""
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         target = tmp_path / ".claude" / "commands" / "deviate-shard.md"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +98,9 @@ class TestCommandInstallation:
         """
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+            lambda agent, _workdir, _export_mode="local": (
+                tmp_path / f".{agent}" / "commands"
+            ),
         )
         (tmp_path / ".claude").mkdir(parents=True)
         (tmp_path / ".opencode").mkdir(parents=True)

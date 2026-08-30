@@ -1018,7 +1018,9 @@ def _display_install_path(target: Path, workdir: Path) -> str:
         return str(target)
 
 
-def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
+def _get_agent_command_dir(
+    agent_name: str, workdir: Path, export_mode: str = "local"
+) -> Path | None:
     """Resolve the slash-command directory for a given agent platform.
 
     Factory, Claude, OpenCode discover slash commands from
@@ -1026,11 +1028,18 @@ def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     ``<workdir>/.{agent}/prompts/`` per their platform conventions.
     Codex CLI 0.117+ dropped custom prompts — return ``None`` so setup
     never writes ``.codex/prompts`` or ``.codex/commands``.
+
+    ``export_mode="global"`` resolves the platform's user-level (home)
+    directory instead of the project-local one. Pi's global prompt
+    templates live at ``~/.pi/agent/prompts/`` (its ``getPromptsDir()``),
+    not ``~/.pi/prompts/`` — the latter is only a project path.
     """
     if agent_name in ("claude", "opencode", "factory"):
         return workdir / f".{agent_name}" / "commands"
     if agent_name == "pi":
-        return workdir / ".pi" / "prompts"
+        return (
+            workdir / ".pi" / ("agent" if export_mode == "global" else "") / "prompts"
+        )
     if agent_name == "omp":
         return workdir / ".omp" / "prompts"
     return None
@@ -1072,7 +1081,7 @@ def _install_commands_to_agents(
                 export_mode=export_mode,
             )
             continue
-        target_dir = _get_agent_command_dir(agent, install_root)
+        target_dir = _get_agent_command_dir(agent, install_root, export_mode)
         if _skip_unknown_agent(agent, target_dir):
             continue
         installed = 0
@@ -1084,6 +1093,7 @@ def _install_commands_to_agents(
                 workdir=workdir,
                 agent=agent,
                 use_libref=use_libref,
+                export_mode=export_mode,
             ):
                 installed += 1
             else:
@@ -1127,6 +1137,7 @@ def _install_codex_command_skills(
             agent="codex",
             target_filename="SKILL.md",
             use_libref=use_libref,
+            export_mode=export_mode,
         ):
             installed += 1
         else:
@@ -1155,21 +1166,29 @@ def _resolve_skill_source() -> str | None:
         return None
 
 
-def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
-    """Return the project-local skills directory for *agent*.
+def _get_agent_skill_dir(
+    workdir: Path, agent: str, export_mode: str = "local"
+) -> Path | None:
+    """Return the skills directory for *agent* (project-local by default).
 
     Setup installs the ``deviatdd`` skill only for the selected agent
     (``droid`` is normalized to ``factory`` before this helper runs).
     The skill body is identical across platforms — only the destination
     directory differs.
 
+    ``export_mode="global"`` resolves the platform's user-level skills
+    directory. Pi loads global skills from ``~/.pi/agent/skills/``; the
+    other platforms use ``~/.{agent}/skills/`` (Claude) or
+    ``~/.agents/skills/`` (Codex).
+
     Auto-discovery status per platform:
 
     - ``claude`` — verified. Same form as user-level
       ``~/.claude/skills/<name>/SKILL.md`` per the Agent Skills spec.
     - ``pi`` — verified. ``pi@latest`` docs at
-      ``packages/coding-agent/docs/skills.md`` list ``.pi/skills/`` as
-      a project-local skill discovery path.
+      ``packages/coding-agent/docs/skills.md`` list `.pi/skills/` as
+      a project-local skill discovery path and `~/.pi/agent/skills/`
+      as the global one.
     - ``opencode`` / ``factory`` — no documented project-local skills
       convention; the file is still written so the skill is on disk if
       those platforms add support. Operators using these backends can
@@ -1195,6 +1214,8 @@ def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
     if agent == "codex":
         return workdir / ".agents" / "skills"
     if agent in ("claude", "opencode", "factory", "pi", "omp"):
+        if export_mode == "global" and agent == "pi":
+            return workdir / ".pi" / "agent" / "skills"
         return workdir / f".{agent}" / "skills"
     return None
 
@@ -1209,7 +1230,7 @@ def _install_deviatdd_skill(
         return
     install_root = _agent_install_root(workdir, export_mode)
     for agent in agents:
-        target_dir = _get_agent_skill_dir(install_root, agent)
+        target_dir = _get_agent_skill_dir(install_root, agent, export_mode)
         if _skip_unknown_agent(agent, target_dir):
             continue
         target = target_dir / "deviatdd" / "SKILL.md"

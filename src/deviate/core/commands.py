@@ -231,6 +231,7 @@ def compose_command_body(
     core_dir: Path,
     constitution_path: Path | None = None,
     use_libref: bool = True,
+    include_constitution: bool = True,
 ) -> str | None:
     """Compose a command body by prepending core.md, layer-shared.md, and lifecycle-manual.md.
 
@@ -242,13 +243,18 @@ def compose_command_body(
     ``lifecycle-manual.md`` (the manual-mode counterpart to
     ``lifecycle-auto.md``).
 
-    When ``constitution_path`` resolves to an existing ``constitution.md``,
-    its content is prepended as the first tier of the composed body — the
-    same position ``load_template()`` reserves on the auto path. This
-    closes the manual/slash-command parity gap so agents running via
-    ``/deviate-*`` slash commands see the constitution at the top of the
-    prompt and cannot silently substitute a mandated tech-stack component
-    (e.g., deferring Phoenix LiveView for a framework-free shell).
+    When ``constitution_path`` resolves to an existing ``constitution.md``
+    and ``include_constitution`` is true, its content is prepended as the
+    first tier of the composed body — the same position ``load_template()``
+    reserves on the auto path. This closes the manual/slash-command parity
+    gap so agents running via ``/deviate-*`` slash commands see the
+    constitution at the top of the prompt and cannot silently substitute a
+    mandated tech-stack component (e.g., deferring Phoenix LiveView for a
+    framework-free shell).
+
+    ``include_constitution=False`` skips tier 0 entirely (used for global
+    installs, where the prompt is project-agnostic and must not bake any
+    single project's constitution).
     """
     fm_match = _YAML_FM_RE.match(raw)
     if not fm_match:
@@ -262,7 +268,14 @@ def compose_command_body(
     # deviate.prompts.assembly.load_template. Missing file is non-fatal
     # to match the auto path's tolerance; the constitution is best-effort
     # because deviatdd may run before `deviate init` (greenfield case).
-    if constitution_path is not None and constitution_path.is_file():
+    # Global installs skip this tier: the installed prompt is shared across
+    # projects and must stay project-agnostic (the core mandate tells the
+    # agent to read ``specs/constitution.md`` at runtime instead).
+    if (
+        include_constitution
+        and constitution_path is not None
+        and constitution_path.is_file()
+    ):
         try:
             parts.append(constitution_path.read_text(encoding="utf-8"))
         except OSError:
@@ -341,6 +354,7 @@ def install_command(
     agent: str = "claude",
     target_filename: str | None = None,
     use_libref: bool = True,
+    export_mode: str = "local",
 ) -> bool:
     """Install a command as a flat file at ``target_dir/<name>.md``.
 
@@ -371,14 +385,21 @@ def install_command(
     # (when workdir is provided). The path is best-effort: a missing file is
     # non-fatal because `deviate setup` may run before `deviate research`
     # scaffolds the constitution in a greenfield repo.
+    # Global installs never embed a constitution — the installed prompt is
+    # project-agnostic and shared across every repo that uses it.
+    include_constitution = export_mode != "global"
     constitution_path: Path | None = None
-    if workdir is not None:
+    if include_constitution and workdir is not None:
         candidate = workdir / "specs" / "constitution.md"
         if candidate.is_file():
             constitution_path = candidate
 
     composed = compose_command_body(
-        raw, core_dir, constitution_path=constitution_path, use_libref=use_libref
+        raw,
+        core_dir,
+        constitution_path=constitution_path,
+        use_libref=use_libref,
+        include_constitution=include_constitution,
     )
     if composed is None:
         return False
