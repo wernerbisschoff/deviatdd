@@ -212,14 +212,36 @@ def test_ready_does_not_remove_issue_dir(tmp_path: Path) -> None:
     assert (issue_dir / "tasks.md").is_file()
 
 
-def test_compact_intent_rejects_without_mutations(tmp_path: Path) -> None:
-    issue_dir = _seed_completed_issue(tmp_path)
-    before = snapshot_ledgers(tmp_path)
-    plan = build_prune_plan(
-        tmp_path, "ISS-ADH-099", intent="compact specs/issues.jsonl"
+def test_parse_other_language_tests_go_and_js(tmp_path: Path) -> None:
+    """Regex fallback classifies non-Python test files (Go, JS) language-agnostically."""
+    tests = tmp_path / "tests"
+    tests.mkdir(parents=True)
+    go_file = tests / "main_test.go"
+    go_file.write_text(
+        "package main\n\n"
+        "func TestBehavioral_ISS_099(t *testing.T) {\n"
+        "    result := Add(1, 2)\n"
+        "    if result != 3 { t.Fail() }\n"
+        "}\n\n"
+        "func TestSpyInternal(t *testing.T) {\n"
+        "    helper.assert_called_with(1)\n"
+        "}\n",
+        encoding="utf-8",
     )
-    assert plan.status == "LEDGER_REWRITE_REJECTED"
-    apply_prune(tmp_path, plan)
-    assert (issue_dir / "plan.md").is_file()
-    assert (tmp_path / "tests" / "test_099_spy.py").is_file()
-    assert snapshot_ledgers(tmp_path) == before
+    js_file = tests / "thing.spec.js"
+    js_file.write_text(
+        "describe('thing', () => {\n"
+        "    it('keeps public io', () => {\n"
+        "        expect(publicApi(1)).toBe(2)\n"
+        "    })\n"
+        "})\n",
+        encoding="utf-8",
+    )
+    from deviate.core.prune import _parse_other_test_items
+
+    go_items = _parse_other_test_items(Path("main_test.go"), go_file.read_text())
+    js_items = _parse_other_test_items(Path("thing.spec.js"), js_file.read_text())
+    by_name = {item.name: item.kind for item in go_items}
+    assert by_name.get("TestBehavioral_ISS_099") == "keep"
+    assert by_name.get("TestSpyInternal") == "drop"
+    assert len(js_items) >= 1

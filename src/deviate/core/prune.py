@@ -33,9 +33,20 @@ SPY_ASSERT_RE = re.compile(
     r"assert_called_once_with|assert_not_called|assert_has_calls|"
     r"assert_any_call|call_count|mock_calls|mocker\.spy)\b"
 )
-PRIVATE_ATTR_RE = re.compile(r"\._[A-Za-z]\w*")
+PRIVATE_ATTR_RE = re.compile(r"(?:\b(?!self|cls)\w+)\._[A-Za-z]\w*\s*(?!\()")
+EXTERNAL_BOUNDARY_MOCK_RE = re.compile(
+    r"\b(?:subprocess\.run|subprocess\.Popen|\bPopen\b|_run_pytest|"
+    r"run_safe_command|invoke_agent|_invoke_agent|\bcodex exec\b|spawn|"
+    r"run_pytest)"
+)
+
 PATCH_PRIVATE_RE = re.compile(r"patch(?:\.object)?\([^)]*['\"]_[A-Za-z]")
-PUBLIC_IO_RE = re.compile(r"\b(?:assert|raises)\b")
+
+PUBLIC_IO_RE = re.compile(
+    r"\b(?:assert|raises|t\.Fail|t\.Errorf|t\.Fatal|t\.Fatalf|"
+    r"expect\(|toBe\(|toEqual\(|should\.|\.should|require\.|"
+    r"assertEqual|assertTrue|assertFalse|assertThat)\b"
+)
 
 PruneStatus = Literal[
     "READY",
@@ -221,16 +232,20 @@ def discover_issue_tests(root: Path, issue_id: str, source_file: str) -> list[Te
     slug = PurePosixPath(source_file).stem
     needles = {issue_id, slug}
     items: list[TestItem] = []
-    for path in sorted(tests_root.rglob("test_*.py")):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        rel = path.relative_to(root)
-        haystack = f"{rel.as_posix()}\n{text}"
-        if not any(needle and needle in haystack for needle in needles):
-            continue
-        items.extend(_parse_test_items(rel, text))
+    patterns = ("test_*", "*_test", "*.spec.*", "*_test.*")
+    for pattern in patterns:
+        for path in sorted(tests_root.rglob(pattern)):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            rel = path.relative_to(root)
+            haystack = f"{rel.as_posix()}\n{text}"
+            if not any(needle and needle in haystack for needle in needles):
+                continue
+            items.extend(_parse_test_items(rel, text))
     return items
 
 
@@ -327,15 +342,24 @@ def _unmatched_acs(tokens: list[str], keep_tests: list[TestItem]) -> list[str]:
 
 
 def _name_tags(name: str) -> set[str]:
-    return {match.group(1).lower() for match in TAG_SEGMENT_RE.finditer(name)}
+    tags = {match.group(1).lower() for match in TAG_SEGMENT_RE.finditer(name)}
+    # Go/Rust camelCase: TestBehavioralFoo (capitalized segment, exact case)
+    for token in ("behavioral", "spy", "impl", "ac"):
+        camel = token[0].upper() + token[1:]
+        if camel in name:
+            tags.add(token)
+    return tags
 
 
 def _classify_body(body: str) -> TestKind:
     if not body.strip():
         return "drop"
-    if SPY_ASSERT_RE.search(body) or PRIVATE_ATTR_RE.search(body):
-        return "drop"
     if PATCH_PRIVATE_RE.search(body):
+        return "drop"
+    is_external_boundary_mock = bool(EXTERNAL_BOUNDARY_MOCK_RE.search(body))
+    if SPY_ASSERT_RE.search(body) and not is_external_boundary_mock:
+        return "drop"
+    if PRIVATE_ATTR_RE.search(body):
         return "drop"
     if AC_TOKEN_RE.search(body) or PUBLIC_IO_RE.search(body):
         return "keep"
@@ -369,6 +393,13 @@ def _node_span(node: ast.AST) -> tuple[int, int]:
 
 
 def _parse_test_items(rel: Path, text: str) -> list[TestItem]:
+    """Classify tests in *text*. Uses AST for Python; regex fallback for other languages."""
+    if rel.suffix == ".py":
+        return _parse_python_test_items(rel, text)
+    return _parse_other_test_items(rel, text)
+
+
+def _parse_python_test_items(rel: Path, text: str) -> list[TestItem]:
     try:
         tree = ast.parse(text)
     except SyntaxError:
@@ -395,6 +426,83 @@ def _parse_test_items(rel: Path, text: str) -> list[TestItem]:
     return items
 
 
+def _parse_other_test_items(rel: Path, text: str) -> list[TestItem]:
+    """Regex-based test discovery for non-Python files (Go, Rust, JS, Elixir, ...)."""
+    file_drop = bool(_name_tags(rel.stem) & DROP_TEST_TAGS)
+    items: list[TestItem] = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines, start=1):
+        name = _test_name_from_line(line)
+        if not name:
+            continue
+        start = index
+        end = _body_end(lines, index)
+        source = "\n".join(lines[start - 1 : end])
+        markers = _markers_before(lines, index - 1)
+        kind = classify_test(name, markers, source)
+        if (
+            kind == "keep"
+            and file_drop
+            and not (_name_tags(name) & KEEP_TEST_TAGS or markers & KEEP_TEST_TAGS)
+        ):
+            kind = "drop"
+        items.append(TestItem(path=rel, name=name, kind=kind, source=source))
+    return items
+
+
+def _test_name_from_line(line: str) -> str | None:
+    """Return a test name from a declaration line, or None."""
+    s = line.strip()
+    if not s:
+        return None
+    for pattern in (
+        r"^\s*test_[A-Za-z0-9_]+\s*\(?\s*:",
+        r"^\s*(?:pub\s+)?fn\s+test_[A-Za-z0-9_]+\s*\(",
+        r"^\s*(?:pub\s+)?fn\s+Test[A-Za-z0-9_]+\s*\(",
+        r"^\s*func\s+Test[A-Za-z0-9_]+\s*\(",
+        r"^\s*(?:it|test)\(['\"][^'\"]+['\"]",
+        r"^\s*describe\(['\"]",
+    ):
+        if re.match(pattern, s):
+            m = re.search(
+                r"(?:test_[A-Za-z0-9_]+|Test[A-Za-z0-9_]+|func\s+Test[A-Za-z0-9_]+|[\w/\- ]+?)\s*\(",
+                s,
+            )
+            if m:
+                return (
+                    m.group(0)
+                    .replace("func ", "")
+                    .replace("fn ", "")
+                    .rstrip(" (")
+                    .strip()
+                )
+    return None
+
+
+def _body_end(lines: list[str], start_index: int) -> int:
+    """Approximate the end line of a test body by brace/indent balance."""
+    depth = 0
+    for index in range(start_index - 1, len(lines)):
+        line = lines[index]
+        depth += line.count("{") - line.count("}")
+        stripped = line.strip()
+        if depth <= 0 and (stripped.endswith(")") or not stripped):
+            return index + 1
+    return len(lines)
+
+
+def _markers_before(lines: list[str], line_index: int) -> set[str]:
+    """Collect tag/marker tokens on the lines immediately before *line_index*."""
+    markers: set[str] = set()
+    for index in range(max(0, line_index - 2), line_index):
+        line = lines[index].strip()
+        if line.startswith("#[") or line.startswith("@") or "@tag" in line:
+            for token in ("behavioral", "spy", "impl", "ac"):
+                if token in line:
+                    markers.add(token)
+    return markers
+
+
 def _thin_tests(root: Path, drop_items: list[TestItem]) -> None:
     by_path: dict[Path, list[TestItem]] = {}
     for item in drop_items:
@@ -413,7 +521,10 @@ def _thin_tests(root: Path, drop_items: list[TestItem]) -> None:
             path.unlink()
             continue
         drop_names = {item.name for item in items}
-        rewritten = _strip_functions(text, drop_names)
+        if rel.suffix == ".py":
+            rewritten = _strip_functions(text, drop_names)
+        else:
+            rewritten = _strip_other_functions(text, drop_names)
         if rewritten is None or not rewritten.strip():
             path.unlink()
         else:
@@ -440,6 +551,21 @@ def _strip_functions(text: str, drop_names: set[str]) -> str | None:
         if index not in skip
     ]
     return "".join(kept)
+
+
+def _strip_other_functions(text: str, drop_names: set[str]) -> str | None:
+    """Line-based removal of test blocks for non-Python files."""
+    lines = text.splitlines()
+    skip: set[int] = set()
+    for index, line in enumerate(lines, start=1):
+        name = _test_name_from_line(line)
+        if name in drop_names:
+            end = _body_end(lines, index)
+            skip.update(range(index, end + 1))
+    if not skip:
+        return text
+    kept = [line for index, line in enumerate(lines, start=1) if index not in skip]
+    return "\n".join(kept)
 
 
 def dumps_contract(contract: dict[str, object]) -> str:

@@ -18,8 +18,8 @@ You are a **DETERMINISTIC_PRUNING_ENGINE** operating inside the **DeviaTDD PRUNE
 
 Your objective is honeycomb test classification and thinning:
 
-1. Prefer pytest marks and name tags. Drop tests tagged `spy` / `impl`. Keep tests tagged `behavioral` / `ac` (keep wins).
-2. If a test has no mark and no name tag, decide from the body. Honeycomb: drop internal spies, mocks of private helpers, and private-state probes. Keep public input-to-output / AC contracts. Untagged tests must not auto-keep.
+1. Prefer test markers / annotations / tags and name tags. Drop tests tagged `spy` / `impl`. Keep tests tagged `behavioral` / `ac` (keep wins).
+2. If a test has no marker and no name tag, decide from the body. Honeycomb: drop internal spies, mocks of private helpers, and private-state probes. Keep public input-to-output / AC contracts. Untagged tests must not auto-keep.
 
 CRITICAL INSTRUCTION INVARIANTS:
 1. **Manual invoke only.** Run this command only when the operator asked for `/deviate-prune` or `deviate prune`. Do not auto-run after COMPLETED, `--all`, or a successful micro loop.
@@ -68,8 +68,8 @@ Verify the contract's `spec_keeps` still exist and will not be deleted:
 
 Apply the tagged keep/drop list first (the CLI will also apply it on `post`):
 
-- **Drop**: tests tagged `spy` / `impl` in the function name (segment) or pytest marker (`@pytest.mark.spy`, `@pytest.mark.impl`)
-- **Keep**: tests tagged `behavioral` / `ac` in the name or marker (`@pytest.mark.behavioral`, `@pytest.mark.ac`) — keep wins
+- **Drop**: tests tagged `spy` / `impl` in the function name (segment) or a test marker/annotation/tag (`@pytest.mark.spy`, `@pytest.mark.impl`, `#[spy]`, `@tag :spy`)
+- **Keep**: tests tagged `behavioral` / `ac` in the name or marker/annotation/tag — keep wins
 
 Then classify remaining untagged tests from the body. Untagged must not auto-keep.
 
