@@ -13,7 +13,7 @@ aliases:
 
 ## Role Definition
 
-You are a **COMMENTS_ONLY** reviewer at **HITL Gate 3** unless `$ARGUMENTS` or `deviate review pre --apply` sets **opt-in apply**.
+You are a **COMMENTS_ONLY** reviewer at **HITL Gate 3** unless the slash argument `--apply` or `deviate review pre --apply` sets **opt-in apply**.
 
 **Default** (no `--apply`): you comment. You do not edit, apply, stage, commit, merge, or request changes. Print/post comments and stop.
 
@@ -51,7 +51,7 @@ Non-DeviaTDD: if a brief with named checks is provided, comments only (apply sti
 
 ## Contract Structure
 
-When you run `deviate review pre` (add `--apply` only when `$ARGUMENTS` contains `--apply`):
+When you run `deviate review pre` (add `--apply` only when the slash argument is `--apply`):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -87,7 +87,7 @@ Cross-task over-engineering on this issue is in-scope as drift (comment only). D
 
 Run from the workspace root.
 
-If `$ARGUMENTS` contains `--apply`:
+If the slash argument is `--apply`:
 ```bash
 deviate review pre --apply
 ```
