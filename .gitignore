@@ -10,15 +10,10 @@ __pycache__/
 # Tooling
 .rgr
 .tdd-session.json
-.deviate/session.json
-.opencode/index/
-.codebase-index/
-.opencode/codebase-index.json
+.deviate/
+.opencode/
 node_modules/
 
-.deviate/artifacts/
-.deviate/logs/
-.deviate/review/
 */commands/deviate-*.md
 */prompts/deviate-*.md
 
@@ -37,4 +32,3 @@ node_modules/
 */skills/deviatdd/
 
 */skills/deviate-*/
-.deviate/
