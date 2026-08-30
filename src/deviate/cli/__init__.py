@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.prompt import Prompt
 
 from deviate.state.config import (
@@ -469,7 +470,7 @@ def _prompt_export_mode(default: str = "local") -> str | None:
     try:
         while True:
             selected = Prompt.ask(
-                "Prompt/skill install [[l]]ocal/[[g]]lobal",
+                f"Prompt/skill install {escape('[l]ocal/[g]lobal')}",
                 default=default_label,
                 console=console,
             )
@@ -517,7 +518,7 @@ def _prompt_claim_remote(default: bool = False) -> bool | None:
     try:
         while True:
             selected = Prompt.ask(
-                "Push claim branches to the remote as a lock [[y]]es/[[n]]o",
+                f"Push claim branches to the remote as a lock {escape('[y]es/[n]o')}",
                 default=default_label,
                 console=console,
             )

@@ -589,19 +589,23 @@ class TestSetupClaimRemoteFlag:
     def test_prompt_claim_remote_escapes_rich_brackets(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The ask message uses doubled brackets so Rich prints ``[y]es/[n]o``."""
+        """The ask message is ``markup.escape``d so ``[y]`` is not a style tag."""
+        from rich.markup import escape
+
         from deviate.cli import _prompt_claim_remote
 
-        seen: list[str] = []
+        seen: list[object] = []
 
-        def fake_ask(message: str, **kwargs: object) -> object:
+        def fake_ask(message: object, **kwargs: object) -> object:
             seen.append(message)
             return kwargs.get("default")
 
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
         assert _prompt_claim_remote() is False
-        assert seen == ["Push claim branches to the remote as a lock [[y]]es/[[n]]o"]
+        assert seen == [
+            f"Push claim branches to the remote as a lock {escape('[y]es/[n]o')}"
+        ]
 
     def test_tty_rerun_existing_true_defaults_yes_and_writes_true(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch

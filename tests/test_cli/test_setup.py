@@ -5,6 +5,7 @@ from contextlib import chdir
 from pathlib import Path
 
 import pytest
+from rich.markup import escape
 from typer.testing import CliRunner
 
 from deviate.cli import (
@@ -724,19 +725,19 @@ class TestSetupExportModeAndBaseBranch:
     def test_prompt_export_mode_escapes_rich_brackets(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The ask message uses doubled brackets so Rich prints ``[l]ocal/[g]lobal``."""
+        """The ask message is ``markup.escape``d so ``[l]`` is not a style tag."""
         from deviate.cli import _prompt_export_mode
 
-        seen: list[str] = []
+        seen: list[object] = []
 
-        def fake_ask(message: str, **kwargs: object) -> object:
+        def fake_ask(message: object, **kwargs: object) -> object:
             seen.append(message)
             return kwargs.get("default")
 
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
         assert _prompt_export_mode() == "local"
-        assert seen == ["Prompt/skill install [[l]]ocal/[[g]]lobal"]
+        assert seen == [f"Prompt/skill install {escape('[l]ocal/[g]lobal')}"]
 
     def test_tty_rerun_defaults_export_to_l_and_keeps_base_branch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -768,7 +769,7 @@ class TestSetupExportModeAndBaseBranch:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
-        assert captured.get("Prompt/skill install [[l]]ocal/[[g]]lobal") == "l"
+        assert captured.get(f"Prompt/skill install {escape('[l]ocal/[g]lobal')}") == "l"
         assert captured.get("Base branch") == "develop"
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert "agent_export_mode" not in parsed
@@ -794,7 +795,7 @@ class TestSetupExportModeAndBaseBranch:
         )
 
         def fake_ask(message: str, **kwargs: object) -> object:
-            if "[[l]]ocal" in str(message):
+            if escape("[l]ocal/[g]lobal") in str(message):
                 return "l"
             return kwargs.get("default")
 
@@ -820,7 +821,7 @@ class TestSetupExportModeAndBaseBranch:
         project.mkdir()
 
         def fake_ask(message: str, **kwargs: object) -> object:
-            if "[[l]]ocal" in str(message):
+            if escape("[l]ocal/[g]lobal") in str(message):
                 return "g"
             return kwargs.get("default")
 
