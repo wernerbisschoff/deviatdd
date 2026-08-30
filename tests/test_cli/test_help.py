@@ -271,7 +271,7 @@ def test_micro_run_help_review_is_pause_not_slash():
     """
     result = runner.invoke(cli, ["micro", "run", "--help"])
     assert result.exit_code == 0, result.output
-    output = _strip_ansi(result.output)
+    output = re.sub(r"[\s│─╭╮╰╯]+", " ", _strip_ansi(result.output))
     assert "--review" in output
     assert "not /deviate-review" in output
     assert "pause" in output.lower()
