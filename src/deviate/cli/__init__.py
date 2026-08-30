@@ -56,6 +56,7 @@ from deviate.core.commands import (
     install_command,
     parse_optional_packs,
 )
+from deviate.ui.checkbox import checkbox_select
 from deviate.ui.render import is_interactive
 
 cli = typer.Typer(no_args_is_help=True)
@@ -456,21 +457,14 @@ def _prompt_claim_remote() -> bool | None:
     return False
 
 
-def _optional_pack_prompt_choices() -> list[str]:
-    """Names shown on the TTY optional-pack selector.
-
-    ``product`` is listed first among named optional packs so the
-    three-command product bundle is the easiest extra to pick.
-    """
-    named = list(OPTIONAL_PACK_NAMES)
-    if "product" in named:
-        named = ["product", *[name for name in named if name != "product"]]
-    return ["none", "all-optional", *named]
+def _optional_pack_rows() -> tuple[str, ...]:
+    """One TTY checkbox row per optional pack (product first)."""
+    return OPTIONAL_PACK_NAMES
 
 
 def _packs_from_selector_picks(picks: list[str]) -> tuple[str, ...]:
-    """Interpret TTY selector picks into optional pack names."""
-    if not picks or picks[0] in {"none", ""}:
+    """Interpret TTY checkbox picks into optional pack names."""
+    if not picks:
         return ()
     if "all-optional" in picks:
         return OPTIONAL_PACK_NAMES
@@ -478,37 +472,25 @@ def _packs_from_selector_picks(picks: list[str]) -> tuple[str, ...]:
 
 
 def _ask_optional_pack_picks() -> list[str]:
-    """Dropdown multi-select: every optional pack, plus none / all-optional."""
-    first = Prompt.ask(
-        "Optional command packs",
-        choices=_optional_pack_prompt_choices(),
-        default="none",
+    """TTY multi-select: one pack per row; Space toggles; Enter confirms."""
+    picks = checkbox_select(
+        _optional_pack_rows(),
+        title="Optional command packs",
         console=console,
     )
-    if first not in OPTIONAL_PACK_NAMES:
-        return [first or "none"]
-    picks = [first]
-    remaining = [name for name in OPTIONAL_PACK_NAMES if name != first]
-    while remaining:
-        nxt = Prompt.ask(
-            "Add another optional pack",
-            choices=[*remaining, "done"],
-            default="done",
-            console=console,
-        )
-        if nxt in {"done", None, ""}:
-            break
-        picks.append(nxt)
-        remaining = [name for name in remaining if name != nxt]
+    if picks:
+        console.print(f"Optional packs: {', '.join(picks)}")
+    else:
+        console.print("Optional packs: none (default layers only)")
     return picks
 
 
 def _prompt_pack_selection() -> tuple[str, ...] | None:
     """Ask which optional command packs to install.
 
-    Returns ``()`` for the default-only set, a tuple of optional pack
-    names when the operator selects some, and ``None`` when the session
-    is not interactive so the caller keeps default-only.
+    Returns ``()`` for the default-only set (nothing checked), a tuple
+    of optional pack names when the operator toggles some, and ``None``
+    when the session is not interactive so the caller keeps default-only.
     """
     if not is_interactive():
         return None

@@ -109,12 +109,13 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   optional command packs for scripts. Default layer packs are the execution layers only
   (`macro` + `meso` + `micro`, including `/deviate-init`). Product is not a default layer:
   it is one optional bundle (`deviate-flows`, `deviate-architecture`, `deviate-release`)
-  that stays unsplit. On a TTY, omitted `--packs` shows a Rich selector that lists
-  `none`, `all-optional`, then `product` first among named packs, then the individual
-  extras (`merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`,
-  `e2e`). Default highlight is `none` (execution layers only). Non-interactive sessions
-  skip the prompt and install default-only. `--packs product` writes all three product
-  commands; `--packs all-optional` includes `product` plus every individual extra.
+  that stays unsplit. On a TTY, omitted `--packs` shows a Rich checkbox list (one pack
+  per row: `product` first, then `merge`, `pr`, `review`, `walkthrough`, `html`,
+  `hotfix`, `triage`, `prune`, `e2e`). Space toggles; Enter confirms; default is
+  nothing selected (execution layers only). The slash-separated `Prompt.ask` list is
+  not used. Non-interactive sessions skip the prompt and install default-only.
+  `--packs product` writes all three product commands; `--packs all-optional` includes
+  `product` plus every individual extra. Pack picks are not written to `config.toml`.
 * **Execution Modes:**
   * **Offline Mode (Default):** `_scaffold_constitution()` writes
     `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`. The
@@ -135,7 +136,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `--agent-export-mode [local|global]` (Defaults to `local`)
   * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Pin install target and persisted backend)
   * `--packs none|all-optional|<comma-separated optional names>` (Scripted optional-pack
-    selection; omitted on a TTY shows the pack selector, default `none`)
+    selection; omitted on a TTY shows the checkbox list, default nothing selected)
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
   * `--claim-remote` (Enable push-as-lock; merges `claim_remote = true` into

@@ -586,3 +586,16 @@
   2. AC-ADHOC-036-02 / AO-036-02: `micro run --help` states that `fast` skips JUDGE and that `--review` is a TTY pause, not `/deviate-review`.
   3. AC-ADHOC-036-03 / AO-036-03: `/deviate-review` is comments-only default (not a merge gate). `/deviate-walkthrough` is the four-look map. Gate 3 prompt bodies and #135 stay untouched.
 
+## FR-ADHOC-037: TTY Checkbox Multi-Select for Optional Setup Packs
+
+- **Description**: `deviate setup` on a TTY replaces the Rich `Prompt.ask` slash-separated optional-pack list with a checkbox list (one pack per row; Space toggles; Enter confirms; default nothing selected). `--packs` and non-TTY default-only stay unchanged. Selection is not persisted in `config.toml`.
+- **Preconditions**: Python 3.13. `_ask_optional_pack_picks` uses `Prompt.ask(choices=...)` which wraps mid-name (`pr` / `une`). Multi-select is a second "Add another" loop. Pack membership is already code-owned (`OPTIONAL_PACKS`).
+- **Inputs/Outputs**: Input — omitted `--packs` on a TTY, or `--packs` for scripts. Output — selected optional pack names, installed command files, no packs key in `config.toml`.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-037-01: As an operator running `deviate setup` on a TTY, I want one optional pack per row with Space to toggle and Enter to confirm so I can pick `product` and `pr` without a wrapping slash list. *(Ref: FR-ADHOC-037)*
+  2. US-037-02: As a script author, I want `--packs` and non-TTY default-only behavior unchanged so CI and one-liners keep working. *(Ref: FR-ADHOC-037)*
+- **Acceptance Outline** (implementation-independent; no Gherkin in the issue file):
+  1. AC-ADHOC-037-01 / AO-037-01: TTY omitted `--packs` shows a checkbox list (one named optional pack per row). Default confirm installs none. Toggling `product`+`pr` installs those two packs only. Selection is not written to `config.toml`. Tests mock the TUI helper, not glyphs.
+  2. AC-ADHOC-037-02 / AO-037-02: `--packs` is unchanged. Non-TTY omitted `--packs` installs default-only and does not prompt. Agent picker, libref, `claim_remote`, pack membership, JUDGE, and Gate 3 bodies stay untouched.
+

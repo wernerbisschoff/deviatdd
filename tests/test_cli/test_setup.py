@@ -7,10 +7,9 @@ import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import (
-    _optional_pack_prompt_choices,
+    _optional_pack_rows,
     _packs_from_selector_picks,
     _prompt_agent_selection,
-    _prompt_pack_selection,
     _resolve_install_agents,
     cli,
 )
@@ -310,54 +309,64 @@ class TestSetupPacks:
         assert not (commands / "deviate-architecture.md").exists()
         assert not (commands / "deviate-release.md").exists()
 
-    def test_pack_prompt_choices_list_every_optional_pack(self) -> None:
-        choices = _optional_pack_prompt_choices()
-        assert choices[0] == "none"
-        assert choices[1] == "all-optional"
-        assert choices[2] == "product"
-        for name in (
-            "product",
-            "merge",
-            "pr",
-            "review",
-            "walkthrough",
-            "html",
-            "hotfix",
-            "triage",
-            "prune",
-            "e2e",
-        ):
-            assert name in choices
-        named = [name for name in choices if name in OPTIONAL_PACK_NAMES]
-        assert named[0] == "product"
-        assert tuple(named) == OPTIONAL_PACK_NAMES
-
-    def test_prompt_pack_selection_default_none(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_tty_helper_invoked_when_packs_omitted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        captured: dict[str, object] = {}
+        invoked: list[list[str]] = []
 
-        def fake_ask(message: str, **kwargs: object) -> object:
-            captured.update(kwargs)
-            return kwargs.get("default")
+        def fake_tui() -> list[str]:
+            invoked.append(list(_optional_pack_rows()))
+            return []
 
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
-        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
-        assert _prompt_pack_selection() == ()
-        assert captured.get("default") == "none"
-        choices = captured.get("choices")
-        assert isinstance(choices, list)
-        assert "product" in choices
-        assert "merge" in choices
-        assert "prune" in choices
-        assert "all-optional" in choices
-        assert choices[0] == "none"
-        assert choices[2] == "product"
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", fake_tui)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert invoked == [list(OPTIONAL_PACK_NAMES)]
+        assert invoked[0][0] == "product"
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-red.md").is_file()
+        assert not (commands / "deviate-pr.md").exists()
+        assert not (commands / "deviate-flows.md").exists()
 
-    def test_packs_from_selector_picks_none_and_all(self) -> None:
-        assert _packs_from_selector_picks(["none"]) == ()
+    def test_tty_toggle_product_and_pr_installs_those_two_only(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr(
+            "deviate.cli._ask_optional_pack_picks", lambda: ["product", "pr"]
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-flows.md").is_file()
+        assert (commands / "deviate-architecture.md").is_file()
+        assert (commands / "deviate-release.md").is_file()
+        assert (commands / "deviate-pr.md").is_file()
+        assert (commands / "deviate-red.md").is_file()
+        for omitted in (
+            "deviate-merge",
+            "deviate-review",
+            "deviate-walkthrough",
+            "deviate-html",
+            "deviate-hotfix",
+            "deviate-triage",
+            "deviate-prune",
+            "deviate-e2e",
+        ):
+            assert not (commands / f"{omitted}.md").exists(), omitted
+        parsed = tomllib.loads(
+            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert "packs" not in parsed
+        assert "optional_packs" not in parsed
+
+    def test_packs_from_selector_picks_empty_and_named(self) -> None:
+        assert _packs_from_selector_picks([]) == ()
+        assert _packs_from_selector_picks(["product", "pr"]) == ("product", "pr")
         assert _packs_from_selector_picks(["all-optional"]) == OPTIONAL_PACK_NAMES
-        assert _packs_from_selector_picks(["merge", "prune"]) == ("merge", "prune")
 
 
 class TestSetupConfigAllowlist:
@@ -591,6 +600,7 @@ class TestSetupPerAgentInstall:
 
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
 
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup"])
@@ -599,15 +609,7 @@ class TestSetupPerAgentInstall:
         agent_kwargs = captured["Select agent platform"]
         assert agent_kwargs.get("default") == "pi"
         assert "pi" in agent_kwargs.get("choices", [])
-        pack_kwargs = captured["Optional command packs"]
-        assert pack_kwargs.get("default") == "none"
-        pack_choices = pack_kwargs.get("choices", [])
-        assert pack_choices[0] == "none"
-        assert pack_choices[1] == "all-optional"
-        assert pack_choices[2] == "product"
-        assert "merge" in pack_choices
-        assert "prune" in pack_choices
-        assert "all-optional" in pack_choices
+        assert "Optional command packs" not in captured
         assert "INSTALL" in result.output.upper()
         assert (tmp_path / ".pi" / "prompts" / "deviate-red.md").is_file()
         assert (tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md").is_file()
