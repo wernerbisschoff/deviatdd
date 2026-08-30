@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
@@ -324,15 +325,66 @@ def resolve_execution_profile(root: Path) -> str:
     return "full"
 
 
+def _remote_default_branch(root: Path) -> str | None:
+    """Return ``origin/HEAD``'s branch name, or ``None`` if it is unset.
+
+    Uses ``git symbolic-ref --quiet --short refs/remotes/origin/HEAD``
+    (the remote default), not the current branch's ``@{upstream}``.
+    """
+    from deviate.core._shared import git_env
+
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "symbolic-ref",
+                "--quiet",
+                "--short",
+                "refs/remotes/origin/HEAD",
+            ],
+            cwd=root,
+            env=git_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    name = result.stdout.strip()
+    if name.startswith("origin/"):
+        name = name.removeprefix("origin/")
+    return name or None
+
+
 def resolve_base_branch(root: Path) -> str:
-    """Return the configured trunk branch, defaulting to ``main``."""
+    """Return the trunk branch for worktrees, PRs, and review diffs.
+
+    Order: hand-set ``base_branch`` in ``.deviate/config.toml``, then
+    ``origin/HEAD``, then ``main``.
+    """
+    data = _load_deviate_config_toml(root)
+    if isinstance(data, dict):
+        value = data.get("base_branch")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    remote = _remote_default_branch(root)
+    if remote:
+        return remote
+    return "main"
+
+
+def resolve_agent_export_mode(root: Path) -> Literal["local", "global"]:
+    """Return the prompt/skill install mode, defaulting to ``local``."""
     data = _load_deviate_config_toml(root)
     if data is None:
-        return "main"
-    value = data.get("base_branch", "main")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return "main"
+        return "local"
+    value = data.get("agent_export_mode", "local")
+    if value in ("local", "global"):
+        return value
+    return "local"
 
 
 class PytestReportConfig(BaseModel):

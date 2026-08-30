@@ -172,7 +172,7 @@ optional packs (`review`, `walkthrough`); default setup does not install them.
   Platform is auto-detected from the `origin` remote and overridable via `--platform`.
   PR titles use conventional-commit format for squash-merge compatibility. There is no Graphite path.
 * **Merge (`deviate merge` / `deviate merge pre` + `/deviate-merge` skill):** Final meso-layer gate that performs
-  the squash-merge into the configured `base_branch` (from `resolve_base_branch` / `.deviate/config.toml`; default `main`) and writes a full Pydantic-validated `IssueRecord` (not a
+  the squash-merge into the configured `base_branch` (from `resolve_base_branch`: hand-set `.deviate/config.toml` key, else `origin/HEAD`, else `main`) and writes a full Pydantic-validated `IssueRecord` (not a
   bare transition). `deviate merge pre` emits a JSON contract with `base_branch` so the skill
   does not hardcode `main`. The CLI run path is intentionally two-phase: `--stage-only` writes the COMPLETED
   transition to `specs/issues.jsonl` and stages it; `-m <subject> -m <body>` then commits
@@ -480,7 +480,7 @@ Agents are bound into specialized operational scopes by context restrictions. Op
 
 ### 5.0 Product Layer Phase Prompts *(optional, sits above Macro)*
 
-The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optional — repositories that only ship single features can skip it and route `/deviate-shard` and `/deviate-adhoc` directly to the Macro layer. `deviate setup` does not install the Product-layer commands by default: they are one optional pack (`product` → `deviate-flows`, `deviate-architecture`, `deviate-release`, kept together). Bare setup / `--packs none` / TTY default `none` write only `macro` + `meso` + `micro`. `--packs product` writes all three product commands; `--packs all-optional` includes that bundle plus the individual extras. The TTY optional-pack selector lists `none`, `all-optional`, then `product` first among named packs.
+The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optional — repositories that only ship single features can skip it and route `/deviate-shard` and `/deviate-adhoc` directly to the Macro layer. `deviate setup` does not install the Product-layer commands by default: they are one optional pack (`product` → `deviate-flows`, `deviate-architecture`, `deviate-release`, kept together). Bare setup / `--packs none` / TTY default (nothing checked) write only `macro` + `meso` + `micro`. `--packs product` writes all three product commands; `--packs all-optional` includes that bundle plus the individual extras. The TTY optional-pack picker is a checkbox list (one pack per row, `product` first; Space toggles, Enter confirms), not a slash-separated `Prompt.ask` line.
 
 * **`/deviate-flows` (FLOW-01, `deviatdd-product-layer`):** Conversational flow authoring. Reads `specs/_product/flows/flows-product.md` as the seed catalog; converses with the user to identify actor, domain, job-to-be-done, trigger, and success state; writes a new `flows-<domain>.md` under `specs/_product/flows/`; appends a row to `specs/_product/flows/index.md` (Flow ID, Name, Actor, Domain, Status, Source).
     * *System Directives:* Extend the seed (never regenerate); preserve the FLOW-NN ID format `^FLOW-\d{2,}$`; every flow block must carry a `## FLOW-NN <Name>` header; the agent must ask clarifying questions when the actor, job, or trigger is ambiguous before writing the flow file. **Commit protocol (v1.4.0):** Phase A drafts every flow file + index row to disk as the conversation progresses (no commit). Before composing the commit subject, Phase B reads `<repo_root>/CONTRIBUTING.md` *if it exists* to discover the target repository's commit-message convention (types, scopes, emoji prefix, subject length). The default when absent is Conventional Commits; if CONTRIBUTING.md exists and declares a different convention, that wins. Phase B then fires exactly one `git add <session-owned files> && git commit -m '<subject per CONTRIBUTING.md or default>'` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes"), staging every session-authored flow file plus `index.md`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit. `git commit` runs WITHOUT `--no-verify` by default; if CONTRIBUTING.md exists and explicitly permits `--no-verify` for docs-only commits, pass it; otherwise the target repo's pre-commit hooks run. If a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass. The prompt invokes the host agent's git tooling directly; no internal Python commit helper is exposed to any Product-layer prompt.
@@ -921,6 +921,9 @@ standard `AgentBackend.invoke()` contract with these customisations:
    file-copies each project command to `<workdir>/.pi/prompts/<name>.md`
    via the existing `install_command` pipeline — the same code path used
    for `.claude/commands/`, `.opencode/commands/`, and `.factory/commands/`.
+   A this-run `global` install (TTY `[g]lobal` or `--agent-export-mode global`)
+   writes that layout under `~/.{agent}/…` (Codex: `~/.agents/skills`)
+   instead of the project; the choice is not persisted in `config.toml`.
    Pi discovers commands from `.pi/prompts/` natively per its documented
    slash-command convention. The corresponding project-root `.gitignore`
    entries (``*/commands/deviate-*.md``, ``*/prompts/deviate-*.md``) are added by

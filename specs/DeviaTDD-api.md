@@ -104,17 +104,23 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   the default highlight, not an auto-skip). Non-TTY without `--agent` reuses a persisted
   backend or fail-closes with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
   Install is always exactly one agent; leftover `.claude/` / `.opencode/` / … dirs are
-  never a fan-out target.
+  never a fan-out target. On a TTY the remaining prompts are, in order: prompt/skill
+  install `[l]ocal/[g]lobal` (default `l`; this-run only, not persisted),
+  claim-remote `[y]es/[n]o`, then the
+  optional-pack checkbox. `global` installs commands/skills under the user-level
+  tree (`~/.{agent}/commands|prompts` + `skills`; Codex `~/.agents/skills`); `local`
+  stays project-local. DeviaTDD still does not write `~/.pi/agent/`.
 * **Optional pack selection:** `--packs none|all-optional|<comma-separated names>` selects
   optional command packs for scripts. Default layer packs are the execution layers only
   (`macro` + `meso` + `micro`, including `/deviate-init`). Product is not a default layer:
   it is one optional bundle (`deviate-flows`, `deviate-architecture`, `deviate-release`)
-  that stays unsplit. On a TTY, omitted `--packs` shows a Rich selector that lists
-  `none`, `all-optional`, then `product` first among named packs, then the individual
-  extras (`merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`,
-  `e2e`). Default highlight is `none` (execution layers only). Non-interactive sessions
-  skip the prompt and install default-only. `--packs product` writes all three product
-  commands; `--packs all-optional` includes `product` plus every individual extra.
+  that stays unsplit. On a TTY, omitted `--packs` shows a Rich checkbox list (one pack
+  per row: `product` first, then `merge`, `pr`, `review`, `walkthrough`, `html`,
+  `hotfix`, `triage`, `prune`, `e2e`). Space toggles; Enter confirms; default is
+  nothing selected (execution layers only). The slash-separated `Prompt.ask` list is
+  not used. Non-interactive sessions skip the prompt and install default-only.
+  `--packs product` writes all three product commands; `--packs all-optional` includes
+  `product` plus every individual extra. Pack picks are not written to `config.toml`.
 * **Execution Modes:**
   * **Offline Mode (Default):** `_scaffold_constitution()` writes
     `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`. The
@@ -132,23 +138,35 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   implementation are static `TBD` tokens, not runtime-resolved variables. The
   `${VARIABLE}` resolver described in earlier revisions of this spec has been removed.
 * **Input Parameters:**
-  * `--agent-export-mode [local|global]` (Defaults to `local`)
+  * `--agent-export-mode [local|global]` (Omitted on a TTY prompts `[l]ocal/[g]lobal`,
+    default `l`. Applies to this run's install only — the key is not written.
+    Non-TTY omitted installs local. Explicit flag skips the prompt.)
+  * `--base-branch <name>` (Optional script write-override. Omitted does not
+    write `base_branch`; runtime uses `resolve_base_branch`: hand-set key,
+    else `origin/HEAD`, else `main`. A hand-set key is not stripped on re-run.)
   * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Pin install target and persisted backend)
   * `--packs none|all-optional|<comma-separated optional names>` (Scripted optional-pack
-    selection; omitted on a TTY shows the pack selector, default `none`)
+    selection; omitted on a TTY shows the checkbox list, default nothing selected)
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
   * `--claim-remote` (Enable push-as-lock; merges `claim_remote = true` into
     `config.toml` without dropping `[models]`, `timeout_seconds`, or `[agent]`.)
   * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
     `config.toml` without dropping `[models]`, `timeout_seconds`, or `[agent]`.
-    Fresh setup without either flag writes `claim_remote = false`. An interactive TTY
-    session with the flags omitted may prompt (default no); a non-interactive session
-    keeps `false`.)
+    Fresh setup without either flag writes `claim_remote = false`. On a TTY with
+    the flags omitted, setup always prompts `[y]es/[n]o` (including re-runs); default
+    is the current file value (`y` if `claim_remote = true`, `n` if false or
+    missing). Accepts `y`/`n`/`yes`/`no`. The answer is upserted. A non-interactive
+    session does not prompt: fresh
+    config writes `false`; an existing file is left alone unless a flag was passed.)
 * **Output Artifacts:**
-  * `.deviate/config.toml` — Persisted configuration profile (includes
-    `[agent].backend` set from `--agent` for meso/micro dispatch, and
-    `claim_remote` default `false`). Codex setup also seeds
+  * `.deviate/config.toml` — Runner configuration only (`profile`,
+    `timeout_seconds`, `claim_remote`, `[agent].backend`,
+    plus `transport` for pi/omp). Inline comments sit on the same line as
+    each key. Does not persist `agent_export_mode`, `base_branch`, or
+    `[agent].timeout`. `resolve_base_branch` reads a hand-set `base_branch`
+    if present, otherwise `origin/HEAD`, otherwise `main`.
+    Codex setup also seeds
     `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"`
     when missing/empty so spawned `codex exec` receives `--model gpt-5.6-luna`
     and `-c model_reasoning_effort=high` without a repo-wide `.codex/config.toml`.
@@ -562,7 +580,8 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
 
 * **Source:** `src/deviate/cli/meso.py` (`_merge_pre`, `_merge_run`)
 * **Description:** `deviate merge pre` emits a JSON contract with `base_branch` resolved
-  from `resolve_base_branch` / `.deviate/config.toml` (default `main` when unset). The
+  from `resolve_base_branch` (hand-set `config.toml` key, else `origin/HEAD`, else
+  `main`). The
   `/deviate-merge` skill uses that value as the squash target. The run path (no `pre`
   argument) marks an issue COMPLETED in the ledger with a full Pydantic-validated
   `IssueRecord`.  Two-phase squash-merge flow used by the `/deviate-merge` slash command:

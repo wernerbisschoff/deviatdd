@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,12 +10,29 @@ from deviate.state.config import (
     DeviateConfig,
     ProfileConfig,
     SessionState,
+    resolve_agent_export_mode,
+    resolve_base_branch,
     resolve_claim_remote,
     resolve_execution_profile,
     resolve_phase_model,
     resolve_reasoning_effort,
 )
-from deviate.cli.__init__ import resolve_base_branch
+from tests.conftest import _git_env
+
+
+def _set_origin_head(repo: Path, branch: str) -> None:
+    """Point ``refs/remotes/origin/HEAD`` at ``origin/<branch>``."""
+    subprocess.run(
+        [
+            "git",
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            f"refs/remotes/origin/{branch}",
+        ],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+    )
 
 
 class TestDeviateConfig:
@@ -102,8 +120,45 @@ class TestDeviateConfig:
         )
         assert resolve_base_branch(tmp_path) == "wb-dev"
 
+    def test_resolve_base_branch_config_trunk_wins(self, tmp_git_repo: Path) -> None:
+        _set_origin_head(tmp_git_repo, "develop")
+        dot_dir = tmp_git_repo / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text(
+            'base_branch = "trunk"\n', encoding="utf-8"
+        )
+        assert resolve_base_branch(tmp_git_repo) == "trunk"
+
+    def test_resolve_base_branch_from_origin_head_develop(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _set_origin_head(tmp_git_repo, "develop")
+        assert resolve_base_branch(tmp_git_repo) == "develop"
+
+    def test_resolve_base_branch_from_origin_head_master(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _set_origin_head(tmp_git_repo, "master")
+        assert resolve_base_branch(tmp_git_repo) == "master"
+
+    def test_resolve_base_branch_missing_origin_head_is_main(
+        self, tmp_git_repo: Path
+    ) -> None:
+        assert resolve_base_branch(tmp_git_repo) == "main"
+
     def test_resolve_base_branch_default(self, tmp_path: Path) -> None:
         assert resolve_base_branch(tmp_path) == "main"
+
+    def test_resolve_agent_export_mode_from_toml(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text(
+            'agent_export_mode = "global"\n', encoding="utf-8"
+        )
+        assert resolve_agent_export_mode(tmp_path) == "global"
+
+    def test_resolve_agent_export_mode_default(self, tmp_path: Path) -> None:
+        assert resolve_agent_export_mode(tmp_path) == "local"
 
     def test_config_claim_remote_field_default(self) -> None:
         config = DeviateConfig()
