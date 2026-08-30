@@ -35,17 +35,19 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
   — 25 flat `.md` files total in the Factory install; 24 in every other agent
   `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land only in the
-  agent directories resolved by `_resolve_install_agents`: when `--agent` is
-  given, exactly that agent directory — `.claude/commands/`, `.opencode/commands/`,
+  one agent directory resolved by `_resolve_install_agents` (always a
+  one-element list): `.claude/commands/`, `.opencode/commands/`,
   `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/`, or Codex skills under
-  `.agents/skills/<name>/SKILL.md`; when
-  omitted, exactly the installed-agent directories returned by `detect_agents`
-  (`src/deviate/core/commands.py`). An unknown or declared-but-uninstalled
-  `--agent` fails closed with `AGENT_NOT_INSTALLED` and writes nothing. Each
-  command is a flat `<name>.md` file (or a Codex `SKILL.md`) with a minimal YAML
-  frontmatter (`name:` + `description:`). The agent selected via `--agent`
+  `.agents/skills/<name>/SKILL.md`. Leftover agent directories are never
+  re-sprayed. `--agent <name>` pins that target without prompting. On a TTY,
+  omitted `--agent` always shows a Rich `Prompt.ask` menu of `AGENT_CHOICES`
+  (existing `[agent].backend` is the default highlight, not an auto-skip).
+  Non-TTY without `--agent` reuses a persisted backend or fail-closes with
+  `NO_AGENT_SELECTED`. An unknown `--agent` fails closed and writes nothing.
+  Each command is a flat `<name>.md` file (or a Codex `SKILL.md`) with a
+  minimal YAML frontmatter (`name:` + `description:`). The selected agent
   (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`, `codex`) is persisted
-  to `[agent].backend` in `config.toml` and selects the install target.
+  to `[agent].backend` in `config.toml` and is the sole install target.
   `--agent codex` additionally seeds `[models].default = "gpt-5.6-luna"` and
   `[agent].reasoning_effort = "high"` when those keys are missing or empty; a
   user-set `[models].default` or `[agent].reasoning_effort` is left untouched.
@@ -96,10 +98,19 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   duplicates rules), preserves user-authored `.gitattributes` content,
   and stages the file via `deviate init post` alongside the other
   scaffolded artifacts.
-* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi|omp|codex]` to override
-  the persisted backend. If omitted, the persisted value is reused; if no persisted value exists and
-  the session is interactive, a Rich `Prompt.ask` menu is shown. In non-interactive mode
-  the command halts with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
+* **Agent Selection:** Accepts `--agent [claude|opencode|droid|factory|pi|omp|codex]` to pin
+  the install target and persisted backend without prompting. On a TTY, omitted `--agent`
+  always shows a Rich `Prompt.ask` menu of `AGENT_CHOICES` (existing `[agent].backend` is
+  the default highlight, not an auto-skip). Non-TTY without `--agent` reuses a persisted
+  backend or fail-closes with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
+  Install is always exactly one agent; leftover `.claude/` / `.opencode/` / … dirs are
+  never a fan-out target.
+* **Optional pack selection:** `--packs none|all-optional|<comma-separated names>` selects
+  optional command packs for scripts. On a TTY, omitted `--packs` shows a Rich selector
+  that lists every optional pack (`merge`, `pr`, `review`, `walkthrough`, `html`,
+  `hotfix`, `triage`, `prune`, `e2e`) plus `none` / `all-optional`. Default is `none`
+  (default layer packs only). Non-interactive sessions skip the prompt and install
+  default-only.
 * **Execution Modes:**
   * **Offline Mode (Default):** `_scaffold_constitution()` writes
     `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`. The
@@ -118,7 +129,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `${VARIABLE}` resolver described in earlier revisions of this spec has been removed.
 * **Input Parameters:**
   * `--agent-export-mode [local|global]` (Defaults to `local`)
-  * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Override persisted backend)
+  * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Pin install target and persisted backend)
+  * `--packs none|all-optional|<comma-separated optional names>` (Scripted optional-pack
+    selection; omitted on a TTY shows the pack selector, default `none`)
   * `--libref` (Force-enable `libref` CLI integration; merges `use_libref = true` into
     `config.toml`)
   * `--claim-remote` (Enable push-as-lock; merges `claim_remote = true` into
@@ -167,15 +180,11 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `_install_commands_to_agents(...)`. Idempotent (content-equality skip
   mirrors `install_command`'s contract).
 * **Install targets (resolved install agents):** the skill is written
-  to `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for each agent in the
-  resolved install set (see `_resolve_install_agents`), which with
-  `--agent <name>` targets only that agent and without `--agent` targets
-  exactly the agents `detect_agents` reports as installed — rather than
-  every platform that `setup` provisions commands for. Mirrors
-  `_install_commands_to_agents`'s resolved-agent policy — the operator
-  gets the skill at the canonical skills directory for each targeted
-  agent. An unknown or declared-but-uninstalled `--agent` fails closed
-  with `AGENT_NOT_INSTALLED`.
+  to `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for the single agent
+  in `_resolve_install_agents` — always a one-element list of the
+  `--agent` pin or the TTY/persisted selection. Leftover agent
+  directories are never a fan-out target. Mirrors
+  `_install_commands_to_agents`. An unknown `--agent` fails closed.
   * `claude` -> `<workdir>/.claude/skills/deviatdd/SKILL.md`
     (verified — same form as user-level `~/.claude/skills/<name>/SKILL.md`).
   * `opencode` -> `<workdir>/.opencode/skills/deviatdd/SKILL.md`
@@ -254,7 +263,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 * **Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py` and
   `TestSetupSelectedAgentIsolation` / `TestSetupCodex` /
   `TestSetupPerAgentInstall` in `tests/test_cli/test_setup.py` cover
-  selected-agent-only install and auto-detect, Codex skills +
+  selected-agent-only install (TTY pick / `--agent` pin; leftover dirs are not sprayed), Codex skills +
   `backend = "codex"`, Luna + `reasoning_effort = "high"` upsert
   (fresh, existing, no-clobber),
   idempotence, gitignore entry presence + idempotence, safety-gate

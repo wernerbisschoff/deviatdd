@@ -5,10 +5,9 @@
 #
 #   1. AC-PLAN-002 — `setup --agent opencode` installs commands and
 #      skills only under `.opencode/`, prints INSTALL, exits 0.
-#   2. AC-PLAN-003 — `setup` with no --agent auto-detects installed
-#      agents and targets exactly those directories.
-#   3. AC-PLAN-004 — setup fails closed on an uninstalled agent
-#      without any partial install.
+#   2. Bare `setup` with leftover agent dirs does not spray — non-TTY
+#      fail-closes with NO_AGENT_SELECTED.
+#   3. `--agent factory` pins factory even when leftover dirs exist.
 #   4. AC-PLAN-001 — setup provisions a root ignore entry so
 #      `git check-ignore .deviate/` resolves and `.deviate/` never
 #      appears as an untracked candidate.
@@ -54,34 +53,28 @@ _deviate() {
     [ -z "$(find .claude \( -name 'deviate-*' -o -name 'deviatdd' \) 2>/dev/null)" ]
 }
 
-@test "setup with no --agent auto-detects exactly the installed agents" {
+@test "setup with no --agent does not spray leftover agent dirs" {
     mkdir .claude .opencode
 
     run _deviate setup
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"INSTALL"* ]]
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"NO_AGENT_SELECTED"* ]]
 
-    # Both detected agents receive command files...
-    [ -f .claude/commands/deviate-red.md ]
-    [ -f .opencode/commands/deviate-red.md ]
-    # ...and skills land under both detected agents.
-    [ -f .claude/skills/deviatdd/SKILL.md ]
-    [ -f .opencode/skills/deviatdd/SKILL.md ]
-
-    # Undetected agent directories were never created by setup.
-    [ ! -d .factory ]
-    [ ! -d .pi ]
-    [ ! -d .omp ]
+    [ ! -f .claude/commands/deviate-red.md ]
+    [ ! -f .opencode/commands/deviate-red.md ]
+    [ ! -f .claude/skills/deviatdd/SKILL.md ]
+    [ ! -f .opencode/skills/deviatdd/SKILL.md ]
 }
 
-@test "setup fails closed on an uninstalled agent without partial install" {
+@test "setup --agent factory pins factory despite leftover dirs" {
     mkdir .claude .opencode
 
     run _deviate setup --agent factory
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"AGENT_NOT_INSTALLED"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"INSTALL"* ]]
 
-    # No partial install: no command or skill files anywhere.
+    [ -f .factory/commands/deviate-red.md ]
+    [ -f .factory/skills/deviatdd/SKILL.md ]
     [ -z "$(find .claude .opencode \( -name 'deviate-*' -o -name 'SKILL.md' \) 2>/dev/null)" ]
 }
 
