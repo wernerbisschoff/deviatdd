@@ -571,3 +571,18 @@
   3. AC-ADHOC-035-03 / AO-035-03: Both remain optional packs (`walkthrough`, `review`). Default setup still does not install them. No new pack names. Do not add `pr-review` or `/deviate-pr-review`.
   4. AC-ADHOC-035-04 / AO-035-04: Tests pin via CLI output/files (not prompt-body greps): default review path has no apply/commit; `--apply` applies CRITICAL only; incomplete brief → `brief incomplete`; walkthrough `pre` emits the four map fields. Always-on auto-apply fail-close tests are rewritten. API + architecture + CHANGELOG land in the same implementation commit.
 
+## FR-ADHOC-036: CLI Help and README Phase Transparency
+
+- **Description**: README and Typer `--help` make it obvious which phases commit, spawn an agent, or fail closed — including RED `--no-verify`, Codex spawn argv, `pre`/`post`, `--profile fast` skipping JUDGE and REFACTOR, and `micro run --review` as a TTY pause (not `/deviate-review`) — without dumping the operator transparency note and without fighting ISS-ADH-035.
+- **Preconditions**: Current main is #134 (default setup = macro+meso+micro). ISS-ADH-035 / PR #135 is open (walkthrough four-look + comments-only review). PyPI 2.23.1 still installs all slash files and auto-applies CRITICAL+SUGGESTION — that is not current main. `claim_remote` defaults false.
+- **Inputs/Outputs**: Input — existing README Workflow/Quickstart rows and Typer help on `setup`, `meso run`, `micro run`. Output — short per-phase transparency table, few-line help strings, a small `--help` pin test, `CHANGELOG.md` `[Unreleased]`, this FR, and one BACKLOG ledger row.
+- **Flow Refs**: `[]`
+- **User Stories**:
+  1. US-036-01: As a coworker on a consumer repo, I want `deviate --help` and the README to say which phases commit, spawn an agent, or fail closed so I can run Path A without reading prompts. *(Ref: FR-ADHOC-036)*
+  2. US-036-02: As a coworker, I want `--profile fast` and `--review` help to name what they skip or pause so I do not confuse them with JUDGE or `/deviate-review`. *(Ref: FR-ADHOC-036)*
+  3. US-036-03: As a coworker, I want default packs, `claim_remote` false, `--no-setup --local`, and comments-only `/deviate-review` documented as current main — not PyPI 2.23.1. *(Ref: FR-ADHOC-036)*
+- **Acceptance Outline** (implementation-independent; no Gherkin in the issue file):
+  1. AC-ADHOC-036-01 / AO-036-01: README names setup, adhoc, meso, micro, review, walkthrough with does / commits / debug a fail, including spawn, fail-closed tokens, packs, worktrees, and `claim_remote` false.
+  2. AC-ADHOC-036-02 / AO-036-02: `micro run --help` states that `fast` skips JUDGE and that `--review` is a TTY pause, not `/deviate-review`.
+  3. AC-ADHOC-036-03 / AO-036-03: `/deviate-review` is comments-only default (not a merge gate). `/deviate-walkthrough` is the four-look map. Gate 3 prompt bodies and #135 stay untouched.
+

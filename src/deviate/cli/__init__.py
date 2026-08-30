@@ -1136,13 +1136,21 @@ def setup(
         None,
         "--packs",
         help=(
-            "Optional command packs to install on top of the default "
-            "macro+meso+micro set. Comma-separated names, "
-            "'none', or 'all-optional'."
+            "Optional packs on top of default macro+meso+micro "
+            "(product, merge, pr, review, walkthrough, html, hotfix, "
+            "triage, prune, e2e). 'none', 'all-optional', or "
+            "comma-separated names. Unknown names fail closed. "
+            "Setup does not commit."
         ),
     ),
 ) -> None:
-    """Bootstrap a new project with DeviaTDD (start here)."""
+    """Bootstrap a new project with DeviaTDD (start here).
+
+    Writes ``.deviate/`` and installs default packs (macro+meso+micro)
+    plus the shared ``deviatdd`` skill. Does not commit.
+    Non-TTY without ``--agent`` fails closed with ``NO_AGENT_SELECTED``;
+    unknown ``--packs`` fails closed. ``claim_remote`` defaults to false.
+    """
     workdir = Path.cwd()
     config_path = workdir / ".deviate" / "config.toml"
 
@@ -1415,7 +1423,7 @@ cli.add_typer(
     adhoc_app,
     name="adhoc",
     rich_help_panel=_AGENT_PANEL,
-    help="Macro: low/medium-complexity shortcut",
+    help="Macro: low/medium-complexity shortcut (post commits artifacts; stays BACKLOG)",
 )
 cli.add_typer(
     constitution_app,
@@ -1433,7 +1441,7 @@ cli.add_typer(
     review_app,
     name="review",
     rich_help_panel=_AGENT_PANEL,
-    help="Gate 3 review: comments by default; --apply is CRITICAL-only",
+    help="Gate 3 comments-only PR scan; --apply is CRITICAL-only (not a merge gate)",
 )
 cli.add_typer(
     prune_app,
@@ -1445,7 +1453,7 @@ cli.add_typer(
     walkthrough_app,
     name="walkthrough",
     rich_help_panel=_AGENT_PANEL,
-    help="Four-look map of this issue's brief, tests, and named checks",
+    help="Four-look map: brief, tests, production vs checks, command (optional pack)",
 )
 
 
@@ -1466,13 +1474,13 @@ cli.add_typer(
     meso_app,
     name="meso",
     rich_help_panel=_USER_PANEL,
-    help="Use `deviate meso run` to run the automated setup → plan → tasks pipeline",
+    help="Use `deviate meso run` to run the automated setup → plan → tasks pipeline (spawns agent; post commits)",
 )
 cli.add_typer(
     micro_app,
     name="micro",
     rich_help_panel=_USER_PANEL,
-    help="Drain the task queue (single or --all) inside a worktree — `deviate micro run --all` is the user-facing micro drain",
+    help="Drain the task queue (single or --all) inside a worktree — `deviate micro run --all` is the user-facing micro drain (each phase commits; spawns agent)",
 )
 cli.add_typer(
     html_app,
@@ -1510,7 +1518,9 @@ def run_command(
     Runs the meso pipeline (SPECIFY setup → PLAN → TASKS) inside the created
     worktree, then immediately chains into ``deviate micro run --all`` to drain
     the task queue. There is no human-approval step between meso and micro —
-    the system auto-advances.
+    the system auto-advances. Nested spawn + phase commits (same as
+    ``meso run`` then ``micro run --all``). ``claim_remote`` defaults false;
+    ``--local`` skips the remote lock.
 
     The per-task / ``--all`` dispatcher can also be invoked directly via
     ``deviate micro run`` if you only want to drain pending tasks without
