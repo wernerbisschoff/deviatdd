@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from deviate.cli import (
     _optional_pack_prompt_choices,
     _packs_from_selector_picks,
+    _prompt_agent_selection,
     _prompt_pack_selection,
     _resolve_install_agents,
     cli,
@@ -520,6 +521,70 @@ class TestSetupPerAgentInstall:
         assert not (
             tmp_path / ".opencode" / "skills" / "deviatdd" / "SKILL.md"
         ).exists()
+
+    def test_tty_setup_existing_config_empty_dirs_prompts_and_installs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Config present + no agent dirs: TTY still picks one agent and installs it.
+
+        Werner repro: delete ``.claude`` / ``.factory`` / ``.omp`` /
+        ``.opencode`` / ``.pi``, keep ``.deviate/config.toml``, run bare
+        ``deviate setup``. Empty ``detect_agents`` must not skip the
+        picker or install zero command files.
+        """
+        from deviate.core.commands import detect_agents
+
+        (tmp_path / ".deviate").mkdir()
+        (tmp_path / ".deviate" / "config.toml").write_text(
+            '[agent]\nbackend = "pi"\n', encoding="utf-8"
+        )
+        assert detect_agents(tmp_path) == []
+
+        captured: dict[str, dict[str, object]] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured[str(message)] = kwargs
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup"])
+        assert result.exit_code == 0, result.output
+        assert "Select agent platform" in captured
+        agent_kwargs = captured["Select agent platform"]
+        assert agent_kwargs.get("default") == "pi"
+        assert "pi" in agent_kwargs.get("choices", [])
+        pack_kwargs = captured["Optional command packs"]
+        assert pack_kwargs.get("default") == "none"
+        assert "merge" in pack_kwargs.get("choices", [])
+        assert "prune" in pack_kwargs.get("choices", [])
+        assert "all-optional" in pack_kwargs.get("choices", [])
+        assert "INSTALL" in result.output.upper()
+        assert (tmp_path / ".pi" / "prompts" / "deviate-red.md").is_file()
+        assert (tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        for leftover in (".claude", ".factory", ".omp", ".opencode"):
+            assert not (tmp_path / leftover / "commands" / "deviate-red.md").exists()
+            assert not (tmp_path / leftover / "prompts" / "deviate-red.md").exists()
+
+    def test_prompt_agent_selection_defaults_to_existing_backend(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config = tmp_path / ".deviate" / "config.toml"
+        config.parent.mkdir()
+        config.write_text('[agent]\nbackend = "pi"\n', encoding="utf-8")
+        captured: dict[str, object] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        assert _prompt_agent_selection(tmp_path, config) == "pi"
+        assert captured.get("default") == "pi"
+        assert "pi" in captured.get("choices", [])
 
     def test_agent_flag_pins_despite_leftover_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

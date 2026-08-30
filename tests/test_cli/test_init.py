@@ -887,7 +887,11 @@ class TestInitAgentFlag:
             assert "NO_AGENT_SELECTED" in result.output
 
     def test_init_no_agent_uses_existing_config(self, tmp_path: Path):
-        """Without `--agent` but with a pre-populated ``[agent].backend``, init uses it."""
+        """Without `--agent` but with a pre-populated ``[agent].backend``, init uses it.
+
+        Empty on-disk agent dirs must not install zero files — the persisted
+        backend is the install target.
+        """
         with chdir(tmp_path):
             dot_dir = tmp_path / ".deviate"
             dot_dir.mkdir()
@@ -899,6 +903,8 @@ class TestInitAgentFlag:
             assert result.exit_code == 0, result.output
             parsed = tomllib.loads((dot_dir / "config.toml").read_text())
             assert parsed["agent"]["backend"] == "claude"
+            assert (tmp_path / ".claude" / "commands" / "deviate-red.md").is_file()
+            assert "INSTALL" in result.output.upper()
 
     def test_init_interactive_prompt_writes_choice_to_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

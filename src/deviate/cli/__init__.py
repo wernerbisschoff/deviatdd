@@ -707,8 +707,10 @@ def _resolve_install_agents(selected_agent: str) -> list[str]:
     """Return exactly one install target.
 
     Never consults ``detect_agents`` or leftover agent directories.
-    ``--agent`` and the TTY picker resolve a single name first; this
-    helper only wraps that name as the install list.
+    An empty on-disk agent set is not a reason to install nothing —
+    setup creates the selected agent's tree. ``--agent`` and the TTY
+    picker resolve a single name first; this helper only wraps that
+    name as the install list.
     """
     return [selected_agent]
 
