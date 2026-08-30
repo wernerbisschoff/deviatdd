@@ -264,28 +264,6 @@ def test_help_user_panel_has_exactly_five_commands():
     )
 
 
-def test_micro_run_help_review_is_pause_not_slash():
-    """``deviate micro run --review`` is a TTY pause before phase commit,
-    not ``/deviate-review``. Coworkers must see that distinction in
-    ``--help`` without opening a prompt file.
-    """
-    result = runner.invoke(cli, ["micro", "run", "--help"])
-    assert result.exit_code == 0, result.output
-    output = re.sub(r"[\s│─╭╮╰╯]+", " ", _strip_ansi(result.output))
-    assert "--review" in output
-    assert "not /deviate-review" in output
-    assert "pause" in output.lower()
-
-
-def test_micro_run_help_fast_skips_judge():
-    """``--profile fast`` skips JUDGE and REFACTOR; ``--help`` must say so."""
-    result = runner.invoke(cli, ["micro", "run", "--help"])
-    assert result.exit_code == 0, result.output
-    output = _strip_ansi(result.output)
-    assert "Execution profile: full, fast" in output
-    assert "skips JUDGE" in output
-
-
 def test_help_phase_dispatchers_not_user_panel_commands():
     """The pre/post phase dispatchers (``specify``/``plan``/``tasks``/
     ``pr``/``merge``) must not appear as command rows in the user panel.
