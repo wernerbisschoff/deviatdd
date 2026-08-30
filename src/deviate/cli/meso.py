@@ -2075,7 +2075,9 @@ def meso_run_command(
         help=(
             "Skip the SPECIFY step (worktree + ledger claim). PLAN and TASKS run "
             "in the current directory; _plan_post / _tasks_post will commit to "
-            "the currently checked-out branch. Bypasses Git Isolation Principle."
+            "the currently checked-out branch. Pair with --local to stay in this "
+            "clone and skip the remote lock (Path A coworker flow). "
+            "Bypasses Git Isolation Principle."
         ),
     ),
     local: bool = typer.Option(
@@ -2084,7 +2086,12 @@ def meso_run_command(
         help=_LOCAL_CLAIM_HELP,
     ),
 ) -> None:
-    """Run the meso automated pipeline (setup → plan → tasks)"""
+    """Run the meso automated pipeline (setup → plan → tasks).
+
+    Default: worktree + claim, then spawn the agent for PLAN/TASKS.
+    post scripts commit. ``--no-setup --local`` stays in this clone and
+    skips the remote lock (Path A coworker flow).
+    """
     _meso_run(
         issue_id=issue,
         dry_run=dry_run,
