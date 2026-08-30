@@ -31,7 +31,6 @@ def discover_commands(commands_root: Path | None = None) -> list[str]:
 
 
 DEFAULT_LAYER_PACKS: dict[str, tuple[str, ...]] = {
-    "product": ("deviate-flows", "deviate-architecture", "deviate-release"),
     "macro": (
         "deviate-explore",
         "deviate-research",
@@ -51,6 +50,7 @@ DEFAULT_LAYER_PACKS: dict[str, tuple[str, ...]] = {
     ),
 }
 OPTIONAL_PACKS: dict[str, tuple[str, ...]] = {
+    "product": ("deviate-flows", "deviate-architecture", "deviate-release"),
     "merge": ("deviate-merge",),
     "pr": ("deviate-pr",),
     "review": ("deviate-review",),
@@ -61,7 +61,7 @@ OPTIONAL_PACKS: dict[str, tuple[str, ...]] = {
     "prune": ("deviate-prune",),
     "e2e": ("deviate-e2e",),
 }
-DEFAULT_PACK_NAMES: tuple[str, ...] = ("product", "macro", "meso", "micro")
+DEFAULT_PACK_NAMES: tuple[str, ...] = ("macro", "meso", "micro")
 OPTIONAL_PACK_NAMES: tuple[str, ...] = tuple(OPTIONAL_PACKS)
 
 

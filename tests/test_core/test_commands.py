@@ -5,6 +5,10 @@ from pathlib import Path
 import yaml
 
 from deviate.core.commands import (
+    DEFAULT_LAYER_PACKS,
+    DEFAULT_PACK_NAMES,
+    OPTIONAL_PACK_NAMES,
+    OPTIONAL_PACKS,
     UnknownPackError,
     classify_packaged_stems,
     commands_for_packs,
@@ -639,19 +643,47 @@ class TestManualDerivationFromAutoCore:
         assert (target / "deviate-red.md").read_text(encoding="utf-8") == first
 
 
+_PRODUCT_BUNDLE = ("deviate-flows", "deviate-architecture", "deviate-release")
+
+
 class TestCommandPacks:
     def test_every_packaged_stem_is_classified(self) -> None:
         assert classify_packaged_stems() == []
 
-    def test_default_packs_include_red_not_pr(self) -> None:
+    def test_default_packs_are_execution_layers_only(self) -> None:
+        assert DEFAULT_PACK_NAMES == ("macro", "meso", "micro")
+        assert tuple(DEFAULT_LAYER_PACKS) == ("macro", "meso", "micro")
+        assert "product" not in DEFAULT_LAYER_PACKS
+        assert "deviate-init" in DEFAULT_LAYER_PACKS["macro"]
+
+    def test_product_is_optional_bundle(self) -> None:
+        assert OPTIONAL_PACKS["product"] == _PRODUCT_BUNDLE
+        assert OPTIONAL_PACK_NAMES[0] == "product"
         stems = commands_for_packs()
         assert "deviate-red" in stems
+        assert "deviate-explore" in stems
+        assert "deviate-plan" in stems
+        assert "deviate-init" in stems
         assert "deviate-pr" not in stems
+        for stem in _PRODUCT_BUNDLE:
+            assert stem not in stems
+
+    def test_commands_for_packs_product_writes_all_three(self) -> None:
+        stems = commands_for_packs(("product",))
+        for stem in _PRODUCT_BUNDLE:
+            assert stem in stems
+        assert "deviate-pr" not in stems
+        assert "deviate-merge" not in stems
 
     def test_parse_optional_packs_names(self) -> None:
         assert parse_optional_packs("none") == ()
         assert parse_optional_packs("pr,review") == ("pr", "review")
-        assert "pr" in parse_optional_packs("all-optional")
+        assert parse_optional_packs("product") == ("product",)
+        assert parse_optional_packs("merge,pr") == ("merge", "pr")
+        all_optional = parse_optional_packs("all-optional")
+        assert "product" in all_optional
+        assert "pr" in all_optional
+        assert all_optional[0] == "product"
 
     def test_parse_unknown_pack_raises(self) -> None:
         try:

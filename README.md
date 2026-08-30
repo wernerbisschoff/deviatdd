@@ -198,7 +198,7 @@ style Ex fill:#f5e1e1
 
 | Phase | Slash command | Artifact committed | What the human reviews / decides |
 |-------|---------------|--------------------|----------------------------------|
-| **Bootstrap · Setup** | `deviate setup [--agent <name>]` | `.deviate/config.toml`, default packs (including `deviate-init`), shared `deviatdd` skill, selected-agent `/deviate-*` commands | Confirm the one agent install. TTY always shows the agent selector (existing backend is the default highlight) and an optional-pack selector (default none). |
+| **Bootstrap · Setup** | `deviate setup [--agent <name>]` | `.deviate/config.toml`, default execution-layer packs (macro + meso + micro, including `deviate-init`), shared `deviatdd` skill, selected-agent `/deviate-*` commands | Confirm the one agent install. TTY always shows the agent selector (existing backend is the default highlight) and an optional-pack selector (`product` first among named packs; default none). |
 | **Bootstrap · Init** | `/deviate-init` | `specs/constitution.md`, `mise.toml`, `specs/issues.jsonl` (skips files already present) | **First prompt after setup.** Codex: the `deviate-init` skill. No-op if the repo is already scaffolded. |
 | **Product · Flows** | `/deviate-flows` | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Confirm the actor, job-to-be-done, and trigger are right; commit the flow file when asked. |
 | **Product · Architecture** | `/deviate-architecture` | `specs/_product/architecture.md`, `specs/_product/domain-model.md` | Reads existing flows; classify the change as Local / Context-Bridging / Context-Creating; commit when satisfied. |
