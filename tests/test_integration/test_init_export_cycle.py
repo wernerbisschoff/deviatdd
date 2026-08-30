@@ -242,11 +242,11 @@ class TestFullInitCycle:
 class TestProductLayerSkillExportCycle:
     """TSK-010-06: full-cycle integration verification for Product-layer skills.
 
-    Verifies that ``deviate setup --agent {claude,opencode}`` installs the three
-    new Product-layer skills (``deviate-flows``, ``deviate-architecture``,
-    ``deviate-release``) into the agent-specific skills directory with source
-    frontmatter and body content preserved (per ``specs/_product/release-next.md:26``
-    acceptance criterion).
+    Verifies that ``deviate setup --agent {claude,opencode} --packs product``
+    installs the three Product-layer skills (``deviate-flows``,
+    ``deviate-architecture``, ``deviate-release``) into the agent-specific
+    commands directory with source frontmatter and body content preserved
+    (per ``specs/_product/release-next.md:26`` acceptance criterion).
     """
 
     def test_init_export_cycle_installs_product_layer_skills_claude(
@@ -263,7 +263,9 @@ class TestProductLayerSkillExportCycle:
 
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "claude", "--libref"])
+            result = runner.invoke(
+                cli, ["setup", "--agent", "claude", "--libref", "--packs", "product"]
+            )
             assert result.exit_code == 0, result.output
 
             commands_root = _resolve_commands_root()
@@ -286,7 +288,9 @@ class TestProductLayerSkillExportCycle:
 
         with chdir(tmp_path):
             workdir = tmp_path
-            result = runner.invoke(cli, ["setup", "--agent", "opencode", "--libref"])
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--libref", "--packs", "product"]
+            )
             assert result.exit_code == 0, result.output
 
             commands_root = _resolve_commands_root()
@@ -311,7 +315,9 @@ class TestProductLayerSkillExportCycle:
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
         with chdir(tmp_path):
-            first = runner.invoke(cli, ["setup", "--agent", "claude"])
+            first = runner.invoke(
+                cli, ["setup", "--agent", "claude", "--packs", "product"]
+            )
             assert first.exit_code == 0, first.output
 
             for skill_name in _PRODUCT_LAYER_SKILLS:
@@ -320,11 +326,13 @@ class TestProductLayerSkillExportCycle:
                     f"first setup did not install {skill_name}: {installed}"
                 )
 
-            second = runner.invoke(cli, ["setup", "--agent", "claude"])
+            second = runner.invoke(
+                cli, ["setup", "--agent", "claude", "--packs", "product"]
+            )
             assert second.exit_code == 0, second.output
 
-            # Output is aggregated per-agent: ``SKIP 32 commands → claude``.
-            # All Product-layer skills are part of those 32 commands; the
+            # Output is aggregated per-agent: ``SKIP N commands → claude``.
+            # Product-layer skills are part of that selected-pack set; the
             # per-skill log lines were retired to keep setup output readable.
             # File-presence is the canonical idempotency proof.
             for skill_name in _PRODUCT_LAYER_SKILLS:
