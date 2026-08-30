@@ -435,29 +435,42 @@ def _prompt_agent_selection(
     return selected
 
 
+def _parse_yes_no(raw: str | None) -> bool | None:
+    """Map ``y``/``yes`` → True, ``n``/``no`` → False (strip, case-insensitive)."""
+    if raw is None:
+        return None
+    token = raw.strip().lower()
+    if token in {"y", "yes"}:
+        return True
+    if token in {"n", "no"}:
+        return False
+    return None
+
+
 def _prompt_claim_remote(default: bool = False) -> bool | None:
     """Ask whether to push claim branches as a remote lock.
 
     Returns ``False`` when the operator disables push-as-lock,
     ``True`` when they enable it, and ``None`` when the session is not
     interactive so the caller keeps the existing or false default.
-    ``default`` is the highlight: ``yes`` when the file already has
-    ``claim_remote = true``, otherwise ``no``.
+    ``default`` is the highlight: ``y`` when the file already has
+    ``claim_remote = true``, otherwise ``n``. Accepts ``y``/``n``/``yes``/``no``.
     """
     if not is_interactive():
         return None
+    default_label = "y" if default else "n"
     try:
-        selected = Prompt.ask(
-            "Push claim branches to the remote as a lock",
-            choices=["yes", "no"],
-            default="yes" if default else "no",
-            console=console,
-        )
+        while True:
+            selected = Prompt.ask(
+                "Push claim branches to the remote as a lock [y/n]",
+                default=default_label,
+                console=console,
+            )
+            parsed = _parse_yes_no(selected)
+            if parsed is not None:
+                return parsed
     except (EOFError, KeyboardInterrupt):
         return None
-    if selected == "yes":
-        return True
-    return False
 
 
 def _optional_pack_rows() -> tuple[str, ...]:

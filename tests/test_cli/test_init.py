@@ -584,7 +584,7 @@ class TestSetupClaimRemoteFlag:
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
         assert _prompt_claim_remote() is False
-        assert captured.get("default") == "no"
+        assert captured.get("default") == "n"
 
     def test_tty_rerun_existing_true_defaults_yes_and_writes_true(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -614,7 +614,7 @@ class TestSetupClaimRemoteFlag:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
-        assert captured.get("default") == "yes"
+        assert captured.get("default") == "y"
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert parsed["claim_remote"] is True
         assert parsed["timeout_seconds"] == 999
@@ -644,7 +644,7 @@ class TestSetupClaimRemoteFlag:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
-        assert captured.get("default") == "no"
+        assert captured.get("default") == "n"
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert parsed["claim_remote"] is False
         assert parsed["timeout_seconds"] == 888
@@ -701,6 +701,46 @@ class TestSetupClaimRemoteFlag:
             )
         assert result.exit_code == 0, result.output
         assert prompted["n"] == 0
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["claim_remote"] is False
+
+    def test_tty_y_writes_true(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mocked ask returning ``y`` writes ``claim_remote = true``."""
+        dot = tmp_git_repo / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            'claim_remote = false\n\n[agent]\nbackend = "pi"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", lambda *a, **k: "y")
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["claim_remote"] is True
+
+    def test_tty_n_writes_false(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mocked ask returning ``n`` writes ``claim_remote = false``."""
+        dot = tmp_git_repo / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            'claim_remote = true\n\n[agent]\nbackend = "pi"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", lambda *a, **k: "n")
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert parsed["claim_remote"] is False
 
