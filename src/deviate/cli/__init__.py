@@ -52,6 +52,7 @@ from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_bac
 from deviate.core.commands import (
     UnknownPackError,
     commands_for_packs,
+    detect_agents,
     install_command,
     parse_optional_packs,
 )
@@ -643,6 +644,26 @@ def _validate_agent_choice(value: str | None) -> str | None:
     return value
 
 
+def _resolve_install_agents(agent: str | None, detected: list[str]) -> list[str]:
+    """Resolve the exact agent set that receives command/skill files.
+
+    ``--agent <name>`` targets only that agent and fails closed when the
+    named agent is declared-but-uninstalled. Omitting ``--agent`` targets
+    exactly the auto-detected installed agents.
+    """
+    if agent is None:
+        return detected
+    if detected and agent not in detected:
+        console.print(
+            f"[red]AGENT_NOT_INSTALLED[/] agent '{agent}' is declared but"
+            " not installed in this workspace. Detected agents:"
+            f" {', '.join(detected)}. Re-run `deviate setup --agent`"
+            " with a detected agent or install it first."
+        )
+        raise typer.Exit(code=1)
+    return [agent]
+
+
 def _insert_toml_root_line(content: str, line: str) -> str:
     """Insert a root-scope TOML assignment before the first ``[table]`` header."""
     if not line.endswith("\n"):
@@ -816,17 +837,6 @@ def _apply_governance(workdir: Path, use_libref: bool = False) -> None:
                 _upsert_governance_block(t, libref_content)
 
 
-def _normalize_install_agent(agent: str) -> str:
-    """Map a user-facing agent name to the install-directory identity.
-
-    ``droid`` and ``factory`` both write ``.factory/``. ``codex`` and
-    every other name pass through unchanged.
-    """
-    if agent == "droid":
-        return "factory"
-    return agent
-
-
 def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     """Resolve the slash-command directory for a given agent platform.
 
@@ -843,6 +853,14 @@ def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     if agent_name == "omp":
         return workdir / ".omp" / "prompts"
     return None
+
+
+def _skip_unknown_agent(agent: str, target_dir: Path | None) -> bool:
+    """Report and skip agents with no install directory."""
+    if target_dir is not None:
+        return False
+    console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
+    return True
 
 
 def _install_commands_to_agents(
@@ -867,8 +885,7 @@ def _install_commands_to_agents(
             )
             continue
         target_dir = _get_agent_command_dir(agent, workdir)
-        if target_dir is None:
-            console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
+        if _skip_unknown_agent(agent, target_dir):
             continue
         installed = 0
         skipped = 0
@@ -999,8 +1016,7 @@ def _install_deviatdd_skill(workdir: Path, agents: list[str]) -> None:
         return
     for agent in agents:
         target_dir = _get_agent_skill_dir(workdir, agent)
-        if target_dir is None:
-            console.print(f"  [yellow]SKIP[/] Unknown agent: {agent}")
+        if _skip_unknown_agent(agent, target_dir):
             continue
         target = target_dir / "deviatdd" / "SKILL.md"
         if target.exists() and target.read_text(encoding="utf-8") == body:
@@ -1074,11 +1090,16 @@ def setup(
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
+    detected = detect_agents(workdir)
+    install_agents = _resolve_install_agents(agent, detected)
+
     selected_agent: str | None = agent
     if selected_agent is None:
         existing_backend = _read_agent_backend_from_config(config_path)
         if existing_backend is not None:
             selected_agent = existing_backend
+        elif detected:
+            selected_agent = detected[0]
         else:
             selected_agent = _prompt_agent_selection(workdir, config_path)
             if selected_agent is None:
@@ -1115,9 +1136,10 @@ def setup(
 
     _apply_governance(workdir, use_libref=use_libref_val)
 
-    # Install commands + the packaged skill only for the selected agent.
-    # ``--agent`` (or the existing ``[agent].backend``, or the interactive
-    # prompt) is the install target as well as the meso/micro backend.
+    # Install commands + the packaged skill only for the targeted agents.
+    # ``--agent`` pins the target and persists ``[agent].backend``; omitted,
+    # setup targets exactly the agents ``detect_agents`` reports. Pack
+    # selection via ``--packs`` governs which command files are written.
     # ``droid`` is normalised to ``factory`` so both names write
     # ``.factory/``. Codex is a first-class backend that writes skills
     # under ``.agents/skills/`` (Codex CLI 0.117+ dropped custom prompts).
@@ -1125,16 +1147,15 @@ def setup(
     # remaining CLIs use ``commands/``. No global ``~/.pi/agent/`` writes,
     # no ``settings.json`` generation — the operator's Pi config is out of
     # scope.
-    install_agent = _normalize_install_agent(selected_agent)
     optional_packs = _resolve_setup_optional_packs(packs)
     command_names = commands_for_packs(optional_packs)
     _install_commands_to_agents(
         workdir,
-        [install_agent],
+        install_agents,
         command_names=command_names,
         use_libref=use_libref_val,
     )
-    _install_deviatdd_skill(workdir, [install_agent])
+    _install_deviatdd_skill(workdir, install_agents)
 
     _ensure_gitignore(workdir)
     _ensure_root_gitignore(workdir)
@@ -1206,13 +1227,14 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
 
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
-    artifacts and worktrees across all agent platforms.
-    Artifact families are installed and must not be committed:
+    artifacts and workspace state on all agent platforms.
+    Six entry groups must not be committed:
     - ``deviate-*`` commands under ``<agent>/commands/`` and
       ``<agent>/prompts/`` — the core DeviaTDD command library.
     - The ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
     - Codex per-command skills under ``.agents/skills/deviate-*/``.
     - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
+    - ``.deviate/`` — per-project runtime state and local config.
     """
     entries = (
         "*/commands/deviate-*.md",
@@ -1220,6 +1242,7 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         "*/skills/deviatdd/",
         "*/skills/deviate-*/",
         ".worktrees/",
+        ".deviate/",
     )
     gitignore_path = workdir / ".gitignore"
     if gitignore_path.exists():

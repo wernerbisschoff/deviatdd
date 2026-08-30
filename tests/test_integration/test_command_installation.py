@@ -38,6 +38,7 @@ class TestCommandInstallation:
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
         (tmp_path / ".claude").mkdir(parents=True)
+        (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
             # First install — all commands get composed (INSTALL expected)
             first = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -80,18 +81,27 @@ class TestCommandInstallation:
             assert "factory" in agents
             assert "omp" in agents
 
-    def test_agent_flag_overrides_detection(
+    def test_agent_flag_targets_exactly_that_agent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """US-006-INIT Scenario 2: --agent flag overrides auto-detection."""
+        """US-006-INIT Scenario 2: --agent flag targets exactly that agent.
+
+        With ``.opencode``/``.claude`` detected, ``--agent opencode``
+        installs commands only to opencode (AC-PLAN-002) and exits 0 with
+        ``INSTALL``.
+        """
         monkeypatch.setattr(
             "deviate.cli._get_agent_command_dir",
             lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
         )
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude").mkdir(parents=True)
+        (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0
+            assert (tmp_path / ".opencode" / "commands").exists()
+            assert "INSTALL" in result.output.upper()
+            assert not (tmp_path / ".claude" / "commands").exists()
 
     def test_contract_handoff_defaults_to_session_json(self, tmp_path: Path):
         """US-006-INIT Scenario 4: contract handoff defaults to .deviate/session.json."""

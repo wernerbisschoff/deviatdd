@@ -92,7 +92,3 @@ Prefer `libref query <lib> "<topic>"` over web fetching. Workflow: `libref list`
 ## 📝 Prompt Edit Discipline
 
 Edit skill/prompt templates in `src/deviate/prompts/` only. `~/.config/opencode/skills/` is a read-only install mirror.
-
-## 🌳 Graphite (when `graphite = true` in `.deviate/config.toml`)
-
-`gt create -am "msg"` (or `-m` if tree clean) → `gt submit --stack` → `gt sync`. Never mix `git checkout -b` with `gt`, never `gh pr create` when Graphite is on.

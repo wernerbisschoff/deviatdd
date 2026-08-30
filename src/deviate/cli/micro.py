@@ -58,6 +58,7 @@ from deviate.state.config import (
     PytestReportConfig,
     SessionState,
     _load_deviate_config_toml,
+    resolve_agent_deadline,
     resolve_phase_model,
     resolve_reasoning_effort,
 )
@@ -567,14 +568,12 @@ def _invoke_agent(
         prompt=prompt,
     )
     try:
-        timeout = _resolve_agent_timeout(Path.cwd())
         reasoning_effort = (
             resolve_reasoning_effort(Path.cwd()) if backend_name == "codex" else None
         )
         backend = AgentBackend(
             config=AgentConfig(
                 backend=backend_name,
-                timeout=timeout,
                 reasoning_effort=reasoning_effort,
             )
         )
@@ -589,6 +588,7 @@ def _invoke_agent(
 
         manifest = backend.invoke(
             prompt,
+            timeout=resolve_agent_deadline(Path.cwd()),
             output_callback=collecting_handler,
             model=model,
             stall_timeout=stall_timeout,
@@ -5712,25 +5712,6 @@ def _test_command_candidates(
     if _find_test_files(root):
         return [("pytest", root)]
     return []
-
-
-def _resolve_agent_timeout(root: Path) -> int:
-    """Return ``[agent].timeout`` from the worktree config, default 600.
-
-    Mirrors ``deviate meso run`` (``meso.py::_invoke_agent_phase``):
-    read ``.deviate/config.toml`` ``[agent].timeout``, fall back to the
-    ``AgentConfig`` default of 600 when the file, section, or key is
-    absent or the value is not a positive int. This is the agent-process
-    wall-clock, distinct from :func:`_resolve_test_timeout_seconds`.
-    """
-    data = _load_deviate_config_toml(root)
-    if isinstance(data, dict):
-        agent = data.get("agent", {})
-        if isinstance(agent, dict):
-            raw = agent.get("timeout", 600)
-            if isinstance(raw, int) and raw > 0:
-                return raw
-    return 600
 
 
 def _resolve_test_timeout_seconds(root: Path) -> int:

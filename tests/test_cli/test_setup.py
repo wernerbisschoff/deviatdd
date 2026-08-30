@@ -1,15 +1,18 @@
-from __future__ import annotations
-
+import subprocess
 import tomllib
 from contextlib import chdir
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.core.commands import commands_for_packs
 
+from tests.conftest import _git_env
+
 runner = CliRunner()
+
 
 _OTHER_AGENT_TREES = (
     ".claude",
@@ -59,14 +62,20 @@ class TestSetupSelectedAgentIsolation:
         _assert_only_agent_trees(tmp_path, ".factory")
         assert not (tmp_path / ".droid").exists()
 
-    def test_setup_droid_writes_factory_only(self, tmp_path: Path) -> None:
+    def test_setup_droid_is_backend_alias_without_install_dir(
+        self, tmp_path: Path
+    ) -> None:
+        """``--agent droid`` persists the backend and writes no install dir.
+
+        ``droid`` is a backend-only alias: it is not an installable agent
+        platform, so setup creates no ``.droid/`` or ``.factory/`` tree.
+        """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
             assert result.exit_code == 0, result.output
-        assert (tmp_path / ".factory" / "commands" / "deviate-red.md").is_file()
-        assert (tmp_path / ".factory" / "skills" / "deviatdd" / "SKILL.md").is_file()
-        _assert_only_agent_trees(tmp_path, ".factory")
         assert not (tmp_path / ".droid").exists()
+        assert not (tmp_path / ".factory").exists()
+        _assert_only_agent_trees(tmp_path)
 
 
 class TestSetupCodex:
@@ -366,3 +375,133 @@ class TestReadmeNewUserPath:
         )
         assert "specs/constitution.md" not in bootstrap
         assert "/deviate-init" in readme
+
+
+runner = CliRunner()
+
+ACTIVE_AGENTS = ("claude", "opencode", "factory", "pi", "omp")
+
+
+def _mock_agent_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route command and skill installs into the isolated temp tree."""
+    monkeypatch.setattr(
+        "deviate.cli._get_agent_command_dir",
+        lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
+    )
+    monkeypatch.setattr(
+        "deviate.cli._get_agent_skill_dir",
+        lambda _workdir, agent: tmp_path / f".{agent}" / "skills",
+    )
+
+
+def _installed_files(root: Path, subdir: str) -> list[Path]:
+    """Return the command/skill files written under ``root/.<agent>/<subdir>``."""
+    target = root / subdir
+    if not target.exists():
+        return []
+    return [p for p in target.rglob("deviate-*.md")] + [
+        p for p in target.rglob("SKILL.md")
+    ]
+
+
+class TestSetupPerAgentInstall:
+    """AC-PLAN-002/003: per-agent install and auto-detect in ``deviate setup``."""
+
+    def test_setup_single_agent_only(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """``setup --agent opencode`` writes only under the opencode agent dir."""
+        _mock_agent_dirs(tmp_path, monkeypatch)
+        (tmp_path / ".claude").mkdir(parents=True)
+        (tmp_path / ".opencode").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0
+            assert "INSTALL" in result.output.upper()
+            assert _installed_files(tmp_path, ".opencode/commands")
+            assert _installed_files(tmp_path, ".opencode/skills")
+            for agent in ACTIVE_AGENTS:
+                if agent == "opencode":
+                    continue
+                assert not _installed_files(tmp_path, f".{agent}/commands")
+                assert not _installed_files(tmp_path, f".{agent}/skills")
+
+    def test_setup_auto_detect_installed_agents(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """``setup`` with no ``--agent`` targets exactly the detected agents."""
+        _mock_agent_dirs(tmp_path, monkeypatch)
+        (tmp_path / ".claude").mkdir(parents=True)
+        (tmp_path / ".opencode").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup"])
+            assert result.exit_code == 0
+            for agent in ("claude", "opencode"):
+                assert _installed_files(tmp_path, f".{agent}/commands")
+                assert _installed_files(tmp_path, f".{agent}/skills")
+            for agent in ("factory", "pi", "omp"):
+                assert not _installed_files(tmp_path, f".{agent}/commands")
+                assert not _installed_files(tmp_path, f".{agent}/skills")
+
+    def test_setup_uninstalled_agent_fails_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A declared-but-not-installed agent fails and writes nothing."""
+        _mock_agent_dirs(tmp_path, monkeypatch)
+        (tmp_path / ".claude").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code != 0
+            for agent in ACTIVE_AGENTS:
+                assert not _installed_files(tmp_path, f".{agent}/commands")
+                assert not _installed_files(tmp_path, f".{agent}/skills")
+
+    def test_setup_unknown_agent_fails_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A name outside ``AGENT_CHOICES`` fails without partial install."""
+        _mock_agent_dirs(tmp_path, monkeypatch)
+        (tmp_path / ".claude").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "not-an-agent"])
+            assert result.exit_code != 0
+            for agent in ACTIVE_AGENTS:
+                assert not _installed_files(tmp_path, f".{agent}/commands")
+                assert not _installed_files(tmp_path, f".{agent}/skills")
+
+
+class TestSetupGitignoreDotdeviate:
+    """AC-PLAN-001: ``deviate setup`` git-ignores ``.deviate/`` by default."""
+
+    def test_setup_gitignores_dotdeviate(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """After setup, ``git check-ignore .deviate/`` resolves and the
+        directory never appears as an untracked git status candidate."""
+        _mock_agent_dirs(tmp_git_repo, monkeypatch)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0
+            assert "INSTALL" in result.output.upper()
+
+        check = subprocess.run(
+            ["git", "check-ignore", ".deviate/"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+        )
+        assert check.returncode == 0, (
+            "AC-PLAN-001: setup must provision an ignore rule resolving "
+            f".deviate/; stderr={check.stderr.strip()!r}"
+        )
+        assert check.stdout.strip() == ".deviate/"
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+        )
+        assert "?? .deviate" not in status.stdout, status.stdout

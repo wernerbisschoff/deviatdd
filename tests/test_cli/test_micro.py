@@ -5441,12 +5441,15 @@ class TestGreenStallHarnessSurface:
 
 
 class TestInvokeAgentConfigTimeout:
-    """GH-87: micro phase agents honor ``[agent].timeout`` from config.toml."""
+    """GH-87 / AC-PLAN-005 (ISS-ADH-030): ``_invoke_agent`` builds
+    ``AgentConfig`` without a ``timeout`` argument; the wall-clock deadline
+    is the consolidated ``DeviateConfig.timeout_seconds``.
+    """
 
-    def test_invoke_agent_passes_config_timeout_to_agent_config(
+    def test_invoke_agent_omits_timeout_uses_timeout_seconds(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A worktree ``[agent].timeout`` other than 600 reaches AgentConfig."""
+        """The worktree config resolves one timeout; AgentConfig carries no timeout."""
         from rich.console import Console
 
         from deviate.cli.micro import _invoke_agent
@@ -5456,7 +5459,7 @@ class TestInvokeAgentConfigTimeout:
         config_dir = tmp_path / ".deviate"
         config_dir.mkdir()
         (config_dir / "config.toml").write_text(
-            '[agent]\nbackend = "pi"\ntimeout = 1800\n',
+            'timeout_seconds = 1800\n[agent]\nbackend = "pi"\n',
             encoding="utf-8",
         )
 
@@ -5489,10 +5492,10 @@ class TestInvokeAgentConfigTimeout:
         assert isinstance(config, AgentConfig), (
             "_invoke_agent must pass AgentConfig into AgentBackend"
         )
-        assert config.timeout == 1800, (
-            "GH-87: [agent].timeout from the worktree config must reach "
-            f"AgentConfig; got {config.timeout} (600 is the unset default)"
+        assert "timeout" not in AgentConfig.model_fields, (
+            "AC-PLAN-005: _invoke_agent must not pass a timeout field to AgentConfig"
         )
+        assert not hasattr(config, "timeout")
         assert config.backend == "pi"
 
 

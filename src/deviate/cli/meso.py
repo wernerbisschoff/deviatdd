@@ -51,6 +51,7 @@ from deviate.state.config import (
     AgentConfig,
     SessionState,
     _load_deviate_config_toml,
+    resolve_agent_deadline,
     resolve_claim_remote,
     resolve_base_branch,
     resolve_model_for_phase,
@@ -1598,7 +1599,6 @@ def _invoke_agent_phase(
         )
         agent_cfg = AgentConfig(
             backend=backend_name,
-            timeout=(data.get("agent", {}).get("timeout", 600) if data else 600),
             reasoning_effort=reasoning_effort,
         )
         backend = AgentBackend(config=agent_cfg)
@@ -1607,7 +1607,12 @@ def _invoke_agent_phase(
             f"[green]INVOKE_AGENT[/] running '{backend_name}{model_str}'"
             f" for [{phase}] phase"
         )
-        manifest = backend.invoke(prompt, cwd=cwd, model=model)
+        manifest = backend.invoke(
+            prompt,
+            cwd=cwd,
+            model=model,
+            timeout=resolve_agent_deadline(root),
+        )
     except AgentSubprocessError as e:
         console.print(f"[red]{phase.upper()}_FAILED[/] {e}")
         raise SystemExit(1) from e
