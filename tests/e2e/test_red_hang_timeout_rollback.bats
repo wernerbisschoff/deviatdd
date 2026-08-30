@@ -3,7 +3,8 @@
 # Installed RED hang surfaces AGENT_TIMEOUT before an outer bash kill
 # (ISS-ADH-027). Constitution §3 E2E command: bats tests/e2e/.
 #
-# Happy path: installed AgentConfig.timeout stays 600s, GREEN/RED stall
+# Happy path: installed wall-clock deadline is DeviateConfig.timeout_seconds
+# (1800s; AgentConfig.timeout was removed in ISS-ADH-030), GREEN/RED stall
 # stays 900s, EXECUTE stall stays 3600s, and `deviate micro --help`
 # exits 0 (AC-PLAN-005, AC-PLAN-006).
 # Critical-failure path: mocked Popen pipes emit an early stdout chunk
@@ -34,20 +35,20 @@ _installed_python() {
     sed -n '1s/^#!//p' "$script"
 }
 
-@test "installed RED hang budget is 600s wall-clock, 900s stall, 3600s EXECUTE" {
+@test "installed RED hang budget is 1800s wall-clock, 900s stall, 3600s EXECUTE" {
     run "$(_installed_python)" -c '
 from deviate.core.agent import STREAM_STALL_TIMEOUT_SECONDS
 from deviate.cli.micro import EXECUTE_STALL_TIMEOUT_SECONDS
-from deviate.state.config import AgentConfig
-assert AgentConfig().timeout == 600, AgentConfig().timeout
+from deviate.state.config import DeviateConfig
+assert DeviateConfig().timeout_seconds == 1800, DeviateConfig().timeout_seconds
 assert STREAM_STALL_TIMEOUT_SECONDS == 900, STREAM_STALL_TIMEOUT_SECONDS
 assert EXECUTE_STALL_TIMEOUT_SECONDS == 3600, EXECUTE_STALL_TIMEOUT_SECONDS
-print("AgentConfig.timeout", AgentConfig().timeout)
+print("DeviateConfig.timeout_seconds", DeviateConfig().timeout_seconds)
 print("STREAM_STALL_TIMEOUT_SECONDS", STREAM_STALL_TIMEOUT_SECONDS)
 print("EXECUTE_STALL_TIMEOUT_SECONDS", EXECUTE_STALL_TIMEOUT_SECONDS)
 '
     [ "$status" -eq 0 ]
-    [[ "$output" == *"AgentConfig.timeout 600"* ]]
+    [[ "$output" == *"DeviateConfig.timeout_seconds 1800"* ]]
     [[ "$output" == *"STREAM_STALL_TIMEOUT_SECONDS 900"* ]]
     [[ "$output" == *"EXECUTE_STALL_TIMEOUT_SECONDS 3600"* ]]
 }
