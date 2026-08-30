@@ -205,6 +205,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `specs/constitution.md` — Resolved boilerplate constitution
   * `AGENTS.md` — Symlink to `CLAUDE.md` (or vice-versa if only `AGENTS.md`
     existed pre-setup). Created by `_linkify_governance_files`; idempotent.
+    Fresh `CLAUDE.md` is empty (governance seeds are empty); an empty pair
+    after setup is expected. First-hour README points at `/deviate-init`;
+    the research rationale lives in `docs/rationale.md`.
+    When `export_mode=global`, setup prints the command dest path on the
+    `INSTALL N commands → <agent>` line (same dest style as the skill
+    INSTALL line).
   * Selected-agent command install only: `.claude/commands/`,
     `.opencode/commands/`, `.factory/commands/`, `.pi/prompts/`,
     `.omp/prompts/`, or `.agents/skills/<name>/SKILL.md` for Codex.
