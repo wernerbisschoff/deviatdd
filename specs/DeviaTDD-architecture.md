@@ -172,7 +172,7 @@ optional packs (`review`, `walkthrough`); default setup does not install them.
   Platform is auto-detected from the `origin` remote and overridable via `--platform`.
   PR titles use conventional-commit format for squash-merge compatibility. There is no Graphite path.
 * **Merge (`deviate merge` / `deviate merge pre` + `/deviate-merge` skill):** Final meso-layer gate that performs
-  the squash-merge into the configured `base_branch` (from `resolve_base_branch` / `.deviate/config.toml`; default `main`) and writes a full Pydantic-validated `IssueRecord` (not a
+  the squash-merge into the configured `base_branch` (from `resolve_base_branch`: hand-set `.deviate/config.toml` key, else `origin/HEAD`, else `main`) and writes a full Pydantic-validated `IssueRecord` (not a
   bare transition). `deviate merge pre` emits a JSON contract with `base_branch` so the skill
   does not hardcode `main`. The CLI run path is intentionally two-phase: `--stage-only` writes the COMPLETED
   transition to `specs/issues.jsonl` and stages it; `-m <subject> -m <body>` then commits

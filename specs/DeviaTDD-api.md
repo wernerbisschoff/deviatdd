@@ -105,8 +105,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   backend or fail-closes with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
   Install is always exactly one agent; leftover `.claude/` / `.opencode/` / … dirs are
   never a fan-out target. On a TTY the remaining prompts are, in order: prompt/skill
-  install `[l]ocal/[g]lobal` (default `l`; this-run only, not persisted), base branch
-  (default current `base_branch` or `main`), claim-remote `[y]es/[n]o`, then the
+  install `[l]ocal/[g]lobal` (default `l`; this-run only, not persisted),
+  claim-remote `[y]es/[n]o`, then the
   optional-pack checkbox. `global` installs commands/skills under the user-level
   tree (`~/.{agent}/commands|prompts` + `skills`; Codex `~/.agents/skills`); `local`
   stays project-local. DeviaTDD still does not write `~/.pi/agent/`.
@@ -141,9 +141,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `--agent-export-mode [local|global]` (Omitted on a TTY prompts `[l]ocal/[g]lobal`,
     default `l`. Applies to this run's install only — the key is not written.
     Non-TTY omitted installs local. Explicit flag skips the prompt.)
-  * `--base-branch <name>` (Omitted on a TTY prompts; default is the current
-    `base_branch` or `main`. Non-TTY omitted: fresh writes `main`; existing file
-    left alone unless the flag was passed.)
+  * `--base-branch <name>` (Optional script write-override. Omitted does not
+    write `base_branch`; runtime uses `resolve_base_branch`: hand-set key,
+    else `origin/HEAD`, else `main`. A hand-set key is not stripped on re-run.)
   * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Pin install target and persisted backend)
   * `--packs none|all-optional|<comma-separated optional names>` (Scripted optional-pack
     selection; omitted on a TTY shows the checkbox list, default nothing selected)
@@ -161,9 +161,11 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     config writes `false`; an existing file is left alone unless a flag was passed.)
 * **Output Artifacts:**
   * `.deviate/config.toml` — Runner configuration only (`profile`,
-    `timeout_seconds`, `base_branch`, `claim_remote`, `[agent].backend`,
+    `timeout_seconds`, `claim_remote`, `[agent].backend`,
     plus `transport` for pi/omp). Inline comments sit on the same line as
-    each key. Does not persist `agent_export_mode` or `[agent].timeout`.
+    each key. Does not persist `agent_export_mode`, `base_branch`, or
+    `[agent].timeout`. `resolve_base_branch` reads a hand-set `base_branch`
+    if present, otherwise `origin/HEAD`, otherwise `main`.
     Codex setup also seeds
     `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"`
     when missing/empty so spawned `codex exec` receives `--model gpt-5.6-luna`
@@ -578,7 +580,8 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
 
 * **Source:** `src/deviate/cli/meso.py` (`_merge_pre`, `_merge_run`)
 * **Description:** `deviate merge pre` emits a JSON contract with `base_branch` resolved
-  from `resolve_base_branch` / `.deviate/config.toml` (default `main` when unset). The
+  from `resolve_base_branch` (hand-set `config.toml` key, else `origin/HEAD`, else
+  `main`). The
   `/deviate-merge` skill uses that value as the squash target. The run path (no `pre`
   argument) marks an issue COMPLETED in the ledger with a full Pydantic-validated
   `IssueRecord`.  Two-phase squash-merge flow used by the `/deviate-merge` slash command:

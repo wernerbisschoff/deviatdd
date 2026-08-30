@@ -124,7 +124,6 @@ def main(
 _CONFIG_TOML_COMMENTS: dict[str, str] = {
     "profile": "micro-run default when --profile is omitted: full or fast",
     "timeout_seconds": "agent spawn + test wall clock (seconds)",
-    "base_branch": "worktrees, PR base, review diffs",
     "claim_remote": "push the claim branch as a lock",
     "use_libref": "enable the libref CLI for offline documentation lookups",
     "transport": "pi/omp only; omit on other backends",
@@ -481,28 +480,6 @@ def _prompt_export_mode(default: str = "local") -> str | None:
         return None
 
 
-def _prompt_base_branch(default: str = "main") -> str | None:
-    """Ask for the trunk branch used as PR/worktree base.
-
-    Returns the typed name, ``default`` on empty input, and ``None``
-    when the session is not interactive.
-    """
-    if not is_interactive():
-        return None
-    try:
-        selected = Prompt.ask(
-            "Base branch",
-            default=default,
-            console=console,
-        )
-    except (EOFError, KeyboardInterrupt):
-        return None
-    if selected is None:
-        return None
-    stripped = str(selected).strip()
-    return stripped or default
-
-
 def _prompt_claim_remote(default: bool = False) -> bool | None:
     """Ask whether to push claim branches as a remote lock.
 
@@ -670,12 +647,13 @@ def _config_dump_dict(
     claim_remote: bool,
     use_libref: bool,
     agent_backend: str | None,
-    base_branch: str = "main",
+    base_branch: str | None = None,
 ) -> dict[str, object]:
     """Allowlist payload for a fresh ``config.toml``.
 
     Setup-only choices (prompt/skill install local vs global) are not
     persisted. ``[agent].timeout`` is dead and is never written.
+    ``base_branch`` is omitted unless ``--base-branch`` was passed.
     """
     backend = agent_backend or "pi"
     agent_update: dict[str, object] = {"backend": backend}
@@ -692,10 +670,11 @@ def _config_dump_dict(
     payload: dict[str, object] = {
         "profile": "full",
         "timeout_seconds": 1800,
-        "base_branch": base_branch,
         "claim_remote": claim_remote,
         "agent": agent,
     }
+    if base_branch is not None:
+        payload["base_branch"] = base_branch
     if use_libref:
         payload["use_libref"] = True
     payload.update(extra)
@@ -715,33 +694,6 @@ def _resolve_setup_export_mode(*, agent_export_mode: str | None) -> str:
         prompted = _prompt_export_mode(default="local")
         return prompted or "local"
     return "local"
-
-
-def _resolve_setup_base_branch(
-    *,
-    base_branch: str | None,
-    config_exists: bool,
-    workdir: Path | None = None,
-) -> str | None:
-    """Decide the ``base_branch`` value written by ``deviate setup``.
-
-    An explicit ``--base-branch`` always writes and skips the prompt.
-    On a TTY with the flag omitted, always prompt (even when
-    ``config.toml`` exists); default is the current file value or
-    ``main``. Non-TTY: no prompt; fresh config writes ``main``;
-    existing config is left alone (``None``).
-    """
-    if base_branch is not None:
-        return base_branch
-    existing = "main"
-    if config_exists and workdir is not None:
-        existing = resolve_base_branch(workdir)
-    if is_interactive():
-        prompted = _prompt_base_branch(default=existing)
-        return existing if prompted is None else prompted
-    if config_exists:
-        return None
-    return "main"
 
 
 def _resolve_setup_claim_remote(
@@ -877,11 +829,11 @@ def _merge_flag_keys(
 ) -> None:
     """Surgically update flag keys in an existing TOML.
 
-    Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` and
-    ``base_branch`` only when the caller passed a value (flags or a TTY
-    answer). Strips leftover ``agent_export_mode`` when asked — that
-    key is setup-only and is never written. Preserves every other
-    key/table (e.g. user-customised ``[models]``).
+    Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` on
+    flags or a TTY answer. Upserts ``base_branch`` only when
+    ``--base-branch`` was passed — omitted setup never writes or
+    strips a hand-set key. Strips leftover ``agent_export_mode`` when
+    asked. Preserves every other key/table (e.g. ``[models]``).
     """
     content = config_path.read_text(encoding="utf-8")
     original = content
@@ -905,7 +857,7 @@ def _scaffold_dotfiles(
     agent_backend: str | None = None,
     update_claim_remote: bool = False,
     update_base_branch: bool = False,
-    base_branch: str = "main",
+    base_branch: str | None = None,
     strip_stale_keys: bool = False,
 ) -> None:
     dot_dir = workdir / ".deviate"
@@ -925,8 +877,9 @@ def _scaffold_dotfiles(
     elif config_path.exists():
         # Existing config: only touch the keys the caller asked us to touch.
         # `use_libref` is upserted when `--libref` was passed.
-        # `claim_remote` and `base_branch` are upserted on flags or a TTY
-        # answer. Leftover `agent_export_mode` is stripped — setup-only.
+        # `claim_remote` is upserted on flags or a TTY answer.
+        # `base_branch` is upserted only when `--base-branch` was passed.
+        # Leftover `agent_export_mode` is stripped — setup-only.
         # `agent_backend` is always upserted when provided so `--agent factory`
         # can overwrite a previously persisted backend.
         changed = False
@@ -1321,7 +1274,10 @@ def setup(
     base_branch: str | None = typer.Option(
         None,
         "--base-branch",
-        help="Trunk branch for worktrees and PRs. Omitted on a TTY prompts.",
+        help=(
+            "Optional write-override for config.toml base_branch. "
+            "Omitted does not write the key; runtime uses origin/HEAD or main."
+        ),
         callback=_validate_base_branch,
     ),
     libref: bool = typer.Option(
@@ -1381,18 +1337,13 @@ def setup(
         raise typer.Exit(code=1)
     config_exists = config_path.exists()
     install_mode = _resolve_setup_export_mode(agent_export_mode=agent_export_mode)
-    base_branch_val = _resolve_setup_base_branch(
-        base_branch=base_branch,
-        config_exists=config_exists,
-        workdir=workdir,
-    )
     claim_remote_val = _resolve_setup_claim_remote(
         claim_remote=claim_remote,
         no_claim_remote=no_claim_remote,
         config_exists=config_exists,
         workdir=workdir,
     )
-    update_base = base_branch_val is not None
+    update_base = base_branch is not None
     update_claim = claim_remote_val is not None
     strip_stale = is_interactive() or agent_export_mode is not None
 
@@ -1405,7 +1356,7 @@ def setup(
         agent_backend=backend,
         update_claim_remote=update_claim,
         update_base_branch=update_base,
-        base_branch=base_branch_val or "main",
+        base_branch=base_branch,
         strip_stale_keys=strip_stale,
     )
 

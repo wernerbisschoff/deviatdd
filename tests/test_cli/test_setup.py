@@ -379,7 +379,7 @@ class TestSetupConfigAllowlist:
         text = (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
         parsed = tomllib.loads(text)
         assert parsed["profile"] == "full"
-        assert parsed["base_branch"] == "main"
+        assert "base_branch" not in parsed
         assert parsed["claim_remote"] is False
         assert "use_libref" not in parsed
         assert "libref" not in text.lower()
@@ -396,10 +396,22 @@ class TestSetupConfigAllowlist:
         assert (
             "timeout_seconds = 1800  # agent spawn + test wall clock (seconds)" in text
         )
-        assert 'base_branch = "main"  # worktrees, PR base, review diffs' in text
+        assert "base_branch" not in text
         assert "claim_remote = false  # push the claim branch as a lock" in text
         assert "pi_rpc" not in agent
         assert "transport" not in agent
+
+    def test_base_branch_flag_writes_override(self, tmp_path: Path) -> None:
+        """``--base-branch`` is a script-only write; omitted leaves the key out."""
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--base-branch", "trunk"]
+            )
+            assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(
+            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert parsed["base_branch"] == "trunk"
 
     def test_pi_writes_transport_not_pi_rpc(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
@@ -621,6 +633,7 @@ class TestSetupPerAgentInstall:
             result = runner.invoke(cli, ["setup"])
         assert result.exit_code == 0, result.output
         assert "Select agent platform" in captured
+        assert "Base branch" not in captured
         agent_kwargs = captured["Select agent platform"]
         assert agent_kwargs.get("default") == "pi"
         assert "pi" in agent_kwargs.get("choices", [])
@@ -770,7 +783,7 @@ class TestSetupExportModeAndBaseBranch:
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
         assert captured.get(f"Prompt/skill install {escape('[l]ocal/[g]lobal')}") == "l"
-        assert captured.get("Base branch") == "develop"
+        assert "Base branch" not in captured
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert "agent_export_mode" not in parsed
         assert parsed["base_branch"] == "develop"
@@ -858,9 +871,6 @@ class TestSetupExportModeAndBaseBranch:
         monkeypatch.setattr("deviate.cli._user_home", lambda: fake_home)
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli._prompt_export_mode", fake_export)
-        monkeypatch.setattr(
-            "deviate.cli._prompt_base_branch", lambda default="main": default
-        )
         monkeypatch.setattr(
             "deviate.cli._prompt_claim_remote", lambda default=False: False
         )

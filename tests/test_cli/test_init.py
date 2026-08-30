@@ -690,9 +690,6 @@ class TestSetupClaimRemoteFlag:
         monkeypatch.setattr(
             "deviate.cli._prompt_export_mode", lambda default="local": default
         )
-        monkeypatch.setattr(
-            "deviate.cli._prompt_base_branch", lambda default="main": default
-        )
         monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -747,9 +744,6 @@ class TestSetupClaimRemoteFlag:
         monkeypatch.setattr(
             "deviate.cli._prompt_export_mode", lambda default="local": default
         )
-        monkeypatch.setattr(
-            "deviate.cli._prompt_base_branch", lambda default="main": default
-        )
         monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -772,9 +766,6 @@ class TestSetupClaimRemoteFlag:
         monkeypatch.setattr("deviate.cli.Prompt.ask", lambda *a, **k: "n")
         monkeypatch.setattr(
             "deviate.cli._prompt_export_mode", lambda default="local": default
-        )
-        monkeypatch.setattr(
-            "deviate.cli._prompt_base_branch", lambda default="main": default
         )
         monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
         with chdir(tmp_git_repo):
