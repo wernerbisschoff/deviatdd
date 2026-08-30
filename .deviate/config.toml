@@ -1,19 +1,7 @@
-# Preset config group: "default", "full", "fast", or "secure"
-profile = "default"
-# CLI inactivity timeout in seconds (must be > 0)
-timeout_seconds = 1800
-# Agent export mode: "local" (project) or "global" (~/.claude/)
-agent_export_mode = "local"
-# Enable the libref CLI for offline documentation lookups
-use_libref = true
-# Trunk branch for worktrees, PR base, and review diffs
-base_branch = "main"
-# Push the claim branch as a distributed lock (default false)
+profile = "full"  # micro-run default when --profile is omitted: full or fast
+timeout_seconds = 1800  # agent spawn + test wall clock (seconds)
 claim_remote = true
-
-# Agent backend configuration
 
 [agent]
 backend = "pi"
-timeout = 600
-transport = "rpc"
+transport = "rpc"  # pi/omp only; omit on other backends

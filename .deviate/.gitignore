@@ -1,6 +1,5 @@
 session.json
 artifacts/
-prompts.log
 reports/
 rollback.jsonl
 logs/
