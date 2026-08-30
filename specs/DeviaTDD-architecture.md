@@ -976,11 +976,13 @@ In addition to the 25 `deviate-*` slash commands under
 provisions exactly **one** project-local skill named `deviatdd` at
 `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for each resolved install agent
 (`claude`, `opencode`, `factory`, `pi`, `omp`).
-`_resolve_install_agents` (`src/deviate/cli/__init__.py`) narrows the target
-set: with `--agent <name>` only that agent is provisioned and a
-declared-but-uninstalled name fails closed with `AGENT_NOT_INSTALLED`; with
-`--agent` omitted, setup provisions exactly the installed-agent directories
-reported by `detect_agents`. Codex receives the same skill at
+`_resolve_install_agents` (`src/deviate/cli/__init__.py`) always returns a
+one-element list of the selected agent. `--agent <name>` pins that target
+without prompting. On a TTY, omitted `--agent` always shows the agent
+selector (existing `[agent].backend` is the default highlight). Non-TTY
+without `--agent` reuses a persisted backend or fail-closes with
+`NO_AGENT_SELECTED`. Leftover agent directories are never sprayed.
+Codex receives the same skill at
 `<workdir>/.agents/skills/deviatdd/SKILL.md` plus one
 `.agents/skills/<command>/SKILL.md` per packaged slash command.
 `--agent` gates both command and skill install. The skill body is identical
@@ -1074,7 +1076,7 @@ deviatdd project's own source at
 **Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py`
 and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` /
 `TestSetupPerAgentInstall` in `tests/test_cli/test_setup.py` cover
-selected-agent-only install and auto-detect, Codex skills +
+selected-agent-only install (TTY pick / `--agent` pin; leftover dirs are not sprayed), Codex skills +
 `backend = "codex"` + Luna/`reasoning_effort` upsert, idempotence,
 gitignore entry presence + idempotence, the safety-gate fragments in
 the SKILL.md body, well-formed frontmatter, and the dispatch table's

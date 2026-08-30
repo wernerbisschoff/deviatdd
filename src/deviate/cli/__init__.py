@@ -50,9 +50,9 @@ from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F40
 
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
 from deviate.core.commands import (
+    OPTIONAL_PACK_NAMES,
     UnknownPackError,
     commands_for_packs,
-    detect_agents,
     install_command,
     parse_optional_packs,
 )
@@ -456,6 +456,46 @@ def _prompt_claim_remote() -> bool | None:
     return False
 
 
+def _optional_pack_prompt_choices() -> list[str]:
+    """Names shown on the TTY optional-pack selector."""
+    return ["none", "all-optional", *OPTIONAL_PACK_NAMES]
+
+
+def _packs_from_selector_picks(picks: list[str]) -> tuple[str, ...]:
+    """Interpret TTY selector picks into optional pack names."""
+    if not picks or picks[0] in {"none", ""}:
+        return ()
+    if "all-optional" in picks:
+        return OPTIONAL_PACK_NAMES
+    return tuple(name for name in picks if name in OPTIONAL_PACK_NAMES)
+
+
+def _ask_optional_pack_picks() -> list[str]:
+    """Dropdown multi-select: every optional pack, plus none / all-optional."""
+    first = Prompt.ask(
+        "Optional command packs",
+        choices=_optional_pack_prompt_choices(),
+        default="none",
+        console=console,
+    )
+    if first not in OPTIONAL_PACK_NAMES:
+        return [first or "none"]
+    picks = [first]
+    remaining = [name for name in OPTIONAL_PACK_NAMES if name != first]
+    while remaining:
+        nxt = Prompt.ask(
+            "Add another optional pack",
+            choices=[*remaining, "done"],
+            default="done",
+            console=console,
+        )
+        if nxt in {"done", None, ""}:
+            break
+        picks.append(nxt)
+        remaining = [name for name in remaining if name != nxt]
+    return picks
+
+
 def _prompt_pack_selection() -> tuple[str, ...] | None:
     """Ask which optional command packs to install.
 
@@ -466,18 +506,9 @@ def _prompt_pack_selection() -> tuple[str, ...] | None:
     if not is_interactive():
         return None
     try:
-        selected = Prompt.ask(
-            "Optional command packs (comma-separated, or none / all-optional)",
-            default="none",
-            console=console,
-        )
+        return _packs_from_selector_picks(_ask_optional_pack_picks())
     except (EOFError, KeyboardInterrupt):
         return None
-    try:
-        return parse_optional_packs(selected)
-    except UnknownPackError as exc:
-        console.print(f"[red]UNKNOWN_PACK[/] {exc}")
-        raise typer.Exit(code=1) from exc
 
 
 def _resolve_setup_optional_packs(packs: str | None) -> tuple[str, ...]:
@@ -644,24 +675,42 @@ def _validate_agent_choice(value: str | None) -> str | None:
     return value
 
 
-def _resolve_install_agents(agent: str | None, detected: list[str]) -> list[str]:
-    """Resolve the exact agent set that receives command/skill files.
+def _resolve_setup_selected_agent(
+    agent: str | None,
+    workdir: Path,
+    config_path: Path,
+) -> str:
+    """Pick exactly one agent: ``--agent``, TTY selector, or existing backend.
 
-    ``--agent <name>`` targets only that agent and fails closed when the
-    named agent is declared-but-uninstalled. Omitting ``--agent`` targets
-    exactly the auto-detected installed agents.
+    A TTY always shows the agent menu (existing ``[agent].backend`` is the
+    default highlight, not an auto-skip). Non-TTY sessions reuse a
+    persisted backend or fail closed with ``NO_AGENT_SELECTED``. Leftover
+    agent directories are never consulted.
     """
-    if agent is None:
-        return detected
-    if detected and agent not in detected:
-        console.print(
-            f"[red]AGENT_NOT_INSTALLED[/] agent '{agent}' is declared but"
-            " not installed in this workspace. Detected agents:"
-            f" {', '.join(detected)}. Re-run `deviate setup --agent`"
-            " with a detected agent or install it first."
-        )
-        raise typer.Exit(code=1)
-    return [agent]
+    if agent is not None:
+        return agent
+    prompted = _prompt_agent_selection(workdir, config_path)
+    if prompted is not None:
+        return prompted
+    existing = _read_agent_backend_from_config(config_path)
+    if existing is not None:
+        return existing
+    console.print(
+        "[red]NO_AGENT_SELECTED[/] No agent platform chosen."
+        " Re-run `deviate setup --agent <name>` with one of:"
+        f" {', '.join(AGENT_CHOICES)}."
+    )
+    raise typer.Exit(code=1)
+
+
+def _resolve_install_agents(selected_agent: str) -> list[str]:
+    """Return exactly one install target.
+
+    Never consults ``detect_agents`` or leftover agent directories.
+    ``--agent`` and the TTY picker resolve a single name first; this
+    helper only wraps that name as the install list.
+    """
+    return [selected_agent]
 
 
 def _insert_toml_root_line(content: str, line: str) -> str:
@@ -1090,25 +1139,8 @@ def setup(
 
     console.print("[bold]Initializing deviate workspace...[/bold]")
 
-    detected = detect_agents(workdir)
-    install_agents = _resolve_install_agents(agent, detected)
-
-    selected_agent: str | None = agent
-    if selected_agent is None:
-        existing_backend = _read_agent_backend_from_config(config_path)
-        if existing_backend is not None:
-            selected_agent = existing_backend
-        elif detected:
-            selected_agent = detected[0]
-        else:
-            selected_agent = _prompt_agent_selection(workdir, config_path)
-            if selected_agent is None:
-                console.print(
-                    "[red]NO_AGENT_SELECTED[/] No agent platform chosen."
-                    " Re-run `deviate setup --agent <name>` with one of:"
-                    f" {', '.join(AGENT_CHOICES)}."
-                )
-                raise typer.Exit(code=1)
+    selected_agent = _resolve_setup_selected_agent(agent, workdir, config_path)
+    install_agents = _resolve_install_agents(selected_agent)
 
     backend = _resolve_agent_to_backend(selected_agent)
     if claim_remote and no_claim_remote:
@@ -1136,10 +1168,11 @@ def setup(
 
     _apply_governance(workdir, use_libref=use_libref_val)
 
-    # Install commands + the packaged skill only for the targeted agents.
-    # ``--agent`` pins the target and persists ``[agent].backend``; omitted,
-    # setup targets exactly the agents ``detect_agents`` reports. Pack
-    # selection via ``--packs`` governs which command files are written.
+    # Install commands + the packaged skill only for the one selected agent.
+    # ``--agent`` pins the target without prompting. On a TTY, omitted
+    # ``--agent`` always shows the agent selector. Pack selection via
+    # ``--packs`` or the TTY pack selector governs which command files
+    # are written.
     # ``droid`` is normalised to ``factory`` so both names write
     # ``.factory/``. Codex is a first-class backend that writes skills
     # under ``.agents/skills/`` (Codex CLI 0.117+ dropped custom prompts).

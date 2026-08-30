@@ -6,8 +6,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from deviate.cli import cli
-from deviate.core.commands import commands_for_packs
+from deviate.cli import (
+    _optional_pack_prompt_choices,
+    _packs_from_selector_picks,
+    _prompt_pack_selection,
+    _resolve_install_agents,
+    cli,
+)
+from deviate.core.commands import OPTIONAL_PACK_NAMES, commands_for_packs
 
 from tests.conftest import _git_env
 
@@ -254,6 +260,61 @@ class TestSetupPacks:
         assert result.exit_code != 0
         assert not (tmp_path / ".opencode" / "commands" / "deviate-red.md").exists()
 
+    def test_packs_none_installs_layer_packs_only(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--packs", "none"]
+            )
+            assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-red.md").is_file()
+        assert not (commands / "deviate-merge.md").exists()
+        assert not (commands / "deviate-prune.md").exists()
+
+    def test_pack_prompt_choices_list_every_optional_pack(self) -> None:
+        choices = _optional_pack_prompt_choices()
+        assert choices[0] == "none"
+        assert "all-optional" in choices
+        for name in (
+            "merge",
+            "pr",
+            "review",
+            "walkthrough",
+            "html",
+            "hotfix",
+            "triage",
+            "prune",
+            "e2e",
+        ):
+            assert name in choices
+        assert tuple(name for name in choices if name in OPTIONAL_PACK_NAMES) == (
+            OPTIONAL_PACK_NAMES
+        )
+
+    def test_prompt_pack_selection_default_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        assert _prompt_pack_selection() == ()
+        assert captured.get("default") == "none"
+        choices = captured.get("choices")
+        assert isinstance(choices, list)
+        assert "merge" in choices
+        assert "prune" in choices
+        assert "all-optional" in choices
+
+    def test_packs_from_selector_picks_none_and_all(self) -> None:
+        assert _packs_from_selector_picks(["none"]) == ()
+        assert _packs_from_selector_picks(["all-optional"]) == OPTIONAL_PACK_NAMES
+        assert _packs_from_selector_picks(["merge", "prune"]) == ("merge", "prune")
+
 
 class TestSetupConfigAllowlist:
     def test_fresh_claude_config_is_tidy(self, tmp_path: Path) -> None:
@@ -405,7 +466,7 @@ def _installed_files(root: Path, subdir: str) -> list[Path]:
 
 
 class TestSetupPerAgentInstall:
-    """AC-PLAN-002/003: per-agent install and auto-detect in ``deviate setup``."""
+    """``deviate setup`` installs exactly one selected agent."""
 
     def test_setup_single_agent_only(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -426,35 +487,57 @@ class TestSetupPerAgentInstall:
                 assert not _installed_files(tmp_path, f".{agent}/commands")
                 assert not _installed_files(tmp_path, f".{agent}/skills")
 
-    def test_setup_auto_detect_installed_agents(
+    def test_bare_setup_does_not_spray_leftover_agent_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """``setup`` with no ``--agent`` targets exactly the detected agents."""
+        """Non-TTY bare ``setup`` fail-closes; leftover dirs are not sprayed."""
         _mock_agent_dirs(tmp_path, monkeypatch)
         (tmp_path / ".claude").mkdir(parents=True)
         (tmp_path / ".opencode").mkdir(parents=True)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup"])
-            assert result.exit_code == 0
-            for agent in ("claude", "opencode"):
-                assert _installed_files(tmp_path, f".{agent}/commands")
-                assert _installed_files(tmp_path, f".{agent}/skills")
-            for agent in ("factory", "pi", "omp"):
-                assert not _installed_files(tmp_path, f".{agent}/commands")
-                assert not _installed_files(tmp_path, f".{agent}/skills")
+        assert result.exit_code != 0
+        assert "NO_AGENT_SELECTED" in result.output
+        for agent in ACTIVE_AGENTS:
+            assert not _installed_files(tmp_path, f".{agent}/commands")
+            assert not _installed_files(tmp_path, f".{agent}/skills")
 
-    def test_setup_uninstalled_agent_fails_closed(
+    def test_tty_setup_installs_one_agent_despite_leftover_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """A declared-but-not-installed agent fails and writes nothing."""
+        """TTY-mocked bare setup installs the picked agent only."""
+        (tmp_path / ".claude" / "commands").mkdir(parents=True)
+        (tmp_path / ".opencode" / "commands").mkdir(parents=True)
+        monkeypatch.setattr("deviate.cli._prompt_agent_selection", lambda *_: "pi")
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup"])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".pi" / "prompts" / "deviate-red.md").is_file()
+        assert (tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        assert not (tmp_path / ".claude" / "commands" / "deviate-red.md").exists()
+        assert not (tmp_path / ".opencode" / "commands" / "deviate-red.md").exists()
+        assert not (tmp_path / ".claude" / "skills" / "deviatdd" / "SKILL.md").exists()
+        assert not (
+            tmp_path / ".opencode" / "skills" / "deviatdd" / "SKILL.md"
+        ).exists()
+
+    def test_agent_flag_pins_despite_leftover_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """``--agent pi`` installs pi even when leftover agent dirs exist."""
         _mock_agent_dirs(tmp_path, monkeypatch)
         (tmp_path / ".claude").mkdir(parents=True)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
-            assert result.exit_code != 0
-            for agent in ACTIVE_AGENTS:
-                assert not _installed_files(tmp_path, f".{agent}/commands")
-                assert not _installed_files(tmp_path, f".{agent}/skills")
+        assert result.exit_code == 0, result.output
+        assert _installed_files(tmp_path, ".pi/commands")
+        assert _installed_files(tmp_path, ".pi/skills")
+        assert not _installed_files(tmp_path, ".claude/commands")
+        assert not _installed_files(tmp_path, ".claude/skills")
+
+    def test_resolve_install_agents_is_exactly_one(self) -> None:
+        assert _resolve_install_agents("pi") == ["pi"]
+        assert _resolve_install_agents("claude") == ["claude"]
 
     def test_setup_unknown_agent_fails_closed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

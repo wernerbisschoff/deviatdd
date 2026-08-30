@@ -670,22 +670,23 @@ class TestInitAgentFlag:
             assert not (tmp_path / ".droid").exists()
             assert not (tmp_path / ".factory").exists()
 
-    def test_init_agent_droid_fails_closed_when_other_agent_installed(
-        self, tmp_path: Path
-    ):
-        """`--agent droid` fails closed when another agent is installed.
+    def test_init_agent_droid_pins_despite_leftover_dirs(self, tmp_path: Path):
+        """`--agent droid` pins the backend even when leftover agent dirs exist.
 
-        ``droid`` is never returned by auto-detection (no ``.droid/``
-        platform dir). When the workspace detects other installed agents,
-        setup rejects ``--agent droid`` with a clear error and writes no
-        command or skill files.
+        ``droid`` remains a backend-only alias (no ``.droid/`` tree). Leftover
+        ``.claude/`` must not receive command or skill files.
         """
         (tmp_path / ".claude").mkdir(parents=True)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
-            assert result.exit_code != 0
-            assert "AGENT_NOT_INSTALLED" in result.output
+            assert result.exit_code == 0, result.output
+            parsed = tomllib.loads((tmp_path / ".deviate" / "config.toml").read_text())
+            assert parsed["agent"]["backend"] == "droid"
             assert not (tmp_path / ".droid").exists()
+            assert not (tmp_path / ".claude" / "commands" / "deviate-red.md").exists()
+            assert not (
+                tmp_path / ".claude" / "skills" / "deviatdd" / "SKILL.md"
+            ).exists()
 
     def test_init_writes_root_gitignore_for_all_agent_dirs(self, tmp_path: Path):
         """``deviate setup`` writes agent artifact patterns and ``.worktrees/``
@@ -1177,42 +1178,23 @@ class TestInstallDeviatddSkill:
                 f"{other} should not receive a skill when --agent claude"
             )
 
-    def test_setup_auto_detect_installs_deviatdd_skill_to_detected_agents(
-        self, tmp_path: Path
+    def test_setup_tty_skill_installs_only_picked_agent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``deviate setup`` with no ``--agent`` installs the deviatdd skill
-        to exactly the auto-detected agent directories (AC-PLAN-003).
-
-        Content is byte-identical across all detected destinations.
-        """
+        """TTY-mocked bare setup writes the skill to the picked agent only."""
         for name in ("claude", "opencode"):
             (tmp_path / f".{name}").mkdir(parents=True)
+        monkeypatch.setattr("deviate.cli._prompt_agent_selection", lambda *_: "pi")
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup"])
             assert result.exit_code == 0, result.output
 
-        bodies: dict[str, str] = {}
-        for agent in ("claude", "opencode"):
-            skill_path = tmp_path / f".{agent}" / "skills" / "deviatdd" / "SKILL.md"
-            assert skill_path.is_file(), (
-                f"{agent} should have the deviatdd skill installed at "
-                f"{skill_path} (auto-detected)"
-            )
-            assert f".{agent}/skills/deviatdd/SKILL.md" in result.output, (
-                f"Missing INSTALL log for {agent}; got:\n{result.output}"
-            )
-            bodies[agent] = skill_path.read_text()
-
-        for agent in ("factory", "pi", "omp"):
-            assert not (tmp_path / f".{agent}" / "skills").exists(), (
-                f"{agent} must not receive the skill; not auto-detected"
-            )
-
-        first_agent, first_body = next(iter(bodies.items()))
-        for agent, body in bodies.items():
-            assert body == first_body, (
-                f"Skill copy for {agent} differs from {first_agent}"
-            )
+        pi_skill = tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md"
+        assert pi_skill.is_file()
+        for agent in ("claude", "opencode", "factory", "omp"):
+            assert not (
+                tmp_path / f".{agent}" / "skills" / "deviatdd" / "SKILL.md"
+            ).exists()
 
     def test_setup_deviatdd_skill_idempotent(self, tmp_path: Path) -> None:
         """Re-running setup with identical content produces SKIP log
