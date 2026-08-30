@@ -35,3 +35,6 @@ node_modules/
 !.env.example
 
 */skills/deviatdd/
+
+*/skills/deviate-*/
+.deviate/

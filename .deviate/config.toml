@@ -14,6 +14,6 @@ claim_remote = true
 # Agent backend configuration
 
 [agent]
-backend = "opencode"
-pi_rpc = false
+backend = "pi"
+timeout = 600
 transport = "rpc"
