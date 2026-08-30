@@ -12,7 +12,7 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
-from deviate.state.config import AgentConfig
+from deviate.state.config import AgentConfig, DeviateConfig
 
 OutputCallback = Callable[[str], None]
 
@@ -845,7 +845,10 @@ class AgentBackend:
                 prompt = ""
         if backend_name == "pi":
             cmd.extend(_pi_lean_flags(cwd))
-        effective_timeout = timeout or self.config.timeout
+        # Consolidated deadline: the caller passes an explicit ``timeout``
+        # (resolved from ``DeviateConfig.timeout_seconds``), else fall back
+        # to the single config default (AC-PLAN-005).
+        effective_timeout = timeout or DeviateConfig().timeout_seconds
 
         popen_kwargs: dict[str, Any] = dict(
             stdin=subprocess.PIPE,

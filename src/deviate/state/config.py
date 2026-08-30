@@ -18,8 +18,8 @@ ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 class AgentConfig(BaseModel):
     # Agent backend: "opencode", "claude", "droid", "pi", "omp", or "codex"
     backend: Literal["opencode", "claude", "droid", "pi", "omp", "codex"] = "pi"
-    # Agent invocation timeout in seconds (must be > 0)
-    timeout: int = Field(default=600, gt=0)
+    # Agent-process and test-command deadlines resolve from the single
+    # consolidated DeviateConfig.timeout_seconds via resolve_agent_deadline().
     # Opt-in RPC mode for Pi — spawns `pi --mode rpc --no-session` instead of `pi -p`
     pi_rpc: bool = Field(
         default=False,
@@ -279,6 +279,22 @@ def _resolve_toml_bool(root: Path, key: str, default: bool) -> bool:
         return default
     value = data.get(key, default)
     return value if isinstance(value, bool) else default
+
+
+def resolve_agent_deadline(root: Path) -> int:
+    """Return the agent wall-clock deadline for *root*.
+
+    Reads ``timeout_seconds`` from ``.deviate/config.toml``; falls back
+    to ``DeviateConfig.timeout_seconds`` (the single consolidation site,
+    AC-PLAN-005) when the file or key is absent or the value is not a
+    positive int.
+    """
+    data = _load_deviate_config_toml(root)
+    if isinstance(data, dict):
+        config_value = data.get("timeout_seconds")
+        if isinstance(config_value, int) and config_value > 0:
+            return config_value
+    return DeviateConfig().timeout_seconds
 
 
 def resolve_claim_remote(root: Path) -> bool:

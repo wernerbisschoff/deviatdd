@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from deviate.state.config import (
+    AgentConfig,
     DeviateConfig,
     ProfileConfig,
     SessionState,
@@ -193,6 +194,31 @@ class TestDeviateConfig:
 
     def test_resolve_execution_profile_missing_file(self, tmp_path: Path) -> None:
         assert resolve_execution_profile(tmp_path) == "full"
+
+
+class TestConsolidatedTimeout:
+    """AC-PLAN-005 / AC-PLAN-006 (ISS-ADH-030): the schema exposes exactly
+    one timeout field and rejects a stale ``graphite`` key.
+    """
+
+    def test_consolidated_timeout_field(self):
+        """One timeout field: ``DeviateConfig.timeout_seconds``. ``AgentConfig``
+        no longer owns a ``timeout`` field (GH-87 field removal)."""
+        config = DeviateConfig()
+        assert config.timeout_seconds == 1800
+        assert "timeout" not in AgentConfig.model_fields, (
+            "AC-PLAN-005: AgentConfig must not expose a second timeout field"
+        )
+        assert not hasattr(DeviateConfig(agent=AgentConfig()).agent, "timeout"), (
+            "AC-PLAN-005: AgentConfig must not expose a ``timeout`` attribute"
+        )
+
+    def test_parse_stale_graphite_key_rejected(self):
+        """AC-PLAN-006: a literal ``graphite`` key is rejected by ``extra = "forbid"``."""
+        with pytest.raises(ValidationError):
+            DeviateConfig(graphite=True)
+        with pytest.raises(ValidationError):
+            DeviateConfig.model_validate({"graphite": True})
 
 
 class TestProfileConfig:

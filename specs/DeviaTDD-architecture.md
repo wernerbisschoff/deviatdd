@@ -844,8 +844,11 @@ handing the manifest to the rest of the pipeline:
    stdout silence inside that 900s budget does not trip the
    detector. EXECUTE passes `stall_timeout=3600`. A stdout-silent
    stall raises `AgentTimeoutError(STALL_DETECTED)`. The same
-   poll loop honors `timeout_secs` from `AgentConfig.timeout`
-   (default 600s) beside the stall detector. A RED child that
+   poll loop honors `timeout_secs` from the single consolidated
+   `DeviateConfig.timeout_seconds` (default 1800s, resolved by
+   `resolve_agent_deadline` in `src/deviate/state/config.py`) beside
+   the stall detector — the removed `AgentConfig.timeout` field no
+   longer exists. A RED child that
    never returns a manifest raises `AgentTimeoutError` inside
    that wall-clock. `invoke` re-raises stall and wall-clock
    timeout. `_invoke_agent` logs `AGENT_TIMEOUT` for a hung RED
@@ -971,12 +974,17 @@ standard `AgentBackend.invoke()` contract with these customisations:
 In addition to the 25 `deviate-*` slash commands under
 `<workdir>/.<agent>/commands/` and `<workdir>/.pi/prompts/`, `deviate setup`
 provisions exactly **one** project-local skill named `deviatdd` at
-`<workdir>/.<agent>/skills/deviatdd/SKILL.md` for the selected agent
-only (`claude`, `opencode`, `factory`/`droid`, `pi`, `omp`). Codex
-receives the same skill at `<workdir>/.agents/skills/deviatdd/SKILL.md`
-plus one `.agents/skills/<command>/SKILL.md` per packaged slash command.
-`--agent` gates both command and skill install; `droid` normalizes to
-`.factory/`. The skill body is identical across platforms — only the
+`<workdir>/.<agent>/skills/deviatdd/SKILL.md` for each resolved install agent
+(`claude`, `opencode`, `factory`, `pi`, `omp`).
+`_resolve_install_agents` (`src/deviate/cli/__init__.py`) narrows the target
+set: with `--agent <name>` only that agent is provisioned and a
+declared-but-uninstalled name fails closed with `AGENT_NOT_INSTALLED`; with
+`--agent` omitted, setup provisions exactly the installed-agent directories
+reported by `detect_agents`. Codex receives the same skill at
+`<workdir>/.agents/skills/deviatdd/SKILL.md` plus one
+`.agents/skills/<command>/SKILL.md` per packaged slash command.
+`--agent` gates both command and skill install. The skill body is identical
+across platforms — only the
 destination directory differs.
 
 **Auto-discovery status per platform (informational, does not gate the
@@ -1064,13 +1072,13 @@ deviatdd project's own source at
 `src/deviate/prompts/skills/deviatdd/` (three directories deep).
 
 **Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py`
-and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` in
-`tests/test_cli/test_setup.py` cover selected-agent-only install,
-Codex skills + `backend = "codex"` + Luna/`reasoning_effort` upsert,
-idempotence, gitignore entry
-presence + idempotence, the safety-gate fragments in the SKILL.md
-body, well-formed frontmatter, and the dispatch table's canonical
-slash-command references.
+and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` /
+`TestSetupPerAgentInstall` in `tests/test_cli/test_setup.py` cover
+selected-agent-only install and auto-detect, Codex skills +
+`backend = "codex"` + Luna/`reasoning_effort` upsert, idempotence,
+gitignore entry presence + idempotence, the safety-gate fragments in
+the SKILL.md body, well-formed frontmatter, and the dispatch table's
+canonical slash-command references.
 
 
 ### 10.3 Pi Sandbox Boundary

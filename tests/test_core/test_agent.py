@@ -51,10 +51,16 @@ def _assert_pi_lean_coding_tools(cmd: list[str]) -> None:
 
 
 class TestAgentConfigModel:
+    """AC-PLAN-005 (ISS-ADH-030): ``AgentConfig`` no longer owns a ``timeout``
+    field; the consolidated deadline lives on ``DeviateConfig.timeout_seconds``.
+    """
+
     def test_agent_config_defaults(self):
         config = AgentConfig()
         assert config.backend == "pi"
-        assert config.timeout == 600
+        assert "timeout" not in AgentConfig.model_fields, (
+            "AC-PLAN-005: AgentConfig must not expose a timeout field"
+        )
         assert config.reasoning_effort is None
 
     def test_agent_config_accepts_codex_reasoning_effort(self):
@@ -65,41 +71,36 @@ class TestAgentConfigModel:
         with pytest.raises(ValidationError):
             AgentConfig(backend="codex", reasoning_effort="max")
 
-    def test_agent_config_custom_values(self):
-        config = AgentConfig(backend="claude", timeout=300)
+    def test_agent_config_custom_backend(self):
+        config = AgentConfig(backend="claude")
         assert config.backend == "claude"
-        assert config.timeout == 300
+        assert not hasattr(config, "timeout")
 
     def test_agent_config_droid_backend(self):
-        config = AgentConfig(backend="droid", timeout=120)
+        config = AgentConfig(backend="droid")
         assert config.backend == "droid"
-        assert config.timeout == 120
 
     def test_agent_config_rejects_invalid_backend(self):
         with pytest.raises(ValidationError):
             AgentConfig(backend="invalid-backend")
 
-    def test_agent_config_rejects_zero_timeout(self):
-        with pytest.raises(ValidationError):
-            AgentConfig(timeout=0)
-
-    def test_agent_config_rejects_negative_timeout(self):
-        with pytest.raises(ValidationError):
-            AgentConfig(timeout=-1)
-
     def test_agent_config_in_deviate_config(self):
-        deviate = DeviateConfig(agent=AgentConfig(backend="claude", timeout=300))
+        deviate = DeviateConfig(agent=AgentConfig(backend="claude"))
         assert deviate.agent.backend == "claude"
-        assert deviate.agent.timeout == 300
+        assert not hasattr(deviate.agent, "timeout")
 
     def test_agent_config_in_deviate_config_default(self):
         deviate = DeviateConfig()
         assert deviate.agent.backend == "pi"
-        assert deviate.agent.timeout == 600
+        assert not hasattr(deviate.agent, "timeout")
 
     def test_agent_config_forbids_extra_fields(self):
         with pytest.raises(ValidationError):
-            AgentConfig(backend="opencode", timeout=600, unknown_field="x")
+            AgentConfig(backend="opencode", unknown_field="x")
+
+    def test_consolidated_deadline_flows_from_deviate_config(self):
+        deviate = DeviateConfig(timeout_seconds=1200)
+        assert deviate.timeout_seconds == 1200
 
 
 class TestHandoverManifestModel:
@@ -379,7 +380,7 @@ class TestAgentBackendInvocation:
                 {"claude": "claude -p"},
             ),
         ):
-            config = AgentConfig(backend="claude", timeout=300)
+            config = AgentConfig(backend="claude")
             backend = AgentBackend(config=config)
             backend.invoke("test prompt")
 
@@ -1241,9 +1242,7 @@ class TestPiBackendRegistration:
 
         config = AgentConfig(backend="pi")
         dumped = config.model_dump()
-        toml_str = (
-            f'[agent]\nbackend = "{dumped["backend"]}"\ntimeout = {dumped["timeout"]}\n'
-        )
+        toml_str = f'[agent]\nbackend = "{dumped["backend"]}"\n'
         (tmp_path / "config.toml").write_text(toml_str, encoding="utf-8")
         parsed = tomllib.loads((tmp_path / "config.toml").read_text())
         reloaded = AgentConfig(**parsed["agent"])

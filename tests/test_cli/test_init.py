@@ -631,7 +631,8 @@ class TestInitAgentFlag:
             assert parsed["agent"]["backend"] == "opencode"
 
     def test_init_agent_factory_overwrites_existing_backend(self, tmp_path: Path):
-        """`--agent factory` overwrites a previously persisted `opencode` backend."""
+        """`--agent factory` overwrites a previously persisted `opencode` backend
+        when `factory` is installed (`.factory/` present)."""
         with chdir(tmp_path):
             runner.invoke(cli, ["setup", "--agent", "opencode"])
             config_path = tmp_path / ".deviate" / "config.toml"
@@ -639,6 +640,7 @@ class TestInitAgentFlag:
                 tomllib.loads(config_path.read_text())["agent"]["backend"] == "opencode"
             )
 
+            (tmp_path / ".factory").mkdir(parents=True)
             result = runner.invoke(cli, ["setup", "--agent", "factory"])
             assert result.exit_code == 0, result.output
             assert tomllib.loads(config_path.read_text())["agent"]["backend"] == "droid"
@@ -650,45 +652,40 @@ class TestInitAgentFlag:
             assert result.exit_code != 0
             assert "aider" in result.output
 
-    def test_init_agent_droid_routes_skills_to_detected_dirs(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_init_agent_droid_is_backend_alias_without_install_dir(
+        self, tmp_path: Path
     ):
-        """`--agent droid` shares the Factory Droid IDE skills directory.
+        """`--agent droid` is a backend-only alias and creates no install dir.
 
-        Both ``droid`` and ``factory`` dispatch to the same backend binary and
-        install skills into ``.factory/skills/deviate-*/`` — there is no
-        ``.droid/skills/`` directory.
+        ``droid`` maps to the ``droid`` backend binary but is not an
+        installable agent platform (no ``.droid/`` command or skill dir).
+        Setup persists the ``droid`` backend and creates no ``.droid/``
+        directory.
         """
-        monkeypatch.setattr(
-            "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
-        )
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
             assert result.exit_code == 0, result.output
-            assert (tmp_path / ".factory" / "commands").exists()
+            parsed = tomllib.loads((tmp_path / ".deviate" / "config.toml").read_text())
+            assert parsed["agent"]["backend"] == "droid"
             assert not (tmp_path / ".droid").exists()
+            assert not (tmp_path / ".factory").exists()
 
-    def test_init_agent_droid_writes_root_gitignore_entry(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_init_agent_droid_fails_closed_when_other_agent_installed(
+        self, tmp_path: Path
     ):
-        """`--agent droid` does NOT create a ``.droid/`` directory.
+        """`--agent droid` fails closed when another agent is installed.
 
-        The root ``.gitignore`` covers ``*/commands/deviate-*.md``
-        so no per-agent ``.gitignore`` is created.
-        ``droid`` is normalised to ``factory`` for the command directory.
+        ``droid`` is never returned by auto-detection (no ``.droid/``
+        platform dir). When the workspace detects other installed agents,
+        setup rejects ``--agent droid`` with a clear error and writes no
+        command or skill files.
         """
-        monkeypatch.setattr(
-            "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir: tmp_path / f".{agent}" / "commands",
-        )
+        (tmp_path / ".claude").mkdir(parents=True)
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "droid"])
-            assert result.exit_code == 0, result.output
+            assert result.exit_code != 0
+            assert "AGENT_NOT_INSTALLED" in result.output
             assert not (tmp_path / ".droid").exists()
-            assert not (tmp_path / ".factory" / ".gitignore").exists()
-            root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
-            assert "*/commands/deviate-*.md" in root_gi
 
     def test_init_writes_root_gitignore_for_all_agent_dirs(self, tmp_path: Path):
         """``deviate setup`` writes agent artifact patterns and ``.worktrees/``
@@ -702,9 +699,13 @@ class TestInitAgentFlag:
             assert "*/prompts/deviate-*.md" in root_gi
             assert ".worktrees/" in root_gi
 
-    def test_init_installs_commands_only_for_selected_agent(self, tmp_path: Path):
-        """``deviate setup --agent <x>`` installs the command library only
-        into the selected agent's directory.
+    def test_init_agent_installs_commands_only_to_selected_agent(self, tmp_path: Path):
+        """``deviate setup --agent opencode`` installs the command library
+        only under ``.opencode/`` — no other agent directory receives files.
+
+        ``--agent`` is both the backend selector and the sole install target
+        (AC-PLAN-002). Without a detected ``.opencode/`` directory, setup
+        still installs to opencode as a fresh provisioning target.
         """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -716,9 +717,9 @@ class TestInitAgentFlag:
                 (".pi", "prompts"),
                 (".omp", "prompts"),
             ):
-                sample = tmp_path / agent_dir / sub / "deviate-red.md"
-                assert not sample.exists(), (
-                    f"Did not expect {sample} — setup installs only the selected agent"
+                assert not (tmp_path / agent_dir / sub / "deviate-red.md").exists(), (
+                    f"Expected no install under {agent_dir}; --agent opencode "
+                    f"targets only the selected agent"
                 )
             assert not (tmp_path / ".agents").exists()
 
@@ -1156,19 +1157,61 @@ class TestInstallDeviatddSkill:
     def test_setup_installs_deviatdd_skill_only_for_selected_agent(
         self, tmp_path: Path
     ) -> None:
-        """``deviate setup --agent claude`` writes the skill only under
-        ``.claude/skills/`` and does not provision other agent trees."""
+        """``deviate setup --agent claude`` writes the deviatdd skill only
+        under ``.claude/skills/deviatdd/SKILL.md`` — not to other agent dirs
+        (AC-PLAN-002)."""
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "claude"])
             assert result.exit_code == 0, result.output
 
         claude_skill = tmp_path / ".claude" / "skills" / "deviatdd" / "SKILL.md"
         assert claude_skill.is_file(), f"Claude skill not installed: {claude_skill}"
+        pi_skill = tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md"
+        assert not pi_skill.exists(), (
+            f"Pi skill must not be installed for --agent claude: {pi_skill}"
+        )
         assert ".claude/skills/deviatdd/SKILL.md" in result.output
         for other in (".pi", ".opencode", ".factory", ".omp", ".agents"):
             other_skill = tmp_path / other / "skills" / "deviatdd" / "SKILL.md"
             assert not other_skill.exists(), (
                 f"{other} should not receive a skill when --agent claude"
+            )
+
+    def test_setup_auto_detect_installs_deviatdd_skill_to_detected_agents(
+        self, tmp_path: Path
+    ) -> None:
+        """``deviate setup`` with no ``--agent`` installs the deviatdd skill
+        to exactly the auto-detected agent directories (AC-PLAN-003).
+
+        Content is byte-identical across all detected destinations.
+        """
+        for name in ("claude", "opencode"):
+            (tmp_path / f".{name}").mkdir(parents=True)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup"])
+            assert result.exit_code == 0, result.output
+
+        bodies: dict[str, str] = {}
+        for agent in ("claude", "opencode"):
+            skill_path = tmp_path / f".{agent}" / "skills" / "deviatdd" / "SKILL.md"
+            assert skill_path.is_file(), (
+                f"{agent} should have the deviatdd skill installed at "
+                f"{skill_path} (auto-detected)"
+            )
+            assert f".{agent}/skills/deviatdd/SKILL.md" in result.output, (
+                f"Missing INSTALL log for {agent}; got:\n{result.output}"
+            )
+            bodies[agent] = skill_path.read_text()
+
+        for agent in ("factory", "pi", "omp"):
+            assert not (tmp_path / f".{agent}" / "skills").exists(), (
+                f"{agent} must not receive the skill; not auto-detected"
+            )
+
+        first_agent, first_body = next(iter(bodies.items()))
+        for agent, body in bodies.items():
+            assert body == first_body, (
+                f"Skill copy for {agent} differs from {first_agent}"
             )
 
     def test_setup_deviatdd_skill_idempotent(self, tmp_path: Path) -> None:
@@ -1182,6 +1225,7 @@ class TestInstallDeviatddSkill:
             second = runner.invoke(cli, ["setup", "--agent", "claude"])
             assert second.exit_code == 0, second.output
 
+        # The selected agent SKIPs on the second run.
         assert "SKIP .claude/skills/deviatdd/SKILL.md" in second.output
         assert "SKIP .pi/skills/deviatdd/SKILL.md" not in second.output
 

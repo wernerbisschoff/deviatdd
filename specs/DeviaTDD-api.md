@@ -35,17 +35,21 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   slash commands + 1 standalone `tools-mcp-servers` command (for Factory Droid)
   — 25 flat `.md` files total in the Factory install; 24 in every other agent
   `.{agent}/prompts/` for Pi) during `deviate setup`. Commands land only in the
-  selected agent's directory — `.claude/commands/`, `.opencode/commands/`,
-  `.factory/commands/` (`--agent factory` and `--agent droid`), `.pi/prompts/`,
-  `.omp/prompts/`, or Codex skills under `.agents/skills/<name>/SKILL.md`.
-  Each command is a flat `<name>.md` file (or a Codex `SKILL.md`) with a
-  minimal YAML frontmatter (`name:` + `description:`). The agent selected via
-  `--agent` (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`, `codex`)
-  is persisted to `[agent].backend` in `config.toml` and is the only install
-  target. `--agent codex` additionally seeds `[models].default = "gpt-5.6-luna"`
-  and `[agent].reasoning_effort = "high"` when those keys are missing or
-  empty; a user-set `[models].default` or `[agent].reasoning_effort` is
-  left untouched. Non-Codex setup does not write Luna or a reasoning key.
+  agent directories resolved by `_resolve_install_agents`: when `--agent` is
+  given, exactly that agent directory — `.claude/commands/`, `.opencode/commands/`,
+  `.factory/commands/`, `.pi/prompts/`, `.omp/prompts/`, or Codex skills under
+  `.agents/skills/<name>/SKILL.md`; when
+  omitted, exactly the installed-agent directories returned by `detect_agents`
+  (`src/deviate/core/commands.py`). An unknown or declared-but-uninstalled
+  `--agent` fails closed with `AGENT_NOT_INSTALLED` and writes nothing. Each
+  command is a flat `<name>.md` file (or a Codex `SKILL.md`) with a minimal YAML
+  frontmatter (`name:` + `description:`). The agent selected via `--agent`
+  (`opencode`, `claude`, `droid`, `factory`, `pi`, `omp`, `codex`) is persisted
+  to `[agent].backend` in `config.toml` and selects the install target.
+  `--agent codex` additionally seeds `[models].default = "gpt-5.6-luna"` and
+  `[agent].reasoning_effort = "high"` when those keys are missing or empty; a
+  user-set `[models].default` or `[agent].reasoning_effort` is left untouched.
+  Non-Codex setup does not write Luna or a reasoning key.
 
   **Single-source prompt derivation:** for each of the 11 overlapping phases
   (`explore`, `research`, `prd`, `shard`, `plan`, `tasks`, `red`, `green`,
@@ -78,7 +82,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `.omp/prompts/` (OMP is an extensible wrapper around the Pi executor; it
   discovers slash commands from `.omp/prompts/`). All five command
   directories are excluded from version control via the project-root
-  `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:653`).
+  `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:905`),
+  which also ignores `.deviate/` and `.worktrees/` by default.
   Additionally, both `deviate setup` and `deviate init pre` provision a project-root
   `.gitattributes` declaring `merge=union` for `specs/issues.jsonl` and
   `specs/**/tasks.jsonl` (see `_ensure_root_gitattributes` at
@@ -133,12 +138,13 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `.deviate/session.json` — Current session state snapshot
   * `.deviate/.gitignore` — Excludes session.json and runtime state
     directories from version control
-  * `<workdir>/.gitignore` — Updated with four concise DeviaTDD
-    agent-command exclusions: `*/commands/deviate-*.md`,
+  * `<workdir>/.gitignore` — Updated with five concise DeviaTDD
+    exclusions: `*/commands/deviate-*.md`,
     `*/prompts/deviate-*.md` (covers every supported agent directory
     — ``.claude/commands/``, ``.opencode/commands/``,
     ``.factory/commands/``, ``.pi/prompts/`` — and any future agent
-    that follows the same flat-file convention). The single-level
+    that follows the same flat-file convention), `*/skills/deviatdd/`,
+    `.worktrees/`, and `.deviate/`. The single-level
     ``*/`` prefix is deliberate: a broader ``**/deviate-*.md`` would
     silently ignore the deviatdd project's own command sources at
     ``src/deviate/prompts/commands/deviate-*.md`` (three directories
@@ -160,12 +166,16 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `src/deviate/cli/__init__.py`, called from `setup()` after
   `_install_commands_to_agents(...)`. Idempotent (content-equality skip
   mirrors `install_command`'s contract).
-* **Install target (selected agent only):** the skill is written to
-  `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for the agent passed to
-  `--agent` (or the persisted backend / interactive prompt). `droid`
-  normalizes to `factory`. Codex writes
-  `<workdir>/.agents/skills/deviatdd/SKILL.md` and does **not** write
-  `.codex/prompts` or `.codex/commands`.
+* **Install targets (resolved install agents):** the skill is written
+  to `<workdir>/.<agent>/skills/deviatdd/SKILL.md` for each agent in the
+  resolved install set (see `_resolve_install_agents`), which with
+  `--agent <name>` targets only that agent and without `--agent` targets
+  exactly the agents `detect_agents` reports as installed — rather than
+  every platform that `setup` provisions commands for. Mirrors
+  `_install_commands_to_agents`'s resolved-agent policy — the operator
+  gets the skill at the canonical skills directory for each targeted
+  agent. An unknown or declared-but-uninstalled `--agent` fails closed
+  with `AGENT_NOT_INSTALLED`.
   * `claude` -> `<workdir>/.claude/skills/deviatdd/SKILL.md`
     (verified — same form as user-level `~/.claude/skills/<name>/SKILL.md`).
   * `opencode` -> `<workdir>/.opencode/skills/deviatdd/SKILL.md`
@@ -235,15 +245,18 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   single-level wildcard covers every selected-agent skill install
   (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
   with one pattern. `*/skills/deviate-*/` covers Codex per-command
-  skill dirs. The single-level prefix (`*/`, not `**/`) is critical: it
+  skill dirs. The entries tuple also carries `.worktrees/` and
+  `.deviate/` so per-project runtime state is untracked by default
+  for new consumer setups. The single-level prefix (`*/`, not `**/`) is critical: it
   scopes the pattern to the project root, never matching the
   source-of-truth at `src/deviate/prompts/skills/deviatdd/` (three
   directories deep).
-* **Tests:** `TestInstallDeviatddSkill` in
-  `tests/test_cli/test_init.py` and `TestSetupSelectedAgentIsolation` /
-  `TestSetupCodex` in `tests/test_cli/test_setup.py` cover
-  selected-agent-only install, Codex skills + `backend = "codex"`,
-  Luna + `reasoning_effort = "high"` upsert (fresh, existing, no-clobber),
+* **Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py` and
+  `TestSetupSelectedAgentIsolation` / `TestSetupCodex` /
+  `TestSetupPerAgentInstall` in `tests/test_cli/test_setup.py` cover
+  selected-agent-only install and auto-detect, Codex skills +
+  `backend = "codex"`, Luna + `reasoning_effort = "high"` upsert
+  (fresh, existing, no-clobber),
   idempotence, gitignore entry presence + idempotence, safety-gate
   fragments in the SKILL.md body, well-formed frontmatter, and the
   dispatch table's canonical slash-command references.
@@ -945,7 +958,7 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   timeout=...)` (`src/deviate/cli/_safe_commands.py`). The deadline
   resolves as `DEVIATE_TEST_TIMEOUT_SECONDS` (env override) →
   `DeviateConfig.timeout_seconds` (`.deviate/config.toml`, default
-  `300`) → `300`; an unparseable env value or a `gt=0`-violating
+  `1800`) → `1800`; an unparseable env value or a `gt=0`-violating
   config value falls through to the next source so the timeout
   binding can never be silently disabled. When the deadline lapses
   the orchestrator runs SIGTERM, waits a 5s grace window, then
@@ -984,7 +997,10 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
   passes `stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS` (3600).
   A stdout-silent stall raises `AgentTimeoutError` with
   `STALL_DETECTED`. The same poll loop also honors
-  `timeout_secs` from `AgentConfig.timeout` (default 600s).
+  `timeout_secs` from the single consolidated `DeviateConfig.timeout_seconds`
+  (default 1800s), resolved by `resolve_agent_deadline`
+  (`src/deviate/state/config.py`) — the same value governing test-command
+  deadlines. The removed `AgentConfig.timeout` field no longer exists.
   A RED child that writes files or trickles stdout and never
   returns a handover manifest still raises `AgentTimeoutError`
   inside that wall-clock. `invoke` re-raises stall and
