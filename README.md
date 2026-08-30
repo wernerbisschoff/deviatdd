@@ -51,7 +51,7 @@ deviate setup --agent claude     # or: opencode | pi | droid | factory | omp | c
 
 Once setup finishes, open your agent and run **`/deviate-init` as the first prompt**. That scaffolds `specs/constitution.md`, `mise.toml`, and `specs/issues.jsonl`, skipping anything already present. Codex uses the same prompt, installed as the `deviate-init` skill.
 
-Then drive the rest of the lifecycle from inside your agent. Each phase emits a single artifact, commits it, and (at the two gates) pauses for human review.
+Then drive the rest of the lifecycle from inside your agent. Each phase emits a single artifact; **`post` often commits it** (you did not type `git commit`). At the two gates the workflow pauses for human review. See [Phase transparency](#phase-transparency) for which commands commit, spawn, or fail closed.
 
 **Product layer** *(optional, for cross-product framing — skip if your repo only ships single features):*
 
@@ -74,7 +74,7 @@ Then drive the rest of the lifecycle from inside your agent. Each phase emits a 
 /deviate-adhoc "Add a /healthz endpoint"   # condenses explore+research+prd+shard into one issue
 ```
 
-**Meso — claim the issue and enter its worktree.** Meso slash commands run inside the per-issue worktree; claim first, then `cd` in:
+**Meso — claim the issue and enter its worktree.** Default meso uses a worktree. `claim_remote` defaults **false** (local claim only; no push lock). Path A coworker flow stays in this clone: `deviate meso run --no-setup --local`. Meso slash commands run inside the per-issue worktree; claim first, then `cd` in:
 
 ```
 # From the main checkout (NOT inside a worktree):
@@ -83,6 +83,9 @@ deviate specify                            # auto-claim the next unblocked BACKL
 deviate specify ISS-001-007                # claim that exact issue; same worktree creation
 cd $(deviate specify ISS-001-007 2>&1 | grep '^WORKTREE' | awk '{print $2}')
                                            # then re-open the agent inside the worktree
+
+# Path A (this clone, no worktree, no remote lock):
+deviate meso run --no-setup --local --issue ISS-001-007
 ```
 
 **Meso** — with the worktree active, decompose into tasks. `tasks.md` is the human's execution blueprint:
@@ -110,11 +113,12 @@ cd $(deviate specify ISS-001-007 2>&1 | grep '^WORKTREE' | awk '{print $2}')
 /deviate-execute  T002                   # skips the TDD cycle; still has its own JUDGE pass
 ```
 
-**Release** — close the loop:
+**Release** — close the loop. `/deviate-pr`, `/deviate-review`, and `/deviate-walkthrough` are **optional packs** (not in default setup on current main):
 
 ```
 /deviate-pr       T001                   # conventional-commit PR; merge appends COMPLETED
-/deviate-review                          # ← Gate 3: final PR scan; merge or request changes
+/deviate-review                          # ← Gate 3: comments-only PR scan (not a merge gate)
+/deviate-walkthrough                     # four-look map (brief, tests, production vs checks, command)
 ```
 
 **Or, run the unattended one-shot pipeline** — the top-level
@@ -207,7 +211,7 @@ style Ex fill:#f5e1e1
 | **Macro · Research** *(Gate 1)* | `/deviate-research` | `specs/{epic}/design.md`, `specs/{epic}/data-model.md` | **Gate 1**: approve the design + data-model before PRD synthesis. |
 | **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
 | **Macro · Shard** | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | Review every sharded issue for completeness, edge cases, and scope (soft review — the system auto-advances to Meso and does not block). Issues are born as full specs — the user-facing *spec content* is embedded here, but **claiming and worktree creation is a separate CLI step (`deviate specify`)** that runs after `/deviate-shard` and before the meso slash commands below. |
-| **Meso · Specify** | `deviate specify [ISS-NNN-NNN]` | A git worktree at `.worktrees/<branch>/`, a claim entry appended to `specs/issues.jsonl`, and the branch pushed to remote | The setup step before plan/tasks. With no argument, auto-claims the next unblocked BACKLOG issue; with an explicit ID, claims that issue. Stops after the worktree is created — does NOT advance session state and does NOT run plan or tasks. `cd` into the printed worktree path before running any other meso slash command. |
+| **Meso · Specify** | `deviate specify [ISS-NNN-NNN]` | A git worktree at `.worktrees/<branch>/` and a claim entry appended to `specs/issues.jsonl`. `claim_remote` defaults **false** (local only). Push-as-lock is opt-in (`--claim-remote` / `claim_remote = true`). | The setup step before plan/tasks. With no argument, auto-claims the next unblocked BACKLOG issue; with an explicit ID, claims that issue. Stops after the worktree is created — does NOT advance session state and does NOT run plan or tasks. `cd` into the printed worktree path before running any other meso slash command. Path A: `deviate meso run --no-setup --local` stays in this clone. |
 | **Run** *(full pipeline, end-to-end)* | `deviate run` | Worktree at `.worktrees/<branch>/`, `tasks.md`, `tasks.jsonl`, then completed task commits | The canonical "go do the next thing" command. Discovers the next BACKLOG issue, claims it (creating a per-issue worktree), runs SPECIFY → PLAN → TASKS in that worktree, then drains every PENDING task through the TDD cycle. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` to the micro drain. Internally calls `deviate meso run` then `deviate micro run --all` inside the created worktree. |
 | **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | **Must be invoked inside the worktree that `deviate specify` created.** Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
 | **Meso · Tasks** | `/deviate-tasks` | `specs/{epic}/issues/ISS-NNN/tasks.md` + `specs/{epic}/tasks.jsonl` (append-only ledger) | **Must be invoked inside the same worktree.** The `tasks.md` artifact is the human's execution blueprint. Verify: 4–8 tasks per issue, every task has a Verification CLI command, each task declares a Mode (`TDD` or `IMMEDIATE`) and Type, DAG `blocked_by` deps are right. TDD tasks flow to red→green→judge→refactor; IMMEDIATE tasks route to `/deviate-execute`. |
@@ -217,11 +221,29 @@ style Ex fill:#f5e1e1
 | **Micro · Refactor** | `/deviate-refactor <task-id>` | Polished, behavior-preserving code (only on `JUDGE_PASS`) | If the refactor breaks tests, the CLI discards it and the task completes on the verified GREEN. |
 | **Micro · Execute** | `/deviate-execute <task-id>` | A targeted change for `direct` / `e2e` tasks | Skips the TDD cycle; still has its own JUDGE pass. |
 | **Micro · Run** *(agent-internal drain)* | `deviate micro run [task-id] --all` | Completed task commits per the cycle | Agent-internal dispatch — `deviate micro run <task-id>` runs a single task; `deviate micro run --all` drains every PENDING task. Top-level `deviate run` invokes this with `--all` inside the worktree the meso step just created. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json`. |
-| **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
-| **Release** *(Gate 3)* | `/deviate-review` | Final PR scan | **Gate 3**: merge or request changes. |
+| **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Optional pack. Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
+| **Release** *(Gate 3)* | `/deviate-review` | Comments-only PR scan (optional pack) | **Gate 3**: comments only by default (stdout / GitHub COMMENT). Not a merge gate. Opt-in `--apply` is CRITICAL-only. Auto-apply of CRITICAL+SUGGESTION is old PyPI 2.23.1 — not current main. |
+| **Walkthrough** | `/deviate-walkthrough` | Four-look map (optional pack; no commit) | Brief location, test hunks, production hunks vs named checks, command to run those checks. Does not approve or auto-edit. |
 | **Cleanup** | `/deviate-prune` | Spy/impl tests thinned; `plan.md` / `tasks.md` and JSONL ledgers unchanged | Manual honeycomb pass for **one** issue. Drops `spy` / `impl` (marks, name tags, or untagged internal probes); keeps `behavioral` / `ac` and public input-to-output. Never deletes `plan.md`, `tasks.md`, `explore.md`, `prd.md`, or `issues/*.md`. Never touches `issues.jsonl`, `tasks.jsonl`, or `flows.jsonl`. Manual invoke only — not hooked into COMPLETED, `--all`, or the skill success loop. |
 
 Operational tools (no gate): `/deviate-triage`, `/deviate-constitution`, `/deviate-hotfix`. `/deviate-prune` is the manual honeycomb test-thinning surface (thin CLI `deviate prune pre` / `post`; the slash command commits the cleanup).
+
+---
+
+## Phase transparency
+
+`--help` and this table say which phases **commit**, **spawn an agent**, or **fail closed**. `pre` injects a JSON contract to the agent; `post` validates, writes, and often commits (you did not type `git commit`). Slash prompts tell the agent to run `pre`/`post`; auto prompts tell the agent not to — the orchestrator does. Codex spawn is `codex exec --sandbox workspace-write --ask-for-approval never` (`src/deviate/core/agent.py`). `meso run` and `micro run` nest that spawn.
+
+Default setup on current main (#134) installs **macro + meso + micro** plus the shared `deviatdd` skill. Optional packs stay off until selected: `product` (bundle), `merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`, `e2e`. PyPI 2.23.1 still installs all slash files — that is not current main.
+
+| Phase | Does | Commits | Debug a fail |
+|-------|------|---------|--------------|
+| **setup** | Writes `.deviate/`, persists one agent, installs default packs + `deviatdd`. `claim_remote` defaults **false**. | No. | Non-TTY without `--agent` → `NO_AGENT_SELECTED`. Unknown `--packs` → fail closed. Named agent missing → `AGENT_NOT_INSTALLED`. |
+| **adhoc** | One spec-enriched issue + `FR-ADHOC-NNN` + a BACKLOG ledger row. | Yes — `post` commits artifacts. Record stays BACKLOG. | Missing problem statement; complexity HIGH without `--force`. |
+| **meso** | Default: worktree + claim, then PLAN → TASKS (spawns the agent). Path A: `deviate meso run --no-setup --local` stays in this clone and skips the remote lock. | Yes — claim, `plan post`, `tasks post`. | `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, `NO_CLAIMABLE_ISSUES`. |
+| **micro** | RED → GREEN → JUDGE → REFACTOR (or EXECUTE). Spawns the agent each phase. `--profile fast` skips **JUDGE and REFACTOR**. `deviate micro run --review` is a **TTY pause before the phase commit**, not `/deviate-review`. Skill argument `review` is an agent loop policy — never pass `--review` from the skill. | Yes — each phase. RED uses `git commit --no-verify`. | `REVIEW_REQUIRES_TTY`, `TRAIN_EXHAUSTED`, `COMMIT_FAILED`. `NO_PENDING_TASKS` (exit 1) means the queue is empty. |
+| **review** | Optional pack. `/deviate-review` is **comments-only** by default. Not a merge gate. | No (unless opt-in `--apply` landed a CRITICAL fix). | `COVERAGE_INCOMPLETE` on `review pre` when a plan AC is unclaimed. |
+| **walkthrough** | Optional pack. Four-look map: brief location, test hunks, production hunks vs named checks, command to run those checks. | No. | Missing brief / named checks: stop. |
 
 ---
 

@@ -6835,12 +6835,19 @@ def run_command(
     task_id: str | None = typer.Argument(
         None, help="Task ID (TNNN or TSK-NNN-NN format)"
     ),
-    all_tasks: bool = typer.Option(False, "--all", help="Run all PENDING tasks"),
+    all_tasks: bool = typer.Option(
+        False,
+        "--all",
+        help="Drain every PENDING task; each phase commits and spawns the agent",
+    ),
     profile: str | None = typer.Option(
         None,
         "--profile",
         callback=_validate_profile,
-        help="Execution profile: full, fast (default: config or full)",
+        help=(
+            "Execution profile: full, fast (default: config or full). "
+            "fast skips JUDGE and REFACTOR."
+        ),
     ),
     no_judge: bool | None = typer.Option(None, "--no-judge", help="Skip JUDGE phase"),
     no_refactor: bool | None = typer.Option(
@@ -6872,12 +6879,18 @@ def run_command(
         False,
         "--review",
         help=(
-            "Pause before each RED/GREEN/REFACTOR/EXECUTE commit so a human "
-            "can review the dirty worktree. Requires a TTY. Off by default."
+            "TTY pause before each phase commit — not /deviate-review. "
+            "Requires a TTY. Off by default."
         ),
     ),
 ) -> None:
-    """Use `deviate micro run --all` to drain the queue."""
+    """Use `deviate micro run --all` to drain the queue.
+
+    Each phase commits (RED uses ``git commit --no-verify``) and spawns
+    the configured agent. ``--profile fast`` skips JUDGE and REFACTOR.
+    ``--review`` is a TTY pause before the phase commit, not
+    ``/deviate-review``.
+    """
     global _verbose, _cli_model_override
     _verbose = verbose
     _cli_model_override = model
