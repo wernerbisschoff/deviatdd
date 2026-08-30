@@ -1441,7 +1441,7 @@ cli.add_typer(
     review_app,
     name="review",
     rich_help_panel=_AGENT_PANEL,
-    help="Gate 3 comments-only PR scan (optional pack; not a merge gate)",
+    help="Gate 3 comments-only PR scan; --apply is CRITICAL-only (not a merge gate)",
 )
 cli.add_typer(
     prune_app,

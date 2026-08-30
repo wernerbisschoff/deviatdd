@@ -1,13 +1,9 @@
 #!/usr/bin/env bats
 #
-# Installed Gate 3 review fail-closes on an unclaimed plan AC (ISS-ADH-028).
+# Installed Gate 3 review is comments-only (ISS-ADH-035). Unclaimed plan ACs
+# stay in the contract as comment input (ISS-ADH-028 uncovered list). A brief
+# with no named checks emits exactly `brief incomplete`.
 # Constitution §3 E2E command: bats tests/e2e/.
-#
-# Happy path: every this-issue COMPLETED claim covers plan.md AC-PLAN-NNN,
-# so `deviate review pre` exits 0 with READY or PASS (AC-PLAN-006). A repo
-# with no plan.md stays vacuously READY (AC-PLAN-007).
-# Critical-failure path: AC-PLAN-002 has no COMPLETED claim, so review pre
-# exits non-zero or emits a non-PASS contract (AC-PLAN-005).
 #
 # Each test starts in a fresh tmpdir so `deviate` does not pick up the host
 # repo's `.deviate/session.json` or `specs/` state. Git commands run only
@@ -36,7 +32,7 @@ _init_isolated_repo() {
 _seed_issue_ledger() {
     mkdir -p specs/adhoc/issues
     printf '%s\n' '{"issue_id": "ISS-ADH-028", "source_file": "specs/adhoc/issues/028-coverage.md"}' > specs/issues.jsonl
-    printf '%s\n' "# coverage issue" > specs/adhoc/issues/028-coverage.md
+    printf '%s\n' "# coverage issue" "AC-ADHOC-028-01 named check" > specs/adhoc/issues/028-coverage.md
 }
 
 _seed_plan() {
@@ -70,12 +66,12 @@ _contract_field() {
     printf '%s' "$output" | python3 -c "import json,sys; print(json.load(sys.stdin)['${field}'])"
 }
 
-@test "no-plan repo stays READY on installed review pre" {
+@test "no brief emits brief incomplete on installed review pre" {
     _init_isolated_repo
 
     run deviate review pre
-    [ "$status" -eq 0 ]
-    [ "$(_contract_field status)" = "READY" ]
+    [ "$status" -ne 0 ]
+    [ "$output" = "brief incomplete" ]
 }
 
 @test "full this-issue COMPLETED claims keep installed review pre READY" {
@@ -93,7 +89,22 @@ _contract_field() {
     [ "$(_contract_field coverage_complete)" = "True" ]
 }
 
-@test "unclaimed plan AC fail-closes installed review pre" {
+@test "default review pre apply is false; --apply is CRITICAL only" {
+    _init_isolated_repo
+    _checkout_issue_branch
+    _seed_issue_ledger
+
+    run deviate review pre
+    [ "$status" -eq 0 ]
+    [ "$(_contract_field apply)" = "False" ]
+
+    run deviate review pre --apply
+    [ "$status" -eq 0 ]
+    [ "$(_contract_field apply)" = "True" ]
+    [ "$(_contract_field apply_scope)" = "CRITICAL" ]
+}
+
+@test "unclaimed plan AC is comment input on installed review pre" {
     _init_isolated_repo
     _checkout_issue_branch
     _seed_issue_ledger
@@ -102,9 +113,8 @@ _contract_field() {
     _seed_pending_claim "TSK-028-02" "AC-PLAN-002"
 
     run deviate review pre
-    [ "$status" -ne 0 ]
-    status_value="$(_contract_field status)"
-    [[ "$status_value" != "READY" && "$status_value" != "PASS" ]]
+    [ "$status" -eq 0 ]
+    [ "$(_contract_field status)" = "READY" ]
     [[ "$output" == *"AC-PLAN-002"* ]]
     [ "$(_contract_field coverage_complete)" = "False" ]
 }
