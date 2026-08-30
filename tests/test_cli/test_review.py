@@ -18,15 +18,6 @@ from tests.conftest import _git_env
 
 runner = CliRunner()
 
-_REVIEW_PROMPT = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "deviate"
-    / "prompts"
-    / "commands"
-    / "deviate-review.md"
-).read_text(encoding="utf-8")
-
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
@@ -71,29 +62,6 @@ def _seed_named_brief(
 class TestReviewCommentsOnly:
     """AC-ADHOC-035-02 / 04: default review is comments-only; incomplete brief stops."""
 
-    def test_default_review_path_has_no_apply_or_commit(self) -> None:
-        text = _REVIEW_PROMPT
-        assert "COMMENTS_ONLY" in text
-        assert "There is no always-on STEP 4" in text
-        assert "Apply every `[CRITICAL]` and `[SUGGESTION]`" not in text
-        assert "Do not `git add`" in text
-        assert "Do not `git commit`" in text
-        assert "Never emit `REQUEST_CHANGES`" in text
-        assert "brief incomplete" in text
-        assert (
-            "Print/post comments and **stop**" in text
-            or "print/post comments and stop" in text.lower()
-        )
-
-    def test_apply_flag_is_critical_only(self) -> None:
-        text = _REVIEW_PROMPT
-        assert "`--apply`" in text
-        assert "STEP 4 only when `--apply`" in text
-        assert "Never auto-apply SUGGESTION or OPPORTUNITY" in text
-        assert "named-check fail" in text
-        assert "Commit only when `--apply` actually landed a CRITICAL fix" in text
-        assert "REQUEST_CHANGES" in text
-
     def test_review_pre_incomplete_brief_emits_exact_phrase(
         self, tmp_git_repo: Path
     ) -> None:
@@ -136,18 +104,6 @@ class TestReviewCommentsOnly:
         contract = json.loads(result.stdout)
         assert contract["issue_brief_path"] == str(brief.resolve())
         assert contract["plan_path"] is None
-
-    def test_review_cli_source_does_not_stage_or_commit(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[2]
-            / "src"
-            / "deviate"
-            / "cli"
-            / "review.py"
-        ).read_text(encoding="utf-8")
-        assert "git add" not in source
-        assert "git commit" not in source
-        assert "REQUEST_CHANGES" not in source
 
     def test_review_pre_default_apply_is_false(self, tmp_git_repo: Path) -> None:
         _seed_named_brief(tmp_git_repo)

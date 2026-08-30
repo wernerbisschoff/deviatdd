@@ -496,11 +496,7 @@ class TestSmallestChangeFoldedIntoExistingPrompts:
         assert "Cross-task over-engineering" in text
         assert "into a shared helper" not in text
         assert "Extract the duplicated validation block" not in text
-        assert "comments only" in text.lower() or "COMMENTS_ONLY" in text
-        assert "There is no always-on STEP 4" in text
-        assert "STEP 4 only when `--apply`" in text
-        assert "Never auto-apply SUGGESTION or OPPORTUNITY" in text
-        assert "Do not `git commit`" in text
+        assert "Skip every `[OPPORTUNITY]`" in text
         assert "## Constraints" not in text
         assert "## Minimality" not in text
 

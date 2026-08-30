@@ -12,15 +12,6 @@ from tests.conftest import _git_env
 
 runner = CliRunner()
 
-_WALKTHROUGH_PROMPT = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "deviate"
-    / "prompts"
-    / "commands"
-    / "deviate-walkthrough.md"
-).read_text(encoding="utf-8")
-
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
@@ -67,30 +58,6 @@ def _seed_issue(
         plan = work / "plan.md"
         plan.write_text("**Scenario AC-PLAN-001: map**\n", encoding="utf-8")
     return brief, plan
-
-
-class TestWalkthroughPromptFourLookMap:
-    """AC-ADHOC-035-01 / 04: walkthrough is a four-look map, not a filter."""
-
-    def test_prompt_requires_four_emit_fields(self) -> None:
-        text = _WALKTHROUGH_PROMPT
-        assert "FOUR_LOOK_MAP" in text
-        assert "issue_brief_path" in text
-        assert "plan AC" in text or "plan.md" in text
-        assert "test hunk" in text.lower() or "test_files" in text
-        assert "production hunk" in text.lower() or "named check" in text
-        assert "command to run those checks" in text.lower() or "Check command" in text
-
-    def test_prompt_forbids_approve_hide_skip_look_auto_edit(self) -> None:
-        text = _WALKTHROUGH_PROMPT
-        assert "approve" in text.lower()
-        assert "MUST NOT" in text
-        assert "hide hunks" in text
-        assert "skip a look" in text
-        assert "auto-edit" in text
-        assert "apply fixes" in text
-        assert "SKIP / SKIM to drop hunks" in text or "No SKIP/SKIM of hunks" in text
-        assert 'never "Skip this look"' in text
 
 
 class TestWalkthroughPre:

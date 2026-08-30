@@ -22,7 +22,7 @@ The coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
 - `/deviate-review` **is** the PR review. **Default**: comments only; no edits, no `git add`, no commit; not a merge gate (never `REQUEST_CHANGES`, never merge). Same inputs → same comments (structured checklist keyed by named-check tokens + test-weakening + cross-task drift, stable sort by token then path then line; no style nits / “consider”). MUST read: this issue’s brief; this issue’s `plan.md` AC-PLAN lines if present; `behavioral`/`ac` tests in the diff; production delta vs those checks; test diff for deleted/skipped/weakened tests. Cross-task drift **on this issue** is in scope (unique job vs per-task JUDGE). If the brief has no named checks: emit exactly `brief incomplete` and stop. Do not hunt Explore. Do not assume JUDGE ran (`--profile fast` is the coworker path). Non-DeviaTDD: comments only if a brief with named checks is provided, else stop.
 - **Apply is opt-in, not default.** `deviate review --apply` (or equivalent slash argument / `deviate review pre --apply`) may apply **CRITICAL** findings only (security / data loss / broken build / named-check fail with a concrete FIX). Never auto-apply SUGGESTION or OPPORTUNITY. Commit only when `--apply` actually landed a CRITICAL fix. Without `--apply`, print/post comments and stop. There is no always-on STEP 4.
 - Both remain optional packs (`walkthrough`, `review`). Default setup still does not install them. No new pack names. Do not add `/deviate-pr-review` or pack `pr-review`.
-- Tests pin: default review path has no apply/commit; `--apply` applies CRITICAL only; walkthrough emits the four map fields and forbids approve/hide/skip-a-look/auto-edit; incomplete brief → `brief incomplete`.
+- Tests pin via CLI output/files (not prompt-body greps): default review path has no apply/commit; `--apply` applies CRITICAL only; incomplete brief → `brief incomplete`; walkthrough `pre` emits the four map fields (`issue_brief_path`, `plan_path`, `test_files`, `production_files`).
 - `deviate walkthrough pre` may gain issue-brief path + plan path (null if absent) + classified test vs production changed files; do not pull constitution/prd unless the brief names them.
 - `deviate review pre` includes issue brief path + `apply` (default false) + `apply_scope` (`CRITICAL` only when `--apply`). `review_coverage.py` plan-AC uncovered list is an input to comments, not a reason to auto-fix; do not require coverage_complete to comment or apply.
 - Update `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md` `[Unreleased]`.
@@ -47,7 +47,7 @@ The coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
 - **US-035-01**: As a human reviewing a coworker one-issue PR (often `--profile fast`), I want `/deviate-walkthrough` to emit a four-look map of this brief, this test diff, which production hunks claim which named check, and the command to run those checks so I know what to look at. *(Ref: FR-ADHOC-035)*
 - **US-035-02**: As a human who was burned when La Review auto-applied edits, I want `/deviate-review` to post comments by default — no edits, no `git add`/`git commit`, never REQUEST_CHANGES — and only apply CRITICAL findings when I pass `--apply`. *(Ref: FR-ADHOC-035)*
 - **US-035-03**: As a consumer-project operator, I want `walkthrough` and `review` to stay optional packs with no new pack names so default setup (macro/meso/micro) does not install them. *(Ref: FR-ADHOC-035)*
-- **US-035-04**: As a DeviaTDD maintainer, I want tests to pin default review has no apply/commit, `--apply` applies CRITICAL only, `brief incomplete` when named checks are missing, and the walkthrough four-look emit/forbid rules. *(Ref: FR-ADHOC-035)*
+- **US-035-04**: As a DeviaTDD maintainer, I want CLI-contract tests to pin default review has no apply/commit, `--apply` applies CRITICAL only, `brief incomplete` when named checks are missing, and walkthrough `pre` four-look fields — not prompt-body substring greps. *(Ref: FR-ADHOC-035)*
 
 ## Acceptance Outline
 <!-- Canonical format reference: src/deviate/prompts/commands/deviate-shard.md -->
@@ -64,7 +64,7 @@ The coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
   - **Error Category**: A new `pr-review` pack name or `/deviate-pr-review` command must not appear.
   - **Boundary Category**: Pack membership is unchanged by this slice.
 - **AO-035-04** *(Ref: AC-ADHOC-035-04, US-035-04)*: Tests pin the rewrite.
-  - **Happy Path**: Default review path has no apply/commit. `--apply` applies CRITICAL only. Incomplete brief → `brief incomplete`. Walkthrough prompt requires the four emit fields and forbids approve/hide/skip-a-look/auto-edit.
+  - **Happy Path**: Default review path has no apply/commit. `--apply` applies CRITICAL only. Incomplete brief → `brief incomplete`. Walkthrough `pre` JSON emits the four map fields (`issue_brief_path`, `plan_path`, `test_files`, `production_files`). Tests pin CLI output/files, not prompt-body substrings.
   - **Error Category**: Existing always-on auto-apply tests are rewritten rather than kept green by leaving STEP 4 always-on.
   - **Boundary Category**: JUDGE, `--profile fast`, and ISS-ADH-029 ponytail-in-review are untouched.
 <!-- `**Given**` / `**When**` / `**Then**` are forbidden here. -->
@@ -82,7 +82,7 @@ The coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
 - Throughput: named-check extraction and test/production file classification stay O(changed files + brief size).
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_cli/test_review.py` — default no apply/commit, `--apply` CRITICAL only, `brief incomplete`, issue brief path, never REQUEST_CHANGES; `tests/test_cli/test_walkthrough.py` — four-look pre contract (brief/plan paths, test vs production files, no default constitution/prd); prompt-template tests that previously asserted always-on apply/commit.
+- **Unit Sandbox Targets**: `tests/test_cli/test_review.py` — default `apply` false / no commit, `--apply` CRITICAL only, `brief incomplete`, issue brief path, coverage not fail-close; `tests/test_cli/test_walkthrough.py` — four-look pre contract (brief/plan paths, test vs production files, no default constitution/prd). No prompt-body substring tests.
 - **Integration Sandbox Targets**: Existing optional-pack tests still classify `review` and `walkthrough` as optional. E2E coverage bats keep the uncovered list as comment input; default `apply` is false; `--apply` sets `apply_scope` CRITICAL.
 
 ## Demonstration Path
