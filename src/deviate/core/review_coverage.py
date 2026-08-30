@@ -14,7 +14,22 @@ from deviate.state.ledger import _read_ledger
 
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
 _TASK_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
+_NAMED_CHECK_RE = re.compile(r"\bAC-(?:ADHOC-\d{3}-\d{2}|PLAN-\d{3}|\d{3}-\d{2})\b")
+_TEST_FILE_RE = re.compile(
+    r"(?:^|/)(?:tests?/|test_)|(?:^|/)conftest\.py$|"
+    r"(?:_test|Test|_spec|\.test)\.[^/]+$|\.bats$",
+    re.IGNORECASE,
+)
 _COMPLETED = "COMPLETED"
+BRIEF_INCOMPLETE = "brief incomplete"
+APPLY_CRITICAL_CATEGORIES = frozenset(
+    {
+        "security",
+        "data_loss",
+        "broken_build",
+        "named_check_fail",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +68,104 @@ def resolve_review_issue_id(
             if isinstance(issue_id, str) and issue_id:
                 return issue_id
     return None
+
+
+def extract_named_checks(text: str) -> list[str]:
+    """Return first-seen named-check tokens from *text* (stable order)."""
+    return list(dict.fromkeys(_NAMED_CHECK_RE.findall(text)))
+
+
+def resolve_issue_brief_path(
+    repo_path: Path | None = None,
+    issue_id: str | None = None,
+) -> Path | None:
+    """Return this issue's brief markdown path, or ``None``."""
+    if not issue_id:
+        return None
+    root = repo_path or Path.cwd()
+    source = _latest_source_file(root, issue_id)
+    if not source:
+        return None
+    path = root / source
+    return path if path.is_file() else None
+
+
+def resolve_issue_plan_path(
+    repo_path: Path | None = None,
+    issue_id: str | None = None,
+) -> Path | None:
+    """Return this issue's ``plan.md`` path, or ``None``."""
+    if not issue_id:
+        return None
+    root = repo_path or Path.cwd()
+    source = _latest_source_file(root, issue_id)
+    if not source:
+        return None
+    plan = resolve_issue_artifact_path(root, source, "plan.md")
+    return plan if plan.is_file() else None
+
+
+def brief_has_named_checks(
+    repo_path: Path | None = None,
+    issue_id: str | None = None,
+) -> bool:
+    """True when this issue's brief itself contains at least one named check.
+
+    Plan AC-PLAN lines are extra inputs, not a substitute for a brief.
+    """
+    brief = resolve_issue_brief_path(repo_path, issue_id)
+    if brief is None:
+        return False
+    return bool(extract_named_checks(brief.read_text(encoding="utf-8")))
+
+
+def brief_names_path(brief_text: str, filename: str) -> bool:
+    """True when *brief_text* names *filename* as a path to read."""
+    return filename in brief_text
+
+
+def is_test_path(path: str) -> bool:
+    """Classify a changed-file path as test vs production."""
+    posix = path.replace("\\", "/")
+    return bool(_TEST_FILE_RE.search(posix))
+
+
+def classify_changed_files(paths: list[str]) -> tuple[list[str], list[str]]:
+    """Split *paths* into ``(test_files, production_files)`` preserving order."""
+    test_files = [p for p in paths if is_test_path(p)]
+    production_files = [p for p in paths if not is_test_path(p)]
+    return test_files, production_files
+
+
+def _normalize_apply_category(category: str) -> str:
+    return category.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def may_apply_finding(
+    *,
+    apply: bool,
+    severity: str,
+    category: str,
+    has_concrete_fix: bool,
+) -> bool:
+    """True only for opt-in ``--apply`` + CRITICAL + allowed category + FIX.
+
+    Default review (``apply=False``) never applies. SUGGESTION and
+    OPPORTUNITY never apply. CRITICAL without a concrete FIX never applies.
+    Allowed categories: security, data loss, broken build, named-check fail.
+    """
+    if not apply:
+        return False
+    if severity.strip().upper() != "CRITICAL":
+        return False
+    if not has_concrete_fix:
+        return False
+    return _normalize_apply_category(category) in APPLY_CRITICAL_CATEGORIES
+
+
+def should_commit_review_fixes(*, apply: bool, applied_critical: int) -> bool:
+    """Commit only when ``--apply`` actually landed a CRITICAL fix."""
+    return bool(apply and applied_critical > 0)
 
 
 def evaluate_review_coverage(

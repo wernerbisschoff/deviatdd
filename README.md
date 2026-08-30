@@ -242,7 +242,7 @@ Default setup on current main (#134) installs **macro + meso + micro** plus the 
 | **adhoc** | One spec-enriched issue + `FR-ADHOC-NNN` + a BACKLOG ledger row. | Yes — `post` commits artifacts. Record stays BACKLOG. | Missing problem statement; complexity HIGH without `--force`. |
 | **meso** | Default: worktree + claim, then PLAN → TASKS (spawns the agent). Path A: `deviate meso run --no-setup --local` stays in this clone and skips the remote lock. | Yes — claim, `plan post`, `tasks post`. | `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, `NO_CLAIMABLE_ISSUES`. |
 | **micro** | RED → GREEN → JUDGE → REFACTOR (or EXECUTE). Spawns the agent each phase. `--profile fast` skips **JUDGE and REFACTOR**. `deviate micro run --review` is a **TTY pause before the phase commit**, not `/deviate-review`. Skill argument `review` is an agent loop policy — never pass `--review` from the skill. | Yes — each phase. RED uses `git commit --no-verify`. | `REVIEW_REQUIRES_TTY`, `TRAIN_EXHAUSTED`, `COMMIT_FAILED`. `NO_PENDING_TASKS` (exit 1) means the queue is empty. |
-| **review** | Optional pack. `/deviate-review` is **comments-only** by default. Not a merge gate. | No (unless opt-in `--apply` landed a CRITICAL fix). | `COVERAGE_INCOMPLETE` on `review pre` when a plan AC is unclaimed. |
+| **review** | Optional pack. `/deviate-review` is **comments-only** by default. Not a merge gate. | No (unless opt-in `--apply` landed a CRITICAL fix). | Missing named checks → `brief incomplete`. Unclaimed plan ACs stay comment input (`uncovered`); not a fail-close. |
 | **walkthrough** | Optional pack. Four-look map: brief location, test hunks, production hunks vs named checks, command to run those checks. | No. | Missing brief / named checks: stop. |
 
 ---

@@ -9,6 +9,13 @@ from pathlib import Path
 import typer
 
 from deviate.core._shared import git_env as _git_env
+from deviate.core.review_coverage import (
+    brief_names_path,
+    classify_changed_files,
+    resolve_issue_brief_path,
+    resolve_issue_plan_path,
+    resolve_review_issue_id,
+)
 from deviate.state.config import resolve_base_branch
 
 logger = logging.getLogger(__name__)
@@ -144,32 +151,42 @@ def pre(
         None, "--branch", help="Target branch for self-contained walkthrough"
     ),
 ) -> None:
-    """Gather git state and governance context for walkthrough."""
+    """Gather this-issue brief, plan, and classified diff for the four-look map."""
     repo = Path.cwd()
     resolved_base = base or resolve_base_branch(repo)
 
     target = branch or "HEAD"
     branch_name = branch or _get_current_branch(repo)
+    issue_id = resolve_review_issue_id(repo, branch_name)
+    brief_path = resolve_issue_brief_path(repo, issue_id)
+    plan_path = resolve_issue_plan_path(repo, issue_id)
 
     diff = _compute_diff(repo, resolved_base, target)
-    constitution_path = _resolve_constitution_path(repo)
-    prd_path, prd_warning = _resolve_prd(branch_name, repo)
     commit_messages = _get_branch_commits(repo, resolved_base)
     changed_files = _get_changed_files(repo, resolved_base, target)
+    test_files, production_files = classify_changed_files(changed_files)
 
     contract: dict[str, object] = {
         "status": "READY",
         "diff": diff,
-        "constitution_path": constitution_path,
-        "constitution_warning": constitution_path is None,
-        "prd_path": prd_path,
-        "prd_warning": prd_warning,
+        "issue_brief_path": str(brief_path.resolve()) if brief_path else None,
+        "plan_path": str(plan_path.resolve()) if plan_path else None,
         "base_branch": resolved_base,
         "commit_messages": commit_messages,
         "changed_files_count": len(changed_files),
         "changed_files": changed_files,
+        "test_files": test_files,
+        "production_files": production_files,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    brief_text = brief_path.read_text(encoding="utf-8") if brief_path else ""
+    if brief_names_path(brief_text, "constitution.md"):
+        contract["constitution_path"] = _resolve_constitution_path(repo)
+        contract["constitution_warning"] = contract["constitution_path"] is None
+    if brief_names_path(brief_text, "prd.md"):
+        prd_path, prd_warning = _resolve_prd(branch_name, repo)
+        contract["prd_path"] = prd_path
+        contract["prd_warning"] = prd_warning
 
     print(json.dumps(contract, indent=2))
 
