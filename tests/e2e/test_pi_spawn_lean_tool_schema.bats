@@ -4,8 +4,9 @@
 # (ISS-ADH-026). Constitution §3 E2E command: bats tests/e2e/.
 #
 # Happy path: installed `AgentBackend.invoke` print-mode argv keeps
-# `pi -p` plus `--no-extensions`, `--no-skills`, and `--tools` listing
-# `read`, `bash`, `edit`, and `write`. `deviate micro --help` exits 0.
+# `pi -p` plus `--no-skills` and `--tools` listing `read`, `bash`, `edit`,
+# and `write`, with no `--no-extensions` (extension-registered providers
+# must load so a saved default model from them resolves). `deviate micro --help` exits 0.
 # Critical-failure path: mocked Popen pipes raise a token-bearing
 # `AgentSubprocessError` on the first `tool_count_limit` /
 # `unsupported_tool_schema` line. No live `pi --mode rpc`.
@@ -52,7 +53,7 @@ cmd = mock_popen.call_args[0][0]
 joined = " ".join(cmd)
 assert cmd[0] == "pi", cmd
 assert cmd[1] == "-p", cmd
-assert "--no-extensions" in cmd or "-ne" in cmd, cmd
+assert "--no-extensions" not in cmd and "-ne" not in cmd, cmd
 assert "--no-skills" in cmd or "-ns" in cmd, cmd
 assert "--no-tools" not in cmd, cmd
 assert "--no-builtin-tools" not in cmd, cmd
@@ -68,7 +69,7 @@ print("LEAN_ARGV", joined)
     [ "$status" -eq 0 ]
     [[ "$output" == *"LEAN_ARGV"* ]]
     [[ "$output" == *"pi -p"* ]]
-    [[ "$output" == *"--no-extensions"* || "$output" == *"-ne"* ]]
+    [[ "$output" != *"--no-extensions"* && "$output" != *"-ne"* ]]
     [[ "$output" == *"--tools"* || "$output" == *"-t"* ]]
     [[ "$output" == *"read"* ]]
     [[ "$output" == *"bash"* ]]

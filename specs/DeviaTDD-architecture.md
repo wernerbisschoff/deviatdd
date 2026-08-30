@@ -908,7 +908,7 @@ handing the manifest to the rest of the pipeline:
 | `opencode` | `opencode run` | Commands copied into `.opencode/commands/` (flat `.md`) | `--model <id>` flag | Default backend |
 | `claude` | `claude -p --permission-mode auto` | Commands copied into `.claude/commands/` (flat `.md`) | `--model <id>` flag (may be ignored by host env) | Print mode, auto permission |
 | `droid` | `droid exec` | Commands copied into `.factory/commands/` (flat `.md`) | `--model <id>` flag | Factory Droid IDE-owned commands dir |
-| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Lean spawn after `pi -p` / RPC `--no-session`: `--no-extensions`, `--tools read,bash,edit,write`, `--no-skills`, optional `--skill`; schema-limit tokens abort as `AGENT_ERROR` |
+| `pi` | `pi -p` | Commands file-copied into `<workdir>/.pi/prompts/<name>.md` (project-local; flat top-level only per Pi's documented slash-command convention) | `--model <id>` flag (accepts `provider/model` shorthand) | Lean spawn after `pi -p` / RPC `--no-session`: `--tools read,bash,edit,write`, `--no-skills`, optional `--skill` (no `--no-extensions`, so extension-registered providers load); schema-limit tokens abort as `AGENT_ERROR` |
 | `codex` | `codex exec --sandbox workspace-write --ask-for-approval never` | Skills written to `<workdir>/.agents/skills/<name>/SKILL.md` (Codex CLI 0.117+ dropped `.codex/prompts`). Packaged `deviatdd` skill plus one skill folder per slash command. | `--model <id>` flag; when `[agent].reasoning_effort` is set, also `-c model_reasoning_effort=<value>` (official values `minimal\|low\|medium\|high\|xhigh`). `deviate setup --agent codex` seeds `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"` if those keys are missing/empty, and does not clobber a user-set default or thinking level. No repo-wide `.codex/config.toml`. | CLI transport only (no Codex RPC). Prompt via stdin. Do not use `--full-auto` or `--dangerously-bypass-approvals-and-sandbox`. |
 
 Pi implements slash-command discovery natively — `pi -p` loads commands from
@@ -966,8 +966,9 @@ standard `AgentBackend.invoke()` contract with these customisations:
    observability across repeated phase invocations within the same session.
 5. **Lean tool policy.** After the print-mode prefix (`pi -p`) or the
    RPC prefix (`pi --mode rpc --no-session`), `invoke` appends
-   `--no-extensions`, `--tools read,bash,edit,write`, and `--no-skills`.
-   When `.pi/skills/deviatdd/SKILL.md` exists under the invoke working
+   `--tools read,bash,edit,write` and `--no-skills`. It omits
+   `--no-extensions`: extension-registered providers must load so a saved
+   default model from them resolves. When `.pi/skills/deviatdd/SKILL.md` exists under the invoke working
    directory, `invoke` also appends `--skill` to that relative path. A
    missing skill file still keeps the four coding tools. The child does
    not load the operator's global extension or MCP stack.

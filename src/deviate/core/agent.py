@@ -223,8 +223,10 @@ SCHEMA_REJECTION_TOKENS: tuple[str, ...] = (
 
 def _pi_lean_flags(cwd: str | None) -> list[str]:
     """Return the default lean Pi tool policy after the transport prefix."""
+    # No --no-extensions: extension-registered providers (e.g. commandcode)
+    # must load, otherwise pi cannot resolve a saved default model from that
+    # provider and silently falls back to whatever env keys authenticate.
     flags = [
-        "--no-extensions",
         "--tools",
         ",".join(PI_CODING_TOOLS),
         "--no-skills",

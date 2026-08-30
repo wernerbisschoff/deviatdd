@@ -227,8 +227,8 @@ class TestPiRpcMode:
             f"RPC prefix must stay pi --mode rpc --no-session (got {cmd})"
         )
         assert "-p" not in cmd, f"RPC argv must omit print-mode -p (got {cmd})"
-        assert _has_long_or_short(cmd, "--no-extensions", "-ne"), (
-            f"Lean Pi spawn requires --no-extensions or -ne (got {cmd})"
+        assert not _has_long_or_short(cmd, "--no-extensions", "-ne"), (
+            f"Pi spawn must load extension providers, got {cmd}"
         )
         assert _has_long_or_short(cmd, "--no-skills", "-ns"), (
             f"Lean Pi spawn requires --no-skills or -ns (got {cmd})"
