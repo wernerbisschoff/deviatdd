@@ -9,6 +9,7 @@ from deviate.state.config import (
     DeviateConfig,
     ProfileConfig,
     SessionState,
+    resolve_agent_export_mode,
     resolve_claim_remote,
     resolve_execution_profile,
     resolve_phase_model,
@@ -104,6 +105,17 @@ class TestDeviateConfig:
 
     def test_resolve_base_branch_default(self, tmp_path: Path) -> None:
         assert resolve_base_branch(tmp_path) == "main"
+
+    def test_resolve_agent_export_mode_from_toml(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text(
+            'agent_export_mode = "global"\n', encoding="utf-8"
+        )
+        assert resolve_agent_export_mode(tmp_path) == "global"
+
+    def test_resolve_agent_export_mode_default(self, tmp_path: Path) -> None:
+        assert resolve_agent_export_mode(tmp_path) == "local"
 
     def test_config_claim_remote_field_default(self) -> None:
         config = DeviateConfig()

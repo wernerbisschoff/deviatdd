@@ -1,3 +1,4 @@
+import re
 import subprocess
 import tomllib
 from contextlib import chdir
@@ -142,7 +143,7 @@ class TestSetupCodex:
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert parsed["agent"]["backend"] == "codex"
         assert parsed["agent"]["reasoning_effort"] == "high"
-        assert parsed["agent"]["timeout"] == 1800
+        assert "timeout" not in parsed["agent"]
         assert parsed["models"]["default"] == "gpt-5.6-luna"
         assert parsed["timeout_seconds"] == 999
         assert config_path.read_text(encoding="utf-8").count("[agent]") == 1
@@ -381,9 +382,21 @@ class TestSetupConfigAllowlist:
         assert parsed["claim_remote"] is False
         assert "use_libref" not in parsed
         assert "libref" not in text.lower()
+        assert "agent_export_mode" not in parsed
         agent = parsed["agent"]
         assert agent["backend"] == "claude"
-        assert "timeout" in agent
+        assert "timeout" not in agent
+        assert "timeout_seconds" in parsed
+        assert re.findall(r"^timeout\s*=", text, flags=re.MULTILINE) == []
+        assert (
+            'profile = "full"  # micro-run default when --profile is omitted: full or fast'
+            in text
+        )
+        assert (
+            "timeout_seconds = 1800  # agent spawn + test wall clock (seconds)" in text
+        )
+        assert 'base_branch = "main"  # worktrees, PR base, review diffs' in text
+        assert "claim_remote = false  # push the claim branch as a lock" in text
         assert "pi_rpc" not in agent
         assert "transport" not in agent
 
@@ -391,12 +404,13 @@ class TestSetupConfigAllowlist:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
             assert result.exit_code == 0, result.output
-        parsed = tomllib.loads(
-            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
-        )
+        text = (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(text)
         assert parsed["agent"]["backend"] == "pi"
         assert parsed["agent"].get("transport") == "rpc"
         assert "pi_rpc" not in parsed["agent"]
+        assert "timeout" not in parsed["agent"]
+        assert 'transport = "rpc"  # pi/omp only; omit on other backends' in text
 
     def test_switch_pi_to_codex_strips_dead_keys(self, tmp_path: Path) -> None:
         dot = tmp_path / ".deviate"
@@ -415,7 +429,7 @@ class TestSetupConfigAllowlist:
             assert result.exit_code == 0, result.output
         parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
         assert parsed["agent"]["backend"] == "codex"
-        assert parsed["agent"]["timeout"] == 1800
+        assert "timeout" not in parsed["agent"]
         assert "pi_rpc" not in parsed["agent"]
         assert "transport" not in parsed["agent"]
         assert parsed["agent"]["reasoning_effort"] == "high"
@@ -702,3 +716,167 @@ class TestSetupGitignoreDotdeviate:
             text=True,
         )
         assert "?? .deviate" not in status.stdout, status.stdout
+
+
+class TestSetupExportModeAndBaseBranch:
+    """TTY prompts and flags for this-run install location and base branch."""
+
+    def test_prompt_export_mode_escapes_rich_brackets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The ask message uses doubled brackets so Rich prints ``[l]ocal/[g]lobal``."""
+        from deviate.cli import _prompt_export_mode
+
+        seen: list[str] = []
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            seen.append(message)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        assert _prompt_export_mode() == "local"
+        assert seen == ["Prompt/skill install [[l]]ocal/[[g]]lobal"]
+
+    def test_tty_rerun_defaults_export_to_l_and_keeps_base_branch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-run defaults export to ``l``, keeps ``base_branch``, strips the key."""
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            "timeout_seconds = 999\n"
+            'base_branch = "develop"\n'
+            'agent_export_mode = "global"\n\n'
+            "[models]\n"
+            'default = "kept-model"\n\n'
+            "[agent]\n"
+            'backend = "pi"\n'
+            "timeout = 600\n",
+            encoding="utf-8",
+        )
+        captured: dict[str, object] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured[str(message)] = kwargs.get("default")
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert captured.get("Prompt/skill install [[l]]ocal/[[g]]lobal") == "l"
+        assert captured.get("Base branch") == "develop"
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert "agent_export_mode" not in parsed
+        assert parsed["base_branch"] == "develop"
+        assert parsed["timeout_seconds"] == 999
+        assert parsed["models"]["default"] == "kept-model"
+        assert "timeout" not in parsed["agent"]
+
+    def test_tty_l_installs_local_without_writing_export_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Answering ``l`` installs project-local and does not persist the key."""
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            "timeout_seconds = 888\n"
+            'agent_export_mode = "global"\n'
+            'base_branch = "develop"\n\n'
+            "[agent]\n"
+            'backend = "pi"\n',
+            encoding="utf-8",
+        )
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            if "[[l]]ocal" in str(message):
+                return "l"
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert "agent_export_mode" not in parsed
+        assert parsed["base_branch"] == "develop"
+        assert parsed["timeout_seconds"] == 888
+        assert (tmp_path / ".opencode" / "commands" / "deviate-red.md").is_file()
+
+    def test_tty_g_installs_under_home_without_writing_export_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TTY ``g`` installs under a monkeypatched home and does not persist."""
+        fake_home = tmp_path / "homeuser"
+        project = tmp_path / "proj"
+        fake_home.mkdir()
+        project.mkdir()
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            if "[[l]]ocal" in str(message):
+                return "g"
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli._user_home", lambda: fake_home)
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(project):
+            result = runner.invoke(cli, ["setup", "--agent", "claude"])
+        assert result.exit_code == 0, result.output
+        assert (fake_home / ".claude" / "commands" / "deviate-red.md").is_file()
+        assert (fake_home / ".claude" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        assert not (project / ".claude" / "commands" / "deviate-red.md").exists()
+        parsed = tomllib.loads(
+            (project / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert "agent_export_mode" not in parsed
+        assert not (fake_home / ".pi" / "agent").exists()
+
+    def test_agent_export_mode_global_flag_skips_prompt_and_installs_under_home(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``--agent-export-mode global`` skips the prompt and writes under home."""
+        fake_home = tmp_path / "homeuser"
+        project = tmp_path / "proj"
+        fake_home.mkdir()
+        project.mkdir()
+        prompted = {"n": 0}
+
+        def fake_export(default: str = "local") -> str:
+            prompted["n"] += 1
+            return default
+
+        monkeypatch.setattr("deviate.cli._user_home", lambda: fake_home)
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli._prompt_export_mode", fake_export)
+        monkeypatch.setattr(
+            "deviate.cli._prompt_base_branch", lambda default="main": default
+        )
+        monkeypatch.setattr(
+            "deviate.cli._prompt_claim_remote", lambda default=False: False
+        )
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(project):
+            result = runner.invoke(
+                cli,
+                ["setup", "--agent", "claude", "--agent-export-mode", "global"],
+            )
+        assert result.exit_code == 0, result.output
+        assert prompted["n"] == 0
+        assert (fake_home / ".claude" / "commands" / "deviate-red.md").is_file()
+        assert (fake_home / ".claude" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        assert not (project / ".claude" / "commands" / "deviate-red.md").exists()
+        assert not (project / ".claude" / "skills" / "deviatdd" / "SKILL.md").exists()
+        parsed = tomllib.loads(
+            (project / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert "agent_export_mode" not in parsed
+        assert not (fake_home / ".pi" / "agent").exists()

@@ -335,6 +335,17 @@ def resolve_base_branch(root: Path) -> str:
     return "main"
 
 
+def resolve_agent_export_mode(root: Path) -> Literal["local", "global"]:
+    """Return the prompt/skill install mode, defaulting to ``local``."""
+    data = _load_deviate_config_toml(root)
+    if data is None:
+        return "local"
+    value = data.get("agent_export_mode", "local")
+    if value in ("local", "global"):
+        return value
+    return "local"
+
+
 class PytestReportConfig(BaseModel):
     json_report: bool = False
 

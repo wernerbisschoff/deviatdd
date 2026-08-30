@@ -132,7 +132,8 @@ class TestFullInitCycle:
                 data = tomllib.load(f)
             assert data.get("profile") == "full"
             assert data.get("timeout_seconds") == 1800
-            assert data.get("agent_export_mode") == "local"
+            assert "agent_export_mode" not in data
+            assert "timeout" not in data.get("agent", {})
 
     def test_full_init_structure_valid_session(self, tmp_path: Path):
         with chdir(tmp_path):

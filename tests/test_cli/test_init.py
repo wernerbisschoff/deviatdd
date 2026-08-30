@@ -586,6 +586,23 @@ class TestSetupClaimRemoteFlag:
         assert _prompt_claim_remote() is False
         assert captured.get("default") == "n"
 
+    def test_prompt_claim_remote_escapes_rich_brackets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The ask message uses doubled brackets so Rich prints ``[y]es/[n]o``."""
+        from deviate.cli import _prompt_claim_remote
+
+        seen: list[str] = []
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            seen.append(message)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        assert _prompt_claim_remote() is False
+        assert seen == ["Push claim branches to the remote as a lock [[y]]es/[[n]]o"]
+
     def test_tty_rerun_existing_true_defaults_yes_and_writes_true(
         self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -666,6 +683,12 @@ class TestSetupClaimRemoteFlag:
 
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr(
+            "deviate.cli._prompt_export_mode", lambda default="local": default
+        )
+        monkeypatch.setattr(
+            "deviate.cli._prompt_base_branch", lambda default="main": default
+        )
         monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -717,6 +740,12 @@ class TestSetupClaimRemoteFlag:
         )
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", lambda *a, **k: "y")
+        monkeypatch.setattr(
+            "deviate.cli._prompt_export_mode", lambda default="local": default
+        )
+        monkeypatch.setattr(
+            "deviate.cli._prompt_base_branch", lambda default="main": default
+        )
         monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -737,6 +766,12 @@ class TestSetupClaimRemoteFlag:
         )
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr("deviate.cli.Prompt.ask", lambda *a, **k: "n")
+        monkeypatch.setattr(
+            "deviate.cli._prompt_export_mode", lambda default="local": default
+        )
+        monkeypatch.setattr(
+            "deviate.cli._prompt_base_branch", lambda default="main": default
+        )
         monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])

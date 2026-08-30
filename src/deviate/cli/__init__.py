@@ -118,18 +118,15 @@ def main(
     """DeviaTDD CLI — agent orchestration framework"""
 
 
-# TOML comment annotations for DeviateConfig fields — emitted as `#` lines
-# before their corresponding key in .deviate/config.toml.  These are the
-# primary documentation surface for end users editing config by hand.
+# TOML comment annotations for generated `.deviate/config.toml` — emitted
+# inline at the end of the same line as the key.
 _CONFIG_TOML_COMMENTS: dict[str, str] = {
-    "profile": 'Micro-run default when --profile is omitted: "full" or "fast"',
-    "timeout_seconds": "CLI inactivity timeout in seconds (must be > 0)",
-    "agent_export_mode": 'Agent export mode: "local" (project) or "global" (~/.claude/)',
-    "agent": "Agent backend configuration",
-    "models": "Per-phase model overrides; key = phase name, value = model ID",
-    "use_libref": "Enable the libref CLI for offline documentation lookups",
-    "base_branch": "Trunk branch for worktrees, PR base, and review diffs",
-    "claim_remote": "Push the claim branch as a distributed lock (default false)",
+    "profile": "micro-run default when --profile is omitted: full or fast",
+    "timeout_seconds": "agent spawn + test wall clock (seconds)",
+    "base_branch": "worktrees, PR base, review diffs",
+    "claim_remote": "push the claim branch as a lock",
+    "use_libref": "enable the libref CLI for offline documentation lookups",
+    "transport": "pi/omp only; omit on other backends",
 }
 
 
@@ -174,20 +171,20 @@ def _dict_to_toml(data: dict, comments: dict[str, str] | None = None) -> str:
             scalars.append((key, value))
 
     for key, value in scalars:
-        if comments and key in comments:
-            lines.append(f"# {comments[key]}")
         line = _serialize_value(key, value)
+        if line and comments and key in comments:
+            line = f"{line}  # {comments[key]}"
         if line:
             lines.append(line)
 
     for key, value in tables:
         if not value:
             continue
-        if comments and key in comments:
-            lines.append(f"\n# {comments[key]}")
         lines.append(f"\n[{key}]")
         for k, v in value.items():
             line = _serialize_value(k, v)
+            if line and comments and k in comments:
+                line = f"{line}  # {comments[k]}"
             if line:
                 lines.append(line)
     lines.append("")
@@ -447,6 +444,64 @@ def _parse_yes_no(raw: str | None) -> bool | None:
     return None
 
 
+def _parse_local_global(raw: str | None) -> str | None:
+    """Map ``l``/``local`` → local, ``g``/``global`` → global (strip, case-insensitive)."""
+    if raw is None:
+        return None
+    token = raw.strip().lower()
+    if token in {"l", "local"}:
+        return "local"
+    if token in {"g", "global"}:
+        return "global"
+    return None
+
+
+def _prompt_export_mode(default: str = "local") -> str | None:
+    """Ask whether to install prompts/skills locally or under the user tree.
+
+    Default highlight is always ``l`` (this choice is not persisted).
+    Accepts ``l``/``g``/``local``/``global``. Returns ``None`` when the
+    session is not interactive so the caller keeps local for this run.
+    """
+    if not is_interactive():
+        return None
+    default_label = "g" if default == "global" else "l"
+    try:
+        while True:
+            selected = Prompt.ask(
+                "Prompt/skill install [[l]]ocal/[[g]]lobal",
+                default=default_label,
+                console=console,
+            )
+            parsed = _parse_local_global(selected)
+            if parsed is not None:
+                return parsed
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+
+def _prompt_base_branch(default: str = "main") -> str | None:
+    """Ask for the trunk branch used as PR/worktree base.
+
+    Returns the typed name, ``default`` on empty input, and ``None``
+    when the session is not interactive.
+    """
+    if not is_interactive():
+        return None
+    try:
+        selected = Prompt.ask(
+            "Base branch",
+            default=default,
+            console=console,
+        )
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if selected is None:
+        return None
+    stripped = str(selected).strip()
+    return stripped or default
+
+
 def _prompt_claim_remote(default: bool = False) -> bool | None:
     """Ask whether to push claim branches as a remote lock.
 
@@ -462,7 +517,7 @@ def _prompt_claim_remote(default: bool = False) -> bool | None:
     try:
         while True:
             selected = Prompt.ask(
-                "Push claim branches to the remote as a lock [y]es/[n]o",
+                "Push claim branches to the remote as a lock [[y]]es/[[n]]o",
                 default=default_label,
                 console=console,
             )
@@ -530,12 +585,15 @@ def _resolve_setup_optional_packs(packs: str | None) -> tuple[str, ...]:
 def _agent_table_for_backend(
     backend: str,
     *,
-    timeout: int = 600,
     reasoning_effort: str | None = None,
     transport: str | None = None,
 ) -> dict[str, object]:
-    """Return the persistable ``[agent]`` keys for *backend*."""
-    table: dict[str, object] = {"backend": backend, "timeout": timeout}
+    """Return the persistable ``[agent]`` keys for *backend*.
+
+    Does not write ``timeout`` — agent spawn and test deadlines both
+    read top-level ``timeout_seconds`` (AC-PLAN-005).
+    """
+    table: dict[str, object] = {"backend": backend}
     if backend in ("pi", "omp"):
         table["transport"] = transport or "rpc"
     if backend == "codex" and reasoning_effort:
@@ -580,13 +638,12 @@ def _rewrite_agent_table(content: str, backend: str) -> tuple[str, bool]:
     re-running setup does not invent ``timeout`` on a hand-edited file.
     """
     existing = _parse_existing_agent_table(content)
-    dead = {"pi_rpc"} if backend in ("pi", "omp") else {"pi_rpc", "transport"}
+    dead = {"pi_rpc", "timeout"}
+    if backend not in ("pi", "omp"):
+        dead.add("transport")
     extras = {key for key in existing if key in dead}
     if existing.get("backend") == backend and not extras:
         return content, False
-    timeout = existing.get("timeout", 600)
-    if not isinstance(timeout, int) or timeout <= 0:
-        timeout = 600
     reasoning = existing.get("reasoning_effort")
     if not isinstance(reasoning, str) or not reasoning.strip():
         reasoning = None
@@ -595,7 +652,6 @@ def _rewrite_agent_table(content: str, backend: str) -> tuple[str, bool]:
         transport = None
     table = _agent_table_for_backend(
         backend,
-        timeout=timeout,
         reasoning_effort=reasoning,
         transport=transport,
     )
@@ -610,12 +666,16 @@ def _rewrite_agent_table(content: str, backend: str) -> tuple[str, bool]:
 
 def _config_dump_dict(
     *,
-    agent_export_mode: str,
     claim_remote: bool,
     use_libref: bool,
     agent_backend: str | None,
+    base_branch: str = "main",
 ) -> dict[str, object]:
-    """Allowlist payload for a fresh ``config.toml``."""
+    """Allowlist payload for a fresh ``config.toml``.
+
+    Setup-only choices (prompt/skill install local vs global) are not
+    persisted. ``[agent].timeout`` is dead and is never written.
+    """
     backend = agent_backend or "pi"
     agent_update: dict[str, object] = {"backend": backend}
     extra: dict[str, object] = {}
@@ -631,8 +691,7 @@ def _config_dump_dict(
     payload: dict[str, object] = {
         "profile": "full",
         "timeout_seconds": 1800,
-        "agent_export_mode": agent_export_mode,
-        "base_branch": "main",
+        "base_branch": base_branch,
         "claim_remote": claim_remote,
         "agent": agent,
     }
@@ -640,6 +699,48 @@ def _config_dump_dict(
         payload["use_libref"] = True
     payload.update(extra)
     return payload
+
+
+def _resolve_setup_export_mode(*, agent_export_mode: str | None) -> str:
+    """This-run prompt/skill install location. Never persisted.
+
+    An explicit ``--agent-export-mode`` skips the prompt and applies
+    to this install only. On a TTY with the flag omitted, always
+    prompt (default ``l``). Non-TTY omitted is ``local``.
+    """
+    if agent_export_mode is not None:
+        return agent_export_mode
+    if is_interactive():
+        prompted = _prompt_export_mode(default="local")
+        return prompted or "local"
+    return "local"
+
+
+def _resolve_setup_base_branch(
+    *,
+    base_branch: str | None,
+    config_exists: bool,
+    workdir: Path | None = None,
+) -> str | None:
+    """Decide the ``base_branch`` value written by ``deviate setup``.
+
+    An explicit ``--base-branch`` always writes and skips the prompt.
+    On a TTY with the flag omitted, always prompt (even when
+    ``config.toml`` exists); default is the current file value or
+    ``main``. Non-TTY: no prompt; fresh config writes ``main``;
+    existing config is left alone (``None``).
+    """
+    if base_branch is not None:
+        return base_branch
+    existing = "main"
+    if config_exists and workdir is not None:
+        existing = resolve_base_branch(workdir)
+    if is_interactive():
+        prompted = _prompt_base_branch(default=existing)
+        return existing if prompted is None else prompted
+    if config_exists:
+        return None
+    return "main"
 
 
 def _resolve_setup_claim_remote(
@@ -750,22 +851,45 @@ def _upsert_toml_bool(content: str, key: str, value: bool) -> str:
     return _insert_toml_root_line(content, new_line)
 
 
+def _upsert_toml_string(content: str, key: str, value: str) -> str:
+    """Replace or insert a top-level string assignment in TOML text."""
+    new_line = _serialize_value(key, value)
+    pattern = re.compile(rf"^{re.escape(key)}\s*=\s*.*$", re.MULTILINE)
+    if pattern.search(content):
+        return pattern.sub(new_line, content)
+    return _insert_toml_root_line(content, new_line)
+
+
+def _strip_toml_root_key(content: str, key: str) -> str:
+    """Remove a top-level assignment (and its trailing newline) if present."""
+    pattern = re.compile(rf"^{re.escape(key)}\s*=\s*.*\n?", re.MULTILINE)
+    return pattern.sub("", content)
+
+
 def _merge_flag_keys(
     config_path: Path,
     *,
     use_libref: bool,
     claim_remote: bool | None = None,
+    base_branch: str | None = None,
+    strip_export_mode: bool = False,
 ) -> None:
     """Surgically update flag keys in an existing TOML.
 
-    Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` only
-    when the caller passed a value (flags or a TTY answer).
-    Preserves every other key/table (e.g. user-customised ``[models]``).
+    Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` and
+    ``base_branch`` only when the caller passed a value (flags or a TTY
+    answer). Strips leftover ``agent_export_mode`` when asked — that
+    key is setup-only and is never written. Preserves every other
+    key/table (e.g. user-customised ``[models]``).
     """
     content = config_path.read_text(encoding="utf-8")
     original = content
+    if strip_export_mode:
+        content = _strip_toml_root_key(content, "agent_export_mode")
     if claim_remote is not None:
         content = _upsert_toml_bool(content, "claim_remote", claim_remote)
+    if base_branch is not None:
+        content = _upsert_toml_string(content, "base_branch", base_branch)
     if use_libref:
         content = _upsert_toml_bool(content, "use_libref", True)
     if content != original:
@@ -774,12 +898,14 @@ def _merge_flag_keys(
 
 def _scaffold_dotfiles(
     workdir: Path,
-    agent_export_mode: str,
     use_libref: bool = False,
     claim_remote: bool = False,
     force_update_flags: bool = False,
     agent_backend: str | None = None,
     update_claim_remote: bool = False,
+    update_base_branch: bool = False,
+    base_branch: str = "main",
+    strip_stale_keys: bool = False,
 ) -> None:
     dot_dir = workdir / ".deviate"
     _ensure_dir(dot_dir)
@@ -791,20 +917,31 @@ def _scaffold_dotfiles(
         and not force_update_flags
         and agent_backend is None
         and not update_claim_remote
+        and not update_base_branch
+        and not strip_stale_keys
     ):
         console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     elif config_path.exists():
         # Existing config: only touch the keys the caller asked us to touch.
         # `use_libref` is upserted when `--libref` was passed.
-        # `claim_remote` is upserted on flags or a TTY answer.
+        # `claim_remote` and `base_branch` are upserted on flags or a TTY
+        # answer. Leftover `agent_export_mode` is stripped — setup-only.
         # `agent_backend` is always upserted when provided so `--agent factory`
         # can overwrite a previously persisted backend.
         changed = False
-        if force_update_flags or update_claim_remote:
+        should_merge = (
+            force_update_flags
+            or update_claim_remote
+            or update_base_branch
+            or strip_stale_keys
+        )
+        if should_merge:
             _merge_flag_keys(
                 config_path,
                 use_libref=use_libref,
                 claim_remote=claim_remote if update_claim_remote else None,
+                base_branch=base_branch if update_base_branch else None,
+                strip_export_mode=strip_stale_keys,
             )
             changed = True
         if agent_backend is not None:
@@ -819,10 +956,10 @@ def _scaffold_dotfiles(
             console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     else:
         payload = _config_dump_dict(
-            agent_export_mode=agent_export_mode,
             claim_remote=claim_remote,
             use_libref=use_libref,
             agent_backend=agent_backend,
+            base_branch=base_branch,
         )
         _write_if_missing(
             config_path,
@@ -905,6 +1042,28 @@ def _apply_governance(workdir: Path, use_libref: bool = False) -> None:
                 _upsert_governance_block(t, libref_content)
 
 
+def _user_home() -> Path:
+    """Return the operator home directory (monkeypatch seam for tests)."""
+    return Path.home()
+
+
+def _agent_install_root(workdir: Path, export_mode: str) -> Path:
+    """Project workdir for local installs; user home for global."""
+    return _user_home() if export_mode == "global" else workdir
+
+
+def _display_install_path(target: Path, workdir: Path) -> str:
+    """Prefer a workdir-relative path; fall back to the absolute path.
+
+    Global installs live under the user home tree, so
+    ``target.relative_to(workdir)`` raises ``ValueError``.
+    """
+    try:
+        return str(target.relative_to(workdir))
+    except ValueError:
+        return str(target)
+
+
 def _get_agent_command_dir(agent_name: str, workdir: Path) -> Path | None:
     """Resolve the slash-command directory for a given agent platform.
 
@@ -936,23 +1095,30 @@ def _install_commands_to_agents(
     agents: list[str],
     command_names: list[str] | None = None,
     use_libref: bool = False,
+    export_mode: str = "local",
 ) -> None:
     """Install the selected command packs into the selected agent directories.
 
     Output is aggregated per-agent — one summary line per agent instead of
     one line per (command × agent) — to keep ``deviate setup`` output
     readable when many commands are written to a single selected agent.
+    ``export_mode="global"`` writes under the user-level agent tree;
+    ``workdir`` stays the project root for constitution composition.
     """
     commands = command_names if command_names is not None else commands_for_packs()
     if not commands:
         return
+    install_root = _agent_install_root(workdir, export_mode)
     for agent in agents:
         if agent == "codex":
             _install_codex_command_skills(
-                workdir, command_names=commands, use_libref=use_libref
+                workdir,
+                command_names=commands,
+                use_libref=use_libref,
+                export_mode=export_mode,
             )
             continue
-        target_dir = _get_agent_command_dir(agent, workdir)
+        target_dir = _get_agent_command_dir(agent, install_root)
         if _skip_unknown_agent(agent, target_dir):
             continue
         installed = 0
@@ -982,12 +1148,14 @@ def _install_codex_command_skills(
     workdir: Path,
     command_names: list[str] | None = None,
     use_libref: bool = False,
+    export_mode: str = "local",
 ) -> None:
     """Install selected packaged slash commands as Codex project skills.
 
     Codex CLI 0.117+ dropped ``~/.codex/prompts`` and ``/prompts:``.
     Official project-local discovery is ``.agents/skills/<name>/SKILL.md``
-    (scanned from CWD up to the repo root). Reuse the composed command
+    (scanned from CWD up to the repo root). Global mode writes the same
+    layout under ``~/.agents/skills``. Reuse the composed command
     bodies via :func:`install_command` — do not invent new prompt text.
     """
     commands = command_names if command_names is not None else commands_for_packs()
@@ -995,7 +1163,8 @@ def _install_codex_command_skills(
         return
     installed = 0
     skipped = 0
-    skills_root = workdir / ".agents" / "skills"
+    install_root = _agent_install_root(workdir, export_mode)
+    skills_root = install_root / ".agents" / "skills"
     for command_name in commands:
         if install_command(
             command_name,
@@ -1076,23 +1245,26 @@ def _get_agent_skill_dir(workdir: Path, agent: str) -> Path | None:
     return None
 
 
-def _install_deviatdd_skill(workdir: Path, agents: list[str]) -> None:
+def _install_deviatdd_skill(
+    workdir: Path, agents: list[str], export_mode: str = "local"
+) -> None:
     """Provision the packaged deviatdd skill for every active agent."""
     body = _resolve_skill_source()
     if body is None:
         console.print("  [yellow]SKIP[/] deviatdd skill source missing")
         return
+    install_root = _agent_install_root(workdir, export_mode)
     for agent in agents:
-        target_dir = _get_agent_skill_dir(workdir, agent)
+        target_dir = _get_agent_skill_dir(install_root, agent)
         if _skip_unknown_agent(agent, target_dir):
             continue
         target = target_dir / "deviatdd" / "SKILL.md"
         if target.exists() and target.read_text(encoding="utf-8") == body:
-            console.print(f"  [yellow]SKIP[/] {target.relative_to(workdir)}")
+            console.print(f"  [yellow]SKIP[/] {_display_install_path(target, workdir)}")
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body, encoding="utf-8")
-        console.print(f"  [green]INSTALL[/] {target.relative_to(workdir)}")
+        console.print(f"  [green]INSTALL[/] {_display_install_path(target, workdir)}")
 
 
 def _ensure_gitignore(workdir: Path) -> None:
@@ -1116,10 +1288,40 @@ def _ensure_gitignore(workdir: Path) -> None:
         gitignore.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
 
+def _validate_export_mode(value: str | None) -> str | None:
+    """Typer callback: ``--agent-export-mode`` is local, global, or omitted."""
+    if value is None:
+        return None
+    if value not in ("local", "global"):
+        raise typer.BadParameter(
+            f"Invalid agent export mode '{value}'. Must be one of: local, global"
+        )
+    return value
+
+
+def _validate_base_branch(value: str | None) -> str | None:
+    """Typer callback: ``--base-branch`` must be a non-empty name when passed."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        raise typer.BadParameter("Base branch must be a non-empty name")
+    return stripped
+
+
 @cli.command(name="setup", rich_help_panel="Run by you (start here)")
 def setup(
-    agent_export_mode: str = typer.Option(
-        "local", "--agent-export-mode", help="Export mode for agent commands"
+    agent_export_mode: str | None = typer.Option(
+        None,
+        "--agent-export-mode",
+        help="Export mode for agent commands (local or global). Omitted on a TTY prompts.",
+        callback=_validate_export_mode,
+    ),
+    base_branch: str | None = typer.Option(
+        None,
+        "--base-branch",
+        help="Trunk branch for worktrees and PRs. Omitted on a TTY prompts.",
+        callback=_validate_base_branch,
     ),
     libref: bool = typer.Option(
         False,
@@ -1176,23 +1378,34 @@ def setup(
             "mutually exclusive."
         )
         raise typer.Exit(code=1)
+    config_exists = config_path.exists()
+    install_mode = _resolve_setup_export_mode(agent_export_mode=agent_export_mode)
+    base_branch_val = _resolve_setup_base_branch(
+        base_branch=base_branch,
+        config_exists=config_exists,
+        workdir=workdir,
+    )
     claim_remote_val = _resolve_setup_claim_remote(
         claim_remote=claim_remote,
         no_claim_remote=no_claim_remote,
-        config_exists=config_path.exists(),
+        config_exists=config_exists,
         workdir=workdir,
     )
+    update_base = base_branch_val is not None
     update_claim = claim_remote_val is not None
+    strip_stale = is_interactive() or agent_export_mode is not None
 
     use_libref_val = bool(libref)
     _scaffold_dotfiles(
         workdir,
-        agent_export_mode,
         use_libref=use_libref_val,
         claim_remote=bool(claim_remote_val),
-        force_update_flags=libref or update_claim,
+        force_update_flags=libref or update_claim or update_base or strip_stale,
         agent_backend=backend,
         update_claim_remote=update_claim,
+        update_base_branch=update_base,
+        base_branch=base_branch_val or "main",
+        strip_stale_keys=strip_stale,
     )
 
     _apply_governance(workdir, use_libref=use_libref_val)
@@ -1216,8 +1429,9 @@ def setup(
         install_agents,
         command_names=command_names,
         use_libref=use_libref_val,
+        export_mode=install_mode,
     )
-    _install_deviatdd_skill(workdir, install_agents)
+    _install_deviatdd_skill(workdir, install_agents, export_mode=install_mode)
 
     _ensure_gitignore(workdir)
     _ensure_root_gitignore(workdir)

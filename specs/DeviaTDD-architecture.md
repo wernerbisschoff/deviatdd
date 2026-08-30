@@ -921,6 +921,9 @@ standard `AgentBackend.invoke()` contract with these customisations:
    file-copies each project command to `<workdir>/.pi/prompts/<name>.md`
    via the existing `install_command` pipeline — the same code path used
    for `.claude/commands/`, `.opencode/commands/`, and `.factory/commands/`.
+   A this-run `global` install (TTY `[g]lobal` or `--agent-export-mode global`)
+   writes that layout under `~/.{agent}/…` (Codex: `~/.agents/skills`)
+   instead of the project; the choice is not persisted in `config.toml`.
    Pi discovers commands from `.pi/prompts/` natively per its documented
    slash-command convention. The corresponding project-root `.gitignore`
    entries (``*/commands/deviate-*.md``, ``*/prompts/deviate-*.md``) are added by

@@ -104,7 +104,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   the default highlight, not an auto-skip). Non-TTY without `--agent` reuses a persisted
   backend or fail-closes with `NO_AGENT_SELECTED` and a directive to re-run with `--agent`.
   Install is always exactly one agent; leftover `.claude/` / `.opencode/` / … dirs are
-  never a fan-out target.
+  never a fan-out target. On a TTY the remaining prompts are, in order: prompt/skill
+  install `[l]ocal/[g]lobal` (default `l`; this-run only, not persisted), base branch
+  (default current `base_branch` or `main`), claim-remote `[y]es/[n]o`, then the
+  optional-pack checkbox. `global` installs commands/skills under the user-level
+  tree (`~/.{agent}/commands|prompts` + `skills`; Codex `~/.agents/skills`); `local`
+  stays project-local. DeviaTDD still does not write `~/.pi/agent/`.
 * **Optional pack selection:** `--packs none|all-optional|<comma-separated names>` selects
   optional command packs for scripts. Default layer packs are the execution layers only
   (`macro` + `meso` + `micro`, including `/deviate-init`). Product is not a default layer:
@@ -133,7 +138,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   implementation are static `TBD` tokens, not runtime-resolved variables. The
   `${VARIABLE}` resolver described in earlier revisions of this spec has been removed.
 * **Input Parameters:**
-  * `--agent-export-mode [local|global]` (Defaults to `local`)
+  * `--agent-export-mode [local|global]` (Omitted on a TTY prompts `[l]ocal/[g]lobal`,
+    default `l`. Applies to this run's install only — the key is not written.
+    Non-TTY omitted installs local. Explicit flag skips the prompt.)
+  * `--base-branch <name>` (Omitted on a TTY prompts; default is the current
+    `base_branch` or `main`. Non-TTY omitted: fresh writes `main`; existing file
+    left alone unless the flag was passed.)
   * `--agent [claude|opencode|droid|factory|pi|omp|codex]` (Pin install target and persisted backend)
   * `--packs none|all-optional|<comma-separated optional names>` (Scripted optional-pack
     selection; omitted on a TTY shows the checkbox list, default nothing selected)
@@ -150,9 +160,11 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     session does not prompt: fresh
     config writes `false`; an existing file is left alone unless a flag was passed.)
 * **Output Artifacts:**
-  * `.deviate/config.toml` — Persisted configuration profile (includes
-    `[agent].backend` set from `--agent` for meso/micro dispatch, and
-    `claim_remote` default `false`). Codex setup also seeds
+  * `.deviate/config.toml` — Runner configuration only (`profile`,
+    `timeout_seconds`, `base_branch`, `claim_remote`, `[agent].backend`,
+    plus `transport` for pi/omp). Inline comments sit on the same line as
+    each key. Does not persist `agent_export_mode` or `[agent].timeout`.
+    Codex setup also seeds
     `[models].default = "gpt-5.6-luna"` and `[agent].reasoning_effort = "high"`
     when missing/empty so spawned `codex exec` receives `--model gpt-5.6-luna`
     and `-c model_reasoning_effort=high` without a repo-wide `.codex/config.toml`.
