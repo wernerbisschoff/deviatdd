@@ -144,7 +144,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `--no-claim-remote` (Disable push-as-lock; merges `claim_remote = false` into
     `config.toml` without dropping `[models]`, `timeout_seconds`, or `[agent]`.
     Fresh setup without either flag writes `claim_remote = false`. On a TTY with
-    the flags omitted, setup always prompts `[y/n]` (including re-runs); default
+    the flags omitted, setup always prompts `[y]es/[n]o` (including re-runs); default
     is the current file value (`y` if `claim_remote = true`, `n` if false or
     missing). Accepts `y`/`n`/`yes`/`no`. The answer is upserted. A non-interactive
     session does not prompt: fresh

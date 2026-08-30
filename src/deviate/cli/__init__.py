@@ -462,7 +462,7 @@ def _prompt_claim_remote(default: bool = False) -> bool | None:
     try:
         while True:
             selected = Prompt.ask(
-                "Push claim branches to the remote as a lock [y/n]",
+                "Push claim branches to the remote as a lock [y]es/[n]o",
                 default=default_label,
                 console=console,
             )
