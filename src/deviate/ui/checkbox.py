@@ -162,22 +162,64 @@ def _read_key() -> str:
     return _read_key_posix()
 
 
+def _flush_pending_input() -> None:
+    """Drop leftover keystrokes (e.g. Prompt.ask's trailing newline)."""
+    if sys.platform == "win32":
+        import msvcrt
+
+        while msvcrt.kbhit():
+            msvcrt.getwch()
+        return
+    try:
+        import termios
+    except ImportError:
+        return
+    try:
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (OSError, termios.error):
+        return
+
+
+def _skip_leading_confirms(read_key: Callable[[], str]) -> Callable[[], str]:
+    """Skip leftover Enter/newline so the first real keystroke is used."""
+    started = False
+
+    def _next() -> str:
+        nonlocal started
+        key = read_key()
+        if not started:
+            while key in {"enter", "\r", "\n"}:
+                key = read_key()
+            started = True
+        return key
+
+    return _next
+
+
 def checkbox_select(
     options: Sequence[str],
     *,
     title: str = "Select",
     console: Console | None = None,
     read_key: Callable[[], str] | None = None,
+    drain_pending: bool = False,
 ) -> list[str]:
     """One option per row. Space toggles; Enter confirms. Default: none.
 
     ``read_key`` is a no-arg callable used by tests to drive the loop
-    without a real TTY. Production leaves it unset and reads stdin.
+    without a real TTY. Production leaves it unset, flushes pending
+    stdin, and reads the terminal.
     """
     if not options:
         return []
     session = CheckboxSession(options=tuple(options))
-    key_fn: Callable[[], str] = read_key if read_key is not None else _read_key
+    if read_key is None:
+        _flush_pending_input()
+        key_fn: Callable[[], str] = _read_key
+    elif drain_pending:
+        key_fn = _skip_leading_confirms(read_key)
+    else:
+        key_fn = read_key
 
     def _run_loop(on_change: Callable[[], None] | None = None) -> list[str]:
         while True:

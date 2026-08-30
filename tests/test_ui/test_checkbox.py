@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from deviate.core.commands import OPTIONAL_PACK_NAMES
-from deviate.ui.checkbox import CheckboxSession, _arrow_from_sequence, checkbox_select
+from deviate.ui.checkbox import (
+    CheckboxSession,
+    _arrow_from_sequence,
+    checkbox_select,
+)
 
 
 class TestCheckboxSession:
@@ -65,3 +69,22 @@ class TestCheckboxSelectLoop:
             read_key=lambda: next(keys),
         )
         assert picked == ["product", "pr"]
+
+    def test_leftover_enter_is_drained_before_confirm(self) -> None:
+        keys = iter(["enter", "space", "enter"])
+        picked = checkbox_select(
+            OPTIONAL_PACK_NAMES,
+            title="Optional command packs",
+            read_key=lambda: next(keys),
+            drain_pending=True,
+        )
+        assert picked == ["product"]
+
+    def test_leftover_enter_confirms_empty_without_drain(self) -> None:
+        keys = iter(["enter", "space", "enter"])
+        picked = checkbox_select(
+            OPTIONAL_PACK_NAMES,
+            title="Optional command packs",
+            read_key=lambda: next(keys),
+        )
+        assert picked == []

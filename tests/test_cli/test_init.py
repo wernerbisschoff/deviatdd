@@ -586,6 +586,124 @@ class TestSetupClaimRemoteFlag:
         assert _prompt_claim_remote() is False
         assert captured.get("default") == "no"
 
+    def test_tty_rerun_existing_true_defaults_yes_and_writes_true(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TTY re-run with claim_remote=true defaults yes and writes true."""
+        dot = tmp_git_repo / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            "timeout_seconds = 999\n"
+            "claim_remote = true\n\n"
+            "[models]\n"
+            'default = "kept-model"\n\n'
+            "[agent]\n"
+            'backend = "pi"\n',
+            encoding="utf-8",
+        )
+        captured: dict[str, object] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert captured.get("default") == "yes"
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["claim_remote"] is True
+        assert parsed["timeout_seconds"] == 999
+        assert parsed["models"]["default"] == "kept-model"
+        assert resolve_claim_remote(tmp_git_repo) is True
+
+    def test_tty_rerun_existing_false_defaults_no_and_writes_false(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TTY re-run with claim_remote=false defaults no and writes false."""
+        dot = tmp_git_repo / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            'timeout_seconds = 888\nclaim_remote = false\n\n[agent]\nbackend = "pi"\n',
+            encoding="utf-8",
+        )
+        captured: dict[str, object] = {}
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert captured.get("default") == "no"
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["claim_remote"] is False
+        assert parsed["timeout_seconds"] == 888
+
+    def test_tty_rerun_can_flip_true_to_false(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TTY re-run writes a changed answer without rewriting other keys."""
+        dot = tmp_git_repo / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            'timeout_seconds = 777\nclaim_remote = true\n\n[agent]\nbackend = "pi"\n',
+            encoding="utf-8",
+        )
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            return "no"
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["claim_remote"] is False
+        assert parsed["timeout_seconds"] == 777
+        assert parsed["agent"]["backend"] == "opencode"
+
+    def test_no_claim_remote_flag_skips_prompt_on_tty(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``--no-claim-remote`` skips the TTY prompt and writes false."""
+        dot = tmp_git_repo / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            'claim_remote = true\n\n[agent]\nbackend = "pi"\n',
+            encoding="utf-8",
+        )
+        prompted = {"n": 0}
+
+        def fake_prompt(default: bool = False) -> bool | None:
+            prompted["n"] += 1
+            return default
+
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli._prompt_claim_remote", fake_prompt)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_git_repo):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--no-claim-remote"]
+            )
+        assert result.exit_code == 0, result.output
+        assert prompted["n"] == 0
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["claim_remote"] is False
+
 
 class TestInitAgentFlag:
     """RED phase tests for the --agent flag persistence contract.

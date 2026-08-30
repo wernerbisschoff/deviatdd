@@ -12,6 +12,7 @@ from deviate.state.config import (
     CODEX_DEFAULT_MODEL,
     CODEX_DEFAULT_REASONING_EFFORT,
     SessionState,
+    resolve_claim_remote,
 )
 from deviate.state.config import resolve_base_branch as resolve_base_branch  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
@@ -434,12 +435,14 @@ def _prompt_agent_selection(
     return selected
 
 
-def _prompt_claim_remote() -> bool | None:
+def _prompt_claim_remote(default: bool = False) -> bool | None:
     """Ask whether to push claim branches as a remote lock.
 
     Returns ``False`` when the operator disables push-as-lock,
     ``True`` when they enable it, and ``None`` when the session is not
-    interactive so the caller keeps the ``claim_remote = false`` default.
+    interactive so the caller keeps the existing or false default.
+    ``default`` is the highlight: ``yes`` when the file already has
+    ``claim_remote = true``, otherwise ``no``.
     """
     if not is_interactive():
         return None
@@ -447,7 +450,7 @@ def _prompt_claim_remote() -> bool | None:
         selected = Prompt.ask(
             "Push claim branches to the remote as a lock",
             choices=["yes", "no"],
-            default="no",
+            default="yes" if default else "no",
             console=console,
         )
     except (EOFError, KeyboardInterrupt):
@@ -631,21 +634,29 @@ def _resolve_setup_claim_remote(
     claim_remote: bool,
     no_claim_remote: bool,
     config_exists: bool,
-) -> bool:
+    workdir: Path | None = None,
+) -> bool | None:
     """Decide the ``claim_remote`` value written by ``deviate setup``.
 
     ``--claim-remote`` always writes true. ``--no-claim-remote`` always
-    writes false. A fresh workspace without either flag may prompt on a
-    TTY (default no). Non-interactive sessions and re-runs against an
-    existing config keep the false default.
+    writes false. On a TTY with neither flag, always prompt (even when
+    ``config.toml`` exists); default is the current file value (``yes``
+    if true, ``no`` if false or missing). Non-TTY: no prompt; fresh
+    config writes false; existing config is left alone (``None``).
     """
     if no_claim_remote:
         return False
     if claim_remote:
         return True
+    existing = False
+    if config_exists and workdir is not None:
+        existing = resolve_claim_remote(workdir)
+    if is_interactive():
+        prompted = _prompt_claim_remote(default=existing)
+        return existing if prompted is None else prompted
     if config_exists:
-        return False
-    return _prompt_claim_remote() is True
+        return None
+    return False
 
 
 def _validate_agent_choice(value: str | None) -> str | None:
@@ -735,8 +746,7 @@ def _merge_flag_keys(
     """Surgically update flag keys in an existing TOML.
 
     Upserts ``use_libref`` when opted in. Upserts ``claim_remote`` only
-    when the caller explicitly passed a value (``--claim-remote`` or
-    ``--no-claim-remote``).
+    when the caller passed a value (flags or a TTY answer).
     Preserves every other key/table (e.g. user-customised ``[models]``).
     """
     content = config_path.read_text(encoding="utf-8")
@@ -763,16 +773,21 @@ def _scaffold_dotfiles(
     _ensure_dir(dot_dir / "artifacts")
 
     config_path = dot_dir / "config.toml"
-    if config_path.exists() and not force_update_flags and agent_backend is None:
+    if (
+        config_path.exists()
+        and not force_update_flags
+        and agent_backend is None
+        and not update_claim_remote
+    ):
         console.print(f"  [yellow]SKIP[/] {config_path.name} already exists")
     elif config_path.exists():
         # Existing config: only touch the keys the caller asked us to touch.
-        # `use_libref` and `claim_remote` are only ever upserted
-        # when the corresponding flag was passed (force_update_flags).
+        # `use_libref` is upserted when `--libref` was passed.
+        # `claim_remote` is upserted on flags or a TTY answer.
         # `agent_backend` is always upserted when provided so `--agent factory`
         # can overwrite a previously persisted backend.
         changed = False
-        if force_update_flags:
+        if force_update_flags or update_claim_remote:
             _merge_flag_keys(
                 config_path,
                 use_libref=use_libref,
@@ -1152,17 +1167,19 @@ def setup(
         claim_remote=claim_remote,
         no_claim_remote=no_claim_remote,
         config_exists=config_path.exists(),
+        workdir=workdir,
     )
+    update_claim = claim_remote_val is not None
 
     use_libref_val = bool(libref)
     _scaffold_dotfiles(
         workdir,
         agent_export_mode,
         use_libref=use_libref_val,
-        claim_remote=claim_remote_val,
-        force_update_flags=libref or no_claim_remote or claim_remote,
+        claim_remote=bool(claim_remote_val),
+        force_update_flags=libref or update_claim,
         agent_backend=backend,
-        update_claim_remote=no_claim_remote or claim_remote,
+        update_claim_remote=update_claim,
     )
 
     _apply_governance(workdir, use_libref=use_libref_val)
