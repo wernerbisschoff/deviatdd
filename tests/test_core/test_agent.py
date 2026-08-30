@@ -1331,8 +1331,8 @@ class TestPiBackendRegistration:
         cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "pi", f"Print-mode prefix must start with pi (got {cmd})"
         assert cmd[1] == "-p", f"Print-mode prefix must keep -p (got {cmd})"
-        assert _has_long_or_short(cmd, "--no-extensions", "-ne"), (
-            f"Lean Pi spawn requires --no-extensions or -ne (got {cmd})"
+        assert not _has_long_or_short(cmd, "--no-extensions", "-ne"), (
+            f"Pi spawn must load extension providers, got {cmd}"
         )
         assert _has_long_or_short(cmd, "--no-skills", "-ns"), (
             f"Lean Pi spawn requires --no-skills or -ns (got {cmd})"
