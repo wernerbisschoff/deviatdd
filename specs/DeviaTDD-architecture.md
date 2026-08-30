@@ -4,7 +4,7 @@
 ---
 
 ## 1. Architectural Overview & Philosophy
-The architecture operates as a hierarchical lifecycle that shifts from human-driven macroscopic scoping to machine-orchestrated, deterministic microscopic execution loops. It is founded on the principle that Large Language Models (LLMs) are probabilistic, optimization-seeking actors that require structured infrastructure containment rather than implicit alignment trust.
+The architecture operates as a hierarchical lifecycle that shifts from human-driven macroscopic scoping to machine-orchestrated, deterministic microscopic execution loops. It is founded on the principle that Large Language Models (LLMs) are probabilistic, optimization-seeking actors that require structured infrastructure containment rather than implicit alignment trust. First-hour setup lives in `README.md`; the research-backed rationale for why each layer, gate, ledger, and TDD phase exists lives in `docs/rationale.md`.
 
 ```plaintext
                           ┌──────────────┐

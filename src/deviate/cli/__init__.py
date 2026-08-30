@@ -1084,6 +1084,7 @@ def _install_commands_to_agents(
         target_dir = _get_agent_command_dir(agent, install_root, export_mode)
         if _skip_unknown_agent(agent, target_dir):
             continue
+        assert target_dir is not None
         installed = 0
         skipped = 0
         for command_name in commands:
@@ -1098,13 +1099,17 @@ def _install_commands_to_agents(
                 installed += 1
             else:
                 skipped += 1
+        dest = _display_install_path(target_dir, workdir)
         if installed and not skipped:
-            console.print(f"  [green]INSTALL[/] {installed} commands → {agent}")
+            console.print(
+                f"  [green]INSTALL[/] {installed} commands → {agent} ({dest})"
+            )
         elif skipped and not installed:
-            console.print(f"  [yellow]SKIP[/] {skipped} commands → {agent}")
+            console.print(f"  [yellow]SKIP[/] {skipped} commands → {agent} ({dest})")
         else:
             console.print(
-                f"  [green]INSTALL[/] {installed}, [yellow]SKIP[/] {skipped} → {agent}"
+                f"  [green]INSTALL[/] {installed}, [yellow]SKIP[/] {skipped} "
+                f"→ {agent} ({dest})"
             )
 
 
@@ -1142,13 +1147,15 @@ def _install_codex_command_skills(
             installed += 1
         else:
             skipped += 1
+    dest = _display_install_path(skills_root, workdir)
     if installed and not skipped:
-        console.print(f"  [green]INSTALL[/] {installed} commands → codex")
+        console.print(f"  [green]INSTALL[/] {installed} commands → codex ({dest})")
     elif skipped and not installed:
-        console.print(f"  [yellow]SKIP[/] {skipped} commands → codex")
+        console.print(f"  [yellow]SKIP[/] {skipped} commands → codex ({dest})")
     else:
         console.print(
-            f"  [green]INSTALL[/] {installed}, [yellow]SKIP[/] {skipped} → codex"
+            f"  [green]INSTALL[/] {installed}, [yellow]SKIP[/] {skipped} "
+            f"→ codex ({dest})"
         )
 
 
@@ -1289,7 +1296,11 @@ def setup(
     agent_export_mode: str | None = typer.Option(
         None,
         "--agent-export-mode",
-        help="Export mode for agent commands (local or global). Omitted on a TTY prompts.",
+        help=(
+            "This-run only (not written to config): local or global. "
+            r"Omitted on a TTY prompts \[l]ocal/\[g]lobal. "
+            "Pi local: .pi/prompts; global: ~/.pi/agent/prompts."
+        ),
         callback=_validate_export_mode,
     ),
     base_branch: str | None = typer.Option(
@@ -1309,7 +1320,10 @@ def setup(
     agent: str | None = typer.Option(
         None,
         "--agent",
-        help="Agent platform to install and persist as [agent].backend",
+        help=(
+            r"Agent platform to install and persist as \[agent].backend. "
+            "Skips only the agent picker; TTY still asks export-mode, lock, packs."
+        ),
         callback=_validate_agent_choice,
     ),
     claim_remote: bool = typer.Option(
@@ -1330,7 +1344,7 @@ def setup(
             "(product, merge, pr, review, walkthrough, html, hotfix, "
             "triage, prune, e2e). 'none', 'all-optional', or "
             "comma-separated names. Unknown names fail closed. "
-            "Setup does not commit."
+            "Omitted off-TTY = default layers only. Setup does not commit."
         ),
     ),
 ) -> None:
@@ -1340,6 +1354,13 @@ def setup(
     plus the shared ``deviatdd`` skill. Does not commit.
     Non-TTY without ``--agent`` fails closed with ``NO_AGENT_SELECTED``;
     unknown ``--packs`` fails closed. ``claim_remote`` defaults to false.
+
+    TTY extras (``--agent`` skips only the agent picker): prompt/skill
+    install ``\\[l]ocal/\\[g]lobal``, claim-remote lock ``\\[y]es/\\[n]o``,
+    then the optional-pack checklist. Omitted ``--packs`` off-TTY installs
+    default layers only. ``--agent-export-mode`` applies to this run
+    only and is not written to config. Pi local: ``.pi/prompts``;
+    global: ``~/.pi/agent/prompts``.
     """
     workdir = Path.cwd()
     config_path = workdir / ".deviate" / "config.toml"
@@ -1391,10 +1412,11 @@ def setup(
     # ``droid`` is normalised to ``factory`` so both names write
     # ``.factory/``. Codex is a first-class backend that writes skills
     # under ``.agents/skills/`` (Codex CLI 0.117+ dropped custom prompts).
-    # ``pi`` uses ``.pi/prompts/``; ``omp`` uses ``.omp/prompts/``; the
-    # remaining CLIs use ``commands/``. No global ``~/.pi/agent/`` writes,
-    # no ``settings.json`` generation — the operator's Pi config is out of
-    # scope.
+    # ``pi`` uses ``.pi/prompts/`` locally and ``~/.pi/agent/prompts/``
+    # globally; ``omp`` uses ``.omp/prompts/``; the remaining CLIs use
+    # ``commands/``. Global Pi writes those ``~/.pi/agent/`` dirs; setup
+    # still does not generate ``settings.json`` — the operator's Pi
+    # config is out of scope.
     optional_packs = _resolve_setup_optional_packs(packs)
     command_names = commands_for_packs(optional_packs)
     _install_commands_to_agents(

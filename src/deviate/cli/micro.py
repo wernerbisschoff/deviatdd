@@ -6878,7 +6878,7 @@ def run_command(
     review: bool = typer.Option(
         False,
         "--review",
-        help="not /deviate-review: TTY pause before phase commit. Requires a TTY.",
+        help="TTY pause before the phase commit — not /deviate-review. Requires a TTY.",
     ),
 ) -> None:
     """Use `deviate micro run --all` to drain the queue.
