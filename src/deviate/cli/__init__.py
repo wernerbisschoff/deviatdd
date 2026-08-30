@@ -1433,7 +1433,7 @@ cli.add_typer(
     review_app,
     name="review",
     rich_help_panel=_AGENT_PANEL,
-    help="Comments-only Gate 3 review (no apply, no merge)",
+    help="Gate 3 review: comments by default; --apply is CRITICAL-only",
 )
 cli.add_typer(
     prune_app,

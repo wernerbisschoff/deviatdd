@@ -9,6 +9,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.commands import OPTIONAL_PACKS
+from deviate.core.review_coverage import (
+    may_apply_finding,
+    should_commit_review_fixes,
+)
 from tests.conftest import _git_env
 
 runner = CliRunner()
@@ -64,18 +69,30 @@ def _seed_named_brief(
 
 
 class TestReviewCommentsOnly:
-    """AC-ADHOC-035-02 / 04: review is comments-only; incomplete brief stops."""
+    """AC-ADHOC-035-02 / 04: default review is comments-only; incomplete brief stops."""
 
-    def test_review_prompt_has_no_apply_or_commit_or_request_changes(self) -> None:
+    def test_default_review_path_has_no_apply_or_commit(self) -> None:
         text = _REVIEW_PROMPT
         assert "COMMENTS_ONLY" in text
-        assert "There is no STEP 4" in text
-        assert "Autonomous Fix Application" not in text
-        assert "apply N review fixes" not in text
+        assert "There is no always-on STEP 4" in text
+        assert "Apply every `[CRITICAL]` and `[SUGGESTION]`" not in text
         assert "Do not `git add`" in text
         assert "Do not `git commit`" in text
         assert "Never emit `REQUEST_CHANGES`" in text
         assert "brief incomplete" in text
+        assert (
+            "Print/post comments and **stop**" in text
+            or "print/post comments and stop" in text.lower()
+        )
+
+    def test_apply_flag_is_critical_only(self) -> None:
+        text = _REVIEW_PROMPT
+        assert "`--apply`" in text
+        assert "STEP 4 only when `--apply`" in text
+        assert "Never auto-apply SUGGESTION or OPPORTUNITY" in text
+        assert "named-check fail" in text
+        assert "Commit only when `--apply` actually landed a CRITICAL fix" in text
+        assert "REQUEST_CHANGES" in text
 
     def test_review_pre_incomplete_brief_emits_exact_phrase(
         self, tmp_git_repo: Path
@@ -120,13 +137,119 @@ class TestReviewCommentsOnly:
         assert contract["issue_brief_path"] == str(brief.resolve())
         assert contract["plan_path"] is None
 
-    def test_review_cli_source_has_no_apply_or_commit(self) -> None:
+    def test_review_cli_source_does_not_stage_or_commit(self) -> None:
         source = (
-            Path(__file__).resolve().parents[2] / "src" / "deviate" / "cli" / "review.py"
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "cli"
+            / "review.py"
         ).read_text(encoding="utf-8")
         assert "git add" not in source
         assert "git commit" not in source
         assert "REQUEST_CHANGES" not in source
+
+    def test_review_pre_default_apply_is_false(self, tmp_git_repo: Path) -> None:
+        _seed_named_brief(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0, result.stdout
+        contract = json.loads(result.stdout)
+        assert contract["apply"] is False
+        assert contract["apply_scope"] is None
+
+    def test_review_pre_apply_flag_is_critical_only(self, tmp_git_repo: Path) -> None:
+        _seed_named_brief(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre", "--apply"])
+
+        assert result.exit_code == 0, result.stdout
+        contract = json.loads(result.stdout)
+        assert contract["apply"] is True
+        assert contract["apply_scope"] == "CRITICAL"
+
+    def test_review_group_apply_flag_reaches_pre(self, tmp_git_repo: Path) -> None:
+        _seed_named_brief(tmp_git_repo)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "--apply", "pre"])
+
+        assert result.exit_code == 0, result.stdout
+        contract = json.loads(result.stdout)
+        assert contract["apply"] is True
+        assert contract["apply_scope"] == "CRITICAL"
+
+    def test_no_pr_review_pack_or_command(self) -> None:
+        assert "pr-review" not in OPTIONAL_PACKS
+        command = (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-pr-review.md"
+        )
+        assert not command.exists()
+
+
+class TestReviewApplyPolicy:
+    """`--apply` applies CRITICAL only; default path never applies or commits."""
+
+    def test_default_never_applies(self) -> None:
+        assert (
+            may_apply_finding(
+                apply=False,
+                severity="CRITICAL",
+                category="security",
+                has_concrete_fix=True,
+            )
+            is False
+        )
+
+    def test_apply_critical_with_fix(self) -> None:
+        for category in (
+            "security",
+            "data loss",
+            "broken build",
+            "named-check fail",
+        ):
+            assert (
+                may_apply_finding(
+                    apply=True,
+                    severity="CRITICAL",
+                    category=category,
+                    has_concrete_fix=True,
+                )
+                is True
+            ), category
+
+    def test_apply_never_suggestion_or_opportunity(self) -> None:
+        for severity in ("SUGGESTION", "OPPORTUNITY"):
+            assert (
+                may_apply_finding(
+                    apply=True,
+                    severity=severity,
+                    category="security",
+                    has_concrete_fix=True,
+                )
+                is False
+            ), severity
+
+    def test_apply_critical_without_fix_is_false(self) -> None:
+        assert (
+            may_apply_finding(
+                apply=True,
+                severity="CRITICAL",
+                category="security",
+                has_concrete_fix=False,
+            )
+            is False
+        )
+
+    def test_commit_only_when_critical_landed(self) -> None:
+        assert should_commit_review_fixes(apply=False, applied_critical=1) is False
+        assert should_commit_review_fixes(apply=True, applied_critical=0) is False
+        assert should_commit_review_fixes(apply=True, applied_critical=1) is True
 
 
 class TestReviewPost:
@@ -230,7 +353,9 @@ class TestReviewPreCore:
         assert "base_branch" in contract
         assert "report_exists" in contract
         assert "timestamp" in contract
+        assert "apply" in contract
         assert contract["status"] == "READY"
+        assert contract["apply"] is False
 
     def test_review_pre_finds_constitution(self, tmp_git_repo: Path) -> None:
         """UT-02: Contract constitution_path points to resolved absolute path of specs/constitution.md."""

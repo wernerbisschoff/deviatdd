@@ -89,6 +89,21 @@ _contract_field() {
     [ "$(_contract_field coverage_complete)" = "True" ]
 }
 
+@test "default review pre apply is false; --apply is CRITICAL only" {
+    _init_isolated_repo
+    _checkout_issue_branch
+    _seed_issue_ledger
+
+    run deviate review pre
+    [ "$status" -eq 0 ]
+    [ "$(_contract_field apply)" = "False" ]
+
+    run deviate review pre --apply
+    [ "$status" -eq 0 ]
+    [ "$(_contract_field apply)" = "True" ]
+    [ "$(_contract_field apply_scope)" = "CRITICAL" ]
+}
+
 @test "unclaimed plan AC is comment input on installed review pre" {
     _init_isolated_repo
     _checkout_issue_branch

@@ -114,18 +114,22 @@ Breaks a business goal down into standard development project containers.
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
-`/deviate-plan` phase for per-issue localized research. A comments-only Gate 3
-review is handled by the `/deviate-review` skill. `deviate review pre` requires
-this issue's brief to contain named-check tokens; otherwise it emits exactly
-`brief incomplete` and stops (no Explore hunt). When the brief is complete,
-`evaluate_review_coverage` (`src/deviate/core/review_coverage.py`) still lists
-unclaimed this-issue `plan.md` `AC-PLAN-NNN` tokens in `uncovered` as **comment
-input** — not an apply gate and not a merge gate. Missing `plan.md` or missing
-plan tokens are vacuously complete. PENDING, FAILED, and sibling-issue rows do
-not claim. The skill comments only (stdout and/or GitHub PR review event
-`COMMENT`). It must not apply, `git add`, `git commit`, `REQUEST_CHANGES`, or
-merge, and must not assume JUDGE already ran (coworker path is often
-`--profile fast`).
+`/deviate-plan` phase for per-issue localized research. Gate 3 PR review is
+handled by the `/deviate-review` skill (`/deviate-review` **is** the PR review;
+there is no `pr-review` pack). Default behavior is comments only. `deviate
+review pre` requires this issue's brief to contain named-check tokens; otherwise
+it emits exactly `brief incomplete` and stops (no Explore hunt). When the brief
+is complete, `evaluate_review_coverage` (`src/deviate/core/review_coverage.py`)
+still lists unclaimed this-issue `plan.md` `AC-PLAN-NNN` tokens in `uncovered`
+as **comment input** — not an apply gate and not a merge gate. Missing
+`plan.md` or missing plan tokens are vacuously complete. PENDING, FAILED, and
+sibling-issue rows do not claim. The skill comments (stdout and/or GitHub PR
+review event `COMMENT`). It must not emit `REQUEST_CHANGES` or merge, and must
+not assume JUDGE already ran (coworker path is often `--profile fast`).
+`--apply` is opt-in: the agent may apply CRITICAL findings only (security /
+data loss / broken build / named-check fail with a concrete FIX) and commit
+only when such a fix landed. Never auto-apply SUGGESTION or OPPORTUNITY. There
+is no always-on STEP 4.
 
 Alongside the review, `/deviate-walkthrough` (see `src/deviate/cli/walkthrough.py`)
 is the four-look map of the same this-issue read set: (a) where the brief is
@@ -332,7 +336,7 @@ to invoke, but model selection is delegated to the calling environment.
 
 ### 3.4 Acceptance Test-Driven Development (ATDD)
 * **How it is fulfilled:** Achieved through bidirectional requirement traceability and the Meso/Micro Layer transition.
-* **Mechanisms:** During the Meso phase, `deviate tasks pre/post` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate checks task-scoped `AC-PLAN-NNN` evidence against the injected RED+GREEN diff. HITL Gate 3 (`deviate review`) is comments-only: unclaimed this-issue `plan.md` tokens appear in `uncovered` as comment input. Review is not a merge gate and does not apply or commit. This keeps mid-plan TDD honest at JUDGE while Gate 3 maps and comments on this issue's named checks.
+* **Mechanisms:** During the Meso phase, `deviate tasks pre/post` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate checks task-scoped `AC-PLAN-NNN` evidence against the injected RED+GREEN diff. HITL Gate 3 (`deviate review`) comments by default: unclaimed this-issue `plan.md` tokens appear in `uncovered` as comment input. Review is not a merge gate and never emits `REQUEST_CHANGES`. Apply is opt-in (`--apply`) and CRITICAL-only. This keeps mid-plan TDD honest at JUDGE while Gate 3 maps and comments on this issue's named checks.
 
 ### 3.5 Evaluation-Driven Development (EDD)
 * **How it is fulfilled:** Realized via the Compliance Gate and the **Green → Judge → Green loop**.

@@ -27,16 +27,47 @@ logger = logging.getLogger(__name__)
 review_app = typer.Typer(no_args_is_help=True)
 
 
+@review_app.callback()
+def _review_flags(
+    ctx: typer.Context,
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help=(
+            "Opt-in: after comments, apply CRITICAL findings only "
+            "(security / data loss / broken build / named-check fail with a "
+            "concrete FIX). Default is comments only."
+        ),
+    ),
+) -> None:
+    """Gate 3 review: comments by default; ``--apply`` is CRITICAL-only."""
+    ctx.ensure_object(dict)
+    ctx.obj["apply"] = apply
+
+
+def _apply_enabled(ctx: typer.Context, apply: bool) -> bool:
+    return apply or bool((ctx.obj or {}).get("apply"))
+
+
 @review_app.command()
 def pre(
+    ctx: typer.Context,
     base: str | None = typer.Option(
         None, "--base", help="Base branch for merge-base computation"
     ),
     branch: str | None = typer.Option(
         None, "--branch", help="Target branch for self-contained review"
     ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help=(
+            "Opt-in: apply CRITICAL findings only after comments. "
+            "Without this flag, print/post comments and stop."
+        ),
+    ),
 ) -> None:
-    """Gather this-issue brief + diff for comments-only Gate 3 review."""
+    """Gather this-issue brief + diff for Gate 3 review (comments by default)."""
     repo = Path.cwd()
     resolved_base = base or resolve_base_branch(repo)
 
@@ -55,6 +86,7 @@ def pre(
     prd_path, prd_warning = _resolve_prd(branch_name, repo)
     report_exists = _check_existing_reports(repo)
     coverage = evaluate_review_coverage(repo, issue_id)
+    apply_on = _apply_enabled(ctx, apply)
 
     contract = {
         "status": "READY",
@@ -70,6 +102,8 @@ def pre(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uncovered": coverage.uncovered,
         "coverage_complete": coverage.complete,
+        "apply": apply_on,
+        "apply_scope": "CRITICAL" if apply_on else None,
     }
 
     print(json.dumps(contract, indent=2))

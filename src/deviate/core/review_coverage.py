@@ -22,6 +22,14 @@ _TEST_FILE_RE = re.compile(
 )
 _COMPLETED = "COMPLETED"
 BRIEF_INCOMPLETE = "brief incomplete"
+APPLY_CRITICAL_CATEGORIES = frozenset(
+    {
+        "security",
+        "data_loss",
+        "broken_build",
+        "named_check_fail",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -127,6 +135,37 @@ def classify_changed_files(paths: list[str]) -> tuple[list[str], list[str]]:
     test_files = [p for p in paths if is_test_path(p)]
     production_files = [p for p in paths if not is_test_path(p)]
     return test_files, production_files
+
+
+def _normalize_apply_category(category: str) -> str:
+    return category.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def may_apply_finding(
+    *,
+    apply: bool,
+    severity: str,
+    category: str,
+    has_concrete_fix: bool,
+) -> bool:
+    """True only for opt-in ``--apply`` + CRITICAL + allowed category + FIX.
+
+    Default review (``apply=False``) never applies. SUGGESTION and
+    OPPORTUNITY never apply. CRITICAL without a concrete FIX never applies.
+    Allowed categories: security, data loss, broken build, named-check fail.
+    """
+    if not apply:
+        return False
+    if severity.strip().upper() != "CRITICAL":
+        return False
+    if not has_concrete_fix:
+        return False
+    return _normalize_apply_category(category) in APPLY_CRITICAL_CATEGORIES
+
+
+def should_commit_review_fixes(*, apply: bool, applied_critical: int) -> bool:
+    """Commit only when ``--apply`` actually landed a CRITICAL fix."""
+    return bool(apply and applied_critical > 0)
 
 
 def evaluate_review_coverage(
