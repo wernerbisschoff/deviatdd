@@ -106,11 +106,15 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   Install is always exactly one agent; leftover `.claude/` / `.opencode/` / … dirs are
   never a fan-out target.
 * **Optional pack selection:** `--packs none|all-optional|<comma-separated names>` selects
-  optional command packs for scripts. On a TTY, omitted `--packs` shows a Rich selector
-  that lists every optional pack (`merge`, `pr`, `review`, `walkthrough`, `html`,
-  `hotfix`, `triage`, `prune`, `e2e`) plus `none` / `all-optional`. Default is `none`
-  (default layer packs only). Non-interactive sessions skip the prompt and install
-  default-only.
+  optional command packs for scripts. Default layer packs are the execution layers only
+  (`macro` + `meso` + `micro`, including `/deviate-init`). Product is not a default layer:
+  it is one optional bundle (`deviate-flows`, `deviate-architecture`, `deviate-release`)
+  that stays unsplit. On a TTY, omitted `--packs` shows a Rich selector that lists
+  `none`, `all-optional`, then `product` first among named packs, then the individual
+  extras (`merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`,
+  `e2e`). Default highlight is `none` (execution layers only). Non-interactive sessions
+  skip the prompt and install default-only. `--packs product` writes all three product
+  commands; `--packs all-optional` includes `product` plus every individual extra.
 * **Execution Modes:**
   * **Offline Mode (Default):** `_scaffold_constitution()` writes
     `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`. The

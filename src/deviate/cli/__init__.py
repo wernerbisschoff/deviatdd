@@ -457,8 +457,15 @@ def _prompt_claim_remote() -> bool | None:
 
 
 def _optional_pack_prompt_choices() -> list[str]:
-    """Names shown on the TTY optional-pack selector."""
-    return ["none", "all-optional", *OPTIONAL_PACK_NAMES]
+    """Names shown on the TTY optional-pack selector.
+
+    ``product`` is listed first among named optional packs so the
+    three-command product bundle is the easiest extra to pick.
+    """
+    named = list(OPTIONAL_PACK_NAMES)
+    if "product" in named:
+        named = ["product", *[name for name in named if name != "product"]]
+    return ["none", "all-optional", *named]
 
 
 def _packs_from_selector_picks(picks: list[str]) -> tuple[str, ...]:
@@ -1130,7 +1137,7 @@ def setup(
         "--packs",
         help=(
             "Optional command packs to install on top of the default "
-            "product+macro+meso+micro set. Comma-separated names, "
+            "macro+meso+micro set. Comma-separated names, "
             "'none', or 'all-optional'."
         ),
     ),

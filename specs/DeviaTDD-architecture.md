@@ -101,8 +101,10 @@ Breaks a business goal down into standard development project containers.
   becomes governed at the first research invocation. `deviate setup` deliberately does
   NOT scaffold the constitution — keeping setup constitution-agnostic preserves the
   greenfield signal for the orchestrator and downstream phases. The new-user path is
-  two steps: `deviate setup` (writes `.deviate/`, persists the agent, installs default
-  packs including `deviate-init` and the shared `deviatdd` skill) then `/deviate-init`
+  two steps: `deviate setup` (writes `.deviate/`, persists the agent, installs the
+  default execution-layer packs — `macro` + `meso` + `micro`, including `deviate-init` —
+  and the shared `deviatdd` skill; the Product layer is an optional `--packs product`
+  bundle) then `/deviate-init`
   as the first agent prompt (Codex: the `deviate-init` skill). `/deviate-init` runs
   `deviate init pre` / `deviate init post` and scaffolds `specs/constitution.md`,
   `mise.toml`, and `specs/issues.jsonl`, skipping anything already present.
@@ -468,7 +470,7 @@ Agents are bound into specialized operational scopes by context restrictions. Op
 
 ### 5.0 Product Layer Phase Prompts *(optional, sits above Macro)*
 
-The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optional — repositories that only ship single features can skip it and route `/deviate-shard` and `/deviate-adhoc` directly to the Macro layer.
+The Product layer captures cross-product framing (FLOW-01..FLOW-03). It is optional — repositories that only ship single features can skip it and route `/deviate-shard` and `/deviate-adhoc` directly to the Macro layer. `deviate setup` does not install the Product-layer commands by default: they are one optional pack (`product` → `deviate-flows`, `deviate-architecture`, `deviate-release`, kept together). Bare setup / `--packs none` / TTY default `none` write only `macro` + `meso` + `micro`. `--packs product` writes all three product commands; `--packs all-optional` includes that bundle plus the individual extras. The TTY optional-pack selector lists `none`, `all-optional`, then `product` first among named packs.
 
 * **`/deviate-flows` (FLOW-01, `deviatdd-product-layer`):** Conversational flow authoring. Reads `specs/_product/flows/flows-product.md` as the seed catalog; converses with the user to identify actor, domain, job-to-be-done, trigger, and success state; writes a new `flows-<domain>.md` under `specs/_product/flows/`; appends a row to `specs/_product/flows/index.md` (Flow ID, Name, Actor, Domain, Status, Source).
     * *System Directives:* Extend the seed (never regenerate); preserve the FLOW-NN ID format `^FLOW-\d{2,}$`; every flow block must carry a `## FLOW-NN <Name>` header; the agent must ask clarifying questions when the actor, job, or trigger is ambiguous before writing the flow file. **Commit protocol (v1.4.0):** Phase A drafts every flow file + index row to disk as the conversation progresses (no commit). Before composing the commit subject, Phase B reads `<repo_root>/CONTRIBUTING.md` *if it exists* to discover the target repository's commit-message convention (types, scopes, emoji prefix, subject length). The default when absent is Conventional Commits; if CONTRIBUTING.md exists and declares a different convention, that wins. Phase B then fires exactly one `git add <session-owned files> && git commit -m '<subject per CONTRIBUTING.md or default>'` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes"), staging every session-authored flow file plus `index.md`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit. `git commit` runs WITHOUT `--no-verify` by default; if CONTRIBUTING.md exists and explicitly permits `--no-verify` for docs-only commits, pass it; otherwise the target repo's pre-commit hooks run. If a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass. The prompt invokes the host agent's git tooling directly; no internal Python commit helper is exposed to any Product-layer prompt.

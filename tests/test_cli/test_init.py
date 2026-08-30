@@ -293,9 +293,9 @@ class TestInitCommand:
     def test_init_product_layer_skills_idempotent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """TSK-010-01: re-running ``deviate setup --agent claude`` against a workdir
-        where the three Product-layer skill files are already installed produces
-        SKIP log lines (no errors, no duplicate writes).
+        """TSK-010-01: re-running ``deviate setup --agent claude --packs product``
+        against a workdir where the three Product-layer skill files are already
+        installed produces SKIP log lines (no errors, no duplicate writes).
 
         Source: ``src/deviate/cli/__init__.py:518-531`` (``_install_commands_to_agents``)
         existing skip-on-equal-content logic.
@@ -307,7 +307,9 @@ class TestInitCommand:
         (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
 
         with chdir(tmp_path):
-            first = runner.invoke(cli, ["setup", "--agent", "claude"])
+            first = runner.invoke(
+                cli, ["setup", "--agent", "claude", "--packs", "product"]
+            )
             assert first.exit_code == 0, first.output
 
             for skill_name in _PRODUCT_LAYER_SKILLS:
@@ -316,7 +318,9 @@ class TestInitCommand:
                     f"first setup did not install {skill_name}: {installed}"
                 )
 
-            second = runner.invoke(cli, ["setup", "--agent", "claude"])
+            second = runner.invoke(
+                cli, ["setup", "--agent", "claude", "--packs", "product"]
+            )
             assert second.exit_code == 0, second.output
 
             for skill_name in _PRODUCT_LAYER_SKILLS:

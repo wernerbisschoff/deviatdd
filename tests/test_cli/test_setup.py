@@ -227,9 +227,12 @@ class TestSetupPacks:
         assert (commands / "deviate-red.md").is_file()
         assert (commands / "deviate-explore.md").is_file()
         assert (commands / "deviate-plan.md").is_file()
-        assert (commands / "deviate-flows.md").is_file()
+        assert (commands / "deviate-init.md").is_file()
         assert (tmp_path / ".opencode" / "skills" / "deviatdd" / "SKILL.md").is_file()
         for optional in (
+            "deviate-flows",
+            "deviate-architecture",
+            "deviate-release",
             "deviate-pr",
             "deviate-merge",
             "deviate-review",
@@ -252,6 +255,37 @@ class TestSetupPacks:
         assert (commands / "deviate-pr.md").is_file()
         assert (commands / "deviate-review.md").is_file()
         assert not (commands / "deviate-merge.md").exists()
+        assert not (commands / "deviate-flows.md").exists()
+        assert not (commands / "deviate-architecture.md").exists()
+        assert not (commands / "deviate-release.md").exists()
+
+    def test_packs_product_writes_all_three(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--packs", "product"]
+            )
+            assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-flows.md").is_file()
+        assert (commands / "deviate-architecture.md").is_file()
+        assert (commands / "deviate-release.md").is_file()
+        assert (commands / "deviate-red.md").is_file()
+        assert (commands / "deviate-init.md").is_file()
+        assert not (commands / "deviate-pr.md").exists()
+        assert not (commands / "deviate-merge.md").exists()
+
+    def test_packs_all_optional_includes_product(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(
+                cli, ["setup", "--agent", "opencode", "--packs", "all-optional"]
+            )
+            assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-flows.md").is_file()
+        assert (commands / "deviate-architecture.md").is_file()
+        assert (commands / "deviate-release.md").is_file()
+        assert (commands / "deviate-pr.md").is_file()
+        assert (commands / "deviate-merge.md").is_file()
 
     def test_unknown_pack_fails_closed(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
@@ -269,14 +303,20 @@ class TestSetupPacks:
             assert result.exit_code == 0, result.output
         commands = tmp_path / ".opencode" / "commands"
         assert (commands / "deviate-red.md").is_file()
+        assert (commands / "deviate-init.md").is_file()
         assert not (commands / "deviate-merge.md").exists()
         assert not (commands / "deviate-prune.md").exists()
+        assert not (commands / "deviate-flows.md").exists()
+        assert not (commands / "deviate-architecture.md").exists()
+        assert not (commands / "deviate-release.md").exists()
 
     def test_pack_prompt_choices_list_every_optional_pack(self) -> None:
         choices = _optional_pack_prompt_choices()
         assert choices[0] == "none"
-        assert "all-optional" in choices
+        assert choices[1] == "all-optional"
+        assert choices[2] == "product"
         for name in (
+            "product",
             "merge",
             "pr",
             "review",
@@ -288,9 +328,9 @@ class TestSetupPacks:
             "e2e",
         ):
             assert name in choices
-        assert tuple(name for name in choices if name in OPTIONAL_PACK_NAMES) == (
-            OPTIONAL_PACK_NAMES
-        )
+        named = [name for name in choices if name in OPTIONAL_PACK_NAMES]
+        assert named[0] == "product"
+        assert tuple(named) == OPTIONAL_PACK_NAMES
 
     def test_prompt_pack_selection_default_none(
         self, monkeypatch: pytest.MonkeyPatch
@@ -307,9 +347,12 @@ class TestSetupPacks:
         assert captured.get("default") == "none"
         choices = captured.get("choices")
         assert isinstance(choices, list)
+        assert "product" in choices
         assert "merge" in choices
         assert "prune" in choices
         assert "all-optional" in choices
+        assert choices[0] == "none"
+        assert choices[2] == "product"
 
     def test_packs_from_selector_picks_none_and_all(self) -> None:
         assert _packs_from_selector_picks(["none"]) == ()
@@ -558,9 +601,13 @@ class TestSetupPerAgentInstall:
         assert "pi" in agent_kwargs.get("choices", [])
         pack_kwargs = captured["Optional command packs"]
         assert pack_kwargs.get("default") == "none"
-        assert "merge" in pack_kwargs.get("choices", [])
-        assert "prune" in pack_kwargs.get("choices", [])
-        assert "all-optional" in pack_kwargs.get("choices", [])
+        pack_choices = pack_kwargs.get("choices", [])
+        assert pack_choices[0] == "none"
+        assert pack_choices[1] == "all-optional"
+        assert pack_choices[2] == "product"
+        assert "merge" in pack_choices
+        assert "prune" in pack_choices
+        assert "all-optional" in pack_choices
         assert "INSTALL" in result.output.upper()
         assert (tmp_path / ".pi" / "prompts" / "deviate-red.md").is_file()
         assert (tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md").is_file()
