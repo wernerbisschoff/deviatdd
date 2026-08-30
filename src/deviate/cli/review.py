@@ -12,7 +12,11 @@ import typer
 from deviate.cli._common import console
 from deviate.core._shared import git_env as _git_env
 from deviate.core.review_coverage import (
+    BRIEF_INCOMPLETE,
+    brief_has_named_checks,
     evaluate_review_coverage,
+    resolve_issue_brief_path,
+    resolve_issue_plan_path,
     resolve_review_issue_id,
 )
 from deviate.state.config import resolve_base_branch
@@ -32,25 +36,31 @@ def pre(
         None, "--branch", help="Target branch for self-contained review"
     ),
 ) -> None:
-    """Gather git state and governance context for review."""
+    """Gather this-issue brief + diff for comments-only Gate 3 review."""
     repo = Path.cwd()
     resolved_base = base or resolve_base_branch(repo)
 
     target = branch or "HEAD"
     branch_name = branch or _get_current_branch(repo)
+    issue_id = resolve_review_issue_id(repo, branch_name)
+    brief_path = resolve_issue_brief_path(repo, issue_id)
+    plan_path = resolve_issue_plan_path(repo, issue_id)
+
+    if not brief_has_named_checks(repo, issue_id):
+        print(BRIEF_INCOMPLETE)
+        raise typer.Exit(code=1)
 
     diff = _compute_diff(repo, resolved_base, target)
     constitution_path = _resolve_constitution_path(repo)
     prd_path, prd_warning = _resolve_prd(branch_name, repo)
     report_exists = _check_existing_reports(repo)
-    coverage = evaluate_review_coverage(
-        repo, resolve_review_issue_id(repo, branch_name)
-    )
-    status = "READY" if coverage.complete else "COVERAGE_INCOMPLETE"
+    coverage = evaluate_review_coverage(repo, issue_id)
 
     contract = {
-        "status": status,
+        "status": "READY",
         "diff": diff,
+        "issue_brief_path": str(brief_path.resolve()) if brief_path else None,
+        "plan_path": str(plan_path.resolve()) if plan_path else None,
         "constitution_path": constitution_path,
         "constitution_warning": constitution_path is None,
         "prd_path": prd_path,
@@ -63,8 +73,6 @@ def pre(
     }
 
     print(json.dumps(contract, indent=2))
-    if not coverage.complete:
-        raise typer.Exit(code=1)
 
 
 def _get_current_branch(repo: Path) -> str | None:
@@ -167,7 +175,7 @@ def post(
         None, help="Report markdown content. If not provided, reads from stdin."
     ),
 ) -> None:
-    """Persist review report and mark review complete."""
+    """Persist comments-only review report. Never applies or commits."""
     if not content:
         if not sys.stdin.isatty():
             content = sys.stdin.read()
@@ -177,12 +185,9 @@ def post(
         raise typer.Exit(code=0)
 
     repo = Path.cwd()
-    coverage = evaluate_review_coverage(
-        repo, resolve_review_issue_id(repo, _get_current_branch(repo))
-    )
-    if not coverage.complete:
-        tokens = ", ".join(coverage.uncovered)
-        console.print(f"[red]COVERAGE_INCOMPLETE[/] unclaimed plan AC tokens: {tokens}")
+    issue_id = resolve_review_issue_id(repo, _get_current_branch(repo))
+    if not brief_has_named_checks(repo, issue_id):
+        print(BRIEF_INCOMPLETE)
         raise typer.Exit(code=1)
 
     reports_dir = _reports_dir(repo)

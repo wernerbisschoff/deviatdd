@@ -1298,61 +1298,63 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
 #### `deviate review pre [--base <branch>] [--branch <branch>]`
 
 * **Source:** `src/deviate/cli/review.py`
-* **Description:** Gathers git state and governance context for a lightweight PR/merge
-  review at HITL Gate 3. Computes the unified diff between the merge-base of `--base`
-  (default: `main`) and `--branch` (default: `HEAD`), resolves the constitution path,
-  resolves the PRD path from the branch name, and checks for existing review reports.
-  Runs a runner-owned plan-AC coverage scan (`evaluate_review_coverage` in
-  `src/deviate/core/review_coverage.py`) with no agent call. The scan reads this
-  issue's `plan.md` `AC-PLAN-NNN` set. It claims tokens from this-issue COMPLETED
-  rows via the same `resolve_task_ac_tokens` first-hit order used by JUDGE
-  (`acceptance_criteria` `criterion_id`s, else the `tasks.md` card minus
-  `**Judge Feedback**` bullets and their continuation lines, else none).
-  A persisted evidence row on a COMPLETED raw JSONL object also claims its token
-  when that row already carries it. PENDING, FAILED, and sibling-issue rows do not
-  claim. Missing `plan.md` or missing plan tokens are vacuously complete. An
-  unclaimed plan AC emits `status: COVERAGE_INCOMPLETE` with `coverage_complete: false`
-  and `uncovered` listing the miss, then exits 1. Adequacy review cannot override
-  the miss. Full claims emit `status: READY` and `coverage_complete: true`.
-  Emits a JSON contract for consumption by the review skill (V4 Flash, single-pass).
-  No report file is persisted — findings are surfaced in chat for human judgment.
+* **Description:** Gathers this-issue brief + merge-base diff for a **comments-only**
+  Gate 3 review. Resolves the current `feat/<bucket>/<slug>` issue, requires a brief
+  that itself contains named-check tokens (`AC-ADHOC-NNN-NN`, `AC-PLAN-NNN`, or
+  `AC-NNN-NN`), and emits exactly `brief incomplete` (exit 1) when those tokens
+  are missing — it does not hunt Explore. When the brief is complete, computes the
+  unified diff between the merge-base of `--base` (default: `main`) and `--branch`
+  (default: `HEAD`), includes `issue_brief_path` and `plan_path` (null if absent),
+  and runs a runner-owned plan-AC coverage scan (`evaluate_review_coverage` in
+  `src/deviate/core/review_coverage.py`) with no agent call. The `uncovered` list
+  is **comment input**, not an apply gate and not a merge gate: `coverage_complete`
+  may be false while `status` stays `READY`. PENDING, FAILED, and sibling-issue
+  rows do not claim tokens. Missing `plan.md` or missing plan tokens are vacuously
+  complete. The `/deviate-review` skill comments only (stdout and/or GitHub PR
+  review event `COMMENT` if a PR exists). It must not apply, `git add`, `git commit`,
+  `REQUEST_CHANGES`, or merge. It must not assume JUDGE already ran.
 * **Input Parameters:**
   * `--base <branch>` (Base branch for merge-base computation; default: `main`)
   * `--branch <branch>` (Target branch for self-contained review; default: `HEAD`)
-* **Output Artifacts:** JSON contract with `status`, `diff`, `constitution_path`, `prd_path`,
-  `constitution_warning`, `prd_warning`, `base_branch`, `report_exists`, `timestamp`,
-  `uncovered`, `coverage_complete`.
+* **Output Artifacts:** On incomplete brief: the exact line `brief incomplete`.
+  Otherwise a JSON contract with `status`, `diff`, `issue_brief_path`, `plan_path`,
+  `constitution_path`, `prd_path`, `constitution_warning`, `prd_warning`,
+  `base_branch`, `report_exists`, `timestamp`, `uncovered`, `coverage_complete`.
 
 #### `deviate review post [content]`
 
 * **Source:** `src/deviate/cli/review.py`
-* **Description:** Persists a review report under `.deviate/review/reports/`.
-  Re-runs the same Gate 3 coverage scan as `deviate review pre`. When any
-  this-issue `plan.md` `AC-PLAN-NNN` is unclaimed, the command prints
-  `COVERAGE_INCOMPLETE` and exits 1. It does not write a PASS report over a miss.
+* **Description:** Persists a comments-only review report under `.deviate/review/reports/`.
+  Emits `brief incomplete` and exits 1 when this issue's brief has no named checks.
+  Does not require `coverage_complete` (there is no apply). Does not stage or commit.
 * **Input Parameters:**
   * `content` (Optional markdown report. When omitted, the command reads stdin.)
-* **Output Artifacts:** A timestamped `review-report-*.md` file when coverage is complete.
+* **Output Artifacts:** A timestamped `review-report-*.md` file when a named-check brief exists.
 
 ---
 
 #### `deviate walkthrough pre [--base <branch>] [--branch <branch>]`
 
 * **Source:** `src/deviate/cli/walkthrough.py`
-* **Description:** Gathers git state and governance context for a human-guided
-  architectural walkthrough at HITL Gate 3, complementing `deviate review pre`.
-  Computes the unified diff and file list (via `git diff --name-only`) between
-  the merge-base of `--base` (default: `main`) and `--branch` (default: `HEAD`),
-  resolves governance paths, and collects commit messages for decision traceability.
-  Emits a JSON contract for consumption by the walkthrough skill.
+* **Description:** Gathers the four-look map inputs for THIS issue/PR at HITL Gate 3:
+  this issue's brief path, this issue's `plan.md` path (null if absent), the
+  merge-base diff, and changed files classified into `test_files` vs
+  `production_files`. Does **not** send `constitution_path` or `prd_path` as
+  default inputs; those keys appear only when this brief names those files.
+  Complements comments-only `deviate review pre`. The `/deviate-walkthrough`
+  skill must emit (a) brief location + this issue's plan AC lines if present,
+  (b) test hunks, (c) which production hunks claim which named check, (d) the
+  command to run those checks. It must not reimplement, approve, hide hunks,
+  tell the human to skip a look, auto-edit, or apply fixes.
 * **Input Parameters:**
   * `--base <branch>` (Base branch for merge-base computation; default: `main`)
   * `--branch <branch>` (Target branch for self-contained walkthrough; default: `HEAD`)
-* **Output Artifacts:** JSON contract with `diff`, `constitution_path`, `prd_path`,
-  `constitution_warning`, `prd_warning`, `base_branch`, `commit_messages`,
-  `changed_files`, `changed_files_count`, `timestamp`.
-* **Token Budget:** Contract is lighter than review's — direct file list + diff, no
-  per-file AST parsing. The agent reads the raw diff and file list directly.
+* **Output Artifacts:** JSON contract with `diff`, `issue_brief_path`, `plan_path`,
+  `base_branch`, `commit_messages`, `changed_files`, `changed_files_count`,
+  `test_files`, `production_files`, `timestamp`. Optional `constitution_path` /
+  `prd_path` only when the brief names those paths.
+* **Token Budget:** Contract is a map, not a curator — file lists + diff, no
+  per-file AST parsing. The agent reads this issue's brief + named checks + this diff.
 
 ---
 
@@ -1529,7 +1531,8 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
 | `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD; incl. a terminal `[E2E]`/`Verification_Batch` `IMMEDIATE` task that authors `tests/e2e/` user-facing scenarios and runs last when a user-facing workflow or `flow_refs` exists; other types still pick TDD vs IMMEDIATE), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
-| `/deviate-walkthrough` | Architectural Walkthrough Guide | (none — conversation only) | `deviate walkthrough pre/post` | 5 steps: gather, sweep, curate, walk (conversational), synthesize |
+| `/deviate-walkthrough` | Four-Look Map | (none — conversation only) | `deviate walkthrough pre/post` | 4 looks: brief + plan AC lines, test hunks, production-hunk→named-check claims, check command. HITL `ask` per look. Must not approve, hide hunks, skip a look, or auto-edit. |
+| `/deviate-review` | Comments-Only Gate 3 Reviewer | advisory `.deviate/review/reports/` (never staged) | `deviate review pre/post` | Comments only (stdout and/or GitHub `COMMENT`). Named-check checklist + test-weakening + this-issue cross-task drift. `brief incomplete` when named checks are missing. No apply, no `git add`/`git commit`, no `REQUEST_CHANGES`, no merge. |
 | `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` *(for `prd`, `deviate html prd --bucket <slug>` targets a specific epic when more than one owns a `prd.md`; `--force` overwrites an existing `.html`)* | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC/FLOW/ADR tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-flows`, `/deviate-architecture`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
 
 > **Deprecation Notice:** `/deviate-specify` is deprecated as a standalone acceptance-authoring step. Shard now emits issues carrying `AO-NNN` acceptance outlines only; Plan authors the current-code-informed Gherkin contract. The `/deviate-specify` skill remains for backward compatibility but redirects to the new workflow (Plan owns Gherkin). This replaces the older "Meso-Layer Restructuring (ADHOC-003)" wording that placed spec detail in Shard.

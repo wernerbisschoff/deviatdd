@@ -13,12 +13,128 @@ from tests.conftest import _git_env
 
 runner = CliRunner()
 
+_REVIEW_PROMPT = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "deviate"
+    / "prompts"
+    / "commands"
+    / "deviate-review.md"
+).read_text(encoding="utf-8")
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args], cwd=repo, env=_git_env(), check=True, capture_output=True
+    )
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def _seed_named_brief(
+    repo: Path,
+    *,
+    issue_id: str = "ISS-ADH-035",
+    slug: str = "035-gate3",
+    token: str = "AC-ADHOC-035-01",
+    extra: str = "",
+) -> Path:
+    """Put a this-issue brief with a named check on ``feat/adhoc/<slug>``."""
+    _git(repo, "checkout", "-B", f"feat/adhoc/{slug}")
+    issues_dir = repo / "specs" / "adhoc" / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+    brief = issues_dir / f"{slug}.md"
+    brief.write_text(f"# gate3\n\n{token} named check\n{extra}", encoding="utf-8")
+    _write_jsonl(
+        repo / "specs" / "issues.jsonl",
+        [
+            {
+                "issue_id": issue_id,
+                "source_file": f"specs/adhoc/issues/{slug}.md",
+            }
+        ],
+    )
+    return brief
+
+
+class TestReviewCommentsOnly:
+    """AC-ADHOC-035-02 / 04: review is comments-only; incomplete brief stops."""
+
+    def test_review_prompt_has_no_apply_or_commit_or_request_changes(self) -> None:
+        text = _REVIEW_PROMPT
+        assert "COMMENTS_ONLY" in text
+        assert "There is no STEP 4" in text
+        assert "Autonomous Fix Application" not in text
+        assert "apply N review fixes" not in text
+        assert "Do not `git add`" in text
+        assert "Do not `git commit`" in text
+        assert "Never emit `REQUEST_CHANGES`" in text
+        assert "brief incomplete" in text
+
+    def test_review_pre_incomplete_brief_emits_exact_phrase(
+        self, tmp_git_repo: Path
+    ) -> None:
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code != 0
+        assert result.stdout.strip() == "brief incomplete"
+
+    def test_review_pre_brief_without_named_checks_is_incomplete(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _git(tmp_git_repo, "checkout", "-b", "feat/adhoc/035-empty")
+        issues = tmp_git_repo / "specs" / "adhoc" / "issues"
+        issues.mkdir(parents=True, exist_ok=True)
+        (issues / "035-empty.md").write_text("# no tokens here\n", encoding="utf-8")
+        _write_jsonl(
+            tmp_git_repo / "specs" / "issues.jsonl",
+            [
+                {
+                    "issue_id": "ISS-ADH-035",
+                    "source_file": "specs/adhoc/issues/035-empty.md",
+                }
+            ],
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code != 0
+        assert result.stdout.strip() == "brief incomplete"
+
+    def test_review_pre_includes_issue_brief_path(self, tmp_git_repo: Path) -> None:
+        brief = _seed_named_brief(tmp_git_repo)
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0, result.stdout
+        contract = json.loads(result.stdout)
+        assert contract["issue_brief_path"] == str(brief.resolve())
+        assert contract["plan_path"] is None
+
+    def test_review_cli_source_has_no_apply_or_commit(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2] / "src" / "deviate" / "cli" / "review.py"
+        ).read_text(encoding="utf-8")
+        assert "git add" not in source
+        assert "git commit" not in source
+        assert "REQUEST_CHANGES" not in source
+
 
 class TestReviewPost:
     """RED-phase tests for TSK-004-04: post command — report persistence with no-commit enforcement."""
 
     def test_review_post_persists_report(self, tmp_git_repo: Path) -> None:
         """UT-10: Post writes report to .deviate/review/reports/review-report-{timestamp}.md."""
+        _seed_named_brief(tmp_git_repo)
         report_content = "# Review Report\n\n## Summary\nAll good."
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "post", report_content])
@@ -69,6 +185,7 @@ class TestReviewPost:
             check=True,
         )
 
+        _seed_named_brief(tmp_git_repo)
         report_content = "# Review Report\n\nReview findings."
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "post", report_content])
@@ -98,14 +215,16 @@ class TestReviewPreCore:
 
     def test_review_pre_emits_contract(self, tmp_git_repo: Path) -> None:
         """UT-01: deviate review pre emits valid JSON contract with all required keys."""
+        _seed_named_brief(tmp_git_repo)
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert isinstance(contract, dict)
         assert "status" in contract
         assert "diff" in contract
+        assert "issue_brief_path" in contract
         assert "constitution_path" in contract
         assert "prd_path" in contract
         assert "base_branch" in contract
@@ -119,6 +238,7 @@ class TestReviewPreCore:
         specs_dir.mkdir(parents=True, exist_ok=True)
         const_path = specs_dir / "constitution.md"
         const_path.write_text("# Test Constitution\n", encoding="utf-8")
+        _seed_named_brief(tmp_git_repo)
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
@@ -169,11 +289,12 @@ class TestReviewPreCore:
             env=_git_env(),
             check=True,
         )
+        _seed_named_brief(tmp_git_repo)
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["diff"], (
             "Expected non-empty diff when branch has changes vs main"
@@ -189,10 +310,12 @@ class TestReviewPreCore:
             check=True,
         )
 
+        _seed_named_brief(tmp_git_repo)
+
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["diff"] == ""
 
@@ -227,6 +350,26 @@ class TestReviewPreCore:
             env=_git_env(),
             check=True,
         )
+        issues_dir = tmp_git_repo / "specs" / "test-epic" / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "test-issue.md").write_text(
+            "# brief\n\nAC-ADHOC-035-01 named check\n", encoding="utf-8"
+        )
+        _write_jsonl(
+            tmp_git_repo / "specs" / "issues.jsonl",
+            [
+                {
+                    "issue_id": "ISS-035-001",
+                    "source_file": "specs/test-epic/issues/test-issue.md",
+                }
+            ],
+        )
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
         subprocess.run(
             ["git", "commit", "-m", "add PRD files"],
             cwd=tmp_git_repo,
@@ -237,7 +380,7 @@ class TestReviewPreCore:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["prd_path"] == str(epic_prd.resolve())
         assert not contract.get("prd_warning", False)
@@ -261,6 +404,20 @@ class TestReviewPreCore:
         adhoc_prd_dir.mkdir(parents=True, exist_ok=True)
         adhoc_prd = adhoc_prd_dir / "prd.md"
         adhoc_prd.write_text("# Adhoc PRD\n", encoding="utf-8")
+        issues_dir = tmp_git_repo / "specs" / "test-epic" / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "test-issue.md").write_text(
+            "# brief\n\nAC-ADHOC-035-01 named check\n", encoding="utf-8"
+        )
+        _write_jsonl(
+            tmp_git_repo / "specs" / "issues.jsonl",
+            [
+                {
+                    "issue_id": "ISS-035-001",
+                    "source_file": "specs/test-epic/issues/test-issue.md",
+                }
+            ],
+        )
 
         subprocess.run(
             ["git", "add", "-A"],
@@ -278,7 +435,7 @@ class TestReviewPreCore:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["prd_path"] == str(adhoc_prd.resolve())
         assert not contract.get("prd_warning", False)
@@ -311,11 +468,25 @@ class TestReviewPreCore:
             env=_git_env(),
             check=True,
         )
+        issues_dir = tmp_git_repo / "specs" / "test-epic" / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "test-issue.md").write_text(
+            "# brief\n\nAC-ADHOC-035-01 named check\n", encoding="utf-8"
+        )
+        _write_jsonl(
+            tmp_git_repo / "specs" / "issues.jsonl",
+            [
+                {
+                    "issue_id": "ISS-035-001",
+                    "source_file": "specs/test-epic/issues/test-issue.md",
+                }
+            ],
+        )
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["prd_warning"] is True
         assert contract["prd_path"] is None
@@ -382,11 +553,12 @@ class TestReviewPreCore:
             env=_git_env(),
             check=True,
         )
+        _seed_named_brief(tmp_git_repo)
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre", "--base", "develop"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["base_branch"] == "develop"
         assert "feat.txt" in contract["diff"]
@@ -403,11 +575,12 @@ class TestReviewPreCore:
         subprocess.run(
             ["git", "add", "-A"], cwd=tmp_git_repo, env=_git_env(), check=False
         )
+        _seed_named_brief(tmp_git_repo)
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["report_exists"] is True
 
@@ -416,20 +589,6 @@ _ISSUE_ID = "ISS-ADH-028"
 _SIBLING_ISSUE_ID = "ISS-ADH-099"
 _SLUG = "028-coverage"
 _BRANCH = f"feat/adhoc/{_SLUG}"
-
-
-def _git(repo: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", *args], cwd=repo, env=_git_env(), check=True, capture_output=True
-    )
-
-
-def _write_jsonl(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "".join(json.dumps(row) + "\n" for row in rows),
-        encoding="utf-8",
-    )
 
 
 def _seed_review_issue(
@@ -443,7 +602,9 @@ def _seed_review_issue(
     _git(repo, "checkout", "-b", _BRANCH)
     issues_dir = repo / "specs" / "adhoc" / "issues"
     issues_dir.mkdir(parents=True, exist_ok=True)
-    (issues_dir / f"{_SLUG}.md").write_text("# coverage issue\n", encoding="utf-8")
+    (issues_dir / f"{_SLUG}.md").write_text(
+        "# coverage issue\n\nAC-ADHOC-028-01 named check\n", encoding="utf-8"
+    )
     issue_rows = [
         {
             "issue_id": _ISSUE_ID,
@@ -509,18 +670,21 @@ def _completed(
 
 
 class TestReviewPlanAcCoverage:
-    """TSK-028-03: Gate 3 fail-closes when a plan AC has no COMPLETED claim."""
+    """Uncovered plan ACs are comment input, not a merge/apply gate."""
 
-    def test_review_pre_vacuous_ready_without_plan(self, tmp_git_repo: Path) -> None:
+    def test_review_pre_named_brief_without_plan_is_ready(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_named_brief(tmp_git_repo)
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert contract["status"] == "READY"
         assert contract.get("uncovered", []) == []
 
-    def test_review_pre_fail_closes_on_unclaimed_plan_ac(
+    def test_review_pre_lists_unclaimed_plan_ac_as_comment_input(
         self, tmp_git_repo: Path
     ) -> None:
         _seed_review_issue(
@@ -533,13 +697,13 @@ class TestReviewPlanAcCoverage:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code != 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
-        assert contract["status"] not in {"READY", "PASS"}
+        assert contract["status"] == "READY"
         assert "AC-PLAN-002" in contract["uncovered"]
         assert contract["coverage_complete"] is False
 
-    def test_review_post_fail_closes_and_skips_pass_report(
+    def test_review_post_persists_comments_when_plan_ac_unclaimed(
         self, tmp_git_repo: Path
     ) -> None:
         _seed_review_issue(
@@ -549,13 +713,14 @@ class TestReviewPlanAcCoverage:
 
         with chdir(tmp_git_repo):
             result = runner.invoke(
-                cli, ["review", "post", "status: PASS\n\nAdequacy looks fine."]
+                cli, ["review", "post", "comments: AC-PLAN-002 uncovered"]
             )
 
-        assert result.exit_code != 0
+        assert result.exit_code == 0, result.stdout
         reports_dir = tmp_git_repo / ".deviate" / "review" / "reports"
-        assert not reports_dir.exists() or not list(reports_dir.iterdir())
-        assert "COVERAGE_INCOMPLETE" in result.stdout
+        files = list(reports_dir.iterdir())
+        assert len(files) == 1
+        assert "AC-PLAN-002" in files[0].read_text(encoding="utf-8")
 
     def test_review_pre_ready_when_completed_claims_cover_plan(
         self, tmp_git_repo: Path
@@ -625,8 +790,9 @@ class TestReviewPlanAcCoverage:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code != 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
+        assert contract["status"] == "READY"
         assert "AC-PLAN-002" in contract["uncovered"]
 
     def test_criteria_win_does_not_union_later_card_tokens(
@@ -641,7 +807,7 @@ class TestReviewPlanAcCoverage:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["review", "pre"])
 
-        assert result.exit_code != 0
+        assert result.exit_code == 0, result.stdout
         contract = json.loads(result.stdout)
         assert "AC-PLAN-002" in contract["uncovered"]
 

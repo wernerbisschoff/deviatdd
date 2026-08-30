@@ -1433,7 +1433,7 @@ cli.add_typer(
     review_app,
     name="review",
     rich_help_panel=_AGENT_PANEL,
-    help="Final PR review (Gate 3)",
+    help="Comments-only Gate 3 review (no apply, no merge)",
 )
 cli.add_typer(
     prune_app,
@@ -1445,7 +1445,7 @@ cli.add_typer(
     walkthrough_app,
     name="walkthrough",
     rich_help_panel=_AGENT_PANEL,
-    help="Architectural code walkthrough (human-guided)",
+    help="Four-look map of this issue's brief, tests, and named checks",
 )
 
 

@@ -114,23 +114,29 @@ Breaks a business goal down into standard development project containers.
 ### 2.2 The Meso Layer: Issue Engineering
 Creates formal contracts for an issue via CLI slash commands. The workflow was restructured
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
-`/deviate-plan` phase for per-issue localized research. A lightweight PR/merge review is handled by the `/deviate-review` skill. The
-runner first fail-closes Gate 3 when any this-issue `plan.md` `AC-PLAN-NNN`
-lacks a this-issue COMPLETED claim (`evaluate_review_coverage` in
-`src/deviate/core/review_coverage.py`). Missing `plan.md` or missing plan tokens
-are vacuously complete. PENDING, FAILED, and sibling-issue rows do not claim.
-Adequacy review may still judge quality after coverage is complete. It cannot
-PASS on a coverage miss. The skill then runs a fast single-pass scan (V4 Flash)
-over ledger integrity, cross-task consistency, and security surface — surfacing
-findings in chat for human judgment rather than persisting report files.
+`/deviate-plan` phase for per-issue localized research. A comments-only Gate 3
+review is handled by the `/deviate-review` skill. `deviate review pre` requires
+this issue's brief to contain named-check tokens; otherwise it emits exactly
+`brief incomplete` and stops (no Explore hunt). When the brief is complete,
+`evaluate_review_coverage` (`src/deviate/core/review_coverage.py`) still lists
+unclaimed this-issue `plan.md` `AC-PLAN-NNN` tokens in `uncovered` as **comment
+input** — not an apply gate and not a merge gate. Missing `plan.md` or missing
+plan tokens are vacuously complete. PENDING, FAILED, and sibling-issue rows do
+not claim. The skill comments only (stdout and/or GitHub PR review event
+`COMMENT`). It must not apply, `git add`, `git commit`, `REQUEST_CHANGES`, or
+merge, and must not assume JUDGE already ran (coworker path is often
+`--profile fast`).
 
 Alongside the review, `/deviate-walkthrough` (see `src/deviate/cli/walkthrough.py`)
-provides a human-guided architectural tour of the same diff. Unlike the review's
-structured seven-domain scan, the walkthrough curates the diff into a narrative
-— spotlighting architectural decisions the automated phases (JUDGE, REFACTOR,
-REVIEW) missed, grouping changes by concern rather than file path, and letting
-the user control depth. It is the more human counterpart to the review, designed
-to build codebase comprehension and surface hidden trade-offs.
+is the four-look map of the same this-issue read set: (a) where the brief is
+plus this issue's plan AC lines if `plan.md` exists; (b) which hunks are the
+test diff; (c) which production hunks claim which named check; (d) the command
+to run those checks. `deviate walkthrough pre` emits `issue_brief_path`,
+`plan_path` (null if absent), and classified `test_files` / `production_files`.
+It does not send constitution/prd as default inputs unless this brief names
+those paths. The walkthrough must not reimplement, approve, hide hunks, tell
+the human to skip a look, auto-edit, or apply fixes. Both commands stay
+optional packs (`review`, `walkthrough`); default setup does not install them.
 
 * **Shard + acceptance outline:** `/deviate-shard` produces vertical issue packets with user stories, `AO-NNN` outcomes, edge cases, performance constraints, and scope boundaries. `GHERKIN_LEAK_DETECTED` rejects Given/When/Then in macro artifacts. Standalone `/deviate-specify` remains deprecated.
 * **[HITL Gate 2 (REMOVED)]:** The post-Tasks approval hard gate was removed. The system never blocks on human approval. `deviate run` chains meso into micro end-to-end; plan and tasks artifacts are committed to the worktree and may be reviewed out-of-band, but execution does not wait on the human.
@@ -326,7 +332,7 @@ to invoke, but model selection is delegated to the calling environment.
 
 ### 3.4 Acceptance Test-Driven Development (ATDD)
 * **How it is fulfilled:** Achieved through bidirectional requirement traceability and the Meso/Micro Layer transition.
-* **Mechanisms:** During the Meso phase, `deviate tasks pre/post` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate checks task-scoped `AC-PLAN-NNN` evidence against the injected RED+GREEN diff. HITL Gate 3 (`deviate review`) then fail-closes when any this-issue `plan.md` token lacks a COMPLETED claim. This keeps mid-plan TDD honest and still requires issue-level completeness before merge.
+* **Mechanisms:** During the Meso phase, `deviate tasks pre/post` translates high-level customer requirements, user stories, and acceptance criteria into explicit target mapping tags inside `tasks.md` (descriptions, `blocked_by` DAG dependencies, `verifiable_sandbox_target`). In the Micro phase, the Judge Gate checks task-scoped `AC-PLAN-NNN` evidence against the injected RED+GREEN diff. HITL Gate 3 (`deviate review`) is comments-only: unclaimed this-issue `plan.md` tokens appear in `uncovered` as comment input. Review is not a merge gate and does not apply or commit. This keeps mid-plan TDD honest at JUDGE while Gate 3 maps and comments on this issue's named checks.
 
 ### 3.5 Evaluation-Driven Development (EDD)
 * **How it is fulfilled:** Realized via the Compliance Gate and the **Green → Judge → Green loop**.
@@ -660,9 +666,9 @@ framework's remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
 * **Gate 2: Acceptance & Task Review (REMOVED)**
     * Was: post-`/deviate-tasks`, pre-micro approval enforced via `deviate meso approve` recording `hitl_gate_2_*_sha256` hashes of `plan.md` and `tasks.md` against the active issue. Micro failed closed on missing (`HITL_GATE_2_APPROVAL_REQUIRED`) or stale (`HITL_GATE_2_APPROVAL_STALE`) approval.
     * Rationale for removal: the system never blocks on human approval. Plan and Tasks still commit their authored artifacts to the worktree for out-of-band review, but execution auto-advances into Micro.
-* **Gate 3: Final Merge Audit (After micro, via `deviate review`)**
-    * *Trigger:* The operator runs `deviate review pre` or `deviate review post` before merge.
-    * *Action:* The runner fail-closes when any this-issue `plan.md` `AC-PLAN-NNN` lacks a this-issue COMPLETED claim. Adequacy review may still judge quality. It cannot PASS on a coverage miss.
+* **Gate 3: Final Merge Audit (After micro, via `deviate review` / `deviate walkthrough`)**
+    * *Trigger:* The operator (or agent) runs the optional `review` / `walkthrough` packs after micro. Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
+    * *Action:* `/deviate-walkthrough` emits the four-look map for THIS issue/PR. `/deviate-review` comments only (stdout and/or GitHub `COMMENT`): named-check checklist + test-weakening + this-issue cross-task drift. A brief with no named checks emits exactly `brief incomplete`. Unclaimed plan-AC tokens are comment input via `uncovered`. Neither command applies, commits, `REQUEST_CHANGES`, or merges.
 
 ---
 
