@@ -161,9 +161,3 @@ next_phase: "TASKS"
 | `specs/_product/` directory absent | Emit `- **Flow References**: []` under `## Product Layer Anchors` and plan only the application behavior. Do not add Product-layer or DeviaTDD setup work. |
 
 </edge_case_handling>
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>

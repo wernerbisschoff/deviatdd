@@ -201,10 +201,3 @@ Apply the Single Option Dominance Rule: if only one option satisfies all constra
 | Options matrix has zero viable options | Halt with NO_VIABLE_OPTIONS. |
 | HITL Gate 1 emitted but no human approval | Wait. Do not auto-advance. |
 </edge_case_handling>
-
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>

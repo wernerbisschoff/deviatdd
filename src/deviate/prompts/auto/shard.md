@@ -118,10 +118,3 @@ Pass 5 (Consumer Implementation Audit): [Confirm every issue implements applicat
 | Horizontal slice detected | Re-cluster with adjacent FRs until ≥2 layers. |
 | `specs/_product/` directory missing | Emit `flow_refs: []` for all application shards; do not create Product-layer setup work. |
 </edge_case_handling>
-
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>

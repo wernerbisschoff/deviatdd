@@ -198,9 +198,3 @@ next_phase: "IDLE"
 | plan.md lacks `## Product Layer Anchors` section | Fall back to issue frontmatter `flow_refs` from `{spec_path}`. If absent, emit `**Flow References**: []` per task and continue. |
 | `specs/_product/` absent | Emit `**Flow References**: []` per application task. Do not add Product-layer, DeviaTDD setup, skill, or flow-catalog work. |
 </edge_case_handling>
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>

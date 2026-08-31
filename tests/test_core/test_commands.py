@@ -642,6 +642,18 @@ class TestManualDerivationFromAutoCore:
         assert install_command("deviate-red", target) is False
         assert (target / "deviate-red.md").read_text(encoding="utf-8") == first
 
+    def test_derived_overlapping_phases_have_one_arguments_seam(self, tmp_path):
+        """Auto cores must not carry a second $ARGUMENTS seam; the overlay owns it."""
+        for phase in self._OVERLAPPING_PHASES:
+            installed = self._installed(f"deviate-{phase}", tmp_path)
+            auto = self._read_auto(phase)
+            assert "$ARGUMENTS" not in auto, f"auto/{phase}.md still has $ARGUMENTS"
+            assert installed.count("$ARGUMENTS") == 1, (
+                f"deviate-{phase}: expected one $ARGUMENTS after derive "
+                f"(got {installed.count('$ARGUMENTS')})"
+            )
+
+
 
 _PRODUCT_BUNDLE = ("deviate-flows", "deviate-architecture", "deviate-release")
 

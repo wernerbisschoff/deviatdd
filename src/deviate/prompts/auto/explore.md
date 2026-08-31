@@ -191,9 +191,3 @@ EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote a
 | Agent attempts to write/modify implementation code, tests, configs, or scripts | Halt with IMPLEMENTATION_DRIFT_DETECTED. |
 | Agent attempts to run test/lint/type-check/build commands | Halt with FORBIDDEN_COMMAND_ATTEMPTED. |
 
-
-<context>
-<user_input>
-$ARGUMENTS
-</user_input>
-</context>
