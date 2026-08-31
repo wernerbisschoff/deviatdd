@@ -614,3 +614,138 @@ class TestManualDerivationDriftGuard:
             "Maintain existing functional signatures — do not change test files"
             not in installed
         )
+
+
+class TestPrdShardOwnership:
+    """GH-141: PRD owns behavior/traceability; shard owns issue topology.
+
+    Pins the ownership split, flexible FR grouping, no fixed issue-count
+    ceiling, and the vertical-slice rules (reject pure horizontal splits;
+    allow a persistence-only behavior). String pins, not filename-exists.
+    """
+
+    @staticmethod
+    def _prd() -> str:
+        return _read_template("prd.md")
+
+    @staticmethod
+    def _shard() -> str:
+        return _read_template("shard.md")
+
+    @staticmethod
+    def _acceptance_gates_prd() -> str:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "specs"
+            / "005-acceptance-gates"
+            / "prd.md"
+        ).read_text(encoding="utf-8")
+
+    def test_prd_ownership_rules_are_present(self) -> None:
+        prd = self._prd()
+        assert (
+            "PRD owns behavior, constraints, acceptance criteria, and FR "
+            "traceability" in prd
+        )
+        assert "FRs are traceability units only" in prd
+        assert "MUST NOT prescribe issue count, issue IDs, or shard topology" in prd
+        assert "Issue Sharding Strategy" in prd
+
+    def test_shard_ownership_rules_are_present(self) -> None:
+        shard = self._shard()
+        assert (
+            "Shard owns issue count, grouping, boundaries, and the "
+            "dependency DAG" in shard
+        )
+        assert "all layers required by the behavior" in shard
+        assert "no fixed minimum or maximum issue count" in shard
+        assert "INCOMPLETE_FR_COVERAGE" in shard
+
+    def test_prompts_do_not_require_one_issue_per_fr(self) -> None:
+        combined = f"{self._prd()}\n{self._shard()}"
+        lowered = combined.lower()
+        assert "one per fr" not in lowered
+        assert "one-issue-per-fr" not in lowered
+        assert "one issue per fr" not in lowered
+
+    def test_prompts_do_not_require_fixed_issue_count_or_hard_ceiling(self) -> None:
+        shard = self._shard()
+        assert "SLICE_CAP_EXCEEDED" not in shard
+        assert "Hard ceiling: 10" not in shard
+        assert "hard ceiling" not in shard.lower()
+        assert "maximum 10" not in shard.lower()
+        assert "count ≤ 10" not in shard
+        assert "count <= 10" not in shard
+        assert "no fixed minimum or maximum issue count" in shard
+
+    def test_shard_requires_independent_behavior_and_executable_verification(
+        self,
+    ) -> None:
+        shard = self._shard()
+        assert "independently testable" in shard
+        assert "one primary observable behavior" in shard
+        assert "executable verification command" in shard
+        assert "## Demonstration Path" in shard
+        assert "## Scope Boundaries" in shard
+        assert "acceptance outcomes" in shard
+
+    def test_multi_fr_and_one_fr_multi_issue_slicing_are_allowed(self) -> None:
+        shard = self._shard()
+        assert "One issue may cover multiple related FRs" in shard
+        assert "One FR may span multiple issues" in shard
+        assert "distinct observable behavior" in shard
+
+    def test_pure_horizontal_layer_splits_remain_rejected(self) -> None:
+        shard = self._shard()
+        assert "HORIZONTAL_SLICE_DETECTED" in shard
+        assert "pure horizontal" in shard.lower()
+        assert "until ≥2 layers" not in shard
+        assert "until >=2 layers" not in shard
+
+    def test_persistence_only_vertical_behavior_remains_allowed(self) -> None:
+        shard = self._shard()
+        assert "persistence-only" in shard.lower()
+        assert "database invariant" in shard.lower()
+        assert "pure setup work is not a valid issue" in shard.lower()
+
+    def test_existing_issue_file_and_manifest_shape_remain(self) -> None:
+        shard = self._shard()
+        for token in (
+            "title",
+            "labels",
+            "source_file",
+            "blocked_by",
+            "coordinates_with",
+            "issue_id",
+            "flow_refs",
+            "## System Topology Mapping",
+            "## The Problem Contract",
+            "## Scope Boundaries",
+            "## Upstream Requirement Tracing",
+            "## Multi-Tiered Verification Targets",
+            "## Demonstration Path",
+            '"type": "feature"',
+        ):
+            assert token in shard, f"shard prompt dropped compatible field {token!r}"
+        assert "included and excluded FR references" in shard
+
+    def test_acceptance_gates_prd_teaches_flexible_grouping_not_one_per_fr(
+        self,
+    ) -> None:
+        example = self._acceptance_gates_prd()
+        assert "one per FR" not in example
+        assert "one issue per FR" not in example
+        assert "does not prescribe issue count" in example
+        assert "Shard owns grouping" in example or "shard owns grouping" in example
+
+    def test_shard_slices_by_behavior_not_by_fr(self) -> None:
+        shard = self._shard()
+        assert "Partition FRs" not in shard
+        assert "partition FRs" not in shard
+        assert "then group them" not in shard
+        assert "Do not partition or bound issues by FR id" in shard
+        assert "Slice by observable behavior first" in shard
+        assert "Coverage is a set property" in shard
+        assert "it does not matter which issue satisfies a given FR" in shard
+        assert "FRs are coverage attached after the slice exists" in shard
+        assert "not required to equal one FR" in shard
