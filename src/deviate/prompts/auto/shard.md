@@ -11,7 +11,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **Incremental Bootstrapping Principle**: Shard N must deliver a complete, end-to-end vertical feature that establishes the minimal behavioral foundation that Shard N+1 extends. The "foundation" is a working feature, not a layer.
 3. **Issue ID Assignment**: Assign each shard a sequential `issue_id` starting from `next_issue_id`. Build a DAG with `blocked_by` and `coordinates_with` arrays.
 4. **Cumulative FR Coverage**: Coverage is a set property. Do not partition or bound issues by FR id. FRs are coverage attached after the slice exists. Every PRD FR must appear in at least one issue; it does not matter which issue satisfies a given FR. A behavior slice cites the FRs it actually covers and is not required to equal one FR. Zero-FR setup, tooling, governance, and refactoring shards are invalid.
-5. **Existing Flow Traceability**: Read the repository's existing `specs/_product/` artifacts only to map each FR to user-visible `FLOW-XX` context. `flow_refs` are traceability metadata, not implementation scope. Keep flow files and indexes unchanged; a missing flow match yields `flow_refs: []` and never creates a flow-authoring or synchronization shard.
+5. **Existing Flow Traceability**: Read Product-layer artifacts from `product_specs_root` in the contract. The CLI resolves this root from `DEVIATE_PRODUCT_SPECS_ROOT`, then local `specs/`, then `../specs/` when that workspace contains `specs/_product/`. Read the files only to map each FR to user-visible `FLOW-XX` context. `flow_refs` are traceability metadata, not implementation scope. Keep flow files and indexes unchanged; a missing flow match yields `flow_refs: []` and never creates a flow-authoring or synchronization shard.
 6. **Shard Ownership**: Shard owns issue count, grouping, boundaries, and the dependency DAG. There is no fixed minimum or maximum issue count. PRD FRs do not prescribe issue IDs or topology.
 </system_instructions>
 
@@ -20,15 +20,14 @@ The target is the consumer application's implementation. Assume the DeviaTDD CLI
 </consumer_repository_boundary>
 
 <traceability_mandates>
-1. **Pass 0 Contract Enforcement**: Verify `FR-[ID]` and `AC-[ID]` tokens exist in the PRD. If missing, trigger MALFORMED_PRD_CONTRACT and halt.
+1. **Pass 0 Contract Enforcement**: Verify `FR-[ID]` and `AO-NNN` tokens exist in the PRD. AO is the observable, implementation-independent outline. Halt with `MALFORMED_PRD_CONTRACT` when either token family is missing.
 2. **Horizontal Slice Audit**: For every candidate slice, enumerate the layers required by its primary observable behavior. Reject a pure horizontal layer split (database-only setup, API-only wiring, UI-only chrome) with HORIZONTAL_SLICE_DETECTED and re-cluster. A one-layer slice is valid when that layer is the behavior under test — a persistence-only vertical (database invariant or migration) or an infrastructure behavior slice. Do not require two or more layers.
-3. **Verification Mapping**: Pair every `AC-[ID]` token with an executable terminal verification command.
-</traceability_mandates>
+3. **Verification Mapping**: Pair every AO token with a copy-pasteable terminal verification command. The command may target a planned test selector or future test path; do not require the test to exist during sharding. Emit it as `**Verification Command**: <copy-pasteable command>` under `## Multi-Tiered Verification Targets`.
 
 <execution_sequence>
 
 <step id="contract_loaded">
-The CLI orchestrator has run `deviate shard pre` and resolved the contract. Available context: `repo_root`, `git_branch`, `epic_slug`, `epic_id`, `feature_dir`, `prd_path`, `constitution_path`, `issues_dir`, `issues_ledger`, `next_issue_id`, `plan_target`. Do NOT run `deviate shard pre` — the orchestrator handles it.
+The CLI orchestrator has run `deviate shard pre` and resolved the contract. Available context: `repo_root`, `git_branch`, `epic_slug`, `epic_id`, `feature_dir`, `prd_path`, `constitution_path`, `product_specs_root`, `issues_dir`, `issues_ledger`, `next_issue_id`, `plan_target`. Do NOT run `deviate shard pre` — the orchestrator handles it.
 </step>
 
 <step id="constitutional_pre_flight">
@@ -36,18 +35,18 @@ Read constitution from `constitution_path`. Extract tech stack, testing protocol
 </step>
 
 <step id="prd_reading">
-Read the PRD from `prd_path`. Extract all `FR-[ID]` and `AC-[ID]` tokens, data model entities, performance/security constraints.
+Read the PRD from `prd_path`. Extract all `FR-[ID]` and `AO-NNN` tokens, data model entities, performance/security constraints.
 </step>
 
 <step id="vertical_slicing">
 Execute Internal ICoT:
-- **Pass 1 (Topological Layout + Flow Anchor)**: Slice by observable behavior first — one primary observable behavior per issue, cutting through all layers that behavior needs. Read the existing `specs/_product/flows/` catalog as read-only context. Do not partition or bound issues by FR id. After each slice exists, attach the FRs that behavior actually covers. Coverage is a set property: every PRD FR must appear in at least one issue, and it does not matter which issue satisfies a given FR. One issue may cover multiple related FRs; one FR may span multiple issues when each issue owns a distinct observable behavior. A behavior slice is not required to equal one FR. Zero-FR setup, tooling, governance, and refactoring shards are invalid.
+- **Pass 1 (Topological Layout + Flow Anchor)**: Slice by observable behavior first — one primary observable behavior per issue, cutting through all layers that behavior needs. Read `<product_specs_root>/_product/flows/` as read-only context. When this root is outside `repo_root`, cite source files with workspace-relative paths such as `../specs/_product/flows/flows-withdrawals.md`, never absolute paths. Do not partition or bound issues by FR id. After each slice exists, attach the FRs that behavior actually covers. Coverage is a set property: every PRD FR must appear in at least one issue, and it does not matter which issue satisfies a given FR. One issue may cover multiple related FRs; one FR may span multiple issues when each issue owns a distinct observable behavior. A behavior slice is not required to equal one FR. Zero-FR setup, tooling, governance, and refactoring shards are invalid.
 - **Pass 1.5 (Independence Gate)**: Emit independently testable vertical slices. There is no fixed minimum or maximum issue count. 1 is legal. Do not invent extra slices to look non-trivial. Do not halt on draft count.
 - **Pass 2 (Boundary Demarcation)**: Establish defensive exclusion criteria for each slice.
-- **Pass 2.1 (FR-to-Flow Traceability)**: Record existing `FLOW-XX` references for every FR. Use `flow_refs: []` when no catalog entry matches; do not introduce catalog work.
+- **Pass 2.1 (FR-to-Flow Traceability)**: Record existing `FLOW-XX` references for every FR from `<product_specs_root>/_product/flows/`. Use `flow_refs: []` when the resolved Product layer is absent or no catalog entry matches; do not introduce catalog work.
 - **Pass 3 (Horizontal Slice Audit)**: For every candidate slice, enumerate the application layers required by the behavior (database, API, business logic, UI/interface). Flag HORIZONTAL_SLICE_DETECTED only for a pure horizontal layer split that is not itself the observable behavior. A persistence-only vertical whose database invariant or migration is the behavior under test is valid. Pure setup work is not a valid issue.
 - **Pass 3.5 (Merge Pass)**: For every pair of slices A, B: if B's Demo Path references an artifact only created by A's workstation cluster, OR if B is flagged HORIZONTAL_SLICE_DETECTED (pure horizontal split), merge A and B. Re-run until no merge candidates remain. Do not merge a valid persistence-only or infrastructure behavior slice just because it touches one layer. Do not re-check a slice-count cap.
-- **Pass 4 (Verification Mapping)**: Pair every `AC-[ID]` with a copy-pasteable executable verification command.
+- **Pass 4 (Verification Mapping)**: Pair every `AO-NNN` token with a copy-pasteable verification command. Planned selectors and future test paths are valid at this phase.
 - **Pass 5 (Consumer Implementation Audit)**: Reject every candidate whose deliverable is DeviaTDD setup, agent skills, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance. Halt immediately with `META_WORK_NOT_ALLOWED`; do not emit a mixed meta/application shard set.
 </step>
 
@@ -61,9 +60,9 @@ For each vertical slice, write a shard issue markdown file to `<issues_dir>/<NNN
 - `## The Problem Contract` — one primary observable behavior
 - `## Scope Boundaries` — explicit inclusions and exclusions
 - `## Upstream Requirement Tracing` — included and excluded FR references
-- `## Multi-Tiered Verification Targets` — acceptance outcomes plus an executable verification command
+- `## Multi-Tiered Verification Targets` — acceptance outcomes plus one `**Verification Command**: <command>` for every covered AO token
 - `## Demonstration Path` — a clear demonstration path
-- Keep `## Acceptance Outline` with AO-NNN tokens (no Given/When/Then) so existing shard-post validation remains compatible
+- Keep `## Acceptance Outline` with `AO-NNN` tokens (no Given/When/Then) so existing shard-post validation remains compatible
 </step>
 <step id="manifest_writing">
 Write execution manifest JSON to `plan_target` (absolute path from contract).
@@ -98,7 +97,7 @@ Pass 2 (Boundary Demarcation): [Inclusion vs exclusion per slice]
 Pass 2.1 (FR-to-Flow Traceability): [For each FR, record matching existing FLOW-XX IDs or an empty list; no catalog work]
 Pass 3 (Horizontal Slice Audit): [Reject pure horizontal splits; allow persistence-only behavior]
 Pass 3.5 (Merge Pass): [Merged pairs and rationale]
-Pass 4 (Verification Mapping): [AC-to-command mapping]
+Pass 4 (Verification Mapping): [AO-to-command mapping]
 Pass 5 (Consumer Implementation Audit): [Confirm every issue implements application behavior and names no DeviaTDD setup, skill, flow-catalog, release-scaffold, or workflow-ledger work]
 ```
 
@@ -113,10 +112,10 @@ Pass 5 (Consumer Implementation Audit): [Confirm every issue implements applicat
 | :--- | :--- |
 | Pre-script returns NO_EPIC | Surface error; no feature workspace found. |
 | Pre-script returns NO_PRD | Surface error; user must run /prd first. |
-| PRD has no FR or AC tokens | Halt with MALFORMED_PRD_CONTRACT. |
+| PRD has no FR or AO tokens | Halt with MALFORMED_PRD_CONTRACT. |
 | Cumulative FR coverage fails | Halt with INCOMPLETE_FR_COVERAGE; list missing FRs. |
 | Circular dependency detected | Halt with TOPOLOGY_LOOP_FAULT. |
 | Post-script returns MANIFEST_NOT_FOUND | LLM forgot to write manifest — write it, then re-run post. |
 | Horizontal slice detected | Re-cluster a pure horizontal layer split. Do not require two or more layers. A persistence-only vertical whose database invariant or migration is the behavior under test is valid. |
-| `specs/_product/` directory missing | Emit `flow_refs: []` for all application shards; do not create Product-layer setup work. |
+| Resolved `product_specs_root` is missing or has no flows directory | Emit `flow_refs: []` for all application shards; do not create Product-layer setup work. |
 </edge_case_handling>

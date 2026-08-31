@@ -360,12 +360,12 @@ The Product layer ships as **agent skills** (no dedicated CLI subcommands) — t
 
 * **Objective:** Decomposes the PRD into standalone, testable issue files.
 * **Granularity Guidelines:**
-  * **Target:** as few independently shippable user-visible verticals as the PRD needs; min 1, max 10
+  * **Target:** as few independently shippable user-visible verticals as the PRD needs; no fixed minimum or maximum
   * **Each issue must be a vertical slice:** Delivers a complete, testable behavior end-to-end
   * **Independence:** Each issue should be independently implementable and testable
   * **Scope bounds:** No issue should require <1 task or >10 tasks
   * **Testability:** Each issue must have clear acceptance criteria
-  * **Enforcement:** The shard prompt owns all slicing rules. Pass 1 (Topological Layout + Flow Anchor) partitions by primary `FLOW-XX`, not by FR. Pass 1.5 (Slice Cap Gate) emits as few as needed (1 is legal) and hard-enforces the max-10 cap with `SLICE_CAP_EXCEEDED`. Pass 3.5 (Merge Pass) collapses adjacent horizontal slices that share workstations or demo paths. The PRD prompt no longer carries §Issue Sharding Strategy; it shapes FRs via flow-segment authoring guidance only.
+  * **Enforcement:** The shard prompt owns all slicing rules. Pass 1 slices by observable behavior, not by FR. Pass 1.5 confirms independent verticals without a count cap. Pass 3.5 merges only invalid horizontal splits or artifact-dependent slices. The PRD prompt owns FR/AC/AO traceability and does not prescribe topology.
 
 ---
 

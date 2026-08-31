@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PRD and Shard contracts now use `AO-NNN` observable outlines; Gherkin `AC-PLAN-NNN` criteria remain owned by Plan.** CLI validation enforces the shared boundary and executable shard verification commands.
+- **Shard flow traceability can read Product specs from `DEVIATE_PRODUCT_SPECS_ROOT` or a sibling `../specs/` workspace.** Generated issue paths remain local to the consumer repository.
 - **`deviate setup --agent pi --agent-export-mode global` now writes to pi's actual global dirs.** Prompt templates go to `~/.pi/agent/prompts/` and the deviatdd skill to `~/.pi/agent/skills/` — pi's `getPromptsDir()` / `getAgentDir()`-relative locations — instead of `~/.pi/prompts/` + `~/.pi/skills/`, which pi only treats as project paths. Local mode (`<workdir>/.pi/prompts`, `<workdir>/.pi/skills`) is unchanged. Pinned by `tests/test_cli/test_setup.py::TestSetupExportModeAndBaseBranch` and the fresh-global-install assertions.
 - **Global installs no longer embed a project's constitution into the prompt.**
   `install_command(..., export_mode=...)` / `compose_command_body(...,

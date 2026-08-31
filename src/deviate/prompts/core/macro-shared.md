@@ -16,7 +16,7 @@ Prior to any synthesis, read and verify the constitution from `constitution_path
 
 <item>
 <title>Output File Mandate</title>
-Each macro phase writes a fixed number of output artifacts — 1 file (explore, prd, shard) or 2 files (research: design.md + data-model.md). No artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
+Each macro phase writes only its declared output artifacts. Explore and PRD write 1 file; research writes 2 files (`design.md` and `data-model.md`). SHARD writes one issue file per vertical slice plus its required execution manifest. No unlisted artifact files, temporary files, summary files, or implementation files are written by the agent or its subagents.
 </item>
 
 <item>

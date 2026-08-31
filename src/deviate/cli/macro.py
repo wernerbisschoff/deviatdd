@@ -1,6 +1,7 @@
 from __future__ import annotations
 import importlib.resources
 import json
+import os
 import shutil
 import subprocess
 import uuid
@@ -36,11 +37,9 @@ from deviate.core.epic import (
 from deviate.core.prd import extract_prd_requirements
 from deviate.core.repo import find_repo_root
 from deviate.core.validation import (
-    ARTIFACT_VALIDATORS,
     extract_section_body,
-    validate_acceptance_outline,
     validate_artifact,
-    validate_sections,
+    validate_macro_contract,
     validate_source_file,
     validate_yaml_frontmatter,
 )
@@ -116,6 +115,23 @@ def _load_session_for_phase(
 
 def _resolve_specs_root() -> Path:
     return Path("specs")
+
+
+def _resolve_product_specs_root() -> Path:
+    """Resolve the read-only Product-specs root used for flow traceability."""
+    configured = os.environ.get("DEVIATE_PRODUCT_SPECS_ROOT", "").strip()
+    if configured:
+        path = Path(configured)
+        return path if path.is_absolute() else Path.cwd() / path
+
+    local = Path("specs")
+    if (local / "_product").exists():
+        return local
+
+    workspace = Path("../specs")
+    if (workspace / "_product").exists():
+        return workspace
+    return local
 
 
 def _resolve_repo_context() -> dict:
@@ -819,16 +835,9 @@ def prd_post(
         _halt("PRD", f"prd.md not found at {prd_path}")
 
     prd_content = prd_path.read_text(encoding="utf-8")
-    prd_required = ARTIFACT_VALIDATORS.get("prd", [])
-    missing_sections = validate_sections(prd_content, prd_required)
-    if missing_sections:
-        console.print(
-            f"[yellow]PRD_WARNING[/] missing required sections: {', '.join(missing_sections)}"
-        )
-
-    outline_errors = validate_acceptance_outline(prd_content)
-    if outline_errors:
-        _halt("PRD", f"invalid acceptance outline: {'; '.join(outline_errors)}")
+    contract_errors = validate_macro_contract(prd_content, "prd")
+    if contract_errors:
+        _halt("PRD", f"invalid PRD contract: {'; '.join(contract_errors)}")
 
     reqs = extract_prd_requirements(prd_path)
     manifest_reqs = manifest_data.get("prd_requirements", [])
@@ -886,6 +895,12 @@ def shard_pre(
     if not prd_path.exists():
         _halt("SHARD", f"prd.md not found at {prd_path}")
 
+    prd_errors = validate_macro_contract(
+        prd_path.read_text(encoding="utf-8"), "prd"
+    )
+    if prd_errors:
+        _halt("SHARD", f"invalid PRD contract: {'; '.join(prd_errors)}")
+
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -907,6 +922,7 @@ def shard_pre(
         dry_run=dry_run,
         epic_slug=epic_slug,
         prd_path=str(prd_path),
+        product_specs_root=str(_resolve_product_specs_root().resolve()),
         next_issue_id=next_issue_id,
         issues_dir=str(issues_dir),
         plan_target=str(artifacts_dir / "manifest_shard.json"),
@@ -945,21 +961,19 @@ def shard_post(
             for shard_file in sorted(issues_dir.glob("*-*.md")):
                 shard_content = shard_file.read_text(encoding="utf-8")
                 if not shard_content.strip():
-                    console.print(
-                        f"[yellow]SHARD_WARNING[/] {shard_file.name} is empty"
+                    _halt("SHARD", f"{shard_file.name} is empty")
+                if not validate_yaml_frontmatter(shard_content):
+                    _halt(
+                        "SHARD",
+                        f"{shard_file.name} has invalid YAML frontmatter",
                     )
-                elif not validate_yaml_frontmatter(shard_content):
-                    console.print(
-                        f"[yellow]SHARD_WARNING[/] invalid YAML frontmatter in {shard_file.name}"
+                contract_errors = validate_macro_contract(shard_content, "shard")
+                if contract_errors:
+                    _halt(
+                        "SHARD",
+                        f"{shard_file.name} has invalid shard contract: "
+                        f"{'; '.join(contract_errors)}",
                     )
-                else:
-                    outline_errors = validate_acceptance_outline(shard_content)
-                    if outline_errors:
-                        _halt(
-                            "SHARD",
-                            f"{shard_file.name} invalid acceptance outline: "
-                            f"{'; '.join(outline_errors)}",
-                        )
 
     for issue_data in issues:
         source_file = issue_data.get("source_file", "")

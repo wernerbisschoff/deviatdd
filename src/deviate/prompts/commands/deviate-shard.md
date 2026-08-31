@@ -24,6 +24,9 @@ for the SHARD instructions.
 2. Execute the sharding work described in the core body.
 3. Run `deviate shard post` after the issue files are written. The command
    validates the frontmatter, updates `specs/issues.jsonl`, and commits.
+   The contract includes `product_specs_root`, resolved from
+   `DEVIATE_PRODUCT_SPECS_ROOT`, local `specs/`, or a sibling `../specs/` Product
+   layer. Use that root for read-only flow lookup; keep generated paths local.
 
 ### Issue ID Assignment
 

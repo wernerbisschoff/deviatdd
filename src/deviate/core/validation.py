@@ -136,6 +136,47 @@ def validate_acceptance_outline(content: str) -> list[str]:
     return errors
 
 
+PRD_CONTRACT_SECTIONS = ARTIFACT_VALIDATORS["prd"] + [
+    "Acceptance Outline",
+    "Ambiguity Resolution and Stakeholder Decisions",
+    "Session State",
+]
+SHARD_CONTRACT_SECTIONS = [
+    "System Topology Mapping",
+    "The Problem Contract",
+    "Scope Boundaries",
+    "Upstream Requirement Tracing",
+    "Multi-Tiered Verification Targets",
+    "Demonstration Path",
+    "Acceptance Outline",
+]
+_AO_PATTERN = re.compile(r"\bAO-\d{3}\b")
+
+
+def validate_macro_contract(content: str, artifact: str) -> list[str]:
+    """Validate the shared PRD/Shard contract before committing artifacts."""
+    required = PRD_CONTRACT_SECTIONS if artifact == "prd" else SHARD_CONTRACT_SECTIONS
+    errors = validate_sections(content, required)
+    if not _AO_PATTERN.search(content):
+        errors.append(f"{artifact.upper()} must contain at least one AO-NNN token")
+    outline = extract_section_body(content, "Acceptance Outline") or ""
+    if outline and _GHERKIN_CLAUSE_PATTERN.search(outline):
+        errors.append(
+            "GHERKIN_LEAK_DETECTED: Acceptance Outline must not contain Given/When/Then clauses"
+        )
+    if artifact == "shard":
+        verification = (
+            extract_section_body(content, "Multi-Tiered Verification Targets") or ""
+        )
+        if not re.search(
+            r"(?im)^\s*[-*]?\s*\*\*Verification Command\*\*\s*:", verification
+        ):
+            errors.append(
+                "Multi-Tiered Verification Targets must contain a Verification Command"
+            )
+    return errors
+
+
 def _validate_verification_mode(scenario_id: str, scenario_body: str) -> list[str]:
     mode_matches = _MODE_PATTERN.findall(scenario_body)
     if not mode_matches:

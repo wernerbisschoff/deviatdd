@@ -120,8 +120,16 @@ class TestPrdPost:
             bucket_dir.mkdir(parents=True)
             prd_content = (
                 "# PRD\n"
+                "## Document Control and Metadata\n"
+                "## System Objectives and Scope Boundary\n"
+                "## Architectural Constraints and Prerequisites\n"
+                "## Functional Flow and Sequence Architecture\n"
+                "## Functional Requirements and Epics\n"
+                "## Issue Sharding Strategy\n"
+                "## Ambiguity Resolution and Stakeholder Decisions\n"
+                "## Session State\n"
                 "## Acceptance Outline\n"
-                "- **AO-001**: Test requirement succeeds for valid input.\n"
+                "- `AC-001-01-01` / `AO-001`: Test requirement succeeds for valid input.\n"
                 "FR-001: Test requirement\n"
                 "FR-002: Another requirement\n"
             )

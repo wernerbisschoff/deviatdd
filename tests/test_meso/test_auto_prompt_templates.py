@@ -644,7 +644,7 @@ class TestPrdShardOwnership:
     def test_prd_ownership_rules_are_present(self) -> None:
         prd = self._prd()
         assert (
-            "PRD owns behavior, constraints, acceptance criteria, and FR "
+            "PRD owns behavior, constraints, acceptance outlines, and FR "
             "traceability" in prd
         )
         assert "FRs are traceability units only" in prd
@@ -684,7 +684,7 @@ class TestPrdShardOwnership:
         shard = self._shard()
         assert "independently testable" in shard
         assert "one primary observable behavior" in shard
-        assert "executable verification command" in shard
+        assert "verification command" in shard.lower()
         assert "## Demonstration Path" in shard
         assert "## Scope Boundaries" in shard
         assert "acceptance outcomes" in shard
