@@ -452,6 +452,10 @@ def _sync_worktree_assets(repo_root: Path, worktree_path: Path) -> None:
             shutil.copytree(src, dst, dirs_exist_ok=True)
             console.print(f"[green]SYNC[/] {agent_dir}/ → worktree")
 
+    dot_dir = repo_root / ".deviate"
+    if dot_dir.exists():
+        shutil.copytree(dot_dir, worktree_path / ".deviate", dirs_exist_ok=True)
+        console.print("[green]SYNC[/] .deviate/ → worktree")
     for filename in _WORKTREE_SYNC_FILES:
         src = repo_root / filename
         dst = worktree_path / filename
@@ -595,6 +599,7 @@ def _try_claim_issue(
     force: bool = False,
     dry_run: bool = False,
     local: bool = False,
+    base_branch: str | None = None,
 ) -> dict | None:
     """Attempt to claim a single issue end-to-end.
 
@@ -654,8 +659,8 @@ def _try_claim_issue(
                 wt_path,
                 repo=repo_root,
                 start_point=resolve_start_point(
-                    resolve_base_branch(repo_root), repo=repo_root
-                ),
+                    base_branch, repo=repo_root
+                ) if base_branch else "HEAD",
             )
             console.print(
                 f"[green]WORKTREE[/] "
@@ -759,6 +764,7 @@ def _specify_pre(
     force: bool = False,
     dry_run: bool = False,
     local: bool = False,
+    base_branch: str | None = None,
 ) -> dict | None:
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     if issue_id is None:
@@ -775,6 +781,7 @@ def _specify_pre(
         force=force,
         dry_run=dry_run,
         local=_effective_local(local),
+        base_branch=base_branch,
     )
     if result is None:
         console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
@@ -2129,6 +2136,12 @@ def specify(
         "--local",
         help="Claim locally only: create worktree, write ledger, commit; skip remote check and push. If the local branch already exists, treat as already claimed.",
     ),
+    base_branch: str | None = typer.Option(
+        None,
+        "--branch",
+        "--base",
+        help="Branch to use as the worktree base (default: current branch)",
+    ),
     issue: str | None = typer.Option(
         None, "--issue", help="Issue ID for pre subcommand"
     ),
@@ -2143,7 +2156,10 @@ def specify(
     command inside the new worktree.
     """
     if issue_id == "pre":
-        _specify_pre(issue_id=issue, force=force, dry_run=dry_run, local=local)
+        _specify_pre(
+            issue_id=issue, force=force, dry_run=dry_run, local=local,
+            base_branch=base_branch,
+        )
     elif issue_id == "post":
         _specify_post(force=force)
     elif issue_id is None:
@@ -2159,9 +2175,13 @@ def specify(
             force=force,
             dry_run=dry_run,
             local=local,
+            base_branch=base_branch,
         )
     else:
-        _specify_pre(issue_id=issue_id, force=force, dry_run=dry_run, local=local)
+        _specify_pre(
+            issue_id=issue_id, force=force, dry_run=dry_run, local=local,
+            base_branch=base_branch,
+        )
 
 
 def plan(

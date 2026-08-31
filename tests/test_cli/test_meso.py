@@ -57,6 +57,23 @@ class TestSyncWorktreeAssets:
             assert copied.exists(), f"{agent_dir} not synced to worktree"
             assert copied.read_text(encoding="utf-8") == agent_dir
 
+    def test_copies_deviate_config_to_worktree(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        worktree = tmp_path / "wt"
+        repo_root.mkdir()
+        worktree.mkdir()
+        dot_dir = repo_root / ".deviate"
+        dot_dir.mkdir()
+        (dot_dir / "config.toml").write_text(
+            "base_branch = 'develop'\n", encoding="utf-8"
+        )
+
+        _sync_worktree_assets(repo_root, worktree)
+
+        assert (worktree / ".deviate" / "config.toml").read_text(
+            encoding="utf-8"
+        ) == "base_branch = 'develop'\n"
+
     def test_skips_missing_agent_dirs_without_creating_them(self, tmp_path):
         repo_root = tmp_path / "repo"
         worktree = tmp_path / "wt"
@@ -154,6 +171,46 @@ class TestWorktreeAssetSyncOrdering:
         assert call_order == ["sync", "setup"], (
             f"Expected sync before setup, got {call_order}"
         )
+
+    def test_claim_worktree_starts_from_current_branch(self, tmp_git_repo: Path):
+        import subprocess
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _try_claim_issue
+        from deviate.state.ledger import IssueRecord
+        from tests.conftest import _git_env
+
+        subprocess.run(
+            ["git", "checkout", "-b", "current-work"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        ledger_path = tmp_git_repo / "specs" / "issues.jsonl"
+        ledger_path.parent.mkdir(parents=True)
+        issue = IssueRecord(
+            issue_id="ISS-001-BRANCH",
+            type="feature",
+            title="Use current branch",
+            source_file="specs/test-epic/issues/iss-001-branch.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        with (
+            patch(
+                "deviate.cli.meso.create_worktree",
+                return_value=tmp_git_repo / "wt",
+            ) as create,
+            patch("deviate.cli.meso.branch_exists_on_remote", return_value=False),
+            patch("deviate.cli.meso.claim_issue", return_value=False),
+            patch("deviate.cli.meso._sync_worktree_assets"),
+            patch("deviate.cli.meso._setup_mise"),
+        ):
+            _try_claim_issue(issue, tmp_git_repo, ledger_path, remote="origin")
+
+        assert create.call_args.kwargs["start_point"] == "HEAD"
 
 
 class TestSpecifyLocalFlag:

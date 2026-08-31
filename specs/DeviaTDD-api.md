@@ -516,7 +516,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Validates `spec.md` Gherkin syntax via `validate_gherkin_syntax()`,
   commits the spec, and transitions session to TASKS.
 
-#### `deviate specify [<issue-id>] [--local]` (Legacy)
+#### `deviate specify [<issue-id>] [--local] [--branch <name>]` (Legacy)
 
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Claim an issue and create its worktree. With an explicit `<issue-id>`,
@@ -532,6 +532,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
   ``deviate plan pre`` or invoke the ``/deviate-plan`` slash command inside the new
   worktree.
 * `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `false`; absent file or absent key resolves to `false`). Explicit `--local` always wins over `claim_remote = true`. Existing `claim_remote = true` configs still push. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim. When push-as-lock is on (`claim_remote = true`, no `--local`) and `git push` of `feat/<epic>/<NNN>-*` or `feat/adhoc/<NNN>-*` is rejected because the name exists, `_try_claim_issue` increments the ordinal and retries the push, at most 3 times. Collision retry does not set `--local`. Non-name-collision push errors still print `PUSH_STDERR` and follow `--force` or rollback.
+* `--branch <name>` / `--base <name>`: use the named branch as the start point for the new worktree. If omitted, use the current branch.
 
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 
