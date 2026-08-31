@@ -1877,7 +1877,7 @@ class TestCodexBackendRegistration:
 
     def test_backend_commands_includes_codex_exec(self) -> None:
         assert BACKEND_COMMANDS["codex"] == (
-            "codex exec --sandbox workspace-write --ask-for-approval never"
+            "codex exec --sandbox workspace-write --approve-for-me"
         )
 
     def test_codex_supports_model_flag(self) -> None:
@@ -1903,8 +1903,8 @@ class TestCodexBackendRegistration:
         assert cmd[:2] == ["codex", "exec"], f"unexpected argv prefix: {cmd}"
         sandbox_idx = cmd.index("--sandbox")
         assert cmd[sandbox_idx + 1] == "workspace-write"
-        approval_idx = cmd.index("--ask-for-approval")
-        assert cmd[approval_idx + 1] == "never"
+        assert "--approve-for-me" in cmd
+        assert "--ask-for-approval" not in cmd
         assert "--yolo" not in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
         assert "--full-auto" not in cmd

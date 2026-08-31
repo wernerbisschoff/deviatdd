@@ -175,10 +175,9 @@ BACKEND_COMMANDS: dict[str, str] = {
     # ``-`` sentinel so ``MODEL_FLAGS`` can append ``--model`` at the end
     # without it being swallowed as prompt text. Default ``codex exec``
     # sandbox is read-only; ``--sandbox workspace-write`` plus
-    # ``--ask-for-approval never`` is the documented unattended analog of
-    # ``claude -p --permission-mode auto``. Do not use ``--full-auto``
-    # (deprecated) or ``--dangerously-bypass-approvals-and-sandbox``.
-    "codex": "codex exec --sandbox workspace-write --ask-for-approval never",
+    # ``--approve-for-me`` provides unattended approval without bypassing the
+    # sandbox. Do not use ``--dangerously-bypass-approvals-and-sandbox``.
+    "codex": "codex exec --sandbox workspace-write --approve-for-me",
     "stub": "stub",
 }
 
