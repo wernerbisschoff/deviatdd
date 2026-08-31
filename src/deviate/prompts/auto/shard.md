@@ -10,7 +10,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 1. **The Vertical Slice Mandate**: A vertical slice is an independently testable behavior that cuts through all layers required by the behavior. One issue may cover multiple related FRs. One FR may span multiple issues when each issue owns a distinct observable behavior. Reject pure horizontal layer splits by default. A persistence-only issue is valid when the database invariant or migration is the behavior under test; pure setup work is not a valid issue. You are strictly forbidden from generating layered/horizontal shards that split work by layer rather than by observable behavior.
 2. **Incremental Bootstrapping Principle**: Shard N must deliver a complete, end-to-end vertical feature that establishes the minimal behavioral foundation that Shard N+1 extends. The "foundation" is a working feature, not a layer.
 3. **Issue ID Assignment**: Assign each shard a sequential `issue_id` starting from `next_issue_id`. Build a DAG with `blocked_by` and `coordinates_with` arrays.
-4. **Cumulative FR Coverage**: Every emitted shard MUST carry one or more `FR-[ID]` tokens from the PRD, and every PRD FR must appear in at least one shard. Technical support work belongs inside the feature slice whose behavior requires it; zero-FR setup, tooling, governance, and refactoring shards are invalid.
+4. **Cumulative FR Coverage**: Coverage is a set property. Do not partition or bound issues by FR id. FRs are coverage attached after the slice exists. Every PRD FR must appear in at least one issue; it does not matter which issue satisfies a given FR. A behavior slice cites the FRs it actually covers and is not required to equal one FR. Zero-FR setup, tooling, governance, and refactoring shards are invalid.
 5. **Existing Flow Traceability**: Read the repository's existing `specs/_product/` artifacts only to map each FR to user-visible `FLOW-XX` context. `flow_refs` are traceability metadata, not implementation scope. Keep flow files and indexes unchanged; a missing flow match yields `flow_refs: []` and never creates a flow-authoring or synchronization shard.
 6. **Shard Ownership**: Shard owns issue count, grouping, boundaries, and the dependency DAG. There is no fixed minimum or maximum issue count. PRD FRs do not prescribe issue IDs or topology.
 </system_instructions>
@@ -41,7 +41,7 @@ Read the PRD from `prd_path`. Extract all `FR-[ID]` and `AC-[ID]` tokens, data m
 
 <step id="vertical_slicing">
 Execute Internal ICoT:
-- **Pass 1 (Topological Layout + Flow Anchor)**: Read the existing `specs/_product/flows/` catalog as read-only context. Partition FRs by the user-visible flows they already serve, then group them into independently testable application behavior bundles. One issue may cover multiple related FRs; one FR may span multiple issues when each issue owns a distinct observable behavior. Every candidate slice carries one or more FRs. Verify cumulative FR coverage.
+- **Pass 1 (Topological Layout + Flow Anchor)**: Slice by observable behavior first — one primary observable behavior per issue, cutting through all layers that behavior needs. Read the existing `specs/_product/flows/` catalog as read-only context. Do not partition or bound issues by FR id. After each slice exists, attach the FRs that behavior actually covers. Coverage is a set property: every PRD FR must appear in at least one issue, and it does not matter which issue satisfies a given FR. One issue may cover multiple related FRs; one FR may span multiple issues when each issue owns a distinct observable behavior. A behavior slice is not required to equal one FR. Zero-FR setup, tooling, governance, and refactoring shards are invalid.
 - **Pass 1.5 (Independence Gate)**: Emit independently testable vertical slices. There is no fixed minimum or maximum issue count. 1 is legal. Do not invent extra slices to look non-trivial. Do not halt on draft count.
 - **Pass 2 (Boundary Demarcation)**: Establish defensive exclusion criteria for each slice.
 - **Pass 2.1 (FR-to-Flow Traceability)**: Record existing `FLOW-XX` references for every FR. Use `flow_refs: []` when no catalog entry matches; do not introduce catalog work.
@@ -92,7 +92,7 @@ The CLI orchestrator runs `deviate shard post` after your response to validate s
 
 ## Internal ICoT Ledger
 ```text
-Pass 1 (Topological Layout + Flow Anchor): [Record grouping of FR-backed application behavior against existing read-only FLOW-XX context]
+Pass 1 (Topological Layout + Flow Anchor): [Record independently testable observable-behavior slices; attach FR coverage after each slice exists]
 Pass 1.5 (Independence Gate): [Confirm independently testable verticals; no fixed count]
 Pass 2 (Boundary Demarcation): [Inclusion vs exclusion per slice]
 Pass 2.1 (FR-to-Flow Traceability): [For each FR, record matching existing FLOW-XX IDs or an empty list; no catalog work]

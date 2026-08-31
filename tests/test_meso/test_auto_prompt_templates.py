@@ -737,3 +737,15 @@ class TestPrdShardOwnership:
         assert "one issue per FR" not in example
         assert "does not prescribe issue count" in example
         assert "Shard owns grouping" in example or "shard owns grouping" in example
+
+    def test_shard_slices_by_behavior_not_by_fr(self) -> None:
+        shard = self._shard()
+        assert "Partition FRs" not in shard
+        assert "partition FRs" not in shard
+        assert "then group them" not in shard
+        assert "Do not partition or bound issues by FR id" in shard
+        assert "Slice by observable behavior first" in shard
+        assert "Coverage is a set property" in shard
+        assert "it does not matter which issue satisfies a given FR" in shard
+        assert "FRs are coverage attached after the slice exists" in shard
+        assert "not required to equal one FR" in shard
