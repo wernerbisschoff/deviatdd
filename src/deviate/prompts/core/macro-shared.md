@@ -21,7 +21,7 @@ Each macro phase writes a fixed number of output artifacts — 1 file (explore, 
 
 <item>
 <title>Subagent Delegation</title>
-For non-trivial features (>20 source files or mixed-language manifests), spawn 2-3 parallel read-only discovery/reasoning subagents. Each returns text fragments only — no file writes. For trivial repos, collapse to a single linear pass.
+Sub-agents are for parallel work. **explore** may spawn 2-3 parallel read-only discovery subagents; each returns text fragments only — no file writes. **research** is ordered: one agent, two sequential jobs in the same prompt — do not spawn research sub-agents or forward context between two research processes. **prd** and **shard** collapse to a single linear pass. For trivial repos, every phase collapses to a single linear pass.
 </item>
 
 <item>

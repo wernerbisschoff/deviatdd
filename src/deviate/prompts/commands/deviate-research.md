@@ -28,7 +28,7 @@ slash command adds these lifecycle steps around it:
    emit the JSON contract on stdout.
 2. If `is_greenfield=true` and `constitution_path` is empty, run the
    `constitution_bootstrap` step to seed the constitution from exploration
-   findings before the subagent fork.
+   findings before the floor job.
 3. Execute the research work described in the core body, writing
    `<design_target>` and `<data_model_target>`.
 4. Run `reduce_phase` to merge the architecture and data-model fragments into

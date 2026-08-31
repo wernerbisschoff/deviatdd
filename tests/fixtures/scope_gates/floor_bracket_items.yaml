@@ -1,0 +1,121 @@
+# Parallel withdrawal next to payout_request (001-crypto-withdrawals shape).
+# evidence keys match the research floor test. Required only when one is true.
+
+sibling_flow:
+  name: payout_request
+  amount_vs_fee: amount + fee
+  lock_vs_reserve: reserve then consume/release
+  vendor_call: job
+  idempotency: one vendor create / no auto-resubmit
+  destination_shape: typed destination snapshot
+
+items:
+  - id: fee
+    kind: field
+    on_floor: true
+    on_schema: true
+    expected_scope: Required
+    evidence:
+      requested_user_flow: true
+      existing_behavior_compatibility: true
+      constitution: false
+      auth_money_provider_integrity: true
+
+  - id: reserve_consume_release
+    kind: mechanism
+    on_floor: true
+    on_schema: true
+    expected_scope: Required
+    evidence:
+      requested_user_flow: true
+      existing_behavior_compatibility: true
+      constitution: false
+      auth_money_provider_integrity: true
+
+  - id: skip_locked_claim
+    kind: mechanism
+    on_floor: true
+    on_schema: false
+    expected_scope: Required
+    evidence:
+      requested_user_flow: false
+      existing_behavior_compatibility: true
+      constitution: false
+      auth_money_provider_integrity: true
+
+  - id: one_vendor_create
+    kind: mechanism
+    on_floor: true
+    on_schema: false
+    expected_scope: Required
+    evidence:
+      requested_user_flow: true
+      existing_behavior_compatibility: true
+      constitution: false
+      auth_money_provider_integrity: true
+
+  - id: typed_destination_snapshot
+    kind: field
+    on_floor: true
+    on_schema: true
+    expected_scope: Required
+    evidence:
+      requested_user_flow: true
+      existing_behavior_compatibility: true
+      constitution: false
+      auth_money_provider_integrity: true
+
+  - id: generic_payload_snapshot
+    kind: jsonb_column
+    on_floor: false
+    on_schema: false
+    expected_scope: Deferred
+    evidence:
+      requested_user_flow: false
+      existing_behavior_compatibility: false
+      constitution: false
+      auth_money_provider_integrity: false
+
+  - id: future_adapter
+    kind: extra
+    on_floor: false
+    on_schema: false
+    expected_scope: Deferred
+    evidence:
+      requested_user_flow: false
+      existing_behavior_compatibility: false
+      constitution: false
+      auth_money_provider_integrity: false
+
+  - id: metric
+    kind: extra
+    on_floor: false
+    on_schema: false
+    expected_scope: Recommended
+    evidence:
+      requested_user_flow: false
+      existing_behavior_compatibility: false
+      constitution: false
+      auth_money_provider_integrity: false
+
+  - id: alert
+    kind: extra
+    on_floor: false
+    on_schema: false
+    expected_scope: Recommended
+    evidence:
+      requested_user_flow: false
+      existing_behavior_compatibility: false
+      constitution: false
+      auth_money_provider_integrity: false
+
+  - id: circuit_breaker
+    kind: extra
+    on_floor: false
+    on_schema: false
+    expected_scope: Deferred
+    evidence:
+      requested_user_flow: false
+      existing_behavior_compatibility: false
+      constitution: false
+      auth_money_provider_integrity: false
