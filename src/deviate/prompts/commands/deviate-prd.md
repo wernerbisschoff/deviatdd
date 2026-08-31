@@ -19,12 +19,18 @@ derived from the canonical `auto/prd.md` core — the single source of truth
 for the PRD instructions.
 
 1. Run `deviate prd pre` to verify the research artifacts and emit the JSON
-   contract on stdout. The command blocks on any `## Pending HITL Decisions`
+   contract on stdout. The contract includes `epic_slug`, `prd_path`, and
+   `plan_target`. The command blocks on any `## Pending HITL Decisions`
    row with Status `PENDING` — the HITL Gate 1 enforcement mechanism.
 2. Execute the PRD compilation work described in the core body, writing
-   `prd.md`.
-3. Run `deviate prd post` after the artifact is written. The command
-   validates the sections, updates the ledger, and commits.
+   `specs/<epic_slug>/prd.md`. The PRD must include every required section,
+   including a top-level `## Acceptance Outline` containing `AO-NNN` tokens.
+3. Write the manifest to the contract's `plan_target` path. It must include
+   the `epic_slug` field.
+4. Run `deviate prd post .deviate/artifacts/manifest_prd.json` after the
+   artifact and manifest are written. Replace the path when `plan_target`
+   specifies another location. The command validates the PRD, stages it,
+   and commits it.
 
 ### Rich Handover Manifest
 

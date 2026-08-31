@@ -22,7 +22,7 @@ Your job is to ingest a JSON contract emitted by `deviate prd pre`, compile the 
 
 <acceptance_token_contract>
 AO is the acceptance outline token. It states the observable, implementation-independent outcome.
-Every FR must define at least one AO-NNN token in its Acceptance Outline.
+Every FR must reference at least one AO-NNN token. Define each AO-NNN exactly once in the top-level Acceptance Outline.
 Gherkin acceptance criteria are not authored in the PRD. Plan authors `AC-PLAN-NNN` criteria from the AO outcomes.
 </acceptance_token_contract>
 
@@ -71,7 +71,6 @@ Generate the PRD content following the output format schema. Write to `prd_path`
 - Acceptance outlines MUST NOT contain bold Given/When/Then clauses.
 - Every path must be relative to `repo_root`.
 - Constitutional constraints must be respected.
-- Do not add new mandatory PRD sections, a recommendations.md artifact, or a full ops-hardening FR set.
 </step>
 
 <step id="manifest_writing">
@@ -79,6 +78,7 @@ Write execution manifest JSON to `plan_target`:
 ```json
 {
   "task_id": "prd",
+  "epic_slug": "<epic_slug>",
   "files_modified": [{"path": "<feature_dir>/prd.md", "action": "created", "purpose": "PRD for feature epic"}],
   "commit_subject": "docs(<epic_id>): add prd.md",
   "validation": {"lint": "SKIP", "typecheck": "SKIP", "tests": "SKIP"}
@@ -87,7 +87,7 @@ Write execution manifest JSON to `plan_target`:
 </step>
 
 <step id="post_orchestrated">
-The CLI orchestrator runs `deviate prd post` after your response to validate `prd.md`, stage, and commit. Do NOT run it yourself.
+After writing `prd.md` and the manifest, run `deviate prd post .deviate/artifacts/manifest_prd.json` to validate, stage, and commit. The manifest must include `epic_slug`.
 </step>
 
 </execution_sequence>
@@ -121,9 +121,11 @@ authorization/ownership; amount + fee; reserve/consume/release; skip_locked; one
 - **Inputs/Outputs**
 - **State Transition**
 - **Exception Strategy**
-- **Acceptance Outline**
-  1. `AO-{NNN}`: observable happy-path outcome
-  2. `AO-{NNN}`: observable error or boundary outcome
+- **AO References**
+  `AO-{NNN}` tokens defined in the top-level Acceptance Outline.
+
+## Acceptance Outline
+Define each `AO-NNN` outcome once here. This is the canonical outline consumed by Shard. Each entry states the observable behavior, relevant inputs or boundary, and measurable result.
 
 ## Non-Functional Engineering Requirements
 ## Issue Sharding Strategy

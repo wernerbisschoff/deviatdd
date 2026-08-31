@@ -157,9 +157,11 @@ def validate_macro_contract(content: str, artifact: str) -> list[str]:
     """Validate the shared PRD/Shard contract before committing artifacts."""
     required = PRD_CONTRACT_SECTIONS if artifact == "prd" else SHARD_CONTRACT_SECTIONS
     errors = validate_sections(content, required)
-    if not _AO_PATTERN.search(content):
-        errors.append(f"{artifact.upper()} must contain at least one AO-NNN token")
     outline = extract_section_body(content, "Acceptance Outline") or ""
+    if not _AO_PATTERN.search(outline):
+        errors.append(
+            f"{artifact.upper()} Acceptance Outline must contain at least one AO-NNN token"
+        )
     if outline and _GHERKIN_CLAUSE_PATTERN.search(outline):
         errors.append(
             "GHERKIN_LEAK_DETECTED: Acceptance Outline must not contain Given/When/Then clauses"
