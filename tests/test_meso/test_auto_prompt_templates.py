@@ -20,15 +20,15 @@ SLIM_TEMPLATES = [
     "tasks.md",
 ]
 
-# Maps template names (without .md) to expected context marker
-_CONTEXT_MAP = {
-    "explore": "<context>",
-    "research": "<context>",
-    "prd": "<context>",
-    "shard": "<context>",
-    "plan": "<context>",
-    "tasks": "<context>",
-}
+# Auto phases whose composed prompts must not carry the manual overlay seam.
+_AUTO_COMPOSE_PHASES = (
+    "explore",
+    "research",
+    "prd",
+    "shard",
+    "plan",
+    "tasks",
+)
 
 
 class TestSlimPromptTemplatesExist:
@@ -53,10 +53,20 @@ class TestSlimPromptTemplatesExist:
 
 
 class TestSlimPromptPattern:
-    def test_composed_template_has_context_marker(self):
-        for name, marker in _CONTEXT_MAP.items():
+    def test_composed_auto_templates_omit_manual_context_seam(self):
+        """Auto composition is orchestrator-injected. ``<context>`` / ``$ARGUMENTS``
+        live only on the per-phase manual overlay (7adffcab $ARGUMENTS dedup).
+        Derived manuals keep exactly one ``$ARGUMENTS`` seam — pinned by
+        ``TestManualDerivationFromAutoCore.test_derived_overlapping_phases_have_one_arguments_seam``.
+        """
+        for name in _AUTO_COMPOSE_PHASES:
             composed = load_template(name)
-            assert marker in composed, f"{name}: expected {marker!r} in composed prompt"
+            assert "<context>" not in composed, (
+                f"{name}: auto composed prompt must not carry the manual <context> seam"
+            )
+            assert "$ARGUMENTS" not in composed, (
+                f"{name}: auto composed prompt must not carry $ARGUMENTS"
+            )
 
     def test_each_template_has_minimum_content_length(self):
         for name in SLIM_TEMPLATES:

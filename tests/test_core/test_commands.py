@@ -654,7 +654,6 @@ class TestManualDerivationFromAutoCore:
             )
 
 
-
 _PRODUCT_BUNDLE = ("deviate-flows", "deviate-architecture", "deviate-release")
 
 
