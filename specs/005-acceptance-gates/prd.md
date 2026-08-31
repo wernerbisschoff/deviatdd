@@ -105,7 +105,7 @@ sequenceDiagram
      - **Boundary Category**: A `manual` or `deferred` mode validates but requires no `test_ref` in the contract body.
   2. `AC-005-01-02` / `AO-001`: Validation keeps requiring Source Outline, Upstream Traceability, Current-Code Evidence, and Given/When/Then.
      - **Observable Result**: Removing any existing clause still fails validation.
-- **Downstream Shard Mapping**: Epic `005-acceptance-gates`, first issue.
+- **Downstream Shard Mapping**: FR traceability unit only; shard owns grouping.
 
 ### FR-005-02: Task Acceptance Traceability
 - **Description**: `TaskRecord` gains an optional `acceptance_criteria: list[CriterionLink] | None` field. `generate_jsonl_from_md` in `src/deviate/core/tasks_ledger.py` propagates task-to-criterion and criterion-to-test links into each generated task row. The field parses as absent for JSONL rows written by older CLI versions.
@@ -118,7 +118,7 @@ sequenceDiagram
      - **Happy Path**: `deviate meso tasks pre` emits rows with valid links.
      - **Error Category**: Malformed criterion id or missing `test_ref` on an automated link fails generation.
      - **Boundary Category**: Legacy JSONL rows without the field still parse under `extra="forbid"`.
-- **Downstream Shard Mapping**: Epic `005-acceptance-gates`, second issue.
+- **Downstream Shard Mapping**: FR traceability unit only; shard owns grouping.
 
 ### FR-005-03: Non-Blocking RED Checkpoint
 - **Description**: `_run_red_phase` in `src/deviate/cli/micro.py` stops raising `PhaseFailedError` on test returncode 0. It builds a `RedHandoffAdvisory` (`passes`, `severity`) and passes it in-memory to the GREEN runner. The RED phase always completes and appends its `RED` transition row. No persistent record is written.
@@ -133,7 +133,7 @@ sequenceDiagram
      - **Boundary Category**: No test file detected — the checkpoint is skipped.
   2. `AC-005-03-02` / `AO-003`: A RED run whose test suite fails completes with an `ok` advisory.
      - **Observable Result**: RED transition row appended; GREEN starts.
-- **Downstream Shard Mapping**: Epic `005-acceptance-gates`, third issue.
+- **Downstream Shard Mapping**: FR traceability unit only; shard owns grouping.
 
 ### FR-005-04: Blocking GREEN Gate with JUDGE Routing
 - **Description**: `_run_green_phase` requires `_run_test_cmd` returncode 0. On failure it sets `train_feedback` and routes to JUDGE, which decides retry GREEN or revert to RED, bounded by `_MAX_JUDGE_FEEDBACK = 3`. Verification mode never exempts the automated suite.
@@ -146,7 +146,7 @@ sequenceDiagram
      - **Happy Path**: Format cmd runs; GREEN result commits.
      - **Error Category**: Non-zero returncode routes to JUDGE via `train_feedback`.
      - **Boundary Category**: A `warning` RED advisory does not block GREEN start.
-- **Downstream Shard Mapping**: Epic `005-acceptance-gates`, fourth issue (may merge with FR-005-03).
+- **Downstream Shard Mapping**: FR traceability unit only; shard owns grouping.
 
 ### FR-005-05: Blocking REFACTOR Regression Gate
 - **Description**: `_run_refactor_phase` inspects the `_run_test_cmd` returncode. Non-zero raises `PhaseFailedError` and the task fails. Zero proceeds to format cmd, appends the `COMPLETED` transition, commits, and transitions the session to `IDLE`.
@@ -159,7 +159,7 @@ sequenceDiagram
      - **Happy Path**: All tests pass after polish; `COMPLETED` row appended.
      - **Error Category**: Non-zero returncode raises and records failure.
      - **Boundary Category**: Tests unchanged and passing — gate passes without side effects.
-- **Downstream Shard Mapping**: Epic `005-acceptance-gates`, fifth issue.
+- **Downstream Shard Mapping**: FR traceability unit only; shard owns grouping.
 
 ### FR-005-06: Prompt Template and Specification Alignment
 - **Description**: Update `src/deviate/prompts/commands/deviate-red.md`, `src/deviate/prompts/auto/red.md`, `green.md`, and `refactor.md` to describe the checkpoint and gates. Update `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` gate semantics in the same commit. Append a `CHANGELOG.md` entry under `[Unreleased]`.
@@ -172,7 +172,7 @@ sequenceDiagram
      - **Happy Path**: Templates and specs match runner behavior.
      - **Error Category**: A stale rejection statement in any template fails review.
      - **Boundary Category**: CHANGELOG entry present under `[Unreleased]`.
-- **Downstream Shard Mapping**: Epic `005-acceptance-gates`, final issue.
+- **Downstream Shard Mapping**: FR traceability unit only; shard owns grouping.
 
 ## Acceptance Outline
 - `AO-001` / `AC-005-01-*`: Verification-mode metadata on `AC-PLAN-NNN` scenarios validates in `validate_acceptance_contract`.
@@ -188,7 +188,7 @@ sequenceDiagram
 - **Type Safety & Modularity**: Pydantic models enforce the schemas above. `ruff check` and `ruff format --check` pass. Coverage stays at or above 80%. Tests mock `deviate.cli.micro._run_pytest` where CLI commands reach it.
 
 ## Issue Sharding Strategy
-Shard the epic into 5-6 issues, one per FR: contract metadata (`FR-005-01`), task traceability (`FR-005-02`), RED checkpoint (`FR-005-03`), GREEN gate (`FR-005-04`), REFACTOR gate (`FR-005-05`), and template/spec alignment (`FR-005-06`). `FR-005-04` may merge with `FR-005-03` into one slice. Each issue keeps its own `plan.md` `AC-PLAN-NNN` acceptance contract with verification-mode metadata.
+This PRD lists FRs as traceability units only. It does not prescribe issue count, issue IDs, or shard topology. Related FRs may share one independently testable vertical (for example FR-005-03 and FR-005-04 as one RED/GREEN gate behavior), and a single FR may split across issues when each issue owns a distinct observable behavior. Shard owns grouping, boundaries, and the dependency DAG.
 
 ## Ambiguity Resolution and Stakeholder Decisions
 - `RESOLVED-Q-001` (HITL-001): RED checkpoint storage ➔ **Resolution Requirement Invariant**: The checkpoint is an in-memory phase-handoff advisory; the system writes no persistent record, no ledger field, and no `.deviate/` store.

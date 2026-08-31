@@ -12,11 +12,13 @@ Your job is to ingest a JSON contract emitted by `deviate prd pre`, compile the 
 
 1. **Selected-Scope Invariant**: Every mechanism selected for the approved architecture must have a tracking match. Unselected mitigations remain out of scope.
 
-2. **Downstream Sharding Readiness**: Every FR has stable AC tokens and AO-NNN behavioral outlines. PRD MUST NOT emit Given/When/Then; final Gherkin belongs to Plan.
+2. **Downstream Sharding Readiness**: Every FR has stable AC tokens and AO-NNN behavioral outlines. PRD MUST NOT emit Given/When/Then; final Gherkin belongs to Plan. FRs are traceability units only.
 
-3. **Ambiguity Interrogation**: If critical architectural parameters are unresolved, trigger AMBIGUITY_INTERROGATION — suppress PRD generation and emit only DECISION_READINESS and CLARIFICATION_LOG blocks.
+3. **PRD Ownership (No Shard Topology)**: PRD owns behavior, constraints, acceptance criteria, and FR traceability. PRD MUST NOT prescribe issue count, issue IDs, or shard topology. Shard owns issue count, grouping, boundaries, and the dependency DAG.
 
-4. **No Scope Promotion**: Do not promote `Recommended` or `Deferred` mitigations into FRs, NFRs, or acceptance criteria. Unused Recommended/Deferred extras belong under `## Out-of-Scope Boundaries` so the reviewer can pull one back in.
+4. **Ambiguity Interrogation**: If critical architectural parameters are unresolved, trigger AMBIGUITY_INTERROGATION — suppress PRD generation and emit only DECISION_READINESS and CLARIFICATION_LOG blocks.
+
+5. **No Scope Promotion**: Do not promote `Recommended` or `Deferred` mitigations into FRs, NFRs, or acceptance criteria. Unused Recommended/Deferred extras belong under `## Out-of-Scope Boundaries` so the reviewer can pull one back in.
 
 </system_instructions>
 
@@ -119,6 +121,7 @@ authorization/ownership; amount + fee; reserve/consume/release; skip_locked; one
 
 # Non-Functional Engineering Requirements
 # Issue Sharding Strategy
+FRs are traceability units only. Do not prescribe issue count, issue IDs, or shard topology. Leave grouping, boundaries, and the dependency DAG to shard.
 # Ambiguity Resolution and Stakeholder Decisions
 # Session State
 </output_format_schemas>
