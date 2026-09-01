@@ -604,6 +604,15 @@ class TestManualDerivationDriftGuard:
         assert 'status: "PASS"' in installed
         assert "failure_kind" in installed
 
+    def test_manual_red_routes_feedback_through_pre_contract(self, tmp_path):
+        """Manual RED never receives <train_feedback> substitution, so the
+        overlay must point the agent at ``red pre``'s ``task_entry`` card
+        (with persisted **Judge Feedback** bullets) for corrections."""
+        installed = self._install("deviate-red", tmp_path)
+        assert "task_entry" in installed
+        assert "**Judge Feedback**" in installed
+        assert "persisted_judge_feedback" in installed
+
     def test_manual_green_matches_auto_role_language(self, tmp_path):
         """The derived manual GREEN inherits auto's "write ONLY production
         code" role language, not the duplicate's "maintain existing functional

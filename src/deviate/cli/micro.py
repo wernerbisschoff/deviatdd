@@ -1664,6 +1664,14 @@ def _run_red_phase(
     prompt = _build_auto_prompt(
         "red", task, root, train_feedback=session.train_feedback
     )
+    if not session.train_feedback:
+        # GREEN's fallback: a JUDGE revert_red rejection persists its feedback
+        # to tasks.md, but session.train_feedback only carries the most
+        # recent retry. Without this read, a fresh RED run (new session,
+        # resumed session) silently drops the correction.
+        persisted = _read_judge_feedback_from_tasks_md(root, task)
+        if persisted:
+            prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
     red_model = resolve_model_for_phase("RED", root, backend=backend)
     manifest, agent_tail, timed_out = _unpack_agent_invoke(
@@ -5910,11 +5918,15 @@ def red_pre(
     task_data, ledger_path = _resolve_task_context(task, root)
 
     spec_dir = str(ledger_path.parent)
+    # Mirror green_pre's task_entry: the manual RED agent gets the card
+    # (including **Judge Feedback** history) through the contract because
+    # slash-command bodies do no placeholder substitution.
     contract = {
         "task_id": task_data.get("id", ""),
         "test_command": _resolve_verification_command(root, task_data),
         "lint_command": "mise run lint",
         "spec_dir": spec_dir,
+        "task_entry": _task_card_text(root, task_data),
     }
     doctor = _attach_mise_pre(root, contract)
     print(json.dumps(contract, ensure_ascii=False))

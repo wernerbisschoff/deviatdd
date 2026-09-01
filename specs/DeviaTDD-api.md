@@ -686,7 +686,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Resolves the task context from `tasks.jsonl`, emits JSON contract with
-  `task_id`, `test_command`, `lint_command`, and `spec_dir`.
+  `task_id`, `test_command`, `lint_command`, `spec_dir`, and `task_entry` (this task's
+  `tasks.md` card via `_task_card_text`, mirroring `green_pre` — it carries persisted
+  `**Judge Feedback**` bullets so the manual RED agent receives correction history that
+  manual mode cannot inject as `<train_feedback>`).
 
 #### `deviate red post [--task-id <id>]`
 
@@ -1020,7 +1023,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
       `CommitFailedError(recovery_ref=None, reason=commit_failed_plumbing)`
       with the plumbing stderr in `output` so the operator sees the
       underlying cause instead of a misleading hook-blocked banner.
-  When session feedback is unavailable, auto GREEN reads the matching task's persisted `**Judge Feedback**` bullets from `tasks.md` as `<persisted_judge_feedback>`. Session `train_feedback` remains authoritative when present, preventing duplicate or stale feedback; the reader is scoped to the exact task block. `_append_judge_feedback` locates that block with `_TASK_BULLET_HEAD_RE` exact-id match (same regex as `_read_judge_feedback_from_tasks_md`) and inserts the bullet under the rejected card only — it does not walk past a later `##` / `###` phase heading onto the next task (GH-102).
+  When session feedback is unavailable, auto GREEN and auto RED read the matching task's persisted `**Judge Feedback**` bullets from `tasks.md` as `<persisted_judge_feedback>` (`_run_red_phase` applies the same fallback as `_run_green_phase`; the RED prompt's `<step id="feedback_ingestion">` documents the same precedence — session `train_feedback` wins, persisted bullets are stale history). Session `train_feedback` remains authoritative when present, preventing duplicate or stale feedback; the reader is scoped to the exact task block. `_append_judge_feedback` locates that block with `_TASK_BULLET_HEAD_RE` exact-id match (same regex as `_read_judge_feedback_from_tasks_md`) and inserts the bullet under the rejected card only — it does not walk past a later `##` / `###` phase heading onto the next task (GH-102).
     GREEN. After 3 attempts the task is marked `FAILED` and the pipeline halts
     with `PhaseFailedError`. The feedback source precedence is `train_feedback`
     on the manifest → `_extract_judge_feedback(...)` from `tasks.md` → verbatim

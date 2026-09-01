@@ -64,6 +64,24 @@ history and must be ignored.
 {train_feedback}
 </train_feedback>
 
+<step id="feedback_ingestion">
+1. If the ``<train_feedback>`` block above is non-empty, treat it as the
+   **authoritative, current** instruction from the orchestrator. Re-author
+   against it directly — it reflects the live retry signal.
+2. If ``<train_feedback>`` is empty and the prompt contains a
+   ``<persisted_judge_feedback>`` block, treat that as the source of truth.
+   Each ``**Judge Feedback**`` bullet inside is a verbatim correction
+   persisted under this task in ``tasks.md`` by a previous JUDGE run;
+   resolve every bullet before declaring RED done.
+3. If both are present, ``<train_feedback>`` wins — the persisted block is
+   stale history and must be ignored (the orchestrator only ever surfaces
+   one at a time).
+4. Treat injected feedback (either source) as a mandatory correction list.
+   Each item must change the test design or receive an explicit, test-based
+   justification in the RED rationale. Do not silently keep an assertion
+   that the feedback rejects.
+</step>
+
 <spec_content>
 The `<authoritative_acceptance_contract source="plan.md">` block is authoritative. The `<macro_issue_intent>` block supplies scope and lineage only; ignore any legacy Gherkin it may contain.
 {spec_content}

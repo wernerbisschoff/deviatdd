@@ -6,9 +6,12 @@ from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
+from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.cli.micro import _run_red_phase
+from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 
@@ -45,6 +48,53 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
 
 
 class TestRedPre:
+    def test_red_pre_contract_includes_task_entry(self, tmp_path: Path):
+        """RED's pre contract carries the tasks.md card so the manual RED
+        agent sees Judge Feedback history without placeholder wiring."""
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id="TSK-004-01",
+                issue_id="ISS-001-004",
+                description="RED test task",
+                status="PENDING",
+            )
+            ledger_path = Path("specs") / "004-micro-layer" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+
+            issue_dir = Path("specs") / "001" / "004-micro-layer"
+            issue_dir.mkdir(parents=True)
+            (issue_dir / "tasks.md").write_text(
+                "# Tasks\n\n"
+                "- TSK-004-01: RED test task\n"
+                "  - **Judge Feedback**: cover the downgrade path\n"
+                "  - **Mode**: TDD\n",
+                encoding="utf-8",
+            )
+            (Path("specs") / "issues.jsonl").write_text(
+                json.dumps(
+                    {
+                        "issue_id": "ISS-001-004",
+                        "source_file": "specs/001/issues/004-micro-layer.md",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = runner.invoke(cli, ["red", "pre", "--task", "TSK-004-01"])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            data = json.loads(result.output)
+            assert "Judge Feedback" in data["task_entry"]
+            assert "downgrade path" in data["task_entry"]
+
     def test_red_pre_emits_contract(self, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
@@ -294,3 +344,124 @@ class TestRedPostTaskId:
                 check=True,
             ).stdout.strip()
             assert head_after == head_before
+
+
+def _write_red_feedback_specs(root: Path) -> tuple[dict, Path]:
+    issue_id = "ISS-ADH-043"
+    source_file = "specs/adhoc/issues/043-auto-red-feedback.md"
+    issue_path = root / source_file
+    issue_path.parent.mkdir(parents=True, exist_ok=True)
+    issue_path.write_text("# Auto RED feedback regression\n", encoding="utf-8")
+    (root / "specs" / "issues.jsonl").write_text(
+        json.dumps({"issue_id": issue_id, "source_file": source_file}) + "\n",
+        encoding="utf-8",
+    )
+    task_dir = root / "specs" / "adhoc" / "043-auto-red-feedback"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "tasks.md").write_text(
+        "# Implementation Tasks: `feat/adhoc/043-auto-red-feedback`\n\n"
+        "## Phase 1: Auto RED feedback\n\n"
+        "- TSK-043-01: Consume persisted Judge feedback in RED\n"
+        "  - **Judge Feedback**: forbid offline SQL rendering in the RED test\n"
+        "  - **Mode**: TDD\n",
+        encoding="utf-8",
+    )
+    record = _make_task_record(
+        task_id="TSK-043-01",
+        issue_id=issue_id,
+        description="Consume persisted Judge feedback in RED",
+        status="PENDING",
+    )
+    ledger_path = task_dir / "tasks.jsonl"
+    _write_ledger(ledger_path, record)
+    return json.loads(record.model_dump_json()), ledger_path
+
+
+def _capture_red_prompt(
+    root: Path,
+    task: dict,
+    ledger_path: Path,
+    *,
+    session_feedback: str = "",
+) -> str:
+    session = SessionState(current_phase="IDLE", train_feedback=session_feedback)
+    session_path = root / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session.save(session_path)
+    captured_prompts: list[str] = []
+
+    def capture_agent_prompt(prompt: str, *args, **kwargs):
+        captured_prompts.append(prompt)
+        return (
+            HandoverManifest(phase="RED", status="SUCCESS", task_id=task["id"]),
+            "",
+        )
+
+    failure = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+    with (
+        chdir(root),
+        patch("deviate.cli.micro._phase_already_done", return_value=False),
+        patch("deviate.cli.micro._log_run"),
+        patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        patch("deviate.cli.micro._invoke_agent", side_effect=capture_agent_prompt),
+        patch("deviate.cli.micro._run_test_cmd", return_value=failure),
+        patch("deviate.cli.micro._run_format_cmd", return_value=failure),
+        patch("deviate.cli.micro.append_task_transition"),
+        patch("deviate.cli.micro._commit_phase", return_value=True),
+        patch("deviate.cli.micro._verify_clean_worktree"),
+    ):
+        _run_red_phase(task, ledger_path, session, session_path, Console(quiet=True))
+
+    return captured_prompts[0]
+
+
+class TestAutoRedPersistedFeedback:
+    def test_auto_red_reads_persisted_feedback_without_session_feedback(
+        self, tmp_path: Path
+    ):
+        task, ledger_path = _write_red_feedback_specs(tmp_path)
+
+        prompt = _capture_red_prompt(tmp_path, task, ledger_path)
+
+        expected_line = (
+            "- **Judge Feedback**: forbid offline SQL rendering in the RED test"
+        )
+        assert "<persisted_judge_feedback>" in prompt
+        persisted_block = prompt.rsplit("<persisted_judge_feedback>", 1)[1].split(
+            "</persisted_judge_feedback>", 1
+        )[0]
+        assert expected_line in persisted_block
+        # Card carries the history too, and nothing duplicates it a third time.
+        # (Count-based: <task_content> also appears in template prose, so block
+        # extraction by tag is ambiguous in the composed RED prompt.)
+        assert prompt.count(expected_line) == 2
+
+    def test_auto_red_prefers_session_feedback_without_persisted_duplicate(
+        self, tmp_path: Path
+    ):
+        session_feedback = "Use the Judge-required transaction boundary."
+        stale_persisted_feedback = "STALE PERSISTED FEEDBACK MUST NOT LEAK"
+        task, ledger_path = _write_red_feedback_specs(tmp_path)
+        tasks_md = ledger_path.parent / "tasks.md"
+        tasks_md.write_text(
+            tasks_md.read_text(encoding="utf-8").replace(
+                "forbid offline SQL rendering in the RED test",
+                stale_persisted_feedback,
+            ),
+            encoding="utf-8",
+        )
+
+        prompt = _capture_red_prompt(
+            tmp_path, task, ledger_path, session_feedback=session_feedback
+        )
+
+        # RED's template embeds the feedback inside its own <train_feedback>
+        # block (with retry prose), unlike GREEN's wrapped placeholder.
+        assert session_feedback in prompt
+        # Same discriminator GREEN pins: the injected block, not the bare tag
+        # name (which also appears in the feedback_ingestion instructions).
+        assert "<persisted_judge_feedback>\n- **Judge Feedback**:" not in prompt
+        # The card keeps its history bullet; with no persisted block injected
+        # it must appear exactly once.
+        assert prompt.count(stale_persisted_feedback) == 1
