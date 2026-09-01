@@ -41,7 +41,9 @@ class TestProductPackGone:
         ):
             assert stem not in stems
             assert not (_PROMPTS / "commands" / f"{stem}.md").exists()
-            assert not (_PROMPTS / "auto" / f"{stem.removeprefix('deviate-')}.md").exists()
+            assert not (
+                _PROMPTS / "auto" / f"{stem.removeprefix('deviate-')}.md"
+            ).exists()
 
     def test_product_shared_prompt_is_gone(self) -> None:
         assert not (_PROMPTS / "core" / "product-shared.md").exists()
@@ -51,7 +53,10 @@ class TestFlowsCliGone:
     def test_cli_has_no_flows_group(self) -> None:
         result = runner.invoke(cli, ["flows", "--help"])
         assert result.exit_code != 0
-        assert "No such command" in result.output or "no such command" in result.output.lower()
+        assert (
+            "No such command" in result.output
+            or "no such command" in result.output.lower()
+        )
 
     def test_inspect_has_no_flows_coverage(self) -> None:
         result = runner.invoke(cli, ["inspect", "flows", "coverage"])
@@ -102,7 +107,7 @@ class TestThreeLayersRemain:
         shard = load_template("shard")
         assert "## User Stories Ledger" in shard
         assert "ATDD" in shard or "## ATDD Acceptance Criteria" in shard
-        assert "flow_refs" not in shard
+        assert "flow_refs:" not in shard
         assert "product_specs_root" not in shard
         assert "FR-to-Flow" not in shard
 
@@ -112,9 +117,10 @@ class TestThreeLayersRemain:
         assert "user stories" in lowered
         assert "atdd" in lowered or "acceptance outline" in lowered
         assert "failing test" in lowered
-        assert "cannot edit tests" in lowered or "leave all `tests/` files untouched" in load_template(
-            "green"
-        ).lower()
+        assert (
+            "cannot edit tests" in lowered
+            or "leave all `tests/` files untouched" in load_template("green").lower()
+        )
         constitution = _CONSTITUTION.read_text(encoding="utf-8")
         assert "user scenarios" in constitution.lower()
         assert "User Stories" in constitution

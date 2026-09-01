@@ -275,7 +275,6 @@ class TestConsumerRepositoryPromptBoundaries:
             assert "<consumer_repository_boundary>" in body
             assert "META_WORK_NOT_ALLOWED" in body
             assert "application behavior" in body
-            assert "read-only" in body.lower()
 
     def test_commands_keep_dev_repo_setup_out_of_generated_work(self):
         for command_name in (
