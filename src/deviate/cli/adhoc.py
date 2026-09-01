@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,9 +14,6 @@ from deviate.core.convention import commit_scope, format_commit_message
 from deviate.state.ledger import AdhocRecord
 
 adhoc_app = typer.Typer(no_args_is_help=True)
-
-_FLOW_REF_PATTERN = re.compile(r"^FLOW-\d{2,}$")
-_FLOW_REF_FORMAT_HINT = "expected format: FLOW-XX with at least two digits"
 
 
 def _adhoc_ledger_path() -> Path:
@@ -54,19 +50,6 @@ def _emit_contract(status: str, **fields: object) -> None:
     print(json.dumps(contract, indent=2))
 
 
-def _parse_flow_refs(raw: str | None) -> list[str]:
-    if raw is None:
-        return []
-    tokens = [token.strip() for token in raw.split(",") if token.strip()]
-    for token in tokens:
-        if not _FLOW_REF_PATTERN.match(token):
-            _exit_with_error(
-                f"INVALID_FLOW_REF {token!r} is not a valid flow ID "
-                f"({_FLOW_REF_FORMAT_HINT})"
-            )
-    return tokens
-
-
 @adhoc_app.command()
 def pre(
     description: str = typer.Argument(..., help="Task description to classify"),
@@ -75,14 +58,8 @@ def pre(
         "--skip-gates",
         help="Skip complexity gate rejection for HIGH complexity tasks",
     ),
-    flow_ref: str | None = typer.Option(
-        None,
-        "--flow-ref",
-        help="Comma-separated FLOW-XX IDs (e.g. FLOW-01,FLOW-02)",
-    ),
 ) -> None:
     """Classify an ad-hoc task description and record it for execution."""
-    flow_refs = _parse_flow_refs(flow_ref)
     result: ClassificationResult = ComplexityGate.classify(description)
 
     if result.level == "HIGH" and not skip_gates:
@@ -96,7 +73,6 @@ def pre(
         description=description,
         execution_mode=result.execution_mode,
         status="PENDING",
-        flow_refs=flow_refs,
     )
 
     ledger_path = _adhoc_ledger_path()
@@ -112,7 +88,6 @@ def pre(
         execution_mode=result.execution_mode,
         description=description,
         issue_id=record.issue_id,
-        flow_refs=flow_refs,
     )
 
 

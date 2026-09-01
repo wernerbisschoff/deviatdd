@@ -17,7 +17,6 @@ from deviate.state.config import (
 )
 from deviate.state.config import resolve_base_branch as resolve_base_branch  # noqa: F401
 from deviate.cli.macro import explore_app, macro_app, research_app, prd_app, shard_app  # noqa: F401
-from deviate.cli.flow_commands import flows_app as flows_app  # noqa: F401
 from deviate.cli.meso import (
     _LOCAL_CLAIM_HELP,
     _meso_run,
@@ -507,7 +506,7 @@ def _prompt_claim_remote(default: bool = False) -> bool | None:
 
 
 def _optional_pack_rows() -> tuple[str, ...]:
-    """One TTY checkbox row per optional pack (product first)."""
+    """One TTY checkbox row per optional pack."""
     return OPTIONAL_PACK_NAMES
 
 
@@ -1341,7 +1340,7 @@ def setup(
         "--packs",
         help=(
             "Optional packs on top of default macro+meso+micro "
-            "(product, merge, pr, review, walkthrough, html, hotfix, "
+            "(merge, pr, review, walkthrough, html, hotfix, "
             "triage, prune, e2e). 'none', 'all-optional', or "
             "comma-separated names. Unknown names fail closed. "
             "Omitted off-TTY = default layers only. Setup does not commit."
@@ -1449,7 +1448,6 @@ DEVIATE_GITATTRIBUTES_SEED = (
     "# See specs/constitution.md §1 Append-Only Ledger Protocol.\n"
     "specs/issues.jsonl merge=union\n"
     "specs/**/tasks.jsonl merge=union\n"
-    "specs/_product/flows.jsonl merge=union\n"
 )
 
 
@@ -1558,13 +1556,6 @@ cli.add_typer(
     rich_help_panel=_OPTIONAL_PANEL,
     help="Inspect issue and task ledgers",
 )
-cli.add_typer(
-    flows_app,
-    name="flows",
-    rich_help_panel=_USER_PANEL,
-    help="Flow ledger commands (sync the canonical flow index into flows.jsonl)",
-)
-
 # Top-level macro-phase Typer groups (agent-internal).
 cli.add_typer(
     explore_app,
@@ -1707,7 +1698,7 @@ cli.add_typer(
     html_app,
     name="html",
     rich_help_panel=_AGENT_PANEL,
-    help="Write per-phase HTML starter scaffolds (plan, prd, flows, architecture, domain-model). Agent-internal — invoked from the /deviate-html slash command, not by hand.",
+    help="Write per-phase HTML starter scaffolds (plan, prd). Agent-internal — invoked from the /deviate-html slash command, not by hand.",
 )
 
 

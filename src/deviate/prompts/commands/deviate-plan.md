@@ -28,9 +28,8 @@ for the PLAN instructions.
 <consumer_repository_boundary>
 The plan is for application implementation in a consumer repository. The
 plan covers only the requested application behavior and the application
-files required to deliver it. Existing flow files and `flow_refs` provide
-read-only user-flow context. Do not add DeviaTDD setup, agent skills, slash
-commands, flow authoring/index synchronization, release scaffolding, or
+files required to deliver it. Do not add DeviaTDD setup, agent skills, slash
+commands, catalog authoring, release scaffolding, or
 workflow-ledger maintenance to any plan section. If any issue scope is meta
 work, halt with `META_WORK_NOT_ALLOWED`.
 </consumer_repository_boundary>

@@ -264,8 +264,6 @@ def is_protected_spec(path: Path, root: Path) -> bool:
         return True
     if rel == "specs/issues.jsonl" or rel.endswith("/tasks.jsonl"):
         return True
-    if rel == "specs/_product/flows.jsonl" or rel.startswith("specs/_product/"):
-        return True
     if path.name in PROTECTED_BASENAMES:
         return True
     if "/issues/" in rel and rel.endswith(".md"):
@@ -274,15 +272,12 @@ def is_protected_spec(path: Path, root: Path) -> bool:
 
 
 def ledger_paths(root: Path) -> list[Path]:
-    """Return existing append-only JSONL ledgers. Missing flows.jsonl is skipped."""
+    """Return existing append-only JSONL ledgers."""
     found: list[Path] = []
     issues = root / "specs" / "issues.jsonl"
     if issues.is_file():
         found.append(issues)
     found.extend(sorted(root.glob("specs/**/tasks.jsonl")))
-    flows = root / "specs" / "_product" / "flows.jsonl"
-    if flows.is_file():
-        found.append(flows)
     return found
 
 

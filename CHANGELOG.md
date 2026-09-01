@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Product layer is gone.** `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, the optional `product` pack, `deviate flows sync`, `deviate inspect flows coverage`, `specs/_product/`, `flow_refs`, and the flow ledger API (`FlowRecord`, `seed_flow_ledger`, …) are deleted — not optional, not tombstoned. Three layers remain: Macro, Meso, Micro. Shard still writes User Stories + ATDD on the issue; RED encodes those scenarios as failing tests. GREEN still cannot edit tests. Historical `issues.jsonl` rows that carry `flow_refs` still parse (the field is ignored). Constitution 0.10.0 records the removal; 0.6.0 / 0.7.0 stay as history.
+
 ### Added
 
 - **Scripted TDD-cycle driver replays wild JUDGE/GREEN/RED handovers on both auto and manual paths.** `tests/helpers/cycle_driver.py` seeds a tmp repo + PENDING task + `session.json`, then runs an ordered list of `{phase, handover YAML, files}` steps. Auto patches only `_invoke_agent` so `_run_*_phase` and `_apply_judge_verdict` stay real; manual invokes `deviate <phase> pre` → scripted files → `deviate <phase> post`. Fixtures cover the happy COMPLIANCE_PASS cycle, GH-158 pass+`REFACTOR NOTE` (+ leftover `revert_red` / `revert_to_red`), and GH-148 stale `skip_refactor` on a second PENDING task. Cycle regressions go in those fixtures, not new coerce branches only. No live LLM. Existing GH-158/148 unit tests stay.

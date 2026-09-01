@@ -11,7 +11,7 @@ This phase runs inside a dedicated git worktree for a single issue. The lifecycl
 
 <item>
 <title>Issue Intent and Plan Contract Loading</title>
-Read macro intent from the issue at `spec_path`: stories, AO outlines, scope, edge cases, performance, topology, and flow refs. Plan reads these inputs and authors the Gherkin `## Acceptance Contract`; Tasks treats that plan contract as authoritative and never falls back to issue/spec Gherkin.
+Read macro intent from the issue at `spec_path`: user stories, AO/ATDD outlines, scope, edge cases, performance, and topology. Plan reads these inputs and authors the Gherkin `## Acceptance Contract`; Tasks treats that plan contract as authoritative and never falls back to issue/spec Gherkin.
 </item>
 
 <item>
@@ -35,8 +35,8 @@ Use only local, deterministic operations. The codebase-index tools (`codebase_pe
 </item>
 
 <item>
-<title>Flow Reference Propagation</title>
-Meso phases propagate references to existing user-visible flows; they do not author or synchronize the flow catalog. The `flow_refs` field on the parent issue's YAML frontmatter is the authoritative source — once shard emits it, every subsequent artifact MUST carry it forward verbatim. **plan** MUST extract `flow_refs` from the issue at `spec_path` and emit a `## Product Layer Anchors` section in `plan.md` containing traceability fields only. **tasks** MUST copy those references onto every emitted task. `Workstation Mapping`, `Implementation Strategy`, and task `Files` list only application files required by the issue; they never include DeviaTDD setup, agent skills, flow files/indexes, release scaffolding, or workflow ledgers.
+<title>Application-Only Workstations</title>
+Meso phases plan and decompose the issue's user stories and ATDD. `Workstation Mapping`, `Implementation Strategy`, and task `Files` list only application files required by the issue; they never include DeviaTDD setup, agent skills, catalog files, release scaffolding, or workflow ledgers.
 </item>
 
 </shared_disciplines>

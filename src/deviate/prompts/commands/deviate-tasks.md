@@ -28,9 +28,8 @@ format.
 
 <consumer_repository_boundary>
 Every task must implement or verify the requested application behavior and
-cite its issue story plus `AC-PLAN-NNN`. Existing flow files and `flow_refs`
-provide read-only user-flow context. Do not emit tasks for DeviaTDD setup,
-agent skills or slash commands, flow authoring/index synchronization, release
+cite its issue story plus `AC-PLAN-NNN`. Do not emit tasks for DeviaTDD setup,
+agent skills or slash commands, catalog authoring, release
 scaffolding, or workflow-ledger maintenance. Any meta-target task halts with
 `META_WORK_NOT_ALLOWED`.
 </consumer_repository_boundary>

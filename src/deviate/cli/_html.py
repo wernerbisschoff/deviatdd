@@ -6,17 +6,14 @@ phase section. The agent running the phase reads the corresponding
 ``.md`` file and fills the body in itself — that is the whole point of
 moving HTML authorship out of the auto-renderer.
 
-Phases supported: ``architecture``, ``prd``, ``plan``, ``flows``,
-``domain-model``. ``deviate html all`` emits the scaffold for every
-phase whose ``.html`` sibling is missing.
+Phases supported: ``prd``, ``plan``. ``deviate html all`` emits the
+scaffold for every phase whose ``.html`` sibling is missing.
 
 Usage examples::
 
-    deviate html architecture
     deviate html prd
     deviate html plan                # autodetect issue from current git branch
     deviate html plan --issue 002-001
-    deviate html flows --force       # overwrite existing HTML
     deviate html all
 """
 
@@ -108,15 +105,6 @@ def _resolve_plan_md(issue_id: str | None) -> Path:
     return plan_md
 
 
-def _resolve_product_md(filename: str) -> Path:
-    """Resolve a product-layer markdown file under ``specs/_product/``."""
-    md = _specs_root() / "_product" / filename
-    if not md.exists():
-        console.print(f"[red]HTML_NO_SOURCE[/] {md} — write the markdown first")
-        raise typer.Exit(code=1)
-    return md
-
-
 def _resolve_prd_md(bucket: str | None = None) -> Path:
     """Resolve the ``prd.md`` for the PRD epic, honoring ``--bucket``.
 
@@ -131,9 +119,8 @@ def _resolve_prd_md(bucket: str | None = None) -> Path:
         return prd_md
     # Only numbered epic dirs (e.g. ``001-deviate-cli-python``) own a
     # ``prd.md``. Other top-level dirs under ``specs/`` carry unrelated
-    # artifacts (``adhoc/`` is the shared adhoc ledger,
-    # ``_product/`` is the product layer, ``explore/`` is the
-    # pre-numbered discovery scratchpad).
+    # artifacts (``adhoc/`` is the shared adhoc ledger, ``explore/`` is
+    # the pre-numbered discovery scratchpad).
     candidates = sorted(
         p for p in specs_root.glob("*/prd.md") if p.parent.name[:3].isdigit()
     )
@@ -159,14 +146,6 @@ def _write_html(md_path: Path, phase: str, *, force: bool) -> Path:
     html_path.write_text(render_starter(phase, md_path), encoding="utf-8")
     console.print(f"[green]WROTE[/] {html_path}")
     return html_path
-
-
-@html_app.command("architecture")
-def html_architecture(
-    force: Annotated[bool, typer.Option(help="Overwrite existing HTML")] = False,
-) -> None:
-    """Write ``specs/_product/architecture.html`` starter scaffold."""
-    _write_html(_resolve_product_md("architecture.md"), "architecture", force=force)
 
 
 @html_app.command("prd")
@@ -201,26 +180,6 @@ def html_plan(
     _write_html(_resolve_plan_md(issue_id), "plan", force=force)
 
 
-@html_app.command("flows")
-def html_flows(
-    force: Annotated[bool, typer.Option(help="Overwrite existing HTML")] = False,
-) -> None:
-    """Write ``specs/_product/flows/index.html`` starter scaffold."""
-    flows_md = _specs_root() / "_product" / "flows" / "index.md"
-    if not flows_md.exists():
-        console.print(f"[red]HTML_NO_SOURCE[/] {flows_md} — write the index first")
-        raise typer.Exit(code=1)
-    _write_html(flows_md, "flows", force=force)
-
-
-@html_app.command("domain-model")
-def html_domain_model(
-    force: Annotated[bool, typer.Option(help="Overwrite existing HTML")] = False,
-) -> None:
-    """Write ``specs/_product/domain-model.html`` starter scaffold."""
-    _write_html(_resolve_product_md("domain-model.md"), "domain-model", force=force)
-
-
 @html_app.command("all")
 def html_all(
     force: Annotated[bool, typer.Option(help="Overwrite existing HTML")] = False,
@@ -241,13 +200,7 @@ def html_all(
         console.print(f"[green]WROTE[/] {html}")
 
     specs_root = _specs_root()
-    product = specs_root / "_product"
-    _try_write(product / "architecture.md", "architecture")
-    _try_write(product / "domain-model.md", "domain-model")
-    _try_write(product / "flows" / "index.md", "flows")
     for prd_md in sorted(specs_root.glob("*/prd.md")):
-        if prd_md.parent.name == "_product":
-            continue
         _try_write(prd_md, "prd")
     plan_md = None
     try:

@@ -20,7 +20,7 @@ from pathlib import Path
 
 # Phase identifiers accepted by ``deviate html <phase>``. Each maps to
 # one template file in this package.
-_PHASES: tuple[str, ...] = ("architecture", "prd", "plan", "flows", "domain-model")
+_PHASES: tuple[str, ...] = ("prd", "plan")
 
 _TEMPLATE_SUFFIX = ".html.tmpl"
 
@@ -34,8 +34,8 @@ _TEMPLATE_SUFFIX = ".html.tmpl"
 _CSS: str = """\
 /* =====================================================================
    DeviaTDD spec stylesheet — "Mission Console"
-   Goal: a low-distraction, dark-first reading surface for PRD / plan /
-   flows / architecture / domain-model artifacts. ADHD-friendly: sticky
+   Goal: a low-distraction, dark-first reading surface for PRD / plan
+   artifacts. ADHD-friendly: sticky
    numbered TOC, progress affordances, mission-stamp tokens, generous
    line-height, no external dependencies.
 
@@ -1226,11 +1226,8 @@ def is_supported_phase(phase: str) -> bool:
 def _phase_title(phase: str) -> str:
     """Human-readable title for the ``<h1>`` in the starter scaffold."""
     return {
-        "architecture": "Architecture",
         "prd": "Product Requirements",
         "plan": "Implementation Plan",
-        "flows": "Flow Catalog",
-        "domain-model": "Domain Model",
     }[phase]
 
 
