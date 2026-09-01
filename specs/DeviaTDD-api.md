@@ -1026,19 +1026,26 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     on the manifest → `_extract_judge_feedback(...)` from `tasks.md` → verbatim
     verdict / rationale.
   * **JUDGE `next_action` routing:** After the TDD mechanical evidence gate accepts a forward PASS, the runner honors `HandoverManifest.next_action`
-    verbatim. See the **JUDGE `next_action` Routing Table** in this document for
-    the five supported values (`revert_red`, `revert_green`,
-    `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`), the
-    rollback anchors and boundary-advance rules per route, and the runner
-    fallbacks when the field is absent (default: `revert_green` on violation,
-    legacy behavior on pass). After GREEN PASS (empty `session.failure_kind`),
+    for the five supported values (`revert_red`, `revert_green`,
+    `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`). See the
+    **JUDGE `next_action` Routing Table** in this document for rollback anchors
+    and boundary-advance rules per route, and the runner fallbacks when the
+    field is absent (default: `revert_green` on violation). A clean
+    `COMPLIANCE_PASS` (no compliance / Test Integrity failure) ignores revert
+    `next_action` values, including the legacy `revert_to_red` alias — a
+    `REFACTOR NOTE:` in `train_feedback` is advice for REFACTOR, not a reject
+    (GH-158). Omitted / ignored-revert pass actions default to
+    `continue_refactor`, or `skip_refactor` when `--no-refactor`. The note is
+    injected into the REFACTOR `{train_feedback}` placeholder; it is not sent
+    as GREEN/RED train feedback. After GREEN PASS (empty `session.failure_kind`),
     a `COMPLIANCE_VIOLATION` with structured Test Integrity
     (`violations[].category` matching Test Integrity / `Test Integrity Violation`,
     and/or `evaluation.test_integrity: FAIL`) is coerced to `revert_red`
     even when `next_action` is omitted or `revert_green`. An honest-test
     implementation/scope gap (`test_integrity: PASS`, Spec Non-Compliance)
     stays `revert_green`. Mechanical overlay is not coerced by Test Integrity.
-    The runner does not parse `train_feedback` for routing. EXECUTE and
+    The runner does not parse `train_feedback` for routing (only to extract a
+    pass-path `REFACTOR NOTE:` for REFACTOR). EXECUTE and
     IMMEDIATE judge paths stay ungated.
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
@@ -1740,7 +1747,7 @@ the action. EXECUTE `_run_execute_phase` and IMMEDIATE judge stay ungated.
 |---|---|---|
 | `revert_red` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). Clear `session.red_commit_sha` so RED re-anchors. Escalate now: reset `green_attempts` to 0, increment `red_attempts`, persist both on `.deviate/session.json`, and dispatch a retry RED with a short `previous cycle failed because …` note in `train_feedback` (not the raw GREEN dump). Before persist, the runner strips discarded-commit `path:line` citations from JUDGE feedback (GH-103); rollback SHA selection is unchanged. The next `INVOKE_AGENT` is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. It never invokes GREEN while `session.red_commit_sha` is empty. `TRAIN_EXHAUSTED` prints after three RED escalates. Used when the test itself is wrong. |
 | `revert_green` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit only when the pre-call SHA is already a RED-phase failing-test commit. Transition to GREEN with feedback in `train_feedback` after stripping discarded-commit `path:line` citations (GH-103). The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. Empty `session.red_commit_sha` is fatal: raise `PhaseFailedError` carrying `ROLLBACK_BOUNDARY_MISSING`. Do not print `ROLLBACK_FAILED`, do not stamp a docs-feedback SHA, and do not train GREEN. |
-| `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. |
+| `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. A clean `COMPLIANCE_PASS` that omitted `next_action` or emitted a revert (`revert_red` / `revert_green` / legacy `revert_to_red`) is coerced to this route (or `skip_refactor` when `--no-refactor`). A `REFACTOR NOTE:` in `train_feedback` is kept as REFACTOR-phase `{train_feedback}` and is not a `JUDGE_REJECTED` (GH-158). |
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. A later `_append_status_transition(..., "COMPLETED")` is a no-op when the ledger already has COMPLETED for this task (GH-146); the COMPLETED evidence gate runs only on the first write. |
 | `proceed_to_refactor_no_diff` | `COMPLIANCE_PASS` (or any) | Forward route for the empty-diff sign-off case. Set `pending_judge_action="proceed_to_refactor_no_diff"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. REFACTOR's commit + COMPLETED transition is the only way to terminate a slice whose git diff is empty (RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose production-code scope is intrinsically nil). Distinct from `continue_refactor` (signals a substantive refactor pass on a non-empty diff). |
 
