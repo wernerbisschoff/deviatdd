@@ -3733,6 +3733,7 @@ def _apply_judge_verdict(
         return session
     if action == "continue_refactor":
         session.pending_judge_action = "continue_refactor"
+        _bind_judge_forward_route(session, tid)
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
@@ -3756,6 +3757,7 @@ def _apply_judge_verdict(
         # pending_judge_action so the runner + logs differentiate a
         # substantive refactor pass from a no-op green sign-off.
         session.pending_judge_action = "proceed_to_refactor_no_diff"
+        _bind_judge_forward_route(session, tid)
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
@@ -3773,6 +3775,7 @@ def _apply_judge_verdict(
 
     if action == "skip_refactor":
         session.pending_judge_action = "skip_refactor"
+        _bind_judge_forward_route(session, tid)
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
@@ -4020,20 +4023,81 @@ def _has_red_commit_boundary(session: SessionState) -> bool:
     return bool(session.red_commit_sha.strip())
 
 
+def _bind_judge_forward_route(session: SessionState, task_id: str) -> None:
+    """Record which task + RED SHA a JUDGE forward route belongs to."""
+    session.judge_task_id = task_id
+    session.judge_red_commit_sha = session.red_commit_sha
+
+
+def _clear_stale_forward_route(session: SessionState) -> None:
+    """Drop a forward route that does not belong to the active task/SHA."""
+    session.pending_judge_action = ""
+    session.last_judge_verdict = ""
+    session.validated_evidence = []
+    session.train_feedback = ""
+    session.judge_task_id = ""
+    session.judge_red_commit_sha = ""
+
+
+def _forward_route_is_stale(session: SessionState, task_id: str) -> bool:
+    """True when a persisted forward route is from another task or RED SHA.
+
+    A pre-fix ``session.json`` has no ``judge_task_id`` /
+    ``judge_red_commit_sha``. That unbound leftover is stale once a RED
+    SHA exists (the GH-148 poison). An unbound ``skip_refactor`` with
+    an empty SHA is the no_failing_test handoff and stays valid.
+    """
+    pending = session.pending_judge_action
+    if pending not in _NO_FAILING_TEST_FORWARD_ROUTES:
+        return False
+    if session.judge_task_id and session.judge_task_id != task_id:
+        return True
+    if (
+        session.judge_red_commit_sha
+        and session.judge_red_commit_sha != session.red_commit_sha
+    ):
+        return True
+    if not session.judge_task_id and not session.judge_red_commit_sha:
+        return _has_red_commit_boundary(session)
+    return False
+
+
+def _invalidate_stale_forward_route(session: SessionState, task_id: str) -> bool:
+    """Clear a cross-task / cross-SHA forward route. Return True when cleared."""
+    if not _forward_route_is_stale(session, task_id):
+        return False
+    _log_run(
+        "PHASE_DECISION",
+        task_id=task_id,
+        phase="CYCLE",
+        decision="invalidate_stale_forward_route",
+        pending=session.pending_judge_action,
+        judge_task_id=session.judge_task_id,
+        judge_red_commit_sha=session.judge_red_commit_sha,
+        red_commit_sha=session.red_commit_sha,
+    )
+    _clear_stale_forward_route(session)
+    return True
+
+
 def _tdd_pre_green_decision(
     session: SessionState,
+    task_id: str = "",
 ) -> Literal["escalate", "complete", "green"]:
     """Choose the next TDD step before GREEN.
 
-    Precedence is fixed: ``revert_red`` re-authors RED; forward JUDGE
-    routes complete without GREEN; a missing RED SHA re-dispatches RED
-    so a cleared retry gate cannot fall through to GREEN.
+    Precedence is fixed: ``revert_red`` re-authors RED; a this-task
+    forward JUDGE route completes without GREEN; a leftover forward
+    route from another task or RED SHA is cleared so GREEN/JUDGE run;
+    a missing RED SHA re-dispatches RED so a cleared retry gate cannot
+    fall through to GREEN.
     """
     pending = session.pending_judge_action
     if pending == "revert_red":
         return "escalate"
     if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
-        return "complete"
+        if not _invalidate_stale_forward_route(session, task_id):
+            return "complete"
     if not _has_red_commit_boundary(session):
         return "escalate"
     return "green"
@@ -4043,6 +4107,8 @@ def _clear_judge_retry_gate(session: SessionState) -> None:
     """Consume the one-shot JUDGE action so the next cycle cannot re-escalate."""
     session.pending_judge_action = ""
     session.judge_rejected = False
+    session.judge_task_id = ""
+    session.judge_red_commit_sha = ""
 
 
 def _consume_retry_gate_after_red(session: SessionState) -> None:
@@ -4067,6 +4133,9 @@ def _idle_after_tdd(
     session.train_feedback = ""
     session.judge_rejected = False
     session.validated_evidence = []
+    session.last_judge_verdict = ""
+    session.judge_task_id = ""
+    session.judge_red_commit_sha = ""
     _reset_tdd_retry_budget(session)
     session.save(session_path)
     return session
@@ -4278,6 +4347,8 @@ def _run_tdd_cycle(
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = SessionState.load(session_path)
+    if _invalidate_stale_forward_route(session, tid):
+        session.save(session_path)
 
     task_desc = task.get("description", "")
 
@@ -4393,7 +4464,7 @@ def _run_tdd_cycle(
         )
 
     while not judge_passed:
-        pre_green = _tdd_pre_green_decision(session)
+        pre_green = _tdd_pre_green_decision(session, tid)
         if pre_green == "escalate":
             session = _escalate("no_failing_test_adjudicated")
             continue

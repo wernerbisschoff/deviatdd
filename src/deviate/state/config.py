@@ -443,6 +443,11 @@ class SessionState(BaseModel):
     # Transient carrier for runner-validated JUDGE citations until the
     # COMPLETED ledger row is written. Not the proof store (GH-84).
     validated_evidence: list[dict] = Field(default_factory=list)
+    # Bind a JUDGE forward route to the task + RED SHA it was issued for
+    # (GH-148). Empty on pre-fix ``session.json`` files — an unbound
+    # ``skip_refactor`` leftover is stale once a RED SHA exists.
+    judge_task_id: str = ""
+    judge_red_commit_sha: str = ""
 
     @field_validator("current_phase")
     @classmethod
