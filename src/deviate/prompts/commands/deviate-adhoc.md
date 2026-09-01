@@ -1,6 +1,6 @@
 ---
 name: deviate-adhoc
-description: Emit a single ad-hoc vertical-slice issue from a natural-language task with lightweight discovery, shared PRD tracking, and flow_refs.
+description: Emit a single ad-hoc vertical-slice issue from a natural-language task with lightweight discovery, shared PRD tracking, and User Stories + ATDD.
 category: deviatdd-macro-layer
 version: 1.0.0
 aliases:
@@ -25,13 +25,13 @@ CRITICAL INSTRUCTION INVARIANTS:
 8. **Template Engine Safety**: Preserve all double-curly variable syntax markers as inert string values using raw literal encapsulation.
 9. **Local Issue Registry Invariant**: After generating the issue, register it in `specs/issues.jsonl` via the issues ledger script --type adhoc. The issue is NOT complete until it appears in the ledger.
 10. **Path Normalization**: Every file path, module reference, or test target written into the issue body must be strictly relative to the workspace root (e.g., `src/core/runner.py`). Absolute machine paths are forbidden.
-11. **Existing Flow Traceability**: Read the repository's existing `specs/_product/flows/` artifacts only to map the requested application behavior to user-visible `FLOW-XX` references. Use explicit `--flow-ref` values verbatim when supplied; otherwise infer only from existing flow definitions. `flow_refs` are metadata, not scope. Keep flow files and indexes unchanged and never turn a missing mapping into a flow-authoring issue.
+11. **User Scenarios on the Issue**: Every ad-hoc issue MUST encode the user-visible job as `## User Stories Ledger` (US-NNN-NN) plus ATDD on the issue (`## Acceptance Outline` with `AO-NNN` tokens). Those scenarios are the user-visible job. Do not invent a catalog. RED later encodes these same scenarios as failing tests.
 12. **Remote-Aware Adhoc Ordinal**: Choose `NNN` as `max(ordinals) + 1` over the current `specs/issues.jsonl`, the `origin/<base_branch>:specs/issues.jsonl` blob when it exists, and already-fetched remote refs `feat/adhoc/<NNN>-*` (`git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`). Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs. A local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. A local-ledger-only `max + 1` is insufficient.
 
 </system_instructions>
 
 <consumer_repository_boundary>
-The ad-hoc issue describes implementation of requested application behavior in a consumer repository. Assume the DeviaTDD CLI, agent skills, and existing Product-layer flow catalog are already available. Existing flows are read-only context for `flow_refs`; they are never issue work. Do not generate an issue for DeviaTDD setup, agent skills or slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance. Do not repeat those preconditions in the generated issue or ledger record. If the request is meta-only, halt with `META_WORK_NOT_ALLOWED` before writing files.
+The ad-hoc issue describes implementation of requested application behavior in a consumer repository. Assume the DeviaTDD CLI and agent skills are already available. User stories plus ATDD on the issue are the user-visible job. Do not generate an issue for DeviaTDD setup, agent skills or slash commands, catalog authoring, release scaffolding, or workflow-ledger maintenance. Do not repeat those preconditions in the generated issue or ledger record. If the request is meta-only, halt with `META_WORK_NOT_ALLOWED` before writing files.
 </consumer_repository_boundary>
 
 <execution_sequence>
@@ -54,12 +54,6 @@ The ad-hoc issue describes implementation of requested application behavior in a
    - Register relevant documentation sources via `libref add <source>` for detected frameworks and libraries (e.g., `libref add <git-repo-url> --name <lib> --path docs --tag <semver>`). Use `libref list` to check what is already available.
    - Output findings in a `## Discovery Audit` block
 
-3.5. **Existing Flow Mapping**: Map the application task to existing Product-layer flow IDs:
-   a. **Explicit override (highest precedence)**: If the user invoked with `--flow-ref FLOW-04,FLOW-05`, use that value verbatim and skip inference.
-   b. **Read-only context**: Read existing domain flow definitions when present and match the requested application behavior to their Trigger and Happy Path. Do not author, repair, synchronize, or index flows.
-   c. **Infer mapping**: Record only existing matching `FLOW-XX` IDs. If no match exists, use `flow_refs: []` and continue the application issue; do not propose a flow issue. Example mapping: a task that touches the streaming catalog and the existing FLOW-04 row says "Live-Stream Agent Progress via RPC" should pick up `FLOW-04`; a task unrelated to any cataloged flow uses `flow_refs: []`.
-   d. **Emit resolved list**: Record the final list under `## Discovery Audit` → `Flow Refs Resolved`.
-
 4. **Shared PRD Lifecycle**:
    a) Check if `specs/adhoc/prd.md` exists. If not, create it with a minimal header:
       ```
@@ -80,11 +74,11 @@ The ad-hoc issue describes implementation of requested application behavior in a
          2. AC-ADHOC-NNN-02 / AO-NNN: [Observable error or boundary outcome]
        ```
 
-5. **Issue File Generation**: Allocate `NNN` with the remote-aware rule, then write `specs/adhoc/issues/{NNN}-{slug}.md`. Next `NNN` is `max(ordinals) + 1` over (a) current-branch `specs/issues.jsonl`, (b) `origin/<base_branch>:specs/issues.jsonl` when that blob exists, (c) already-fetched `feat/adhoc/<NNN>-*` refs via `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`. Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs; a local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. The file must contain `## User Stories Ledger`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
+5. **Issue File Generation**: Allocate `NNN` with the remote-aware rule, then write `specs/adhoc/issues/{NNN}-{slug}.md`. Next `NNN` is `max(ordinals) + 1` over (a) current-branch `specs/issues.jsonl`, (b) `origin/<base_branch>:specs/issues.jsonl` when that blob exists, (c) already-fetched `feat/adhoc/<NNN>-*` refs via `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`. Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs; a local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. The file must contain `## User Stories Ledger`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order. Those User Stories + ATDD are the user-visible job; RED later encodes them as failing tests. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
 
 6. **Ledger Registration**: Append exactly ONE newline-delimited JSON record to `specs/issues.jsonl`. The record MUST use this exact `IssueRecord` schema — no extra fields, no alternate names:
 ```json
-{"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"ISO8601","created_at":"ISO8601","flow_refs":["FLOW-XX", "..."]}
+{"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"ISO8601","created_at":"ISO8601"}
 ```
 Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reuse the same `NNN` allocated in step 5. `ISS-ADH-NNN` and `ISS-NNN` share that ordinal. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
@@ -106,7 +100,6 @@ Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reu
 - **Existing Patterns**: [Relevant patterns, hooks, utilities, or conventions found in the codebase that this task should follow]
 - **Scope Boundary**: [Brief: what's in scope]
 - **Excluded**: [Brief: what's explicitly out of scope]
-- **Flow Refs Resolved**: `[FLOW-XX, ...]` — final mapping from step 3.5 (explicit `--flow-ref` override wins over inferred mapping). Empty list when no flows match or `specs/_product/` is missing.
 
 ## Requirements Synthesis
 - **FR-ADHOC-NNN**: [One-sentence functional requirement]
@@ -127,7 +120,6 @@ labels: [enhancement, adhoc, vertical-slice]
 blocked_by: []
 coordinates_with: []
 issue_id: ISS-NNN
-flow_refs: [FLOW-XX, ...]
 ---
 
 ## System Topology Mapping
@@ -184,7 +176,7 @@ flow_refs: [FLOW-XX, ...]
 ## Ledger Registration
 Appended to `specs/issues.jsonl`:
 ```json
-{"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"...","created_at":"...","flow_refs":["FLOW-XX", "..."]}
+{"issue_id":"ISS-NNN","type":"adhoc","title":"...","status":"BACKLOG","source_file":"specs/adhoc/issues/NNN-slug.md","blocked_by":[],"coordinates_with":[],"timestamp":"...","created_at":"..."}
 ```
 </output_format_schemas>
 
@@ -204,15 +196,7 @@ Appended to `specs/issues.jsonl`:
 <case condition="Issues ledger registration fails or tool is missing">
 <action>Emit the issue content to stdout and instruct the user to register manually. Do not lose the generated issue.</action>
 </case>
-<case condition="specs/_product/ directory missing">
-<action>Skip Product-layer flow mapping and emit `flow_refs: []` for the application issue. Note that no existing flow context was available; do not create Product-layer setup work.</action>
-</case>
-<case condition="User passed --flow-ref explicitly">
-<action>Use the explicit value verbatim in the issue frontmatter and ledger record (e.g., `--flow-ref FLOW-01,FLOW-03` → `flow_refs: [FLOW-01, FLOW-03]`). Skip the inference step in 3.5(b)–(c). Record `"Flow Refs Resolved: explicit override"` in the Discovery Audit.</action>
-</case>
-<case condition="Task description does not match any Product-layer flow">
-<action>Emit `flow_refs: []` for the application issue and continue. A missing flow match is not a request to author or synchronize a flow.</action>
-<case condition="The task requests DeviaTDD setup, agent skills, slash commands, flow authoring/index synchronization, release scaffolding, or workflow-ledger maintenance">
+<case condition="The task requests DeviaTDD setup, agent skills, slash commands, catalog authoring, release scaffolding, or workflow-ledger maintenance">
 <action>Halt with `META_WORK_NOT_ALLOWED`; do not write the issue, shared PRD entry, or ledger record.</action>
 </case>
 </edge_case_handling>
@@ -222,4 +206,3 @@ Appended to `specs/issues.jsonl`:
 $ARGUMENTS
 </user_input>
 </context>
-

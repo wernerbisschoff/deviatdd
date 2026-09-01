@@ -38,8 +38,8 @@ Cross-task drift **on this issue** is in scope (unique job vs per-task JUDGE).
 
 MUST NOT:
 - hunt Explore if the brief has no named checks — emit exactly `brief incomplete` and stop
-- treat leftover flows / research as the spec
-- read epic explore, leftover research, other plans, Product/flows, or constitution unless this brief names those paths
+- treat leftover research/docs as the spec
+- read epic explore, leftover research/docs, other plans, or constitution unless this brief names those paths
 - auto-apply CRITICAL or SUGGESTION unless `--apply` is set (and then CRITICAL only)
 - run `git add` or `git commit` unless `--apply` actually landed a CRITICAL fix
 - emit REQUEST_CHANGES or merge
@@ -99,7 +99,7 @@ deviate review pre
 
 If stdout is exactly `brief incomplete` (or the contract is missing named checks): emit exactly `brief incomplete` and stop. Do not hunt Explore.
 
-Parse `diff`, `issue_brief_path`, `plan_path`, `uncovered`, `apply`. Read the brief and, if present, this issue's plan AC-PLAN lines. Read the test hunks and production hunks. Do not read leftover research or flows unless the brief names those paths.
+Parse `diff`, `issue_brief_path`, `plan_path`, `uncovered`, `apply`. Read the brief and, if present, this issue's plan AC-PLAN lines. Read the test hunks and production hunks. Do not read leftover research/docs unless the brief names those paths.
 
 If `diff` is empty after a complete brief, emit `SKIP: no changes since {base_branch}` and exit.
 

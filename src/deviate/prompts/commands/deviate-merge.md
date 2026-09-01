@@ -65,7 +65,7 @@ Analyse:
 If the ledger entry exists, also read the issue record's `title` and `type` to inform commit message generation:
 ```bash
 jq -R 'fromjson?' specs/issues.jsonl 2>/dev/null \
-  | jq -s '[group_by(.issue_id) | map(last)[]] | .[] | select(.issue_id == "{ISSUE_ID}") | {title, type, source_file, flow_refs}'
+  | jq -s '[group_by(.issue_id) | map(last)[]] | .[] | select(.issue_id == "{ISSUE_ID}") | {title, type, source_file}'
 ```
 
 </step>
@@ -157,28 +157,15 @@ If the user chooses **Edit commit message**, collect the revised message and re-
 
 3. **Stage the ledger update** — writes a full IssueRecord to ``specs/issues.jsonl``
    and ``git add``-s it, but does NOT commit.  The ledger change will be folded
-   into the squash-merge commit below.  The same call also confirms every
-   ``flow_ref`` on the issue by appending a ``FLOW_CONFIRMED_IMPLEMENTED``
-   event to ``specs/_product/flows.jsonl`` (which is staged in the same
-   commit).  This is the source of truth that ``/deviate-release`` consults
-   via ``deviate inspect flows candidates`` — the merge step is what
-   promotes a flow from ``UNCONFIRMED`` to ``CONFIRMED_IMPLEMENTED`` in
-   the flow coverage derivation.
+   into the squash-merge commit below.
 
    ```bash
    deviate merge --issue {ISSUE_ID} --stage-only
    ```
 
    Banner reference:
-   - `[green]CONFIRMED[/] FLOW-XX` — one per confirmed flow_ref.
-   - `[yellow]LEDGER_IDEMPOTENT[/]` — the issue and/or flow events
-     were already recorded (safe to re-run).
-   - `[yellow]NO_FLOW_REFS[/]` — the issue has no ``flow_refs``; no
-     flow confirmation was emitted, no ``flows.jsonl`` was created.
-   - `[yellow]ORPHANED_FLOW_REF_SKIPPED[/] <ref>` — the issue named a
-     ref that failed the canonical ``FLOW-\d{2,}`` regex.  Surface
-     to the operator; this is a bug in the issue's frontmatter, not
-     a flow-coverage concern.
+   - `[yellow]LEDGER_IDEMPOTENT[/]` — the COMPLETED issue transition
+     was already recorded (safe to re-run).
 
 4. **Verify staging captured everything** — `git merge --squash` plus
    `deviate merge --stage-only` should leave the **index** non-empty and the

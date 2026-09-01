@@ -25,8 +25,8 @@ CRITICAL INSTRUCTION INVARIANTS:
 1. **Manual invoke only.** Run this command only when the operator asked for `/deviate-prune` or `deviate prune`. Do not auto-run after COMPLETED, `--all`, or a successful micro loop.
 2. **Input Resolution Rule**: Run `deviate prune pre --issue <ISS>` first (or omit `--issue` when `session.active_issue_id` is set). Parse its JSON contract from stdout. Then read `<user_input>`.
 3. **One issue per invocation.** Do not walk every epic. If the operator names a second issue id, stop.
-4. **Ledger immutability**: Never compact, rewrite, squash, or delete `specs/issues.jsonl`, `specs/**/tasks.jsonl`, or `specs/_product/flows.jsonl`. If `<user_input>` asks to compact / squash / rewrite a ledger, stop. Do not call `deviate prune post`.
-5. **No spec deletes.** Do not delete `plan.md`, `tasks.md`, `explore.md`, `prd.md`, `specs/**/issues/*.md`, leftover `design.md` / `data-model.md`, `specs/constitution.md`, or `specs/_product/`. `spec_deletes` must stay empty. `apply_prune` / READY must not unlink those files.
+4. **Ledger immutability**: Never compact, rewrite, squash, or delete `specs/issues.jsonl` or `specs/**/tasks.jsonl`. If `<user_input>` asks to compact / squash / rewrite a ledger, stop. Do not call `deviate prune post`.
+5. **No spec deletes.** Do not delete `plan.md`, `tasks.md`, `explore.md`, `prd.md`, `specs/**/issues/*.md`, leftover `design.md` / `data-model.md`, or `specs/constitution.md`. `spec_deletes` must stay empty. `apply_prune` / READY must not unlink those files.
 6. **Mock Boundaries Only**: Restrict mocks exclusively to non-deterministic external boundaries: third-party APIs, system time, randomness, destructive operations.
 
 ## Tier Classification
@@ -103,14 +103,14 @@ Mock only these external boundary categories:
 deviate prune post --issue <ISSUE_ID>
 ```
 
-`post` thins tagged `spy` / `impl` tests and untagged internal probes. It never writes JSONL ledgers and never unlinks `plan.md`, `tasks.md`, `explore.md`, `prd.md`, issue md, or leftover cycle markdown. Missing `specs/_product/flows.jsonl` is skipped, not created. `post` does not commit.
+`post` thins tagged `spy` / `impl` tests and untagged internal probes. It never writes JSONL ledgers and never unlinks `plan.md`, `tasks.md`, `explore.md`, `prd.md`, issue md, or leftover cycle markdown. `post` does not commit.
 
 ### STEP_4: VERIFY
 
 Confirm:
 
 ```bash
-git diff -- specs/issues.jsonl specs/**/tasks.jsonl specs/_product/flows.jsonl
+git diff -- specs/issues.jsonl specs/**/tasks.jsonl
 ```
 
 The diff must be empty. `plan.md` / `tasks.md`, epic `explore.md` / `prd.md`, and the issue md must still exist. Public behavioral / `ac` tests still pass.
@@ -139,7 +139,7 @@ After prune, emit:
 - **Kept (behavioral / ac / public I/O)**: `<list>`
 
 ## Ledgers
-- **Byte-identical**: `specs/issues.jsonl`, `specs/**/tasks.jsonl`, `specs/_product/flows.jsonl`
+- **Byte-identical**: `specs/issues.jsonl`, `specs/**/tasks.jsonl`
 ```
 
 </output_contract>
@@ -152,7 +152,6 @@ After prune, emit:
 | Untagged test | Classify from the body. Do not auto-keep. |
 | No cycle markdown | Honeycomb test thinning still runs. |
 | Compact / squash / rewrite a ledger | Reject. Stop. |
-| Missing optional `flows.jsonl` | Skip. Do not create it. |
 | Second issue named | Stop. One issue per invocation. |
 | COMPLETED / `--all` / skill success loop | Do not auto-invoke prune. Manual invoke only. |
 
