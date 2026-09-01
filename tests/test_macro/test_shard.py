@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.state.config import SessionState
+from tests.prd_fixture import MINIMAL_VALID_PRD
 
 runner = CliRunner()
 
@@ -25,7 +26,7 @@ class TestShardCommand:
             spec_dir = Path("specs") / "001-deviate-cli-python"
             spec_dir.mkdir(parents=True)
             (spec_dir / "explore.md").write_text("# Explore\n")
-            (spec_dir / "prd.md").write_text("# PRD\n")
+            (spec_dir / "prd.md").write_text(MINIMAL_VALID_PRD)
 
             result = runner.invoke(cli, ["shard", "pre"])
             assert result.exit_code == 0, result.output

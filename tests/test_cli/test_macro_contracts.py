@@ -9,6 +9,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from tests.prd_fixture import MINIMAL_VALID_PRD
 
 runner = CliRunner()
 
@@ -219,7 +220,7 @@ class TestMacroContracts:
             (epic_dir / "explore.md").write_text("# Explore\n\nFacts.\n")
             (epic_dir / "design.md").write_text("# Design\n\nDesign details.\n")
             (epic_dir / "data-model.md").write_text("# Data Model\n\nSchema details.\n")
-            (epic_dir / "prd.md").write_text("# PRD\n\nPRD details.\n")
+            (epic_dir / "prd.md").write_text(MINIMAL_VALID_PRD)
 
             result = runner.invoke(cli, ["shard", "pre"])
             assert result.exit_code == 0, result.output
@@ -252,7 +253,7 @@ class TestMacroContracts:
             (epic_dir / "explore.md").write_text("# Explore\n\nFacts.\n")
             (epic_dir / "design.md").write_text("# Design\n\nDesign details.\n")
             (epic_dir / "data-model.md").write_text("# Data Model\n\nSchema details.\n")
-            (epic_dir / "prd.md").write_text("# PRD\n\nPRD details.\n")
+            (epic_dir / "prd.md").write_text(MINIMAL_VALID_PRD)
             ledger_path = tmp_path / "specs" / "issues.jsonl"
             ledger_path.parent.mkdir(parents=True, exist_ok=True)
             ledger_path.write_text("")
@@ -295,7 +296,7 @@ class TestMacroContracts:
             (epic_dir / "explore.md").write_text("# Explore\n\nFacts.\n")
             (epic_dir / "design.md").write_text("# Design\n\nDesign details.\n")
             (epic_dir / "data-model.md").write_text("# Data Model\n\nSchema details.\n")
-            (epic_dir / "prd.md").write_text("# PRD\n\nPRD details.\n")
+            (epic_dir / "prd.md").write_text(MINIMAL_VALID_PRD)
 
             ledger_path = tmp_path / "specs" / "issues.jsonl"
             (tmp_path / "specs").mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from deviate.cli import cli
 from deviate.state.config import SessionState
+from tests.prd_fixture import MINIMAL_VALID_PRD
 
 runner = CliRunner()
 
@@ -14,7 +15,8 @@ runner = CliRunner()
 def scaffold_artifacts(workspace: Path, *names: str) -> None:
     spec_dir = workspace / "specs" / "001-deviate-cli-python"
     for name in names:
-        (spec_dir / name).write_text(f"# {name}\n")
+        body = MINIMAL_VALID_PRD if name == "prd.md" else f"# {name}\n"
+        (spec_dir / name).write_text(body)
     # `deviate research pre` now reads `specs/explore/<slug>.md` and moves
     # it into the epic dir, so tests that simulate a full macro cycle
     # must place `explore.md` at the staging location too (the previous
