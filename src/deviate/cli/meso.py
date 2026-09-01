@@ -658,9 +658,9 @@ def _try_claim_issue(
                 branch,
                 wt_path,
                 repo=repo_root,
-                start_point=resolve_start_point(
-                    base_branch, repo=repo_root
-                ) if base_branch else "HEAD",
+                start_point=resolve_start_point(base_branch, repo=repo_root)
+                if base_branch
+                else "HEAD",
             )
             console.print(
                 f"[green]WORKTREE[/] "
@@ -2157,7 +2157,10 @@ def specify(
     """
     if issue_id == "pre":
         _specify_pre(
-            issue_id=issue, force=force, dry_run=dry_run, local=local,
+            issue_id=issue,
+            force=force,
+            dry_run=dry_run,
+            local=local,
             base_branch=base_branch,
         )
     elif issue_id == "post":
@@ -2179,7 +2182,10 @@ def specify(
         )
     else:
         _specify_pre(
-            issue_id=issue_id, force=force, dry_run=dry_run, local=local,
+            issue_id=issue_id,
+            force=force,
+            dry_run=dry_run,
+            local=local,
             base_branch=base_branch,
         )
 
