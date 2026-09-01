@@ -688,7 +688,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 * **Description:** Resolves the task context from `tasks.jsonl`, emits JSON contract with
   `task_id`, `test_command`, `lint_command`, and `spec_dir`.
 
-#### `deviate red post`
+#### `deviate red post [--task-id <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Runs the project's resolved test command (language-agnostic: `mix test`,
@@ -696,6 +696,11 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   resolution order — task `verification`, constitution `test_command`, `mise run test`, manifest
   table, Python fallback). Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
   SYNTAX_ERROR), runs the test command, and reports whether the test failed as expected.
+  Optional ``--task-id`` is compared to the resolved pending record
+  (``session.active_issue_id`` → first PENDING) **before** the ledger transition
+  and commit. Mismatch prints ``TASK_ID_MISMATCH`` and exits 1 with no ledger
+  write and no commit. Match, or an omitted ``--task-id``, keeps the existing
+  post behavior.
   `deviate micro run`'s internal RED phase (`_run_red_phase`) applies the same contract: when the
   test command exits 0 (all tests passed), collects no tests (pytest exit 5), or resolves to no
   command at all (returncode 127), it does NOT die — it routes the decision to JUDGE

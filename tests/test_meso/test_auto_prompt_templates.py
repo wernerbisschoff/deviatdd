@@ -749,3 +749,103 @@ class TestPrdShardOwnership:
         assert "it does not matter which issue satisfies a given FR" in shard
         assert "FRs are coverage attached after the slice exists" in shard
         assert "not required to equal one FR" in shard
+
+
+class TestRedTransportAndIdentityPrompts:
+    """GH-154: RED transport-of-record / invalid failures / AC matrix / train
+    binding, plus GREEN mechanical-row narrowing. String pins on the
+    canonical auto cores (``commands/deviate-red.md`` inherits via
+    ``_derive_manual_body``).
+    """
+
+    @staticmethod
+    def _red() -> str:
+        return _read_template("red.md")
+
+    @staticmethod
+    def _green() -> str:
+        return _read_template("green.md")
+
+    def test_red_transport_of_record_names_live_catalog_not_offline_sql(self) -> None:
+        red = self._red()
+        assert "Transport of record" in red or "transport of record" in red
+        assert "upgrade()" in red
+        assert "as_sql=True" in red
+        assert "live catalog" in red
+        for token in (
+            "tables",
+            "version tables",
+            "enum",
+            "foreign key",
+            "unique",
+            "check constraint",
+            "downgrade",
+        ):
+            assert token in red.lower() or token in red, (
+                f"RED transport-of-record rule must name live-catalog token {token!r}"
+            )
+        assert "not" in red.lower() and "satisfy RED" in red, (
+            "RED must name offline SQL rendering as not satisfying RED"
+        )
+        assert "Git Isolation" in red
+        assert "Environment Determinism" in red
+
+    def test_red_invalid_failure_causes_require_error_not_offline_substitute(
+        self,
+    ) -> None:
+        red = self._red()
+        lowered = red.lower()
+        for token in (
+            "syntax",
+            "missing fixture",
+            "incorrect",
+            "unavailable",
+        ):
+            assert token in lowered, (
+                f"RED must list invalid failure cause {token!r} (AC-2)"
+            )
+        assert 'status: "ERROR"' in red
+        assert "PostgreSQL" in red or "postgres" in lowered
+        assert "do not substitute an offline test" in lowered
+
+    def test_red_requires_ac_to_test_matrix_before_authoring(self) -> None:
+        red = self._red()
+        assert "AC-to-test matrix" in red
+        assert "AC-PLAN-NNN" in red
+        assert "Given" in red and "When" in red and "Then" in red
+        assert "before writing" in red.lower() or "before test" in red.lower()
+
+    def test_red_treats_train_feedback_as_mandatory_correction_list(self) -> None:
+        red = self._red()
+        assert "mandatory correction list" in red
+        assert "<train_feedback>" in red
+        assert "<persisted_judge_feedback>" in red
+        assert "test design" in red.lower() or "test-based justification" in red.lower()
+        assert "authoritative, current" in red
+
+    def test_red_never_mocks_the_system_under_test(self) -> None:
+        red = self._red()
+        assert "never mock the system under test" in red.lower()
+
+    def test_green_mechanical_edge_case_excludes_required_services(self) -> None:
+        green = self._green()
+        assert "required tool not in workspace" in green
+        assert "failure_kind: mechanical" in green
+        lowered = green.lower()
+        assert "unavailable required service" in lowered
+        assert "not mechanical" in lowered
+        mechanical_rows = [
+            line
+            for line in green.splitlines()
+            if line.strip().startswith("|")
+            and "plus `failure_kind: mechanical`" in line
+        ]
+        assert mechanical_rows, (
+            "GREEN must keep a mechanical edge-case table row for CLI/tool/fixture"
+        )
+        for row in mechanical_rows:
+            cells = [cell.strip() for cell in row.split("|")]
+            condition = cells[1] if len(cells) > 1 else row
+            assert "postgres" not in condition.lower(), (
+                "Unavailable PostgreSQL must not be mapped as mechanical"
+            )
