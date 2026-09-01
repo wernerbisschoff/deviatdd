@@ -30,7 +30,7 @@ REFACTOR owns structural improvements. You MUST NOT flag refactoring opportuniti
 - **"Could be organized better"** / "should be split into N modules" → REFACTOR's domain
 - **Code smell opinions** (duplication, complexity, coupling) → REFACTOR's domain
 
-If you observe a refactoring opportunity, surface it as an **informational note** in `train_feedback` on a COMPLIANCE_PASS verdict. The orchestrator logs it for the operator; REFACTOR may pick it up. Never emit COMPLIANCE_VIOLATION for a refactoring opportunity.
+If you observe a refactoring opportunity, surface it as an **informational note** in `train_feedback` on a COMPLIANCE_PASS verdict, prefixed `REFACTOR NOTE:`. A REFACTOR NOTE is optional advice for the REFACTOR phase. It is not a reason to revert. `next_action` on a pass is `continue_refactor` or `skip_refactor` (or `proceed_to_refactor_no_diff` for the empty-diff sign-off). Never emit `revert_red` / `revert_green` on a COMPLIANCE_PASS. The orchestrator injects the note into the REFACTOR prompt; it does not train GREEN or RED. Never emit COMPLIANCE_VIOLATION for a refactoring opportunity.
 
 **CRITICAL — `train_feedback` on a COMPLIANCE_VIOLATION is route-specific. `next_action: revert_green` injects it into the next GREEN (discard GREEN, keep RED). `next_action: revert_red` injects it into the next RED (discard RED+GREEN). It is also appended to `tasks.md`. Do NOT put `REFACTOR NOTE:` content in rejection feedback — the prefix tells GREEN to defer to REFACTOR, which defeats the training purpose. On COMPLIANCE_VIOLATION, see the Format Requirements in STEP_3 below.**
 
@@ -166,6 +166,7 @@ Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's
 
 **GREEN PASS `next_action` mapping (no `<failure_kind>` overlay):** After GREEN PASS you MUST emit `next_action` on every verdict. The runner accepts exactly these values: `revert_red` | `revert_green` | `continue_refactor` | `skip_refactor` | `proceed_to_refactor_no_diff`.
 
+- **COMPLIANCE_PASS (no Category of Violations)** → `next_action: continue_refactor` or `skip_refactor` (or `proceed_to_refactor_no_diff` for empty GREEN). A `REFACTOR NOTE:` is optional advice for REFACTOR; it is not a reason to revert. Do not emit `revert_red` / `revert_green` on a pass.
 - **Test is honest; implementation/scope is wrong** → `next_action: revert_green` (discard GREEN, keep RED). `train_feedback` addresses the next GREEN (`The next GREEN attempt must:`). Typical categories: Spec Non-Compliance, No-Shortcut, Scope, Security, Constitution — with `test_integrity: PASS`.
 - **Test is wrong, weak, filename-only, or does not actually validate the task AC (Test Integrity)** → `next_action: revert_red` (discard RED+GREEN). `train_feedback` addresses the next RED (`The next RED attempt must:`). Set `test_integrity: FAIL` and/or category `Test Integrity Violation`.
 - Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged.
@@ -224,7 +225,7 @@ diff_summary:
   files_deleted: 0
 ```
 
-**On COMPLIANCE_PASS with an observed refactoring opportunity**: populate `train_feedback` with a short note prefixed `REFACTOR NOTE:` (e.g., `REFACTOR NOTE: consider splitting src/x.py into helper + entry; not blocking`). The orchestrator logs it as `JUDGE_REFACTOR_NOTE`.
+**On COMPLIANCE_PASS with an observed refactoring opportunity**: populate `train_feedback` with a short note prefixed `REFACTOR NOTE:` (e.g., `REFACTOR NOTE: consider splitting src/x.py into helper + entry; not blocking`). A REFACTOR NOTE is optional advice for REFACTOR; it is not a reason to revert. Emit `next_action: continue_refactor` or `skip_refactor`. The orchestrator logs it as `JUDGE_REFACTOR_NOTE` and injects it into the REFACTOR prompt.
 
 **On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below. If you also populate `train_feedback`, it MUST be specific actionable instructions for the next agent on that route (`revert_green` → next GREEN; `revert_red` → next RED) — NEVER `REFACTOR NOTE:` content (that tells GREEN to defer, defeating training). Refactoring concerns alongside a correctness gap belong in `summary`, not `train_feedback`.
 
@@ -296,7 +297,7 @@ diff_summary:
 | `<failure_kind>test_defect</failure_kind>` present | GREEN judged the RED test itself wrong (it asserts behavior the spec does not require, exercises the wrong abstraction, or encodes an assumption that contradicts `<spec_content>` / `<data_model_content>`). Do NOT attempt to satisfy the test yourself. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (re-run RED with GREEN's rationale as feedback). Populate `train_feedback` with the GREEN rationale so the next RED attempt has the full conflict description. |
 | `<failure_kind>no_failing_test</failure_kind>` present | RED produced NO failing test: the test command exited 0 (all tests passed) or collected no tests. The authored test is uncommitted in the working tree, may be a stub, and no implementation exists. If the required behavior ALREADY EXISTS and the task needs no implementation — `verdict: COMPLIANCE_PASS` + `next_action: skip_refactor` with `evidence` quotes copied from HEAD file contents for both the test and the impl (mark the task COMPLETED; nothing to refactor). A named test file absent on disk is not a pass. If the test is wrong, tautological, or cannot target the required behavior — `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (discard the test, re-author a genuinely failing test in RED). Always populate `train_feedback` or `rationale` so the next RED attempt (or the COMPLETED record) carries the reason. |
 | Empty `**Flow References**` in task | Treat task as enabling / infrastructure; set `flow_alignment: SKIP`; do not penalize |
-| Refactoring opportunity observed | COMPLIANCE_PASS **only** (never COMPLIANCE_VIOLATION). Populate `train_feedback` with `REFACTOR NOTE:` prefix. On COMPLIANCE_VIOLATION, put refactoring observations in `summary`, not `train_feedback`. |
+| Refactoring opportunity observed | COMPLIANCE_PASS **only** (never COMPLIANCE_VIOLATION). Populate `train_feedback` with `REFACTOR NOTE:` prefix. A REFACTOR NOTE is optional advice for REFACTOR; it is not a reason to revert. `next_action` on a pass is `continue_refactor` or `skip_refactor`. On COMPLIANCE_VIOLATION, put refactoring observations in `summary`, not `train_feedback`. |
 | "Should split into N modules" / "code smell" / "naming preference" / "could be cleaner" | COMPLIANCE_PASS — these are REFACTOR concerns, never blocking |
 
 </edge_case_handling>

@@ -2767,6 +2767,61 @@ def _manifest_signals_test_integrity(manifest: HandoverManifest) -> bool:
     return False
 
 
+_REFACTOR_NOTE_RE = re.compile(r"(REFACTOR NOTE:.*)", re.DOTALL | re.IGNORECASE)
+_REVERT_JUDGE_ACTIONS = frozenset({"revert_red", "revert_green"})
+
+
+def _verdict_is_fail(verdict: str) -> bool:
+    """True for ``COMPLIANCE_VIOLATION`` or ``COMPLIANCE_FAIL`` tokens."""
+    token = str(verdict or "").strip().upper()
+    return "COMPLIANCE_VIOLATION" in token or "COMPLIANCE_FAIL" in token
+
+
+def _verdict_is_clean_pass(verdict: str, manifest: HandoverManifest) -> bool:
+    """True when the payload is a compliance pass without a real fail.
+
+    A ``REFACTOR NOTE`` / non-empty ``train_feedback`` is not a reject.
+    Structured Test Integrity (GH-149) keeps the fail path. Agents that
+    put ``COMPLIANCE_PASS:`` only in ``train_feedback`` still count as a
+    pass when the verdict field is empty.
+    """
+    if _verdict_is_fail(verdict):
+        return False
+    if _manifest_signals_test_integrity(manifest):
+        return False
+    token = str(verdict or "").strip().upper()
+    if "COMPLIANCE_PASS" in token:
+        return True
+    if token:
+        return False
+    feedback = _coerce_feedback_text(
+        getattr(manifest, "train_feedback", None)
+        or (_manifest_extra(manifest).get("train_feedback", "") if manifest else "")
+    ).strip()
+    return feedback.upper().startswith("COMPLIANCE_PASS")
+
+
+def _extract_refactor_note(feedback: str) -> str:
+    """Return the ``REFACTOR NOTE:`` slice from pass-path train_feedback.
+
+    Strips a leading ``COMPLIANCE_PASS:`` preamble. Returns empty when
+    the text is a violation instruction or a bare pass with no note.
+    """
+    text = _coerce_feedback_text(feedback).strip()
+    if not text:
+        return ""
+    upper = text.upper()
+    if "COMPLIANCE_VIOLATION" in upper or "COMPLIANCE_FAIL" in upper:
+        match = _REFACTOR_NOTE_RE.search(text)
+        return match.group(1).strip() if match else ""
+    match = _REFACTOR_NOTE_RE.search(text)
+    if match:
+        return match.group(1).strip()
+    if upper.startswith("COMPLIANCE_PASS"):
+        return ""
+    return text
+
+
 def _coerce_judge_action(
     manifest: HandoverManifest,
     verdict: str,
@@ -2781,22 +2836,24 @@ def _coerce_judge_action(
     ``no_failing_test`` and the verdict is a violation, force
     ``revert_red`` regardless of what ``next_action`` the JUDGE manifest
     declared (or omitted). The RED test itself is wrong; the agent must
-    re-author it before any further GREEN attempt. PASS verdicts preserve
-    the agent's outcome.
+    re-author it before any further GREEN attempt.
 
     After GREEN PASS (``failure_kind`` empty / not mechanical), a
     ``COMPLIANCE_VIOLATION`` with structured Test Integrity also forces
     ``revert_red`` — even when ``next_action`` is omitted or
     ``revert_green``. Mechanical overlay keeps the agent's three-way
     choice. Spec-only gaps stay ``revert_green``.
+
+    A clean ``COMPLIANCE_PASS`` (no compliance / Test Integrity failure)
+    ignores revert ``next_action`` values, including the legacy
+    ``revert_to_red`` alias. A ``REFACTOR NOTE`` is advice for REFACTOR,
+    not a reject. The caller defaults omitted pass actions to
+    ``continue_refactor`` (or ``skip_refactor`` when ``--no-refactor``).
     """
-    if (
-        failure_kind in {"test_defect", "no_failing_test"}
-        and verdict.upper() == "COMPLIANCE_VIOLATION"
-    ):
+    if failure_kind in {"test_defect", "no_failing_test"} and _verdict_is_fail(verdict):
         return "revert_red"
     if (
-        verdict.upper() == "COMPLIANCE_VIOLATION"
+        _verdict_is_fail(verdict)
         and failure_kind not in {"mechanical", "test_defect", "no_failing_test"}
         and _manifest_signals_test_integrity(manifest)
     ):
@@ -2806,6 +2863,22 @@ def _coerce_judge_action(
         # Pre-rename manifests may carry the legacy destination-named
         # routes; normalize before membership so they route identically.
         next_action = JUDGE_REVERT_ACTION_ALIASES.get(next_action, next_action)
+    if _verdict_is_clean_pass(verdict, manifest):
+        # GH-158: revert_* on a clean pass (often copied from the YAML
+        # enum, or leftover ``revert_to_red``) must not reject. Forward
+        # routes the agent actually chose are kept.
+        if next_action in _JUDGE_ACTIONS and next_action not in _REVERT_JUDGE_ACTIONS:
+            return next_action
+        if (
+            next_action is not None
+            and next_action != ""
+            and next_action not in _JUDGE_ACTIONS
+        ):
+            _log(
+                f"JUDGE_UNKNOWN_ACTION ignored: {next_action!r}; defaulting "
+                f"verdict={verdict!r}"
+            )
+        return None
     if next_action in _JUDGE_ACTIONS:
         return next_action
     if next_action is not None and next_action != "":
@@ -2816,7 +2889,7 @@ def _coerce_judge_action(
             f"verdict={verdict!r}"
         )
         next_action = None
-    if verdict.upper() == "COMPLIANCE_VIOLATION":
+    if _verdict_is_fail(verdict):
         return "revert_green"
     return None
 
@@ -3235,6 +3308,7 @@ def _run_judge_phase(
     monitor: OrchestrationMonitor | None = None,
     red_baseline: list[str] | None = None,
     declared_paths: Sequence[str] | None = None,
+    no_refactor: bool = False,
 ) -> SessionState:
     tid = task.get("id", "?")
     backend = agent or "pi"
@@ -3321,6 +3395,7 @@ def _run_judge_phase(
         injected_diff=diff,
         declared_paths=declared_paths,
         red_baseline=red_baseline,
+        no_refactor=no_refactor,
     )
 
 
@@ -3334,6 +3409,7 @@ def _apply_judge_verdict(
     injected_diff: str,
     declared_paths: Sequence[str] | None = None,
     red_baseline: list[str] | None = None,
+    no_refactor: bool = False,
 ) -> SessionState:
     """Apply JUDGE handover side effects shared by auto and ``judge post``.
 
@@ -3341,6 +3417,9 @@ def _apply_judge_verdict(
     TEST_FAILURE, then rolls back / persists feedback / updates session
     the same way auto ``_run_judge_phase`` always has. Does not invoke
     an agent and is not reached by shelling out from ``micro run``.
+    ``no_refactor`` defaults an omitted pass action to ``skip_refactor``
+    instead of ``continue_refactor``. Agent-declared ``continue_refactor``
+    still enters REFACTOR.
     """
     tid = task.get("id", "?")
     root = Path.cwd()
@@ -3352,6 +3431,12 @@ def _apply_judge_verdict(
         and verdict.upper() == "COMPLIANCE_PASS"
     )
     action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
+    if _verdict_is_clean_pass(verdict, manifest) and action in _REVERT_JUDGE_ACTIONS:
+        # Defense in depth: a leftover revert on a clean pass (legacy
+        # ``revert_to_red`` / copied enum) is ignored before the
+        # unmatched-PASS rewrite. The evidence gate can still force
+        # ``revert_green`` when citations do not match.
+        action = None
     if no_failing_pass and (action is None or action in _TDD_EVIDENCE_GATE_ROUTES):
         # Already-exists route: JUDGE ruled the behavior exists at HEAD and
         # there is no RED commit to roll back to. Coerce the forward route
@@ -3607,6 +3692,7 @@ def _apply_judge_verdict(
         getattr(manifest, "train_feedback", None)
         or (manifest.model_extra or {}).get("train_feedback", "")
     )
+    extracted_note = _extract_refactor_note(refactor_note)
     if refactor_note.strip():
         note_preview = refactor_note.replace("\n", " ")[:200]
         c.print(f"  [cyan]JUDGE_REFACTOR_NOTE[/] {tid}: {note_preview}")
@@ -3616,6 +3702,14 @@ def _apply_judge_verdict(
             action=action or "",
             note=refactor_note,
         )
+    if (
+        action is None
+        and _verdict_is_clean_pass(verdict, manifest)
+        and not suite_still_red
+    ):
+        # GH-158: omitted / ignored-revert pass defaults to REFACTOR,
+        # or skip when the operator passed ``--no-refactor``.
+        action = "skip_refactor" if no_refactor else "continue_refactor"
     if suite_still_red:
         # GREEN TEST_FAILURE: implementation ran, suite still red.
         # Honor only revert_green / revert_red (already returned above).
@@ -3648,7 +3742,7 @@ def _apply_judge_verdict(
             action=action,
         )
         session = session.force_transition_to("JUDGE")
-        session.train_feedback = ""
+        session.train_feedback = extracted_note
         session.judge_rejected = False
         session.save(session_path)
         _append_status_transition(task, "JUDGE", ledger_path)
@@ -3671,7 +3765,7 @@ def _apply_judge_verdict(
             action=action,
         )
         session = session.force_transition_to("JUDGE")
-        session.train_feedback = ""
+        session.train_feedback = extracted_note
         session.judge_rejected = False
         session.save(session_path)
         _append_status_transition(task, "JUDGE", ledger_path)
@@ -4214,6 +4308,7 @@ def _run_tdd_cycle(
                 c,
                 agent=agent,
                 monitor=monitor,
+                no_refactor=no_refactor,
             )
             pending = session.pending_judge_action
             if suite_red:
@@ -4350,7 +4445,14 @@ def _run_tdd_cycle(
             monitor, "phase_change", task_id=tid, phase="JUDGE", description=task_desc
         )
         session = _run_judge_phase(
-            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+            task,
+            ledger_path,
+            session,
+            session_path,
+            c,
+            agent=agent,
+            monitor=monitor,
+            no_refactor=no_refactor,
         )
         # Honor coerced ``revert_red``. ``revert_green`` still trains
         # GREEN and keeps dump ``train_feedback``.
