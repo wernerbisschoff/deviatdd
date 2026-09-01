@@ -52,6 +52,8 @@ task will fail permanently.**
 {task_content}
 </task_content>
 
+{train_feedback}
+
 <spec_content>
 {spec_content}
 </spec_content>

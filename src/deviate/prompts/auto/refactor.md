@@ -25,6 +25,8 @@ After completion, the next task's RED phase begins a fresh cycle, or if all task
 {task_content}
 </task_content>
 
+{train_feedback}
+
 <spec_content>
 {spec_content}
 </spec_content>

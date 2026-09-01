@@ -3966,7 +3966,7 @@ class TestNoFailingTestAlreadyExistsPass:
 
 
 # ---------------------------------------------------------------------------
-# GH-118: JUDGE <task_card> must omit runner-appended **Judge Feedback**
+# GH-118: JUDGE <task_content> must omit runner-appended **Judge Feedback**
 # so a prior fail-close cannot bias the next judge into under-citing owned
 # tokens. Token resolution already strips via _strip_judge_feedback (#89);
 # the injected prompt card must use the same strip. Constitution §3:
@@ -4034,7 +4034,7 @@ class TestJudgePromptStripsJudgeFeedback:
     def test_judge_prompt_omits_appended_feedback_keeps_owned_acs(
         self, tmp_path: Path
     ) -> None:
-        """GH-118: <task_card> drops Judge Feedback, keeps owned ACs."""
+        """GH-118: <task_content> drops Judge Feedback, keeps owned ACs."""
         import re
 
         from deviate.cli.micro import _build_auto_prompt, _task_card_text
@@ -4050,24 +4050,24 @@ class TestJudgePromptStripsJudgeFeedback:
 
         prompt = _build_auto_prompt("judge", task, tmp_path)
         match = re.search(
-            r'<task_card source="tasks.md">(.*?)</task_card>',
+            r"<task_content>\n(.*?)</task_content>",
             prompt,
             re.DOTALL,
         )
         assert match is not None, (
-            'JUDGE prompt must inject <task_card source="tasks.md">'
+            "JUDGE prompt must inject this-task card as <task_content>"
         )
         injected = match.group(1)
 
         assert "**Judge Feedback**" not in injected, (
-            "GH-118: injected JUDGE <task_card> must omit **Judge Feedback** bullets"
+            "GH-118: injected JUDGE <task_content> must omit **Judge Feedback** bullets"
         )
         assert self._FALSE_OWNERSHIP not in injected, (
-            "GH-118: injected JUDGE <task_card> must omit prior-round "
+            "GH-118: injected JUDGE <task_content> must omit prior-round "
             "false-ownership continuation lines"
         )
         assert self._RATIONALE in injected, (
-            "GH-118: injected JUDGE <task_card> must keep the real Rationale"
+            "GH-118: injected JUDGE <task_content> must keep the real Rationale"
         )
         for token in (
             "AC-PLAN-001",
@@ -4076,7 +4076,7 @@ class TestJudgePromptStripsJudgeFeedback:
             "AC-PLAN-004",
         ):
             assert token in injected, (
-                f"GH-118: injected JUDGE <task_card> must keep owned token {token}"
+                f"GH-118: injected JUDGE <task_content> must keep owned token {token}"
             )
 
     def test_judge_prompt_keeps_card_without_feedback_unchanged(
@@ -4091,12 +4091,12 @@ class TestJudgePromptStripsJudgeFeedback:
         raw = _task_card_text(tmp_path, task)
         prompt = _build_auto_prompt("judge", task, tmp_path)
         match = re.search(
-            r'<task_card source="tasks.md">(.*?)</task_card>',
+            r"<task_content>\n(.*?)</task_content>",
             prompt,
             re.DOTALL,
         )
         assert match is not None, (
-            'JUDGE prompt must inject <task_card source="tasks.md">'
+            "JUDGE prompt must inject this-task card as <task_content>"
         )
         injected = match.group(1).strip()
         assert injected == raw.strip(), (
