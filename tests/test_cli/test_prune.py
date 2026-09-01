@@ -86,7 +86,6 @@ def test_prune_post_thins_tests_and_keeps_cycle_markdown(tmp_path: Path) -> None
     assert not (tmp_path / "tests" / "test_099_spy.py").exists()
     assert (tmp_path / "tests" / "test_099_keep.py").is_file()
     assert snapshot_ledgers(tmp_path) == before
-    assert not (tmp_path / "specs" / "_product" / "flows.jsonl").exists()
 
 
 def test_prune_pre_in_flight_reports_and_lists_no_spec_deletes(

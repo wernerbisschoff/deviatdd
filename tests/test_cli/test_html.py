@@ -57,17 +57,6 @@ def _init_repo(path: Path) -> None:
     )
 
 
-def _seed_product_md(tmp_path: Path) -> Path:
-    """Create the product-layer markdown files the html command consumes."""
-    product = tmp_path / "specs" / "_product"
-    flows = product / "flows"
-    flows.mkdir(parents=True)
-    (product / "architecture.md").write_text("# Architecture\n")
-    (product / "domain-model.md").write_text("# Domain Model\n")
-    (flows / "index.md").write_text("# Flows\n")
-    return product
-
-
 def _seed_issue(
     specs: Path,
     *,
@@ -98,22 +87,16 @@ def _seed_issue(
 
 
 def test_supported_phases_returns_expected_list() -> None:
-    """The five phases map to the five human-review artifacts."""
+    """HTML scaffolds remain for PRD and plan only."""
     assert supported_phases() == (
-        "architecture",
         "prd",
         "plan",
-        "flows",
-        "domain-model",
     )
 
 
 def test_is_supported_phase_accepts_known_phases() -> None:
-    assert is_supported_phase("architecture")
     assert is_supported_phase("prd")
     assert is_supported_phase("plan")
-    assert is_supported_phase("flows")
-    assert is_supported_phase("domain-model")
 
 
 def test_is_supported_phase_rejects_unknown_phases() -> None:
@@ -129,9 +112,7 @@ def test_render_starter_rejects_unknown_phase() -> None:
 
 def test_render_starter_substitutes_all_sentinels(tmp_path: Path) -> None:
     """Sentinels are replaced; nothing leaks back into the output."""
-    out = render_starter(
-        "architecture", tmp_path / "specs" / "_product" / "architecture.md"
-    )
+    out = render_starter("prd", tmp_path / "specs" / "001-foo" / "prd.md")
     assert "<<TITLE>>" not in out
     assert "<<PHASE_TITLE>>" not in out
     assert "<<SOURCE_MD>>" not in out
@@ -139,7 +120,7 @@ def test_render_starter_substitutes_all_sentinels(tmp_path: Path) -> None:
     assert "<<SECTION_COUNT>>" not in out
     assert "<<TOC_DOTS>>" not in out
     # The source path appears in the header / <meta> tag.
-    assert "architecture.md" in out
+    assert "prd.md" in out
     # CSS content is present (variable declarations).
     assert "--bg:" in out
 
@@ -249,23 +230,6 @@ def test_render_starter_recommends_inline_svg_over_mermaid(tmp_path: Path) -> No
 # ---------------------------------------------------------------------------
 
 
-def test_html_architecture_writes_scaffold(tmp_path: Path, monkeypatch) -> None:
-    _seed_product_md(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    r = runner.invoke(cli, ["html", "architecture"])
-    assert r.exit_code == 0, r.output
-    out = tmp_path / "specs" / "_product" / "architecture.html"
-    assert out.exists()
-    body = out.read_text()
-    assert "<!DOCTYPE html>" in body
-    assert "Architecture" in body
-    assert "architecture.md" in body
-    # Section anchors present, no markdown → HTML conversion.
-    assert 'id="recommended-architecture"' in body
-    assert "<pre><code>" not in body
-    assert "<h1 id=" not in body
-
-
 def test_html_prd_refuses_when_no_prd_exists(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "specs").mkdir()
@@ -276,7 +240,6 @@ def test_html_prd_refuses_when_no_prd_exists(tmp_path: Path, monkeypatch) -> Non
 
 def test_html_prd_refuses_with_multiple_prds(tmp_path: Path, monkeypatch) -> None:
     """Ambiguity guard — refuses when more than one epic has prd.md."""
-    _seed_product_md(tmp_path)
     (tmp_path / "specs" / "001-foo").mkdir(parents=True)
     (tmp_path / "specs" / "001-foo" / "prd.md").write_text("# Foo\n")
     (tmp_path / "specs" / "002-bar").mkdir(parents=True)
@@ -299,12 +262,11 @@ def test_html_prd_writes_scaffold_for_single_epic(tmp_path: Path, monkeypatch) -
 def test_html_prd_excludes_adhoc_and_unnumbered_buckets(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """``adhoc`` / ``_product`` / ``explore`` must not appear as candidates."""
+    """``adhoc`` / ``explore`` must not appear as candidates."""
     (tmp_path / "specs" / "adhoc").mkdir(parents=True)
     (tmp_path / "specs" / "adhoc" / "prd.md").write_text("# Adhoc\n")
     (tmp_path / "specs" / "explore").mkdir(parents=True)
     (tmp_path / "specs" / "explore" / "prd.md").write_text("# Explore\n")
-    _seed_product_md(tmp_path)
     monkeypatch.chdir(tmp_path)
     r = runner.invoke(cli, ["html", "prd"])
     # All non-epic candidates excluded → HTML_NO_PRD, not AMBIGUOUS.
@@ -315,50 +277,33 @@ def test_html_prd_excludes_adhoc_and_unnumbered_buckets(
     assert not (tmp_path / "specs" / "explore" / "prd.html").exists()
 
 
-def test_html_flows_writes_index_scaffold(tmp_path: Path, monkeypatch) -> None:
-    _seed_product_md(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    r = runner.invoke(cli, ["html", "flows"])
-    assert r.exit_code == 0, r.output
-    out = tmp_path / "specs" / "_product" / "flows" / "index.html"
-    assert out.exists()
-
-
-def test_html_flows_fails_when_index_missing(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "specs" / "_product" / "flows").mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
-    r = runner.invoke(cli, ["html", "flows"])
-    assert r.exit_code != 0
-
-
-def test_html_domain_model_writes_scaffold(tmp_path: Path, monkeypatch) -> None:
-    _seed_product_md(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    r = runner.invoke(cli, ["html", "domain-model"])
-    assert r.exit_code == 0, r.output
-    assert (tmp_path / "specs" / "_product" / "domain-model.html").exists()
-
-
 # ---------------------------------------------------------------------------
 # CLI: overwrite guard
 # ---------------------------------------------------------------------------
 
 
+def _seed_prd(tmp_path: Path) -> Path:
+    prd_dir = tmp_path / "specs" / "001-foo"
+    prd_dir.mkdir(parents=True)
+    (prd_dir / "prd.md").write_text("# Foo\n")
+    return prd_dir
+
+
 def test_html_refuses_to_overwrite_without_force(tmp_path: Path, monkeypatch) -> None:
-    _seed_product_md(tmp_path)
+    _seed_prd(tmp_path)
     monkeypatch.chdir(tmp_path)
-    first = runner.invoke(cli, ["html", "architecture"])
+    first = runner.invoke(cli, ["html", "prd"])
     assert first.exit_code == 0, first.output
-    second = runner.invoke(cli, ["html", "architecture"])
+    second = runner.invoke(cli, ["html", "prd"])
     assert second.exit_code != 0
     assert "HTML_EXISTS" in second.output or "HTML_EXISTS" in (second.stderr or "")
 
 
 def test_html_force_overwrites(tmp_path: Path, monkeypatch) -> None:
-    _seed_product_md(tmp_path)
+    _seed_prd(tmp_path)
     monkeypatch.chdir(tmp_path)
-    runner.invoke(cli, ["html", "architecture"])
-    r = runner.invoke(cli, ["html", "architecture", "--force"])
+    runner.invoke(cli, ["html", "prd"])
+    r = runner.invoke(cli, ["html", "prd", "--force"])
     assert r.exit_code == 0, r.output
 
 
@@ -441,22 +386,18 @@ def test_html_plan_autodetects_from_branch(tmp_path: Path, monkeypatch) -> None:
 def test_html_all_writes_every_phase_scaffold(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "specs" / "001-foo").mkdir(parents=True)
     (tmp_path / "specs" / "001-foo" / "prd.md").write_text("# Foo\n")
-    _seed_product_md(tmp_path)
     monkeypatch.chdir(tmp_path)
     r = runner.invoke(cli, ["html", "all", "--force"])
     # plan is best-effort; without a branch/session, it's silently skipped.
     assert r.exit_code == 0
-    assert (tmp_path / "specs" / "_product" / "architecture.html").exists()
-    assert (tmp_path / "specs" / "_product" / "domain-model.html").exists()
-    assert (tmp_path / "specs" / "_product" / "flows" / "index.html").exists()
     assert (tmp_path / "specs" / "001-foo" / "prd.html").exists()
 
 
 def test_html_all_skips_existing(tmp_path: Path, monkeypatch) -> None:
     """Without ``--force``, existing HTML is reported as skipped."""
-    _seed_product_md(tmp_path)
+    _seed_prd(tmp_path)
     monkeypatch.chdir(tmp_path)
-    runner.invoke(cli, ["html", "architecture"])
+    runner.invoke(cli, ["html", "prd"])
     r = runner.invoke(cli, ["html", "all"])
     assert "HTML_SKIPPED" in r.output or "HTML_SKIPPED" in (r.stderr or "")
 
@@ -472,7 +413,6 @@ def test_html_prd_bucket_targets_specific_epic(tmp_path: Path, monkeypatch) -> N
     Regression guard: the pre-fix CLI hard-failed with HTML_AMBIGUOUS_PRD
     whenever more than one epic owned a prd.md and offered no flag to target
     a specific bucket. ``--bucket`` bypasses the walker entirely."""
-    _seed_product_md(tmp_path)
     (tmp_path / "specs" / "001-foo").mkdir(parents=True)
     (tmp_path / "specs" / "001-foo" / "prd.md").write_text("# Foo\n")
     (tmp_path / "specs" / "002-bar").mkdir(parents=True)

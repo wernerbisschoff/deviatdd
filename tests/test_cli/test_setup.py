@@ -256,35 +256,14 @@ class TestSetupPacks:
         assert (commands / "deviate-pr.md").is_file()
         assert (commands / "deviate-review.md").is_file()
         assert not (commands / "deviate-merge.md").exists()
-        assert not (commands / "deviate-flows.md").exists()
-        assert not (commands / "deviate-architecture.md").exists()
-        assert not (commands / "deviate-release.md").exists()
 
-    def test_packs_product_writes_all_three(self, tmp_path: Path) -> None:
-        with chdir(tmp_path):
-            result = runner.invoke(
-                cli, ["setup", "--agent", "opencode", "--packs", "product"]
-            )
-            assert result.exit_code == 0, result.output
-        commands = tmp_path / ".opencode" / "commands"
-        assert (commands / "deviate-flows.md").is_file()
-        assert (commands / "deviate-architecture.md").is_file()
-        assert (commands / "deviate-release.md").is_file()
-        assert (commands / "deviate-red.md").is_file()
-        assert (commands / "deviate-init.md").is_file()
-        assert not (commands / "deviate-pr.md").exists()
-        assert not (commands / "deviate-merge.md").exists()
-
-    def test_packs_all_optional_includes_product(self, tmp_path: Path) -> None:
+    def test_packs_all_optional_includes_merge_and_pr(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
             result = runner.invoke(
                 cli, ["setup", "--agent", "opencode", "--packs", "all-optional"]
             )
             assert result.exit_code == 0, result.output
         commands = tmp_path / ".opencode" / "commands"
-        assert (commands / "deviate-flows.md").is_file()
-        assert (commands / "deviate-architecture.md").is_file()
-        assert (commands / "deviate-release.md").is_file()
         assert (commands / "deviate-pr.md").is_file()
         assert (commands / "deviate-merge.md").is_file()
 
@@ -307,9 +286,6 @@ class TestSetupPacks:
         assert (commands / "deviate-init.md").is_file()
         assert not (commands / "deviate-merge.md").exists()
         assert not (commands / "deviate-prune.md").exists()
-        assert not (commands / "deviate-flows.md").exists()
-        assert not (commands / "deviate-architecture.md").exists()
-        assert not (commands / "deviate-release.md").exists()
 
     def test_tty_helper_invoked_when_packs_omitted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -326,30 +302,27 @@ class TestSetupPacks:
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
         assert invoked == [list(OPTIONAL_PACK_NAMES)]
-        assert invoked[0][0] == "product"
+        assert invoked[0][0] == "merge"
         commands = tmp_path / ".opencode" / "commands"
         assert (commands / "deviate-red.md").is_file()
         assert not (commands / "deviate-pr.md").exists()
-        assert not (commands / "deviate-flows.md").exists()
+        assert not (commands / "deviate-merge.md").exists()
 
-    def test_tty_toggle_product_and_pr_installs_those_two_only(
+    def test_tty_toggle_merge_and_pr_installs_those_two_only(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
         monkeypatch.setattr(
-            "deviate.cli._ask_optional_pack_picks", lambda: ["product", "pr"]
+            "deviate.cli._ask_optional_pack_picks", lambda: ["merge", "pr"]
         )
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
         commands = tmp_path / ".opencode" / "commands"
-        assert (commands / "deviate-flows.md").is_file()
-        assert (commands / "deviate-architecture.md").is_file()
-        assert (commands / "deviate-release.md").is_file()
+        assert (commands / "deviate-merge.md").is_file()
         assert (commands / "deviate-pr.md").is_file()
         assert (commands / "deviate-red.md").is_file()
         for omitted in (
-            "deviate-merge",
             "deviate-review",
             "deviate-walkthrough",
             "deviate-html",
@@ -367,7 +340,7 @@ class TestSetupPacks:
 
     def test_packs_from_selector_picks_empty_and_named(self) -> None:
         assert _packs_from_selector_picks([]) == ()
-        assert _packs_from_selector_picks(["product", "pr"]) == ("product", "pr")
+        assert _packs_from_selector_picks(["merge", "pr"]) == ("merge", "pr")
         assert _packs_from_selector_picks(["all-optional"]) == OPTIONAL_PACK_NAMES
 
 

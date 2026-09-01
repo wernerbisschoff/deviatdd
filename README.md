@@ -11,7 +11,7 @@
 
 > **An agent-orchestration framework that runs your entire TDD loop — explore, spec, red, green, refactor — with two hard human-in-the-loop gates (design/contract review and merge review); shard is a soft review.**
 
-DeviaTDD is a CLI that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a four-layer architecture (Product · Macro · Meso · Micro), append-only ledgers, worktree isolation, and path-scoped GREEN writes. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, Droid, the Factory Droid IDE, and Oh-My-Pi are first-class backends today.
+DeviaTDD is a CLI that coordinates AI coding agents across the full Test-Driven Development lifecycle, from problem framing through documentation. It ships with a three-layer architecture (Macro · Meso · Micro), append-only ledgers, worktree isolation, and path-scoped GREEN writes. The system is **agent-agnostic** — Claude Code, OpenCode, Pi, Droid, the Factory Droid IDE, and Oh-My-Pi are first-class backends today.
 
 ---
 
@@ -67,14 +67,6 @@ Open the agent and run **`/deviate-init` as the first prompt**. That scaffolds `
 Empty `CLAUDE.md` / `AGENTS.md` after setup is expected.
 
 Then drive the rest of the lifecycle from inside your agent. Each phase emits a single artifact; **`post` often commits it** (you did not type `git commit`). At the two gates the workflow pauses for human review. See [Phase transparency](#phase-transparency) for which commands commit, spawn, or fail closed.
-
-**Product layer** *(optional, for cross-product framing — skip if your repo only ships single features):*
-
-```
-/deviate-flows         "Onboard a new tenant"      # FLOW-01 customer flow → specs/_product/flows/
-/deviate-architecture                                # FLOW-02 cross-epic architecture → specs/_product/architecture.md
-/deviate-release        "Ship the v2 onboarding"    # FLOW-03 release plan → specs/_product/release-next.md
-```
 
 **Macro** — pick one of two paths. Full path for new features, the `adhoc` shortcut for low/medium-complexity tasks:
 
@@ -163,15 +155,10 @@ dispatcher is `deviate micro run <task-id>` and the queue drain is
 The full lifecycle takes you from a problem statement to merged, tested code with a documented audit trail.
 ---
 
-## Architecture: Four Layers, Two Gates
+## Architecture: Three Layers, Two Gates
 
 ```mermaid
 flowchart TB
-subgraph Product["Product Layer — Customer & Release Framing (optional)"]
-  F[flows] --> A[architecture]
-  A --> R[release]
-end
-
 subgraph Macro["Macro Layer — Feature Scoping"]
   E[explore] --> Re[research]
   Re --> P[prd]
@@ -196,9 +183,6 @@ subgraph MicroAlt["Micro Layer — Direct Path (low-complexity tasks)"]
   T -.->|complexity ≤ 3| Ex[execute]
 end
 
-style F fill:#f5e1f5
-style A fill:#f5e1f5
-style R fill:#f5e1f5
 style E fill:#e1f5e1
 style Re fill:#e1f5e1
 style P fill:#e1f5e1
@@ -219,13 +203,10 @@ style Ex fill:#f5e1e1
 |-------|---------------|--------------------|----------------------------------|
 | **Bootstrap · Setup** | `deviate setup [--agent <name>]` | `.deviate/config.toml`, default execution-layer packs (macro + meso + micro, including `deviate-init`), shared `deviatdd` skill, selected-agent `/deviate-*` commands | Confirm the one agent install. `--agent` skips only the agent picker. TTY still asks `[l]ocal/[g]lobal`, claim-remote `[y]es/[n]o` (default `n`), then a pack checklist (Enter = none). |
 | **Bootstrap · Init** | `/deviate-init` | `specs/constitution.md`, `mise.toml`, `specs/issues.jsonl` (skips files already present) | **First prompt after setup.** Pi: prompt template from `deviate-init.md` (not the `deviatdd` skill). Codex: the `deviate-init` skill. Optional no-agent path: `deviate init pre && deviate init post` (stages; does not commit). Empty `CLAUDE.md` / `AGENTS.md` after setup is expected. |
-| **Product · Flows** | `/deviate-flows` | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Confirm the actor, job-to-be-done, and trigger are right; commit the flow file when asked. |
-| **Product · Architecture** | `/deviate-architecture` | `specs/_product/architecture.md`, `specs/_product/domain-model.md` | Reads existing flows; classify the change as Local / Context-Bridging / Context-Creating; commit when satisfied. |
-| **Product · Release** | `/deviate-release` | `specs/_product/release-next.md` (overrides previous) | Supply a release-goal sentence; confirm the Included Flows / Included Work / Acceptance tables reflect that goal; commit. |
 | **Macro · Explore** | `/deviate-explore` | `specs/{epic}/explore.md` (raw codebase scan — what exists, not what to do) | Does the scan cover the right subsystems? Commit to advance. |
 | **Macro · Research** *(Gate 1)* | `/deviate-research` | `specs/{epic}/design.md`, `specs/{epic}/data-model.md` | **Gate 1**: approve the design + data-model before PRD synthesis. |
 | **Macro · PRD** | `/deviate-prd` | `specs/{epic}/prd.md` (FR list + acceptance criteria) | Verify each FR is testable; commit. |
-| **Macro · Shard** | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with `flow_refs:` frontmatter and embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | Review every sharded issue for completeness, edge cases, and scope (soft review — the system auto-advances to Meso and does not block). Issues are born as full specs — the user-facing *spec content* is embedded here, but **claiming and worktree creation is a separate CLI step (`deviate specify`)** that runs after `/deviate-shard` and before the meso slash commands below. |
+| **Macro · Shard** | `/deviate-shard` | `specs/{epic}/issues/ISS-NNN-*.md` (one file per vertical slice), with embedded `## User Stories Ledger` / `## ATDD Acceptance Criteria` sections | Review every sharded issue for completeness, edge cases, and scope (soft review — the system auto-advances to Meso and does not block). Issues are born as full specs — the user-facing *spec content* is embedded here, but **claiming and worktree creation is a separate CLI step (`deviate specify`)** that runs after `/deviate-shard` and before the meso slash commands below. |
 | **Meso · Specify** | `deviate specify [ISS-NNN-NNN]` | A git worktree at `.worktrees/<branch>/` and a claim entry appended to `specs/issues.jsonl`. `claim_remote` defaults **false** (local only). Push-as-lock is opt-in (`--claim-remote` / `claim_remote = true`). | The setup step before plan/tasks. With no argument, auto-claims the next unblocked BACKLOG issue; with an explicit ID, claims that issue. Stops after the worktree is created — does NOT advance session state and does NOT run plan or tasks. `cd` into the printed worktree path before running any other meso slash command. Path A: `deviate meso run --no-setup --local` stays in this clone. |
 | **Run** *(full pipeline, end-to-end)* | `deviate run` | Worktree at `.worktrees/<branch>/`, `tasks.md`, `tasks.jsonl`, then completed task commits | The canonical "go do the next thing" command. Discovers the next BACKLOG issue, claims it (creating a per-issue worktree), runs SPECIFY → PLAN → TASKS in that worktree, then drains every PENDING task through the TDD cycle. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` to the micro drain. Internally calls `deviate meso run` then `deviate micro run --all` inside the created worktree. |
 | **Meso · Plan** | `/deviate-plan` | `specs/{epic}/issues/ISS-NNN/plan.md` (per-issue localized research, workstation file structure) | **Must be invoked inside the worktree that `deviate specify` created.** Review the workstation mapping and the integration surface listed; commit. Optional when shard already embedded spec sections. |
@@ -239,7 +220,7 @@ style Ex fill:#f5e1e1
 | **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Optional pack. Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
 | **Release** *(Gate 3)* | `/deviate-review` | Comments-only PR scan (optional pack) | **Gate 3**: comments only by default (stdout / GitHub COMMENT). Not a merge gate. Opt-in `--apply` is CRITICAL-only. |
 | **Walkthrough** | `/deviate-walkthrough` | Four-look map (optional pack; no commit) | Brief location, test hunks, production hunks vs named checks, command to run those checks. Does not approve or auto-edit. |
-| **Cleanup** | `/deviate-prune` | Spy/impl tests thinned; `plan.md` / `tasks.md` and JSONL ledgers unchanged | Manual honeycomb pass for **one** issue. Drops `spy` / `impl` (marks, name tags, or untagged internal probes); keeps `behavioral` / `ac` and public input-to-output. Never deletes `plan.md`, `tasks.md`, `explore.md`, `prd.md`, or `issues/*.md`. Never touches `issues.jsonl`, `tasks.jsonl`, or `flows.jsonl`. Manual invoke only — not hooked into COMPLETED, `--all`, or the skill success loop. |
+| **Cleanup** | `/deviate-prune` | Spy/impl tests thinned; `plan.md` / `tasks.md` and JSONL ledgers unchanged | Manual honeycomb pass for **one** issue. Drops `spy` / `impl` (marks, name tags, or untagged internal probes); keeps `behavioral` / `ac` and public input-to-output. Never deletes `plan.md`, `tasks.md`, `explore.md`, `prd.md`, or `issues/*.md`. Never touches `issues.jsonl` or `tasks.jsonl`. Manual invoke only — not hooked into COMPLETED, `--all`, or the skill success loop. |
 
 Operational tools (no gate): `/deviate-triage`, `/deviate-constitution`, `/deviate-hotfix`. `/deviate-prune` is the manual honeycomb test-thinning surface (thin CLI `deviate prune pre` / `post`; the slash command commits the cleanup).
 
@@ -249,7 +230,7 @@ Operational tools (no gate): `/deviate-triage`, `/deviate-constitution`, `/devia
 
 `--help` and this table say which phases **commit**, **spawn an agent**, or **fail closed**. `pre` injects a JSON contract to the agent; `post` validates, writes, and often commits (you did not type `git commit`). Slash prompts tell the agent to run `pre`/`post`; auto prompts tell the agent not to — the orchestrator does. Codex spawn is `codex exec --sandbox workspace-write --ask-for-approval never` (`src/deviate/core/agent.py`). `meso run` and `micro run` nest that spawn.
 
-Default setup installs **macro + meso + micro** plus the shared `deviatdd` skill. Optional packs stay off until selected: `product` (bundle), `merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`, `e2e`.
+Default setup installs **macro + meso + micro** plus the shared `deviatdd` skill. Optional packs stay off until selected: `merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`, `e2e`.
 
 | Phase | Does | Commits | Debug a fail |
 |-------|------|---------|--------------|

@@ -50,7 +50,6 @@ DEFAULT_LAYER_PACKS: dict[str, tuple[str, ...]] = {
     ),
 }
 OPTIONAL_PACKS: dict[str, tuple[str, ...]] = {
-    "product": ("deviate-flows", "deviate-architecture", "deviate-release"),
     "merge": ("deviate-merge",),
     "pr": ("deviate-pr",),
     "review": ("deviate-review",),
@@ -163,9 +162,9 @@ def _resolve_core_dir() -> Path | None:
 # slash-command body is derived from this core plus a per-phase manual
 # overlay at install time — there is no hand-maintained duplicate middle
 # file to drift from the auto semantics. The 15 commands-only prompts
-# (adhoc, architecture, constitution, e2e, flows, hotfix, html, init,
-# merge, pr, prune, release, review, triage, walkthrough) have no auto
-# counterpart and stay hand-maintained.
+# (adhoc, constitution, e2e, hotfix, html, init, merge, pr, prune,
+# review, triage, walkthrough) have no auto counterpart and stay
+# hand-maintained.
 _OVERLAPPING_PHASES = frozenset(
     {
         "explore",
@@ -293,18 +292,12 @@ def compose_command_body(
         layer_content = _read_text(core_dir / f"{layer}-shared.md")
         if layer_content:
             parts.append(layer_content)
-    # 3. Lifecycle block — branch on layer.
-    # Manual-mode (plan/specify/tasks/pr/merge) prepends ``lifecycle-manual.md``
-    # which documents ``deviate <phase> pre`` / ``deviate <phase> post`` scripts.
-    # Product-layer commands (release/architecture/flows) have no pre/post
-    # scripts; they commit a single artifact via
-    # ``deviate.core.commit.commit_artifact`` and the layer-shared block above
-    # already documents that lifecycle. Skip the manual block here so the agent
-    # does not attempt to run ``deviate release pre`` (no such subcommand).
-    if layer != "product":
-        lifecycle = _read_text(core_dir / "lifecycle-manual.md")
-        if lifecycle:
-            parts.append(lifecycle)
+    # 3. Lifecycle block — manual-mode (plan/specify/tasks/pr/merge) prepends
+    # ``lifecycle-manual.md`` which documents ``deviate <phase> pre`` /
+    # ``deviate <phase> post`` scripts.
+    lifecycle = _read_text(core_dir / "lifecycle-manual.md")
+    if lifecycle:
+        parts.append(lifecycle)
 
     # 4. ASD-STE100 writing-style directive (prose + structured discipline) —
     # sibling of lifecycle-manual.md; mirrors the auto-mode injection in

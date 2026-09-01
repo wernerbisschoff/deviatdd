@@ -16,8 +16,6 @@ from tests.conftest import _git_env
 
 runner = CliRunner()
 
-_PRODUCT_LAYER_SKILLS = ("deviate-flows", "deviate-architecture", "deviate-release")
-
 
 class TestInitCommand:
     def test_init_creates_dotfile_structure(self, tmp_path: Path):
@@ -237,130 +235,6 @@ class TestInitCommand:
             assert result.exit_code == 0, result.output
             assert config_path.read_text() == original
 
-    def test_init_creates_product_layer_skills(self) -> None:
-        """TSK-010-01: three Product-layer SKILL.md templates exist with canonical
-        YAML frontmatter (``name``, ``category: deviatdd-product-layer``,
-        ``aliases`` containing slash-command forms).
-
-        Source: ``specs/_product/release-next.md:26`` (acceptance criterion) and
-        ``src/deviate/prompts/commands/deviate-constitution.md:1-11``
-        (canonical frontmatter schema reference).
-        """
-        commands_root = _resolve_commands_root()
-
-        for skill_name in _PRODUCT_LAYER_SKILLS:
-            skill_path = commands_root / f"{skill_name}.md"
-            assert skill_path.exists(), (
-                f"Product-layer skill template missing: {skill_path}"
-            )
-
-            content = skill_path.read_text(encoding="utf-8")
-            assert content.lstrip().startswith("---"), (
-                f"{skill_name}: SKILL.md missing YAML frontmatter delimiter"
-            )
-
-            fm = yaml.safe_load(content.split("---", 2)[1])
-            assert isinstance(fm, dict), (
-                f"{skill_name}: frontmatter did not parse to a dict"
-            )
-
-            assert fm.get("name") == skill_name, (
-                f"{skill_name}: frontmatter name mismatch (got {fm.get('name')!r})"
-            )
-            assert fm.get("category") == "deviatdd-product-layer", (
-                f"{skill_name}: category must be 'deviatdd-product-layer' "
-                f"(got {fm.get('category')!r})"
-            )
-
-            aliases = fm.get("aliases")
-            assert isinstance(aliases, list) and aliases, (
-                f"{skill_name}: aliases must be a non-empty flat YAML list"
-            )
-            assert f"/{skill_name}" in aliases, (
-                f"{skill_name}: aliases must include slash-command /{skill_name} "
-                f"(got {aliases!r})"
-            )
-            assert f"spec:{skill_name.split('-', 1)[1]}" in aliases, (
-                f"{skill_name}: aliases must include spec:<skill> form "
-                f"(got {aliases!r})"
-            )
-
-            description = fm.get("description")
-            assert isinstance(description, str) and "\n" not in description, (
-                f"{skill_name}: description must be a single-line string"
-            )
-
-    def test_init_product_layer_skills_idempotent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """TSK-010-01: re-running ``deviate setup --agent claude --packs product``
-        against a workdir where the three Product-layer skill files are already
-        installed produces SKIP log lines (no errors, no duplicate writes).
-
-        Source: ``src/deviate/cli/__init__.py:518-531`` (``_install_commands_to_agents``)
-        existing skip-on-equal-content logic.
-        """
-        monkeypatch.setattr(
-            "deviate.cli._get_agent_command_dir",
-            lambda agent, _workdir, _export_mode="local": (
-                tmp_path / f".{agent}" / "commands"
-            ),
-        )
-        (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
-
-        with chdir(tmp_path):
-            first = runner.invoke(
-                cli, ["setup", "--agent", "claude", "--packs", "product"]
-            )
-            assert first.exit_code == 0, first.output
-
-            for skill_name in _PRODUCT_LAYER_SKILLS:
-                installed = tmp_path / ".claude" / "commands" / f"{skill_name}.md"
-                assert installed.exists(), (
-                    f"first setup did not install {skill_name}: {installed}"
-                )
-
-            second = runner.invoke(
-                cli, ["setup", "--agent", "claude", "--packs", "product"]
-            )
-            assert second.exit_code == 0, second.output
-
-            for skill_name in _PRODUCT_LAYER_SKILLS:
-                assert "SKIP" in second.output, (
-                    f"second setup did not emit SKIP log for {skill_name}; "
-                    f"got: {second.output!r}"
-                )
-
-    def test_init_discover_commands_enumerates_product_layer(self) -> None:
-        """TSK-010-06: ``discover_commands()`` enumerates >= 23 skill names and
-        includes the three new Product-layer skills (``deviate-flows``,
-        ``deviate-architecture``, ``deviate-release``) exactly once each.
-
-        Source: AC-ADHOC-010-02 (``discover_commands()`` must return 23 names after
-        the three Product-layer skills are added; >= 23 chosen for forward
-        compatibility per ``specs/adhoc/010-deviate-setup-product-layer/tasks.md``
-        §`Risk Hotspots`).
-        """
-        from deviate.core.commands import discover_commands
-
-        skills = discover_commands()
-
-        assert len(skills) >= 23, (
-            f"discover_commands() returned {len(skills)} skill names; "
-            f"expected >= 23. Got: {sorted(skills)}"
-        )
-
-        for skill_name in _PRODUCT_LAYER_SKILLS:
-            assert skill_name in skills, (
-                f"Product-layer skill '{skill_name}' missing from "
-                f"discover_commands() output. Got: {sorted(skills)}"
-            )
-            assert skills.count(skill_name) == 1, (
-                f"Product-layer skill '{skill_name}' appears "
-                f"{skills.count(skill_name)} times in discover_commands() output; "
-                f"expected exactly 1. Got: {sorted(skills)}"
-            )
-
     def test_init_user_input_injection_seam_convention(self) -> None:
         """Every skill declares exactly one ``<user_input>$ARGUMENTS</user_input>``
         runtime injection seam and exactly one ``$ARGUMENTS`` literal in the
@@ -375,9 +249,7 @@ class TestInitCommand:
         injection seam only.
 
         Source: regression guard for the refiner bug that embedded the
-        literal text ``"and update the above prompt in place"`` into
-        ``deviate-flows/SKILL.md`` and the literal Go/Postgres example into
-        ``deviate-constitution/SKILL.md``.
+        literal Go/Postgres example into ``deviate-constitution/SKILL.md``.
         """
         import re
 
@@ -1061,15 +933,12 @@ class TestInitAgentFlag:
             assert "specs/**/tasks.jsonl merge=union" in content
 
     def test_init_seeds_flows_jsonl_merge_union(self, tmp_path: Path):
-        """``deviate setup`` seeds ``specs/_product/flows.jsonl merge=union``
-        in the root ``.gitattributes``, extending the constitution v0.4.0
-        union-merge strategy for the append-only JSONL ledgers.
-        """
+        """``deviate setup`` no longer seeds a flows.jsonl gitattributes rule."""
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
             assert result.exit_code == 0, result.output
             content = (tmp_path / ".gitattributes").read_text(encoding="utf-8")
-            assert "specs/_product/flows.jsonl merge=union" in content
+            assert "specs/_product/flows.jsonl merge=union" not in content
             assert "specs/issues.jsonl merge=union" in content
             assert "specs/**/tasks.jsonl merge=union" in content
 

@@ -5,7 +5,7 @@
 
 <track_a_prose_rules>
 Applies ONLY when you author prose sentences and paragraphs in documents — PRD, design,
-data-model, architecture, domain-model, flows, release notes, PR bodies, ADRs, change
+data-model, PR bodies, ADRs, change
 reports, and review HTML. Follow every rule below:
 
 1. **One idea per sentence.** Split compound sentences at each independent idea. If a
@@ -48,7 +48,7 @@ the artifact is code or structured data, where only Track B is active (Track A d
 
 1. **Exact tokens stay verbatim.** Preserve identifiers, IDs, key names, file paths,
    command names, environment variables, and field names exactly as specified
-   (`TSK-001-01`, `flow_refs`, `AC-PLAN-001`). Never paraphrase or rename them.
+   (`TSK-001-01`, `AC-PLAN-001`). Never paraphrase or rename them.
 2. **One semantic per field.** Each labeled field, key, or ID carries exactly one meaning.
    Do not reuse one field for two concepts, and do not split one concept across two fields.
 3. **No synonym fields.** Do not introduce a second label for a concept that already has a

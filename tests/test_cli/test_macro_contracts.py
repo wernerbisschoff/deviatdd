@@ -406,7 +406,6 @@ class TestMacroContracts:
             "coordinates_with": [],
             "timestamp": "2026-07-30T00:00:00Z",
             "created_at": "2026-07-30T00:00:00Z",
-            "flow_refs": [],
         }
 
     def test_compute_next_issue_id_emits_per_epic_label_for_empty_ledger(

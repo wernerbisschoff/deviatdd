@@ -368,7 +368,7 @@ human confirmation; the gate enforces that.
 ### 1. Ledger sanity
 
 ```bash
-git status --porcelain -- specs/issues.jsonl specs/**/tasks.jsonl specs/_product/flows.jsonl
+git status --porcelain -- specs/issues.jsonl specs/**/tasks.jsonl
 ```
 
 MUST be empty. The Append-Only Ledger Protocol (constitution §1) and the
@@ -399,8 +399,7 @@ Surface the workspace inventory + the exact command pair
 (`git reset --hard HEAD && git clean -fd`) to the user with a numbered
 list of every file that would be discarded, and require an unambiguous
 affirmation: "yes", "do it", "reset", "ship it". **Silence is NOT
-sign-off** — same convention as `/deviate-flows` and
-`/deviate-architecture` sign-off.
+sign-off**.
 
 ### 4. The reset
 

@@ -24,9 +24,7 @@ for the SHARD instructions.
 2. Execute the sharding work described in the core body.
 3. Run `deviate shard post` after the issue files are written. The command
    validates the frontmatter, updates `specs/issues.jsonl`, and commits.
-   The contract includes `product_specs_root`, resolved from
-   `DEVIATE_PRODUCT_SPECS_ROOT`, local `specs/`, or a sibling `../specs/` Product
-   layer. Use that root for read-only flow lookup; keep generated paths local.
+   Keep generated issue paths local to the consumer repository.
 
 ### Issue ID Assignment
 
@@ -48,10 +46,10 @@ frontmatter arrays referencing other shards' `issue_id` values, e.g.
 <consumer_repository_boundary>
 The target is the consumer application's implementation. Assume the DeviaTDD
 CLI and every required agent skill are already installed. Every emitted issue
-must implement or verify the requested application behavior. Existing flow
-files and `flow_refs` provide read-only user-flow context. Do not list
-DeviaTDD setup, skill or slash-command creation, flow authoring/index
-synchronization, release scaffolding, or workflow-ledger maintenance in
+must implement or verify the requested application behavior. User stories
+plus ATDD on the issue are the user-visible job. Do not list
+DeviaTDD setup, skill or slash-command creation, catalog authoring,
+release scaffolding, or workflow-ledger maintenance in
 issue titles, workstation paths, acceptance outlines, demonstration paths,
 or manifest entries. If any PRD requirement is meta work rather than
 application behavior, halt with `META_WORK_NOT_ALLOWED` before writing

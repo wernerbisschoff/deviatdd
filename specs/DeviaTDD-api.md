@@ -65,8 +65,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   manual overlay (pre/post-script lifecycle steps, rich handover manifest,
   `<context><user_input>` block) is appended from the reduced
   `commands/deviate-{phase}.md` source. `auto/{phase}.md` is the single source of
-  truth; the 15 commands-only prompts (adhoc, architecture, constitution, e2e,
-  flows, hotfix, html, init, merge, pr, prune, release, review, triage,
+  truth; the 12 commands-only prompts (adhoc, constitution, e2e,
+  hotfix, html, init, merge, pr, prune, review, triage,
   walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
   pins the identical-middle invariant across all 11 phases (see section 2).
 
@@ -80,8 +80,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   manual overlay (pre/post-script lifecycle steps, rich handover manifest,
   `<context><user_input>` block) is appended from the reduced
   `commands/deviate-{phase}.md` source. `auto/{phase}.md` is the single source of
-  truth; the 15 commands-only prompts (adhoc, architecture, constitution, e2e,
-  flows, hotfix, html, init, merge, pr, prune, release, review, triage,
+  truth; the 12 commands-only prompts (adhoc, constitution, e2e,
+  hotfix, html, init, merge, pr, prune, review, triage,
   walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
   pins the identical-middle invariant across all 11 phases (see section 2).
   **Agent-to-commands-directory mapping:** `.claude/` → `.claude/commands/`;
@@ -129,16 +129,14 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `getAgentDir()`); the other agents use `~/.{agent}/commands|prompts` +
   `skills` (Codex `~/.agents/skills`); `local` stays project-local.
 * **Optional pack selection:** `--packs none|all-optional|<comma-separated names>` selects
-  optional command packs for scripts. Default layer packs are the execution layers only
-  (`macro` + `meso` + `micro`, including `/deviate-init`). Product is not a default layer:
-  it is one optional bundle (`deviate-flows`, `deviate-architecture`, `deviate-release`)
-  that stays unsplit. On a TTY, omitted `--packs` shows a Rich checkbox list (one pack
-  per row: `product` first, then `merge`, `pr`, `review`, `walkthrough`, `html`,
-  `hotfix`, `triage`, `prune`, `e2e`). Space toggles; Enter confirms; default is
+  optional command packs for scripts. Default layer packs are the three execution layers
+  (`macro` + `meso` + `micro`, including `/deviate-init`). On a TTY, omitted `--packs`
+  shows a Rich checkbox list (one pack per row: `merge`, `pr`, `review`, `walkthrough`,
+  `html`, `hotfix`, `triage`, `prune`, `e2e`). Space toggles; Enter confirms; default is
   nothing selected (execution layers only). The slash-separated `Prompt.ask` list is
   not used. Non-interactive sessions skip the prompt and install default-only.
-  `--packs product` writes all three product commands; `--packs all-optional` includes
-  `product` plus every individual extra. Pack picks are not written to `config.toml`.
+  `--packs all-optional` includes every individual extra. Pack picks are not written
+  to `config.toml`.
 * **Execution Modes:**
   * **Offline Mode (Default):** `_scaffold_constitution()` writes
     `src/deviate/prompts/constitution_seed.md` verbatim to `specs/constitution.md`. The
@@ -342,20 +340,6 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     Emits `{"status": "SUCCESS"}` on success.
 * **Common Flags:** None (each sub-command exposes its own options).
 
-### 1.5 Product Layer *(optional, sits above Macro)*
-
-The Product layer ships as **agent skills** (no dedicated CLI subcommands) — the prompts live at `src/deviate/prompts/commands/deviate-{flows,architecture,release}.md` and are installed to the selected agent directory alongside the rest. They are **not** wired into the `deviate` CLI's `pre`/`post` subcommand pattern: the agent invokes them directly as `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, and the conversation produces the artifact. The CLI's only involvement is installing the skill files during `deviate setup` and (via `deviate-shard` / `deviate-adhoc`) consuming the `flow_refs:` frontmatter those artifacts emit.
-
-| Command | Source skill | Artifact committed | Notes |
-|---------|--------------|--------------------|-------|
-| `/deviate-flows` | `src/deviate/prompts/commands/deviate-flows.md` (FLOW-01) | `specs/_product/flows/flows-<domain>.md` + updated `specs/_product/flows/index.md` | Conversational; the agent must surface clarifying questions when actor, job-to-be-done, or trigger is ambiguous. FLOW-NN IDs use `^FLOW-\d{2,}$`. **Commit protocol (v1.4.0):** Phase A drafts every flow file + index row to disk as the conversation progresses (no commit). Before composing the commit subject, Phase B reads `<repo_root>/CONTRIBUTING.md` *if it exists* to discover the target repository's commit-message convention (types, scopes, emoji prefix, subject length). The default when absent is Conventional Commits; if CONTRIBUTING.md exists and declares a different convention, that wins. Phase B then fires exactly one `git add <session-owned files> && git commit -m '<subject per CONTRIBUTING.md or default>'` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes"), staging every session-authored flow file plus `index.md`. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit. `git commit` runs WITHOUT `--no-verify` by default; if CONTRIBUTING.md exists and explicitly permits `--no-verify` for docs-only commits, pass it; otherwise the target repo's pre-commit hooks run. If a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass. The prompt invokes the host agent's git tooling directly; no internal Python commit helper is exposed to any Product-layer prompt. |
-| `/deviate-architecture` | `src/deviate/prompts/commands/deviate-architecture.md` (FLOW-02) | `specs/_product/architecture.md` (includes `## Architectural Decision Records` when qualifying decisions exist) + `specs/_product/domain-model.md` | **Precondition:** at least one flow file under `specs/_product/flows/` must exist; otherwise the skill must surface `[red]FLOWS_MISSING[/]` and recommend `/deviate-flows` first. ADRs are one-paragraph entries appended inline when a decision is hard to reverse, surprising without context, and the result of a real tradeoff. **Commit protocol (v1.3.0):** Phase A drafts `specs/_product/architecture.md` and `specs/_product/domain-model.md` to disk as the conversation progresses and stages them via the host agent's git tooling (`git add`) so the user can `git diff --cached` while iterating — no commit fires mid-conversation. Before composing the commit subject, Phase B reads `<repo_root>/CONTRIBUTING.md` *if it exists* to discover the target repository's commit-message convention (types, scopes, emoji prefix, subject length); the default when absent is Conventional Commits. Phase B then fires exactly one `git commit -m '<subject per CONTRIBUTING.md or default>'` after the user explicitly signs off ("commit", "looks good", "done", "ship it", "approve", "lgtm", "yes" — silence is not sign-off), staging every session-authored architecture and domain-model file. The pre-commit `git diff --cached --name-only` audit must confirm the staged set is a subset of the session-owned files; any extras halt the commit and surface the discrepancy (no auto-unstage). Per-file commits and `git add -A` / `git commit --only` are forbidden (these were the v1.2.0 split-across-N-commits regression). The classification banner (`Local` / `Context-Bridging` / `Context-Creating`) rides in the commit body. `git commit` runs WITHOUT `--no-verify` by default; only pass `--no-verify` when CONTRIBUTING.md exists and explicitly permits hook bypass for this scenario. If a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass. The prompt invokes the host agent's git tooling directly; no internal Python commit helper is exposed to any Product-layer prompt. |
-| `/deviate-release` | `src/deviate/prompts/commands/deviate-release.md` (FLOW-03) | `specs/_product/release-next.md` (overrides previous) | **Precondition:** both `specs/_product/architecture.md` and at least one flow file must exist; otherwise `[red]ARCH_OR_FLOWS_MISSING[/]`. The release goal (free-text user input) drives the Included Flows / Included Work / Acceptance tables. **Commit protocol (v1.1.0):** Phase A drafts `specs/_product/release-next.md` to disk. Before composing the commit subject, Phase B reads `<repo_root>/CONTRIBUTING.md` *if it exists* to discover the target repository's commit-message convention (types, scopes, emoji prefix, subject length). The default when absent is Conventional Commits (`docs(release): <one-line summary>`); if CONTRIBUTING.md exists and declares a different convention, that wins. Phase B then fires exactly one `git add specs/_product/release-next.md && git commit -m '<subject per CONTRIBUTING.md or default>'` after the user explicitly signs off. `git commit` runs WITHOUT `--no-verify` by default; only pass `--no-verify` when CONTRIBUTING.md exists and explicitly permits hook bypass for this scenario. If a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass. The prompt invokes the host agent's git tooling directly; no internal Python commit helper is exposed to any Product-layer prompt. |
-
-**Downstream consumption:** `deviate-shard` and `deviate-adhoc` SKILL.md bodies read `specs/_product/flows/`, `specs/_product/release-next.md`, `specs/_product/architecture.md`, and `specs/_product/domain-model.md` as authoritative context. Each sharded or adhoc issue emits a `flow_refs: [FLOW-XX, ...]` field in its YAML frontmatter and in the `IssueRecord.flow_refs` ledger entry (validated against `^FLOW-\d{2,}$`), so vertical slices stay traceable back to the flow that motivated them. `deviate adhoc pre` accepts a `--flow-ref FLOW-01,FLOW-02` CLI override to set the flow refs explicitly when the agent's natural-language inference is ambiguous.
-
-**Active Domain Discipline** is enforced at HITL gates: the Product-layer discovery steps (`/deviate-flows`, `/deviate-architecture`) follow a structured 7–8 bullet active discipline — one question at a time with a recommended answer, dependency-ordered, read-first, term-challenge against the glossary, sharpen fuzzy language, stress-test with scenarios, and update the artifact (`flows-<domain>.md` or `domain-model.md`) inline as terms resolve.
-
 #### `/deviate-shard` (Macro Layer)
 
 * **Objective:** Decomposes the PRD into standalone, testable issue files.
@@ -540,14 +524,14 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Per-issue localized research phase with two operating modes:
   * **Outside a linked worktree:** auto-discovers or uses `--issue`, creates/claims the worktree through `_specify_pre`, force-transitions to PLAN, and syncs `.deviate/`.
   * **Inside a linked worktree:** accepts SPECIFY or PLAN, resolves `record.source_file`, parses `## System Topology Mapping`, and emits `issue_id`, `spec_path`, `plan_target`, `worktree_full`, `branch_name`, and constitution paths. The issue is resolved from `session.active_issue_id`, falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against `specs/issues.jsonl` so a fresh worktree with an empty session still targets the branch's own issue.
-* **Acceptance ownership:** The issue supplies stories, scope, topology, `AO-NNN` outlines, edge cases, performance constraints, and flow refs. Plan reconciles each outline into complete `AC-PLAN-NNN` scenarios with Source Outline, upstream traceability, current-code evidence, and Given/When/Then. This contract is authoritative for Tasks, RED, and JUDGE.
+* **Acceptance ownership:** The issue supplies stories, scope, topology, `AO-NNN` outlines, edge cases, and performance constraints. Plan reconciles each outline into complete `AC-PLAN-NNN` scenarios with Source Outline, upstream traceability, current-code evidence, and Given/When/Then. This contract is authoritative for Tasks, RED, and JUDGE.
   * **Per-scenario required fields** (every `AC-PLAN-NNN` MUST contain all five):
     1. **Scenario header** — `**Scenario AC-PLAN-NNN: <observable behaviour, imperative present tense>**`. Sequential, zero-padded, unique.
     2. **Source Outline** — `**Source Outline**: \`AO-NNN\`[, \`AO-MMM\`…]`. MUST be a literal AO token literally present in the issue's `## Acceptance Outline`. A comma-separated list is allowed for cross-cutting scenarios.
     3. **Upstream Traceability** — `**Upstream Traceability**: \`US-NNN-NN\`, \`FR-NNN-ID\`, \`AC-NNN-ID-NN\`. At minimum one `US-`, one `FR-`, and one `AC-` token, comma-separated, drawn from the issue's `## Upstream Requirement Tracing` and `## User Stories Ledger`.
     4. **Current-Code Evidence** — `**Current-Code Evidence**: \`<relative path>:<symbol or line>\``. At least one concrete path reference grounded in the codebase scan.
     5. **Given / When / Then** — exactly three bold-labelled clauses in this order: `**Given**:`, `**When**:`, `**Then**:`. Each clause is a single imperative sentence and MUST NOT embed additional `**Given**` / `**When**` / `**Then**` markers. The `**Then**` clause MUST state a verifiable observable outcome.
-  * **Required sections in canonical order**: `## Plan Summary` → `## Product Layer Anchors` → `## Acceptance Contract` → `## Workstation Mapping` → `## Implementation Strategy` → `## Data Flow Analysis` → `## Risk Assessment` → `## Security Profile` → `## Integration Points` → `## Constitutional Alignment`.
+  * **Required sections in canonical order**: `## Plan Summary` → `## Acceptance Contract` → `## Workstation Mapping` → `## Implementation Strategy` → `## Data Flow Analysis` → `## Risk Assessment` → `## Security Profile` → `## Integration Points` → `## Constitutional Alignment`.
   * **Acceptance Coverage Invariant:** Every AO from the issue's `## Acceptance Outline` MUST appear as the Source Outline of at least one AC-PLAN scenario. Behavioural coverage that does not map cleanly to a single AO (e.g. an HMAC failure, an RLS isolation invariant, a defensive boundary) belongs under an existing AO's Error Category or Boundary Category. If no existing AO fits, the issue's outline is incomplete — halt with `INCOMPLETE_ISSUE_OUTLINE` and request that shard/adhoc regenerate the issue.
   * **Forbidden patterns** (any one triggers `PLAN_ACCEPTANCE_CONTRACT_INVALID` from `deviate plan post`): Source Outline labelled `Edge Cases`, `Boundary`, `Constitutional §…`, `RLS`, `Tenant Isolation`, `Hardening`, `Security`, or any non-AO string; missing `**Source Outline**` / `**Upstream Traceability**` / `**Current-Code Evidence**` / any of `**Given**` / `**When**` / `**Then**`; a repeated or illegal `**Verification Mode**: <automated|manual|deferred>` literal (a scenario MUST carry exactly one legal mode line; an empty or non-alphabetic value is treated as missing); an issue AO not used by any AC-PLAN scenario; duplicate or non-sequential `AC-PLAN-NNN` identifiers; wrapping the plan body in any XML tag / code fence / preamble. A *missing* mode line is not a stopping error: the meso gates auto-fill the default `automated` value into the scenario body (see `deviate plan post`). The validator lives at `src/deviate/core/validation.py::validate_acceptance_contract`; the repair helper is `repair_missing_verification_mode`.
 * **Input Parameters:** `--issue`, `--force`, `--dry-run`; common `--json` / `--quiet` wrappers apply.
@@ -842,8 +826,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `explore.md`, `prd.md`, issue md, or ledgers. In-flight (non-COMPLETED)
   issues emit `IN_FLIGHT` and still classify tests. Compact / squash / rewrite
   intent is `LEDGER_REWRITE_REJECTED`. Manual invoke only: not hooked into
-  micro COMPLETED, `--all`, or the `deviatdd` skill success loop. Missing
-  `specs/_product/flows.jsonl` is skipped, not created.
+  micro COMPLETED, `--all`, or the `deviatdd` skill success loop.
 * **Input Parameters:**
   * `--issue <id>` (optional; one issue per invocation)
   * trailing `intent` words (rejected when they ask to compact/squash/rewrite)
@@ -857,7 +840,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 * **Description:** Applies honeycomb thinning (deletes tagged `spy` / `impl`
   tests and untagged internal probes; keeps `behavioral` / `ac` and public
   I/O). Never unlinks `plan.md`, `tasks.md`, `explore.md`, `prd.md`,
-  `specs/**/issues/*.md`, leftover cycle markdown, constitution, Product/flows,
+  `specs/**/issues/*.md`, leftover cycle markdown, constitution,
   or any JSONL ledger. READY and `IN_FLIGHT` both thin tests and leave specs
   in place. Does not commit — the slash command commits the cleanup.
 * **Input Parameters:** Same as `deviate prune pre`.
@@ -1367,35 +1350,6 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `--type` and `--status`. The `--json` flag emits the parsed record array.
 * **Common Flags:** `--json`, `--quiet`
 
-#### `deviate inspect flows coverage [--release <release.md>]`
-
-* **Source:** `src/deviate/cli/inspect.py` (`flows_coverage_command`)
-* **Description:** Read-only query surface that joins three inputs — `specs/_product/flows/index.md` (the flows catalog), `specs/_product/flows.jsonl` (the append-only events ledger seeded by `deviate flows sync`), and `specs/issues.jsonl` (for issue linkage) — via `load_flow_coverage()` (`src/deviate/state/ledger.py`) to emit one `FlowCoverage` row per `FLOW-NN` with a populated `drift_flag` drawn from the seven-value taxonomy (`OK`, `STALE_DRIFT`, `ORPHANED_FLOW`, `PROMPT_ONLY_NO_CODE`, `DOC_ARTIFACT_ONLY`, `DOCUMENTED_BUT_NOT_IMPLEMENTED`, `IMPLEMENTED_BUT_UNDOCUMENTED`). Renders a Rich `Table` (Flow ID, Title, Drift Flag, Last Event) — these are STATE 3 surface rows, not banners. The command distinguishes two missing-input states with different remedia…
-  * **STATE 2 — normal first-run:** `flows/index.md` exists but `specs/_product/flows.jsonl` has not yet been seeded (typical on a fresh checkout before the first `deviate flows sync` has run). The command emits a `[yellow]NO_FLOWS_LEDGER[/]` banner on stderr, exits with code `0`, and renders an empty Rich table. Remediation: run `deviate flows sync` (or `/deviate-flows` Phase B, which invokes it) to seed the ledger; "no rows" is the correct answer, not an error.
-  * **STATE 3 — live drift:** the ledger is present and the catalog has entries. Every cataloged `FLOW-NN` shows up as a normal table row whose `drift_flag` column carries one of the seven taxonomy values above. No banner — drift surfaces row-by-row.
-* **Input Parameters:**
-  * `--release <release.md>` (Path to the active release-next Markdown file. When supplied, parses the `Included Flows` table (rows beginning with `| FLOW-`) and narrows the rendered coverage to only those `FLOW-NN` IDs explicitly listed for the release. Header markers and rows with an empty first cell are skipped silently — so the operator sees "what is still incomplete for THIS release" instead of "what is incomplete globally.")
-* **Common Flags:** `--json`, `--quiet`
-
-#### `deviate inspect flows candidates [--include-released]`
-
-* **Source:** `src/deviate/cli/inspect.py` (`flows_candidates_command`)
-* **Description:** Read-only release-readiness view that lists `FlowCoverage` rows with `impl_status == "CONFIRMED_IMPLEMENTED"` — i.e. flows whose `FLOW_CONFIRMED_IMPLEMENTED` event has been written to `specs/_product/flows.jsonl` (by `/deviate-merge`) and which have not yet been tagged by a `FLOW_INCLUDED_IN_RELEASE` event. Backed by `select_release_candidate_flows()` in `src/deviate/state/ledger.py`. Order: most recent issue-reference timestamp first, `flow_id` ascending as the tiebreaker, unreferenced flows last. The command mirrors the State 1 / State 2 / State 3 contract used by `flows coverage`:
-  * **STATE 1 — configuration error:** `specs/_product/flows/index.md` is absent. The command emits a `[red]FLOWS_INDEX_MISSING[/]` banner on stderr and exits with code `2`.
-  * **STATE 2 — normal first-run:** `flows/index.md` exists but `specs/_product/flows.jsonl` has not yet been seeded. The command emits a `[yellow]NO_FLOWS_LEDGER[/]` banner on stderr, exits with code `0`, and emits an empty JSON array (or `NO_CANDIDATE_FLOWS` for the human-readable table). An empty result is the correct answer, not an error — `/deviate-release` treats it as a recommendation list and continues.
-  * **STATE 3 — live readiness:** the ledger is present. Renders one Rich table row per confirmed flow (Flow ID, Implementation, Last Issue, Drift Flag) or a JSON array of `FlowCoverage` records under `--json`.
-* **Input Parameters:**
-  * `--include-released` — relax the `FLOW_INCLUDED_IN_RELEASE` filter so flows already shipped in a prior release also surface. Use only when the operator explicitly wants to re-list a flow (e.g. "re-list FLOW-04 that was in 1.0"); the release prompt documents this as a deliberate override.
-* **Common Flags:** `--json`, `--quiet`
-* **Read by:** `/deviate-release` step 2.5 as a recommendation list for the Included Flows table. The release prompt's goal-first invariant is preserved: the user/agent composes the Included Flows table; the candidate list is a default-fill suggestion, not an auto-populate.
-
-#### `deviate flows sync`
-
-* **Source:** `src/deviate/cli/flow_commands.py` (`flows_sync`)
-* **Description:** Mutating command — the sole owner of `specs/_product/flows.jsonl` creation. Parses every row of `specs/_product/flows/index.md` (the canonical flow catalog) and appends one ``FlowRecord`` identity row plus ``FLOW_DISCOVERED`` and ``FLOW_DOCUMENTED`` events per flow. It NEVER writes ``FLOW_REFERENCED_BY_ISSUE`` events to the ledger — the referenced-by relationship is derived read-only from ``specs/issues.jsonl::flow_refs`` at coverage time, never persisted into ``flows.jsonl``. Re-running on a populated ledger is a no-op (compound-key idempotency on `append_flow_record` + `append_flow_event` — `flow_id` for identity, `(flow_id, event_type, event_issue_id, event_release_version, evidence_path)` for events). Exits non-zero with a `[red]FLOWS_INDEX_MISSING` banner on stderr when `specs/_product/flows/index.md` is absent; exits non-zero with `[red]FLOWS_INDEX_EMPTY` when the index exists but parses to zero rows (authoring-defect detection, surfaces half-baked catalogs). On a successful idempotent re-run, prints `[green]FLOW_LEDGER_UP_TO_DATE`; on first-run emits `[green]FLOW_LEDGER_SEEDED <count>`. ``deviate explore post`` never writes to the ledger — it only renders the coverage report (deriving ``last_referenced_by_issue_id`` read-only from ``specs/issues.jsonl::flow_refs``). Operators can run this command directly to (re-)seed the ledger from the catalog.
-* **Input Parameters:** None.
-* **Common Flags:** None.
-
 ---
 ### 7. Code Review & Quality Gates
 
@@ -1595,7 +1549,7 @@ src/deviate/
 │   │   ├── red.md, green.md, judge.md, refactor.md, plan.md, execute.md
 │   │   └── (11 overlapping phases above)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 26 DeviaTDD slash commands (flat *.md): 11 derive their body from auto/{phase}.md + a manual overlay ({execute, explore, green, judge, plan, prd, red, refactor, research, shard, tasks}); 15 hand-maintained commands-only prompts (adhoc, architecture, constitution, e2e, flows, hotfix, html, init, merge, pr, prune, release, review, triage, walkthrough)
+│   └── commands/             # 23 DeviaTDD slash commands (flat *.md): 11 derive their body from auto/{phase}.md + a manual overlay ({execute, explore, green, judge, plan, prd, red, refactor, research, shard, tasks}); 12 hand-maintained commands-only prompts (adhoc, constitution, e2e, hotfix, html, init, merge, pr, prune, review, triage, walkthrough)
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
     └── ledger.py             # IssueRecord, TaskRecord, append_issue_transition, append_task_transition
 ```
@@ -1646,10 +1600,10 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation with remote-aware `NNN` (`max(origin ledger, current ledger, remote feat/adhoc/<NNN>-*) + 1`; `ISS-ADH-NNN` and `ISS-NNN` are one series; local-only branches do not reserve), ledger registration, commit, Gherkin-leak guard |
 | **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
-| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD; incl. a terminal `[E2E]`/`Verification_Batch` `IMMEDIATE` task that authors `tests/e2e/` user-facing scenarios and runs last when a user-facing workflow or `flow_refs` exists; other types still pick TDD vs IMMEDIATE), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
+| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD; incl. a terminal `[E2E]`/`Verification_Batch` `IMMEDIATE` task that authors `tests/e2e/` user-facing scenarios and runs last when a user-facing workflow exists; other types still pick TDD vs IMMEDIATE), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
 | `/deviate-walkthrough` | Four-Look Map | (none — conversation only) | `deviate walkthrough pre/post` | 4 looks: brief + plan AC lines, test hunks, production-hunk→named-check claims, check command. HITL `ask` per look. Must not approve, hide hunks, skip a look, or auto-edit. |
 | `/deviate-review` | Gate 3 PR Reviewer | advisory `.deviate/review/reports/` (never staged) | `deviate review pre/post` (`--apply` opt-in) | Default: comments only (stdout and/or GitHub `COMMENT`). Named-check checklist + test-weakening + this-issue cross-task drift. `brief incomplete` when named checks are missing. No always-on apply; no `REQUEST_CHANGES`; no merge. `--apply` may land CRITICAL-only fixes (security / data loss / broken build / named-check fail with a concrete FIX) and commit only if a CRITICAL fix landed. |
-| `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` *(for `prd`, `deviate html prd --bucket <slug>` targets a specific epic when more than one owns a `prd.md`; `--force` overwrites an existing `.html`)* | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC/FLOW/ADR tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-flows`, `/deviate-architecture`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
+| `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` *(for `prd`, `deviate html prd --bucket <slug>` targets a specific epic when more than one owns a `prd.md`; `--force` overwrites an existing `.html`)* | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
 
 > **Deprecation Notice:** `/deviate-specify` is deprecated as a standalone acceptance-authoring step. Shard now emits issues carrying `AO-NNN` acceptance outlines only; Plan authors the current-code-informed Gherkin contract. The `/deviate-specify` skill remains for backward compatibility but redirects to the new workflow (Plan owns Gherkin). This replaces the older "Meso-Layer Restructuring (ADHOC-003)" wording that placed spec detail in Shard.
 
@@ -1673,7 +1627,6 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `source_file` | `str` | Path to the issue's source file |
 | `blocked_by` | `list[str]` | DAG dependency issue IDs |
 | `coordinates_with` | `list[str]` | Related issue IDs |
-| `flow_refs` | `list[str]` | Product-layer FLOW-NN IDs this issue implements (e.g. `["FLOW-01", "FLOW-04"]`). Defaults to `[]`. Populated by `deviate-shard` and `deviate-adhoc` from `specs/_product/flows/` so vertical slices stay traceable back to the Product-layer flows that motivated them. Validated against `^FLOW-\d{2,}$` on `--flow-ref` CLI overrides. |
 | `timestamp` | `datetime` | When the record was created |
 | `created_at` | `datetime` | When the issue was first created |
 
@@ -1703,24 +1656,6 @@ All state transitions are append-only. No existing line is ever modified or over
   append).
 - Canonical state: Issues derived bottom-up (latest entry per `issue_id`); tasks derived
   sequentially (latest entry per `(id, status)` compound key)
-
-
-#### Flow Ledger Helpers (Pydantic + runtime -- `src/deviate/state/ledger.py`)
-
-Append-only event-sourced flow ledger (`specs/_product/flows.jsonl`).
-The Pydantic models `FlowRecord` (identity row), `FlowEvent` (event row
-with seven typed event kinds), and `FlowCoverage` (derived per-flow
-drift row) are documented in `specs/DeviaTDD-architecture.md` §Flow
-Ledger. The two runtime helpers below are the new contract surface
-introduced for `/deviate-merge` flow confirmation and `/deviate-release`
-candidate selection:
-
-| Function | Purpose | Used by |
-|---|---|---|
-| `_confirm_implemented_flows(*, issue_id, issues_ledger, flows_ledger) -> FlowConfirmationResult` | Pure ledger op: reads the issue's `flow_refs`, validates each token against the canonical `^FLOW-\d{2,}$` regex, and appends one `FLOW_CONFIRMED_IMPLEMENTED` event per ref via `append_flow_event`. Idempotent on `(flow_id, event_type, event_issue_id, evidence_path=None)`. Returns `FlowConfirmationResult(flow_ids, appended_count, skipped_refs)`: `flow_ids` lists every syntactically valid ref (so idempotent re-runs still report the flow as confirmed), `appended_count` separates new writes from no-ops, `skipped_refs` carries malformed tokens. | `deviate merge` (`src/deviate/cli/meso.py::_merge_run`). |
-| `select_release_candidate_flows(*, flows_ledger, flows_index, issues_ledger, exclude_released=True) -> list[FlowCoverage]` | Returns `FlowCoverage` rows whose `impl_status == "CONFIRMED_IMPLEMENTED"`. When `exclude_released=True` (default), rows with any prior `FLOW_INCLUDED_IN_RELEASE` event are filtered out. Returns `[]` (not an error) when `flows_ledger` does not exist — the State 2 first-run condition. Order: most recent issue-reference timestamp desc, `flow_id` ascending as the tiebreaker, unreferenced flows last. | `deviate inspect flows candidates` (`src/deviate/cli/inspect.py::flows_candidates_command`) and `/deviate-release` step 2.5. |
-
-
 
 
 #### SessionState (Pydantic -- `src/deviate/state/config.py`)

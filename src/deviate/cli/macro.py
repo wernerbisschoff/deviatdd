@@ -1,7 +1,6 @@
 from __future__ import annotations
 import importlib.resources
 import json
-import os
 import shutil
 import subprocess
 import uuid
@@ -43,13 +42,7 @@ from deviate.core.validation import (
     validate_source_file,
     validate_yaml_frontmatter,
 )
-from rich.console import Console
-from rich.table import Table
 from deviate.state.ledger import (
-    FlowCoverage,
-    FlowRecord,
-    load_flow_coverage,
-    _parse_flows_index,
     IssueRecord,
     _read_ledger,
     append_issue_record,
@@ -115,23 +108,6 @@ def _load_session_for_phase(
 
 def _resolve_specs_root() -> Path:
     return Path("specs")
-
-
-def _resolve_product_specs_root() -> Path:
-    """Resolve the read-only Product-specs root used for flow traceability."""
-    configured = os.environ.get("DEVIATE_PRODUCT_SPECS_ROOT", "").strip()
-    if configured:
-        path = Path(configured)
-        return path if path.is_absolute() else Path.cwd() / path
-
-    local = Path("specs")
-    if (local / "_product").exists():
-        return local
-
-    workspace = Path("../specs")
-    if (workspace / "_product").exists():
-        return workspace
-    return local
 
 
 def _resolve_repo_context() -> dict:
@@ -483,10 +459,6 @@ def explore_post(
         console.print(f"[yellow]COMMIT_SKIP[/] {explore_path} — no changes to stage")
     else:
         console.print(f"[green]COMMITTED[/] {explore_path}")
-    # ------------------------------------------------------------------
-    # Product-layer: seed flow ledger and render coverage report
-    # ------------------------------------------------------------------
-    _run_flow_ledger_cycle(specs_root)
     _save_session(session, session_path, "EXPLORE")
 
 
@@ -920,7 +892,6 @@ def shard_pre(
         dry_run=dry_run,
         epic_slug=epic_slug,
         prd_path=str(prd_path),
-        product_specs_root=str(_resolve_product_specs_root().resolve()),
         next_issue_id=next_issue_id,
         issues_dir=str(issues_dir),
         plan_target=str(artifacts_dir / "manifest_shard.json"),
@@ -999,7 +970,6 @@ def shard_post(
             blocked_by=issue_data.get("blocked_by", []),
             coordinates_with=issue_data.get("coordinates_with", []),
             timestamp=datetime.now(timezone.utc),
-            flow_refs=issue_data.get("flow_refs", []),
         )
         appended = append_issue_record(record, ledger_path)
         if appended:
@@ -1238,106 +1208,6 @@ def _shard_pre(epic: str | None = None) -> None:
 
 def _shard_post(manifest: Path, epic: str | None = None, force: bool = False) -> None:
     shard_post(manifest, epic=epic, force=force)
-
-
-def _run_flow_ledger_cycle(specs_root: Path) -> None:
-    """Render the flow coverage report from the canonical flow index.
-
-    Reads ``specs/_product/flows/index.md`` (the canonical flow index) and
-    ``specs/_product/flows.jsonl`` (the append-only flow event ledger) to
-    derive a ``FlowCoverage`` report. Identity and documentation events
-    (``FLOW_DISCOVERED`` / ``FLOW_DOCUMENTED``) are emitted by
-    ``deviate flows sync``. Once the ledger is seeded and the index
-    exists, this function renders the coverage report; it never writes
-    ``FLOW_REFERENCED_BY_ISSUE`` events. The 'last referenced by issue'
-    column is derived read-only from ``specs/issues.jsonl::flow_refs``.
-    If the index is absent, emits a ``FLOWS_INDEX_MISSING`` warning and
-    returns early.
-    """
-    flows_index_path = specs_root / "_product" / "flows" / "index.md"
-    flows_ledger_path = specs_root / "_product" / "flows.jsonl"
-    issues_ledger_path = specs_root / "issues.jsonl"
-
-    if not flows_index_path.exists():
-        console.print(
-            "[yellow]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md — ",
-            "skipping flow coverage report",
-        )
-        return
-
-    records_by_id: dict[str, FlowRecord] = {
-        r.flow_id: r for r in _parse_flows_index(flows_index_path)
-    }
-
-    rows = load_flow_coverage(flows_ledger_path, flows_index_path, issues_ledger_path)
-    _render_flow_coverage_report(rows, records_by_id)
-
-
-def _render_flow_coverage_report(
-    rows: list[FlowCoverage],
-    records_by_id: dict[str, FlowRecord],
-) -> None:
-    """Render a Rich-formatted Flow Coverage Report to stdout.
-
-    Builds a ``rich.table.Table`` with six columns drawn from the
-    ``FlowCoverage`` derived view. Rows whose ``drift_flag`` is one of
-    ``DOCUMENTED_BUT_NOT_IMPLEMENTED``, ``IMPLEMENTED_BUT_UNDOCUMENTED``,
-    ``ORPHANED_FLOW``, or ``STALE_DRIFT`` are styled in yellow.
-    """
-
-    table = Table(title="Flow Coverage")
-    table.add_column("flow_id")
-    table.add_column("Actor / Job / Trigger")
-    table.add_column("Documented?")
-    table.add_column("Implementation Evidence")
-    table.add_column("Last Referenced By")
-    table.add_column("Drift Flag", no_wrap=True)
-
-    yellow_flags = frozenset(
-        {
-            "DOCUMENTED_BUT_NOT_IMPLEMENTED",
-            "IMPLEMENTED_BUT_UNDOCUMENTED",
-            "ORPHANED_FLOW",
-            "STALE_DRIFT",
-        }
-    )
-
-    for row in rows:
-        flow_record = records_by_id.get(row.flow_id)
-        actor = flow_record.actor if flow_record else ""
-
-        documented_str = "Yes" if row.doc_status == "DOCUMENTED" else "No"
-
-        if row.evidence_paths:
-            impl_evidence = "; ".join(row.evidence_paths)
-        elif row.impl_status == "CONFIRMED_IMPLEMENTED":
-            impl_evidence = "Confirmed implemented"
-        elif row.impl_status == "PARTIALLY_IMPLEMENTED":
-            impl_evidence = "Partial evidence"
-        else:
-            impl_evidence = "None"
-
-        last_ref = row.last_referenced_by_issue_id or ""
-        if row.last_referenced_by_release_version:
-            if last_ref:
-                last_ref += f" / {row.last_referenced_by_release_version}"
-            else:
-                last_ref = row.last_referenced_by_release_version
-
-        style = "yellow" if row.drift_flag in yellow_flags else None
-
-        table.add_row(
-            row.flow_id,
-            actor,
-            documented_str,
-            impl_evidence,
-            last_ref,
-            row.drift_flag,
-            style=style,
-        )
-
-    rich_console = Console(width=200)
-    rich_console.print(table)
 
 
 # ---------------------------------------------------------------------------

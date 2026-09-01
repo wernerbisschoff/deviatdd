@@ -28,9 +28,8 @@ MUST read:
 
 MUST NOT read unless this brief names those paths:
 - epic explore
-- leftover research
+- leftover research/docs
 - other issues' plans
-- Product/flows
 - constitution
 - PRD
 
@@ -95,7 +94,7 @@ deviate walkthrough pre
 
 Parse the JSON contract. If `diff` is empty, emit `SKIP: no changes since {base_branch}` and exit.
 
-Read `issue_brief_path` and, if not null, `plan_path`. Do not open constitution, PRD, explore, research, other plans, or Product/flows unless the brief names those paths.
+Read `issue_brief_path` and, if not null, `plan_path`. Do not open constitution, PRD, explore, leftover research/docs, or other plans unless the brief names those paths.
 
 ### STEP 2: MAP THE FOUR LOOKS
 

@@ -8,23 +8,18 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
-from rich.text import Text
 
 from deviate.cli.meso import _resolve_bucket_dir, _source_stem
 from deviate.core._shared import git_env as _git_env
 from deviate.core.worktree import detect_remote
 from deviate.state.ledger import (
-    FlowCoverage,
     IssueRecord,
     _read_ledger_strict,
-    load_flow_coverage,
-    select_release_candidate_flows,
 )
 
 inspect_app = typer.Typer(no_args_is_help=True)
 issues_app = typer.Typer(no_args_is_help=True)
 tasks_app = typer.Typer(no_args_is_help=True)
-flows_app = typer.Typer(no_args_is_help=True)
 inspect_app.add_typer(issues_app, name="issues")
 inspect_app.add_typer(tasks_app, name="tasks")
 
@@ -53,10 +48,7 @@ def tasks_show_command(
     typer.echo(json.dumps(task) if json_flag else str(task))
 
 
-inspect_app.add_typer(flows_app, name="flows")
-
 console = Console()
-err_console = Console(stderr=True)
 
 
 def _derive_issue_branch(source_file: str) -> str:
@@ -336,217 +328,3 @@ def tasks_list_command(
                 task.get("execution_mode", ""),
             )
         console.print(table)
-
-
-# ---------------------------------------------------------------------------
-# Flow coverage query (mirrors inspect issues list / inspect tasks list shape).
-# Three-state missing contract (see DeviaTDD-api.md §6):
-#   STATE 1 (config error) — flows/index.md absent → [red]FLOWS_INDEX_MISSING[/] + exit 2
-#   STATE 2 (first-run)    — flows.jsonl absent   → [yellow]NO_FLOWS_LEDGER[/] + exit 0
-#   STATE 3 (real drift)   — render drift_flag row-by-row
-# ---------------------------------------------------------------------------
-
-import re as _re  # noqa: E402  -- co-located with the flows sub-app block
-
-
-def _resolve_specs_root() -> Path:
-    return Path.cwd() / "specs"
-
-
-def _parse_release_included_flows(release_path: Path) -> list[str]:
-    """Parse the Included Flows table of a release-next.md and return flow_ids.
-
-    Rows start with ``| FLOW-NN`` (regex ``FLOW-\\d+``). Header markers and
-    rows with an empty first cell are skipped silently. The parser walks the
-    markdown line-by-line and only considers lines between ``## Included
-    Flows`` and the next ``## `` heading.
-    """
-    if not release_path.exists():
-        return []
-    flow_ids: list[str] = []
-    in_section = False
-    pattern = _re.compile(r"^FLOW-\d+$")
-    for raw in release_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            in_section = line == "## Included Flows"
-            continue
-        if not in_section or not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.split("|") if c.strip()]
-        if not cells:
-            continue
-        first = cells[0].strip("`").strip()
-        if pattern.match(first):
-            flow_ids.append(first)
-    return flow_ids
-
-
-def _flows_coverage(release_path: Path | None = None) -> list[FlowCoverage]:
-    """Return FlowCoverage rows for the current repo.
-
-    Missing-flows-ledger semantics are delegated to the caller: this function
-    raises ``typer.Exit(2)`` for STATE 1 (index missing — config error) and
-    emits a ``[yellow]NO_FLOWS_LEDGER[/]`` banner to stderr for STATE 2
-    (ledger not yet seeded — first-run), returning an empty list. STATE 3
-    loads ``load_flow_coverage`` and optionally narrows by ``--release``.
-    """
-    specs_root = _resolve_specs_root()
-    flows_index = specs_root / "_product" / "flows" / "index.md"
-    flows_ledger = specs_root / "_product" / "flows.jsonl"
-    issues_ledger = specs_root / "issues.jsonl"
-
-    if not flows_index.exists():
-        err_console.print(
-            Text(
-                "[red]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md is "
-                "absent. Run /deviate-flows to populate the catalog before any "
-                "ledger can be meaningful.",
-                no_wrap=True,
-            )
-        )
-        raise typer.Exit(code=2)
-
-    if not flows_ledger.exists():
-        err_console.print(
-            Text(
-                "[yellow]NO_FLOWS_LEDGER[/] specs/_product/flows.jsonl has not been seeded. Run deviate explore post to seed; an empty result is correct, not an error.",
-                no_wrap=True,
-            )
-        )
-        return []
-
-    rows = load_flow_coverage(flows_ledger, flows_index, issues_ledger)
-    if release_path is not None:
-        included = set(_parse_release_included_flows(release_path))
-        if included:
-            rows = [r for r in rows if r.flow_id in included]
-    return rows
-
-
-_DRIFT_FLAGS_TO_HIGHLIGHT = {
-    "PROMPT_ONLY_NO_CODE",
-    "DOC_ARTIFACT_ONLY",
-    "DOCUMENTED_BUT_NOT_IMPLEMENTED",
-    "IMPLEMENTED_BUT_UNDOCUMENTED",
-    "ORPHANED_FLOW",
-    "STALE_DRIFT",
-}
-
-
-@flows_app.command("coverage")
-def flows_coverage_command(
-    release: Path | None = typer.Option(
-        None,
-        "--release",
-        help="Narrow coverage to flows listed in the Included Flows table of <release>.",
-    ),
-    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
-) -> None:
-    rows = _flows_coverage(release_path=release)
-    payload = [r.model_dump() for r in rows]
-    if json_flag:
-        typer.echo(json.dumps(payload))
-        return
-    if quiet:
-        return
-    table = Table(title="Flow Coverage", width=180)
-    table.add_column("Flow ID", style="cyan")
-    table.add_column("Discovered")
-    table.add_column("Documented")
-    table.add_column("Implementation")
-    table.add_column("Last Issue")
-    table.add_column("Last Release")
-    table.add_column("Drift Flag", overflow="fold", no_wrap=False)
-    for row in rows:
-        drift = row.drift_flag
-        drift_cell = (
-            f"[yellow]{drift}[/yellow]" if drift in _DRIFT_FLAGS_TO_HIGHLIGHT else drift
-        )
-        table.add_row(
-            row.flow_id,
-            row.discovered_status,
-            row.doc_status,
-            row.impl_status,
-            row.last_referenced_by_issue_id or "",
-            row.last_referenced_by_release_version or "",
-            drift_cell,
-        )
-    console.print(table)
-
-
-@flows_app.command("candidates")
-def flows_candidates_command(
-    include_released: bool = typer.Option(
-        False,
-        "--include-released",
-        help="Include flows that already carry a FLOW_INCLUDED_IN_RELEASE event.",
-    ),
-    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
-) -> None:
-    """List flows confirmed by merge and not yet tagged for release.
-
-    Backed by :func:`select_release_candidate_flows` in
-    ``deviate.state.ledger``.  Returns an empty list (not an error)
-    when the flows ledger has not been seeded yet — that is the
-    State 2 first-run condition documented in the release prompt.
-    """
-    specs_root = _resolve_specs_root()
-    flows_index = specs_root / "_product" / "flows" / "index.md"
-    flows_ledger = specs_root / "_product" / "flows.jsonl"
-    issues_ledger = specs_root / "issues.jsonl"
-
-    if not flows_index.exists():
-        err_console.print(
-            Text(
-                "[red]FLOWS_INDEX_MISSING[/] specs/_product/flows/index.md is "
-                "absent. Run /deviate-flows to populate the catalog before any "
-                "candidate can be derived.",
-                no_wrap=True,
-            )
-        )
-        raise typer.Exit(code=2)
-
-    if not flows_ledger.exists():
-        err_console.print(
-            Text(
-                "[yellow]NO_FLOWS_LEDGER[/] specs/_product/flows.jsonl has not been seeded. Run /deviate-merge to confirm flows; an empty result is correct, not an error.",
-                no_wrap=True,
-            )
-        )
-        rows: list[FlowCoverage] = []
-    else:
-        rows = select_release_candidate_flows(
-            flows_ledger=flows_ledger,
-            flows_index=flows_index,
-            issues_ledger=issues_ledger,
-            exclude_released=not include_released,
-        )
-
-    payload = [r.model_dump() for r in rows]
-    if json_flag:
-        typer.echo(json.dumps(payload))
-        return
-    if quiet:
-        return
-    if not rows:
-        console.print(
-            "[yellow]NO_CANDIDATE_FLOWS[/] no flows with "
-            "CONFIRMED_IMPLEMENTED impl_status yet to be released"
-        )
-        return
-    table = Table(title="Release Candidate Flows", width=140)
-    table.add_column("Flow ID", style="cyan")
-    table.add_column("Implementation")
-    table.add_column("Last Issue", style="dim")
-    table.add_column("Drift Flag", overflow="fold", no_wrap=False)
-    for row in rows:
-        table.add_row(
-            row.flow_id,
-            row.impl_status,
-            row.last_referenced_by_issue_id or "",
-            row.drift_flag,
-        )
-    console.print(table)
