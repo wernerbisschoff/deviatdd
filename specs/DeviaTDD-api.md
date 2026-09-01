@@ -1022,6 +1022,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
     `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
+  * **GREEN-resume `start_phase=JUDGE` honors `revert_to_red` as TRAIN GREEN:** Ledger status GREEN maps to `start_phase="JUDGE"` (`_start_phase_from_status`). After that JUDGE, `pending_judge_action == revert_to_red` (or `judge_rejected` with that action) falls through into the GREEN train loop — discard GREEN, keep RED, re-run GREEN with the stored `train_feedback`. The runner must not call `_finish_tdd_cycle` / REFACTOR / COMPLETED on that path. When the session already holds `pending_judge_action == revert_to_red` plus `train_feedback` (JUDGE already applied the verdict), skip a second JUDGE and train GREEN immediately. `_finish_tdd_cycle` also refuses REFACTOR and COMPLETED while pending is `revert_to_red` or `revert_before` (defense in depth). The in-loop TRAIN GREEN path and `revert_before` escalate-to-RED are unchanged. Pinned by `tests/test_micro/test_revert_to_red_resume.py`.
 * **Queue Drain (`deviate micro run --all`):** **Issue-scoped** task sweep.
   A known `feat/{bucket}/{slug}` issue from `specs/issues.jsonl` beats a leftover
   `session.active_issue_id`. The leftover issue does not keep the queue even when

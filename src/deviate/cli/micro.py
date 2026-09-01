@@ -3821,6 +3821,25 @@ def _finish_tdd_cycle(
         )
         return session
 
+    # Defense in depth: TRAIN / escalate routes must never polish or
+    # complete. ``revert_to_red`` retrains GREEN; ``revert_before``
+    # re-authors RED. The caller should fall through into the TDD loop
+    # instead of reaching here — this guard stops a resume hole from
+    # entering REFACTOR / COMPLETED if it does.
+    if pending in {"revert_to_red", "revert_before"}:
+        c.print(
+            f"  [yellow]JUDGE_REJECTED[/] {tid} \u2014 refusing REFACTOR/"
+            f"COMPLETED (pending={pending})"
+        )
+        _log_run(
+            "PHASE_DECISION",
+            task_id=tid,
+            phase="CYCLE",
+            decision="refuse_complete",
+            reason=pending,
+        )
+        return session
+
     # JUDGE verdict-driven routing overrides the CLI's no_refactor flag:
     #   continue_refactor             → enter REFACTOR regardless of no_refactor.
     #   proceed_to_refactor_no_diff   → enter REFACTOR regardless of no_refactor
@@ -4161,41 +4180,66 @@ def _run_tdd_cycle(
     task_desc = task.get("description", "")
 
     if start_phase == "JUDGE":
-        _maybe_push_event(
-            monitor,
-            "phase_change",
-            task_id=tid,
-            phase="JUDGE",
-            description=task_desc,
+        # Meso/micro re-entry after ledger GREEN maps here. A stored
+        # ``revert_to_red`` + train_feedback means JUDGE already applied
+        # the verdict — skip a second JUDGE and train GREEN.
+        already_train_green = session.pending_judge_action == "revert_to_red" and bool(
+            session.train_feedback
         )
-        suite_red = _is_green_test_failure(session)
-        suite_dump = session.train_feedback if suite_red else ""
-        session = _run_judge_phase(
-            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
-        )
-        if suite_red:
-            # TEST_FAILURE remapped to TRAIN (or revert_to_red / revert_before).
-            # Fall through into the GREEN train loop; do not complete.
-            if session.pending_judge_action in _NO_FAILING_TEST_FORWARD_ROUTES:
-                session.pending_judge_action = ""
-            if (
-                not session.train_feedback
-                and session.pending_judge_action != "revert_to_red"
-            ):
-                session.train_feedback = suite_dump
+        if already_train_green:
             start_phase = "GREEN"
         else:
-            session = _finish_tdd_cycle(
+            _maybe_push_event(
+                monitor,
+                "phase_change",
+                task_id=tid,
+                phase="JUDGE",
+                description=task_desc,
+            )
+            suite_red = _is_green_test_failure(session)
+            suite_dump = session.train_feedback if suite_red else ""
+            session = _run_judge_phase(
                 task,
                 ledger_path,
                 session,
                 session_path,
                 c,
-                no_refactor,
                 agent=agent,
-                green_test_failure=False,
+                monitor=monitor,
             )
-            return
+            pending = session.pending_judge_action
+            if suite_red:
+                # TEST_FAILURE remapped to TRAIN (or revert_to_red /
+                # revert_before). Fall through into the GREEN train loop;
+                # do not complete.
+                if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
+                    session.pending_judge_action = ""
+                if not session.train_feedback and pending != "revert_to_red":
+                    session.train_feedback = suite_dump
+                start_phase = "GREEN"
+            elif pending == "revert_to_red" or (
+                session.judge_rejected and pending == "revert_to_red"
+            ):
+                # Passing GREEN + JUDGE revert_to_red (or judge_rejected
+                # with that action): discard GREEN, keep RED, train
+                # GREEN. Never _finish_tdd_cycle.
+                start_phase = "GREEN"
+            elif pending == "revert_before":
+                # Preserve escalate-to-RED. Fall through so the loop's
+                # existing revert_before branch re-authors RED.
+                start_phase = "GREEN"
+            else:
+                session = _finish_tdd_cycle(
+                    task,
+                    ledger_path,
+                    session,
+                    session_path,
+                    c,
+                    no_refactor,
+                    agent=agent,
+                    green_test_failure=False,
+                )
+                return
 
     # `no_judge` only skips the JUDGE phase — GREEN must still run. The
     # in-loop `if no_judge: judge_passed = True; break` below is the exit
