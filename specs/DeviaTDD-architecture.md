@@ -679,8 +679,13 @@ framework's remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
 ## 7. Multi-Framework Testing Abstraction
 
 DeviaTDD's current implementation (`src/deviate/cli/micro.py`) runs tests through the
-language-agnostic `_run_test_cmd()` → `_test_command_candidates()` resolution: the task's
-`verification` value, the constitution `test_command`, a `mise run test` task, or the
+language-agnostic `_run_test_cmd()` → `_resolve_verification_command()` (shared with
+`deviate red|green|refactor pre` and `_build_auto_prompt` `{test_command}`): a partial
+declared verification (file / `-k` / node id) becomes `mise exec -- <command>` when
+`mise.toml` / `.mise.toml` is present; a full suite picks an allowlisted named mise
+task (`mise unit` / `mise integ` or `mise integration` / `mise test`; `mise e2e` only
+when the task says e2e); `mise doctor` is preflight only when defined. Without mise the
+order is unchanged: task `verification`, constitution `test_command`, then the
 `_MANIFEST_TEST_COMMANDS` manifest table (`mix.exs` → `mix test`, `Cargo.toml` → `cargo test`,
 `go.mod` → `go test ./...`, `package.json` → `npm test`, `pyproject.toml` → `pytest`), with a
 Python-only fallback (`_find_test_files` globbing `tests/**/test_*.py` → `pytest`) used only

@@ -84,10 +84,11 @@ Apply targeted transformations:
 
 ### STEP_4: VERIFY_INVARIANCE
 
-Run the tests to confirm behavior preservation:
+{doctor_preflight}Run the tests to confirm behavior preservation:
 ```bash
 {test_command}
 ```
+{test_command_rule}
 
 Run lint to ensure code quality:
 ```bash

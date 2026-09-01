@@ -92,10 +92,11 @@ task will fail permanently.**
 2. Write ONLY production code — leave all `tests/` files untouched
 3. Add only the production code required — no speculative features, and no file or dependency the task did not name
 4. **Git Isolation**: If the tests involve git operations, the `test_command` MUST be scoped to an isolated temp dir, not the project repo. Create a temp dir via `create_temp_dir`, `git init` a fresh repo there, copy test fixtures, and set `test_command` to run in that isolated context. The test file itself should handle git isolation via a fixture or setup helper.
-5. Run the `test_command` to verify the tests pass:
+5. {doctor_preflight}Run the `test_command` to verify the tests pass:
    ```bash
    {test_command}
    ```
+   {test_command_rule}
 6. Run the `lint_command` to ensure lint compliance:
    ```bash
    {lint_command}

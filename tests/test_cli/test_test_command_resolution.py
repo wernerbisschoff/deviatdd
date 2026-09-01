@@ -99,7 +99,7 @@ def test_constitution_command_used_without_mise_task(tmp_path: Path) -> None:
     assert calls == [["pytest"]]
 
 
-def test_missing_mise_task_falls_back_to_constitution(tmp_path: Path) -> None:
+def test_resolved_mise_test_is_not_replaced_by_constitution(tmp_path: Path) -> None:
     (tmp_path / "mise.toml").write_text(
         '[tasks.test]\nrun = "pytest"\n', encoding="utf-8"
     )
@@ -114,7 +114,7 @@ def test_missing_mise_task_falls_back_to_constitution(tmp_path: Path) -> None:
     ) -> subprocess.CompletedProcess:
         argv = command.split()
         calls.append(argv)
-        if argv == ["mise", "run", "test"]:
+        if argv == ["mise", "test"]:
             return subprocess.CompletedProcess(
                 argv, 1, "", "mise ERROR unknown command: test"
             )
@@ -123,8 +123,8 @@ def test_missing_mise_task_falls_back_to_constitution(tmp_path: Path) -> None:
     with patch("deviate.cli.micro.run_safe_command", side_effect=fake_run):
         result = _run_test_cmd(tmp_path)
 
-    assert result.returncode == 0
-    assert calls == [["mise", "run", "test"], ["pytest", "fallback"]]
+    assert result.returncode == 1
+    assert calls == [["mise", "test"]]
 
 
 def test_nested_python_manifest_is_used_when_root_is_unconfigured(
