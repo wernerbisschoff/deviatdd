@@ -156,6 +156,45 @@ class TestHandoverManifestModel:
         reloaded = HandoverManifest.model_validate(dumped)
         assert reloaded.files == ["src/watcher.py", "src/main.py"]
 
+    def test_handover_manifest_keeps_existing_failure_kind_and_fields(self):
+        """GH-154 AC-7: no new failure_kind literals or HandoverManifest fields."""
+        from typing import Literal, Union, get_args, get_origin
+
+        from deviate.core.agent import HandoverManifest
+
+        assert set(HandoverManifest.model_fields) == {
+            "phase",
+            "status",
+            "task_id",
+            "test_file",
+            "verification_command",
+            "expected_failure_node",
+            "rationale",
+            "failure_kind",
+            "next_phase",
+            "next_action",
+            "files",
+            "evidence",
+            "parse_errors",
+        }
+        annotation = HandoverManifest.model_fields["failure_kind"].annotation
+        origin = get_origin(annotation)
+        parts = (
+            get_args(annotation)
+            if origin in {Union, type(str | None)}
+            else (annotation,)
+        )
+        literals: set[str] = set()
+        for part in parts:
+            if get_origin(part) is Literal:
+                literals.update(str(item) for item in get_args(part))
+        assert literals == {"mechanical", "test_defect", "already_satisfied"}
+        HandoverManifest(failure_kind="mechanical")
+        HandoverManifest(failure_kind="test_defect")
+        HandoverManifest(failure_kind="already_satisfied")
+        with pytest.raises(ValidationError):
+            HandoverManifest(failure_kind="service_unavailable")
+
     def test_handover_manifest_evidence_is_first_class_not_model_extra(self):
         """AC-PLAN-001: evidence is a declared field the gate can read."""
         from deviate.core.agent import HandoverManifest

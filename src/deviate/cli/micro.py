@@ -6164,7 +6164,13 @@ def _resolve_files_to_refactor(root: Path, task: dict | None) -> list[str]:
 
 
 @red_app.command(name="post")
-def red_post() -> None:
+def red_post(
+    task_id: str | None = typer.Option(
+        None,
+        "--task-id",
+        help="Expected pending task ID to transition",
+    ),
+) -> None:
     root = Path.cwd()
     if not _test_command_candidates(root):
         console.print(
@@ -6205,6 +6211,13 @@ def red_post() -> None:
 
     pending_record, ledger_path = pending
     task_uuid = pending_record.get("id", "")
+    expected_task_id = (task_id or "").strip()
+    if expected_task_id and expected_task_id != task_uuid:
+        console.print(
+            f"[red]TASK_ID_MISMATCH[/] --task-id {expected_task_id} does not "
+            f"match pending task {task_uuid}"
+        )
+        raise typer.Exit(code=1)
 
     try:
         record = TaskRecord.model_validate(pending_record)

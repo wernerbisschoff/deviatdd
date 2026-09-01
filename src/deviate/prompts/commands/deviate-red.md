@@ -21,9 +21,10 @@ for the RED instructions.
 1. Run `deviate red pre` to allocate the active TDD task and emit the JSON
    contract on stdout.
 2. Execute the RED (test-writing) work described in the core body.
-3. Run `deviate red post` after the tests are verified failing. The command
-   stages the test files, verifies them failing, updates the task ledger,
-   and commits.
+3. Run `deviate red post --task-id {TASK_ID}` after the tests are verified
+   failing. The command stages the test files, verifies them failing, updates
+   the task ledger, and commits. A mismatch with the resolved pending task
+   exits `TASK_ID_MISMATCH` with no ledger write and no commit.
 
 ### Rich Handover Manifest
 

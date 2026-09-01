@@ -179,3 +179,118 @@ class TestRedPost:
             result = runner.invoke(cli, ["red", "post"])
 
             assert result.exit_code == 0
+
+
+class TestRedPostTaskId:
+    """GH-154 AC-6: ``deviate red post --task-id`` matches the pending record."""
+
+    def _seed_pending(self, root: Path, *, task_id: str = "TSK-004-01") -> Path:
+        from tests.conftest import _git_env as isolation_git_env
+
+        dot_dir = root / ".deviate"
+        dot_dir.mkdir(parents=True, exist_ok=True)
+        session = SessionState(current_phase="IDLE", active_issue_id="ISS-001-004")
+        session.save(dot_dir / "session.json")
+
+        task = _make_task_record(
+            task_id=task_id, issue_id="ISS-001-004", status="PENDING"
+        )
+        ledger_path = root / "specs" / "004-micro-layer" / "tasks.jsonl"
+        _write_ledger(ledger_path, task)
+
+        test_file = root / "tests" / "test_failing.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("def test_fail():\n    assert False\n")
+        subprocess.run(
+            ["git", "add", "."], cwd=root, env=isolation_git_env(), check=True
+        )
+        return ledger_path
+
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_red_post_task_id_match_follows_existing_post_path(
+        self, mock_run_test, mock_run_format, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="1 failed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        from tests.conftest import _git_env as isolation_git_env
+
+        with chdir(tmp_git_repo):
+            ledger_path = self._seed_pending(tmp_git_repo)
+            result = runner.invoke(cli, ["red", "post", "--task-id", "TSK-004-01"])
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            assert "TASK_ID_MISMATCH" not in result.output
+            assert "RED_POST_OK" in result.output
+            rows = [
+                json.loads(line)
+                for line in ledger_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            assert any(
+                row.get("status") == "RED" and row.get("id") == "TSK-004-01"
+                for row in rows
+            )
+            log = subprocess.run(
+                ["git", "log", "--oneline", "-1"],
+                cwd=tmp_git_repo,
+                capture_output=True,
+                text=True,
+                env=isolation_git_env(),
+            )
+            assert "RED phase" in log.stdout
+
+    @patch("deviate.cli.micro._run_format_cmd")
+    @patch("deviate.cli.micro._run_test_cmd")
+    def test_red_post_task_id_mismatch_exits_without_ledger_or_commit(
+        self, mock_run_test, mock_run_format, tmp_git_repo: Path
+    ):
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="1 failed", stderr=""
+        )
+        mock_run_format.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        from tests.conftest import _git_env as isolation_git_env
+
+        with chdir(tmp_git_repo):
+            head_before = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=tmp_git_repo,
+                capture_output=True,
+                text=True,
+                env=isolation_git_env(),
+                check=True,
+            ).stdout.strip()
+            ledger_path = self._seed_pending(tmp_git_repo)
+            ledger_before = ledger_path.read_text(encoding="utf-8")
+
+            result = runner.invoke(cli, ["red", "post", "--task-id", "TSK-004-02"])
+
+            assert result.exit_code == 1, (
+                f"Expected exit 1, got {result.exit_code}: {result.output}"
+            )
+            assert "TASK_ID_MISMATCH" in result.output
+            assert ledger_path.read_text(encoding="utf-8") == ledger_before
+            rows = [
+                json.loads(line)
+                for line in ledger_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            assert all(row.get("status") == "PENDING" for row in rows)
+            assert not any(row.get("status") == "RED" for row in rows)
+            head_after = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=tmp_git_repo,
+                capture_output=True,
+                text=True,
+                env=isolation_git_env(),
+                check=True,
+            ).stdout.strip()
+            assert head_after == head_before
