@@ -2565,21 +2565,27 @@ def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
 
 
 def _format_violations_as_feedback(
-    violations: list[dict[str, object]],
+    violations: list[object] | None,
 ) -> str:
     """Render a structured ``violations`` list as readable feedback text.
 
     Both judge schemas are supported:
     - Auto template: category / file / detail / severity / recommendation
     - Manual skill: file / detail / severity / requirement
+    - Live-judge string items: the string is the body / detail (GH-143)
 
-    Returns an empty string when the list is empty so the caller can chain
-    it as another fallback in the feedback-resolution cascade.
+    Returns an empty string when the list is empty or None so the caller
+    can chain it as another fallback in the feedback-resolution cascade.
     """
     if not violations:
         return ""
     lines: list[str] = []
     for i, v in enumerate(violations, start=1):
+        if not isinstance(v, dict):
+            body = _coerce_feedback_text(v)
+            if body:
+                lines.append(f"- violation {i}: {body}".rstrip())
+            continue
         category = v.get("category", "")
         file = v.get("file", "")
         detail = v.get("detail", "")

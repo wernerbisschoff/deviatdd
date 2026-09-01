@@ -1647,6 +1647,161 @@ class TestJudgeFeedbackLogging:
         # Empty list returns empty string
         assert _format_violations_as_feedback([]) == ""
 
+    def test_format_violations_as_feedback_handles_string_and_mixed(
+        self,
+    ) -> None:
+        """GH-143: string items and mixed list[str|dict] must not crash.
+
+        Live judges emit ``violations`` as a list of strings. The
+        formatter used to call ``v.get(...)`` on every item and raise
+        ``AttributeError: 'str' object has no attribute 'get'``. String
+        items become the body/detail; dict items keep auto/manual
+        schema formatting. None and empty list stay empty.
+        """
+        from deviate.cli.micro import _format_violations_as_feedback
+
+        assert _format_violations_as_feedback(None) == ""
+        assert _format_violations_as_feedback([]) == ""
+
+        strings_only = [
+            "Protected module modified: src/deviate/cli/micro.py",
+            "GREEN exceeded the declared slice",
+        ]
+        feedback_strings = _format_violations_as_feedback(strings_only)
+        assert "Protected module modified: src/deviate/cli/micro.py" in (
+            feedback_strings
+        )
+        assert "GREEN exceeded the declared slice" in feedback_strings
+        assert "AttributeError" not in feedback_strings
+
+        mixed = [
+            "slice-scope conflict: CLI flag is out of this task",
+            {
+                "category": "Protected Module Modification",
+                "file": "src/deviate/cli/micro.py",
+                "detail": "Core orchestrator was modified",
+                "severity": "CRITICAL",
+            },
+            {
+                "file": "src/auth/jwt.py",
+                "detail": "encode() returns hardcoded token",
+                "severity": "HIGH",
+                "requirement": "FR-01",
+            },
+        ]
+        feedback_mixed = _format_violations_as_feedback(mixed)
+        assert "slice-scope conflict: CLI flag is out of this task" in (feedback_mixed)
+        assert "Protected Module Modification" in feedback_mixed
+        assert "src/deviate/cli/micro.py" in feedback_mixed
+        assert "Core orchestrator was modified" in feedback_mixed
+        assert "src/auth/jwt.py" in feedback_mixed
+        assert "encode() returns hardcoded token" in feedback_mixed
+
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._execute_rollback")
+    @patch("deviate.cli.micro.resolve_model_for_phase")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._build_auto_prompt")
+    @patch("deviate.cli.micro._make_agent_output_callback")
+    @patch("deviate.cli.micro._log_run")
+    @patch("deviate.cli.micro._phase_already_done")
+    @patch("deviate.cli.micro.subprocess.run")
+    @patch("deviate.cli.micro.Path.cwd")
+    def test_judge_rejected_builds_feedback_from_string_violations(
+        self,
+        mock_cwd: MagicMock,
+        mock_subprocess: MagicMock,
+        mock_done: MagicMock,
+        mock_log: MagicMock,
+        mock_callback: MagicMock,
+        mock_build: MagicMock,
+        mock_agent: MagicMock,
+        mock_resolve: MagicMock,
+        mock_rollback: MagicMock,
+        mock_pytest: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """GH-143: JUDGE_REJECTED with string-list violations persists feedback.
+
+        Live judges emit ``violations: [str, ...]`` with no
+        ``train_feedback``. The runner must not raise AttributeError
+        during feedback extraction; it must emit JUDGE_REJECTED,
+        persist the string bodies, and continue the revert/retry path.
+        """
+        from deviate.core.agent import HandoverManifest
+        from deviate.state.config import SessionState
+        from deviate.cli.micro import _run_judge_phase
+        from rich.console import Console
+
+        import io
+
+        cwd = tmp_path
+        mock_cwd.return_value = cwd
+        mock_build.return_value = "test prompt"
+        mock_callback.return_value = None
+        mock_resolve.return_value = None
+        mock_done.return_value = False
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        string_violation = "Protected module modified: src/deviate/cli/micro.py"
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-011-05",
+            rationale="",
+            train_feedback="",
+        )
+        # Live-judge shape: extra="allow" rides a string list through
+        # model_extra into the formatter (GH-143).
+        manifest.__pydantic_extra__["violations"] = [
+            string_violation,
+            {
+                "category": "Scope Violation",
+                "file": "src/deviate/cli/feature.py",
+                "detail": "branch helper was rewritten",
+            },
+        ]
+        mock_agent.return_value = (manifest, "")
+
+        task = {
+            "id": "TSK-011-05",
+            "issue_id": "ISS-ADH-011",
+            "description": "string violations GH-143",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger_path = tmp_path / "tasks.jsonl"
+        session = SessionState()
+        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
+        session_path = tmp_path / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        result = _run_judge_phase(task, ledger_path, session, session_path, console)
+
+        output = buf.getvalue()
+        assert "JUDGE_REJECTED" in output, output
+        assert string_violation in output, (
+            f"Expected string violation body in JUDGE_REJECTED output, got: {output!r}"
+        )
+        assert "source=violations" in output, (
+            f"Expected source=violations label, got: {output!r}"
+        )
+        assert "Scope Violation" in output or "branch helper was rewritten" in (output)
+        assert string_violation in result.train_feedback, (
+            f"Expected persisted train_feedback to include the string "
+            f"violation; got {result.train_feedback!r}"
+        )
+        persisted = SessionState.load(session_path)
+        assert string_violation in persisted.train_feedback, (
+            f"Expected saved session.train_feedback to include the string "
+            f"violation; got {persisted.train_feedback!r}"
+        )
+
 
 _GH103_CITATION = "tests/foo.py:121"
 _GH103_FEEDBACK = (

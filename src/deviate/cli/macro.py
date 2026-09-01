@@ -895,9 +895,7 @@ def shard_pre(
     if not prd_path.exists():
         _halt("SHARD", f"prd.md not found at {prd_path}")
 
-    prd_errors = validate_macro_contract(
-        prd_path.read_text(encoding="utf-8"), "prd"
-    )
+    prd_errors = validate_macro_contract(prd_path.read_text(encoding="utf-8"), "prd")
     if prd_errors:
         _halt("SHARD", f"invalid PRD contract: {'; '.join(prd_errors)}")
 
