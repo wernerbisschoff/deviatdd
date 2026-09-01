@@ -253,6 +253,8 @@ see `DeviaTDD-api.md` §5 for the orchestration contract.:
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
   `_run_execute_phase()`, which marks the task COMPLETED without test generation.
 
+Cycle regressions (wild JUDGE/GREEN/RED handovers such as GH-158 pass+`REFACTOR NOTE` and GH-148 stale `skip_refactor`) go in scripted fixtures (`tests/helpers/cycle_driver.py`), not new `_coerce_judge_action` branches only. The same handover YAML is replayed on **both** invocation styles: auto `_run_tdd_cycle` (patch `_invoke_agent` only; `_run_*_phase` and `_apply_judge_verdict` stay real) and manual `deviate <phase> pre` → scripted files on disk → `deviate <phase> post`. Auto does not shell out to pre/post. A payload that only exists on one path is a missed bug.
+
 Each phase transition appends a status record to the append-only task ledger using
 `append_task_transition()` with compound-key idempotency on `(id, status)`. The JUDGE
 phase (`deviate judge pre`) performs compliance verification by comparing changed files

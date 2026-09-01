@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Scripted TDD-cycle driver replays wild JUDGE/GREEN/RED handovers on both auto and manual paths.** `tests/helpers/cycle_driver.py` seeds a tmp repo + PENDING task + `session.json`, then runs an ordered list of `{phase, handover YAML, files}` steps. Auto patches only `_invoke_agent` so `_run_*_phase` and `_apply_judge_verdict` stay real; manual invokes `deviate <phase> pre` → scripted files → `deviate <phase> post`. Fixtures cover the happy COMPLIANCE_PASS cycle, GH-158 pass+`REFACTOR NOTE` (+ leftover `revert_red` / `revert_to_red`), and GH-148 stale `skip_refactor` on a second PENDING task. Cycle regressions go in those fixtures, not new coerce branches only. No live LLM. Existing GH-158/148 unit tests stay.
+
 ### Fixed
 
 - **JUDGE `COMPLIANCE_PASS` + `REFACTOR NOTE` proceeds to REFACTOR instead of rejecting.** A clean pass that also emits a `REFACTOR NOTE:` (or leftover `next_action: revert_red` / legacy `revert_to_red`) no longer sets `JUDGE_REJECTED` or `revert_red` / `revert_green`. The runner defaults to `continue_refactor` (or `skip_refactor` when `--no-refactor`), injects the note into the REFACTOR `{train_feedback}` placeholder, and leaves GH-149 Test Integrity `revert_red` unchanged. ([#158](https://github.com/wernerbisschoff/deviatdd/issues/158))
