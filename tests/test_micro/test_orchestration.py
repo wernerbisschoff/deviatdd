@@ -2313,33 +2313,116 @@ def test_judge_auto_prompt_documents_proceed_to_refactor_no_diff() -> None:
     # so the agent knows to pick `proceed_to_refactor_no_diff` (COMPLIANCE_PASS
     # forward route) alongside `revert_before` / `revert_to_red` / `skip_refactor`
     # (COMPLIANCE_VIOLATION rejection routes) under the same discriminator.
-    # Look for `proceed_to_refactor_no_diff` within the prompt and confirm it
-    # appears in a context that ALSO references `<failure_kind>mechanical`.
+    # YAML schema examples also name the verb (GH-149); find the occurrence
+    # whose backward window includes `<failure_kind>mechanical`.
     needle = "proceed_to_refactor_no_diff"
-    idx = judge_prompt.find(needle)
-    assert idx != -1, (
-        f"JUDGE prompt must reference `{needle}` somewhere in its edge-case "
-        f"table for the mechanical discriminator. prompt head: {judge_prompt[:500]!r}"
-    )
-    # The mechanical row context window — scan backward 4000 chars (table
-    # row width in our prompts is well under that). The discriminator block
-    # reference may be in the table cell of the same row.
-    window_before = judge_prompt[max(0, idx - 4000) : idx]
-    assert "<failure_kind>mechanical</failure_kind>" in window_before, (
-        f"The `proceed_to_refactor_no_diff` reference must appear in a context "
-        f"that also references `<failure_kind>mechanical</failure_kind>`, so "
-        f"JUDGE knows to emit the action under that discriminator. "
-        f"window_before: {window_before[-500:]!r}"
+    idx = 0
+    mechanical_idx = -1
+    while True:
+        idx = judge_prompt.find(needle, idx)
+        if idx == -1:
+            break
+        window_before = judge_prompt[max(0, idx - 4000) : idx]
+        if "<failure_kind>mechanical</failure_kind>" in window_before:
+            mechanical_idx = idx
+            break
+        idx += len(needle)
+    assert mechanical_idx != -1, (
+        f"JUDGE prompt must reference `{needle}` in a context that also "
+        f"references `<failure_kind>mechanical</failure_kind>` so JUDGE "
+        f"emits the action under that discriminator. "
+        f"prompt head: {judge_prompt[:500]!r}"
     )
 
     # The action MUST be tied to a COMPLIANCE_PASS verdict (not VIOLATION) so
     # the runner dispatches the forward-route branch in _run_judge_phase and
     # does not enter the rejection cascade.
-    verdict_window = judge_prompt[max(0, idx - 200) : min(len(judge_prompt), idx + 400)]
+    verdict_window = judge_prompt[
+        max(0, mechanical_idx - 200) : min(len(judge_prompt), mechanical_idx + 400)
+    ]
     assert "COMPLIANCE_PASS" in verdict_window, (
         f"`proceed_to_refactor_no_diff` must be tied to a COMPLIANCE_PASS "
         f"verdict in the JUDGE prompt (it's a forward route, not a "
         f"rejection). window: {verdict_window!r}"
+    )
+
+
+def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
+    """Pin GREEN-PASS ``next_action`` vocabulary and revert meanings (GH-149).
+
+    YAML examples must name the runner's five verbs. After GREEN PASS the
+    prompt must map Test Integrity to ``revert_before`` (discard RED+GREEN)
+    and an honest-test implementation gap to ``revert_to_red`` (discard
+    GREEN only). It must not say every violation feeds GREEN.
+    """
+    from importlib import resources
+
+    judge_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("judge.md")
+        .read_text(encoding="utf-8")
+    )
+
+    required_actions = (
+        "revert_before",
+        "revert_to_red",
+        "continue_refactor",
+        "skip_refactor",
+        "proceed_to_refactor_no_diff",
+    )
+    for action in required_actions:
+        assert "next_action" in judge_prompt and action in judge_prompt, (
+            f"JUDGE prompt must name next_action value {action!r} so the "
+            "agent can emit a runner-accepted verb."
+        )
+
+    first_yaml = judge_prompt.find("```yaml")
+    second_yaml = judge_prompt.find("```yaml", first_yaml + 1)
+    assert first_yaml != -1 and second_yaml != -1, (
+        "JUDGE prompt must keep two YAML examples (STEP_3 + output schema)"
+    )
+    first_block = judge_prompt[first_yaml:second_yaml]
+    second_end = judge_prompt.find("```", second_yaml + 3)
+    second_block = judge_prompt[second_yaml : second_end + 3]
+    for label, block in (
+        ("STEP_3 example", first_block),
+        ("schema example", second_block),
+    ):
+        assert "next_action:" in block, (
+            f"{label} must include next_action with the runner-accepted values"
+        )
+
+    compact = judge_prompt.lower().replace(" ", "").replace("\n", "")
+    assert "discardred+green" in compact or "discardredandgreen" in compact, (
+        "JUDGE prompt must say revert_before discards RED+GREEN"
+    )
+    assert "keepred" in compact and "discardgreen" in compact, (
+        "JUDGE prompt must say revert_to_red discards GREEN and keeps RED"
+    )
+
+    mapping_idx = judge_prompt.find("GREEN PASS `next_action` mapping")
+    assert mapping_idx != -1, (
+        "JUDGE prompt must document GREEN PASS next_action mapping"
+    )
+    mapping_window = judge_prompt[mapping_idx : mapping_idx + 1500]
+    assert "Test Integrity" in mapping_window, (
+        "GREEN PASS mapping must name Test Integrity"
+    )
+    assert "revert_before" in mapping_window, (
+        "Test Integrity mapping after GREEN PASS must name revert_before"
+    )
+    assert "revert_to_red" in mapping_window, (
+        "Honest-test implementation gap must name revert_to_red"
+    )
+
+    assert "next GREEN's only memory" not in judge_prompt, (
+        "Do not frame every COMPLIANCE_VIOLATION as the next GREEN's only memory"
+    )
+    assert "feedback is fed to GREEN" not in judge_prompt, (
+        "Do not say every COMPLIANCE_VIOLATION feeds GREEN"
+    )
+    assert "next RED" in judge_prompt, (
+        "revert_before train_feedback must be framed as the next RED's memory"
     )
 
 

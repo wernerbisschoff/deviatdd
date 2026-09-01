@@ -2603,6 +2603,147 @@ class TestCoerceJudgeActionFailureKind:
         )
 
 
+def _judge_violation_manifest(
+    *,
+    next_action: str | None = None,
+    violations: list[object] | None = None,
+    evaluation: dict[str, str] | None = None,
+    verdict: str = "COMPLIANCE_VIOLATION",
+) -> HandoverManifest:
+    """Build a live-parse-shaped JUDGE manifest (extra fields via extra=allow)."""
+    data: dict[str, object] = {
+        "phase": "JUDGE",
+        "status": "SUCCESS",
+        "verdict": verdict,
+        "task_id": "TSK-149-01",
+    }
+    if next_action is not None:
+        data["next_action"] = next_action
+    if violations is not None:
+        data["violations"] = violations
+    if evaluation is not None:
+        data["evaluation"] = evaluation
+    return HandoverManifest(**data)
+
+
+_TEST_INTEGRITY_VIOLATION = {
+    "category": "Test Integrity Violation",
+    "file": "tests/test_wallet.py",
+    "detail": "filename-only test does not validate AC-PLAN-001",
+    "severity": "CRITICAL",
+    "recommendation": "Re-author RED so the test actually fails the AC",
+}
+
+_SPEC_ONLY_VIOLATION = {
+    "category": "Spec Non-Compliance",
+    "file": "src/wallet.py",
+    "detail": "implementation misses AC-PLAN-001 boundary",
+    "severity": "CRITICAL",
+    "recommendation": "Implement the missing slice in src/",
+}
+
+
+class TestCoerceJudgeActionTestIntegrity:
+    """GREEN PASS Test Integrity must coerce to ``revert_before`` (GH-149).
+
+    After GREEN PASS, ``session.failure_kind`` is empty, so the
+    ``test_defect`` / ``no_failing_test`` overlay is absent. Structured
+    Test Integrity (category and/or ``evaluation.test_integrity: FAIL``)
+    must still discard RED+GREEN. Spec-only gaps stay ``revert_to_red``.
+    Mechanical overlay is not coerced by Test Integrity.
+    """
+
+    def test_green_pass_test_integrity_omitted_next_action_is_revert_before(
+        self,
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            violations=[_TEST_INTEGRITY_VIOLATION],
+        )
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_before", (
+            "GREEN PASS + Test Integrity + omitted next_action must coerce "
+            f"to revert_before; got {result!r}"
+        )
+
+    def test_green_pass_test_integrity_explicit_revert_to_red_is_revert_before(
+        self,
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            next_action="revert_to_red",
+            violations=[_TEST_INTEGRITY_VIOLATION],
+            evaluation={"test_integrity": "FAIL"},
+        )
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_before", (
+            "GREEN PASS + Test Integrity + explicit revert_to_red must still "
+            f"coerce to revert_before; got {result!r}"
+        )
+
+    def test_green_pass_spec_only_omitted_next_action_stays_revert_to_red(
+        self,
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            violations=[_SPEC_ONLY_VIOLATION],
+            evaluation={"test_integrity": "PASS"},
+        )
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_to_red", (
+            "GREEN PASS + Spec Non-Compliance only + test_integrity PASS "
+            f"must stay revert_to_red; got {result!r}"
+        )
+
+    def test_evaluation_fail_alone_forces_revert_before(self) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            next_action="revert_to_red",
+            violations=[_SPEC_ONLY_VIOLATION],
+            evaluation={"test_integrity": "FAIL"},
+        )
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_before", (
+            "evaluation.test_integrity FAIL must force revert_before even "
+            f"without a Test Integrity category; got {result!r}"
+        )
+
+    def test_mechanical_overlay_keeps_declared_revert_to_red(self) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            next_action="revert_to_red",
+            violations=[_TEST_INTEGRITY_VIOLATION],
+            evaluation={"test_integrity": "FAIL"},
+        )
+        result = _coerce_judge_action(
+            manifest, "COMPLIANCE_VIOLATION", failure_kind="mechanical"
+        )
+        assert result == "revert_to_red", (
+            "mechanical overlay must keep the agent's three-way choice; "
+            f"Test Integrity must not coerce revert_before; got {result!r}"
+        )
+
+    @pytest.mark.parametrize("failure_kind", ["test_defect", "no_failing_test"])
+    def test_existing_failure_kind_force_revert_before_still_holds(
+        self, failure_kind: str
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(next_action="revert_to_red")
+        result = _coerce_judge_action(
+            manifest, "COMPLIANCE_VIOLATION", failure_kind=failure_kind
+        )
+        assert result == "revert_before", (
+            f"{failure_kind!r} + COMPLIANCE_VIOLATION must still force "
+            f"revert_before; got {result!r}"
+        )
+
+
 class TestFindTaskRecord:
     def test_find_task_record_returns_latest_status(self, tmp_path: Path):
         from deviate.cli.micro import _find_task_record

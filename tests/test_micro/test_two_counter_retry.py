@@ -919,15 +919,19 @@ def _install_coerce_violation_stubs(
     monkeypatch: pytest.MonkeyPatch,
     *,
     failure_kind: str,
-    declared_next_action: str,
+    declared_next_action: str | None,
     pass_after_red_count: int = 2,
+    violations: list[object] | None = None,
+    evaluation: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Stub JUDGE as an agent that declares ``declared_next_action``.
 
     The stub then applies ``_coerce_judge_action`` the same way
     ``_run_judge_phase`` does, so a ``test_defect`` / ``no_failing_test``
     ``COMPLIANCE_VIOLATION`` becomes ``revert_before`` even when the
-    agent asked for ``revert_to_red``.
+    agent asked for ``revert_to_red``. GREEN PASS Test Integrity
+    (empty ``failure_kind`` + structured category / ``test_integrity``)
+    uses the same coerce path.
     """
     call_log: list[str] = []
     coerced_actions: list[str | None] = []
@@ -977,14 +981,20 @@ def _install_coerce_violation_stubs(
             current.train_feedback = ""
             coerced_actions.append("skip_refactor")
         else:
-            manifest = HandoverManifest.model_construct(
-                phase="JUDGE",
-                status="SUCCESS",
-                verdict="COMPLIANCE_VIOLATION",
-                task_id="TSK-017-05",
-                next_action=declared_next_action,
-                rationale="AC-PLAN-005 coerce matrix pin",
-            )
+            manifest_kwargs: dict[str, object] = {
+                "phase": "JUDGE",
+                "status": "SUCCESS",
+                "verdict": "COMPLIANCE_VIOLATION",
+                "task_id": "TSK-017-05",
+                "rationale": "AC-PLAN-005 coerce matrix pin",
+            }
+            if declared_next_action is not None:
+                manifest_kwargs["next_action"] = declared_next_action
+            if violations is not None:
+                manifest_kwargs["violations"] = violations
+            if evaluation is not None:
+                manifest_kwargs["evaluation"] = evaluation
+            manifest = HandoverManifest(**manifest_kwargs)
             action = _coerce_judge_action(
                 manifest,
                 "COMPLIANCE_VIOLATION",
@@ -1135,6 +1145,67 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
             f"AC-PLAN-005: escalate adds 1 to red_attempts; got {counters_at_red!r}"
         )
         assert "TRAIN_EXHAUSTED" not in buf.getvalue()
+
+    def test_green_pass_test_integrity_explicit_revert_to_red_escalates(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GREEN PASS Test Integrity coerces ``revert_to_red`` to RED."""
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-017",
+            green_attempts=0,
+            red_attempts=0,
+        ).save(session_path)
+
+        traces = _install_coerce_violation_stubs(
+            monkeypatch,
+            failure_kind="",
+            declared_next_action="revert_to_red",
+            pass_after_red_count=2,
+            violations=[
+                {
+                    "category": "Test Integrity Violation",
+                    "file": "tests/test_wallet.py",
+                    "detail": "filename-only test does not validate AC",
+                    "severity": "CRITICAL",
+                    "recommendation": "Re-author RED",
+                }
+            ],
+            evaluation={"test_integrity": "FAIL"},
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        try:
+            _run_tdd_cycle(task, ledger_path, console)
+        except PhaseFailedError as exc:
+            raise AssertionError(
+                "GH-149: GREEN PASS Test Integrity must escalate RED "
+                f"without TRAIN_EXHAUSTED; got {exc!r}\n{buf.getvalue()}"
+            ) from exc
+
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        coerced_actions = traces["coerced_actions"]
+        assert isinstance(coerced_actions, list)
+
+        assert coerced_actions[0] == "revert_before", (
+            "GH-149: GREEN PASS + Test Integrity + explicit revert_to_red "
+            f"must coerce to revert_before; got {coerced_actions!r}"
+        )
+        assert call_log.count("RED") >= 2, (
+            f"GH-149: coerced revert_before must dispatch a retry RED; got {call_log!r}"
+        )
+        first_contract = call_log[: call_log.index("RED", 1)]
+        assert first_contract.count("GREEN") == 1, (
+            "GH-149: Test Integrity revert_before must not train GREEN; "
+            f"got {call_log!r}"
+        )
 
 
 class TestAcPlan005SpecAlignment:

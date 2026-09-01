@@ -2688,6 +2688,56 @@ _MAX_GREEN_ATTEMPTS = 3
 _MAX_RED_ATTEMPTS = 3
 
 
+def _manifest_extra(manifest: HandoverManifest) -> dict[str, object]:
+    extra = getattr(manifest, "model_extra", None)
+    return extra if isinstance(extra, dict) else {}
+
+
+def _manifest_field(manifest: HandoverManifest, name: str) -> object:
+    extra = _manifest_extra(manifest)
+    if name in extra:
+        return extra[name]
+    return getattr(manifest, name, None)
+
+
+def _category_is_test_integrity(category: object) -> bool:
+    return "test integrity" in str(category or "").strip().lower()
+
+
+def _evaluation_test_integrity_fail(evaluation: object) -> bool:
+    if evaluation is None:
+        return False
+    if isinstance(evaluation, dict):
+        value = evaluation.get("test_integrity")
+    else:
+        value = getattr(evaluation, "test_integrity", None)
+    return str(value or "").strip().upper() == "FAIL"
+
+
+def _manifest_signals_test_integrity(manifest: HandoverManifest) -> bool:
+    """True when structured Test Integrity is present on the JUDGE manifest.
+
+    Accepts ``violations[].category`` containing ``Test Integrity`` (including
+    the live string ``Test Integrity Violation``) and/or
+    ``evaluation.test_integrity: FAIL``. Does not read ``train_feedback``.
+    """
+    if _evaluation_test_integrity_fail(_manifest_field(manifest, "evaluation")):
+        return True
+    if str(_manifest_field(manifest, "test_integrity") or "").strip().upper() == "FAIL":
+        return True
+    violations = _manifest_field(manifest, "violations")
+    if not isinstance(violations, list):
+        return False
+    for item in violations:
+        if isinstance(item, dict):
+            category = item.get("category")
+        else:
+            category = getattr(item, "category", None)
+        if _category_is_test_integrity(category):
+            return True
+    return False
+
+
 def _coerce_judge_action(
     manifest: HandoverManifest,
     verdict: str,
@@ -2704,10 +2754,22 @@ def _coerce_judge_action(
     declared (or omitted). The RED test itself is wrong; the agent must
     re-author it before any further GREEN attempt. PASS verdicts preserve
     the agent's outcome.
+
+    After GREEN PASS (``failure_kind`` empty / not mechanical), a
+    ``COMPLIANCE_VIOLATION`` with structured Test Integrity also forces
+    ``revert_before`` — even when ``next_action`` is omitted or
+    ``revert_to_red``. Mechanical overlay keeps the agent's three-way
+    choice. Spec-only gaps stay ``revert_to_red``.
     """
     if (
         failure_kind in {"test_defect", "no_failing_test"}
         and verdict.upper() == "COMPLIANCE_VIOLATION"
+    ):
+        return "revert_before"
+    if (
+        verdict.upper() == "COMPLIANCE_VIOLATION"
+        and failure_kind not in {"mechanical", "test_defect", "no_failing_test"}
+        and _manifest_signals_test_integrity(manifest)
     ):
         return "revert_before"
     next_action = getattr(manifest, "next_action", None)
