@@ -2313,29 +2313,33 @@ def test_judge_auto_prompt_documents_proceed_to_refactor_no_diff() -> None:
     # so the agent knows to pick `proceed_to_refactor_no_diff` (COMPLIANCE_PASS
     # forward route) alongside `revert_before` / `revert_to_red` / `skip_refactor`
     # (COMPLIANCE_VIOLATION rejection routes) under the same discriminator.
-    # Look for `proceed_to_refactor_no_diff` within the prompt and confirm it
-    # appears in a context that ALSO references `<failure_kind>mechanical`.
+    # YAML schema examples also name the verb (GH-149); find the occurrence
+    # whose backward window includes `<failure_kind>mechanical`.
     needle = "proceed_to_refactor_no_diff"
-    idx = judge_prompt.find(needle)
-    assert idx != -1, (
-        f"JUDGE prompt must reference `{needle}` somewhere in its edge-case "
-        f"table for the mechanical discriminator. prompt head: {judge_prompt[:500]!r}"
-    )
-    # The mechanical row context window — scan backward 4000 chars (table
-    # row width in our prompts is well under that). The discriminator block
-    # reference may be in the table cell of the same row.
-    window_before = judge_prompt[max(0, idx - 4000) : idx]
-    assert "<failure_kind>mechanical</failure_kind>" in window_before, (
-        f"The `proceed_to_refactor_no_diff` reference must appear in a context "
-        f"that also references `<failure_kind>mechanical</failure_kind>`, so "
-        f"JUDGE knows to emit the action under that discriminator. "
-        f"window_before: {window_before[-500:]!r}"
+    idx = 0
+    mechanical_idx = -1
+    while True:
+        idx = judge_prompt.find(needle, idx)
+        if idx == -1:
+            break
+        window_before = judge_prompt[max(0, idx - 4000) : idx]
+        if "<failure_kind>mechanical</failure_kind>" in window_before:
+            mechanical_idx = idx
+            break
+        idx += len(needle)
+    assert mechanical_idx != -1, (
+        f"JUDGE prompt must reference `{needle}` in a context that also "
+        f"references `<failure_kind>mechanical</failure_kind>` so JUDGE "
+        f"emits the action under that discriminator. "
+        f"prompt head: {judge_prompt[:500]!r}"
     )
 
     # The action MUST be tied to a COMPLIANCE_PASS verdict (not VIOLATION) so
     # the runner dispatches the forward-route branch in _run_judge_phase and
     # does not enter the rejection cascade.
-    verdict_window = judge_prompt[max(0, idx - 200) : min(len(judge_prompt), idx + 400)]
+    verdict_window = judge_prompt[
+        max(0, mechanical_idx - 200) : min(len(judge_prompt), mechanical_idx + 400)
+    ]
     assert "COMPLIANCE_PASS" in verdict_window, (
         f"`proceed_to_refactor_no_diff` must be tied to a COMPLIANCE_PASS "
         f"verdict in the JUDGE prompt (it's a forward route, not a "
