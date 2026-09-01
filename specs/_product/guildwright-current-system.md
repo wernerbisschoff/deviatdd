@@ -175,8 +175,8 @@ PENDING
   -> RED
   -> GREEN
   -> JUDGE
-     -> revert_before -> RED
-     -> revert_to_red -> GREEN
+     -> revert_red -> RED
+     -> revert_green -> GREEN
      -> continue_refactor -> REFACTOR
      -> proceed_to_refactor_no_diff -> REFACTOR
      -> skip_refactor -> COMPLETED
@@ -194,8 +194,8 @@ REFACTOR runs after compliance approval. It reruns regression checks. A regressi
 
 ### JUDGE routing
 
-- `revert_before`: discard RED and GREEN. A test defect forces this route.
-- `revert_to_red`: preserve RED and discard GREEN.
+- `revert_red`: discard RED and GREEN. A test defect forces this route.
+- `revert_green`: preserve RED and discard GREEN.
 - `continue_refactor`: approve a substantive diff.
 - `proceed_to_refactor_no_diff`: approve a valid zero-production-diff slice.
 - `skip_refactor`: complete without refactor.

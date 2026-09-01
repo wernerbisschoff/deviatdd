@@ -1,7 +1,7 @@
-"""GREEN-resume JUDGE must TRAIN GREEN on ``revert_to_red``.
+"""GREEN-resume JUDGE must TRAIN GREEN on ``revert_green``.
 
 Ledger GREEN maps to ``start_phase="JUDGE"``. After a passing GREEN
-(``_is_green_test_failure`` is false) a JUDGE ``next_action: revert_to_red``
+(``_is_green_test_failure`` is false) a JUDGE ``next_action: revert_green``
 must fall through into the GREEN train loop. It must not call
 ``_finish_tdd_cycle`` / ``_run_refactor_phase`` or mark COMPLETED.
 
@@ -26,7 +26,7 @@ from tests.conftest import _git_env
 
 STANDING_RED_SHA = "abc-red-contract"
 TRAIN_FEEDBACK = (
-    "implementation wrong: slice misses AC-PLAN-001 boundary on revert_to_red"
+    "implementation wrong: slice misses AC-PLAN-001 boundary on revert_green"
 )
 _ISSUE_ID = "ISS-ADH-032"
 _TASK_ID = "TSK-032-01"
@@ -41,7 +41,7 @@ def _seed_workspace(
     task = {
         "id": _TASK_ID,
         "issue_id": _ISSUE_ID,
-        "description": "Resume JUDGE revert_to_red must train GREEN",
+        "description": "Resume JUDGE revert_green must train GREEN",
         "execution_mode": "TDD",
     }
     append_task_transition(TaskRecord(**task), ledger_path)
@@ -82,7 +82,7 @@ def _completed_rows(ledger_path: Path) -> list[dict]:
 def _install_judge_resume_stubs(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    first_judge_action: str = "revert_to_red",
+    first_judge_action: str = "revert_green",
     subsequent_judge_action: str = "skip_refactor",
 ) -> dict[str, object]:
     """Stub phases. First JUDGE applies ``first_judge_action``; later skip.
@@ -131,9 +131,9 @@ def _install_judge_resume_stubs(
             if call_log.count("JUDGE") == 1
             else subsequent_judge_action
         )
-        if action == "revert_to_red":
+        if action == "revert_green":
             current.judge_rejected = True
-            current.pending_judge_action = "revert_to_red"
+            current.pending_judge_action = "revert_green"
             current.train_feedback = TRAIN_FEEDBACK
             current.failure_kind = ""
             current.last_judge_verdict = "COMPLIANCE_VIOLATION"
@@ -166,10 +166,10 @@ def _install_judge_resume_stubs(
     }
 
 
-class TestJudgeResumeRevertToRedTrainsGreen:
-    """start_phase=JUDGE + passing suite + revert_to_red → TRAIN GREEN."""
+class TestJudgeResumeRevertGreenTrainsGreen:
+    """start_phase=JUDGE + passing suite + revert_green → TRAIN GREEN."""
 
-    def test_start_phase_judge_revert_to_red_trains_green_not_refactor(
+    def test_start_phase_judge_revert_green_trains_green_not_refactor(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -177,7 +177,7 @@ class TestJudgeResumeRevertToRedTrainsGreen:
         """Resume at JUDGE after GREEN PASS must train GREEN, never REFACTOR.
 
         ``_is_green_test_failure`` is false (passing suite). Mocked JUDGE
-        returns ``COMPLIANCE_VIOLATION`` + ``next_action: revert_to_red`` +
+        returns ``COMPLIANCE_VIOLATION`` + ``next_action: revert_green`` +
         train_feedback. GREEN must run with that pending action; REFACTOR
         must not.
         """
@@ -219,19 +219,19 @@ class TestJudgeResumeRevertToRedTrainsGreen:
         assert isinstance(feedback_at_green, list)
 
         assert "REFACTOR" not in call_log, (
-            "start_phase=JUDGE + revert_to_red must not enter REFACTOR; "
+            "start_phase=JUDGE + revert_green must not enter REFACTOR; "
             f"got {call_log!r}\n{buf.getvalue()}"
         )
         assert "GREEN" in call_log, (
-            "start_phase=JUDGE + revert_to_red must train GREEN; "
+            "start_phase=JUDGE + revert_green must train GREEN; "
             f"got {call_log!r}\n{buf.getvalue()}"
         )
         assert call_log[0] == "JUDGE", (
             "fresh JUDGE resume (no stored pending) must invoke JUDGE once; "
             f"got {call_log!r}"
         )
-        assert pending_at_green[0] == "revert_to_red", (
-            "pending_judge_action must stay revert_to_red until GREEN trains; "
+        assert pending_at_green[0] == "revert_green", (
+            "pending_judge_action must stay revert_green until GREEN trains; "
             f"got {pending_at_green!r}"
         )
         assert feedback_at_green[0] == TRAIN_FEEDBACK, (
@@ -239,12 +239,12 @@ class TestJudgeResumeRevertToRedTrainsGreen:
             f"got {feedback_at_green!r}"
         )
 
-    def test_finish_tdd_cycle_refuses_refactor_on_revert_to_red(
+    def test_finish_tdd_cycle_refuses_refactor_on_revert_green(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Defense in depth: pending revert_to_red never enters REFACTOR."""
+        """Defense in depth: pending revert_green never enters REFACTOR."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
         _mock_pytest(monkeypatch)
@@ -260,7 +260,7 @@ class TestJudgeResumeRevertToRedTrainsGreen:
         session = SessionState(
             active_issue_id=_ISSUE_ID,
             current_phase="GREEN",
-            pending_judge_action="revert_to_red",
+            pending_judge_action="revert_green",
             train_feedback=TRAIN_FEEDBACK,
             judge_rejected=True,
             red_commit_sha=STANDING_RED_SHA,
@@ -282,27 +282,27 @@ class TestJudgeResumeRevertToRedTrainsGreen:
 
         assert refactor_calls == [], (
             "_finish_tdd_cycle must not call _run_refactor_phase while "
-            f"pending is revert_to_red; got {refactor_calls!r}"
+            f"pending is revert_green; got {refactor_calls!r}"
         )
-        assert result.pending_judge_action == "revert_to_red", (
-            "_finish_tdd_cycle must leave pending revert_to_red in place; "
+        assert result.pending_judge_action == "revert_green", (
+            "_finish_tdd_cycle must leave pending revert_green in place; "
             f"got {result.pending_judge_action!r}"
         )
         assert result.current_phase != "IDLE", (
-            "_finish_tdd_cycle must not park IDLE/COMPLETED on revert_to_red; "
+            "_finish_tdd_cycle must not park IDLE/COMPLETED on revert_green; "
             f"got {result.current_phase!r}"
         )
         assert _completed_rows(ledger_path) == [], (
-            "_finish_tdd_cycle must not append COMPLETED on revert_to_red; "
+            "_finish_tdd_cycle must not append COMPLETED on revert_green; "
             f"got {_completed_rows(ledger_path)!r}"
         )
 
-    def test_finish_tdd_cycle_refuses_refactor_on_revert_before(
+    def test_finish_tdd_cycle_refuses_refactor_on_revert_red(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Defense in depth: pending revert_before never enters REFACTOR."""
+        """Defense in depth: pending revert_red never enters REFACTOR."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
         _mock_pytest(monkeypatch)
@@ -310,7 +310,7 @@ class TestJudgeResumeRevertToRedTrainsGreen:
         session = SessionState(
             active_issue_id=_ISSUE_ID,
             current_phase="RED",
-            pending_judge_action="revert_before",
+            pending_judge_action="revert_red",
             train_feedback=TRAIN_FEEDBACK,
             judge_rejected=True,
             red_commit_sha="",
@@ -332,17 +332,17 @@ class TestJudgeResumeRevertToRedTrainsGreen:
 
         assert refactor_calls == [], (
             "_finish_tdd_cycle must not call _run_refactor_phase while "
-            f"pending is revert_before; got {refactor_calls!r}"
+            f"pending is revert_red; got {refactor_calls!r}"
         )
-        assert result.pending_judge_action == "revert_before"
+        assert result.pending_judge_action == "revert_red"
         assert _completed_rows(ledger_path) == []
 
-    def test_resume_stored_revert_to_red_skips_judge_and_trains_green(
+    def test_resume_stored_revert_green_skips_judge_and_trains_green(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Ledger GREEN + session already revert_to_red skips a second JUDGE."""
+        """Ledger GREEN + session already revert_green skips a second JUDGE."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
         _mock_pytest(monkeypatch)
@@ -359,7 +359,7 @@ class TestJudgeResumeRevertToRedTrainsGreen:
             active_issue_id=_ISSUE_ID,
             current_phase="GREEN",
             red_commit_sha=STANDING_RED_SHA,
-            pending_judge_action="revert_to_red",
+            pending_judge_action="revert_green",
             train_feedback=TRAIN_FEEDBACK,
             judge_rejected=True,
             failure_kind="",
@@ -381,11 +381,11 @@ class TestJudgeResumeRevertToRedTrainsGreen:
         assert isinstance(feedback_at_green, list)
 
         assert call_log[0] == "GREEN", (
-            "stored pending revert_to_red + train_feedback must skip JUDGE "
+            "stored pending revert_green + train_feedback must skip JUDGE "
             f"and train GREEN first; got {call_log!r}\n{buf.getvalue()}"
         )
         assert "REFACTOR" not in call_log, (
-            f"stored revert_to_red resume must not enter REFACTOR; got {call_log!r}"
+            f"stored revert_green resume must not enter REFACTOR; got {call_log!r}"
         )
-        assert pending_at_green[0] == "revert_to_red"
+        assert pending_at_green[0] == "revert_green"
         assert feedback_at_green[0] == TRAIN_FEEDBACK

@@ -1,8 +1,8 @@
 """Two-counter TDD retry pins (ISS-ADH-017 / AC-PLAN-001..005).
 
 GREEN trains three times against one standing RED contract on
-``revert_to_red``, then escalates. Cycle 1 does not print
-``TRAIN_EXHAUSTED``. ``revert_before`` escalates immediately; three
+``revert_green``, then escalates. Cycle 1 does not print
+``TRAIN_EXHAUSTED``. ``revert_red`` escalates immediately; three
 escalates print ``TRAIN_EXHAUSTED`` and stop. Counters seed from
 ``SessionState`` so a crash mid-train cannot zero the budget via a
 local ``train_attempts = 0``. Escalate RED receives a short
@@ -37,7 +37,7 @@ from deviate.state.ledger import TaskRecord, append_task_transition
 
 STANDING_RED_SHA = "abc-red-contract"
 STANDING_FEEDBACK = (
-    "implementation wrong: slice misses AC-PLAN-001 boundary on revert_to_red"
+    "implementation wrong: slice misses AC-PLAN-001 boundary on revert_green"
 )
 GREEN_DUMP_MARKER = "UNIQUE_GREEN_DUMP_MARKER_AC_PLAN_004"
 GREEN_DUMP = (
@@ -64,7 +64,7 @@ def _seed_workspace(root: Path) -> tuple[dict, Path, Path]:
     task = {
         "id": "TSK-017-02",
         "issue_id": "ISS-ADH-017",
-        "description": "Train GREEN three times on revert_to_red, then escalate",
+        "description": "Train GREEN three times on revert_green, then escalate",
         "execution_mode": "TDD",
     }
     append_task_transition(TaskRecord(**task), ledger_path)
@@ -85,12 +85,12 @@ def _mock_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _install_always_revert_to_red_stubs(
+def _install_always_revert_green_stubs(
     monkeypatch: pytest.MonkeyPatch,
     *,
     pass_after_red_count: int,
 ) -> dict[str, object]:
-    """Stub JUDGE to return ``revert_to_red`` until a new RED (escalate).
+    """Stub JUDGE to return ``revert_green`` until a new RED (escalate).
 
     After ``pass_after_red_count`` RED dispatches, JUDGE forwards
     ``skip_refactor`` so this task cannot hang waiting for the later
@@ -147,7 +147,7 @@ def _install_always_revert_to_red_stubs(
             current.failure_kind = ""
         else:
             current.judge_rejected = True
-            current.pending_judge_action = "revert_to_red"
+            current.pending_judge_action = "revert_green"
             current.train_feedback = STANDING_FEEDBACK
             current.failure_kind = "mechanical"
         current.save(session_path_arg)
@@ -172,15 +172,15 @@ def _install_always_revert_to_red_stubs(
     }
 
 
-class TestAlwaysRevertToRedTrainsThenEscalates:
+class TestAlwaysRevertGreenTrainsThenEscalates:
     """AC-PLAN-001 / US-017-01 / FR-ADHOC-017 / AC-ADHOC-017-01."""
 
-    def test_always_revert_to_red_trains_green_three_times_then_escalates(
+    def test_always_revert_green_trains_green_three_times_then_escalates(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Three ``revert_to_red`` trains increment ``green_attempts``.
+        """Three ``revert_green`` trains increment ``green_attempts``.
 
         After 3, the runner dispatches a new RED. Cycle 1 does not print
         ``TRAIN_EXHAUSTED``. The standing RED SHA and GREEN
@@ -196,9 +196,7 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
             red_attempts=0,
         ).save(session_path)
 
-        traces = _install_always_revert_to_red_stubs(
-            monkeypatch, pass_after_red_count=2
-        )
+        traces = _install_always_revert_green_stubs(monkeypatch, pass_after_red_count=2)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
 
@@ -206,7 +204,7 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
             _run_tdd_cycle(task, ledger_path, console)
         except PhaseFailedError as exc:
             raise AssertionError(
-                "AC-PLAN-001: three revert_to_red trains must escalate to a "
+                "AC-PLAN-001: three revert_green trains must escalate to a "
                 "new RED without TRAIN_EXHAUSTED on cycle 1; runner raised "
                 f"{exc!r}\n{buf.getvalue()}"
             ) from exc
@@ -222,16 +220,16 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
         assert isinstance(sha_at_green, list)
 
         assert "TRAIN_EXHAUSTED" not in output, (
-            "AC-PLAN-001: a JUDGE that always revert_to_red must not print "
+            "AC-PLAN-001: a JUDGE that always revert_green must not print "
             f"TRAIN_EXHAUSTED before the first escalate; got {output!r}"
         )
         assert call_log.count("RED") >= 2, (
-            "AC-PLAN-001: after 3 revert_to_red trains the runner must "
+            "AC-PLAN-001: after 3 revert_green trains the runner must "
             f"dispatch a new _run_red_phase; got {call_log!r}"
         )
         assert green_attempts_at_green[:3] == [0, 1, 2], (
             "AC-PLAN-001: first GREEN of a fresh RED does not increment; "
-            "each revert_to_red then adds 1 to green_attempts before the "
+            "each revert_green then adds 1 to green_attempts before the "
             f"next GREEN. got {green_attempts_at_green!r}"
         )
         first_contract_greens = call_log[: call_log.index("RED", 1)]
@@ -241,11 +239,11 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
             f"times before escalate; got {call_log!r}"
         )
         assert sha_at_green[:3] == [STANDING_RED_SHA] * 3, (
-            "AC-PLAN-001: revert_to_red keeps session.red_commit_sha for "
+            "AC-PLAN-001: revert_green keeps session.red_commit_sha for "
             f"trains 1-3; got {sha_at_green[:3]!r}"
         )
         assert feedback_at_green[1:3] == [STANDING_FEEDBACK, STANDING_FEEDBACK], (
-            "AC-PLAN-001: revert_to_red keeps GREEN train_feedback for "
+            "AC-PLAN-001: revert_green keeps GREEN train_feedback for "
             f"trains 1-3; got {feedback_at_green!r}"
         )
 
@@ -259,7 +257,7 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
         A crash mid-GREEN-train reloads ``.deviate/session.json``. The
         runner must not assign ``train_attempts = 0`` and give the task
         three fresh trains. Seeded ``green_attempts == 2`` plus one
-        ``revert_to_red`` reaches 3 and escalates.
+        ``revert_green`` reaches 3 and escalates.
         """
         root = tmp_git_repo
         monkeypatch.chdir(root)
@@ -278,9 +276,7 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
         assert reloaded.green_attempts == 2
         assert reloaded.red_attempts == 0
 
-        traces = _install_always_revert_to_red_stubs(
-            monkeypatch, pass_after_red_count=1
-        )
+        traces = _install_always_revert_green_stubs(monkeypatch, pass_after_red_count=1)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
 
@@ -289,7 +285,7 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
         except PhaseFailedError as exc:
             raise AssertionError(
                 "AC-PLAN-001: re-entry must resume session.green_attempts=2 "
-                "and escalate after one more revert_to_red, not TRAIN_EXHAUSTED "
+                "and escalate after one more revert_green, not TRAIN_EXHAUSTED "
                 f"from a zeroed local train_attempts; got {exc!r}\n"
                 f"{buf.getvalue()}"
             ) from exc
@@ -309,7 +305,7 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
             f"local train_attempts = 0; got {output!r} log={call_log!r}"
         )
         assert call_log.count("RED") >= 1, (
-            "AC-PLAN-001: one more revert_to_red on a loaded budget of 2 "
+            "AC-PLAN-001: one more revert_green on a loaded budget of 2 "
             f"must escalate to a new RED; got {call_log!r}"
         )
         greens_before_escalate = 0
@@ -324,10 +320,10 @@ class TestAlwaysRevertToRedTrainsThenEscalates:
         )
 
 
-def _install_always_revert_before_stubs(
+def _install_always_revert_red_stubs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, object]:
-    """Stub JUDGE to always set ``pending_judge_action`` to ``revert_before``.
+    """Stub JUDGE to always set ``pending_judge_action`` to ``revert_red``.
 
     A 24-phase guard stops the current infinite-restart loop so this
     pin fails on missing ``TRAIN_EXHAUSTED`` instead of hanging.
@@ -377,7 +373,7 @@ def _install_always_revert_before_stubs(
         assert isinstance(session_path_arg, Path)
         current = SessionState.load(session_path_arg)
         current.judge_rejected = True
-        current.pending_judge_action = "revert_before"
+        current.pending_judge_action = "revert_red"
         current.failure_kind = "test_defect"
         current.train_feedback = STANDING_FEEDBACK
         current.save(session_path_arg)
@@ -401,10 +397,10 @@ def _install_always_revert_before_stubs(
     }
 
 
-def _install_empty_red_sha_revert_before_stubs(
+def _install_empty_red_sha_revert_red_stubs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, object]:
-    """RED returns empty SHA + ``revert_before`` (``no_failing_test``).
+    """RED returns empty SHA + ``revert_red`` (``no_failing_test``).
 
     GREEN is a counter so the pin can prove it is never dispatched.
     """
@@ -425,7 +421,7 @@ def _install_empty_red_sha_revert_before_stubs(
         current = SessionState.load(session_path_arg)
         current.red_commit_sha = ""
         current.current_phase = "RED"
-        current.pending_judge_action = "revert_before"
+        current.pending_judge_action = "revert_red"
         current.failure_kind = "no_failing_test"
         current.judge_rejected = True
         current.save(session_path_arg)
@@ -449,7 +445,7 @@ def _install_empty_red_sha_revert_before_stubs(
         assert isinstance(session_path_arg, Path)
         current = SessionState.load(session_path_arg)
         current.judge_rejected = True
-        current.pending_judge_action = "revert_before"
+        current.pending_judge_action = "revert_red"
         current.failure_kind = "no_failing_test"
         current.save(session_path_arg)
         return current
@@ -467,15 +463,15 @@ def _install_empty_red_sha_revert_before_stubs(
     return {"call_log": call_log, "green_calls": green_calls}
 
 
-class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
+class TestAlwaysRevertRedStopsAfterThreeEscalates:
     """AC-PLAN-002 / US-017-02 / US-017-03 / FR-ADHOC-017 / AC-ADHOC-017-02."""
 
-    def test_always_revert_before_stops_after_three_escalates(
+    def test_always_revert_red_stops_after_three_escalates(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Three ``revert_before`` escalates hand off; no fourth RED.
+        """Three ``revert_red`` escalates hand off; no fourth RED.
 
         Each escalate increments ``red_attempts``, resets
         ``green_attempts`` to 0, and consumes ``pending_judge_action``
@@ -493,7 +489,7 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
             red_attempts=0,
         ).save(session_path)
 
-        traces = _install_always_revert_before_stubs(monkeypatch)
+        traces = _install_always_revert_red_stubs(monkeypatch)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
 
@@ -532,7 +528,7 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
             "GREEN",
             "JUDGE",
         ], (
-            "AC-PLAN-002: each revert_before is consumed once so the next "
+            "AC-PLAN-002: each revert_red is consumed once so the next "
             f"cycle is GREEN, not an extra RED; got {call_log!r}"
         )
         assert "REFACTOR" not in call_log, (
@@ -543,13 +539,13 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
             f"green_attempts=2 must still be present; got {counters_at_red!r}"
         )
         assert counters_at_red[1:] == [(0, 1), (0, 2)], (
-            "AC-PLAN-002: each revert_before resets green_attempts to 0 and "
+            "AC-PLAN-002: each revert_red resets green_attempts to 0 and "
             "adds 1 to red_attempts before the retry RED; "
             f"got {counters_at_red!r}"
         )
         assert pending_at_green[1:] == ["", ""], (
             "AC-PLAN-002: pending_judge_action is consumed once after each "
-            "escalate so GREEN does not see revert_before; "
+            "escalate so GREEN does not see revert_red; "
             f"got {pending_at_green!r}"
         )
 
@@ -571,7 +567,7 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
         """AC-PLAN-001: empty red_commit_sha after escalate never calls GREEN.
 
         ``_run_red_phase`` returns with empty ``session.red_commit_sha`` and
-        ``pending_judge_action == revert_before`` (no_failing_test
+        ``pending_judge_action == revert_red`` (no_failing_test
         adjudicated). ``_run_green_phase`` is a counter. The loop re-invokes
         RED or raises TRAIN_EXHAUSTED / PhaseFailedError. Caps stay 3.
         """
@@ -585,7 +581,7 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
             red_attempts=0,
         ).save(session_path)
 
-        traces = _install_empty_red_sha_revert_before_stubs(monkeypatch)
+        traces = _install_empty_red_sha_revert_red_stubs(monkeypatch)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
 
@@ -609,7 +605,7 @@ class TestAlwaysRevertBeforeStopsAfterThreeEscalates:
         )
         assert "GREEN" not in call_log, (
             "AC-PLAN-001: _run_green_phase must never run on the empty-SHA "
-            f"revert_before path; got {call_log!r}\n{output}"
+            f"revert_red path; got {call_log!r}\n{output}"
         )
         assert "TRAIN_EXHAUSTED" in str(excinfo.value), (
             "AC-PLAN-001: _account_red_escalate must still stop the loop at "
@@ -668,7 +664,7 @@ def _install_escalate_note_stubs(
 ) -> dict[str, object]:
     """Stub phases and capture the ``train_feedback`` retry RED forwards.
 
-    ``judge_action`` is ``revert_before`` (escalate) or ``revert_to_red``
+    ``judge_action`` is ``revert_red`` (escalate) or ``revert_green``
     (GREEN train). After the first retry path, JUDGE forwards
     ``skip_refactor`` so the loop exits.
     """
@@ -767,7 +763,7 @@ class TestEscalateInjectsShortNoteNotGreenDump:
 
         After GREEN stores a long ``train_feedback`` dump that includes
         ``<test_output>`` and a full rationale, JUDGE returns
-        ``revert_before``. The retry RED prompt that
+        ``revert_red``. The retry RED prompt that
         ``_build_auto_prompt`` builds from ``session.train_feedback``
         contains ``previous cycle failed because`` and omits the dump.
         """
@@ -782,7 +778,7 @@ class TestEscalateInjectsShortNoteNotGreenDump:
         ).save(session_path)
 
         traces = _install_escalate_note_stubs(
-            monkeypatch, task, judge_action="revert_before"
+            monkeypatch, task, judge_action="revert_red"
         )
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
@@ -791,7 +787,7 @@ class TestEscalateInjectsShortNoteNotGreenDump:
             _run_tdd_cycle(task, ledger_path, console)
         except PhaseFailedError as exc:
             raise AssertionError(
-                "AC-PLAN-004: one revert_before escalate must re-author RED "
+                "AC-PLAN-004: one revert_red escalate must re-author RED "
                 f"without TRAIN_EXHAUSTED; got {exc!r}\n{buf.getvalue()}"
             ) from exc
 
@@ -803,7 +799,7 @@ class TestEscalateInjectsShortNoteNotGreenDump:
         assert isinstance(prompts_at_red, list)
 
         assert call_log.count("RED") >= 2, (
-            "AC-PLAN-004: revert_before must dispatch a retry RED so the "
+            "AC-PLAN-004: revert_red must dispatch a retry RED so the "
             f"escalate note can be observed; got {call_log!r}"
         )
         retry_feedback = feedback_at_red[1]
@@ -844,12 +840,12 @@ class TestEscalateInjectsShortNoteNotGreenDump:
             f"prompt excerpt={retry_prompt[-800:]!r}"
         )
 
-    def test_escalate_revert_to_red_keeps_green_train_feedback(
+    def test_escalate_revert_green_keeps_green_train_feedback(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """GREEN-train (``revert_to_red``) keeps the existing dump."""
+        """GREEN-train (``revert_green``) keeps the existing dump."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
         _mock_pytest(monkeypatch)
@@ -861,7 +857,7 @@ class TestEscalateInjectsShortNoteNotGreenDump:
         ).save(session_path)
 
         traces = _install_escalate_note_stubs(
-            monkeypatch, task, judge_action="revert_to_red"
+            monkeypatch, task, judge_action="revert_green"
         )
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
@@ -870,7 +866,7 @@ class TestEscalateInjectsShortNoteNotGreenDump:
             _run_tdd_cycle(task, ledger_path, console)
         except PhaseFailedError as exc:
             raise AssertionError(
-                "AC-PLAN-004: revert_to_red must keep GREEN train_feedback "
+                "AC-PLAN-004: revert_green must keep GREEN train_feedback "
                 f"and retry GREEN, not TRAIN_EXHAUSTED; got {exc!r}\n"
                 f"{buf.getvalue()}"
             ) from exc
@@ -881,11 +877,11 @@ class TestEscalateInjectsShortNoteNotGreenDump:
         assert isinstance(feedback_at_green, list)
 
         assert call_log.count("GREEN") >= 2, (
-            "AC-PLAN-004: revert_to_red must retry GREEN against the standing "
+            "AC-PLAN-004: revert_green must retry GREEN against the standing "
             f"RED; got {call_log!r}"
         )
         assert feedback_at_green[1] == GREEN_DUMP, (
-            "AC-PLAN-004: revert_to_red keeps the existing GREEN "
+            "AC-PLAN-004: revert_green keeps the existing GREEN "
             "train_feedback for the next GREEN; "
             f"got {feedback_at_green[1]!r}"
         )
@@ -898,8 +894,8 @@ class TestEscalateInjectsShortNoteNotGreenDump:
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _EXPECTED_JUDGE_ACTIONS = frozenset(
     {
-        "revert_before",
-        "revert_to_red",
+        "revert_red",
+        "revert_green",
         "continue_refactor",
         "skip_refactor",
         "proceed_to_refactor_no_diff",
@@ -928,8 +924,8 @@ def _install_coerce_violation_stubs(
 
     The stub then applies ``_coerce_judge_action`` the same way
     ``_run_judge_phase`` does, so a ``test_defect`` / ``no_failing_test``
-    ``COMPLIANCE_VIOLATION`` becomes ``revert_before`` even when the
-    agent asked for ``revert_to_red``. GREEN PASS Test Integrity
+    ``COMPLIANCE_VIOLATION`` becomes ``revert_red`` even when the
+    agent asked for ``revert_green``. GREEN PASS Test Integrity
     (empty ``failure_kind`` + structured category / ``test_integrity``)
     uses the same coerce path.
     """
@@ -1031,13 +1027,13 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
     @pytest.mark.parametrize(
         "failure_kind,declared_next_action",
         [
-            ("test_defect", "revert_to_red"),
+            ("test_defect", "revert_green"),
             ("test_defect", None),
-            ("no_failing_test", "revert_to_red"),
+            ("no_failing_test", "revert_green"),
             ("no_failing_test", None),
         ],
     )
-    def test_coerce_maps_test_defect_and_no_failing_test_to_revert_before(
+    def test_coerce_maps_test_defect_and_no_failing_test_to_revert_red(
         self,
         failure_kind: str,
         declared_next_action: str | None,
@@ -1055,10 +1051,10 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         result = _coerce_judge_action(
             manifest, "COMPLIANCE_VIOLATION", failure_kind=failure_kind
         )
-        assert result == "revert_before", (
+        assert result == "revert_red", (
             "AC-PLAN-005: failure_kind "
             f"{failure_kind!r} on COMPLIANCE_VIOLATION must stay "
-            f"revert_before even when next_action={declared_next_action!r}; "
+            f"revert_red even when next_action={declared_next_action!r}; "
             f"got {result!r}"
         )
 
@@ -1090,7 +1086,7 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         monkeypatch: pytest.MonkeyPatch,
         failure_kind: str,
     ) -> None:
-        """Coerced ``revert_before`` skips remaining GREEN trains."""
+        """Coerced ``revert_red`` skips remaining GREEN trains."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
         _mock_pytest(monkeypatch)
@@ -1104,7 +1100,7 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         traces = _install_coerce_violation_stubs(
             monkeypatch,
             failure_kind=failure_kind,
-            declared_next_action="revert_to_red",
+            declared_next_action="revert_green",
             pass_after_red_count=2,
         )
         buf = io.StringIO()
@@ -1114,7 +1110,7 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
             _run_tdd_cycle(task, ledger_path, console)
         except PhaseFailedError as exc:
             raise AssertionError(
-                "AC-PLAN-005: one coerced revert_before must escalate RED "
+                "AC-PLAN-005: one coerced revert_red must escalate RED "
                 f"without TRAIN_EXHAUSTED; got {exc!r}\n{buf.getvalue()}"
             ) from exc
 
@@ -1125,17 +1121,17 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         counters_at_red = traces["counters_at_red"]
         assert isinstance(counters_at_red, list)
 
-        assert coerced_actions[0] == "revert_before", (
-            "AC-PLAN-005: _coerce_judge_action must force revert_before for "
+        assert coerced_actions[0] == "revert_red", (
+            "AC-PLAN-005: _coerce_judge_action must force revert_red for "
             f"{failure_kind!r} on COMPLIANCE_VIOLATION; got {coerced_actions!r}"
         )
         assert call_log.count("RED") >= 2, (
-            "AC-PLAN-005: coerced revert_before must dispatch a retry RED "
+            "AC-PLAN-005: coerced revert_red must dispatch a retry RED "
             f"now; got {call_log!r}"
         )
         first_contract = call_log[: call_log.index("RED", 1)]
         assert first_contract.count("GREEN") == 1, (
-            "AC-PLAN-005: coerced revert_before must not burn remaining GREEN "
+            "AC-PLAN-005: coerced revert_red must not burn remaining GREEN "
             f"tries; got {call_log!r}"
         )
         assert counters_at_red[1][0] == 0, (
@@ -1146,12 +1142,12 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         )
         assert "TRAIN_EXHAUSTED" not in buf.getvalue()
 
-    def test_green_pass_test_integrity_explicit_revert_to_red_escalates(
+    def test_green_pass_test_integrity_explicit_revert_green_escalates(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """GREEN PASS Test Integrity coerces ``revert_to_red`` to RED."""
+        """GREEN PASS Test Integrity coerces ``revert_green`` to RED."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
         _mock_pytest(monkeypatch)
@@ -1165,7 +1161,7 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         traces = _install_coerce_violation_stubs(
             monkeypatch,
             failure_kind="",
-            declared_next_action="revert_to_red",
+            declared_next_action="revert_green",
             pass_after_red_count=2,
             violations=[
                 {
@@ -1194,17 +1190,16 @@ class TestAcPlan005KeepJudgeVerbsCoerceAndCaps:
         coerced_actions = traces["coerced_actions"]
         assert isinstance(coerced_actions, list)
 
-        assert coerced_actions[0] == "revert_before", (
-            "GH-149: GREEN PASS + Test Integrity + explicit revert_to_red "
-            f"must coerce to revert_before; got {coerced_actions!r}"
+        assert coerced_actions[0] == "revert_red", (
+            "GH-149: GREEN PASS + Test Integrity + explicit revert_green "
+            f"must coerce to revert_red; got {coerced_actions!r}"
         )
         assert call_log.count("RED") >= 2, (
-            f"GH-149: coerced revert_before must dispatch a retry RED; got {call_log!r}"
+            f"GH-149: coerced revert_red must dispatch a retry RED; got {call_log!r}"
         )
         first_contract = call_log[: call_log.index("RED", 1)]
         assert first_contract.count("GREEN") == 1, (
-            "GH-149: Test Integrity revert_before must not train GREEN; "
-            f"got {call_log!r}"
+            f"GH-149: Test Integrity revert_red must not train GREEN; got {call_log!r}"
         )
 
 
@@ -1231,7 +1226,7 @@ class TestAcPlan005SpecAlignment:
         )
         assert "resetting `train_attempts`" not in api, (
             "AC-PLAN-005: specs/DeviaTDD-api.md must not reset "
-            "train_attempts on revert_before."
+            "train_attempts on revert_red."
         )
         assert "max_train_attempts" not in api, (
             "AC-PLAN-005: specs/DeviaTDD-api.md must replace "
@@ -1256,7 +1251,7 @@ class TestAcPlan005SpecAlignment:
         )
         assert "resetting `train_attempts`" not in arch, (
             "AC-PLAN-005: specs/DeviaTDD-architecture.md must not reset "
-            "train_attempts on revert_before."
+            "train_attempts on revert_red."
         )
         assert "max_train_attempts" not in arch, (
             "AC-PLAN-005: specs/DeviaTDD-architecture.md must replace "
@@ -1271,12 +1266,12 @@ class TestAcPlan005SpecAlignment:
             b
             for b in bullets
             if "TRAIN_EXHAUSTED" in b
-            and "revert_before" in b
+            and "revert_red" in b
             and ("GREEN" in b or "green_attempts" in b)
         ]
         assert matching, (
             "AC-PLAN-005: CHANGELOG.md [Unreleased] must have a Changed/Fixed "
             "bullet that GREEN trains three times then escalates and that "
             "three RED escalates print TRAIN_EXHAUSTED and stop the infinite "
-            "revert_before loop."
+            "revert_red loop."
         )

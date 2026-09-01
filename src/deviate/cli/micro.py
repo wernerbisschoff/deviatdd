@@ -61,6 +61,7 @@ from deviate.state.config import (
     resolve_agent_deadline,
     resolve_phase_model,
     resolve_reasoning_effort,
+    JUDGE_REVERT_ACTION_ALIASES,
 )
 from deviate.ui.monitor import OrchestrationMonitor
 from deviate.ui.pipeline import (
@@ -1765,7 +1766,7 @@ def _adjudicate_red_no_failing_test(
     JUDGE directly — a vacuous GREEN would only burn the TRAIN budget:
     JUDGE either rules the behavior already exists (``skip_refactor`` — the
     task is COMPLETED and declared regression tests stay on disk) or rules
-    the test wrong (``revert_before`` — the agent's work is discarded and
+    the test wrong (``revert_red`` — the agent's work is discarded and
     RED re-authors a genuinely failing test).
 
     On a TDD ``already_satisfied`` claim, or on a no-failing-test COMPLETE
@@ -1832,7 +1833,7 @@ def _adjudicate_red_no_failing_test(
     )
     action = session.pending_judge_action
 
-    if action == "revert_before":
+    if action == "revert_red":
         _log_run(
             "PHASE_DECISION",
             task_id=tid,
@@ -1919,7 +1920,7 @@ def _run_green_phase(
     prompt = _build_auto_prompt(
         "green", task, root, train_feedback=session.train_feedback
     )
-    if session.judge_rejected and session.pending_judge_action == "revert_to_red":
+    if session.judge_rejected and session.pending_judge_action == "revert_green":
         prompt += (
             "\n\n<rollback_context>\n"
             "JUDGE rollback discarded the prior GREEN implementation, including "
@@ -1984,13 +1985,13 @@ def _run_green_phase(
             # outcome class to emit:
             #   - "mechanical" — RED test cannot be satisfied via the
             #     library/API surface declared in scope. JUDGE picks between
-            #     `revert_before` (test wrong → re-run RED),
-            #     `revert_to_red` (slice/scope wrong → re-run GREEN with
+            #     `revert_red` (test wrong → re-run RED),
+            #     `revert_green` (slice/scope wrong → re-run GREEN with
             #     feedback), and `skip_refactor` (operator widen scope).
             #   - "test_defect" — GREEN judged the RED test itself wrong
             #     (asserts behavior the spec doesn't require, exercises a
             #     surface that's the wrong abstraction, etc.). Pre-decided
-            #     routing: `revert_before` (re-run RED). GREEN surfaces this
+            #     routing: `revert_red` (re-run RED). GREEN surfaces this
             #     via `failure_kind: test_defect` in its manifest; we
             #     default to "mechanical" if unset so prior behavior holds.
             failure_kind = manifest.failure_kind or "mechanical"
@@ -2542,22 +2543,22 @@ def _resolve_judge_diff_base(root: Path, red_commit_sha: str) -> str:
     return red_commit_sha.strip()
 
 
-def _require_revert_to_red_boundary(session: SessionState, tid: str) -> str:
-    """Return the RED SHA for ``revert_to_red``, or raise if it is missing."""
+def _require_revert_green_boundary(session: SessionState, tid: str) -> str:
+    """Return the RED SHA for ``revert_green``, or raise if it is missing."""
     sha = session.red_commit_sha.strip()
     if not sha:
         raise PhaseFailedError(
-            f"ROLLBACK_BOUNDARY_MISSING: revert_to_red for {tid} "
+            f"ROLLBACK_BOUNDARY_MISSING: revert_green for {tid} "
             f"has no session.red_commit_sha to roll back to. "
             f"Refusing to fall back to HEAD~1."
         )
     return sha
 
 
-def _is_fatal_missing_revert_to_red_boundary(action: str, exc: BaseException) -> bool:
-    """Return True when TDD ``revert_to_red`` has no RED boundary SHA."""
+def _is_fatal_missing_revert_green_boundary(action: str, exc: BaseException) -> bool:
+    """Return True when TDD ``revert_green`` has no RED boundary SHA."""
     return (
-        action == "revert_to_red"
+        action == "revert_green"
         and isinstance(exc, PhaseFailedError)
         and "ROLLBACK_BOUNDARY_MISSING" in str(exc)
     )
@@ -2574,7 +2575,7 @@ def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) ->
 
 
 def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
-    """Return the SHA to reset to for ``next_action="revert_before"``.
+    """Return the SHA to reset to for ``next_action="revert_red"``.
 
     The pre-RED anchor is ``red_commit_sha^`` — the commit just before the
     task's RED phase landed. When ``red_sha^`` does not look like a
@@ -2670,10 +2671,10 @@ def _coerce_feedback_text(value: object) -> str:
 # JUDGE decides, via HandoverManifest.next_action, how the runner should
 # route the task on compliance outcome. Five values:
 #
-#   revert_before              — discard this task's GREEN *and* its RED; restart
+#   revert_red                — discard this task's GREEN *and* its RED; restart
 #                                from pre-RED so RED can re-author the failing test.
 #                                Used when the test itself is wrong.
-#   revert_to_red              — discard GREEN, keep RED, advance red_commit_sha
+#   revert_green              — discard GREEN, keep RED, advance red_commit_sha
 #                                past the feedback commit so a second rollback
 #                                preserves the new GREEN attempt's history. (Default
 #                                on COMPLIANCE_VIOLATION when next_action is omitted
@@ -2702,8 +2703,8 @@ def _coerce_feedback_text(value: object) -> str:
 # a runtime question.
 _JUDGE_ACTIONS = frozenset(
     {
-        "revert_before",
-        "revert_to_red",
+        "revert_red",
+        "revert_green",
         "continue_refactor",
         "skip_refactor",
         "proceed_to_refactor_no_diff",
@@ -2770,34 +2771,38 @@ def _coerce_judge_action(
     failure_kind: str = "",
 ) -> str | None:
     """Return the manifest's ``next_action`` if valid; default to
-    ``revert_to_red`` on violation when the field is absent; ``None`` on
+    ``revert_green`` on violation when the field is absent; ``None`` on
     pass when the field is absent.
 
     Runner-level override: when ``failure_kind`` is ``test_defect`` or
     ``no_failing_test`` and the verdict is a violation, force
-    ``revert_before`` regardless of what ``next_action`` the JUDGE manifest
+    ``revert_red`` regardless of what ``next_action`` the JUDGE manifest
     declared (or omitted). The RED test itself is wrong; the agent must
     re-author it before any further GREEN attempt. PASS verdicts preserve
     the agent's outcome.
 
     After GREEN PASS (``failure_kind`` empty / not mechanical), a
     ``COMPLIANCE_VIOLATION`` with structured Test Integrity also forces
-    ``revert_before`` — even when ``next_action`` is omitted or
-    ``revert_to_red``. Mechanical overlay keeps the agent's three-way
-    choice. Spec-only gaps stay ``revert_to_red``.
+    ``revert_red`` — even when ``next_action`` is omitted or
+    ``revert_green``. Mechanical overlay keeps the agent's three-way
+    choice. Spec-only gaps stay ``revert_green``.
     """
     if (
         failure_kind in {"test_defect", "no_failing_test"}
         and verdict.upper() == "COMPLIANCE_VIOLATION"
     ):
-        return "revert_before"
+        return "revert_red"
     if (
         verdict.upper() == "COMPLIANCE_VIOLATION"
         and failure_kind not in {"mechanical", "test_defect", "no_failing_test"}
         and _manifest_signals_test_integrity(manifest)
     ):
-        return "revert_before"
+        return "revert_red"
     next_action = getattr(manifest, "next_action", None)
+    if next_action is not None:
+        # Pre-rename manifests may carry the legacy destination-named
+        # routes; normalize before membership so they route identically.
+        next_action = JUDGE_REVERT_ACTION_ALIASES.get(next_action, next_action)
     if next_action in _JUDGE_ACTIONS:
         return next_action
     if next_action is not None and next_action != "":
@@ -2809,7 +2814,7 @@ def _coerce_judge_action(
         )
         next_action = None
     if verdict.upper() == "COMPLIANCE_VIOLATION":
-        return "revert_to_red"
+        return "revert_green"
     return None
 
 
@@ -2825,7 +2830,7 @@ _BARE_AND_LINE_RE = re.compile(r"\s+and\s+:\d+\b")
 def _strip_revert_line_citations(feedback: str) -> str:
     """Remove discarded-commit ``path:line`` tokens from revert-route feedback.
 
-    After ``revert_before`` / ``revert_to_red`` those lines no longer exist.
+    After ``revert_red`` / ``revert_green`` those lines no longer exist.
     Keep the surrounding behavioral rewrite contract.
     """
     if not feedback:
@@ -2837,7 +2842,7 @@ def _strip_revert_line_citations(feedback: str) -> str:
 def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]:
     """Return ``(feedback_text, feedback_source)`` from a judge manifest.
 
-    Used by both rejection routes (``revert_to_red`` and ``revert_before``)
+    Used by both rejection routes (``revert_green`` and ``revert_red``)
     so they share the same feedback source cascade. File:line citations
     from the discarded commit are stripped before persist (GH-103).
     """
@@ -3010,7 +3015,7 @@ def _resume_pending_judge_feedback(
         session,
         session_path,
     )
-    session.pending_judge_action = "revert_to_red"
+    session.pending_judge_action = "revert_green"
     session.train_feedback = pending["feedback"]
     session.judge_rejected = True
     session = session.force_transition_to("GREEN")
@@ -3176,7 +3181,7 @@ def _rewrite_unmatched_tdd_pass(
     declared_paths: Sequence[str] | None = None,
     skip_token_citation: bool = False,
 ) -> str | None:
-    """Force unmatched TDD PASS onto ``revert_to_red`` with runner feedback."""
+    """Force unmatched TDD PASS onto ``revert_green`` with runner feedback."""
     if not _is_test_bearing_tdd(task):
         return action
     if action is not None and action not in _TDD_EVIDENCE_GATE_ROUTES:
@@ -3214,7 +3219,7 @@ def _rewrite_unmatched_tdd_pass(
         action=action or "",
         feedback=feedback,
     )
-    return "revert_to_red"
+    return "revert_green"
 
 
 def _run_judge_phase(
@@ -3250,8 +3255,8 @@ def _run_judge_phase(
             "GREEN emitted `status: FAILURE` with a mechanical rationale — no "
             "production code was written. Do NOT attempt to satisfy the test "
             "yourself; review the rationale and emit `verdict: COMPLIANCE_VIOLATION` "
-            "+ `next_action: revert_before` (the RED test is wrong — re-run RED) or "
-            "`next_action: revert_to_red` (the slice/scope is wrong — re-run GREEN "
+            "+ `next_action: revert_red` (the RED test is wrong — re-run RED) or "
+            "`next_action: revert_green` (the slice/scope is wrong — re-run GREEN "
             "with the rationale as feedback) or `next_action: skip_refactor` "
             "(the operator should intervene at the meso layer, e.g. widen the "
             "slice scope).\n"
@@ -3264,7 +3269,7 @@ def _run_judge_phase(
             "encodes an assumption that contradicts spec/data-model). No "
             "production code was written. Do NOT attempt to satisfy the test "
             "yourself. Emit `verdict: COMPLIANCE_VIOLATION` + "
-            "`next_action: revert_before` — the RED test must be re-authored. "
+            "`next_action: revert_red` — the RED test must be re-authored. "
             "Populate `train_feedback` with the GREEN rationale so the next "
             "RED attempt has the full conflict description.\n"
         )
@@ -3283,7 +3288,7 @@ def _run_judge_phase(
             "REFACTOR pass is wanted — no implementation was written).\n"
             "  - The test is wrong, tautological, or cannot target the "
             "required behavior: `verdict: COMPLIANCE_VIOLATION` + "
-            "`next_action: revert_before` (discard the test and re-author a "
+            "`next_action: revert_red` (discard the test and re-author a "
             "genuinely failing test in RED).\n"
             "Populate `train_feedback` or `rationale` with the reason, so "
             "the next RED attempt (or the COMPLETED record) carries it.\n"
@@ -3347,7 +3352,7 @@ def _apply_judge_verdict(
     if no_failing_pass and (action is None or action in _TDD_EVIDENCE_GATE_ROUTES):
         # Already-exists route: JUDGE ruled the behavior exists at HEAD and
         # there is no RED commit to roll back to. Coerce the forward route
-        # to skip_refactor so _require_revert_to_red_boundary is never hit.
+        # to skip_refactor so _require_revert_green_boundary is never hit.
         action = "skip_refactor"
     action = _rewrite_unmatched_tdd_pass(
         root=root,
@@ -3365,7 +3370,7 @@ def _apply_judge_verdict(
         session.validated_evidence = []
 
     # ---- Violation routes ----------------------------------------------
-    if action in {"revert_to_red", "revert_before"}:
+    if action in {"revert_green", "revert_red"}:
         # Both rejection routes resolve feedback through the same cascade
         # and emit the same user-visible rejection log + advance the RED
         # boundary via a feedback commit. They differ in WHERE the
@@ -3414,7 +3419,7 @@ def _apply_judge_verdict(
         # distinct refs.
         rollback_attempts = 0
         try:
-            if action == "revert_before":
+            if action == "revert_red":
                 pre_red = (
                     _resolve_pre_red_sha(root, session.red_commit_sha)
                     if session.red_commit_sha
@@ -3489,7 +3494,7 @@ def _apply_judge_verdict(
                         # landed, so there is nothing to reset. Re-dispatch
                         # RED directly instead of raising.
                         session.red_commit_sha = ""
-                        session.pending_judge_action = "revert_before"
+                        session.pending_judge_action = "revert_red"
                         session.train_feedback = feedback
                         session.judge_rejected = True
                         session = session.force_transition_to("RED")
@@ -3508,7 +3513,7 @@ def _apply_judge_verdict(
                     # so the operator can see why rollback was refused
                     # instead of silently losing commits.
                     raise PhaseFailedError(
-                        f"ROLLBACK_BOUNDARY_MISSING: revert_before for {tid} "
+                        f"ROLLBACK_BOUNDARY_MISSING: revert_red for {tid} "
                         f"has no pre-RED anchor (session.red_commit_sha is "
                         f"empty) and no explicit boundary_sha was supplied. "
                         f"Refusing to fall back to HEAD~1."
@@ -3516,7 +3521,7 @@ def _apply_judge_verdict(
                 # No boundary advance: pre-RED no longer has a RED
                 # boundary in this task, so RED will land a fresh one.
                 session.red_commit_sha = ""
-                session.pending_judge_action = "revert_before"
+                session.pending_judge_action = "revert_red"
                 session.train_feedback = feedback
                 session.judge_rejected = True
                 session = session.force_transition_to("RED")
@@ -3531,11 +3536,11 @@ def _apply_judge_verdict(
                 session.save(session_path)
                 return session
 
-            # revert_to_red: rollback to RED then advance the boundary.
+            # revert_green: rollback to RED then advance the boundary.
             # ``boundary_sha`` is the active RED commit, threaded from
             # ``session.red_commit_sha`` — never inferred from session
             # state inside ``_execute_rollback`` itself.
-            boundary_sha = _require_revert_to_red_boundary(session, tid)
+            boundary_sha = _require_revert_green_boundary(session, tid)
             rollback_attempts += 1
             _execute_rollback(
                 root,
@@ -3546,7 +3551,7 @@ def _apply_judge_verdict(
                 attempt=rollback_attempts,
             )
         except Exception as e:
-            if _is_fatal_missing_revert_to_red_boundary(action, e):
+            if _is_fatal_missing_revert_green_boundary(action, e):
                 raise
             c.print(
                 f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with "
@@ -3559,7 +3564,7 @@ def _apply_judge_verdict(
         session = _commit_judge_feedback_and_advance(
             root, task, feedback, feedback_source, c, session, session_path
         )
-        session.pending_judge_action = "revert_to_red"
+        session.pending_judge_action = "revert_green"
         session.train_feedback = feedback
         session.judge_rejected = True
         _log_run(
@@ -3610,7 +3615,7 @@ def _apply_judge_verdict(
         )
     if suite_still_red:
         # GREEN TEST_FAILURE: implementation ran, suite still red.
-        # Honor only revert_to_red / revert_before (already returned above).
+        # Honor only revert_green / revert_red (already returned above).
         # continue_refactor / skip_refactor / proceed_to_refactor_no_diff /
         # bare COMPLIANCE_PASS and JUDGE_REFACTOR_NOTE are advisory — remap
         # to TRAIN with the test dump. Do not write COMPLETED or hand off
@@ -3822,11 +3827,11 @@ def _finish_tdd_cycle(
         return session
 
     # Defense in depth: TRAIN / escalate routes must never polish or
-    # complete. ``revert_to_red`` retrains GREEN; ``revert_before``
+    # complete. ``revert_green`` retrains GREEN; ``revert_red``
     # re-authors RED. The caller should fall through into the TDD loop
     # instead of reaching here — this guard stops a resume hole from
     # entering REFACTOR / COMPLETED if it does.
-    if pending in {"revert_to_red", "revert_before"}:
+    if pending in {"revert_green", "revert_red"}:
         c.print(
             f"  [yellow]JUDGE_REJECTED[/] {tid} \u2014 refusing REFACTOR/"
             f"COMPLETED (pending={pending})"
@@ -3923,12 +3928,12 @@ def _tdd_pre_green_decision(
 ) -> Literal["escalate", "complete", "green"]:
     """Choose the next TDD step before GREEN.
 
-    Precedence is fixed: ``revert_before`` re-authors RED; forward JUDGE
+    Precedence is fixed: ``revert_red`` re-authors RED; forward JUDGE
     routes complete without GREEN; a missing RED SHA re-dispatches RED
     so a cleared retry gate cannot fall through to GREEN.
     """
     pending = session.pending_judge_action
-    if pending == "revert_before":
+    if pending == "revert_red":
         return "escalate"
     if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
         return "complete"
@@ -3947,7 +3952,7 @@ def _consume_retry_gate_after_red(session: SessionState) -> None:
     """Clear the JUDGE retry gate only after RED lands a failing-test SHA.
 
     Ownership of the empty-SHA gate lives here so ``_clear_judge_retry_gate``
-    stays a pure consume. A retry RED that re-adjudicates ``revert_before``
+    stays a pure consume. A retry RED that re-adjudicates ``revert_red``
     or a forward route keeps ``pending_judge_action`` until a RED-phase
     commit exists (or the TDD loop re-dispatches / completes).
     """
@@ -4181,9 +4186,9 @@ def _run_tdd_cycle(
 
     if start_phase == "JUDGE":
         # Meso/micro re-entry after ledger GREEN maps here. A stored
-        # ``revert_to_red`` + train_feedback means JUDGE already applied
+        # ``revert_green`` + train_feedback means JUDGE already applied
         # the verdict — skip a second JUDGE and train GREEN.
-        already_train_green = session.pending_judge_action == "revert_to_red" and bool(
+        already_train_green = session.pending_judge_action == "revert_green" and bool(
             session.train_feedback
         )
         if already_train_green:
@@ -4209,24 +4214,24 @@ def _run_tdd_cycle(
             )
             pending = session.pending_judge_action
             if suite_red:
-                # TEST_FAILURE remapped to TRAIN (or revert_to_red /
-                # revert_before). Fall through into the GREEN train loop;
+                # TEST_FAILURE remapped to TRAIN (or revert_green /
+                # revert_red). Fall through into the GREEN train loop;
                 # do not complete.
                 if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
                     session.pending_judge_action = ""
-                if not session.train_feedback and pending != "revert_to_red":
+                if not session.train_feedback and pending != "revert_green":
                     session.train_feedback = suite_dump
                 start_phase = "GREEN"
-            elif pending == "revert_to_red" or (
-                session.judge_rejected and pending == "revert_to_red"
+            elif pending == "revert_green" or (
+                session.judge_rejected and pending == "revert_green"
             ):
-                # Passing GREEN + JUDGE revert_to_red (or judge_rejected
+                # Passing GREEN + JUDGE revert_green (or judge_rejected
                 # with that action): discard GREEN, keep RED, train
                 # GREEN. Never _finish_tdd_cycle.
                 start_phase = "GREEN"
-            elif pending == "revert_before":
+            elif pending == "revert_red":
                 # Preserve escalate-to-RED. Fall through so the loop's
-                # existing revert_before branch re-authors RED.
+                # existing revert_red branch re-authors RED.
                 start_phase = "GREEN"
             else:
                 session = _finish_tdd_cycle(
@@ -4344,9 +4349,9 @@ def _run_tdd_cycle(
         session = _run_judge_phase(
             task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
         )
-        # Honor coerced ``revert_before``. ``revert_to_red`` still trains
+        # Honor coerced ``revert_red``. ``revert_green`` still trains
         # GREEN and keeps dump ``train_feedback``.
-        if session.pending_judge_action == "revert_before":
+        if session.pending_judge_action == "revert_red":
             session = _escalate("test_defect")
             continue
         # GREEN TEST_FAILURE: implementation ran, suite still red. Forward
@@ -4357,7 +4362,7 @@ def _run_tdd_cycle(
                 session.pending_judge_action = ""
             if (
                 not session.train_feedback
-                and session.pending_judge_action != "revert_to_red"
+                and session.pending_judge_action != "revert_green"
                 and not session.judge_rejected
             ):
                 session.train_feedback = green_test_dump
@@ -4371,10 +4376,7 @@ def _run_tdd_cycle(
                 )
             session = session.force_transition_to("GREEN")
             session.save(session_path)
-            if (
-                session.pending_judge_action == "revert_to_red"
-                or session.judge_rejected
-            ):
+            if session.pending_judge_action == "revert_green" or session.judge_rejected:
                 train_reason = "re-running GREEN with judge feedback"
             else:
                 train_reason = (
@@ -4415,10 +4417,7 @@ def _run_tdd_cycle(
                 )
             session = session.force_transition_to("GREEN")
             session.save(session_path)
-            if (
-                session.pending_judge_action == "revert_to_red"
-                or session.judge_rejected
-            ):
+            if session.pending_judge_action == "revert_green" or session.judge_rejected:
                 train_reason = "re-running GREEN with judge feedback"
             else:
                 train_reason = (
@@ -4584,7 +4583,7 @@ def _run_execute_phase(
         # rollback actions maps to the same rollback-to-pre_execute_sha
         # flow. Forward routes (None / continue_refactor / skip_refactor)
         # fall through to the pass branch.
-        is_rollback_route = judge_action in {"revert_before", "revert_to_red"} or (
+        is_rollback_route = judge_action in {"revert_red", "revert_green"} or (
             verdict.upper() == "COMPLIANCE_VIOLATION"
             and judge_action not in {"continue_refactor", "skip_refactor"}
         )

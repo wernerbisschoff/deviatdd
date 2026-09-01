@@ -138,8 +138,8 @@ Runner rollback uses this strict order:
 7. Reduce workflow state from the restored `HEAD`.
 8. Emit a typed result with restore instructions.
 
-- `revert_to_red` resets to the RED boundary.
-- `revert_before` resets to the pre-RED boundary.
+- `revert_green` resets to the RED boundary.
+- `revert_red` resets to the pre-RED boundary.
 - EXECUTE resets to the pre-execute boundary.
 
 

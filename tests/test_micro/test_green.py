@@ -291,7 +291,7 @@ class TestGreenAutoPromptFeedback:
             current_phase="GREEN",
             train_feedback=feedback,
             judge_rejected=True,
-            pending_judge_action="revert_to_red",
+            pending_judge_action="revert_green",
             red_commit_sha="seed-red-boundary",
         )
         session_path = tmp_path / ".deviate" / "session.json"

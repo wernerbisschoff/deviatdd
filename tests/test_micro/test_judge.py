@@ -149,7 +149,7 @@ class TestJudgePost:
     def _seed_judge_post_repo(self, root: Path) -> tuple[str, str, Path]:
         """Seed meso artifacts, RED, GREEN, session, and ledger.
 
-        ``tasks.md`` is committed before RED so ``revert_to_red`` keeps
+        ``tasks.md`` is committed before RED so ``revert_green`` keeps
         the card for the feedback commit.
         """
         subprocess.run(
@@ -250,7 +250,7 @@ class TestJudgePost:
         assert "_apply_judge_verdict" in src
         assert callable(_apply_judge_verdict)
 
-    def test_revert_to_red_drops_green_keeps_red_and_commits_feedback(
+    def test_revert_green_drops_green_keeps_red_and_commits_feedback(
         self, tmp_git_repo: Path
     ) -> None:
         red_sha, _green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
@@ -258,13 +258,13 @@ class TestJudgePost:
             tmp_git_repo,
             self._handover_yaml(
                 verdict="COMPLIANCE_VIOLATION",
-                next_action="revert_to_red",
+                next_action="revert_green",
                 rationale="missing error path",
             ),
         )
 
         assert result.exit_code == 0, result.output
-        assert "revert_to_red" in result.output, result.output
+        assert "revert_green" in result.output, result.output
         assert (tmp_git_repo / "feature.py").exists()
         assert not (tmp_git_repo / "impl.py").exists()
 
@@ -289,21 +289,21 @@ class TestJudgePost:
         session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
         assert session.red_commit_sha == head
         assert session.current_phase == "GREEN"
-        assert session.pending_judge_action == "revert_to_red"
+        assert session.pending_judge_action == "revert_green"
 
-    def test_revert_before_drops_red_and_green(self, tmp_git_repo: Path) -> None:
+    def test_revert_red_drops_red_and_green(self, tmp_git_repo: Path) -> None:
         red_sha, _green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
         result = self._invoke_judge_post(
             tmp_git_repo,
             self._handover_yaml(
                 verdict="COMPLIANCE_VIOLATION",
-                next_action="revert_before",
+                next_action="revert_red",
                 rationale="RED test asserts the wrong contract",
             ),
         )
 
         assert result.exit_code == 0, result.output
-        assert "revert_before" in result.output, result.output
+        assert "revert_red" in result.output, result.output
         assert not (tmp_git_repo / "feature.py").exists()
         assert not (tmp_git_repo / "impl.py").exists()
         head = self._rev_parse(tmp_git_repo)
@@ -312,7 +312,7 @@ class TestJudgePost:
         session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
         assert session.red_commit_sha == ""
         assert session.current_phase == "RED"
-        assert session.pending_judge_action == "revert_before"
+        assert session.pending_judge_action == "revert_red"
 
     def test_forward_route_does_not_reset(self, tmp_git_repo: Path) -> None:
         _red_sha, green_sha, _ledger = self._seed_judge_post_repo(tmp_git_repo)
@@ -375,7 +375,7 @@ class TestJudgePost:
             tmp_git_repo,
             self._handover_yaml(
                 verdict="COMPLIANCE_VIOLATION",
-                next_action="revert_to_red",
+                next_action="revert_green",
                 rationale="",
             ),
         )
@@ -1809,7 +1809,7 @@ _GH103_FEEDBACK = (
     f"{_GH103_CITATION} and :153 assert "
     "row.payload['data']['status'] == live['status'] where live is "
     "charge.as_dict() (ChargeStatus enum) and payload is JSONB.\n"
-    "The next GREEN attempt must: not proceed. revert_before and re-run RED.\n"
+    "The next GREEN attempt must: not proceed. revert_red and re-run RED.\n"
     "The next RED attempt must: compare payload['data']['status'] "
     "to a JSON-safe value."
 )
@@ -1818,7 +1818,7 @@ _GH103_FEEDBACK = (
 class TestRevertFeedbackStripsLineCitations:
     """GH-103: revert-route feedback must not persist discarded file:line cites.
 
-    After ``revert_before`` / ``revert_to_red`` the cited RED/GREEN lines
+    After ``revert_red`` / ``revert_green`` the cited RED/GREEN lines
     no longer exist. The runner strips ``path:line`` tokens before writing
     ``session.train_feedback`` or ``tasks.md``, and keeps the durable
     rewrite contract ("The next RED/GREEN attempt must: …").
@@ -1840,7 +1840,7 @@ class TestRevertFeedbackStripsLineCitations:
             "non-citation colons (verdict labels) must survive the strip"
         )
 
-    @pytest.mark.parametrize("next_action", ["revert_before", "revert_to_red"])
+    @pytest.mark.parametrize("next_action", ["revert_red", "revert_green"])
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._execute_rollback")
     @patch("deviate.cli.micro.resolve_model_for_phase")
@@ -1945,7 +1945,7 @@ class TestRevertFeedbackStripsLineCitations:
             f"{next_action}: saved session must also drop {_GH103_CITATION!r}; "
             f"got {persisted.train_feedback!r}"
         )
-        if next_action == "revert_to_red":
+        if next_action == "revert_green":
             tasks_body = tasks_md.read_text(encoding="utf-8")
             assert _GH103_CITATION not in tasks_body, (
                 f"{next_action}: tasks.md must drop {_GH103_CITATION!r}; "
@@ -2856,7 +2856,7 @@ def _run_tdd_judge(
     task = {
         "id": _GATE_TASK_ID,
         "issue_id": _GATE_ISSUE_ID,
-        "description": "Rewrite unmatched TDD PASS to revert_to_red",
+        "description": "Rewrite unmatched TDD PASS to revert_green",
         "status": "GREEN",
         "execution_mode": "TDD",
     }
@@ -2907,8 +2907,8 @@ def _ledger_statuses(ledger_path: Path) -> list[str]:
 
 
 def _assert_reverted_to_red(session: SessionState, ledger_path: Path) -> None:
-    assert session.pending_judge_action == "revert_to_red", (
-        f"Expected revert_to_red, got {session.pending_judge_action!r}"
+    assert session.pending_judge_action == "revert_green", (
+        f"Expected revert_green, got {session.pending_judge_action!r}"
     )
     assert session.judge_rejected is True
     assert session.train_feedback.strip() != "", (
@@ -2964,8 +2964,8 @@ def _assert_already_satisfied_not_completed(
 ) -> None:
     """AC-PLAN-005: unmatched already-exists PASS cannot COMPLETE."""
     action = session.pending_judge_action
-    assert action in {"revert_before", "revert_to_red"}, (
-        f"Expected revert_before or revert_to_red, got {action!r}"
+    assert action in {"revert_red", "revert_green"}, (
+        f"Expected revert_red or revert_green, got {action!r}"
     )
     assert session.train_feedback.strip() != "", (
         "Runner-authored feedback must name the missing declared test path"
@@ -3155,7 +3155,7 @@ class TestJudgeDiffBaseWalksPastFeedback:
     """GH-88 / GH-90: docs-feedback ``red_commit_sha`` must not hide the RED test.
 
     ``_maybe_advance_red_sha_past_feedback`` keeps the feedback commit as the
-    GREEN-entry / ``revert_to_red`` boundary. The injected JUDGE diff must
+    GREEN-entry / ``revert_green`` boundary. The injected JUDGE diff must
     still start at the real RED-phase failing-test commit.
     """
 
@@ -3831,7 +3831,7 @@ class TestJudgeEvidencePromptSchema:
 
 # ---------------------------------------------------------------------------
 # ISS-ADH-031 / TSK-031-01: a no_failing_test already-exists COMPLIANCE_PASS
-# must complete via skip_refactor instead of being rewritten to revert_to_red
+# must complete via skip_refactor instead of being rewritten to revert_green
 # (which raises ROLLBACK_BOUNDARY_MISSING because red_commit_sha is empty).
 # AC-PLAN-001..006. Constitution §3: pytest under tests/; git isolation via
 # tmp_git_repo + _git_env(); mock _invoke_agent and _run_pytest.
@@ -3911,7 +3911,7 @@ class TestNoFailingTestAlreadyExistsPass:
     def test_partial_evidence_pass_completes_without_red_sha(
         self, tmp_git_repo: Path
     ) -> None:
-        """AC-PLAN-002/006: partial evidence must not rewrite to revert_to_red.
+        """AC-PLAN-002/006: partial evidence must not rewrite to revert_green.
 
         The judge cites only some required AC tokens, the session carries
         no RED commit (`red_commit_sha == ""`), and the declared
@@ -3948,19 +3948,19 @@ class TestNoFailingTestAlreadyExistsPass:
         )
         _assert_forward(session, ledger, action="skip_refactor", completed=True)
 
-    def test_violation_still_routes_revert_before(self, tmp_git_repo: Path) -> None:
+    def test_violation_still_routes_revert_red(self, tmp_git_repo: Path) -> None:
         """AC-PLAN-005: genuine COMPLIANCE_VIOLATION stays fail-closed."""
         _seed_already_exists(tmp_git_repo)
         session, _, ledger = _run_no_failing_test_judge(
             tmp_git_repo,
             _gate_manifest(
                 verdict="COMPLIANCE_VIOLATION",
-                next_action="revert_before",
+                next_action="revert_red",
                 evidence=[_gate_evidence()],
                 train_feedback="The authored test is tautological.",
             ),
         )
-        assert session.pending_judge_action == "revert_before"
+        assert session.pending_judge_action == "revert_red"
         statuses = _ledger_statuses(ledger)
         assert "COMPLETED" not in statuses
 

@@ -74,8 +74,8 @@ class HandoverManifest(BaseModel):
     next_phase: str | None = None
     next_action: Optional[
         Literal[
-            "revert_before",
-            "revert_to_red",
+            "revert_red",
+            "revert_green",
             "continue_refactor",
             "skip_refactor",
             "proceed_to_refactor_no_diff",

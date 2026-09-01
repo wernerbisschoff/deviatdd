@@ -402,6 +402,16 @@ class ProfileConfig(BaseModel):
         return 'default = "{}"\n'.format(self.default)
 
 
+# JUDGE revert routes are named by blast radius: ``revert_green`` discards
+# GREEN and keeps RED; ``revert_red`` discards RED and GREEN. The legacy
+# destination-named values map to the canonical names so manifests and
+# sessions written before the rename still route identically.
+JUDGE_REVERT_ACTION_ALIASES: dict[str, str] = {
+    "revert_to_red": "revert_green",
+    "revert_before": "revert_red",
+}
+
+
 class SessionState(BaseModel):
     current_phase: str = "IDLE"
     active_issue_id: Optional[str] = None
@@ -464,7 +474,11 @@ class SessionState(BaseModel):
             return cls()
         raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
-        return cls.model_validate(data)
+        session = cls.model_validate(data)
+        session.pending_judge_action = JUDGE_REVERT_ACTION_ALIASES.get(
+            session.pending_judge_action, session.pending_judge_action
+        )
+        return session
 
     @staticmethod
     def validate_filesystem_state(

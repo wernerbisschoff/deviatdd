@@ -809,8 +809,8 @@ class TestMicroOrchestration:
         Pins layer discipline: GREEN says "I can't make this test pass
         within my mechanical scope" via ``status: FAILURE`` + concrete
         ``rationale:``; JUDGE owns the decision of whether the test is
-        wrong (``revert_before`` — re-run RED) or the slice scope is
-        wrong (``revert_to_red`` — re-run GREEN with the rationale as
+        wrong (``revert_red`` — re-run RED) or the slice scope is
+        wrong (``revert_green`` — re-run GREEN with the rationale as
         feedback). The runner does NOT try to satisfy the test itself,
         does NOT promote loose-string ``error_kind`` to HITL escalation,
         and does NOT mark the task FAILED on first mechanical FAILURE.
@@ -885,7 +885,7 @@ class TestMicroOrchestration:
                             status="SUCCESS",
                             verdict="COMPLIANCE_VIOLATION",
                             task_id=tid,
-                            next_action="revert_before",
+                            next_action="revert_red",
                             train_feedback=mechanical_rationale,
                         ),
                         "",
@@ -930,7 +930,7 @@ class TestMicroOrchestration:
             # an empty temp repo and the rejection path is never entered —
             # the test would silently skip the very contract it claims to
             # pin. The seed commit becomes ``red_sha^`` so the
-            # ``revert_before`` ``git reset --hard`` returns HEAD here and
+            # ``revert_red`` ``git reset --hard`` returns HEAD here and
             # the retry RED phase still sees the file on disk.
             tests_seed = Path("tests")
             tests_seed.mkdir(parents=True, exist_ok=True)
@@ -969,8 +969,8 @@ class TestMicroOrchestration:
                 f"call_log={call_log}"
             )
             # One RED + one RED retry + two GREEN (fail + retry) +
-            # two JUDGE (revert_before + pass) + one REFACTOR = 7.
-            # Mechanical ``revert_before`` shares the RED-retry path with
+            # two JUDGE (revert_red + pass) + one REFACTOR = 7.
+            # Mechanical ``revert_red`` shares the RED-retry path with
             # ``test_defect``: JUDGE says the slice's existing RED test is
             # unsatisfiable, so the runner must re-author the failing test
             # before the GREEN retry can land a passing implementation.
@@ -997,7 +997,7 @@ class TestMicroOrchestration:
                 f"rationale: {judge_prompt[:1000]}"
             )
             assert result.exit_code == 0, (
-                f"Expected exit 0 after JUDGE routes revert_before + "
+                f"Expected exit 0 after JUDGE routes revert_red + "
                 f"GREEN retry succeeds, got {result.exit_code}: "
                 f"{result.output}"
             )
@@ -1023,11 +1023,11 @@ class TestMicroOrchestration:
     ):
         """GREEN ``failure_kind: test_defect`` (RED test asserts behavior the
         spec does not require) routes through JUDGE so JUDGE can emit
-        ``revert_before`` and re-run RED.
+        ``revert_red`` and re-run RED.
 
         Distinct from the mechanical case: GREEN surfaces this via the new
         ``failure_kind`` discriminator on the manifest, and JUDGE is steered
-        toward a pre-decided ``revert_before`` (no ``revert_to_red`` /
+        toward a pre-decided ``revert_red`` (no ``revert_green`` /
         ``skip_refactor`` branch — test defect has one sensible outcome).
 
         Pins layer discipline: GREEN surfaces test defects via
@@ -1113,7 +1113,7 @@ class TestMicroOrchestration:
                             status="SUCCESS",
                             verdict="COMPLIANCE_VIOLATION",
                             task_id=tid,
-                            next_action="revert_before",
+                            next_action="revert_red",
                             train_feedback=test_defect_rationale,
                         ),
                         "",
@@ -1159,7 +1159,7 @@ class TestMicroOrchestration:
             # temp repo and the rejection path is never entered — the
             # test would silently skip the very contract this branch
             # claims to enforce. The seed commit becomes ``red_sha^`` so
-            # ``revert_before``'s ``git reset --hard`` returns HEAD here
+            # ``revert_red``'s ``git reset --hard`` returns HEAD here
             # and the retry RED phase still sees the file on disk.
             tests_seed = Path("tests")
             tests_seed.mkdir(parents=True, exist_ok=True)
@@ -1231,13 +1231,13 @@ class TestMicroOrchestration:
                 f"JUDGE prompt must reference <failure_kind>mechanical"
                 f"</failure_kind> exactly twice (two sub-rows in the edge-case table: "
                 f"RED-only-PASS-case via `proceed_to_refactor_no_diff` and "
-                f"otherwise-VIOLATION-case via `revert_before`/`revert_to_red`/"
+                f"otherwise-VIOLATION-case via `revert_red`/`revert_green`/"
                 f"`skip_refactor`); the runner does NOT inject the mechanical block "
                 f"when `failure_kind == 'test_defect'`. count="
                 f"{judge_prompt.count('<failure_kind>mechanical</failure_kind>')}"
             )
             assert result.exit_code == 0, (
-                f"Expected exit 0 after JUDGE routes revert_before + "
+                f"Expected exit 0 after JUDGE routes revert_red + "
                 f"GREEN retry succeeds, got {result.exit_code}: "
                 f"{result.output}"
             )
@@ -1276,7 +1276,7 @@ class TestMicroOrchestration:
 
         This is the regression guard for the TSK-009-07 symptom in the original
         trace: GREEN mechanical FAILURE on a RED-only slice looped GREEN↔JUDGE
-        indefinitely because ``next_action`` defaulted to ``revert_to_red`` and
+        indefinitely because ``next_action`` defaulted to ``revert_green`` and
         re-running GREEN hit the same out-of-scope failure. With this fix, the
         runner honors the JUDGE-supplied ``proceed_to_refactor_no_diff`` and
         routes straight to REFACTOR's no-op commit + COMPLETED transition.
@@ -1559,7 +1559,7 @@ class TestMicroOrchestration:
         A test-bearing TDD RED that claims ``failure_kind: already_satisfied``
         with ``files`` null or empty and ``test_file`` null is a RED defect.
         The runner raises ``PhaseFailedError`` or forces ``test_defect`` /
-        ``revert_before``. The task ledger has no COMPLETED row. GREEN is
+        ``revert_red``. The task ledger has no COMPLETED row. GREEN is
         never invoked to invent tests. Constitution §3: mock ``_run_pytest``.
         """
         call_log: list[str] = []
@@ -1748,7 +1748,7 @@ class TestMicroOrchestration:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._verify_worktree_branch")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_no_failing_test_revert_before_invokes_red_not_green(
+    def test_no_failing_test_revert_red_invokes_red_not_green(
         self,
         mock_agent,
         mock_branch,
@@ -1758,7 +1758,7 @@ class TestMicroOrchestration:
         mock_run_pytest,
         tmp_git_repo: Path,
     ):
-        """AC-PLAN-001: always-``revert_before`` on ``no_failing_test`` stays RED.
+        """AC-PLAN-001: always-``revert_red`` on ``no_failing_test`` stays RED.
 
         After two (or more) RED_NO_FAILING_TEST adjudications the next
         ``INVOKE_AGENT`` is RED, or the loop raises ``TRAIN_EXHAUSTED`` /
@@ -1774,7 +1774,7 @@ class TestMicroOrchestration:
             args=[], returncode=0, stdout="", stderr=""
         )
 
-        def _always_revert_before(*args, **kwargs):
+        def _always_revert_red(*args, **kwargs):
             phase = kwargs.get("phase", "")
             tid = kwargs.get("task_id", "TSK-021-01")
             call_log.append(phase)
@@ -1789,7 +1789,7 @@ class TestMicroOrchestration:
                         status="SUCCESS",
                         verdict="COMPLIANCE_VIOLATION",
                         task_id=tid,
-                        next_action="revert_before",
+                        next_action="revert_red",
                         rationale=(
                             "The authored test is tautological; "
                             "re-author a genuinely failing test."
@@ -1802,7 +1802,7 @@ class TestMicroOrchestration:
                 "",
             )
 
-        mock_agent.side_effect = _always_revert_before
+        mock_agent.side_effect = _always_revert_red
         with chdir(tmp_git_repo):
             tests_dir = tmp_git_repo / "tests"
             tests_dir.mkdir(parents=True, exist_ok=True)
@@ -1825,7 +1825,7 @@ class TestMicroOrchestration:
                 "id": "TSK-021-01",
                 "issue_id": "ISS-ADH-021",
                 "description": (
-                    "Dispatch RED after no_failing_test / revert_before, never GREEN"
+                    "Dispatch RED after no_failing_test / revert_red, never GREEN"
                 ),
                 "execution_mode": "TDD",
             }
@@ -1845,7 +1845,7 @@ class TestMicroOrchestration:
                 _run_tdd_cycle(task, ledger_path, console)
             output = buf.getvalue()
             assert "GREEN" not in call_log, (
-                "AC-PLAN-001: after no_failing_test / revert_before the next "
+                "AC-PLAN-001: after no_failing_test / revert_red the next "
                 "INVOKE_AGENT must be RED (or TRAIN_EXHAUSTED / "
                 f"PhaseFailedError), never GREEN; got {call_log!r}\n{output}"
             )
@@ -1862,7 +1862,7 @@ class TestMicroOrchestration:
                 f"got {call_log!r}\n{output}"
             )
             assert "TRAIN_EXHAUSTED" in str(excinfo.value), (
-                "AC-PLAN-001: always-revert_before on no_failing_test must "
+                "AC-PLAN-001: always-revert_red on no_failing_test must "
                 "stop at the existing red_attempts cap with TRAIN_EXHAUSTED "
                 f"or PhaseFailedError; got {excinfo.value!r}\n{output}"
             )
@@ -1954,8 +1954,8 @@ class TestMicroOrchestration:
 
         Implementation ran (GREEN agent SUCCESS); the suite stayed red.
         JUDGE may still run and may emit a pass / continue_refactor /
-        JUDGE_REFACTOR_NOTE. Those are advisory. Only revert_to_red
-        (TRAIN) and revert_before (escalate RED) may change the route.
+        JUDGE_REFACTOR_NOTE. Those are advisory. Only revert_green
+        (TRAIN) and revert_red (escalate RED) may change the route.
         Mechanical / test_defect GREEN status:FAILURE is a different
         path and is not this pin.
         """
@@ -2159,7 +2159,7 @@ def test_judge_auto_prompt_handles_mechanical_failure() -> None:
     (GREEN prompt content). The runner sets ``session.failure_kind="mechanical"``
     and injects the ``<failure_kind>mechanical</failure_kind>`` block into the
     JUDGE prompt; the JUDGE prompt must contain the review-and-route rule so
-    JUDGE emits verdict + ``next_action`` (revert_before / revert_to_red /
+    JUDGE emits verdict + ``next_action`` (revert_red / revert_green /
     skip_refactor) instead of attempting to satisfy the test itself.
 
     Three-axis pin (runner-routing + GREEN prompt content + JUDGE prompt
@@ -2185,9 +2185,9 @@ def test_judge_auto_prompt_handles_mechanical_failure() -> None:
         "::_run_judge_phase)."
     )
 
-    # The action language MUST be present: revert_before (test wrong),
-    # revert_to_red (scope wrong), skip_refactor (operator intervenes).
-    required_actions = ("revert_before", "revert_to_red", "skip_refactor")
+    # The action language MUST be present: revert_red (test wrong),
+    # revert_green (scope wrong), skip_refactor (operator intervenes).
+    required_actions = ("revert_red", "revert_green", "skip_refactor")
     for action in required_actions:
         assert action in judge_prompt, (
             f"JUDGE prompt must reference `{action}` in the "
@@ -2219,13 +2219,13 @@ def test_judge_auto_prompt_handles_test_defect_failure() -> None:
     and injects the ``<failure_kind>test_defect</failure_kind>`` block into
     the JUDGE prompt; the JUDGE prompt must contain the review-and-route
     rule so JUDGE emits ``verdict: COMPLIANCE_VIOLATION`` +
-    ``next_action: revert_before`` (re-run RED with GREEN's rationale)
+    ``next_action: revert_red`` (re-run RED with GREEN's rationale)
     instead of attempting to satisfy the test itself.
 
     Distinct from the mechanical case: test defect has a single sensible
-    outcome (``revert_before`` only), so the prompt must NOT advertise
-    ``revert_to_red`` / ``skip_refactor`` as options in the test_defect
-    rule. ``revert_before`` is referenced in both rules — the discriminator
+    outcome (``revert_red`` only), so the prompt must NOT advertise
+    ``revert_green`` / ``skip_refactor`` as options in the test_defect
+    rule. ``revert_red`` is referenced in both rules — the discriminator
     pins on the test_defect-specific wording ("wrong abstraction") to
     distinguish.
     """
@@ -2248,13 +2248,13 @@ def test_judge_auto_prompt_handles_test_defect_failure() -> None:
         "::_run_judge_phase)."
     )
 
-    # The action language MUST be present: revert_before (re-run RED).
-    # Test defect has only one sensible outcome; revert_to_red and
+    # The action language MUST be present: revert_red (re-run RED).
+    # Test defect has only one sensible outcome; revert_green and
     # skip_refactor should NOT appear in the test_defect rule's context.
-    assert "next_action: revert_before" in judge_prompt, (
-        "JUDGE prompt must reference `revert_before` in the "
+    assert "next_action: revert_red" in judge_prompt, (
+        "JUDGE prompt must reference `revert_red` in the "
         "<failure_kind>test_defect</failure_kind> rule so the agent knows "
-        "to emit next_action='revert_before' (re-run RED). Without this, "
+        "to emit next_action='revert_red' (re-run RED). Without this, "
         "JUDGE has no routing vocabulary for test defects."
     )
 
@@ -2311,7 +2311,7 @@ def test_judge_auto_prompt_documents_proceed_to_refactor_no_diff() -> None:
 
     # The action MUST be linked to the mechanical failure_kind in the prompt
     # so the agent knows to pick `proceed_to_refactor_no_diff` (COMPLIANCE_PASS
-    # forward route) alongside `revert_before` / `revert_to_red` / `skip_refactor`
+    # forward route) alongside `revert_red` / `revert_green` / `skip_refactor`
     # (COMPLIANCE_VIOLATION rejection routes) under the same discriminator.
     # YAML schema examples also name the verb (GH-149); find the occurrence
     # whose backward window includes `<failure_kind>mechanical`.
@@ -2351,8 +2351,8 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
     """Pin GREEN-PASS ``next_action`` vocabulary and revert meanings (GH-149).
 
     YAML examples must name the runner's five verbs. After GREEN PASS the
-    prompt must map Test Integrity to ``revert_before`` (discard RED+GREEN)
-    and an honest-test implementation gap to ``revert_to_red`` (discard
+    prompt must map Test Integrity to ``revert_red`` (discard RED+GREEN)
+    and an honest-test implementation gap to ``revert_green`` (discard
     GREEN only). It must not say every violation feeds GREEN.
     """
     from importlib import resources
@@ -2364,8 +2364,8 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
     )
 
     required_actions = (
-        "revert_before",
-        "revert_to_red",
+        "revert_red",
+        "revert_green",
         "continue_refactor",
         "skip_refactor",
         "proceed_to_refactor_no_diff",
@@ -2394,10 +2394,10 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
 
     compact = judge_prompt.lower().replace(" ", "").replace("\n", "")
     assert "discardred+green" in compact or "discardredandgreen" in compact, (
-        "JUDGE prompt must say revert_before discards RED+GREEN"
+        "JUDGE prompt must say revert_red discards RED+GREEN"
     )
     assert "keepred" in compact and "discardgreen" in compact, (
-        "JUDGE prompt must say revert_to_red discards GREEN and keeps RED"
+        "JUDGE prompt must say revert_green discards GREEN and keeps RED"
     )
 
     mapping_idx = judge_prompt.find("GREEN PASS `next_action` mapping")
@@ -2408,11 +2408,11 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
     assert "Test Integrity" in mapping_window, (
         "GREEN PASS mapping must name Test Integrity"
     )
-    assert "revert_before" in mapping_window, (
-        "Test Integrity mapping after GREEN PASS must name revert_before"
+    assert "revert_red" in mapping_window, (
+        "Test Integrity mapping after GREEN PASS must name revert_red"
     )
-    assert "revert_to_red" in mapping_window, (
-        "Honest-test implementation gap must name revert_to_red"
+    assert "revert_green" in mapping_window, (
+        "Honest-test implementation gap must name revert_green"
     )
 
     assert "next GREEN's only memory" not in judge_prompt, (
@@ -2422,7 +2422,7 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
         "Do not say every COMPLIANCE_VIOLATION feeds GREEN"
     )
     assert "next RED" in judge_prompt, (
-        "revert_before train_feedback must be framed as the next RED's memory"
+        "revert_red train_feedback must be framed as the next RED's memory"
     )
 
 
@@ -2561,13 +2561,13 @@ class TestTwoCounterStubJudgeLoops:
     ``failure_kind: test_defect`` coerce.
     """
 
-    def test_always_revert_to_red_trains_green_three_times_then_escalates(
+    def test_always_revert_green_trains_green_three_times_then_escalates(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from tests.test_micro.test_two_counter_retry import (
-            _install_always_revert_to_red_stubs,
+            _install_always_revert_green_stubs,
             _mock_pytest,
             _seed_workspace,
         )
@@ -2581,9 +2581,7 @@ class TestTwoCounterStubJudgeLoops:
             green_attempts=0,
             red_attempts=0,
         ).save(session_path)
-        traces = _install_always_revert_to_red_stubs(
-            monkeypatch, pass_after_red_count=2
-        )
+        traces = _install_always_revert_green_stubs(monkeypatch, pass_after_red_count=2)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
         _run_tdd_cycle(task, ledger_path, console)
@@ -2593,17 +2591,17 @@ class TestTwoCounterStubJudgeLoops:
         assert call_log.count("RED") >= 2
         first_contract = call_log[: call_log.index("RED", 1)]
         assert first_contract.count("GREEN") == 3, (
-            "AC-PLAN-005: always-revert_to_red must train GREEN three times "
+            "AC-PLAN-005: always-revert_green must train GREEN three times "
             f"then escalate; got {call_log!r}"
         )
 
-    def test_always_revert_before_stops_after_three_escalates(
+    def test_always_revert_red_stops_after_three_escalates(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from tests.test_micro.test_two_counter_retry import (
-            _install_always_revert_before_stubs,
+            _install_always_revert_red_stubs,
             _mock_pytest,
             _seed_workspace,
         )
@@ -2613,7 +2611,7 @@ class TestTwoCounterStubJudgeLoops:
         _mock_pytest(monkeypatch)
         task, ledger_path, session_path = _seed_workspace(root)
         SessionState(active_issue_id="ISS-ADH-017").save(session_path)
-        traces = _install_always_revert_before_stubs(monkeypatch)
+        traces = _install_always_revert_red_stubs(monkeypatch)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
         with pytest.raises(PhaseFailedError, match="TRAIN_EXHAUSTED"):
@@ -2621,7 +2619,7 @@ class TestTwoCounterStubJudgeLoops:
         call_log = traces["call_log"]
         assert isinstance(call_log, list)
         assert call_log.count("RED") == 3, (
-            "AC-PLAN-005: always-revert_before must stop after three "
+            "AC-PLAN-005: always-revert_red must stop after three "
             f"escalates with no fourth RED; got {call_log!r}"
         )
         assert "TRAIN_EXHAUSTED" in buf.getvalue()
@@ -2645,7 +2643,7 @@ class TestTwoCounterStubJudgeLoops:
         traces = _install_coerce_violation_stubs(
             monkeypatch,
             failure_kind="test_defect",
-            declared_next_action="revert_to_red",
+            declared_next_action="revert_green",
             pass_after_red_count=2,
         )
         buf = io.StringIO()
@@ -2655,7 +2653,7 @@ class TestTwoCounterStubJudgeLoops:
         assert isinstance(call_log, list)
         coerced_actions = traces["coerced_actions"]
         assert isinstance(coerced_actions, list)
-        assert coerced_actions[0] == "revert_before"
+        assert coerced_actions[0] == "revert_red"
         first_contract = call_log[: call_log.index("RED", 1)]
         assert first_contract.count("GREEN") == 1, (
             f"AC-PLAN-005: test_defect coerce must escalate now; got {call_log!r}"

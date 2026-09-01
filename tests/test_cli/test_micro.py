@@ -1059,7 +1059,7 @@ class TestJudgeTrainRollback:
 
         c = Console()
 
-        # --- Round 1: judge rejects with next_action=revert_to_red (explicit) ---
+        # --- Round 1: judge rejects with next_action=revert_green (explicit) ---
         mock_skill.return_value = "# JUDGE skill"
         mock_invoke.return_value = (
             HandoverManifest(
@@ -1067,7 +1067,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="Missing error handling",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1119,7 +1119,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="Still wrong",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1217,7 +1217,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="missing error path",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1285,7 +1285,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="still wrong",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1354,7 +1354,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="missing error path",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1521,14 +1521,14 @@ class TestJudgeTrainRollback:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_judge_revert_before_resets_past_red(
+    def test_judge_revert_red_resets_past_red(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """next_action=revert_before resets past RED so the task retries from scratch."""
+        """next_action=revert_red resets past RED so the task retries from scratch."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
 
@@ -1566,7 +1566,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="Implementation drifted from spec",
-                next_action="revert_before",
+                next_action="revert_red",
             ),
             "",
         )
@@ -1586,17 +1586,17 @@ class TestJudgeTrainRollback:
 
         # Both RED and GREEN must be discarded — running this task again from RED.
         assert not (root / "feature.py").exists(), (
-            "revert_before must discard RED's introduced file"
+            "revert_red must discard RED's introduced file"
         )
         assert not (root / "impl.py").exists(), (
-            "revert_before must discard GREEN's introduced file"
+            "revert_red must discard GREEN's introduced file"
         )
         # red_commit_sha must be cleared so the cycle restarts cleanly.
         assert result.red_commit_sha == "", (
-            f"red_commit_sha must be cleared after revert_before; got {result.red_commit_sha!r}"
+            f"red_commit_sha must be cleared after revert_red; got {result.red_commit_sha!r}"
         )
         assert result.current_phase == "RED", (
-            f"after revert_before the phase must transition to RED; got {result.current_phase}"
+            f"after revert_red the phase must transition to RED; got {result.current_phase}"
         )
         assert result.train_feedback, (
             "REDRestart must carry the judge feedback into RED's next attempt"
@@ -1622,14 +1622,14 @@ class TestJudgeTrainRollback:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_judge_revert_to_red_advances_red_commit_sha(
+    def test_judge_revert_green_advances_red_commit_sha(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """next_action=revert_to_red: discard GREEN, advance red_commit_sha to feedback commit."""
+        """next_action=revert_green: discard GREEN, advance red_commit_sha to feedback commit."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
 
@@ -1696,7 +1696,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="missing error path",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1740,13 +1740,13 @@ class TestJudgeTrainRollback:
             f"red_commit_sha must equal HEAD ({head_sha}); got {result.red_commit_sha}"
         )
         assert result.current_phase == "GREEN", (
-            f"revert_to_red transitions to GREEN; got {result.current_phase}"
+            f"revert_green transitions to GREEN; got {result.current_phase}"
         )
 
     @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_revert_to_red_missing_red_commit_sha_is_fatal(
+    def test_revert_green_missing_red_commit_sha_is_fatal(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
@@ -1754,9 +1754,9 @@ class TestJudgeTrainRollback:
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """AC-PLAN-004: empty ``red_commit_sha`` makes ``revert_to_red`` fatal.
+        """AC-PLAN-004: empty ``red_commit_sha`` makes ``revert_green`` fatal.
 
-        JUDGE ``next_action=revert_to_red`` with no RED-phase boundary must
+        JUDGE ``next_action=revert_green`` with no RED-phase boundary must
         raise ``PhaseFailedError`` carrying ``ROLLBACK_BOUNDARY_MISSING``.
         The runner must not print ``ROLLBACK_FAILED … proceeding with train
         feedback``, must not stamp ``red_commit_sha`` onto a
@@ -1782,7 +1782,7 @@ class TestJudgeTrainRollback:
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
                 rationale="GREEN invented production symbols without a RED contract",
-                next_action="revert_to_red",
+                next_action="revert_green",
             ),
             "",
         )
@@ -1819,11 +1819,11 @@ class TestJudgeTrainRollback:
 
         output = captured.getvalue()
         assert "ROLLBACK_FAILED" not in output, (
-            "missing-boundary revert_to_red must not print ROLLBACK_FAILED; "
+            "missing-boundary revert_green must not print ROLLBACK_FAILED; "
             f"got {output!r}"
         )
         assert "proceeding with train feedback" not in output, (
-            "missing-boundary revert_to_red must not proceed with train "
+            "missing-boundary revert_green must not proceed with train "
             f"feedback; got {output!r}"
         )
 
@@ -1832,7 +1832,7 @@ class TestJudgeTrainRollback:
             f"red_commit_sha must stay empty; got {session_after.red_commit_sha!r}"
         )
         assert session_after.current_phase != "GREEN", (
-            "missing-boundary revert_to_red must not train GREEN; "
+            "missing-boundary revert_green must not train GREEN; "
             f"got phase {session_after.current_phase!r}"
         )
 
@@ -1857,7 +1857,7 @@ class TestJudgeTrainRollback:
             check=True,
         ).stdout.strip()
         assert head_after == head_before, (
-            "worktree HEAD must stay at the pre-JUDGE commit when revert_to_red "
+            "worktree HEAD must stay at the pre-JUDGE commit when revert_green "
             f"has no RED boundary; before={head_before} after={head_after}"
         )
 
@@ -2037,14 +2037,14 @@ class TestJudgeTrainRollback:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_judge_default_action_on_violation_is_revert_to_red(
+    def test_judge_default_action_on_violation_is_revert_green(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Missing next_action on violation defaults to revert_to_red (backward compat)."""
+        """Missing next_action on violation defaults to revert_green (backward compat)."""
         root = tmp_git_repo
         monkeypatch.chdir(root)
 
@@ -2098,7 +2098,7 @@ class TestJudgeTrainRollback:
             c=c,
         )
 
-        # Same outcome as explicit revert_to_red.
+        # Same outcome as explicit revert_green.
         assert (root / "feature.py").exists(), "RED preserved under default action"
         assert not (root / "impl.py").exists(), "GREEN discarded under default action"
         assert result.current_phase == "GREEN", (
@@ -2545,7 +2545,7 @@ class TestCoerceJudgeActionFailureKind:
     a ``failure_kind`` discriminator threaded from ``session.failure_kind``.
 
     Pins defect #1 (coercion): ``failure_kind == "test_defect"`` plus
-    ``verdict == COMPLIANCE_VIOLATION`` forces ``revert_before`` regardless
+    ``verdict == COMPLIANCE_VIOLATION`` forces ``revert_red`` regardless
     of what ``next_action`` the JUDGE manifest declared. PASS verdicts and
     non-test_defect paths preserve the legacy resolution (JUDGE remains the
     authority on its own outcome).
@@ -2554,24 +2554,24 @@ class TestCoerceJudgeActionFailureKind:
     @pytest.mark.parametrize(
         "next_action,verdict,failure_kind,expected",
         [
-            # test_defect + violation: forced revert_before, regardless of
+            # test_defect + violation: forced revert_red, regardless of
             # what the agent declared or omitted.
-            ("revert_before", "COMPLIANCE_VIOLATION", "test_defect", "revert_before"),
-            (None, "COMPLIANCE_VIOLATION", "test_defect", "revert_before"),
-            ("revert_to_red", "COMPLIANCE_VIOLATION", "test_defect", "revert_before"),
+            ("revert_red", "COMPLIANCE_VIOLATION", "test_defect", "revert_red"),
+            (None, "COMPLIANCE_VIOLATION", "test_defect", "revert_red"),
+            ("revert_green", "COMPLIANCE_VIOLATION", "test_defect", "revert_red"),
             # PASS verdicts: runner-level override does NOT fire; JUDGE wins.
             (None, "COMPLIANCE_PASS", "test_defect", None),
             ("skip_refactor", "COMPLIANCE_PASS", "test_defect", "skip_refactor"),
             # Non-test_defect failures: legacy contract preserved.
-            (None, "COMPLIANCE_VIOLATION", "mechanical", "revert_to_red"),
-            ("revert_before", "COMPLIANCE_VIOLATION", "mechanical", "revert_before"),
+            (None, "COMPLIANCE_VIOLATION", "mechanical", "revert_green"),
+            ("revert_red", "COMPLIANCE_VIOLATION", "mechanical", "revert_red"),
             (None, "COMPLIANCE_PASS", "mechanical", None),
             # Clean run (no failure_kind): legacy contract preserved.
             ("skip_refactor", "COMPLIANCE_PASS", "", "skip_refactor"),
             (None, "COMPLIANCE_PASS", "", None),
         ],
     )
-    def test_overrides_to_revert_before_on_test_defect(
+    def test_overrides_to_revert_red_on_test_defect(
         self,
         next_action: str | None,
         verdict: str,
@@ -2644,16 +2644,16 @@ _SPEC_ONLY_VIOLATION = {
 
 
 class TestCoerceJudgeActionTestIntegrity:
-    """GREEN PASS Test Integrity must coerce to ``revert_before`` (GH-149).
+    """GREEN PASS Test Integrity must coerce to ``revert_red`` (GH-149).
 
     After GREEN PASS, ``session.failure_kind`` is empty, so the
     ``test_defect`` / ``no_failing_test`` overlay is absent. Structured
     Test Integrity (category and/or ``evaluation.test_integrity: FAIL``)
-    must still discard RED+GREEN. Spec-only gaps stay ``revert_to_red``.
+    must still discard RED+GREEN. Spec-only gaps stay ``revert_green``.
     Mechanical overlay is not coerced by Test Integrity.
     """
 
-    def test_green_pass_test_integrity_omitted_next_action_is_revert_before(
+    def test_green_pass_test_integrity_omitted_next_action_is_revert_red(
         self,
     ) -> None:
         from deviate.cli.micro import _coerce_judge_action
@@ -2662,28 +2662,28 @@ class TestCoerceJudgeActionTestIntegrity:
             violations=[_TEST_INTEGRITY_VIOLATION],
         )
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_before", (
+        assert result == "revert_red", (
             "GREEN PASS + Test Integrity + omitted next_action must coerce "
-            f"to revert_before; got {result!r}"
+            f"to revert_red; got {result!r}"
         )
 
-    def test_green_pass_test_integrity_explicit_revert_to_red_is_revert_before(
+    def test_green_pass_test_integrity_explicit_revert_green_is_revert_red(
         self,
     ) -> None:
         from deviate.cli.micro import _coerce_judge_action
 
         manifest = _judge_violation_manifest(
-            next_action="revert_to_red",
+            next_action="revert_green",
             violations=[_TEST_INTEGRITY_VIOLATION],
             evaluation={"test_integrity": "FAIL"},
         )
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_before", (
-            "GREEN PASS + Test Integrity + explicit revert_to_red must still "
-            f"coerce to revert_before; got {result!r}"
+        assert result == "revert_red", (
+            "GREEN PASS + Test Integrity + explicit revert_green must still "
+            f"coerce to revert_red; got {result!r}"
         )
 
-    def test_green_pass_spec_only_omitted_next_action_stays_revert_to_red(
+    def test_green_pass_spec_only_omitted_next_action_stays_revert_green(
         self,
     ) -> None:
         from deviate.cli.micro import _coerce_judge_action
@@ -2693,54 +2693,54 @@ class TestCoerceJudgeActionTestIntegrity:
             evaluation={"test_integrity": "PASS"},
         )
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_to_red", (
+        assert result == "revert_green", (
             "GREEN PASS + Spec Non-Compliance only + test_integrity PASS "
-            f"must stay revert_to_red; got {result!r}"
+            f"must stay revert_green; got {result!r}"
         )
 
-    def test_evaluation_fail_alone_forces_revert_before(self) -> None:
+    def test_evaluation_fail_alone_forces_revert_red(self) -> None:
         from deviate.cli.micro import _coerce_judge_action
 
         manifest = _judge_violation_manifest(
-            next_action="revert_to_red",
+            next_action="revert_green",
             violations=[_SPEC_ONLY_VIOLATION],
             evaluation={"test_integrity": "FAIL"},
         )
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
-        assert result == "revert_before", (
-            "evaluation.test_integrity FAIL must force revert_before even "
+        assert result == "revert_red", (
+            "evaluation.test_integrity FAIL must force revert_red even "
             f"without a Test Integrity category; got {result!r}"
         )
 
-    def test_mechanical_overlay_keeps_declared_revert_to_red(self) -> None:
+    def test_mechanical_overlay_keeps_declared_revert_green(self) -> None:
         from deviate.cli.micro import _coerce_judge_action
 
         manifest = _judge_violation_manifest(
-            next_action="revert_to_red",
+            next_action="revert_green",
             violations=[_TEST_INTEGRITY_VIOLATION],
             evaluation={"test_integrity": "FAIL"},
         )
         result = _coerce_judge_action(
             manifest, "COMPLIANCE_VIOLATION", failure_kind="mechanical"
         )
-        assert result == "revert_to_red", (
+        assert result == "revert_green", (
             "mechanical overlay must keep the agent's three-way choice; "
-            f"Test Integrity must not coerce revert_before; got {result!r}"
+            f"Test Integrity must not coerce revert_red; got {result!r}"
         )
 
     @pytest.mark.parametrize("failure_kind", ["test_defect", "no_failing_test"])
-    def test_existing_failure_kind_force_revert_before_still_holds(
+    def test_existing_failure_kind_force_revert_red_still_holds(
         self, failure_kind: str
     ) -> None:
         from deviate.cli.micro import _coerce_judge_action
 
-        manifest = _judge_violation_manifest(next_action="revert_to_red")
+        manifest = _judge_violation_manifest(next_action="revert_green")
         result = _coerce_judge_action(
             manifest, "COMPLIANCE_VIOLATION", failure_kind=failure_kind
         )
-        assert result == "revert_before", (
+        assert result == "revert_red", (
             f"{failure_kind!r} + COMPLIANCE_VIOLATION must still force "
-            f"revert_before; got {result!r}"
+            f"revert_red; got {result!r}"
         )
 
 
@@ -4142,9 +4142,9 @@ class TestExecutePhaseJudgeRouting:
     """EXECUTE phase's inner JUDGE branch mirrors the four-action
     routing with ``pre_execute_sha`` as the rollback anchor (EXECUTE
     has no RED boundary). Two scenarios are pinned: the explicit
-    ``revert_before`` (which collapses to ``revert_to_red`` because
+    ``revert_red`` (which collapses to ``revert_green`` because
     there's nothing pre-RED to revert to) and the default
-    ``revert_to_red`` path. Both must roll back to ``pre_execute_sha``
+    ``revert_green`` path. Both must roll back to ``pre_execute_sha``
     and land a feedback commit past it.
 
     Implements the (3) "Continue to Refactor (for cases where green
@@ -4239,18 +4239,18 @@ class TestExecutePhaseJudgeRouting:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_execute_judge_revert_before_rolls_back_to_pre_execute_sha(
+    def test_execute_judge_revert_red_rolls_back_to_pre_execute_sha(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """``next_action=revert_before`` on EXECUTE JUDGE: roll back to
+        """``next_action=revert_red`` on EXECUTE JUDGE: roll back to
         ``pre_execute_sha``, land a feedback commit past it, retry
         EXECUTE. Both EXECUTE rollback actions share the same anchor
         (EXECUTE has no RED boundary) — pinning the explicit
-        ``revert_before`` case guards against accidental divergence.
+        ``revert_red`` case guards against accidental divergence.
         """
         root = tmp_git_repo
         monkeypatch.chdir(root)
@@ -4265,7 +4265,7 @@ class TestExecutePhaseJudgeRouting:
         ).stdout.strip()
 
         mock_invoke.side_effect = self._build_invoke_side_effect(
-            next_action_value="revert_before",
+            next_action_value="revert_red",
             judge_rationale="Spec drift",
         )
         mock_skill.return_value = "# JUDGE skill"
@@ -4292,7 +4292,7 @@ class TestExecutePhaseJudgeRouting:
         ).stdout.strip()
         assert int(rev_list_count) > 0, (
             f"feedback commit must exist past pre_execute_sha after "
-            f"revert_before rejection; rev-list counted {rev_list_count}"
+            f"revert_red rejection; rev-list counted {rev_list_count}"
         )
         session_after = SessionState.load(session_path)
         assert session_after.red_commit_sha != pre_execute_sha, (
@@ -4305,15 +4305,15 @@ class TestExecutePhaseJudgeRouting:
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")
-    def test_execute_judge_revert_to_red_advances_boundary_and_retries(
+    def test_execute_judge_revert_green_advances_boundary_and_retries(
         self,
         mock_skill: MagicMock,
         mock_invoke: MagicMock,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """``next_action=revert_to_red`` on EXECUTE JUDGE: same anchor
-        as ``revert_before``, advance the boundary, retry.
+        """``next_action=revert_green`` on EXECUTE JUDGE: same anchor
+        as ``revert_red``, advance the boundary, retry.
         """
         root = tmp_git_repo
         monkeypatch.chdir(root)
@@ -4328,7 +4328,7 @@ class TestExecutePhaseJudgeRouting:
         ).stdout.strip()
 
         mock_invoke.side_effect = self._build_invoke_side_effect(
-            next_action_value="revert_to_red",
+            next_action_value="revert_green",
             judge_rationale="Implementation drifted from spec",
         )
         mock_skill.return_value = "# JUDGE skill"
@@ -4360,7 +4360,7 @@ class TestExecutePhaseJudgeRouting:
         session_after = SessionState.load(session_path)
         assert session_after.red_commit_sha != pre_execute_sha, (
             "session.red_commit_sha must advance past pre_execute_sha "
-            "after revert_to_red rejection"
+            "after revert_green rejection"
         )
 
 
@@ -4443,7 +4443,7 @@ class TestJudgeFeedbackCommitResume:
         assert commit_attempts == 2
         assert resumed.pending_judge_feedback is None
         assert resumed.train_feedback == "Create the missing Credo check."
-        assert resumed.pending_judge_action == "revert_to_red"
+        assert resumed.pending_judge_action == "revert_green"
         assert resumed.current_phase == "GREEN"
         assert resumed.red_commit_sha != original_red_sha
 
@@ -4625,22 +4625,22 @@ class TestExecuteTaskRetryJudgeFeedbackCommitBound:
         )
 
 
-class TestRunnerLoopRestartsRedOnRevertBefore:
-    """AC-PLAN-002: ``revert_before`` escalates to a fresh RED.
+class TestRunnerLoopRestartsRedOnRevertRed:
+    """AC-PLAN-002: ``revert_red`` escalates to a fresh RED.
 
     Patches phase helpers (``_run_red_phase``, ``_run_green_phase``,
     ``_run_judge_phase``, ``_finish_tdd_cycle``) and asserts:
-      * the first ``revert_before`` restarts RED (not GREEN),
+      * the first ``revert_red`` restarts RED (not GREEN),
       * ``red_attempts`` increments and ``green_attempts`` resets to 0,
       * a third escalate stops with ``TRAIN_EXHAUSTED``.
     """
 
-    def test_revert_before_dispatches_red_again(
+    def test_revert_red_dispatches_red_again(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The first ``revert_before`` dispatches a second RED.
+        """The first ``revert_red`` dispatches a second RED.
 
         Escalate accounting increments ``red_attempts``, resets
         ``green_attempts`` to 0, and injects a short escalate note into
@@ -4704,13 +4704,13 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
                     "AC-PLAN-004/005: escalate RED must omit the raw GREEN "
                     f"rationale dump; got {current.train_feedback!r}"
                 )
-                assert current.pending_judge_action == "revert_before"
+                assert current.pending_judge_action == "revert_red"
                 assert current.red_attempts >= 1, (
-                    "AC-PLAN-002: revert_before must increment red_attempts "
+                    "AC-PLAN-002: revert_red must increment red_attempts "
                     f"before the retry RED; got {current.red_attempts!r}"
                 )
                 assert current.green_attempts == 0, (
-                    "AC-PLAN-002: revert_before must reset green_attempts "
+                    "AC-PLAN-002: revert_red must reset green_attempts "
                     f"to 0; got {current.green_attempts!r}"
                 )
             return current
@@ -4721,7 +4721,7 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             current = SessionState.load(session_path_arg)
             if call_log.count("GREEN") == 1:
                 # First GREEN: emit a test_defect failure so JUDGE
-                # has something to reject with ``revert_before``.
+                # has something to reject with ``revert_red``.
                 current.failure_kind = "test_defect"
                 current.train_feedback = test_defect_rationale
             else:
@@ -4736,7 +4736,7 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             current = SessionState.load(session_path_arg)
             if call_log.count("JUDGE") == 1:
                 current.judge_rejected = True
-                current.pending_judge_action = "revert_before"
+                current.pending_judge_action = "revert_red"
                 current.train_feedback = test_defect_rationale
             else:
                 current.judge_rejected = False
@@ -4763,14 +4763,14 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             "GREEN",
             "JUDGE",
             "REFACTOR",
-        ], f"Runner must restart RED on revert_before; got phase order {call_log!r}"
+        ], f"Runner must restart RED on revert_red; got phase order {call_log!r}"
 
-    def test_revert_before_third_escalate_stops_with_train_exhausted(
+    def test_revert_red_third_escalate_stops_with_train_exhausted(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A stub JUDGE that always ``revert_before``s stops after 3."""
+        """A stub JUDGE that always ``revert_red``s stops after 3."""
         import io
 
         from rich.console import Console as RichConsole
@@ -4797,7 +4797,7 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
         task = {
             "id": "TSK-017-03",
             "issue_id": "ISS-ADH-017",
-            "description": "Escalate on revert_before",
+            "description": "Escalate on revert_red",
             "execution_mode": "TDD",
         }
         append_task_transition(TaskRecord(**task), ledger_path)
@@ -4831,7 +4831,7 @@ class TestRunnerLoopRestartsRedOnRevertBefore:
             session_path_arg = args[3]
             current = SessionState.load(session_path_arg)
             current.judge_rejected = True
-            current.pending_judge_action = "revert_before"
+            current.pending_judge_action = "revert_red"
             current.failure_kind = "test_defect"
             current.save(session_path_arg)
             return current
@@ -4866,7 +4866,7 @@ class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
         instead of letting the GREEN phase pick up a passing test
         (the regression that produced the TSK-002-02 mismatch).
 
-    (b) On a JUDGE ``revert_before`` retry, ``session.train_feedback``
+    (b) On a JUDGE ``revert_red`` retry, ``session.train_feedback``
         must be appended to the RED prompt so the agent knows what
         defect to fix.
     """
@@ -5002,7 +5002,7 @@ class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
             "RED test asserts the wrong tenant (Tenant A) where the "
             "spec requires isolation from Tenant B."
         )
-        session.pending_judge_action = "revert_before"
+        session.pending_judge_action = "revert_red"
         session.failure_kind = "test_defect"
         session_path = root / ".deviate" / "session.json"
         session.save(session_path)
