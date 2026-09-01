@@ -11,7 +11,7 @@ This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner pic
 
 **Default invoke** (no skill argument): after exit 0, immediately re-invoke `deviate micro run` until `NO_PENDING_TASKS`. **Review invoke** when `$ARGUMENTS` contains the token `review`, or the operator said `/deviatdd review` / "deviatdd with review": after each successful `deviate micro run`, STOP. Show the task id and the commits just made. Wait for the human to continue. Then run the next `deviate micro run`. Never pass `--review` or `--all` to the runner — this skill's `review` argument is an agent loop policy, not a CLI flag. Failure-path triage is the same in both modes.
 
-The default posture is **repeat stepping**: the agent runs the bare `deviate micro run` on repeat, with the bash tool's `timeout` parameter set (see **Step 1: Run the next task**). Each invocation consumes one unchecked task from `tasks.md`; the loop terminates when the runner exits with `NO_PENDING_TASKS`. A single task boundary keeps the queue inspectable and prevents one bad task from cascading into the next.
+The default posture is **repeat stepping**: the agent runs the bare `deviate micro run` on repeat, with the bash tool's `timeout` parameter set (see the timeout guidance in **Per-task stepping loop** below). Each invocation consumes one unchecked task from `tasks.md`; the loop terminates when the runner exits with `NO_PENDING_TASKS`. A single task boundary keeps the queue inspectable and prevents one bad task from cascading into the next.
 
 ## First action: prepare Meso, then run Micro
 
@@ -20,6 +20,8 @@ Run this command first:
 ```bash
 deviate meso run
 ```
+
+Set the bash tool's `timeout` parameter on this call. Meso spawns up to two agent phases (PLAN, then TASKS), each bounded at `timeout_seconds` (default 1800s) via `resolve_agent_deadline` (`src/deviate/state/config.py`), so a cold run needs **`timeout: 3660`** (2 × 1800s + 60s buffer). The `MESO_ALREADY_COMPLETE` and resume paths finish in seconds; the value only needs to cover the cold case.
 
 `deviate meso run` owns issue discovery, Specify, Plan, Tasks, and resume decisions.
 Do not inspect `plan.md` or `tasks.md` manually before this command.
@@ -81,7 +83,7 @@ Flags you may need:
 
 Do NOT use `--all`. The skill is built around per-task stepping; `--all` defeats the per-task inspection loop and is reserved for the `deviate run` meso driver.
 
-Set a **decent timeout** on the bash invocation of `deviate micro run`. The CLI has no end-to-end deadline (`src/deviate/cli/micro.py::run_command` does not bound the subprocess); the only timeout it self-applies is `_resolve_test_timeout_seconds` (default 1800s) on the *test command*, not the whole cycle. **Use the bash tool's own `timeout` parameter** (e.g. `timeout: 1830` on the bash call) — the shell binary `timeout` and `gtimeout` are NOT installed in this environment. Do NOT wrap the command in a shell-level `timeout` invocation; rely on the harness. Full profile: 1800s. Fast profile: 900s. Add a 30s buffer so the runner can finish gracefully.
+Set a **decent timeout** on the bash invocation of `deviate micro run`. The CLI has no end-to-end deadline (`src/deviate/cli/micro.py::run_command` does not bound the subprocess); it self-bounds only per component — each agent call via `resolve_agent_deadline` and each test command via `_resolve_test_timeout_seconds`, both defaulting to 1800s. **Use the bash tool's own `timeout` parameter** — the shell binary `timeout` and `gtimeout` are NOT installed in this environment. Do NOT wrap the command in a shell-level `timeout` invocation; rely on the harness. Size the value for the **whole cycle**, not one phase: full profile runs up to 4 agent phases (RED, GREEN, JUDGE, REFACTOR; JUDGE runs no test command) plus a test command in each of the other three → **`timeout: 9000`** (4 × 1800s agent + 3 × 1800s test + buffer). Fast profile runs 2 phases (RED, GREEN), each with a test command → **`timeout: 5400`** (2 × 1800s agent + 2 × 1800s test + buffer). The per-phase deadlines inside the runner usually fire first; the bash timeout is the backstop for a legitimately slow cycle.
 
 If the timeout fires, the task is still in the ledger; the next repeat invocation picks it up from the same phase state. Do NOT bypass with `kill -9` unless the runner left session state corrupted (then run the **Clean-slate retry** gate).
 ### Step 2: Check the result
@@ -233,7 +235,8 @@ The spawned runner command is **always** the bare `deviate micro run` (optional 
 # Default: bare command, on repeat. The runner picks the next unchecked task from tasks.md.
 deviate micro run
 
-# Fast profile: 15 minutes (no JUDGE / REFACTOR) — only for very simple slices.
+# Fast profile: 2 phases (RED, GREEN), no JUDGE / REFACTOR — only for very simple slices.
+# Set the bash tool's timeout per the budget in Per-task stepping loop (timeout: 5400).
 deviate micro run --profile fast
 
 # Pinned task: the operator gave a specific ID.
