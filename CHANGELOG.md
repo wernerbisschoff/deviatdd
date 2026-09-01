@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- RED/GREEN/REFACTOR `pre` JSON, auto prompts, and the runner share one verification resolver: when mise is present, `test_command` is the resolved `mise test` / `mise unit` / `mise integ` / `mise exec -- …` string (plus the allowlisted task names that exist), and `_run_test_cmd` executes that same command after optional `mise doctor` preflight. ([#156](https://github.com/wernerbisschoff/deviatdd/issues/156))
+
 - **JUDGE revert routes renamed by blast radius: `revert_to_red` → `revert_green`, `revert_before` → `revert_red`.** `revert_green` discards GREEN and keeps RED; `revert_red` discards RED and GREEN. The old destination-named `revert_to_red` read as "revert RED too", so JUDGE agents misrouted rejections. The auto JUDGE prompt advertises only the new names; `_coerce_judge_action` and `SessionState.load` normalize the legacy names so pre-rename manifests and persisted `pending_judge_action` route identically. Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `specs/_product/guildwright-current-system.md`. Pinned by `tests/test_micro/test_judge_action_rename.py`.
 ### Added
 - **`deviate red post --task-id` rejects a pending-task mismatch (`TASK_ID_MISMATCH`).** Manual RED post compares the flag to the resolved first-PENDING record before any ledger write or commit; mismatch exits 1 with no state change. Match (or omitted `--task-id`) keeps the existing post path. Auto `_run_red_phase` already holds the resolved task dict and is unchanged. Specs: `specs/DeviaTDD-api.md`. Pinned by `tests/test_micro/test_red.py::TestRedPostTaskId`.

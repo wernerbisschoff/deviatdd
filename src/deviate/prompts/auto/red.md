@@ -120,10 +120,11 @@ task_id: "TASK-104"
 <step id="test_writing">
 1. Write the physical test file within the repository's native test structure using project-specific frameworks. Stamp each new test with the project-native honeycomb marker for `behavioral` (default), `spy`, or `impl` — Python `@pytest.mark.*`, Rust `#[*]`, Go/JS name segment or tag. Most RED tests are behavioral.
 2. Ensure all code interfaces required for the test compilation are structurally present; declare dummy interfaces or minimal stub structures if the target module does not yet exist
-3. Run the `test_command` to verify the test fails:
+3. {doctor_preflight}Run the `test_command` to verify the test fails:
    ```bash
    {test_command}
    ```
+   {test_command_rule}
 4. **Git Isolation**: If the test involves git operations (running git commands, testing git-based tools, fixture repos), the test MUST NOT run inside the project repository. Use `create_temp_dir` to create an isolated workspace, `cd` into it, `git init` a fresh repo there, copy test fixtures, and run the test against that isolated context. The `test_command` must be scoped to the isolated directory, not `$REPO_ROOT`.
 5. Validate that the execution crashes explicitly due to assertion failures or missing function components — the missing behavior the AC names. A suite exit ≠ 0 counts as RED only when that is the failure. Syntax errors, missing fixtures, incorrect test setup, or unavailable required services do **not** establish RED. If a required service (e.g. PostgreSQL) is unavailable, emit `status: "ERROR"` with the connection failure. Do not substitute an offline test. If the suite passes immediately, the required behavior may already exist: keep the test and emit `failure_kind: already_satisfied` with a non-empty `files` set and/or `test_file` naming the regression test path(s), plus a `rationale` explaining why no implementation is needed. A passing suite with no named test files is not a COMPLETE. If the test itself cannot target the required behavior, emit `failure_kind: test_defect`. Only a parsing syntax failure is a hard abort — fix it and re-run. Never emit a bare PASS when the suite does not fail.
 6. Run the `lint_command` to ensure lint compliance:

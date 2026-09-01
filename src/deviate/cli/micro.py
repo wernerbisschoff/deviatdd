@@ -4,6 +4,7 @@ import importlib.resources
 import json
 import os
 import re
+import shlex
 
 import subprocess
 import time
@@ -1421,10 +1422,10 @@ def _build_auto_prompt(
             prd_content = prd_path.read_text(encoding="utf-8")
 
     task_content = _this_task_prompt_card(root, task, phase=phase)
-    test_command = task.get("verification", "")
+    test_command = _resolve_verification_command(root, task)
     lint_command = _resolve_lint_command(root)
-    verification_command = task.get("verification", "")
-    verification_binary = task.get("verification", "")
+    verification_command = test_command
+    verification_binary = test_command
 
     const_path = root / "specs" / "constitution.md"
 
@@ -1440,6 +1441,8 @@ def _build_auto_prompt(
         "lint_command": lint_command,
         "verification_command": verification_command,
         "verification_binary": verification_binary,
+        "doctor_preflight": _doctor_preflight_prompt(root),
+        "test_command_rule": _test_command_rule(test_command),
         "next_phase": "",
         "train_feedback": _train_feedback_placeholder(phase, train_feedback),
     }
@@ -1691,7 +1694,7 @@ def _run_red_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    test_result = _run_test_cmd(root)
+    test_result = _run_test_cmd(root, task)
     if (
         test_result.returncode == 0
         or _is_no_tests_collected(test_result)
@@ -3766,7 +3769,7 @@ def _run_refactor_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    _run_test_cmd(root)
+    _run_test_cmd(root, task)
     _run_format_cmd(root)
 
     try:
@@ -4693,6 +4696,14 @@ class PhaseFailedError(Exception):
     pass
 
 
+class EnvNotReadyError(PhaseFailedError):
+    """``mise doctor`` failed — deps, ports, or DB are not ready.
+
+    This is an environment outage, not a RED/GREEN test outcome and not
+    ``failure_kind: mechanical``. No phase ledger row is written.
+    """
+
+
 class ReviewRequiresTtyError(PhaseFailedError):
     """``--review`` cannot proceed without an interactive TTY.
 
@@ -4915,6 +4926,10 @@ def _execute_task_with_retry(
                 return True
             except (typer.Exit, ReviewRequiresTtyError):
                 raise
+            except EnvNotReadyError as exc:
+                c.print(f"  [red]ENV_NOT_READY[/] {tid}: {exc}")
+                _log_run("ENV_NOT_READY", task_id=tid, error=str(exc))
+                return False
             except HitlEscalationError as exc:
                 # Structured HITL escalation — deterministic non-answer.
                 # Don't retry; mark HITL_PENDING and halt the chain.
@@ -5722,15 +5737,15 @@ def red_pre(
     task_data, ledger_path = _resolve_task_context(task, root)
 
     spec_dir = str(ledger_path.parent)
-    test_commands = _test_command_candidates(root, task_data)
-
     contract = {
         "task_id": task_data.get("id", ""),
-        "test_command": test_commands[0][0] if test_commands else "",
+        "test_command": _resolve_verification_command(root, task_data),
         "lint_command": "mise run lint",
         "spec_dir": spec_dir,
     }
+    doctor = _attach_mise_pre(root, contract)
     print(json.dumps(contract, ensure_ascii=False))
+    _fail_pre_if_doctor_failed(doctor)
     raise typer.Exit(code=0)
 
 
@@ -5800,18 +5815,252 @@ def _constitution_test_command(root: Path) -> str:
     return ""
 
 
-def _mise_has_test_task(root: Path) -> bool:
+_MISE_ALLOWLISTED_TASKS = (
+    "doctor",
+    "test",
+    "unit",
+    "integ",
+    "integration",
+    "e2e",
+)
+_UNIT_KIND_RE = re.compile(r"\bunit\b", re.IGNORECASE)
+_INTEG_KIND_RE = re.compile(r"\binteg(?:ration)?\b", re.IGNORECASE)
+_E2E_KIND_RE = re.compile(r"\be2e\b|\bend-to-end\b|\bend to end\b", re.IGNORECASE)
+_PARTIAL_FLAG_TOKENS = frozenset({"-k", "--keyword"})
+_SUITE_ROOT_TOKENS = frozenset({"tests", "tests/", "test", "test/", ".", "./..."})
+_SUITE_EXEC_TOKENS = frozenset(
+    {
+        "pytest",
+        "python",
+        "python3",
+        "mix",
+        "cargo",
+        "npm",
+        "go",
+        "test",
+        "unittest",
+        "-m",
+    }
+)
+_TEST_FILE_SUFFIXES = (".py", ".exs", ".rs", ".go", ".js", ".ts", ".tsx", ".rb")
+
+
+def _mise_config_paths(root: Path) -> list[Path]:
+    return [p for p in (root / "mise.toml", root / ".mise.toml") if p.is_file()]
+
+
+def _mise_defined_tasks(root: Path) -> set[str]:
+    """Task names declared in ``mise.toml`` / ``.mise.toml``.
+
+    Evolves :func:`_mise_has_test_task` — same TOML detector, all keys.
+    """
     import tomllib
 
-    path = root / "mise.toml"
-    if not path.exists():
+    names: set[str] = set()
+    for path in _mise_config_paths(root):
+        try:
+            config = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        tasks = config.get("tasks")
+        if isinstance(tasks, dict):
+            names.update(str(key) for key in tasks)
+    return names
+
+
+def _mise_has_test_task(root: Path) -> bool:
+    return "test" in _mise_defined_tasks(root)
+
+
+def _mise_present(root: Path) -> bool:
+    return bool(_mise_config_paths(root))
+
+
+def _mise_allowlisted_tasks(root: Path) -> list[str]:
+    """Allowlisted mise tasks that actually exist. Never dumps setup/seed/watch."""
+    defined = _mise_defined_tasks(root)
+    return [name for name in _MISE_ALLOWLISTED_TASKS if name in defined]
+
+
+def _is_partial_verification(command: str) -> bool:
+    """True for a file, ``-k``, node-id, or other non-suite subset."""
+    if not command.strip():
         return False
     try:
-        config = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return False
-    tasks = config.get("tasks")
-    return isinstance(tasks, dict) and "test" in tasks
+        tokens = shlex.split(command)
+    except ValueError:
+        return True
+    if any(
+        token in _PARTIAL_FLAG_TOKENS
+        or token.startswith("-k")
+        or token.startswith("--keyword=")
+        for token in tokens
+    ):
+        return True
+    if any("::" in token for token in tokens):
+        return True
+    for token in tokens:
+        if token.startswith("-") or token in _SUITE_EXEC_TOKENS:
+            continue
+        if token in _SUITE_ROOT_TOKENS:
+            continue
+        name = token.rsplit("/", 1)[-1]
+        if (
+            token.endswith(_TEST_FILE_SUFFIXES)
+            or name.startswith("test_")
+            or "_test." in name
+        ):
+            return True
+    return False
+
+
+def _classify_suite_kind(root: Path, task: dict | None, declared: str) -> str | None:
+    """Return ``unit``, ``integ``, ``e2e``, ``ambiguous``, or ``None``.
+
+    ``e2e`` only when the task (description, card, or declared verification)
+    explicitly says e2e. Never the default.
+    """
+    task_text = ""
+    if task:
+        task_text = (
+            f"{task.get('description', '')} {_task_card_text(root, task)} {declared}"
+        )
+    corpus = f"{declared} {task_text}"
+    has_unit = bool(_UNIT_KIND_RE.search(corpus))
+    has_integ = bool(_INTEG_KIND_RE.search(corpus))
+    has_e2e = bool(_E2E_KIND_RE.search(task_text))
+    if has_e2e:
+        return "e2e"
+    if has_unit and has_integ:
+        return "ambiguous"
+    if has_unit:
+        return "unit"
+    if has_integ:
+        return "integ"
+    return None
+
+
+def _usable_constitution_command(root: Path) -> str:
+    command = _constitution_test_command(root)
+    if command in {
+        "true",
+        "echo 'No test framework'",
+        'echo "No test framework"',
+    }:
+        return ""
+    return command
+
+
+def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
+    """Single verification-command resolver for pre, prompt, and runner.
+
+    Partial (file / ``-k`` / node id) + mise → ``mise exec -- <command>``.
+    Full suite → matching allowlisted named task (``mise unit`` / ``mise
+    integ`` / ``mise test``). ``e2e`` only when the task says e2e.
+    No mise → declared command / existing fallback unchanged.
+    """
+    declared = _task_verification_command(root, task)
+    defined = _mise_defined_tasks(root)
+    mise = _mise_present(root)
+
+    if declared and _is_partial_verification(declared):
+        if mise:
+            return f"mise exec -- {declared}"
+        return declared
+
+    if mise:
+        kind = _classify_suite_kind(root, task, declared)
+        if kind == "e2e" and "e2e" in defined:
+            return "mise e2e"
+        if kind == "unit" and "unit" in defined:
+            return "mise unit"
+        if kind == "integ":
+            if "integ" in defined:
+                return "mise integ"
+            if "integration" in defined:
+                return "mise integration"
+        if kind == "ambiguous":
+            if "test" in defined:
+                return "mise test"
+            if "unit" in defined:
+                return "mise unit"
+        if "test" in defined:
+            return "mise test"
+        if declared:
+            return f"mise exec -- {declared}"
+
+    if declared:
+        return declared
+    constitution = _usable_constitution_command(root)
+    if constitution:
+        return constitution
+    manifests = _manifest_test_commands(root)
+    if manifests:
+        return manifests[0][0]
+    if _find_test_files(root):
+        return "pytest"
+    return ""
+
+
+def _doctor_preflight_prompt(root: Path) -> str:
+    if "doctor" not in _mise_defined_tasks(root):
+        return ""
+    return (
+        "Preflight the execution environment (deps, ports, DB). If this "
+        "fails, emit status ERROR — environment not ready, not a test "
+        "failure. Do not substitute an offline test:\n"
+        "mise doctor\n"
+    )
+
+
+def _test_command_rule(test_command: str) -> str:
+    if not test_command.startswith("mise "):
+        return ""
+    return (
+        "Run this exact test_command. Do not invent a bare pytest, "
+        "mix test, cargo test, or npm test — mise was resolved for this "
+        "repository.\n"
+    )
+
+
+def _maybe_run_doctor(root: Path) -> dict[str, object] | None:
+    if "doctor" not in _mise_defined_tasks(root):
+        return None
+    proc = _execute_test_command("mise doctor", root)
+    result: dict[str, object] = {
+        "command": "mise doctor",
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+    }
+    _log_run("DOCTOR_PREFLIGHT", **result)
+    return result
+
+
+def _require_doctor_ok(result: dict[str, object] | None) -> None:
+    if result is not None and not result.get("ok"):
+        raise EnvNotReadyError(
+            "ENV_NOT_READY: mise doctor failed (deps, ports, or DB not ready)"
+        )
+
+
+def _attach_mise_pre(
+    root: Path, contract: dict[str, object]
+) -> dict[str, object] | None:
+    if not _mise_present(root):
+        return None
+    contract["mise_tasks"] = _mise_allowlisted_tasks(root)
+    doctor = _maybe_run_doctor(root)
+    if doctor is not None:
+        contract["doctor"] = doctor
+    return doctor
+
+
+def _fail_pre_if_doctor_failed(doctor: dict[str, object] | None) -> None:
+    if doctor is not None and not doctor.get("ok"):
+        console.print(
+            "[red]ENV_NOT_READY[/] mise doctor failed (deps, ports, or DB not ready)"
+        )
+        raise typer.Exit(code=1)
 
 
 _IGNORED_TEST_DISCOVERY_DIRS = frozenset(
@@ -5836,32 +6085,25 @@ def _manifest_test_commands(root: Path) -> list[tuple[str, Path]]:
     return sorted(commands, key=lambda item: str(item[1]))
 
 
+def _verification_cwd(root: Path, command: str, task: dict | None) -> Path:
+    """Keep nested-manifest pytest cwd when no mise/declared/constitution won."""
+    if _mise_present(root):
+        return root
+    if _task_verification_command(root, task) or _usable_constitution_command(root):
+        return root
+    for manifest_command, manifest_cwd in _manifest_test_commands(root):
+        if manifest_command == command:
+            return manifest_cwd
+    return root
+
+
 def _test_command_candidates(
     root: Path, task: dict | None = None
 ) -> list[tuple[str, Path]]:
-    task_command = _task_verification_command(root, task)
-    if task_command:
-        return [(task_command, root)]
-    constitution_command = _constitution_test_command(root)
-    if constitution_command in {
-        "true",
-        "echo 'No test framework'",
-        'echo "No test framework"',
-    }:
-        constitution_command = ""
-    if _mise_has_test_task(root):
-        candidates = [("mise run test", root)]
-        if constitution_command:
-            candidates.append((constitution_command, root))
-        return candidates
-    if constitution_command:
-        return [(constitution_command, root)]
-    manifests = _manifest_test_commands(root)
-    if manifests:
-        return manifests
-    if _find_test_files(root):
-        return [("pytest", root)]
-    return []
+    resolved = _resolve_verification_command(root, task)
+    if not resolved:
+        return []
+    return [(resolved, _verification_cwd(root, resolved, task))]
 
 
 def _resolve_test_timeout_seconds(root: Path) -> int:
@@ -5917,26 +6159,15 @@ def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProces
     return run_safe_command(command, cwd, timeout=timeout)
 
 
-def _mise_test_invocation_failed(proc: subprocess.CompletedProcess) -> bool:
-    """Return whether mise itself could not resolve the ``test`` task."""
-    stderr = (proc.stderr or "").lower()
-    return proc.returncode != 0 and any(
-        marker in stderr
-        for marker in ("unknown command", "unknown task", "task not found")
-    )
-
-
 def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedProcess:
-    """Run configured tests through the safe-command gate.
+    """Run the same resolved command that pre JSON and the prompt advertise.
 
-    The candidate list is built by :func:`_test_command_candidates`,
-    which already drops values that fail :func:`is_safe_test_command`
-    for the task-ledger and constitution sources. Each remaining
-    candidate is then executed by :func:`_execute_test_command`, which
-    uses :func:`run_safe_command` — the single structured-argv
-    trust boundary. No shell is ever spawned for repository-provided
-    test commands.
+    Doctor preflight (when ``[tasks.doctor]`` exists) runs first. Then
+    :func:`_resolve_verification_command` is executed through
+    :func:`run_safe_command`. No second command, no unknown-task fallback.
     """
+    doctor = _maybe_run_doctor(root)
+    _require_doctor_ok(doctor)
     candidates = _test_command_candidates(root, task)
     if not candidates:
         return subprocess.CompletedProcess(
@@ -5945,22 +6176,10 @@ def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedP
             "",
             "No test command configured and no test project detected",
         )
-    if candidates[0][0] == "mise run test":
-        first = _execute_test_command(*candidates[0])
-        if first.returncode == 0 or not _mise_test_invocation_failed(first):
-            return first
-        candidates = candidates[1:]
-        if not candidates:
-            return first
-    results = [_execute_test_command(command, cwd) for command, cwd in candidates]
-    if len(results) == 1:
-        return results[0]
-    return subprocess.CompletedProcess(
-        results[0].args,
-        next((r.returncode for r in results if r.returncode != 0), 0),
-        "\n".join(r.stdout or "" for r in results),
-        "\n".join(r.stderr or "" for r in results),
-    )
+    command, cwd = candidates[0]
+    _log_run("TEST_COMMAND", command=command)
+    console.print(f"  [cyan]TEST_COMMAND[/] {command}")
+    return _execute_test_command(command, cwd)
 
 
 def _run_format_cmd(root: Path) -> subprocess.CompletedProcess:
@@ -6178,7 +6397,13 @@ def red_post(
         )
         raise typer.Exit(code=1)
 
-    proc = _run_test_cmd(root)
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    early_session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    pending_for_cmd = _resolve_first_pending(root, early_session.active_issue_id or "")
+    proc = _run_test_cmd(root, pending_for_cmd[0] if pending_for_cmd else None)
 
     if proc.returncode == 0:
         console.print(
@@ -6197,14 +6422,13 @@ def red_post(
         if fmt.stdout.strip():
             console.print(f"[yellow]Format stdout:[/] {fmt.stdout.strip()}")
 
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
-    session = (
-        SessionState.load(session_path) if session_path.exists() else SessionState()
-    )
-
+    session = early_session
     issue_id = session.active_issue_id or ""
-    pending = _resolve_first_pending(root, issue_id)
+    pending = (
+        pending_for_cmd
+        if pending_for_cmd is not None
+        else _resolve_first_pending(root, issue_id)
+    )
     if pending is None:
         console.print("[red]NO_PENDING_TASKS[/] No PENDING task found for active issue")
         raise typer.Exit(code=1)
@@ -6282,8 +6506,11 @@ def green_pre(
         "task_entry": task_entry.strip(),
         "test_file": str(test_files[0]) if test_files else "",
         "implementation_targets": [str(f) for f in src_files],
+        "test_command": _resolve_verification_command(root, task_data),
     }
+    doctor = _attach_mise_pre(root, contract)
     print(json.dumps(contract, ensure_ascii=False))
+    _fail_pre_if_doctor_failed(doctor)
     raise typer.Exit(code=0)
 
 
@@ -6557,14 +6784,13 @@ def refactor_pre(
     task_data, ledger_path = _resolve_task_context(task, root)
 
     spec_dir = str(ledger_path.parent)
-    test_commands = _test_command_candidates(root, task_data)
     card = _task_card_text(root, task_data)
     contract = {
         "status": "READY",
         "task_id": task_data.get("id", ""),
         "task_title": task_data.get("description", ""),
         "task_type": _task_type_from_card(card),
-        "test_command": test_commands[0][0] if test_commands else "",
+        "test_command": _resolve_verification_command(root, task_data),
         "lint_command": _resolve_lint_command(root) or "mise run lint",
         "spec_dir": spec_dir,
         "verification": _task_verification_command(root, task_data),
@@ -6573,7 +6799,9 @@ def refactor_pre(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "files_to_refactor": _resolve_files_to_refactor(root, task_data),
     }
+    doctor = _attach_mise_pre(root, contract)
     print(json.dumps(contract, ensure_ascii=False))
+    _fail_pre_if_doctor_failed(doctor)
     raise typer.Exit(code=0)
 
 

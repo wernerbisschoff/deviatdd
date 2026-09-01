@@ -71,8 +71,19 @@ _TIMEOUT_GRACE_SECONDS: float = 5.0
 #: Executables that may run as test commands. Each entry maps the
 #: recognised argv head to a normalised argv list. Anything not on this
 #: list is rejected before subprocess.run is called.
+#: Allowlisted ``mise <task>`` names that may run as verification or preflight.
+#: Unknown mise tasks (setup, seed, watch, fmt, …) are never auto-run.
+_MISE_NAMED_TASKS = frozenset({"test", "unit", "integ", "integration", "e2e", "doctor"})
+
 SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     ("mise", "run", "test"): "mise run test",
+    ("mise", "test"): "mise test",
+    ("mise", "unit"): "mise unit",
+    ("mise", "integ"): "mise integ",
+    ("mise", "integration"): "mise integration",
+    ("mise", "e2e"): "mise e2e",
+    ("mise", "doctor"): "mise doctor",
+    ("mise", "exec"): "mise exec",
     ("pytest",): "pytest",
     ("python", "-m", "pytest"): "python -m pytest",
     ("python", "-m", "unittest"): "python -m unittest",
@@ -149,6 +160,19 @@ def _is_safe_token(token: str) -> bool:
     return True
 
 
+def _match_mise_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str] | None:
+    """Accept only allowlisted mise tasks and ``mise exec -- <safe cmd>``."""
+    if len(argv) >= 2 and argv[1] in _MISE_NAMED_TASKS:
+        return (("mise", argv[1]), f"mise {argv[1]}")
+    if argv[:3] == ("mise", "run", "test"):
+        return (("mise", "run", "test"), "mise run test")
+    if len(argv) >= 4 and argv[1] == "exec" and argv[2] == "--":
+        inner = _match_executable(argv[3:])
+        if inner is not None:
+            return (("mise", "exec"), "mise exec")
+    return None
+
+
 def _match_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str] | None:
     """Return the executable prefix + label if argv starts with one of the
     allowlisted executables. Otherwise ``None``.
@@ -160,6 +184,8 @@ def _match_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str] | No
         basename = head.rsplit("/", 1)[-1]
     else:
         basename = head
+    if basename == "mise":
+        return _match_mise_executable(argv)
     # Normalised mapping from executable basename to argv prefix.
     candidates: list[tuple[tuple[str, ...], str]] = [
         # Direct basenames
@@ -176,8 +202,6 @@ def _match_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str] | No
         # python3.13, etc.) carrying ``-m pytest`` / ``-m unittest``.
         (("python", "-m", "pytest"), "python -m pytest"),
         (("python", "-m", "unittest"), "python -m unittest"),
-        # ``mise`` is the canonical task runner.
-        (("mise",), "mise run test"),
     ]
     for prefix, label in candidates:
         primary = prefix[0]
@@ -190,8 +214,6 @@ def _match_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str] | No
         elif basename != primary:
             continue
         if len(prefix) == 1:
-            if label == "mise run test" and argv[:3] != ("mise", "run", "test"):
-                continue
             return tuple(prefix), label
         # Allow ``python -m pytest`` / ``unittest`` where the interpreter
         # may also be a path or ``python3`` flavour.

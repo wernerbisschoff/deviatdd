@@ -692,9 +692,25 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Runs the project's resolved test command (language-agnostic: `mix test`,
-  `cargo test`, `npm test`, `go test ./...`, or `pytest` chosen via the `_test_command_candidates`
-  resolution order — task `verification`, constitution `test_command`, `mise run test`, manifest
-  table, Python fallback). Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
+  `cargo test`, `npm test`, `go test ./...`, or `pytest` chosen via `_resolve_verification_command`
+  — the same resolver used by `deviate red|green|refactor pre`, `_build_auto_prompt` `{test_command}`,
+  and `_run_test_cmd`. Resolution order: (1) if the declared verification is **partial** (a file,
+  `-k` / `--keyword`, or node id) and the repo has `mise.toml` / `.mise.toml`, wrap it as
+  `mise exec -- <declared>` so the command still uses the repo `.venv`; never expand a partial run
+  into `mise test` / `mise unit` / `mise e2e`; (2) if the command is a **full suite**, pick an
+  allowlisted named mise task that actually exists (`doctor` is preflight only): unit markers →
+  `mise unit`, integration markers → `mise integ` or `mise integration` (the name the repo defines),
+  e2e **only** when the task/verification explicitly says e2e → `mise e2e`, otherwise `mise test`
+  when `[tasks.test]` exists; if unit vs integ is ambiguous and both exist, prefer `mise test` else
+  `mise unit` (never default e2e); (3) mise present but no matching named task → `mise exec --
+  <declared>`; (4) no mise → task `verification`, constitution `test_command`, manifest table,
+  Python fallback, unchanged. Pre JSON also lists the allowlisted tasks that exist
+  (`doctor`, `test`, `unit`, `integ`/`integration`, `e2e`) and does not dump unrelated mise tasks.
+  When `[tasks.doctor]` exists, the runner and pre run `mise doctor` before verification (deps,
+  ports, DB up). Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
+  `failure_kind: mechanical`. Absence of doctor skips preflight. The exact command string is
+  logged (`TEST_COMMAND`) and injected into the phase prompt; agents must not invent a bare
+  `pytest` / `mix test` when mise was resolved. Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
   SYNTAX_ERROR), runs the test command, and reports whether the test failed as expected.
   Optional ``--task-id`` is compared to the resolved pending record
   (``session.active_issue_id`` → first PENDING) **before** the ledger transition
