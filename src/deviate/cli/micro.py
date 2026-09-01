@@ -1348,6 +1348,36 @@ def _build_scope(issue_id: str, task_id: str) -> str:
     return issue_id
 
 
+def _this_task_prompt_card(root: Path, task: dict, *, phase: str) -> str:
+    """Return this task's ``tasks.md`` card for auto ``{task_content}``.
+
+    RED/GREEN/REFACTOR get the raw card (description, Flow References,
+    AC-PLAN, Judge Feedback history). JUDGE gets the GH-118
+    Judge-Feedback-stripped card so prior-round prose cannot bias
+    AC-token matching. Sibling cards are never included.
+    """
+    card = _task_card_text(root, task)
+    if not card:
+        return ""
+    if phase == "judge":
+        return _strip_judge_feedback(card)
+    return card
+
+
+def _train_feedback_placeholder(phase: str, train_feedback: str) -> str:
+    """Fill ``{train_feedback}`` for the assembled auto prompt.
+
+    RED's template already wraps the placeholder in ``<train_feedback>``.
+    Other phases receive the GREEN-style block only when feedback exists
+    so an empty tag cannot suppress ``<persisted_judge_feedback>``.
+    """
+    if not train_feedback:
+        return ""
+    if phase == "red":
+        return train_feedback
+    return f"<train_feedback>\n{train_feedback}\n</train_feedback>"
+
+
 def _build_auto_prompt(
     phase: str,
     task: dict,
@@ -1357,23 +1387,18 @@ def _build_auto_prompt(
 ) -> str:
     """Build a prompt from auto templates with context injected.
 
-    ``train_feedback`` fills the ``{train_feedback}`` placeholder.
-    Escalate paths pass a short note from ``_inject_escalate_note``;
-    GREEN-train paths pass the standing GREEN dump. Empty on first RED.
+    ``{task_content}`` is this task's ``tasks.md`` markdown card (GH-150),
+    never the ledger JSON row and never sibling cards. JUDGE receives
+    the GH-118 Judge-Feedback-stripped card. ``train_feedback`` fills
+    the ``{train_feedback}`` placeholder. Escalate paths pass a short
+    note from ``_inject_escalate_note``; GREEN-train paths pass the
+    standing GREEN dump. Empty on first RED.
     """
     issue_id = task.get("issue_id", "")
     task_id = task.get("id", "")
     source_file = _resolve_issue_source_file(root, issue_id) if issue_id else None
 
     spec_content = _resolve_spec_md(root, task)
-    if phase == "judge":
-        # Same strip resolve_task_ac_tokens uses (#89) so prior-round
-        # Judge-Feedback prose cannot bias the next judge (GH-118).
-        card = _strip_judge_feedback(_task_card_text(root, task))
-        if card:
-            spec_content = (
-                f'{spec_content}\n\n<task_card source="tasks.md">\n{card}\n</task_card>'
-            )
 
     feature_slug = ""
     issue_slug = ""
@@ -1394,7 +1419,7 @@ def _build_auto_prompt(
         if prd_path.exists():
             prd_content = prd_path.read_text(encoding="utf-8")
 
-    task_content = json.dumps(task, indent=2)
+    task_content = _this_task_prompt_card(root, task, phase=phase)
     test_command = task.get("verification", "")
     lint_command = _resolve_lint_command(root)
     verification_command = task.get("verification", "")
@@ -1415,7 +1440,7 @@ def _build_auto_prompt(
         "verification_command": verification_command,
         "verification_binary": verification_binary,
         "next_phase": "",
-        "train_feedback": train_feedback,
+        "train_feedback": _train_feedback_placeholder(phase, train_feedback),
     }
     if phase == "refactor":
         context["files_to_refactor"] = "\n".join(_resolve_files_to_refactor(root, task))
@@ -1891,7 +1916,9 @@ def _run_green_phase(
     root = Path.cwd()
     backend = agent or "pi"
 
-    prompt = _build_auto_prompt("green", task, root)
+    prompt = _build_auto_prompt(
+        "green", task, root, train_feedback=session.train_feedback
+    )
     if session.judge_rejected and session.pending_judge_action == "revert_to_red":
         prompt += (
             "\n\n<rollback_context>\n"
@@ -1901,9 +1928,7 @@ def _run_green_phase(
             "anything missing before reporting success.\n"
             "</rollback_context>\n"
         )
-    if session.train_feedback:
-        prompt += f"\n\n<train_feedback>\n{session.train_feedback}\n</train_feedback>\n"
-    else:
+    if not session.train_feedback:
         persisted = _read_judge_feedback_from_tasks_md(root, task)
         if persisted:
             prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
@@ -2122,7 +2147,7 @@ def _task_card_text(root: Path, task: dict) -> str:
         (
             i
             for i in range(start + 1, len(lines))
-            if _TASK_BULLET_HEAD_RE.match(lines[i])
+            if _TASK_BULLET_HEAD_RE.match(lines[i]) or _MD_HEADING_RE.match(lines[i])
         ),
         len(lines),
     )
@@ -3213,7 +3238,9 @@ def _run_judge_phase(
         red_baseline=red_baseline,
     )
 
-    prompt = _build_auto_prompt("judge", task, root)
+    prompt = _build_auto_prompt(
+        "judge", task, root, train_feedback=session.train_feedback
+    )
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
     if session.train_feedback:
         prompt += f"\n\n<test_feedback>\n{session.train_feedback}\n</test_feedback>\n"
@@ -3705,7 +3732,9 @@ def _run_refactor_phase(
 
     backend = agent or "pi"
     root = Path.cwd()
-    prompt = _build_auto_prompt("refactor", task, root)
+    prompt = _build_auto_prompt(
+        "refactor", task, root, train_feedback=session.train_feedback
+    )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
     refactor_model = resolve_model_for_phase("REFACTOR", root, backend=backend)
     manifest, agent_tail = _invoke_agent(

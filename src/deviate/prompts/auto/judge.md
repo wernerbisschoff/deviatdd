@@ -40,6 +40,8 @@ If you observe a refactoring opportunity, surface it as an **informational note*
 {task_content}
 </task_content>
 
+{train_feedback}
+
 <spec_content>
 {spec_content}
 </spec_content>
@@ -160,7 +162,7 @@ with category `Security Violation` and the pattern name in the `detail` field.
 
 ### STEP_3: EMIT_VERDICT
 
-Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's `acceptance_criteria` or the injected `<task_card source="tasks.md">`). Empty `evidence` is not a pass when those task tokens exist. Do not require later-shard or unassigned plan tokens in this verdict. Quotes must be copied from the injected `<diff>` or allowed HEAD files. Paraphrases, comments, and later-work sentences are illegal. Emit `COMPLIANCE_PASS` only when those citations match the injected `<diff>` (or HEAD on the already-exists `skip_refactor` path) and none of the eight Categories of Violations is present. Emit `COMPLIANCE_VIOLATION` only when one of the eight Categories of Violations above is genuinely present. Tasks with no resolved task `AC-PLAN-*` tokens may emit empty `evidence`. The empty-GREEN sign-off action requires a dirty-diff `test_quote` and omits `impl_quote`.
+Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's `acceptance_criteria` or the injected `<task_content>` card). Empty `evidence` is not a pass when those task tokens exist. Do not require later-shard or unassigned plan tokens in this verdict. Quotes must be copied from the injected `<diff>` or allowed HEAD files. Paraphrases, comments, and later-work sentences are illegal. Emit `COMPLIANCE_PASS` only when those citations match the injected `<diff>` (or HEAD on the already-exists `skip_refactor` path) and none of the eight Categories of Violations is present. Emit `COMPLIANCE_VIOLATION` only when one of the eight Categories of Violations above is genuinely present. Tasks with no resolved task `AC-PLAN-*` tokens may emit empty `evidence`. The empty-GREEN sign-off action requires a dirty-diff `test_quote` and omits `impl_quote`.
 
 **GREEN PASS `next_action` mapping (no `<failure_kind>` overlay):** After GREEN PASS you MUST emit `next_action` on every verdict. The runner accepts exactly these values: `revert_before` | `revert_to_red` | `continue_refactor` | `skip_refactor` | `proceed_to_refactor_no_diff`.
 

@@ -218,10 +218,13 @@ class TestRefactorPre:
         prompt = _build_auto_prompt("refactor", task, tmp_git_repo)
         assert "git log -2" in prompt
         assert "git diff HEAD~2..HEAD" in prompt
-        assert _OUTBOX_PROD in prompt
+        start = prompt.index("The REFACTOR production scope")
+        end = prompt.index("Do not expand scope beyond these production files.")
+        scoped = prompt[start:end]
+        assert _OUTBOX_PROD in scoped
         for extra in _EXTRA_SRC:
-            assert extra not in prompt, (
-                f"auto refactor prompt must not list extra src file {extra}"
+            assert extra not in scoped, (
+                f"auto refactor files_to_refactor must not list extra src file {extra}"
             )
 
 

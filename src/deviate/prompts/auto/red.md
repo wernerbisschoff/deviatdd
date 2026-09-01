@@ -61,7 +61,7 @@ The `<authoritative_acceptance_contract source="plan.md">` block is authoritativ
 </spec_content>
 
 <traceability_mandates>
-1. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in tasks.md and the plan acceptance contract.
+1. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in the injected `<task_content>` card and the plan acceptance contract. Do not open `tasks.md` for this-task fields.
 2. **Gherkin Execution**: Translate only the assigned `AC-PLAN-NNN` Given/When/Then scenarios into observable failing tests; preserve AO and upstream FR/AC lineage.
 3. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Implement sociable component orchestration paths over solitary configurations. Restrict mocking structures exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (e.g., system epoch timers, cryptographic entropy paths).
 4. **Honeycomb mark stamp**: Every new test MUST carry exactly one test marker/annotation/tag naming `behavioral`, `spy`, or `impl` in the project's native test framework (Python: `@pytest.mark.behavioral`, `@pytest.mark.spy`, `@pytest.mark.impl`; Rust: `#[behavioral]`; Go: name segment `_behavioral`; JS: `test.behavioral(...)` or a `behavioral` tag). Most RED tests are `behavioral` (public input-to-output / AC). Use `spy` only for internal call probes. Use `impl` only for implementation-coupled helpers. Never leave a new test untagged — prune will not auto-keep untagged tests.

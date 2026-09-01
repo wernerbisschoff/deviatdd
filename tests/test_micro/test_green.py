@@ -238,7 +238,16 @@ class TestGreenAutoPromptFeedback:
             "</persisted_judge_feedback>", 1
         )[0]
         assert expected_line in persisted_block
-        assert prompt.count(expected_line) == 1
+        task_block = prompt.rsplit("<task_content>", 1)[1].split("</task_content>", 1)[
+            0
+        ]
+        assert expected_line in task_block, (
+            "GH-150: this-task card in <task_content> keeps Judge Feedback history"
+        )
+        assert prompt.count(expected_line) == 2, (
+            "Judge Feedback belongs in <task_content> and <persisted_judge_feedback> "
+            "only — not a third copy"
+        )
         assert _PREFIX_COLLISION_FEEDBACK not in prompt
         assert _NEIGHBOR_TASK_FEEDBACK not in prompt
 
@@ -259,9 +268,17 @@ class TestGreenAutoPromptFeedback:
         )
 
         assert f"<train_feedback>\n{session_feedback}\n</train_feedback>" in prompt
-        assert prompt.count(session_feedback) == 1
         assert "<persisted_judge_feedback>\n- **Judge Feedback**:" not in prompt
-        assert stale_persisted_feedback not in prompt
+        task_block = prompt.rsplit("<task_content>", 1)[1].split("</task_content>", 1)[
+            0
+        ]
+        assert session_feedback in task_block
+        assert stale_persisted_feedback in task_block, (
+            "GH-150: this-task card keeps persisted Judge Feedback history"
+        )
+        assert stale_persisted_feedback not in prompt.split("</task_content>", 1)[-1], (
+            "stale persisted feedback must not leak outside the this-task card"
+        )
         assert _PREFIX_COLLISION_FEEDBACK not in prompt
         assert _NEIGHBOR_TASK_FEEDBACK not in prompt
 
