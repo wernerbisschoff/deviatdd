@@ -992,7 +992,15 @@ accepts `--json` and `--quiet`. `pre` emits a JSON contract describing the envir
     `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`), the
     rollback anchors and boundary-advance rules per route, and the runner
     fallbacks when the field is absent (default: `revert_to_red` on violation,
-    legacy behavior on pass). EXECUTE and IMMEDIATE judge paths stay ungated.
+    legacy behavior on pass). After GREEN PASS (empty `session.failure_kind`),
+    a `COMPLIANCE_VIOLATION` with structured Test Integrity
+    (`violations[].category` matching Test Integrity / `Test Integrity Violation`,
+    and/or `evaluation.test_integrity: FAIL`) is coerced to `revert_before`
+    even when `next_action` is omitted or `revert_to_red`. An honest-test
+    implementation/scope gap (`test_integrity: PASS`, Spec Non-Compliance)
+    stays `revert_to_red`. Mechanical overlay is not coerced by Test Integrity.
+    The runner does not parse `train_feedback` for routing. EXECUTE and
+    IMMEDIATE judge paths stay ungated.
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
     `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
@@ -1727,7 +1735,14 @@ is wrong, the runner must restart RED with the GREEN's rationale injected, not
 loop back into GREEN with the same test. `_coerce_judge_action` accepts a
 keyword-only `failure_kind` parameter (default `""`) and is the single source of
 truth for the override (`test_defect` / `no_failing_test` on a violation map to
-`revert_before`; the 3/3 caps from ISS-ADH-017 stay). `_run_tdd_cycle` honours
+`revert_before`; the 3/3 caps from ISS-ADH-017 stay). After GREEN PASS
+(`failure_kind` empty / not `mechanical`), a `COMPLIANCE_VIOLATION` with
+structured Test Integrity (`violations[].category` matching Test Integrity,
+including `Test Integrity Violation`, and/or `evaluation.test_integrity: FAIL`)
+also forces `revert_before` even when the agent omitted `next_action` or set
+`revert_to_red`. Honest-test implementation/scope gaps stay `revert_to_red`.
+Mechanical overlay keeps the agent's three-way choice. The runner does not
+parse `train_feedback` for routing. `_run_tdd_cycle` honours
 `pending_judge_action == "revert_before"` (set by JUDGE or the override) by
 escalating now: reset `green_attempts` to 0, increment `red_attempts`, persist
 both on `.deviate/session.json`, dispatch `_run_red_phase(task, ...,

@@ -19,7 +19,7 @@ This is the **JUDGE** (compliance gate) phase of the DeviaTDD micro-cycle. Use i
 
 After completion:
 - **COMPLIANCE_PASS**: Pipeline proceeds to REFACTOR (or COMPLETED if REFACTOR skipped).
-- **COMPLIANCE_VIOLATION**: Pipeline aborts with specific violation details and feedback is fed to GREEN.
+- **COMPLIANCE_VIOLATION**: Pipeline routes on `next_action`. `revert_to_red` discards GREEN and keeps RED — `train_feedback` is the next GREEN's memory. `revert_before` discards RED+GREEN — `train_feedback` is the next RED's memory. Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged.
 
 ## What JUDGE Does NOT Do
 
@@ -32,7 +32,7 @@ REFACTOR owns structural improvements. You MUST NOT flag refactoring opportuniti
 
 If you observe a refactoring opportunity, surface it as an **informational note** in `train_feedback` on a COMPLIANCE_PASS verdict. The orchestrator logs it for the operator; REFACTOR may pick it up. Never emit COMPLIANCE_VIOLATION for a refactoring opportunity.
 
-**CRITICAL — `train_feedback` on a COMPLIANCE_VIOLATION verdict is the next GREEN's only memory of its prior attempt. It gets injected directly into GREEN's prompt and appended to `tasks.md`. Do NOT put `REFACTOR NOTE:` content in rejection feedback — the prefix tells GREEN to defer to REFACTOR, which defeats the training purpose. On COMPLIANCE_VIOLATION, see the Format Requirements in STEP_3 below.**
+**CRITICAL — `train_feedback` on a COMPLIANCE_VIOLATION is route-specific. `next_action: revert_to_red` injects it into the next GREEN (discard GREEN, keep RED). `next_action: revert_before` injects it into the next RED (discard RED+GREEN). It is also appended to `tasks.md`. Do NOT put `REFACTOR NOTE:` content in rejection feedback — the prefix tells GREEN to defer to REFACTOR, which defeats the training purpose. On COMPLIANCE_VIOLATION, see the Format Requirements in STEP_3 below.**
 
 </system_instructions>
 
@@ -162,10 +162,18 @@ with category `Security Violation` and the pattern name in the `detail` field.
 
 Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's `acceptance_criteria` or the injected `<task_card source="tasks.md">`). Empty `evidence` is not a pass when those task tokens exist. Do not require later-shard or unassigned plan tokens in this verdict. Quotes must be copied from the injected `<diff>` or allowed HEAD files. Paraphrases, comments, and later-work sentences are illegal. Emit `COMPLIANCE_PASS` only when those citations match the injected `<diff>` (or HEAD on the already-exists `skip_refactor` path) and none of the eight Categories of Violations is present. Emit `COMPLIANCE_VIOLATION` only when one of the eight Categories of Violations above is genuinely present. Tasks with no resolved task `AC-PLAN-*` tokens may emit empty `evidence`. The empty-GREEN sign-off action requires a dirty-diff `test_quote` and omits `impl_quote`.
 
+**GREEN PASS `next_action` mapping (no `<failure_kind>` overlay):** After GREEN PASS you MUST emit `next_action` on every verdict. The runner accepts exactly these values: `revert_before` | `revert_to_red` | `continue_refactor` | `skip_refactor` | `proceed_to_refactor_no_diff`.
+
+- **Test is honest; implementation/scope is wrong** → `next_action: revert_to_red` (discard GREEN, keep RED). `train_feedback` addresses the next GREEN (`The next GREEN attempt must:`). Typical categories: Spec Non-Compliance, No-Shortcut, Scope, Security, Constitution — with `test_integrity: PASS`.
+- **Test is wrong, weak, filename-only, or does not actually validate the task AC (Test Integrity)** → `next_action: revert_before` (discard RED+GREEN). `train_feedback` addresses the next RED (`The next RED attempt must:`). Set `test_integrity: FAIL` and/or category `Test Integrity Violation`.
+- Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged.
+
+Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their documented three-way (or single-outcome) choice. Do not collapse those rows into this GREEN PASS mapping.
+
 **Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST:
-1. **State what GREEN did wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
-2. **Tell the next GREEN what to do instead** — concrete, actionable steps starting with "The next GREEN attempt must:"
-3. **Be instruction, not observation** — GREEN must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
+1. **State what went wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
+2. **Tell the next agent what to do instead** — concrete, actionable steps. On `revert_to_red` start with "The next GREEN attempt must:". On `revert_before` start with "The next RED attempt must:".
+3. **Be instruction, not observation** — the next agent must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
 4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
 5. **On `next_action: revert_before` or `revert_to_red`**: do NOT cite `path:line` locations from the commit that rollback will discard. Write a durable rewrite contract (behavior + forbidden assertion + required proof). Those line numbers will not exist for the next agent. The runner also strips leftover `file:line` tokens on these routes.
 
@@ -176,6 +184,7 @@ phase: JUDGE
 status: "PASS"
 task_id: "{TASK_ID}"
 next_phase: "IDLE"
+next_action: "revert_before" | "revert_to_red" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 evidence:
   - ac: "AC-PLAN-001"
@@ -191,13 +200,14 @@ violations:
     severity: "CRITICAL" | "HIGH" | "MEDIUM"
     recommendation: "How to resolve the violation (specific files, specific changes)"
 train_feedback: |
-  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next GREEN.
-  MUST state what went wrong AND what to do ("The next GREEN
-  attempt must:" steps). NEVER "REFACTOR NOTE:" or operator
-  observations here — those go in summary.
+  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next agent.
+  revert_to_red → "The next GREEN attempt must:" (discard GREEN, keep RED).
+  revert_before → "The next RED attempt must:" (discard RED+GREEN).
+  NEVER "REFACTOR NOTE:" or operator observations here — those go in summary.
 
   COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
   observations for the REFACTOR phase.
+evaluation:
   spec_compliance: "PASS" | "FAIL"
   functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
@@ -214,7 +224,7 @@ diff_summary:
 
 **On COMPLIANCE_PASS with an observed refactoring opportunity**: populate `train_feedback` with a short note prefixed `REFACTOR NOTE:` (e.g., `REFACTOR NOTE: consider splitting src/x.py into helper + entry; not blocking`). The orchestrator logs it as `JUDGE_REFACTOR_NOTE`.
 
-**On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below. If you also populate `train_feedback`, it MUST be specific actionable instructions for the next GREEN attempt (state what went wrong and what to do) — NEVER `REFACTOR NOTE:` content (that tells GREEN to defer, defeating training). Refactoring concerns alongside a correctness gap belong in `summary`, not `train_feedback`.
+**On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below. If you also populate `train_feedback`, it MUST be specific actionable instructions for the next agent on that route (`revert_to_red` → next GREEN; `revert_before` → next RED) — NEVER `REFACTOR NOTE:` content (that tells GREEN to defer, defeating training). Refactoring concerns alongside a correctness gap belong in `summary`, not `train_feedback`.
 
 </execution_sequence>
 
@@ -227,6 +237,7 @@ phase: JUDGE
 status: "PASS"
 task_id: "{TASK_ID}"
 next_phase: "IDLE"
+next_action: "revert_before" | "revert_to_red" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 evidence:
   - ac: "AC-PLAN-001"
@@ -242,10 +253,10 @@ violations:
     severity: "..."
     recommendation: "..."
 train_feedback: |
-  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next GREEN.
-  MUST state what went wrong AND what to do ("The next GREEN
-  attempt must:" steps). NEVER "REFACTOR NOTE:" or operator
-  observations here — those go in summary.
+  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next agent.
+  revert_to_red → "The next GREEN attempt must:" (discard GREEN, keep RED).
+  revert_before → "The next RED attempt must:" (discard RED+GREEN).
+  NEVER "REFACTOR NOTE:" or operator observations here — those go in summary.
 
   COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
   observations for the REFACTOR phase.
@@ -310,11 +321,12 @@ at least:
 - ``violations`` with at least one entry carrying
   ``{category, file, detail, severity, recommendation}``.
 
-The ``recommendation`` field is what the next GREEN attempt will read
+The ``recommendation`` field is what the next agent on that route will
+read (next GREEN on ``revert_to_red``; next RED on ``revert_before``)
 — it must be concrete enough to act on (specific files, specific
 changes, not "re-verify spec compliance"). Recommendations must
 address a CORRECTNESS gap (missing behavior, wrong behavior, stub,
-security hole, gate skip, flow break), never a refactor.
+security hole, gate skip, flow break, dishonest test), never a refactor.
 
 </failure_contract>
 

@@ -2343,6 +2343,85 @@ def test_judge_auto_prompt_documents_proceed_to_refactor_no_diff() -> None:
     )
 
 
+def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
+    """Pin GREEN-PASS ``next_action`` vocabulary and revert meanings (GH-149).
+
+    YAML examples must name the runner's five verbs. After GREEN PASS the
+    prompt must map Test Integrity to ``revert_before`` (discard RED+GREEN)
+    and an honest-test implementation gap to ``revert_to_red`` (discard
+    GREEN only). It must not say every violation feeds GREEN.
+    """
+    from importlib import resources
+
+    judge_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("judge.md")
+        .read_text(encoding="utf-8")
+    )
+
+    required_actions = (
+        "revert_before",
+        "revert_to_red",
+        "continue_refactor",
+        "skip_refactor",
+        "proceed_to_refactor_no_diff",
+    )
+    for action in required_actions:
+        assert "next_action" in judge_prompt and action in judge_prompt, (
+            f"JUDGE prompt must name next_action value {action!r} so the "
+            "agent can emit a runner-accepted verb."
+        )
+
+    first_yaml = judge_prompt.find("```yaml")
+    second_yaml = judge_prompt.find("```yaml", first_yaml + 1)
+    assert first_yaml != -1 and second_yaml != -1, (
+        "JUDGE prompt must keep two YAML examples (STEP_3 + output schema)"
+    )
+    first_block = judge_prompt[first_yaml:second_yaml]
+    second_end = judge_prompt.find("```", second_yaml + 3)
+    second_block = judge_prompt[second_yaml : second_end + 3]
+    for label, block in (
+        ("STEP_3 example", first_block),
+        ("schema example", second_block),
+    ):
+        assert "next_action:" in block, (
+            f"{label} must include next_action with the runner-accepted values"
+        )
+
+    compact = judge_prompt.lower().replace(" ", "").replace("\n", "")
+    assert "discardred+green" in compact or "discardredandgreen" in compact, (
+        "JUDGE prompt must say revert_before discards RED+GREEN"
+    )
+    assert "keepred" in compact and "discardgreen" in compact, (
+        "JUDGE prompt must say revert_to_red discards GREEN and keeps RED"
+    )
+
+    mapping_idx = judge_prompt.find("GREEN PASS `next_action` mapping")
+    assert mapping_idx != -1, (
+        "JUDGE prompt must document GREEN PASS next_action mapping"
+    )
+    mapping_window = judge_prompt[mapping_idx : mapping_idx + 1500]
+    assert "Test Integrity" in mapping_window, (
+        "GREEN PASS mapping must name Test Integrity"
+    )
+    assert "revert_before" in mapping_window, (
+        "Test Integrity mapping after GREEN PASS must name revert_before"
+    )
+    assert "revert_to_red" in mapping_window, (
+        "Honest-test implementation gap must name revert_to_red"
+    )
+
+    assert "next GREEN's only memory" not in judge_prompt, (
+        "Do not frame every COMPLIANCE_VIOLATION as the next GREEN's only memory"
+    )
+    assert "feedback is fed to GREEN" not in judge_prompt, (
+        "Do not say every COMPLIANCE_VIOLATION feeds GREEN"
+    )
+    assert "next RED" in judge_prompt, (
+        "revert_before train_feedback must be framed as the next RED's memory"
+    )
+
+
 class TestYellowHandoffContract:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
