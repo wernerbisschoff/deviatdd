@@ -170,7 +170,6 @@ def test_apply_prune_thins_tests_and_never_unlinks_specs(tmp_path: Path) -> None
     assert (tmp_path / "tests" / "test_099_keep.py").is_file()
     assert (tmp_path / "tests" / "test_099_untagged_keep.py").is_file()
     assert snapshot_ledgers(tmp_path) == before
-    assert not (tmp_path / "specs" / "_product" / "flows.jsonl").exists()
 
 
 def test_in_flight_issue_still_thins_tests_and_keeps_specs(tmp_path: Path) -> None:

@@ -233,10 +233,10 @@ def _extract_panel_command_names(panel_block: str) -> list[str]:
     return pattern.findall(panel_block)
 
 
-def test_help_user_panel_has_exactly_five_commands():
+def test_help_user_panel_has_exactly_four_commands():
     """The 'Run by you' panel must contain exactly ``setup``, ``run``,
-    ``meso``, ``micro``, ``flows`` as command rows. If a phase dispatcher
-    or agent-internal command ever leaks into this panel, a first-timer
+    ``meso``, ``micro`` as command rows. If a phase dispatcher or
+    agent-internal command ever leaks into this panel, a first-timer
     will think it is for them — this assertion catches that regression.
 
     ``micro`` is the user-facing drain for the task queue
@@ -244,10 +244,6 @@ def test_help_user_panel_has_exactly_five_commands():
     as the human entry point on the micro side. The HTML scaffold command
     (``deviate html``) was demoted to the agent panel when the swap landed,
     since the slash-command surface (``/deviate-html``) is what dispatches it.
-    ``flows`` is the operator-driven seeding surface for
-    ``specs/_product/flows.jsonl`` — ``/deviate-flows`` Phase B invokes
-    ``deviate flows sync`` between index authoring and the final commit,
-    but the operator can also run it directly to re-seed by hand.
     """
     output = _help_output()
     user_block = _panel_block(output, USER_PANEL)
@@ -257,9 +253,8 @@ def test_help_user_panel_has_exactly_five_commands():
         "run",
         "meso",
         "micro",
-        "flows",
     }, (
-        f"User panel must contain exactly {{setup, run, meso, micro, flows}} "
+        f"User panel must contain exactly {{setup, run, meso, micro}} "
         f"as command rows; got {sorted(user_command_names)}"
     )
 

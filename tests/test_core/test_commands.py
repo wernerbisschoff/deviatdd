@@ -7,8 +7,6 @@ import yaml
 from deviate.core.commands import (
     DEFAULT_LAYER_PACKS,
     DEFAULT_PACK_NAMES,
-    OPTIONAL_PACK_NAMES,
-    OPTIONAL_PACKS,
     UnknownPackError,
     classify_packaged_stems,
     commands_for_packs,
@@ -102,107 +100,6 @@ class TestShardCommandIssueIdFormat:
         """The rule must explicitly call out the legacy ``ISS-NNN`` fallback."""
         text = self._command_text()
         assert "ISS-NNN" in text
-
-
-class TestDeviateFlowsCommitAtSignOff:
-    """``/deviate-flows`` v1.4.0 contract: draft-on-disk and
-    commit-only-on-sign-off.
-
-    These guards describe the remaining user-visible sign-off behavior.
-    """
-
-    @staticmethod
-    def _command_text() -> str:
-        return resolve_command(
-            "deviate-flows", commands_root=_SOURCE_COMMANDS_ROOT
-        ).read_text(encoding="utf-8")
-
-    def test_drafts_remain_uncommitted_during_conversation(self):
-        """Phase A writes flow files + index rows to disk but does NOT
-        commit them mid-conversation. The skill must defer all commits
-        until explicit sign-off.
-        """
-        text = self._command_text()
-        # The invariant must describe a Phase A draft step and forbid
-        # any commit during it.
-        assert "Phase A" in text and "Draft" in text
-        assert "No commit fires during Phase A" in text or (
-            "no commit fires during phase a" in text.lower()
-        )
-
-    def test_explicit_user_sign_off_required(self):
-        """Committing requires explicit user approval. Recognized signals
-        are listed in the prompt; silence is not sign-off.
-        """
-        text = self._command_text()
-        for signal in ("commit", "looks good", "done", "ship it", "approve", "lgtm"):
-            assert signal in text, f"Sign-off signal {signal!r} missing from prompt"
-        # Negative guard: silence / topic change must not count.
-        assert (
-            "Silence is not sign-off" in text
-            or "silence is not sign-off" in text.lower()
-        )
-
-    def test_old_two_commits_wording_is_gone(self):
-        """Guard against the v1.3.0 ambiguity regressing. The old prompt
-        said ``create a single git commit (or two commits, one per file)``
-        — that wording must never return.
-        """
-        text = self._command_text()
-        assert "or two commits, one per file" not in text
-        assert "create a single git commit (or two commits" not in text
-
-
-class TestDeviateArchitectureCommitAtSignOff:
-    """``/deviate-architecture`` v1.3.0 contract: draft-on-disk and
-    commit-only-on-sign-off.
-
-    These guards describe the remaining user-visible sign-off behavior.
-    """
-
-    @staticmethod
-    def _command_text() -> str:
-        return resolve_command(
-            "deviate-architecture", commands_root=_SOURCE_COMMANDS_ROOT
-        ).read_text(encoding="utf-8")
-
-    def test_drafts_remain_uncommitted_during_conversation(self):
-        """Phase A writes architecture and domain-model files to disk but does
-        NOT commit them mid-conversation. The skill must defer all commits
-        until explicit sign-off.
-        """
-        text = self._command_text()
-        # The invariant must describe a Phase A draft step and forbid any
-        # commit during it.
-        assert "Phase A" in text and "Draft" in text
-        assert "No commit fires" in text or "do NOT fire any commit" in text
-
-    def test_explicit_user_sign_off_required(self):
-        """Committing requires explicit user approval. Recognized signals are
-        listed in the prompt; silence is not sign-off.
-        """
-        text = self._command_text()
-        for signal in ("commit", "looks good", "done", "ship it", "approve", "lgtm"):
-            assert signal in text, f"Sign-off signal {signal!r} missing from prompt"
-        # Negative guard: silence / topic change must not count.
-        assert (
-            "Silence is NOT sign-off" in text
-            or "silence is not sign-off" in text.lower()
-        )
-
-    def test_old_two_commits_wording_is_gone(self):
-        """Guard against the v1.2.0 wording regressing. The old prompt said
-        ``create git commits using deviate.core.commit.commit_artifact`` and
-        emitted two commit subjects ``docs(architecture): <summary>`` and
-        ``docs(architecture): sync domain model with architecture.md`` — that
-        per-file commit pattern must never return.
-        """
-        text = self._command_text()
-        # The old per-file commit-orchestration prose must be gone.
-        assert (
-            "create git commits using `deviate.core.commit.commit_artifact`" not in text
-        )
-        assert "sync domain model with architecture.md" not in text
 
 
 class TestPlatformFrontmatter:
@@ -391,7 +288,7 @@ class TestConsumerRepositoryPromptBoundaries:
                 command_name, commands_root=_SOURCE_COMMANDS_ROOT
             ).read_text(encoding="utf-8")
             assert "agent skill" in content
-            assert "flow authoring" in content.lower()
+            assert "META_WORK_NOT_ALLOWED" in content
             assert "do not" in content.lower()
 
 
@@ -460,15 +357,8 @@ class TestComposeCommandBodyConstitutionInjection:
         assert "<universal_invariants>" in composed
 
 
-class TestComposeCommandBodyProductLayerLifecycle:
-    """``layer: product`` commands (deviate-release, deviate-architecture,
-    deviate-flows) must NOT inherit the manual-mode pre/post-script
-    lifecycle, which assumes ``deviate <phase> pre`` exists for every phase.
-    Product-layer commands write a single artifact and commit via
-    ``deviate.core.commit.commit_artifact`` — there is no pre-script and no
-    post-script. The composer must route these commands to the product-layer
-    shared lifecycle block instead of ``lifecycle-manual.md``.
-    """
+class TestComposeCommandBodyManualLifecycle:
+    """Execution-layer commands keep the manual pre/post-script lifecycle."""
 
     @staticmethod
     def _core_dir() -> Path:
@@ -476,46 +366,7 @@ class TestComposeCommandBodyProductLayerLifecycle:
             Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "core"
         )
 
-    @staticmethod
-    def _sample_command() -> str:
-        return (
-            "---\n"
-            "name: test-product-command\n"
-            "description: sample\n"
-            "layer: product\n"
-            "---\n"
-            "\n"
-            "# Body\n"
-            "This is the command body.\n"
-        )
-
-    def test_product_layer_skips_manual_lifecycle_block(self):
-        composed = compose_command_body(self._sample_command(), self._core_dir())
-        assert composed is not None
-        # The <lifecycle mode="manual"> block must be absent — that block
-        # instructs agents to run ``deviate <phase> pre`` which does not
-        # exist for product-layer commands (no release/architecture/flows
-        # pre-script subcommand). The product-shared block may mention the
-        # phrase in negated form ("there is **no** deviate <phase> pre");
-        # we test the structural marker, not the phrase.
-        assert '<lifecycle mode="manual">' not in composed, (
-            "product-layer commands must not inherit the manual pre/post-script "
-            "lifecycle block; release has no deviate <phase> pre subcommand"
-        )
-
-    def test_product_layer_includes_product_shared_block(self):
-        composed = compose_command_body(self._sample_command(), self._core_dir())
-        assert composed is not None
-        assert "commit_artifact" in composed, (
-            "product-layer lifecycle block must reference commit_artifact"
-        )
-        assert '<lifecycle mode="product">' in composed, (
-            'product-layer lifecycle block must be tagged with mode="product"'
-        )
-
     def test_micro_layer_still_uses_manual_lifecycle(self):
-        """Regression guard: only ``layer: product`` skips the manual block;
-        ``layer: micro`` and ``layer: meso`` and ``layer: macro`` keep it."""
         raw = (
             "---\n"
             "name: test-micro-command\n"
@@ -528,7 +379,6 @@ class TestComposeCommandBodyProductLayerLifecycle:
         composed = compose_command_body(raw, self._core_dir())
         assert composed is not None
         assert '<lifecycle mode="manual">' in composed
-        assert '<lifecycle mode="product">' not in composed
 
 
 class TestManualDerivationFromAutoCore:
@@ -654,9 +504,6 @@ class TestManualDerivationFromAutoCore:
             )
 
 
-_PRODUCT_BUNDLE = ("deviate-flows", "deviate-architecture", "deviate-release")
-
-
 class TestCommandPacks:
     def test_every_packaged_stem_is_classified(self) -> None:
         assert classify_packaged_stems() == []
@@ -664,37 +511,30 @@ class TestCommandPacks:
     def test_default_packs_are_execution_layers_only(self) -> None:
         assert DEFAULT_PACK_NAMES == ("macro", "meso", "micro")
         assert tuple(DEFAULT_LAYER_PACKS) == ("macro", "meso", "micro")
-        assert "product" not in DEFAULT_LAYER_PACKS
         assert "deviate-init" in DEFAULT_LAYER_PACKS["macro"]
 
-    def test_product_is_optional_bundle(self) -> None:
-        assert OPTIONAL_PACKS["product"] == _PRODUCT_BUNDLE
-        assert OPTIONAL_PACK_NAMES[0] == "product"
+    def test_default_commands_exclude_optional_stems(self) -> None:
         stems = commands_for_packs()
         assert "deviate-red" in stems
         assert "deviate-explore" in stems
         assert "deviate-plan" in stems
         assert "deviate-init" in stems
         assert "deviate-pr" not in stems
-        for stem in _PRODUCT_BUNDLE:
-            assert stem not in stems
-
-    def test_commands_for_packs_product_writes_all_three(self) -> None:
-        stems = commands_for_packs(("product",))
-        for stem in _PRODUCT_BUNDLE:
-            assert stem in stems
-        assert "deviate-pr" not in stems
         assert "deviate-merge" not in stems
+
+    def test_commands_for_packs_merge_only(self) -> None:
+        stems = commands_for_packs(("merge",))
+        assert "deviate-merge" in stems
+        assert "deviate-pr" not in stems
 
     def test_parse_optional_packs_names(self) -> None:
         assert parse_optional_packs("none") == ()
         assert parse_optional_packs("pr,review") == ("pr", "review")
-        assert parse_optional_packs("product") == ("product",)
         assert parse_optional_packs("merge,pr") == ("merge", "pr")
         all_optional = parse_optional_packs("all-optional")
-        assert "product" in all_optional
+        assert "merge" in all_optional
         assert "pr" in all_optional
-        assert all_optional[0] == "product"
+        assert all_optional[0] == "merge"
 
     def test_parse_unknown_pack_raises(self) -> None:
         try:

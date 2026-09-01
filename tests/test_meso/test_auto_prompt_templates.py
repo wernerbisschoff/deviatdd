@@ -179,94 +179,6 @@ class TestSlimPromptConstraints:
         assert "${" not in content or "<context>" in content
 
 
-class TestFlowTripleMandateRemoved:
-    def test_flows_prompt_drops_mandated_triple_and_seed(self):
-        text = (
-            Path(__file__).resolve().parents[2]
-            / "src"
-            / "deviate"
-            / "prompts"
-            / "commands"
-            / "deviate-flows.md"
-        ).read_text(encoding="utf-8")
-        assert "No Mandated Triple" in text
-        assert "never delete existing flow IDs (FLOW-01/02/03)" not in text
-        assert "avoid re-asking about FLOW-01/02/03" not in text
-        assert "extend, never regenerate" not in text
-        assert "FLOW-01 seed is absent" not in text
-
-    def test_architecture_prompt_drops_flows_precondition(self):
-        text = (
-            Path(__file__).resolve().parents[2]
-            / "src"
-            / "deviate"
-            / "prompts"
-            / "commands"
-            / "deviate-architecture.md"
-        ).read_text(encoding="utf-8")
-        assert "FLOWS_MISSING" not in text
-        assert "Flows Precondition Gate" not in text
-        assert "Refuse with `[red]FLOWS_MISSING[/]`" not in text
-        assert "FLOW-02 Preconditions" not in text
-        assert "No Mandatory Flow Precondition" in text
-
-    def test_release_prompt_drops_arch_or_flows_precondition(self):
-        text = (
-            Path(__file__).resolve().parents[2]
-            / "src"
-            / "deviate"
-            / "prompts"
-            / "commands"
-            / "deviate-release.md"
-        ).read_text(encoding="utf-8")
-        assert "ARCH_OR_FLOWS_MISSING" not in text
-        assert "Architecture + Flows Precondition Gate" not in text
-        assert "FLOW-03 Preconditions" not in text
-        assert "No Mandatory Flow or Architecture Precondition" in text
-
-    def test_adhoc_prompt_drops_flow_triple_inference(self):
-        text = (
-            Path(__file__).resolve().parents[2]
-            / "src"
-            / "deviate"
-            / "prompts"
-            / "commands"
-            / "deviate-adhoc.md"
-        ).read_text(encoding="utf-8")
-        assert (
-            "canonical FLOW-01 (Flows), FLOW-02 (Architecture), FLOW-03 (Release)"
-            not in text
-        )
-        assert "Existing Flow Mapping" in text
-
-    def test_flows_index_omits_mandated_triple(self):
-        index = (
-            Path(__file__).resolve().parents[2]
-            / "specs"
-            / "_product"
-            / "flows"
-            / "index.md"
-        ).read_text(encoding="utf-8")
-        assert "| FLOW-01 |" not in index
-        assert "| FLOW-02 |" not in index
-        assert "| FLOW-03 |" not in index
-        assert "no mandated FLOW-01/02/03 triple" in index
-
-    def test_flows_product_seed_is_optional_starter(self):
-        seed = (
-            Path(__file__).resolve().parents[2]
-            / "specs"
-            / "_product"
-            / "flows"
-            / "flows-product.md"
-        ).read_text(encoding="utf-8")
-        assert "## FLOW-01 Flows" not in seed
-        assert "## FLOW-02 Architecture" not in seed
-        assert "## FLOW-03 Release" not in seed
-        assert "Optional starter" in seed
-        assert "no fixed FLOW-01/02/03" in seed
-
-
 class TestConsumerRepositoryBoundaries:
     def test_auto_macro_and_meso_prompts_reject_meta_work(self):
         for template_name in ("shard", "plan", "tasks"):
@@ -274,13 +186,12 @@ class TestConsumerRepositoryBoundaries:
             assert "<consumer_repository_boundary>" in content
             assert "META_WORK_NOT_ALLOWED" in content
             assert "application behavior" in content
-            assert "existing" in content.lower()
-            assert "read-only" in content.lower()
 
-    def test_auto_prompts_require_application_targets_for_empty_flow_refs(self):
+    def test_auto_prompts_require_application_targets(self):
         for template_name in ("shard", "plan", "tasks"):
             content = load_template(template_name)
-            assert "flow_refs: []" in content
+            assert "META_WORK_NOT_ALLOWED" in content
+            assert "application" in content.lower()
             assert "do not" in content.lower()
             assert "setup" in content.lower()
 
@@ -717,7 +628,8 @@ class TestPrdShardOwnership:
             "blocked_by",
             "coordinates_with",
             "issue_id",
-            "flow_refs",
+            "## User Stories Ledger",
+            "ATDD",
             "## System Topology Mapping",
             "## The Problem Contract",
             "## Scope Boundaries",
