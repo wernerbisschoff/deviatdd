@@ -1252,6 +1252,14 @@ def _require_tdd_completed_evidence(
 def _append_status_transition(
     task_data: dict, new_status: str, ledger_path: Path
 ) -> None:
+    if new_status == "COMPLETED" and _phase_already_done(
+        ledger_path, task_data.get("id", ""), "COMPLETED"
+    ):
+        # Already COMPLETED (JUDGE skip_refactor, adjudicated already-exists,
+        # or a prior _finish_tdd_cycle write). Re-running the evidence gate
+        # after failure_kind is cleared scrapes leftover card tokens and
+        # raises a false COMPLETED_EVIDENCE_MISSING (GH-146).
+        return
     root = Path.cwd()
     bundle = None
     if new_status == "COMPLETED":
@@ -1828,7 +1836,8 @@ def _adjudicate_red_no_failing_test(
         if action != "skip_refactor":
             session.pending_judge_action = "skip_refactor"
         session.save(session_path)
-        _append_status_transition(task, "COMPLETED", ledger_path)
+        if not _phase_already_done(ledger_path, tid, "COMPLETED"):
+            _append_status_transition(task, "COMPLETED", ledger_path)
         c.print(
             f"  [green]COMPLETED (adjudicated)[/] {tid} \u2014 "
             "behavior already exists, no implementation needed"
@@ -3733,12 +3742,13 @@ def _finish_tdd_cycle(
     #                                  nothing about future tasks; the judge
     #                                  verdict does).
     if pending == "skip_refactor":
-        try:
-            _append_status_transition(task, "COMPLETED", ledger_path)
-        except PhaseFailedError:
-            raise
-        except Exception as e:
-            c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
+        if not _phase_already_done(ledger_path, tid, "COMPLETED"):
+            try:
+                _append_status_transition(task, "COMPLETED", ledger_path)
+            except PhaseFailedError:
+                raise
+            except Exception as e:
+                c.print(f"  [yellow]LEDGER_UPDATE_FAILED[/] {e}")
         c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
         _log_run(
             "PHASE_DECISION",
