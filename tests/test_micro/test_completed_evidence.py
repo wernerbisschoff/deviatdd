@@ -7,14 +7,20 @@ Reuse the TSK-020-03 / TSK-028-02 gate fixtures from test_judge.
 
 from __future__ import annotations
 
+import io
 import json
+import subprocess
 from contextlib import chdir
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.cli.micro import _finish_tdd_cycle, _run_tdd_cycle
+from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 from tests.test_micro.test_judge import (
@@ -291,3 +297,156 @@ class TestCompletedEvidenceDurability:
             assert evidence.get("head") == head
             assert evidence.get("green") == head
             assert evidence.get("red") == red_sha
+
+
+def _write_leftover_ac_card(repo: Path) -> None:
+    """Card owns AC-PLAN-002 and also names leftover plan-wide tokens."""
+    tasks_md = repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
+    tasks_md.write_text(
+        f"# Tasks\n\n- {_GATE_TASK_ID}: Already-exists slice\n"
+        "  - **Acceptance Criteria**: AC-PLAN-002\n"
+        "  - **Rationale**: leftover plan tokens AC-PLAN-004 and AC-PLAN-001\n",
+        encoding="utf-8",
+    )
+
+
+def _passing_proc() -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="1 passed", stderr=""
+    )
+
+
+class TestCompletedOnceSkipRefactor:
+    """GH-146: skip_refactor / already-exists COMPLETE writes exactly one row."""
+
+    def test_already_exists_skip_refactor_completes_once_with_leftover_ac_tokens(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """Already-exists skip_refactor must COMPLETE once and stay IDLE.
+
+        MeepleInn TSK-004-02 shape: evidence covers AC-PLAN-002, the card
+        also names leftover AC-PLAN-004 / AC-PLAN-001. A second COMPLETED
+        append must not raise COMPLETED_EVIDENCE_MISSING or enter GREEN.
+        """
+        _seed_already_exists(tmp_git_repo)
+        _write_leftover_ac_card(tmp_git_repo)
+        call_log: list[str] = []
+        passing = _passing_proc()
+
+        def _invoke(*_args: object, **kwargs: object):
+            phase = str(kwargs.get("phase", ""))
+            tid = str(kwargs.get("task_id", _GATE_TASK_ID))
+            call_log.append(phase)
+            if len(call_log) > 24:
+                raise AssertionError(
+                    f"TDD loop did not terminate after 24 invokes: {call_log!r}"
+                )
+            if phase == "RED":
+                return (
+                    HandoverManifest(
+                        phase="RED",
+                        status="SUCCESS",
+                        task_id=tid,
+                        failure_kind="already_satisfied",
+                        files=[_GATE_TEST_PATH],
+                        test_file=_GATE_TEST_PATH,
+                        rationale=f"Required behavior already exists in {_GATE_TEST_PATH}",
+                    ),
+                    "",
+                )
+            if phase == "JUDGE":
+                return (
+                    _gate_manifest(
+                        next_action="skip_refactor",
+                        evidence=[_gate_evidence(ac="AC-PLAN-002")],
+                    ),
+                    "",
+                )
+            return (
+                HandoverManifest(phase=phase, status="SUCCESS", task_id=tid),
+                "",
+            )
+
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "Already-exists leftover AC tokens",
+            "status": "PENDING",
+            "execution_mode": "TDD",
+        }
+        ledger = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(TaskRecord.model_validate(task).model_dump_json() + "\n")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(current_phase="IDLE", active_issue_id=_GATE_ISSUE_ID).save(
+            session_path
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.micro._invoke_agent", side_effect=_invoke),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="test prompt"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._verify_worktree_branch"),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+            patch("deviate.cli.micro._run_format_cmd", return_value=passing),
+            patch("deviate.cli.micro._run_test_cmd", return_value=passing),
+            patch("deviate.cli.micro._run_pytest", return_value=passing),
+        ):
+            _run_tdd_cycle(task, ledger, console)
+        output = buf.getvalue()
+        assert "COMPLETED_EVIDENCE_MISSING" not in output, output
+        assert "GREEN" not in call_log, f"GREEN must stay uninvoked: {call_log!r}"
+        rows = _completed_rows(ledger)
+        assert len(rows) == 1, f"expected one COMPLETED row, got {rows!r}"
+        session = SessionState.load(session_path)
+        assert session.current_phase == "IDLE", (
+            f"session must stay IDLE after adjudicated complete; got {session.current_phase!r}"
+        )
+
+    def test_green_judge_skip_refactor_does_not_double_append(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GREEN+JUDGE skip_refactor must not re-run the COMPLETED evidence gate.
+
+        `_run_tdd_cycle` always calls `_finish_tdd_cycle` after JUDGE
+        skip_refactor. The ledger already dedups `(id, COMPLETED)`, but a
+        later write still re-scrapes leftover card tokens and can raise
+        COMPLETED_EVIDENCE_MISSING after a successful first COMPLETE.
+        """
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            red_sha,
+        )
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
+        assert len(_completed_rows(ledger)) == 1
+        _write_leftover_ac_card(tmp_git_repo)
+        session.failure_kind = ""
+        session.pending_judge_action = "skip_refactor"
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session.save(session_path)
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "GREEN+JUDGE skip_refactor once",
+            "status": "GREEN",
+            "execution_mode": "TDD",
+        }
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        with chdir(tmp_git_repo):
+            result = _finish_tdd_cycle(
+                task, ledger, session, session_path, console, no_refactor=True
+            )
+        assert len(_completed_rows(ledger)) == 1, (
+            f"GREEN+JUDGE skip_refactor must not double-append COMPLETED; "
+            f"got {_completed_rows(ledger)!r}"
+        )
+        assert result.current_phase == "IDLE"
