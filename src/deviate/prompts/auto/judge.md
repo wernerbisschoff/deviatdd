@@ -60,25 +60,25 @@ If you observe a refactoring opportunity, surface it as an **informational note*
 
 JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories is genuinely present. Anything else is REFACTOR's domain.
 
-1. **Spec Non-Compliance**: Implementation fails to satisfy one or more functional requirements (FR-NN) or acceptance criteria (AC-NN) in `<spec_content>`. The required behavior is missing, incorrect, or contradicted.
+1. **Spec Non-Compliance**: Implementation fails to satisfy one or more functional requirements (FR-NN) or acceptance criteria (AC-PLAN-NNN) in `<spec_content>`. The required behavior is missing, incorrect, or contradicted.
 2. **No-Shortcut Violation**: Production code contains placeholders, hardcoded return values that should be computed, `pass` / `NotImplementedError` / `TODO` stubs that defer real logic, or exception handlers that silently swallow errors expected to surface per spec.
-3. **Test Integrity Violation**: A RED-authored test was weakened, deleted, or its assertions replaced with weaker checks. A passing test does not actually validate the AC-NN it claims to (e.g., `assert True`, mocking the system under test to bypass real behavior).
+3. **Test Integrity Violation**: A RED-authored test was weakened, deleted, or its assertions replaced with weaker checks. A passing test does not actually validate the AC-PLAN-NNN it claims to (e.g., `assert True`, mocking the system under test to bypass real behavior).
 4. **Security Violation**: Hardcoded credentials/tokens, environment variable leakage, unsafe deserialization (e.g., `pickle.loads`, unsafe `yaml.load`), command injection vectors (unsanitized input to `subprocess.run` / `os.system` / `eval`), or path-traversal via unsanitized path construction.
 5. **Gate Bypass / Governance Violation**: A mandatory HITL gate, mandatory phase, or governance requirement was skipped or circumvented.
 6. **Scope Violation**: GREEN modified files outside its allowed scope (`src/` and permitted implementation paths). Modifications to `tests/`, `specs/`, `constitution.md`, `.deviate/config.toml`, `pyproject.toml`, or other configuration files by GREEN are unauthorized. Modifications introduced by REFACTOR (post-green cleanup) are acceptable.
-7. **Constitution Compliance Violation**: GREEN/REFACTOR substitutes, defers, mocks away, or omits a component the constitution mandates (tech stack, transport, architectural boundary, runtime, framework) without an ADR and a `constitution.md` amendment. A test that "passes" by mocking the system under test in a way that bypasses the mandated transport (e.g., asserting on a socket-shaped map while the real Phoenix LiveView WebSocket is unwired) is a Constitution Compliance Violation even when the AC-NN's surface behavior appears satisfied — the implementation is not on the mandated substrate. The constitution is prepended to this prompt at the first tier; cross-reference its Tech Stack Standards and Architectural Principles sections before issuing a verdict.
+7. **Constitution Compliance Violation**: GREEN/REFACTOR substitutes, defers, mocks away, or omits a component the constitution mandates (tech stack, transport, architectural boundary, runtime, framework) without an ADR and a `constitution.md` amendment. A test that "passes" by mocking the system under test in a way that bypasses the mandated transport (e.g., asserting on a socket-shaped map while the real Phoenix LiveView WebSocket is unwired) is a Constitution Compliance Violation even when the AC-PLAN-NNN's surface behavior appears satisfied — the implementation is not on the mandated substrate. The constitution is prepended to this prompt at the first tier; cross-reference its Tech Stack Standards and Architectural Principles sections before issuing a verdict.
 
 ### Evaluation Dimensions
 
 
 | Dimension | Weight | Description |
 |---|---|---|
-| Spec Compliance | Critical | Implementation satisfies every FR-NN / AC-NN in `<spec_content>`. No missing behavior; no contradicted behavior. |
+| Spec Compliance | Critical | Implementation satisfies every FR-NN / AC-PLAN-NNN in `<spec_content>`. No missing behavior; no contradicted behavior. |
 | Functional Invariance | Critical | Implementation produces the spec's expected outputs and side effects. Inputs flow through real logic; results are not hardcoded; errors surface per spec. |
-| Test Integrity | Critical | Tests honestly validate AC-NN. No weakened assertions. Tests not modified by GREEN. |
+| Test Integrity | Critical | Tests honestly validate AC-PLAN-NNN. No weakened assertions. Tests not modified by GREEN. |
 | Security & Governance | Critical | No hardcoded secrets, no injection, no audit bypass, no gate skip. |
 | Flow Alignment | High | Diff preserves or extends the user-visible flow(s) named in the task's `**Flow References**`. |
-| No Shortcuts | High | No placeholder / stub / deferred logic in production code paths exercised by the AC-NN. |
+| No Shortcuts | High | No placeholder / stub / deferred logic in production code paths exercised by the AC-PLAN-NNN. |
 | Constitution Compliance | Critical | Implementation runs on the mandated substrate. Every tech-stack, transport, architectural-boundary, and runtime requirement declared in the constitution (prepended to this prompt) is present, wired, and exercised by the diff. A missing component without an ADR + `constitution.md` amendment is a blocking violation — deferring it via a code comment or a moduledoc disclaimer does not satisfy the contract. |
 | Security Checks | Critical | The `security_checks` field on the manifest is **mandatory** — emitted as `pass | fail | warn` based on the existing flat security scan (secrets, injection, deserialization, path traversal, log leakage) plus any `security_profile.body` content from the task. Absence of the field is a Judge rejection, not a soft warning. |
 
@@ -96,11 +96,11 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 
 ### STEP_2: ANALYZE_DIFF_FOR_CORRECTNESS
 
-For each functional requirement (FR-NN) and acceptance criterion (AC-NN) in `<spec_content>`:
+For each functional requirement (FR-NN) and acceptance criterion (AC-PLAN-NNN) in `<spec_content>`:
 
 1. Locate the test that exercises it. Confirm the test is present in the diff (RED authored it) and was not weakened.
 2. Trace the test through the production code. Confirm the implementation actually computes the result — no stubs, no hardcoded returns, no `pass` / `NotImplementedError` placeholders.
-3. Confirm the implementation's output matches the AC-NN's expected behavior.
+3. Confirm the implementation's output matches the AC-PLAN-NNN's expected behavior.
 
 Then run these hard checks:
 
@@ -176,7 +176,7 @@ Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their doc
 **Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST:
 1. **State what went wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
 2. **Tell the next agent what to do instead** — concrete, actionable steps. On `revert_green` start with "The next GREEN attempt must:". On `revert_red` start with "The next RED attempt must:".
-3. **Be instruction, not observation** — the next agent must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-002-03" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
+3. **Be instruction, not observation** — the next agent must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-PLAN-001" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
 4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
 5. **On `next_action: revert_red` or `revert_green`**: do NOT cite `path:line` locations from the commit that rollback will discard. Write a durable rewrite contract (behavior + forbidden assertion + required proof). Those line numbers will not exist for the next agent. The runner also strips leftover `file:line` tokens on these routes.
 
@@ -199,7 +199,7 @@ summary: "One-sentence outcome"
 violations:
   - category: "Spec Non-Compliance"
     file: "path/to/file.ext"
-    detail: "Specific description of the violation, citing FR-NN / AC-NN"
+    detail: "Specific description of the violation, citing FR-NN / AC-PLAN-NNN"
     severity: "CRITICAL" | "HIGH" | "MEDIUM"
     recommendation: "How to resolve the violation (specific files, specific changes)"
 train_feedback: |
@@ -218,6 +218,7 @@ evaluation:
   flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
   constitution_compliance: "PASS" | "FAIL"
+  security_checks: pass | fail | warn
 diff_summary:
   files_changed: 5
   files_modified: 3
@@ -338,7 +339,7 @@ security hole, gate skip, flow break, dishonest test), never a refactor.
 - Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence`. Empty `evidence` is not a pass when those task tokens exist. Do not require unassigned plan tokens in this verdict.
 - Emit COMPLIANCE_VIOLATION only for the eight Categories of Violations above.
 - Refactoring opportunities are NEVER blocking. Surface them as informational notes in `train_feedback` on a passing verdict, or omit them entirely.
-- Violations must be specific and actionable, citing FR-NN / AC-NN where applicable.
+- Violations must be specific and actionable, citing FR-NN / AC-PLAN-NNN where applicable.
 - Each `test_quote` and `impl_quote` must be an exact substring of the named file's hunk in the injected `<diff>` (or HEAD file contents when `next_action` is `skip_refactor` on the already-exists path). Quotes need ≥ 12 non-whitespace characters, or the full added line if that line is shorter. When a quote contains `"`, emit it as a `|` block scalar — do not wrap the snippet in a double-quoted YAML string.
 - `proceed_to_refactor_no_diff` requires a dirty-diff `test_quote` and omits `impl_quote`.
 - "Implementation is correct + tests pass + spec satisfied + matching evidence + no security/governance/scope/flow issues" → COMPLIANCE_PASS.

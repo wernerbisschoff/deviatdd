@@ -3483,6 +3483,8 @@ _TDD_EVIDENCE_GATE_ROUTES = frozenset(
         "proceed_to_refactor_no_diff",
     }
 )
+_MAX_JUDGE_MANIFEST_ATTEMPTS = 3
+_EVIDENCE_SCHEMA_ERROR_RE = re.compile(r"(?i)(^|\.)evidence(\.|:)|EvidenceItem")
 
 
 def _untracked_file_paths(root: Path, status_path: str) -> list[str]:
@@ -3624,6 +3626,27 @@ def _attach_judge_runner_feedback(manifest: HandoverManifest, feedback: str) -> 
     manifest.rationale = feedback
 
 
+def _judge_manifest_schema_errors(manifest: HandoverManifest) -> list[str]:
+    """Return evidence-schema / parse errors that make a JUDGE handover invalid.
+
+    A recovered ``HandoverManifest`` with string evidence items has
+    ``parse_errors`` like ``evidence.0: Input should be a valid dictionary
+    or instance of EvidenceItem`` and emptied ``evidence``. That is a JUDGE
+    execution failure, not a compliance rejection of GREEN (GH-167).
+    Out-of-enum ``next_action`` / ``failure_kind`` recovery (GH-52 / GH-55)
+    is not an evidence-schema failure and is left to ``_coerce_judge_action``.
+    """
+    return [
+        err for err in manifest.parse_errors if _EVIDENCE_SCHEMA_ERROR_RE.search(err)
+    ]
+
+
+def _raise_judge_manifest_invalid(tid: str, errors: Sequence[str]) -> None:
+    """Abort JUDGE without applying verdict side effects. GREEN stays."""
+    detail = "; ".join(errors) or "malformed JUDGE handover"
+    raise PhaseFailedError(f"JUDGE_MANIFEST_INVALID for {tid}: {detail}")
+
+
 def _rewrite_unmatched_tdd_pass(
     *,
     root: Path,
@@ -3749,19 +3772,47 @@ def _run_judge_phase(
         )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "JUDGE")
     judge_model = resolve_model_for_phase("JUDGE", root, backend=backend)
-    manifest, _ = _invoke_agent(
-        prompt,
-        c,
-        backend_name=backend,
-        task_id=tid,
-        phase="JUDGE",
-        output_callback=agent_output_callback,
-        model=judge_model,
-    )
-    if manifest is None:
-        raise PhaseFailedError(
-            f"JUDGE phase agent error for {tid}: agent returned no manifest"
+    manifest: HandoverManifest | None = None
+    schema_errors: list[str] = []
+    for attempt in range(1, _MAX_JUDGE_MANIFEST_ATTEMPTS + 1):
+        manifest, _ = _invoke_agent(
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="JUDGE",
+            output_callback=agent_output_callback,
+            model=judge_model,
         )
+        if manifest is None:
+            raise PhaseFailedError(
+                f"JUDGE phase agent error for {tid}: agent returned no manifest"
+            )
+        schema_errors = _judge_manifest_schema_errors(manifest)
+        if not schema_errors:
+            break
+        _log_run(
+            "JUDGE_MANIFEST_INVALID",
+            task_id=tid,
+            attempt=attempt,
+            max_attempts=_MAX_JUDGE_MANIFEST_ATTEMPTS,
+            parse_errors=schema_errors,
+            verdict=getattr(manifest, "verdict", ""),
+            next_action=getattr(manifest, "next_action", "") or "",
+        )
+        if attempt < _MAX_JUDGE_MANIFEST_ATTEMPTS:
+            c.print(
+                f"  [yellow]JUDGE_MANIFEST_INVALID[/] {tid} "
+                f"(attempt {attempt}/{_MAX_JUDGE_MANIFEST_ATTEMPTS}): "
+                "retrying JUDGE on the same GREEN tree"
+            )
+            continue
+        c.print(
+            f"  [red]JUDGE_MANIFEST_INVALID[/] {tid}: exhausted "
+            f"{_MAX_JUDGE_MANIFEST_ATTEMPTS} JUDGE attempts; GREEN preserved"
+        )
+        _raise_judge_manifest_invalid(tid, schema_errors)
+    assert manifest is not None
     return _apply_judge_verdict(
         task,
         ledger_path,
@@ -3848,11 +3899,30 @@ def _apply_judge_verdict(
     instead of ``continue_refactor``. Agent-declared ``continue_refactor``
     still enters REFACTOR.
 
+    Evidence-schema / parse failures (``parse_errors`` on ``evidence``,
+    string evidence items, missing required keys) raise
+    ``JUDGE_MANIFEST_INVALID`` before any revert or Judge Feedback write
+    (GH-167). GREEN stays. Auto ``_run_judge_phase`` retries JUDGE first.
+
     ``assume_yes`` defaults True so auto ``micro run`` / ``_run_judge_phase``
     revert immediately. Manual ``judge post`` passes False unless the
     operator supplied ``--yes`` / ``--revert``.
     """
     tid = task.get("id", "?")
+    schema_errors = _judge_manifest_schema_errors(manifest)
+    if schema_errors:
+        _log_run(
+            "JUDGE_MANIFEST_INVALID",
+            task_id=tid,
+            parse_errors=schema_errors,
+            verdict=getattr(manifest, "verdict", ""),
+            next_action=getattr(manifest, "next_action", "") or "",
+        )
+        c.print(
+            f"  [red]JUDGE_MANIFEST_INVALID[/] {tid}: malformed JUDGE "
+            "handover; GREEN preserved"
+        )
+        _raise_judge_manifest_invalid(tid, schema_errors)
     root = Path.cwd()
     suite_still_red = _is_green_test_failure(session)
     suite_test_dump = session.train_feedback if suite_still_red else ""

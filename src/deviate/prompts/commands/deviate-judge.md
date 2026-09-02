@@ -34,12 +34,53 @@ for the JUDGE instructions.
 ### Rich Handover Manifest
 
 Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted.
+```. All string values are double-quoted. `evidence` is a list of objects
+with `ac: "AC-PLAN-NNN"` (plan-owned Gherkin — not `AO-*`, not bare
+`AC-NN`) plus `test_path` / `test_quote` / `impl_path` / `impl_quote`.
+Do not emit string evidence items.
 
 ```yaml
 phase: "JUDGE"
 status: "PASS"
 task_id: "{TASK_ID}"
+next_phase: "IDLE"
+next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
+verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
+evidence:
+  - ac: "AC-PLAN-001"
+    test_path: "tests/example.py"
+    test_quote: "assert increment(2) == 3"
+    impl_path: "src/example.py"
+    impl_quote: "return n + 1"
+summary: "One-sentence outcome"
+violations:
+  - category: "Spec Non-Compliance"
+    file: "path/to/file.ext"
+    detail: "Specific description of the violation, citing FR-NN / AC-PLAN-NNN"
+    severity: "CRITICAL" | "HIGH" | "MEDIUM"
+    recommendation: "How to resolve the violation"
+train_feedback: |
+  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next agent.
+  revert_green → "The next GREEN attempt must:" (discard GREEN, keep RED).
+  revert_red → "The next RED attempt must:" (discard RED+GREEN).
+  NEVER "REFACTOR NOTE:" or operator observations here — those go in summary.
+
+  COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
+  observations for the REFACTOR phase.
+evaluation:
+  spec_compliance: "PASS" | "FAIL"
+  functional_invariance: "PASS" | "FAIL"
+  test_integrity: "PASS" | "FAIL"
+  security_governance: "PASS" | "FAIL"
+  flow_alignment: "PASS" | "FAIL" | "SKIP"
+  no_shortcuts: "PASS" | "FAIL"
+  constitution_compliance: "PASS" | "FAIL"
+  security_checks: pass | fail | warn
+diff_summary:
+  files_changed: 0
+  files_modified: 0
+  files_created: 0
+  files_deleted: 0
 ```
 
 <context>
