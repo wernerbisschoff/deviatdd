@@ -43,7 +43,7 @@ from deviate.core.judge_evidence import (
     resolve_task_ac_tokens,
 )
 from deviate.core.issues import resolve_issue_artifact_path
-from deviate.core.tasks_ledger import resolve_execution_mode
+from deviate.core.tasks_ledger import parse_test_strategy, resolve_execution_mode
 from deviate.core.profile import canonicalize_profile, resolve_profile
 from deviate.core.run_logger import (
     RunLogger,
@@ -957,7 +957,8 @@ def _find_all_pending_tasks(
                 continue
             mode = "TDD"
             task_type: str | None = None
-            for j in range(i + 1, min(i + 10, len(content_lines))):
+            test_strategy: str | None = None
+            for j in range(i + 1, min(i + 12, len(content_lines))):
                 type_m = _TYPE_LINE_RE.match(content_lines[j])
                 if type_m:
                     task_type = type_m.group(1)
@@ -965,17 +966,24 @@ def _find_all_pending_tasks(
                 mode_m = _MODE_LINE_RE.match(content_lines[j])
                 if mode_m:
                     mode = mode_m.group(1)
+                    continue
+                strategy_m = _TEST_STRATEGY_LINE_RE.match(content_lines[j])
+                if strategy_m:
+                    test_strategy = parse_test_strategy(strategy_m.group(1))
             mode = resolve_execution_mode(task_type, mode)
             _log(f"    → no ledger entry, mode={mode}")
+            pending: dict[str, str] = {
+                "id": tid,
+                "issue_id": md_issue_id,
+                "description": m.group(3).strip(),
+                "status": "PENDING",
+                "execution_mode": mode,
+            }
+            if test_strategy:
+                pending["test_strategy"] = test_strategy
             results.append(
                 (
-                    {
-                        "id": tid,
-                        "issue_id": md_issue_id,
-                        "description": m.group(3).strip(),
-                        "status": "PENDING",
-                        "execution_mode": mode,
-                    },
+                    pending,
                     fallback,
                 )
             )
@@ -1337,6 +1345,7 @@ def _append_status_transition(
         description=task_data.get("description", ""),
         status=new_status,
         execution_mode=task_data.get("execution_mode", "TDD"),
+        test_strategy=parse_test_strategy(task_data.get("test_strategy")),
         evidence=bundle,
     )
     append_task_transition(record, ledger_path)
@@ -1486,7 +1495,8 @@ def _build_auto_prompt(
             prd_content = prd_path.read_text(encoding="utf-8")
 
     task_content = _this_task_prompt_card(root, task, phase=phase)
-    test_command = _resolve_verification_command(root, task)
+    layer = _layer_contract_fields(root, task)
+    test_command = layer["test_command"]
     lint_command = _resolve_lint_command(root)
     verification_command = test_command
     verification_binary = test_command
@@ -1502,10 +1512,12 @@ def _build_auto_prompt(
         "issue_id": issue_id,
         "feature_slug": feature_slug,
         "test_command": test_command,
+        "test_strategy": layer["test_strategy"],
+        "test_write_dir": layer["test_write_dir"],
         "lint_command": lint_command,
         "verification_command": verification_command,
         "verification_binary": verification_binary,
-        "doctor_preflight": _doctor_preflight_prompt(root),
+        "doctor_preflight": _doctor_preflight_prompt(root, task),
         "test_command_rule": _test_command_rule(test_command),
         "next_phase": "",
         "train_feedback": _train_feedback_placeholder(phase, train_feedback),
@@ -3497,6 +3509,7 @@ def _append_judge_revert_jsonl(
             description=description,
             status=landing,
             execution_mode=task.get("execution_mode", "TDD"),
+            test_strategy=parse_test_strategy(task.get("test_strategy")),
             judge_action=judge_action,  # type: ignore[arg-type]
             judge_feedback=feedback,
             head_sha=_rollback_index_field(getattr(rollback, "head_sha", None)),
@@ -5748,6 +5761,14 @@ class EnvNotReadyError(PhaseFailedError):
     """
 
 
+class VerificationUnresolvedError(PhaseFailedError):
+    """Task Test Strategy cannot resolve to an existing suite.
+
+    An ``integration``- or ``e2e``-stamped task with no matching rung must
+    fail loud. Do not silently fall back to ``mise test`` or the full tree.
+    """
+
+
 class ReviewRequiresTtyError(PhaseFailedError):
     """``--review`` cannot proceed without an interactive TTY.
 
@@ -6786,12 +6807,12 @@ def red_pre(
     # slash-command bodies do no placeholder substitution.
     contract = {
         "task_id": task_data.get("id", ""),
-        "test_command": _resolve_verification_command(root, task_data),
+        **_pre_layer_contract(root, task_data),
         "lint_command": "mise run lint",
         "spec_dir": spec_dir,
         "task_entry": _task_card_text(root, task_data),
     }
-    doctor = _attach_mise_pre(root, contract)
+    doctor = _attach_mise_pre(root, contract, task_data)
     print(json.dumps(contract, ensure_ascii=False))
     _fail_pre_if_doctor_failed(doctor)
     raise typer.Exit(code=0)
@@ -6874,6 +6895,16 @@ _MISE_ALLOWLISTED_TASKS = (
 _UNIT_KIND_RE = re.compile(r"\bunit\b", re.IGNORECASE)
 _INTEG_KIND_RE = re.compile(r"\binteg(?:ration)?\b", re.IGNORECASE)
 _E2E_KIND_RE = re.compile(r"\be2e\b|\bend-to-end\b|\bend to end\b", re.IGNORECASE)
+_TEST_STRATEGY_LINE_RE = re.compile(
+    r"^\s*-?\s+\*{0,2}Test[ _-]Strategy\*{0,2}\s*:?\s*`?(\S+)`?",
+    re.MULTILINE | re.IGNORECASE,
+)
+_CONVENTIONAL_SUITE_DIRS: dict[str, tuple[str, ...]] = {
+    "unit": ("tests/unit",),
+    "integ": ("tests/integration", "tests/integ"),
+    "e2e": ("tests/e2e",),
+}
+_LADDER_JOIN = " && "
 _PARTIAL_FLAG_TOKENS = frozenset({"-k", "--keyword"})
 _SUITE_ROOT_TOKENS = frozenset({"tests", "tests/", "test", "test/", ".", "./..."})
 _SUITE_EXEC_TOKENS = frozenset(
@@ -6962,12 +6993,36 @@ def _is_partial_verification(command: str) -> bool:
     return False
 
 
+def _extract_test_strategy(root: Path, task: dict | None) -> str | None:
+    """Return ``unit`` | ``integration`` | ``e2e`` from the task or card."""
+    if not task:
+        return None
+    parsed = parse_test_strategy(task.get("test_strategy"))
+    if parsed:
+        return parsed
+    card = _task_card_text(root, task)
+    match = _TEST_STRATEGY_LINE_RE.search(card)
+    if match:
+        return parse_test_strategy(match.group(1))
+    return None
+
+
 def _classify_suite_kind(root: Path, task: dict | None, declared: str) -> str | None:
     """Return ``unit``, ``integ``, ``e2e``, ``ambiguous``, or ``None``.
 
-    ``e2e`` only when the task (description, card, or declared verification)
-    explicitly says e2e. Never the default.
+    Test Strategy on the card (and ``execution_mode: E2E``) wins. Keyword
+    fallback stays for unstamped historical cards. ``e2e`` is never the
+    default.
     """
+    strategy = _extract_test_strategy(root, task)
+    if strategy == "unit":
+        return "unit"
+    if strategy == "integration":
+        return "integ"
+    if strategy == "e2e":
+        return "e2e"
+    if task and str(task.get("execution_mode") or "").strip().upper() == "E2E":
+        return "e2e"
     task_text = ""
     if task:
         task_text = (
@@ -6988,55 +7043,62 @@ def _classify_suite_kind(root: Path, task: dict | None, declared: str) -> str | 
     return None
 
 
-def _usable_constitution_command(root: Path) -> str:
-    command = _constitution_test_command(root)
-    if command in {
-        "true",
-        "echo 'No test framework'",
-        'echo "No test framework"',
-    }:
-        return ""
-    return command
+def _conventional_runner(root: Path) -> str:
+    manifests = _manifest_test_commands(root)
+    if manifests:
+        return manifests[0][0]
+    if _find_test_files(root):
+        return "pytest"
+    return "pytest"
 
 
-def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
-    """Single verification-command resolver for pre, prompt, and runner.
+def _conventional_suite_command(root: Path, kind: str) -> str | None:
+    runner = _conventional_runner(root)
+    for rel in _CONVENTIONAL_SUITE_DIRS.get(kind, ()):
+        if (root / rel).is_dir():
+            return f"{runner} {rel}"
+    return None
 
-    Partial (file / ``-k`` / node id) + mise → ``mise exec -- <command>``.
-    Full suite → matching allowlisted named task (``mise unit`` / ``mise
-    integ`` / ``mise test``). ``e2e`` only when the task says e2e.
-    No mise → declared command / existing fallback unchanged.
-    """
-    declared = _task_verification_command(root, task)
+
+def _suite_rung_command(root: Path, kind: str) -> str | None:
+    """Return the command for one ladder rung, or ``None`` if it is absent."""
     defined = _mise_defined_tasks(root)
-    mise = _mise_present(root)
-
-    if declared and _is_partial_verification(declared):
-        if mise:
-            return f"mise exec -- {declared}"
-        return declared
-
-    if mise:
-        kind = _classify_suite_kind(root, task, declared)
-        if kind == "e2e" and "e2e" in defined:
-            return "mise e2e"
+    if _mise_present(root):
         if kind == "unit" and "unit" in defined:
             return "mise unit"
         if kind == "integ":
-            if "integ" in defined:
-                return "mise integ"
             if "integration" in defined:
                 return "mise integration"
-        if kind == "ambiguous":
-            if "test" in defined:
-                return "mise test"
-            if "unit" in defined:
-                return "mise unit"
+            if "integ" in defined:
+                return "mise integ"
+        if kind == "e2e" and "e2e" in defined:
+            return "mise e2e"
+        return None
+    return _conventional_suite_command(root, kind)
+
+
+def existing_verification_suites(root: Path) -> list[str]:
+    """Product-named rungs that exist (``unit``, ``integration``, ``e2e``)."""
+    found: list[str] = []
+    if _suite_rung_command(root, "unit"):
+        found.append("unit")
+    if _suite_rung_command(root, "integ"):
+        found.append("integration")
+    if _suite_rung_command(root, "e2e"):
+        found.append("e2e")
+    return found
+
+
+def _legacy_full_suite_command(root: Path, declared: str) -> str:
+    """Unstamped / ambiguous fallback — never used for a stamped unit task."""
+    defined = _mise_defined_tasks(root)
+    if _mise_present(root):
         if "test" in defined:
             return "mise test"
+        if "unit" in defined:
+            return "mise unit"
         if declared:
             return f"mise exec -- {declared}"
-
     if declared:
         return declared
     constitution = _usable_constitution_command(root)
@@ -7050,8 +7112,189 @@ def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
     return ""
 
 
-def _doctor_preflight_prompt(root: Path) -> str:
+def _scoped_declared_command(root: Path, declared: str) -> str:
+    if _mise_present(root):
+        return f"mise exec -- {declared}"
+    return declared
+
+
+def _resolve_verification_rungs(root: Path, task: dict | None = None) -> list[str]:
+    """Ordered verification commands for this task's Test Strategy ladder."""
+    declared = _task_verification_command(root, task)
+    if declared and _is_partial_verification(declared):
+        return [_scoped_declared_command(root, declared)]
+
+    kind = _classify_suite_kind(root, task, declared)
+
+    if kind == "unit":
+        unit = _suite_rung_command(root, "unit")
+        if unit:
+            return [unit]
+        if declared and not _is_full_tree_verification(declared):
+            return [_scoped_declared_command(root, declared)]
+        conventional = _conventional_suite_command(root, "unit")
+        if conventional:
+            return [conventional]
+        return []
+
+    if kind == "integ":
+        integ = _suite_rung_command(root, "integ")
+        if not integ:
+            raise VerificationUnresolvedError(
+                "VERIFICATION_UNRESOLVED: integration-stamped task has no "
+                "integ/integration suite — will not fall back to mise test"
+            )
+        rungs: list[str] = []
+        unit = _suite_rung_command(root, "unit")
+        if unit:
+            rungs.append(unit)
+        rungs.append(integ)
+        return rungs
+
+    if kind == "e2e":
+        e2e = _suite_rung_command(root, "e2e")
+        if not e2e:
+            raise VerificationUnresolvedError(
+                "VERIFICATION_UNRESOLVED: e2e-stamped task has no e2e suite — "
+                "will not invent e2e or fall back to mise test"
+            )
+        rungs = []
+        for cheaper in ("unit", "integ"):
+            cmd = _suite_rung_command(root, cheaper)
+            if cmd:
+                rungs.append(cmd)
+        rungs.append(e2e)
+        return rungs
+
+    if kind == "ambiguous":
+        defined = _mise_defined_tasks(root)
+        if _mise_present(root):
+            if "test" in defined:
+                return ["mise test"]
+            if "unit" in defined:
+                return ["mise unit"]
+        fallback = _legacy_full_suite_command(root, declared)
+        return [fallback] if fallback else []
+
+    fallback = _legacy_full_suite_command(root, declared)
+    return [fallback] if fallback else []
+
+
+def _is_full_tree_verification(command: str) -> bool:
+    """True for an unscoped whole-tree collect (``pytest tests/``, ``mise test``)."""
+    if not command.strip():
+        return False
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if tokens[:2] == ["mise", "test"] or tokens[:3] == ["mise", "run", "test"]:
+        return True
+    if _is_partial_verification(command):
+        return False
+    return any(token in _SUITE_ROOT_TOKENS for token in tokens)
+
+
+def _usable_constitution_command(root: Path) -> str:
+    command = _constitution_test_command(root)
+    if command in {
+        "true",
+        "echo 'No test framework'",
+        'echo "No test framework"',
+    }:
+        return ""
+    return command
+
+
+def _resolve_test_write_dir(root: Path, strategy: str | None) -> str:
+    """Init-convention directory for this Test Strategy layer."""
+    from deviate.cli.init import (
+        _detect_project_type,
+        _existing_e2e_dir,
+        _integ_stub_path,
+        _unit_stub_path,
+    )
+
+    project_type = _detect_project_type(root)
+    if strategy == "unit":
+        return _unit_stub_path(project_type).as_posix()
+    if strategy == "integration":
+        return _integ_stub_path(project_type, root).as_posix()
+    if strategy == "e2e":
+        existing = _existing_e2e_dir(root)
+        return (existing or Path("tests/e2e")).as_posix()
+    return ""
+
+
+def _product_strategy_name(kind: str | None) -> str:
+    if kind == "integ":
+        return "integration"
+    if kind in {"unit", "e2e"}:
+        return kind
+    return ""
+
+
+def _resolve_layer_command(root: Path, task: dict | None = None) -> str:
+    """This task's own rung — what pre / ``{test_command}`` inject.
+
+    An integration RED runs ``mise integration`` (or ``mise integ`` if that
+    is the only defined name). The runner may still execute cheaper rungs
+    after the agent via :func:`_resolve_verification_rungs`.
+    """
+    rungs = _resolve_verification_rungs(root, task)
+    if not rungs:
+        return ""
+    declared = _task_verification_command(root, task)
+    kind = _classify_suite_kind(root, task, declared)
+    if kind in {"unit", "integ", "e2e"}:
+        layer = _suite_rung_command(root, kind)
+        if layer:
+            return layer
+        if declared and _is_partial_verification(declared):
+            return rungs[0]
+        return rungs[-1]
+    return rungs[0] if len(rungs) == 1 else _LADDER_JOIN.join(rungs)
+
+
+def _layer_contract_fields(root: Path, task: dict | None) -> dict[str, str]:
+    declared = _task_verification_command(root, task) if task else ""
+    strategy = _extract_test_strategy(root, task) or _product_strategy_name(
+        _classify_suite_kind(root, task, declared)
+    )
+    return {
+        "test_strategy": strategy,
+        "test_write_dir": _resolve_test_write_dir(root, strategy),
+        "test_command": _resolve_layer_command(root, task),
+    }
+
+
+def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
+    """Layer command for pre JSON and ``{test_command}`` injection.
+
+    Stamped tasks get that layer's named mise task (``mise unit`` /
+    ``mise integration`` / ``mise e2e``). The runner still walks cheaper
+    existing rungs via :func:`_resolve_verification_rungs`.
+    """
+    return _resolve_layer_command(root, task)
+
+
+def _doctor_required_for_task(root: Path, task: dict | None) -> bool:
+    """Doctor is preflight only for rungs that need the live environment.
+
+    Unit-stamped tasks must still run with the DB down under ``mise unit``.
+    Unstamped full-suite fallback keeps doctor when defined.
+    """
     if "doctor" not in _mise_defined_tasks(root):
+        return False
+    declared = _task_verification_command(root, task) if task else ""
+    kind = _classify_suite_kind(root, task, declared)
+    if kind == "unit":
+        return False
+    return True
+
+
+def _doctor_preflight_prompt(root: Path, task: dict | None = None) -> str:
+    if not _doctor_required_for_task(root, task):
         return ""
     return (
         "Preflight the execution environment (deps, ports, DB). If this "
@@ -7071,8 +7314,8 @@ def _test_command_rule(test_command: str) -> str:
     )
 
 
-def _maybe_run_doctor(root: Path) -> dict[str, object] | None:
-    if "doctor" not in _mise_defined_tasks(root):
+def _maybe_run_doctor(root: Path, task: dict | None = None) -> dict[str, object] | None:
+    if not _doctor_required_for_task(root, task):
         return None
     proc = _execute_test_command("mise doctor", root)
     result: dict[str, object] = {
@@ -7092,12 +7335,14 @@ def _require_doctor_ok(result: dict[str, object] | None) -> None:
 
 
 def _attach_mise_pre(
-    root: Path, contract: dict[str, object]
+    root: Path,
+    contract: dict[str, object],
+    task: dict | None = None,
 ) -> dict[str, object] | None:
     if not _mise_present(root):
         return None
     contract["mise_tasks"] = _mise_allowlisted_tasks(root)
-    doctor = _maybe_run_doctor(root)
+    doctor = _maybe_run_doctor(root, task)
     if doctor is not None:
         contract["doctor"] = doctor
     return doctor
@@ -7109,6 +7354,24 @@ def _fail_pre_if_doctor_failed(doctor: dict[str, object] | None) -> None:
             "[red]ENV_NOT_READY[/] mise doctor failed (deps, ports, or DB not ready)"
         )
         raise typer.Exit(code=1)
+
+
+def _pre_test_command(root: Path, task: dict | None) -> str:
+    """Resolve the layer command or fail loud at phase pre."""
+    try:
+        return _resolve_verification_command(root, task)
+    except VerificationUnresolvedError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+
+
+def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
+    """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
+    try:
+        return _layer_contract_fields(root, task)
+    except VerificationUnresolvedError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
 
 
 _IGNORED_TEST_DISCOVERY_DIRS = frozenset(
@@ -7148,10 +7411,8 @@ def _verification_cwd(root: Path, command: str, task: dict | None) -> Path:
 def _test_command_candidates(
     root: Path, task: dict | None = None
 ) -> list[tuple[str, Path]]:
-    resolved = _resolve_verification_command(root, task)
-    if not resolved:
-        return []
-    return [(resolved, _verification_cwd(root, resolved, task))]
+    rungs = _resolve_verification_rungs(root, task)
+    return [(command, _verification_cwd(root, command, task)) for command in rungs]
 
 
 def _resolve_test_timeout_seconds(root: Path) -> int:
@@ -7208,13 +7469,14 @@ def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProces
 
 
 def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedProcess:
-    """Run the same resolved command that pre JSON and the prompt advertise.
+    """Run the verification ladder (cheaper existing rungs, then this layer).
 
-    Doctor preflight (when ``[tasks.doctor]`` exists) runs first. Then
-    :func:`_resolve_verification_command` is executed through
-    :func:`run_safe_command`. No second command, no unknown-task fallback.
+    Pre JSON and ``{test_command}`` inject this layer only. Doctor preflight
+    (when required for this task's rungs) runs first. Then each rung from
+    :func:`_resolve_verification_rungs` is executed through
+    :func:`run_safe_command`. Stop at the first failure.
     """
-    doctor = _maybe_run_doctor(root)
+    doctor = _maybe_run_doctor(root, task)
     _require_doctor_ok(doctor)
     candidates = _test_command_candidates(root, task)
     if not candidates:
@@ -7224,10 +7486,14 @@ def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedP
             "",
             "No test command configured and no test project detected",
         )
-    command, cwd = candidates[0]
-    _log_run("TEST_COMMAND", command=command)
-    console.print(f"  [cyan]TEST_COMMAND[/] {command}")
-    return _execute_test_command(command, cwd)
+    last = subprocess.CompletedProcess(["deviate", "test"], 127, "", "")
+    for command, cwd in candidates:
+        _log_run("TEST_COMMAND", command=command)
+        console.print(f"  [cyan]TEST_COMMAND[/] {command}")
+        last = _execute_test_command(command, cwd)
+        if last.returncode != 0:
+            return last
+    return last
 
 
 def _run_format_cmd(root: Path) -> subprocess.CompletedProcess:
@@ -7554,9 +7820,9 @@ def green_pre(
         "task_entry": task_entry.strip(),
         "test_file": str(test_files[0]) if test_files else "",
         "implementation_targets": [str(f) for f in src_files],
-        "test_command": _resolve_verification_command(root, task_data),
+        **_pre_layer_contract(root, task_data),
     }
-    doctor = _attach_mise_pre(root, contract)
+    doctor = _attach_mise_pre(root, contract, task_data)
     print(json.dumps(contract, ensure_ascii=False))
     _fail_pre_if_doctor_failed(doctor)
     raise typer.Exit(code=0)
@@ -7858,7 +8124,7 @@ def refactor_pre(
         "task_id": task_data.get("id", ""),
         "task_title": task_data.get("description", ""),
         "task_type": _task_type_from_card(card),
-        "test_command": _resolve_verification_command(root, task_data),
+        **_pre_layer_contract(root, task_data),
         "lint_command": _resolve_lint_command(root) or "mise run lint",
         "spec_dir": spec_dir,
         "verification": _task_verification_command(root, task_data),
@@ -7867,7 +8133,7 @@ def refactor_pre(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "files_to_refactor": _resolve_files_to_refactor(root, task_data),
     }
-    doctor = _attach_mise_pre(root, contract)
+    doctor = _attach_mise_pre(root, contract, task_data)
     print(json.dumps(contract, ensure_ascii=False))
     _fail_pre_if_doctor_failed(doctor)
     raise typer.Exit(code=0)

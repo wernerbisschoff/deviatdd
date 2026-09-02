@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from importlib.resources import as_file, files
 from pathlib import Path
 
@@ -420,6 +421,98 @@ class TestSmallestChangeFoldedIntoExistingPrompts:
         assert "Skip every `[OPPORTUNITY]`" in text
         assert "## Constraints" not in text
         assert "## Minimality" not in text
+
+
+class TestLayerStampedPrompts:
+    """One TDD task = one layer. RED writes only that layer."""
+
+    _DUAL_LAYER_PHRASES = (
+        "acceptance and unit tests",
+        "acceptance-and-unit-tests",
+        "suite of both layers",
+        "suite-of-both-layers",
+        "automated acceptance and unit",
+    )
+
+    def test_red_prompt_has_no_dual_layer_suite_language(self):
+        auto = _read_template("red.md")
+        assembled = load_template("red")
+        for label, text in (("auto/red.md", auto), ("assembled red", assembled)):
+            lowered = text.lower()
+            for phrase in self._DUAL_LAYER_PHRASES:
+                assert phrase not in lowered, f"{label}: still has {phrase!r}"
+
+    def test_red_reads_test_strategy_and_forbids_other_layer(self):
+        auto = _read_template("red.md")
+        assert "Layer: {test_strategy}" in auto
+        assert "Write tests only in: {test_write_dir}" in auto
+        assert "Run only: {test_command}" in auto
+        assert "Do not write tests in any other layer directory." in auto
+        assert (
+            "Do not put an integration test in the unit directory. "
+            "Do not put a unit test in the integration directory."
+        ) in auto
+        assert "mise unit" in auto
+        assert "mise integration" in auto
+        assert re.search(r"mise integ(?!ration)", auto) is None
+        assert "pytest tests/" not in auto
+        assert "fall back" in auto.lower()
+
+    def test_green_gets_layer_command_and_must_not_write_tests(self):
+        auto = _read_template("green.md")
+        assert "{test_command}" in auto
+        assert "Layer: {test_strategy}" in auto
+        assert "Run only: {test_command}" in auto
+        assert "NEVER modify test files" in auto or "must not write" in auto.lower()
+        assert re.search(r"mise integ(?!ration)", auto) is None
+
+    def test_red_keeps_transport_and_honeycomb(self):
+        auto = _read_template("red.md")
+        assert "Transport of record" in auto
+        assert "behavioral" in auto
+        assert "as_sql=True" in auto
+
+    def test_tasks_stamps_unit_integration_e2e_not_sociable(self):
+        auto = _read_template("tasks.md")
+        assembled = load_template("tasks")
+        for text in (auto, assembled):
+            assert "unit | integration | e2e" in text
+            assert "Sociable_Unit" not in text
+            assert "Solitary_Unit" not in text
+            assert "Sociable/Integration" not in text
+
+    def test_tasks_template_defaults_to_scoped_unit(self):
+        auto = _read_template("tasks.md")
+        assert "**Test Strategy**: unit" in auto
+        assert "**Verification**: `mise unit`" in auto
+        assert "**Verification**: `pytest tests/`" not in auto
+        assert "mise unit" in auto or "tests/unit" in auto
+
+    def test_tasks_closing_sweep_follows_existing_rungs(self):
+        auto = _read_template("tasks.md")
+        assert "[E2E]" in auto
+        assert "[VERIFY]" in auto
+        assert "never manufacture empty E2E" in auto.lower() or (
+            "never emit empty e2e" in auto.lower()
+        )
+
+    def test_tasks_migration_ac_is_integration(self):
+        auto = _read_template("tasks.md")
+        lowered = auto.lower()
+        assert "migration" in lowered
+        assert "live-db" in lowered or "live db" in lowered
+        assert "integration" in lowered
+
+    def test_assembled_red_and_slash_command_share_auto_core(self, tmp_path: Path):
+        from deviate.core.commands import install_command
+
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-red", target)
+        installed = (target / "deviate-red.md").read_text(encoding="utf-8")
+        auto = _read_template("red.md")
+        assert auto in installed
+        for phrase in self._DUAL_LAYER_PHRASES:
+            assert phrase not in installed.lower()
 
 
 class TestVerificationBatchImmediateRouting:

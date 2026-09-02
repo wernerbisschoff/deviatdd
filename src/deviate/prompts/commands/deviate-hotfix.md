@@ -83,7 +83,7 @@ Every hotfix task MUST contain:
 - Task_ID: T001 (or T001 + T002 if split is necessary)
 - Task_Type: Bugfix
 - Execution_Mode: TDD (always — test-first is critical for hotfixes)
-- Test_Strategy: Sociable_Unit (preferred) or Integration
+- Test_Strategy: unit (default) or integration (live-DB / migration)
 - Verification: Deterministic CLI command to run the specific test
 - Estimated_Time: 15-45 minutes
 - Files_Touched: Exactly 2 files (broken file + test file)
@@ -103,7 +103,7 @@ Render output to tasks.md at workspace root. Follow the format:
 - [ ] [T001] Fix {bug_short_name} in {target_file}
   - [Task_Type]: Bugfix
   - [Execution_Mode]: TDD
-  - [Test_Strategy]: Sociable_Unit
+  - [Test_Strategy]: unit
   - [Verification]: {test_command} -v
   - [Estimated_Time]: 30 minutes
   - [Files_Touched]:

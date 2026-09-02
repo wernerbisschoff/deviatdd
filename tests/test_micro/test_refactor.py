@@ -48,6 +48,8 @@ _REFACTOR_PRE_CONTRACT_KEYS = {
     "task_id",
     "task_title",
     "task_type",
+    "test_strategy",
+    "test_write_dir",
     "test_command",
     "lint_command",
     "spec_dir",

@@ -17,12 +17,12 @@ class TestGenerateJsonlFromMd:
             "- TSK-005-06: Implement tasks.jsonl proposal pattern\n"
             "  - **Type**: Feature_Batch\n"
             "  - **Mode**: TDD\n"
-            "  - **Test Strategy**: Integration\n"
+            "  - **Test Strategy**: integration\n"
             "  - **Rationale**: US-005-SKILLS\n\n"
             "- TSK-005-07: Do something else\n"
             "  - **Type**: Domain_Batch\n"
             "  - **Mode**: IMMEDIATE\n"
-            "  - **Test Strategy**: Sociable_Unit\n"
+            "  - **Test Strategy**: unit\n"
         )
 
         records = generate_jsonl_from_md(tasks_md, issue_id="ISS-002-005")
@@ -33,12 +33,14 @@ class TestGenerateJsonlFromMd:
         assert records[0].description == "Implement tasks.jsonl proposal pattern"
         assert records[0].status == "PENDING"
         assert records[0].execution_mode == "TDD"
+        assert records[0].test_strategy == "integration"
 
         assert records[1].id == "TSK-005-07"
         assert records[1].issue_id == "ISS-002-005"
         assert records[1].description == "Do something else"
         assert records[1].status == "PENDING"
         assert records[1].execution_mode == "IMMEDIATE"
+        assert records[1].test_strategy == "unit"
 
     def test_verification_batch_maps_to_immediate_even_when_mode_is_tdd(
         self, tmp_path: Path
@@ -51,7 +53,7 @@ class TestGenerateJsonlFromMd:
             "- TSK-005-03: Row-validator accept/reject cases\n"
             "  - **Type**: Verification_Batch\n"
             "  - **Mode**: TDD\n"
-            "  - **Test Strategy**: Sociable_Unit\n"
+            "  - **Test Strategy**: unit\n"
             "  - **Green**: No production change.\n"
             "- TSK-005-01: Implement the model field\n"
             "  - **Type**: Feature_Batch\n"
@@ -236,6 +238,37 @@ class TestResolveExecutionMode:
         assert resolve_execution_mode("Bugfix", "TDD") == "TDD"
         assert resolve_execution_mode("Config", "IMMEDIATE") == "IMMEDIATE"
         assert resolve_execution_mode(None, "TDD") == "TDD"
+
+
+class TestParseTestStrategy:
+    def test_enum_accepts_unit_integration_e2e(self):
+        from deviate.core.tasks_ledger import TEST_STRATEGIES, parse_test_strategy
+
+        assert TEST_STRATEGIES == frozenset({"unit", "integration", "e2e"})
+        assert parse_test_strategy("unit") == "unit"
+        assert parse_test_strategy("Integration") == "integration"
+        assert parse_test_strategy("`e2e`") == "e2e"
+
+    def test_sociable_and_solitary_are_not_runner_values(self):
+        from deviate.core.tasks_ledger import parse_test_strategy
+
+        assert parse_test_strategy("Sociable_Unit") is None
+        assert parse_test_strategy("Solitary_Unit") is None
+        assert parse_test_strategy("Integration") == "integration"
+
+    def test_jsonl_persists_card_strategy(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = tmp_path / "tasks.md"
+        tasks_md.write_text(
+            "# Tasks\n\n"
+            "- TSK-001-01: Wallet unit contract\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: e2e\n"
+        )
+        records = generate_jsonl_from_md(tasks_md, issue_id="ISS-001")
+        assert records[0].test_strategy == "e2e"
 
 
 class TestValidateTasksJsonl:

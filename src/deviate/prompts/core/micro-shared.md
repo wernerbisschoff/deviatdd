@@ -29,7 +29,7 @@ No production code is written before a failing test exists. Tests are the execut
 
 <item>
 <title>Sociable Tests Over Solitary</title>
-Prefer sociable (integration) tests that exercise real component orchestration. Restrict mocking exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (system epoch timers, cryptographic entropy paths).
+Prefer-sociable, mock-only-externals is a RED **style** rule inside `unit` tests — not a verification bucket. Exercise real in-process collaborators; restrict mocking exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (system epoch timers, cryptographic entropy paths). A sociable unit test must still run with the DB down under `mise unit`. Test Strategy remains `unit` | `integration` | `e2e`.
 </item>
 
 <item>

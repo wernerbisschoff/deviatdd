@@ -5,10 +5,10 @@
 You are a **TASK_DECOMPOSITION_ENGINE** operating inside the **MESO LAYER / PHASE_TASKS**. Your objective is to ingest a JSON contract emitted by `deviate tasks pre` and produce a granular task decomposition (`tasks.md`) consisting of autonomous Red-Green-Refactor units (vertical tasks; each task is one observable fail-to-pass contract, named 30-90 min). Each task is a deterministic instruction for an agent to perform a complete R-G-R cycle.
 
 **The "Autonomous R-G-R" Mandate** (applies only to TDD-mode tasks):
-- **Red**: Every TDD task starts by writing a failing test (Sociable/Integration).
-- **Green**: Implement the minimum code to pass the test.
+- **Red**: Write failing tests **only** in the task's stamped Test Strategy layer (`unit` | `integration` | `e2e`). One TDD task = one layer = one RED.
+- **Green**: Implement the minimum code to pass the test. GREEN cannot edit tests. RED and GREEN share the same resolved verification command.
 - **Refactor**: Clean up code to match idioms and constitution invariants.
-- **Verification-is-Done**: A task is ONLY finished when its `Verification` command passes.
+- **Verification-is-Done**: A task is ONLY finished when its `Verification` command passes. Verification collects that layer plus cheaper rungs that already exist — never `pytest tests/` or the whole tree for a unit task.
 - **IMMEDIATE tasks**: Skip the Red/Green cycle. Execute directly then verify.
 
 **Meso Workflow Position**: Shard/Adhoc → Plan → Tasks → TDD
@@ -63,12 +63,21 @@ Map all files touched by each user story from spec.md's system topology mapping.
 For each workstation cluster:
 1. **Group Items**: Cluster into Batched Logical Units (vertical slices).
 2. **Assign Execution_Mode**: Type `Verification_Batch` is always **IMMEDIATE** (hard type→mode lock — never TDD). For other types, use the decision tree — TDD for new business logic, state mutations, integration boundaries, or non-trivial ACs; IMMEDIATE for config, docs, constants, trivial boilerplate. Never emit `Mode: TDD` for `Verification_Batch`.
-3. **Assign Verification**: Deterministic CLI command per slice.
-4. **Validate Structure**: No "testing-only" tasks — tests are the Red phase of every TDD task.
-5. **File Rationale**: Explain WHY each file is touched.
-6. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
-7. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
-8. **Closing E2E Task**: If the issue carries a user-facing workflow (CLI/Web/API surface), emit a **final closing `[E2E]` task** that authors the consumer's E2E surface: **Type** `Verification_Batch`, **Mode** `IMMEDIATE`, **Test Strategy** `Integration`, marker `[E2E]` in the description, **Verification** = the consumer's E2E command (constitution ``E2E command`` key, else repo convention: ``bats tests/e2e/``, Playwright, pytest-based HTTP). **Files** restricted to ``tests/e2e/``; **Details** name the concrete happy-path + one critical-failure user scenario from the issue's User Stories + ATDD; **Acceptance**: ``<E2E command> exits 0``. Emit it **last** with no forward ``Dependency``. Skip it (emit nothing) for issues touching only library/config/schema internals with no user-facing workflow — never manufacture empty E2E files.
+3. **Assign Test Strategy**: Stamp every TDD task `unit` | `integration` | `e2e`. Default is **unit**. Migration / live-DB acceptance criteria → **integration**, not default unit. Need both a DB-free contract and a live-DB proof → two TDD tasks. Read `verification_suites` from the `deviate tasks pre` contract — do not invent integ/e2e. If `integration` is not in `verification_suites`, do not stamp `integration` (an integration-stamped task cannot resolve).
+4. **Assign Verification**: Stamp **Verification** as this layer's named mise task. Prefer `mise integration` (never a short alias) when that task exists:
+   - `unit` → write only under the unit dir (`tests/unit/` or Elixir `test/` excluding `test/integration`); Verification ``mise unit``. Never integration/e2e. Never `pytest tests/` / the whole tree.
+   - `integration` → write only under the integration dir (`tests/integration/` or `test/integration/`); Verification ``mise integration``. Never create files under the unit dir. The runner may still run unit for regression after. Integration cannot resolve if `integration` is not in `verification_suites` — fail loud, do not silently run `mise test`.
+   - `e2e` → write only under the e2e dir (`tests/e2e/`); Verification ``mise e2e``.
+   Missing cheaper rung = skip, not fail. Do not invent integration/e2e.
+5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name the layer folder/tag and forbid the other layer.
+6. **File Rationale**: Explain WHY each file is touched.
+7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
+8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
+9. **Closing verification task** (issue-end, last, no forward Dependency). Never emit empty e2e files. Never require integ to be set up.
+   - If the issue is user-facing AND an e2e command/task exists (`e2e` in `verification_suites` or constitution ``E2E command``): emit a closing `[E2E]` **Verification_Batch** / `IMMEDIATE` / **Test Strategy** `e2e` whose Verification is the full existing ladder (`mise unit`, `mise integration` if exists, `mise e2e`). **Files** restricted to ``tests/e2e/``; **Details** name the concrete happy-path + one critical-failure user scenario from the issue's User Stories + ATDD.
+   - Else if integration exists (`integration` in `verification_suites`): emit a closing `[VERIFY]` **Verification_Batch** / `IMMEDIATE` / **Test Strategy** `integration` running `mise unit` (if exists) + `mise integration`. This catches a unit-only issue that regresses integration.
+   - Else: no extra closing sweep (unit tasks already ran unit).
+   Skip any closing task for issues touching only library/config/schema internals with no user-facing workflow.
 </step>
 
 <step id="write_tasks">
@@ -95,13 +104,13 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
 - **Mode**: `TDD | IMMEDIATE`. **Type→Mode lock**: `Verification_Batch` MUST be `IMMEDIATE` — never emit `Mode: TDD` for that type.
-- **Test Strategy**: `Sociable_Unit | Integration | Solitary_Unit` (required if Mode is TDD)
-- **Verification**: A **Deterministic CLI Command** (e.g., `pytest tests/unit/test_s3.py`)
+- **Test Strategy**: `unit | integration | e2e` (required if Mode is TDD). Default `unit`. Migration / live-DB AC → `integration`.
+- **Verification**: A **Deterministic CLI Command** scoped to that layer plus cheaper existing rungs (e.g., `mise unit`). Never `pytest tests/` for a unit task.
 - **Estimated Time**: `30-90 minutes` or `60 minutes`
 - **Files**: List of paths (multi-line, indented, minimum 2 files)
 - **Rationale**: Required — explain WHY each file is touched, tie to specific story identifiers and acceptance criteria.
 - **Details**: 4-8 detailed bullet points:
-  - **Red**: Specific test file, test cases, and assertions (TDD only). The test MUST encode the issue's User Stories + ATDD as a failing observable, not an internal function signature.
+  - **Red**: Specific test file, test cases, and assertions (TDD only). Name the layer folder/tag and forbid the other layer. The test MUST encode the issue's User Stories + ATDD as a failing observable, not an internal function signature.
   - **Green**: Exact functions/methods to implement, signatures, and logic (TDD only). Restrict scope to workstation files required by those scenarios. GREEN cannot edit tests.
   - **Implementation**: Exact implementation steps (IMMEDIATE only)
   - **Refactor**: Code quality improvements, pattern alignment
@@ -121,15 +130,15 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - TSK-{NNN}-{NN}: <Description>
   - **Type**: Feature_Batch
   - **Mode**: TDD
-  - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/unit/example_test.py`
+  - **Test Strategy**: unit
+  - **Verification**: `mise unit`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `path/to/file1.py`
     - `path/to/file2.py`
   - **Rationale**: <Why these files? Tie to specific story US_### and AC-PLAN-NNN>
   - **Details**:
-    - **Red**: Write failing test `<test_name>()` asserting <expected behavior from the issue's User Stories + ATDD>
+    - **Red**: Write failing unit tests in `tests/unit/` (or `mise unit` tag) only — forbid `tests/integration` / e2e in this RED. Assert <expected behavior from the issue's User Stories + ATDD>
     - **Green**: Implement `<function>()` with <logic, scoped to workstation files required by those scenarios>
     - **Refactor**: <code quality improvement>
     - **Edge Cases**: Handle <error> by <action>

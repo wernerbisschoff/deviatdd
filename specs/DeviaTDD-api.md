@@ -735,31 +735,45 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Resolves the task context from `tasks.jsonl`, emits JSON contract with
-  `task_id`, `test_command`, `lint_command`, `spec_dir`, and `task_entry` (this task's
+  `task_id`, `test_strategy` (`unit` | `integration` | `e2e`), `test_write_dir` (init-convention
+  directory for that layer), `test_command` (this layer's named mise task only — `mise unit` /
+  `mise integration` / `mise e2e`; never inject `mise integ` when `mise integration` exists),
+  `lint_command`, `spec_dir`, and `task_entry` (this task's
   `tasks.md` card via `_task_card_text`, mirroring `green_pre` — it carries persisted
   `**Judge Feedback**` bullets so the manual RED agent receives correction history that
-  manual mode cannot inject as `<train_feedback>`).
+  manual mode cannot inject as `<train_feedback>`). The runner determines the layer and
+  **explicitly passes** those three fields; the agent must not infer the layer by reading
+  `tasks.md` (card **Test Strategy** is a fallback only when the contract field is missing).
 
 #### `deviate red post [--task-id <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Runs the project's resolved test command (language-agnostic: `mix test`,
   `cargo test`, `npm test`, `go test ./...`, or `pytest` chosen via `_resolve_verification_command`
-  — the same resolver used by `deviate red|green|refactor pre`, `_build_auto_prompt` `{test_command}`,
-  and `_run_test_cmd`. Resolution order: (1) if the declared verification is **partial** (a file,
+  — the layer command injected by `deviate red|green|refactor pre` and `_build_auto_prompt`
+  `{test_command}` / `{test_strategy}` / `{test_write_dir}`. `_run_test_cmd` still walks
+  `_resolve_verification_rungs` (cheaper existing rungs, then this layer). Classify from the
+  task card **Test Strategy** (`unit` | `integration` | `e2e`)
+  and `execution_mode: E2E` first; `Sociable_Unit` / `Solitary_Unit` are not runner values.
+  Resolution order: (1) if the declared verification is **partial** (a file,
   `-k` / `--keyword`, or node id) and the repo has `mise.toml` / `.mise.toml`, wrap it as
   `mise exec -- <declared>` so the command still uses the repo `.venv`; never expand a partial run
-  into `mise test` / `mise unit` / `mise e2e`; (2) if the command is a **full suite**, pick an
-  allowlisted named mise task that actually exists (`doctor` is preflight only): unit markers →
-  `mise unit`, integration markers → `mise integ` or `mise integration` (the name the repo defines),
-  e2e **only** when the task/verification explicitly says e2e → `mise e2e`, otherwise `mise test`
-  when `[tasks.test]` exists; if unit vs integ is ambiguous and both exist, prefer `mise test` else
-  `mise unit` (never default e2e); (3) mise present but no matching named task → `mise exec --
-  <declared>`; (4) no mise → task `verification`, constitution `test_command`, manifest table,
-  Python fallback, unchanged. Pre JSON also lists the allowlisted tasks that exist
+  into `mise test` / `mise unit` / `mise e2e`; (2) **injected layer command** is this task's
+  named mise task only (`mise unit` / `mise integration` / `mise e2e`; prefer `integration`
+  over the `integ` alias). The **runner ladder** (exists = allowlisted
+  mise task, or conventional `tests/unit` / `tests/integration` / `tests/e2e` when no mise) is:
+  `unit` → unit only (never integ/e2e; never fall back to `mise test` / the full tree);
+  `integration` → unit (if it exists) then integration — if integration is not defined the task cannot
+  resolve (`VERIFICATION_UNRESOLVED` at pre, no silent `mise test`);
+  `e2e` → unit (if exists) then integration (if exists) then e2e. Missing cheaper rung = skip, not
+  fail. Do not invent integ/e2e; (3) unstamped / keyword-ambiguous cards keep the previous
+  `mise test` / `mise unit` fallback; (4) no mise → conventional layer paths when those
+  directories exist, else the declared Verification if it is already scoped. Pre JSON also lists
+  the allowlisted tasks that exist
   (`doctor`, `test`, `unit`, `integ`/`integration`, `e2e`) and does not dump unrelated mise tasks.
-  When `[tasks.doctor]` exists, the runner and pre run `mise doctor` before verification (deps,
-  ports, DB up). Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
+  When `[tasks.doctor]` exists, the runner and pre run `mise doctor` only for rungs this task
+  actually runs (integ / e2e / unstamped full suite — not a unit-stamped `mise unit` task).
+  Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
   `failure_kind: mechanical`. Absence of doctor skips preflight. The exact command string is
   logged (`TEST_COMMAND`) and injected into the phase prompt; agents must not invent a bare
   `pytest` / `mix test` when mise was resolved. Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
@@ -804,8 +818,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 #### `deviate green pre [--task <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Resolves task context, emits JSON contract with `test_file` and
-  `implementation_targets` (all `src/**/*.py` files).
+* **Description:** Resolves task context, emits JSON contract with `test_file`,
+  `implementation_targets` (all `src/**/*.py` files), and the same layer contract as
+  `red pre` (`test_strategy`, `test_write_dir`, `test_command` — this layer's named
+  mise task only). GREEN must not write tests.
 
 #### `deviate green post`
 
@@ -835,7 +851,8 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   (the RED+GREEN commits). When that git range is empty or unavailable, it
   falls back to the task `Files:` list minus tests. Test files are never
   included. The contract also carries the documented handover fields:
-  `status`, `task_id`, `task_title`, `task_type`, `test_command`,
+  `status`, `task_id`, `task_title`, `task_type`, `test_strategy`,
+  `test_write_dir`, `test_command`,
   `lint_command`, `spec_dir`, `verification`, `repo_root`, `git_branch`,
   `timestamp`. Auto `_build_auto_prompt("refactor")` injects the same scoped
   list; it does not glob `src/**/*.py`.
@@ -1679,7 +1696,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `/deviate-adhoc` | Condensed Scoper | `specs/adhoc/` | `deviate adhoc pre/post` | 8 steps: complexity gate, codebase scan, PRD append, issue generation with remote-aware `NNN` (`max(origin ledger, current ledger, remote feat/adhoc/<NNN>-*) + 1`; `ISS-ADH-NNN` and `ISS-NNN` are one series; local-only branches do not reserve), ledger registration, commit, Gherkin-leak guard |
 | **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
-| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD; incl. a terminal `[E2E]`/`Verification_Batch` `IMMEDIATE` task that authors `tests/e2e/` user-facing scenarios and runs last when a user-facing workflow exists; other types still pick TDD vs IMMEDIATE), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
+| `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD), stamp every TDD task **Test Strategy** `unit` | `integration` | `e2e` (default `unit`; migration / live-DB AC → `integration`; Verification is that layer plus cheaper existing rungs — never `pytest tests/` for a unit task), emit a closing sweep only when a rung exists (user-facing + e2e → `[E2E]` Verification_Batch with the full existing ladder; else if integ exists → `[VERIFY]` unit-if-exists + integ; else no extra sweep — never empty e2e files, never require integ), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
 | `/deviate-walkthrough` | Four-Look Map | (none — conversation only) | `deviate walkthrough pre/post` | 4 looks: brief + plan AC lines, test hunks, production-hunk→named-check claims, check command. HITL `ask` per look. Must not approve, hide hunks, skip a look, or auto-edit. |
 | `/deviate-review` | Gate 3 PR Reviewer | advisory `.deviate/review/reports/` (never staged) | `deviate review pre/post` (`--apply` opt-in) | Default: comments only (stdout and/or GitHub `COMMENT`). Named-check checklist + test-weakening + this-issue cross-task drift. `brief incomplete` when named checks are missing. No always-on apply; no `REQUEST_CHANGES`; no merge. `--apply` may land CRITICAL-only fixes (security / data loss / broken build / named-check fail with a concrete FIX) and commit only if a CRITICAL fix landed. |
 | `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` *(for `prd`, `deviate html prd --bucket <slug>` targets a specific epic when more than one owns a `prd.md`; `--force` overwrites an existing `.html`)* | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |
