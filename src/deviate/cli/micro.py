@@ -3396,8 +3396,11 @@ def _commit_judge_feedback_and_advance(
         text=True,
         env=_git_env(),
     ).stdout.strip()
-    if judge_action != "revert_red":
-        _maybe_advance_red_sha_past_feedback(session, root, prior_red_sha, fb_head)
+    # TDD revert_red clears ``red_commit_sha`` before this helper, so
+    # ``prior_red_sha`` is empty and the advance is a no-op. EXECUTE
+    # maps both revert actions onto ``pre_execute_sha`` and must still
+    # move the boundary onto the feedback commit.
+    _maybe_advance_red_sha_past_feedback(session, root, prior_red_sha, fb_head)
     session.pending_judge_feedback = None
     session.save(session_path)
     return session
