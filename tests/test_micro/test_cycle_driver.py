@@ -15,6 +15,7 @@ import pytest
 
 from tests.helpers.cycle_driver import (
     _REFACTOR_NOTE,
+    _UNUSED_IMPORT_NOTE,
     CycleTask,
     gh158_steps,
     happy_path_steps,
@@ -22,6 +23,7 @@ from tests.helpers.cycle_driver import (
     run_scripted_cycle,
     seed_cycle_repo,
     skip_refactor_steps,
+    violation_refactor_note_steps,
 )
 
 _TASK_A = CycleTask(
@@ -114,6 +116,44 @@ class TestGh158PassPlusRefactorNote:
             refactor_prompts = result.prompts.get("REFACTOR", [])
             assert refactor_prompts, f"{mode}: REFACTOR agent was not invoked"
             assert _REFACTOR_NOTE in refactor_prompts[0]
+
+
+@pytest.mark.parametrize("mode", ["auto", "manual"])
+class TestViolationRefactorNoteKeepsGreen:
+    """COMPLIANCE_VIOLATION + revert_green + unused-import REFACTOR NOTE
+    must keep GREEN and continue to REFACTOR (not TRAIN 2/3).
+    """
+
+    def test_violation_note_goes_to_refactor_not_reset(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        mode: str,
+    ) -> None:
+        seeded = seed_cycle_repo(tmp_git_repo, tasks=[_TASK_A])
+        result = run_scripted_cycle(
+            seeded,
+            violation_refactor_note_steps(_TASK_A.task_id, ac=_TASK_A.ac),
+            monkeypatch,
+            mode=mode,  # type: ignore[arg-type]
+        )
+        _assert_no_reject(result)
+        assert result.phases == ["RED", "GREEN", "JUDGE", "REFACTOR"], (
+            f"{mode}: unused-import VIOLATION must JUDGE→REFACTOR, not reset; "
+            f"got {result.phases!r}\n{result.output}"
+        )
+        statuses = result.statuses_for(_TASK_A.task_id)
+        assert statuses.count("RED") == 1, (
+            f"{mode}: ledger must not return to RED; got {statuses!r}\n"
+            f"{result.output}"
+        )
+        assert statuses[-1] == "COMPLETED"
+        assert result.session is not None
+        assert result.session.pending_judge_action != "revert_green"
+        assert _UNUSED_IMPORT_NOTE in result.session.train_feedback, (
+            f"{mode}: REFACTOR train_feedback must keep the unused-import "
+            f"note; got {result.session.train_feedback!r}"
+        )
 
 
 @pytest.mark.parametrize("mode", ["auto", "manual"])

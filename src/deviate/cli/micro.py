@@ -3132,6 +3132,18 @@ def _manifest_signals_test_integrity(manifest: HandoverManifest) -> bool:
 
 
 _REFACTOR_NOTE_RE = re.compile(r"(REFACTOR NOTE:.*)", re.DOTALL | re.IGNORECASE)
+_REFACTOR_ONLY_BODY_RE = re.compile(
+    r"(?is)^\s*(?:COMPLIANCE_PASS\b[^\n]*\s*)*REFACTOR NOTE:"
+)
+_RETRY_INSTRUCTION_RE = re.compile(
+    r"the next (?:green|red) attempt must\s*:",
+    re.IGNORECASE,
+)
+_BLOCKING_VIOLATION_RE = re.compile(
+    r"spec non-compliance|no-shortcut|test integrity|security|"
+    r"gate bypass|governance|scope violation|constitution",
+    re.IGNORECASE,
+)
 _REVERT_JUDGE_ACTIONS = frozenset({"revert_red", "revert_green"})
 
 
@@ -3141,28 +3153,68 @@ def _verdict_is_fail(verdict: str) -> bool:
     return "COMPLIANCE_VIOLATION" in token or "COMPLIANCE_FAIL" in token
 
 
+def _manifest_train_feedback(manifest: HandoverManifest) -> str:
+    """Return ``train_feedback`` from the manifest or its extra mapping."""
+    return _coerce_feedback_text(
+        getattr(manifest, "train_feedback", None)
+        or (_manifest_extra(manifest).get("train_feedback", "") if manifest else "")
+    )
+
+
+def _feedback_is_refactor_only(feedback: str) -> bool:
+    """True when *feedback* is a ``REFACTOR NOTE:`` (optional PASS preamble).
+
+    After GREEN's suite is green, this body is advice for REFACTOR — unused
+    imports, warnings, style — not a reject. A ``COMPLIANCE_VIOLATION:`` /
+    ``COMPLIANCE_FAIL:`` prefix or ``The next GREEN/RED attempt must:``
+    instruction is a real fail.
+    """
+    text = _coerce_feedback_text(feedback).strip()
+    if not text:
+        return False
+    upper = text.upper()
+    if upper.startswith("COMPLIANCE_VIOLATION") or upper.startswith("COMPLIANCE_FAIL"):
+        return False
+    if _RETRY_INSTRUCTION_RE.search(text):
+        return False
+    return bool(_REFACTOR_ONLY_BODY_RE.match(text))
+
+
+def _manifest_has_blocking_violations(manifest: HandoverManifest) -> bool:
+    """True when structured ``violations`` name a real compliance category."""
+    for category in _violation_categories(manifest):
+        if _BLOCKING_VIOLATION_RE.search(category):
+            return True
+    return False
+
+
 def _verdict_is_clean_pass(verdict: str, manifest: HandoverManifest) -> bool:
     """True when the payload is a compliance pass without a real fail.
 
     A ``REFACTOR NOTE`` / non-empty ``train_feedback`` is not a reject.
-    Structured Test Integrity (GH-149) keeps the fail path. Agents that
+    Structured Test Integrity (GH-149) keeps the fail path. A
+    ``COMPLIANCE_VIOLATION`` whose only body is a ``REFACTOR NOTE:``
+    (optional ``COMPLIANCE_PASS`` preamble) and which has no structured
+    Test Integrity / blocking-category violation is also a clean pass —
+    unused imports, warnings, and style belong to REFACTOR. Agents that
     put ``COMPLIANCE_PASS:`` only in ``train_feedback`` still count as a
     pass when the verdict field is empty.
     """
-    if _verdict_is_fail(verdict):
-        return False
     if _manifest_signals_test_integrity(manifest):
+        return False
+    if _manifest_has_blocking_violations(manifest):
+        return False
+    feedback = _manifest_train_feedback(manifest)
+    if _feedback_is_refactor_only(feedback):
+        return True
+    if _verdict_is_fail(verdict):
         return False
     token = str(verdict or "").strip().upper()
     if "COMPLIANCE_PASS" in token:
         return True
     if token:
         return False
-    feedback = _coerce_feedback_text(
-        getattr(manifest, "train_feedback", None)
-        or (_manifest_extra(manifest).get("train_feedback", "") if manifest else "")
-    ).strip()
-    return feedback.upper().startswith("COMPLIANCE_PASS")
+    return feedback.strip().upper().startswith("COMPLIANCE_PASS")
 
 
 def _extract_refactor_note(feedback: str) -> str:
@@ -3211,8 +3263,10 @@ def _coerce_judge_action(
     A clean ``COMPLIANCE_PASS`` (no compliance / Test Integrity failure)
     ignores revert ``next_action`` values, including the legacy
     ``revert_to_red`` alias. A ``REFACTOR NOTE`` is advice for REFACTOR,
-    not a reject. The caller defaults omitted pass actions to
-    ``continue_refactor`` (or ``skip_refactor`` when ``--no-refactor``).
+    not a reject — including a mislabeled ``COMPLIANCE_VIOLATION`` +
+    ``revert_green`` whose only body is that note. The caller defaults
+    omitted pass actions to ``continue_refactor`` (or ``skip_refactor``
+    when ``--no-refactor``).
     """
     if failure_kind in {"test_defect", "no_failing_test"} and _verdict_is_fail(verdict):
         return "revert_red"
@@ -4170,11 +4224,16 @@ def _apply_judge_verdict(
         and verdict.upper() == "COMPLIANCE_PASS"
     )
     action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
-    if _verdict_is_clean_pass(verdict, manifest) and action in _REVERT_JUDGE_ACTIONS:
+    if (
+        _verdict_is_clean_pass(verdict, manifest)
+        and action in _REVERT_JUDGE_ACTIONS
+        and session.failure_kind not in {"test_defect", "no_failing_test"}
+    ):
         # Defense in depth: a leftover revert on a clean pass (legacy
         # ``revert_to_red`` / copied enum) is ignored before the
-        # unmatched-PASS rewrite. The evidence gate can still force
-        # ``revert_green`` when citations do not match.
+        # unmatched-PASS rewrite. Do not undo the test_defect /
+        # no_failing_test force-``revert_red``. The evidence gate can
+        # still force ``revert_green`` when citations do not match.
         action = None
     if no_failing_pass and (action is None or action in _TDD_EVIDENCE_GATE_ROUTES):
         # Already-exists route: JUDGE ruled the behavior exists at HEAD and
@@ -4534,7 +4593,9 @@ def _apply_judge_verdict(
         and not suite_still_red
     ):
         # GH-158: omitted / ignored-revert pass defaults to REFACTOR,
-        # or skip when the operator passed ``--no-refactor``.
+        # or skip when the operator passed ``--no-refactor``. A
+        # refactor-only ``COMPLIANCE_VIOLATION`` (unused import / style)
+        # is a clean pass here too once the suite is green.
         action = "skip_refactor" if no_refactor else "continue_refactor"
     pass_feedback, pass_source = _judge_feedback_from_manifest(manifest)
     if not pass_feedback:

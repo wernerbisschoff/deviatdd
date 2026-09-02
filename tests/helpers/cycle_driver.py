@@ -86,6 +86,10 @@ _REFACTOR_NOTE = (
     "REFACTOR NOTE: The root layout is implemented as a function "
     "component rather than a separate template file."
 )
+_UNUSED_IMPORT_NOTE = (
+    "REFACTOR NOTE: unused import of Phoenix.ConnTest; "
+    "assertions use render_component only"
+)
 _STALE_EVIDENCE = [
     {
         "ac": "AC-PLAN-099",
@@ -362,6 +366,40 @@ def gh158_steps(
         CycleStep(
             phase="JUDGE",
             handover=judge_pass_plus_note_yaml(task_id, ac=ac, next_action=next_action),
+        ),
+        CycleStep(phase="REFACTOR", handover=refactor_handover_yaml(task_id)),
+    ]
+
+
+def judge_violation_refactor_note_yaml(
+    task_id: str,
+    *,
+    ac: str,
+) -> str:
+    """Live unused-import shape: VIOLATION + revert_green + REFACTOR NOTE."""
+    return judge_pass_yaml(
+        task_id,
+        ac=ac,
+        next_action="revert_green",
+        train_feedback=f"{_UNUSED_IMPORT_NOTE}\n",
+        verdict="COMPLIANCE_VIOLATION",
+    )
+
+
+def violation_refactor_note_steps(task_id: str, *, ac: str) -> list[CycleStep]:
+    """RED + GREEN + mislabeled VIOLATION note + REFACTOR (GREEN kept)."""
+    return [
+        CycleStep(
+            phase="RED", handover=red_handover_yaml(task_id), files=red_files(task_id)
+        ),
+        CycleStep(
+            phase="GREEN",
+            handover=green_handover_yaml(task_id),
+            files=green_files(task_id),
+        ),
+        CycleStep(
+            phase="JUDGE",
+            handover=judge_violation_refactor_note_yaml(task_id, ac=ac),
         ),
         CycleStep(phase="REFACTOR", handover=refactor_handover_yaml(task_id)),
     ]
