@@ -3817,18 +3817,35 @@ _BINARY_MAGIC_PREFIXES = (
 )
 
 
-def _decode_git_diff_bytes(raw: bytes) -> str:
-    """Decode git stdout without crashing on latin-1 or binary bytes."""
+def _decode_git_diff_bytes(raw: bytes | str) -> str:
+    """Decode git stdout without crashing on latin-1 or binary bytes.
+
+    Tests that patch ``subprocess.run`` still return ``str`` stdout; accept
+    that so mocked JUDGE paths keep working. Real git calls return bytes.
+    """
+    if isinstance(raw, str):
+        return raw
     return raw.decode("utf-8", errors="replace")
 
 
+def _coerce_git_stdout(raw: bytes | str | None) -> bytes:
+    """Normalize subprocess stdout to bytes (mocks may still return ``str``)."""
+    if raw is None:
+        return b""
+    if isinstance(raw, str):
+        return raw.encode("utf-8", errors="replace")
+    return raw
+
+
 def _run_git_stdout_bytes(args: list[str], root: Path) -> bytes:
-    return subprocess.run(
-        args,
-        cwd=root,
-        capture_output=True,
-        env=_git_env(),
-    ).stdout
+    return _coerce_git_stdout(
+        subprocess.run(
+            args,
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        ).stdout
+    )
 
 
 def _bytes_look_binary(data: bytes) -> bool:
