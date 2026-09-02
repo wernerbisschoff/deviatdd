@@ -114,6 +114,20 @@ class AgentTimeoutError(Exception):
 
 
 _STREAMING_STALL_TOKENS = ("STALL_DETECTED", "SMART_STALL_DETECTED")
+# Print-mode CLIs that buffer all stdout until process exit. A stdout-silence
+# stall cannot distinguish working from hung on these transports (GH-166).
+_BUFFERED_PRINT_BACKENDS: frozenset[str] = frozenset({"pi", "omp"})
+
+
+def _is_buffered_print_cli(backend_name: str, cmd: list[str]) -> bool:
+    """Return True when *cmd* is a print-mode CLI that buffers stdout until exit.
+
+    ``pi -p`` and ``omp -p`` emit the full answer only at process exit.
+    RPC (``pi --mode rpc``) and streaming backends are not buffered this way.
+    """
+    if backend_name not in _BUFFERED_PRINT_BACKENDS:
+        return False
+    return "-p" in cmd
 
 
 def _backend_timeout_message(backend_name: str, timeout_secs: int) -> str:
@@ -569,6 +583,11 @@ class AgentBackend:
         # builds) that legitimately emit nothing for >15 min; the interactive
         # 900s TDD budget would kill a healthy run.
         stall_timeout_secs = stall_timeout or STREAM_STALL_TIMEOUT_SECONDS
+        # ``pi -p`` / ``omp -p`` buffer every stdout byte until exit. Watching
+        # stdout silence (or 0 B/s) would kill a healthy GREEN that thinks for
+        # longer than the 900s default. Wall-clock ``timeout_secs`` still
+        # applies. Streaming backends keep the silence stall (GH-166).
+        watch_stdout_silence = not _is_buffered_print_cli(backend_name, cmd)
         try:
             proc.stdin.write(prompt.encode("utf-8"))
             proc.stdin.close()
@@ -586,13 +605,16 @@ class AgentBackend:
 
         # Two-track stall detector (see diagnosis F2 in the README).
         # ``stall_lock`` + ``stall_deadline`` reset on stdout only and trip
-        # after STREAM_STALL_TIMEOUT_SECONDS of stdout silence. Stderr is
-        # diagnostic capture (partial_stderr) and must not refresh the hard
-        # clock or feed ``record_bytes``. The ``byte_samples`` window tracks
-        # stdout emit rate over STREAM_STALL_WINDOW_SECONDS — a stuck agent
-        # that trickles a few stdout bytes per minute resets the line-timer
-        # on every emit but the byte-rate stays well below the floor for a
-        # real working invocation like ``mix precommit`` (~100 B/s).
+        # after STREAM_STALL_TIMEOUT_SECONDS of stdout silence — but only
+        # when the child is a streaming backend. ``pi -p`` / ``omp -p``
+        # buffer stdout until exit, so silence is not a hang (GH-166).
+        # Stderr is diagnostic capture (partial_stderr) and must not refresh
+        # the hard clock or feed ``record_bytes``. The ``byte_samples``
+        # window tracks stdout emit rate over STREAM_STALL_WINDOW_SECONDS
+        # — a stuck streaming agent that trickles a few stdout bytes per
+        # minute resets the line-timer on every emit but the byte-rate
+        # stays well below the floor for a real working invocation like
+        # ``mix precommit`` (~100 B/s).
         stall_lock = threading.Lock()
         invoke_started = time.monotonic()
         wall_deadline = invoke_started + timeout_secs
@@ -705,7 +727,7 @@ class AgentBackend:
             if wall_clock_remaining() <= 0:
                 capture_poll_abort(_backend_timeout_message(backend_name, timeout_secs))
                 break
-            if stall_deadline_remaining() <= 0:
+            if watch_stdout_silence and stall_deadline_remaining() <= 0:
                 capture_poll_abort(
                     f"STALL_DETECTED: no agent output for {stall_timeout_secs}s"
                 )
@@ -715,8 +737,10 @@ class AgentBackend:
             # samples to trust the measurement. ``mix precommit`` emits
             # ~100 B/s; a stuck subprocess emits <10 B/s. Threshold chosen
             # at 50 B/s to leave room for compile output bursts.
+            # Buffered print CLIs never emit mid-run, so 0 B/s is not hung.
             if (
-                time.monotonic() - stall_deadline[0] + stall_timeout_secs
+                watch_stdout_silence
+                and time.monotonic() - stall_deadline[0] + stall_timeout_secs
                 > stall_timeout_secs / 2
                 and byte_rate_below_floor()
             ):

@@ -1146,7 +1146,7 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `MAX_PROMPT_CHARS = 80,000` by `_truncate_prompt`; oversized
   prompts preserve head + tail and are marked with a
   `PROMPT_TRUNCATED` comment so the agent knows the payload was
-  sliced. (2) **Streaming stall watchdog** — the streaming dispatch
+  sliced.   (2) **Streaming stall watchdog** — the streaming dispatch
   path (`_invoke_streaming`) uses stdout as the only liveness
   source. Stderr is diagnostic capture and does not reset the
   hard stall clock. Periodic stdout keeps the watchdog warm.
@@ -1154,7 +1154,12 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   GREEN, RED, JUDGE, and REFACTOR use that default. EXECUTE
   passes `stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS` (3600).
   A stdout-silent stall raises `AgentTimeoutError` with
-  `STALL_DETECTED`. The same poll loop also honors
+  `STALL_DETECTED` on streaming backends (claude, opencode,
+  droid, codex). Print-mode `pi -p` / `omp -p` buffer all
+  stdout until process exit, so the silence stall and the
+  0 B/s smart-stall gate do not fire while that child is
+  running; the wall-clock `timeout_secs` remains the deadline
+  (GH-166). The same poll loop also honors
   `timeout_secs` from the single consolidated `DeviateConfig.timeout_seconds`
   (default 1800s), resolved by `resolve_agent_deadline`
   (`src/deviate/state/config.py`) — the same value governing test-command
