@@ -308,7 +308,18 @@ class TestJudgePost:
         assert not (tmp_git_repo / "impl.py").exists()
         head = self._rev_parse(tmp_git_repo)
         pre_red = self._rev_parse(tmp_git_repo, f"{red_sha}^")
-        assert head == pre_red
+        head_parent = self._rev_parse(tmp_git_repo, "HEAD^")
+        assert head != pre_red
+        assert head_parent == pre_red
+        subject = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert "add judge feedback" in subject, subject
         session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
         assert session.red_commit_sha == ""
         assert session.current_phase == "RED"
@@ -2546,7 +2557,7 @@ class TestExecuteRollbackUntrackedCleanup:
             attempt=0,
         )
 
-        assert red_sha_returned == red_sha
+        assert red_sha_returned.reset_to == red_sha
 
         # Untracked artifact must be gone
         assert not scratch.exists(), (

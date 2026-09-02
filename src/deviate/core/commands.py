@@ -313,6 +313,13 @@ def compose_command_body(
     composed = f"{frontmatter}\n\n{body}"
     if not use_libref:
         composed = redact_libref(composed)
+    if constitution_path is not None:
+        from deviate.prompts.assembly import AGENT_REASONS_BLOCK
+        from deviate.state.config import resolve_agent_reasons
+
+        root = constitution_path.parent.parent
+        if resolve_agent_reasons(root):
+            composed = composed.rstrip() + "\n\n" + AGENT_REASONS_BLOCK
     return composed
 
 

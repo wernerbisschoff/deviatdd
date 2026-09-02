@@ -87,6 +87,13 @@ def _seed_green_repo(root: Path) -> tuple[str, Path]:
     (root / "specs" / "constitution.md").write_text(
         "# constitution\n", encoding="utf-8"
     )
+    gitignore = root / ".gitignore"
+    if gitignore.exists():
+        text = gitignore.read_text(encoding="utf-8")
+        if ".deviate/" not in text.splitlines():
+            gitignore.write_text(text.rstrip() + "\n.deviate/\n", encoding="utf-8")
+    else:
+        gitignore.write_text(".deviate/\n", encoding="utf-8")
     ledger_path = workspace / "tasks.jsonl"
     _write_ledger(
         ledger_path,

@@ -1601,7 +1601,7 @@ class TestJudgeTrainRollback:
         assert result.train_feedback, (
             "REDRestart must carry the judge feedback into RED's next attempt"
         )
-        # HEAD should sit at the initial empty commit (parent of red_sha).
+        # HEAD is the post-reset feedback commit sitting on red_sha^.
         head_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=root,
@@ -1616,9 +1616,28 @@ class TestJudgeTrainRollback:
             text=True,
             env=_git_env(),
         ).stdout.strip()
-        assert head_sha == red_parent_sha, (
-            f"HEAD must equal red_sha^ ({red_parent_sha}); got {head_sha}"
+        head_parent = subprocess.run(
+            ["git", "rev-parse", "HEAD^"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+        subject = subprocess.run(
+            ["git", "log", "-1", "--pretty=%s"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+        assert head_sha != red_parent_sha, (
+            "HEAD must be the feedback commit, not the pre-RED reset sha"
         )
+        assert head_parent == red_parent_sha, (
+            f"feedback commit parent must be red_sha^ ({red_parent_sha}); "
+            f"got {head_parent}"
+        )
+        assert "add judge feedback" in subject, subject
 
     @patch("deviate.cli.micro._invoke_agent")
     @patch("deviate.cli.micro._load_skill_content")

@@ -275,18 +275,56 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   (NOT necessarily terminal — emitted for both intermediate JUDGE
   routing decisions and the final CYCLE outcome; interpret via
   `decision=` / `reroute=` / `action=` plus `phase=`), `PHASE_SKIP`,
-  `INVOKE_AGENT` (names `backend=` and `model=`), `AGENT_RESULT`
-  (carries `status=`, `verdict=`, full `manifest=`; the manifest
-  contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
-  (full stdout in a single `raw_output=` field; stderr is NOT
-  captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and
+  `INVOKE_AGENT` (short line: `task_id=`, `phase=`, `backend=`,
+  `model=` — no prompt body), `AGENT_RESULT`
+  (summary: `status=`, `verdict=`, `next_action=` when present —
+  not the full manifest JSON), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and
   `partial_stdout=`; harness verdict for a hung RED or hung GREEN), `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`,
   `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`,
   `JUDGE_REFACTOR_NOTE` (carries `note=`, the refactor hint),
   `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`, `TASKS_MD_SKIP`,
   `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE` (carries
   `uncommitted_count=` and `files=`, the dirty files the hook
-  refused — NOT `returncode=` / `stderr=`).
+  refused — NOT `returncode=` / `stderr=`),
+  `CYCLE_END` (emitted when a task leaves `_run_tdd_cycle` —
+  complete, fail, or skip; carries `task_id=`, `completed=`,
+  `phase_decisions=` (PHASE_DECISION `action=` values in order
+  this run), `reject_count=`, `last_blast=` (`red` / `green` /
+  `none`), `max_streak=`), `LOOP_DETECTED` (same-blast reject
+  streak >= 2; carries `blast=` and `streak=`).
+  Transcripts are for diagnosis, not a dump: verbatim agent stdout
+  and the prompt body live in
+  `.deviate/logs/<ISSUE_ID>/<TASK_ID>.raw/<phase>-<n>.log` (optional
+  `<phase>-<n>.prompt.log`), not in the run/task transcript.
+  **Per-task JUDGE postmortem** (structured JSONL, not the
+  transcript format): `.deviate/logs/<ISSUE_ID>/<TASK_ID>.verdicts.jsonl`.
+  One JSON object per JUDGE application (pass and reject), written
+  from `_apply_judge_verdict` so auto and `judge post` share it.
+  Fields: `ts` (UTC ISO), `task_id`, `issue_id`, `verdict` (raw),
+  `next_action` (after coerce / GH-149 / GH-158), `next_action_raw`
+  (agent-declared; empty if omitted), `coerced` (bool),
+  `blast` (`red` / `green` / `none` — `revert_red` → red,
+  `revert_green` → green, forward/pass → none), `feedback` (the
+  reason string actually used), `feedback_source`, `violations`
+  (category strings, else `[]`), `test_integrity` (from
+  `evaluation` if present, else `null`), `failure_kind` (session
+  at judge time), `streak` (consecutive same-blast rejects on this
+  task), `loop` (`true` when `streak >= 2`). On a revert that rolls
+  back: `head_sha` (HEAD before reset), `reset_to` (blast-radius SHA),
+  `recovery_ref` (`tmp/deviate-agent-work/<task>/attempt-<N>`, empty
+  when HEAD already equaled the boundary). When the cycle leaves, one
+  `{"event":"cycle_end", ...}` object is appended to the same
+  file with `completed`, `phase_decisions`, `reject_count`,
+  `last_blast`, and `max_streak`. Do not put the full prompt or raw
+  agent stdout in this file. Local file only — no dashboard, no
+  `inspect postmortem`, no upload.
+  **`[log].agent_reasons`** (`.deviate/config.toml`, default
+  `false`): when `true`, assembled auto/manual phase prompts gain a
+  short block asking for a one-line handover `rationale` (especially
+  JUDGE `revert_red` vs `revert_green`). When `false`, prompts must
+  not mention logging, `deviate log`, or writing a reason file.
+  Setup does not write this key. Pre/post/runner logging never
+  checks the flag.
   Skill frontmatter version is `3.0.0`. The drift-check test
   `test_deviatdd_skill_troubleshooting_section_matches_logger` parses
   `micro.py` for `_log_run("<NAME>", ...)` calls and asserts every
@@ -1641,6 +1679,11 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `execution_mode` | Literal | `TDD`, `DIRECT`, `E2E` |
 | `created_at` | `datetime` | When the task was created |
 | `evidence` | `TaskEvidenceBundle \| None` | Optional. Present only on the `COMPLETED` row (GH-84). Default absent so legacy rows still parse. `TaskEvidenceBundle` holds `items` (`list` of `{ac, test_path, test_quote, impl_path, impl_quote}` copied from the runner-validated `HandoverManifest.evidence`) plus commit provenance `red` (`session.red_commit_sha` when present), `green`, and `head` (`HEAD` at the COMPLETED write). Earlier RED/GREEN/JUDGE rows stay lean. `.deviate/` session files are not the proof store. |
+| `judge_action` | `Literal["revert_red", "revert_green"] \| None` | Optional. Present on the post-reset JUDGE revert row. Omitted on earlier rows. |
+| `judge_feedback` | `str \| None` | Optional. The reason string persisted with `judge_action`. Omitted when empty. |
+| `head_sha` | `str \| None` | Optional. Full SHA of HEAD **before** the blast-radius reset (the discarded GREEN / RED+GREEN tree). |
+| `reset_to` | `str \| None` | Optional. Full SHA the runner reset to (`red_commit_sha` or its parent). |
+| `recovery_ref` | `str \| None` | Optional. `tmp/deviate-agent-work/<task>/attempt-<N>` from `_preserve_agent_work`. Empty when HEAD already equaled the boundary (nothing preserved). |
 
 
 #### Append-Only Ledger Protocol
@@ -1648,6 +1691,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 All state transitions are append-only. No existing line is ever modified or overwritten.
 - `append_issue_transition()`: Idempotent on `(issue_id, status)` compound key
 - `append_task_transition()`: Idempotent on `(id, status)` compound key
+- `append_task_event()`: always appends (JUDGE revert may repeat `PENDING` / `RED`)
 - `_append_record()` / `_append_with_compound_key()`: Use `fcntl.flock` for file-level
   locking on platforms that support it. If the ledger is non-empty and the last
   line has no trailing newline, a leading `\n` is written before the new record
@@ -1686,8 +1730,8 @@ the action. EXECUTE `_run_execute_phase` and IMMEDIATE judge stay ungated.
 
 | `next_action` | Required verdict | Runner behavior |
 |---|---|---|
-| `revert_red` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). Clear `session.red_commit_sha` so RED re-anchors. Escalate now: reset `green_attempts` to 0, increment `red_attempts`, persist both on `.deviate/session.json`, and dispatch a retry RED with a short `previous cycle failed because …` note in `train_feedback` (not the raw GREEN dump). Before persist, the runner strips discarded-commit `path:line` citations from JUDGE feedback (GH-103); rollback SHA selection is unchanged. The next `INVOKE_AGENT` is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. It never invokes GREEN while `session.red_commit_sha` is empty. `TRAIN_EXHAUSTED` prints after three RED escalates. Used when the test itself is wrong. |
-| `revert_green` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, append a feedback commit past RED, advance `session.red_commit_sha` to that commit only when the pre-call SHA is already a RED-phase failing-test commit. Transition to GREEN with feedback in `train_feedback` after stripping discarded-commit `path:line` citations (GH-103). The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. Empty `session.red_commit_sha` is fatal: raise `PhaseFailedError` carrying `ROLLBACK_BOUNDARY_MISSING`. Do not print `ROLLBACK_FAILED`, do not stamp a docs-feedback SHA, and do not train GREEN. |
+| `revert_red` | `COMPLIANCE_VIOLATION` (or any) | Discard this task's GREEN **and** its RED. Reset to `red_commit_sha^` (the parent of the RED commit, defended by a subject-match regex; logs `PRE_RED_AMBIGUOUS` if the parent is not a RED-phase convention). **After** that reset, `_commit_judge_feedback_and_advance` appends a `tasks.jsonl` row (`judge_action=revert_red`, `judge_feedback`, status `PENDING`) plus the `tasks.md` Judge Feedback bullet and commits both in one `docs(<tid>): add judge feedback for retry` commit (`git add` those paths only; not `session.json`). Clear `session.red_commit_sha` so RED re-anchors. Escalate now: reset `green_attempts` to 0, increment `red_attempts`, persist both on `.deviate/session.json`, and dispatch a retry RED with a short `previous cycle failed because …` note in `train_feedback` (not the raw GREEN dump). Before persist, the runner strips discarded-commit `path:line` citations from JUDGE feedback (GH-103); rollback SHA selection is unchanged. The next `INVOKE_AGENT` is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. It never invokes GREEN while `session.red_commit_sha` is empty. `TRAIN_EXHAUSTED` prints after three RED escalates. Used when the test itself is wrong. |
+| `revert_green` | `COMPLIANCE_VIOLATION` (default on violation when field omitted) | Discard GREEN, preserve RED. Reset to `red_sha`, **then** append a feedback commit past RED that contains both the `tasks.jsonl` revert row (`judge_action=revert_green`, status `RED`) and `tasks.md` Judge Feedback. Advance `session.red_commit_sha` to that commit only when the pre-call SHA is already a RED-phase failing-test commit. Transition to GREEN with feedback in `train_feedback` after stripping discarded-commit `path:line` citations (GH-103). The previous-round feedback commit is preserved so a second rollback only kills the subsequent GREEN. Empty `session.red_commit_sha` is fatal: raise `PhaseFailedError` carrying `ROLLBACK_BOUNDARY_MISSING`. Do not print `ROLLBACK_FAILED`, do not stamp a docs-feedback SHA, and do not train GREEN. |
 | `continue_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback (GREEN is intact). Set `pending_judge_action="continue_refactor"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. A clean `COMPLIANCE_PASS` that omitted `next_action` or emitted a revert (`revert_red` / `revert_green` / legacy `revert_to_red`) is coerced to this route (or `skip_refactor` when `--no-refactor`). A `REFACTOR NOTE:` in `train_feedback` is kept as REFACTOR-phase `{train_feedback}` and is not a `JUDGE_REJECTED` (GH-158). |
 | `skip_refactor` | `COMPLIANCE_PASS` (or any) | Skip the rollback. Set `pending_judge_action="skip_refactor"`. `_finish_tdd_cycle` marks the task `COMPLETED` and returns to `IDLE`, regardless of `--no-refactor`. A later `_append_status_transition(..., "COMPLETED")` is a no-op when the ledger already has COMPLETED for this task (GH-146); the COMPLETED evidence gate runs only on the first write. |
 | `proceed_to_refactor_no_diff` | `COMPLIANCE_PASS` (or any) | Forward route for the empty-diff sign-off case. Set `pending_judge_action="proceed_to_refactor_no_diff"`. `_finish_tdd_cycle` enters REFACTOR regardless of `--no-refactor`. REFACTOR's commit + COMPLETED transition is the only way to terminate a slice whose git diff is empty (RED-only deliverable, fixture file, generated types, doc-only slice, or any task whose production-code scope is intrinsically nil). Distinct from `continue_refactor` (signals a substantive refactor pass on a non-empty diff). |

@@ -3,15 +3,15 @@
 Covers the per-task structured log surface (``TaskLogger``) which
 complements the per-run ``RunLogger``. Each task gets its own log file
 under ``.deviate/logs/<issue_id>/<task_id>.log`` so the operator can
-recover the full prompt/agent-output transcript for one task without
-grepping a single chronological run log.
+scan one task's events without grepping a chronological run log.
+Verbatim stdout lives in ``<task>.raw/``, not this transcript.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from deviate.core.run_logger import RunLogger, TaskLogger
+from deviate.core.run_logger import RunLogger, TaskLogger, write_raw_sidecar
 
 
 def test_task_logger_writes_to_issue_and_task_path(tmp_path: Path) -> None:
@@ -69,6 +69,31 @@ def test_task_logger_appends_across_invocations(tmp_path: Path) -> None:
     contents = target.read_text(encoding="utf-8")
     assert "attempt: 1" in contents
     assert "attempt: 2" in contents
+
+
+def test_write_raw_sidecar_is_beside_transcript_not_inside_it(tmp_path: Path) -> None:
+    """Verbatim stdout lands in ``<task>.raw/<phase>-n.log``, not the transcript."""
+    logger = TaskLogger(tmp_path, issue_id="ISS-RAW", task_id="TSK-RAW-01")
+    logger.log("INVOKE_AGENT", task_id="TSK-RAW-01", phase="RED", backend="pi")
+    logger.close()
+    path = write_raw_sidecar(
+        tmp_path,
+        "ISS-RAW",
+        "TSK-RAW-01",
+        "RED",
+        stdout="agent-stdout-verbatim",
+        prompt="full prompt body",
+    )
+    assert path is not None
+    assert path.name == "red-1.log"
+    assert path.read_text(encoding="utf-8") == "agent-stdout-verbatim"
+    prompt_sidecar = path.with_name("red-1.prompt.log")
+    assert prompt_sidecar.read_text(encoding="utf-8") == "full prompt body"
+    transcript = tmp_path / ".deviate" / "logs" / "ISS-RAW" / "TSK-RAW-01.log"
+    text = transcript.read_text(encoding="utf-8")
+    assert "INVOKE_AGENT" in text
+    assert "agent-stdout-verbatim" not in text
+    assert "full prompt body" not in text
 
 
 def test_run_logger_still_writes_per_run_file(tmp_path: Path) -> None:

@@ -163,6 +163,11 @@ class TaskRecord(BaseModel):
     security_profile: SecurityProfile | None = None
     acceptance_criteria: list[CriterionLink] | None = None
     evidence: TaskEvidenceBundle | None = None
+    judge_action: Literal["revert_red", "revert_green"] | None = None
+    judge_feedback: str | None = None
+    head_sha: str | None = None
+    reset_to: str | None = None
+    recovery_ref: str | None = None
     model_config = {"extra": "forbid"}
 
     @field_validator("id")
@@ -273,10 +278,20 @@ def append_issue_transition(record: IssueRecord, ledger_path: Path) -> bool:
 
 
 def _task_record_json(record: TaskRecord) -> str:
-    """Serialize a task row, omitting absent ``evidence`` so earlier rows stay lean."""
+    """Serialize a task row, omitting absent optional fields so earlier rows stay lean."""
     exclude = set()
     if record.evidence is None:
         exclude.add("evidence")
+    if record.judge_action is None:
+        exclude.add("judge_action")
+    if not record.judge_feedback:
+        exclude.add("judge_feedback")
+    if not record.head_sha:
+        exclude.add("head_sha")
+    if not record.reset_to:
+        exclude.add("reset_to")
+    if not record.recovery_ref:
+        exclude.add("recovery_ref")
     return record.model_dump_json(exclude=exclude)
 
 
@@ -301,6 +316,23 @@ def append_task_transition(record: TaskRecord, ledger_path: Path) -> bool:
         key_fields=["id", "status"],
         ledger_path=ledger_path,
     )
+
+
+def append_task_event(record: TaskRecord, ledger_path: Path) -> None:
+    """Always append a task ledger row.
+
+    Used for JUDGE revert records that may repeat ``PENDING`` / ``RED``
+    (``append_task_transition`` is a no-op on a repeated ``(id, status)``).
+    """
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    with ledger_path.open("a+", encoding="utf-8") as handle:
+        if HAS_FCNTL:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            _write_jsonl_record(handle, _task_record_json(record))
+        finally:
+            if HAS_FCNTL:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def resolve_issue_record(issue_id: str, ledger_path: Path) -> IssueRecord | None:

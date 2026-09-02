@@ -159,6 +159,17 @@ events to two sinks under `.deviate/logs/` via the dispatcher in
   one file per invocation, always written. Use this when the failing
   task is unknown, the per-task file does not exist, or you need a
   cross-task view of one multi-task run.
+- **Per-task JUDGE postmortem** — `.deviate/logs/<ISSUE_ID>/<TASK_ID>.verdicts.jsonl`.
+  One JSON object per JUDGE application (pass and reject), plus a
+  final `cycle_end` object when `_run_tdd_cycle` leaves. JSONL, not
+  the `[<UTC iso>] EVENT` transcript format. Read this first when
+  asking why JUDGE failed RED or GREEN. A reject that rolled back
+  carries `head_sha` / `reset_to` / `recovery_ref` — `git show
+  <head_sha>` or `git switch <recovery_ref>` inspects the discarded
+  tree. The same three fields are on the post-reset `tasks.jsonl` row.
+- **Raw agent sidecar** — `.deviate/logs/<ISSUE_ID>/<TASK_ID>.raw/<phase>-<n>.log`
+  (optional `<phase>-<n>.prompt.log`). Verbatim stdout lives here so the
+  main transcript stays scannable.
 
 Each line is `[<UTC iso>] <EVENT>\n  <kwarg>: <value>\n` (multi-line
 values are indented four-space under a `key:` header). The
@@ -175,17 +186,11 @@ for triage:
   Use the `decision=` / `reroute=` / `action=` keywords plus the
   matching `phase=` to interpret it; do NOT assume `PHASE_DECISION`
   means "done".
-- `INVOKE_AGENT` — names the `backend=` and `model=` actually invoked.
-  Use this to verify model routing.
-- `AGENT_RESULT` — carries `status=`, `verdict=`, and the full
-  serialized `manifest=`. Read the manifest; do NOT assume top-level
-  `files=` exists on the event itself (it lives inside the manifest
-  JSON).
-- `AGENT_RAW_OUTPUT` — carries the full stdout the agent's output
-  callback collected, newline-joined into a single `raw_output=`
-  field. Stderr is NOT captured by the logger; if the manifest is
-  silent, this is your only fallback. Note: it is full stdout, not a
-  tail.
+- `INVOKE_AGENT` — short line: `task_id=`, `phase=`, `backend=`,
+  `model=`. No prompt body.
+- `AGENT_RESULT` — summary only: `status=`, `verdict=`,
+  `next_action=` (when present). Full stdout is in the raw sidecar,
+  not this event.
 - `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE`
   — judge-specific. `JUDGE_REFACTOR_NOTE` carries `note=` (the
   refactor hint), not `note_preview=`.
@@ -194,6 +199,13 @@ for triage:
   NOT `returncode=`/`stderr=`.
 - `FEEDBACK_COMMIT_FAILED` — auto-GREEN's feedback-marker commit
   failed; the runner continues but the train boundary is degraded.
+- `CYCLE_END` — task left `_run_tdd_cycle` (complete, fail, or
+  skip). Carries `completed=`, `phase_decisions=` (PHASE_DECISION
+  actions this run), `reject_count=`, `last_blast=` (`red` /
+  `green` / `none`), `max_streak=`. The same payload is appended to
+  `.verdicts.jsonl` as `{"event":"cycle_end", ...}`.
+- `LOOP_DETECTED` — two or more consecutive JUDGE rejects with the
+  same blast (`streak>=2`). Carries `blast=` and `streak=`.
 
 Quick lookup:
 

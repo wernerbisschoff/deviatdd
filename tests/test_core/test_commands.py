@@ -355,6 +355,33 @@ class TestComposeCommandBodyConstitutionInjection:
         assert composed is not None
         assert "<universal_invariants>" in composed
 
+    def test_agent_reasons_block_only_when_flag_on(self, tmp_path: Path):
+        from deviate.prompts.assembly import AGENT_REASONS_BLOCK
+
+        specs = tmp_path / "specs"
+        specs.mkdir()
+        const = specs / "constitution.md"
+        const.write_text("# Constitution\n", encoding="utf-8")
+        default = compose_command_body(
+            self._sample_command(), self._core_dir(), constitution_path=const
+        )
+        assert default is not None
+        assert AGENT_REASONS_BLOCK.strip() not in default
+        assert "one-line handover" not in default
+
+        cfg = tmp_path / ".deviate"
+        cfg.mkdir()
+        (cfg / "config.toml").write_text(
+            "[log]\nagent_reasons = true\n", encoding="utf-8"
+        )
+        flagged = compose_command_body(
+            self._sample_command(), self._core_dir(), constitution_path=const
+        )
+        assert flagged is not None
+        assert "one-line handover" in flagged
+        assert "revert_red" in flagged
+        assert "revert_green" in flagged
+
 
 class TestComposeCommandBodyManualLifecycle:
     """Execution-layer commands keep the manual pre/post-script lifecycle."""

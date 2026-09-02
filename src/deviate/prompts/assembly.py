@@ -35,6 +35,16 @@ _LAYER_MAP: dict[str, str | None] = {
 _CORE_DIR = "deviate.prompts.core"
 _AUTO_DIR = "deviate.prompts.auto"
 
+# Injected only when ``[log].agent_reasons = true``. Default prompts must
+# not mention logging, ``deviate log``, or writing a reason file.
+AGENT_REASONS_BLOCK = (
+    "## Agent rationale\n"
+    "Emit a one-line handover `rationale` for the route you chose.\n"
+    "For JUDGE, say why `revert_red` (the test is wrong; discard RED and "
+    "GREEN) versus `revert_green` (the test is honest; discard GREEN only).\n"
+    "Use the existing `rationale` / `train_feedback` handover fields.\n"
+)
+
 
 def _read_resource(package: str, filename: str) -> str | None:
     path = resources.files(package) / filename
@@ -134,4 +144,9 @@ def assemble_prompt(
 ) -> str:
     prompt = load_template(template_name, constitution_path=constitution_path)
     prompt = _PLACEHOLDER_RE.sub(lambda m: _replace_placeholder(m, context), prompt)
+    from deviate.state.config import resolve_agent_reasons
+
+    root = constitution_path.parent.parent
+    if resolve_agent_reasons(root):
+        prompt = prompt.rstrip() + "\n\n" + AGENT_REASONS_BLOCK
     return prompt
