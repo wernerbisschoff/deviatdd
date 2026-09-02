@@ -4640,9 +4640,13 @@ class TestRunnerLoopRestartsRedOnRevertRed:
     ) -> None:
         """The first ``revert_red`` dispatches a second RED.
 
-        Escalate accounting increments ``red_attempts``, resets
-        ``green_attempts`` to 0, and injects a short escalate note into
-        ``session.train_feedback`` for the retry RED (AC-PLAN-004).
+        Escalate accounting increments ``red_attempts`` and resets
+        ``green_attempts`` to 0. GH-170: a JUDGE payload already on
+        ``session.train_feedback`` (here the test-defect rationale) is
+        kept for retry RED — not replaced with
+        ``previous cycle failed because``. AC-PLAN-004 still wipes a
+        GREEN pytest dump; that is pinned in
+        ``test_two_counter_retry.py``.
         """
         from deviate.cli.micro import (
             _run_tdd_cycle,
@@ -4693,14 +4697,13 @@ class TestRunnerLoopRestartsRedOnRevertRed:
                 current.red_commit_sha = "abc123def"
                 current.save(session_path_arg)
             if call_log.count("RED") >= 2:
-                assert "previous cycle failed because" in current.train_feedback, (
-                    "AC-PLAN-004/005: escalate RED must get a short "
-                    "'previous cycle failed because' note, not the GREEN "
-                    f"dump; got {current.train_feedback!r}"
+                assert test_defect_rationale in current.train_feedback, (
+                    "GH-170: escalate RED must keep the JUDGE / test-defect "
+                    f"payload; got {current.train_feedback!r}"
                 )
-                assert test_defect_rationale not in current.train_feedback, (
-                    "AC-PLAN-004/005: escalate RED must omit the raw GREEN "
-                    f"rationale dump; got {current.train_feedback!r}"
+                assert "previous cycle failed because" not in current.train_feedback, (
+                    "GH-170: escalate must not replace real feedback with "
+                    f"the generic note; got {current.train_feedback!r}"
                 )
                 assert current.pending_judge_action == "revert_red"
                 assert current.red_attempts >= 1, (
