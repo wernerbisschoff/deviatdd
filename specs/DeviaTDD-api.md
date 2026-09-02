@@ -275,11 +275,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   (NOT necessarily terminal — emitted for both intermediate JUDGE
   routing decisions and the final CYCLE outcome; interpret via
   `decision=` / `reroute=` / `action=` plus `phase=`), `PHASE_SKIP`,
-  `INVOKE_AGENT` (names `backend=` and `model=`), `AGENT_RESULT`
-  (carries `status=`, `verdict=`, full `manifest=`; the manifest
-  contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
-  (full stdout in a single `raw_output=` field; stderr is NOT
-  captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and
+  `INVOKE_AGENT` (short line: `task_id=`, `phase=`, `backend=`,
+  `model=` — no prompt body), `AGENT_RESULT`
+  (summary: `status=`, `verdict=`, `next_action=` when present —
+  not the full manifest JSON), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and
   `partial_stdout=`; harness verdict for a hung RED or hung GREEN), `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`,
   `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`,
   `JUDGE_REFACTOR_NOTE` (carries `note=`, the refactor hint),
@@ -291,7 +290,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   complete, fail, or skip; carries `task_id=`, `completed=`,
   `phase_decisions=` (PHASE_DECISION `action=` values in order
   this run), `reject_count=`, `last_blast=` (`red` / `green` /
-  `none`)).
+  `none`), `max_streak=`), `LOOP_DETECTED` (same-blast reject
+  streak >= 2; carries `blast=` and `streak=`).
+  Transcripts are for diagnosis, not a dump: verbatim agent stdout
+  and the prompt body live in
+  `.deviate/logs/<ISSUE_ID>/<TASK_ID>.raw/<phase>-<n>.log` (optional
+  `<phase>-<n>.prompt.log`), not in the run/task transcript.
   **Per-task JUDGE postmortem** (structured JSONL, not the
   transcript format): `.deviate/logs/<ISSUE_ID>/<TASK_ID>.verdicts.jsonl`.
   One JSON object per JUDGE application (pass and reject), written
@@ -304,12 +308,20 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   reason string actually used), `feedback_source`, `violations`
   (category strings, else `[]`), `test_integrity` (from
   `evaluation` if present, else `null`), `failure_kind` (session
-  at judge time). When the cycle leaves, one
+  at judge time), `streak` (consecutive same-blast rejects on this
+  task), `loop` (`true` when `streak >= 2`). When the cycle leaves, one
   `{"event":"cycle_end", ...}` object is appended to the same
-  file with `completed`, `phase_decisions`, `reject_count`, and
-  `last_blast`. Do not put the full prompt or `AGENT_RAW_OUTPUT`
-  in this file. Local file only — no dashboard, no
+  file with `completed`, `phase_decisions`, `reject_count`,
+  `last_blast`, and `max_streak`. Do not put the full prompt or raw
+  agent stdout in this file. Local file only — no dashboard, no
   `inspect postmortem`, no upload.
+  **`[log].agent_reasons`** (`.deviate/config.toml`, default
+  `false`): when `true`, assembled auto/manual phase prompts gain a
+  short block asking for a one-line handover `rationale` (especially
+  JUDGE `revert_red` vs `revert_green`). When `false`, prompts must
+  not mention logging, `deviate log`, or writing a reason file.
+  Setup does not write this key. Pre/post/runner logging never
+  checks the flag.
   Skill frontmatter version is `3.0.0`. The drift-check test
   `test_deviatdd_skill_troubleshooting_section_matches_logger` parses
   `micro.py` for `_log_run("<NAME>", ...)` calls and asserts every

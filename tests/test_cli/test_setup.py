@@ -373,6 +373,8 @@ class TestSetupConfigAllowlist:
         assert "claim_remote = false  # push the claim branch as a lock" in text
         assert "pi_rpc" not in agent
         assert "transport" not in agent
+        assert "log" not in parsed
+        assert "agent_reasons" not in text
 
     def test_base_branch_flag_writes_override(self, tmp_path: Path) -> None:
         """``--base-branch`` is a script-only write; omitted leaves the key out."""

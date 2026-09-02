@@ -1012,11 +1012,10 @@ post-cycle failure — read first), `PHASE_START`, `PHASE_DECISION`
 (NOT necessarily terminal — emitted for both intermediate JUDGE
 routing decisions and the final CYCLE outcome; interpret via
 `decision=` / `reroute=` / `action=` plus `phase=`), `PHASE_SKIP`,
-`INVOKE_AGENT` (names `backend=` and `model=`), `AGENT_RESULT`
-(carries `status=`, `verdict=`, full `manifest=`; the manifest
-contains `files=`, not the event itself), `AGENT_RAW_OUTPUT`
-(full stdout in a single `raw_output=` field; stderr is NOT
-captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and `partial_stdout=`; harness verdict for a hung RED or hung GREEN),
+`INVOKE_AGENT` (short line: `task_id=`, `phase=`, `backend=`,
+`model=` — no prompt body), `AGENT_RESULT`
+(summary: `status=`, `verdict=`, `next_action=` when present —
+not the full manifest JSON), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and `partial_stdout=`; harness verdict for a hung RED or hung GREEN),
 `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`, `JUDGE_REJECTED`,
 `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE` (carries `note=`,
 the refactor hint), `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`,
@@ -1026,7 +1025,12 @@ hook refused — NOT `returncode=` / `stderr=`), `CYCLE_END`
 (emitted when a task leaves `_run_tdd_cycle` — complete, fail,
 or skip; carries `task_id=`, `completed=`, `phase_decisions=`
 (PHASE_DECISION `action=` values in order this run),
-`reject_count=`, `last_blast=` (`red` / `green` / `none`)).
+`reject_count=`, `last_blast=` (`red` / `green` / `none`),
+`max_streak=`), `LOOP_DETECTED` (same-blast reject streak >= 2).
+Transcripts are for diagnosis, not a dump: verbatim agent stdout
+and the prompt body live in
+`.deviate/logs/<ISSUE_ID>/<TASK_ID>.raw/<phase>-<n>.log` (optional
+`<phase>-<n>.prompt.log`).
 **Per-task JUDGE postmortem** (structured JSONL, not the
 transcript format): `.deviate/logs/<ISSUE_ID>/<TASK_ID>.verdicts.jsonl`.
 One JSON object per JUDGE application (pass and reject), written
@@ -1039,12 +1043,17 @@ Fields: `ts` (UTC ISO), `task_id`, `issue_id`, `verdict` (raw),
 reason string actually used), `feedback_source`, `violations`
 (category strings, else `[]`), `test_integrity` (from
 `evaluation` if present, else `null`), `failure_kind` (session
-at judge time). When the cycle leaves, one
+at judge time), `streak` (consecutive same-blast rejects),
+`loop` (`true` when `streak >= 2`). When the cycle leaves, one
 `{"event":"cycle_end", ...}` object is appended to the same
-file with `completed`, `phase_decisions`, `reject_count`, and
-`last_blast`. Do not put the full prompt or `AGENT_RAW_OUTPUT`
-in this file. Local file only — no dashboard, no
+file with `completed`, `phase_decisions`, `reject_count`,
+`last_blast`, and `max_streak`. Do not put the full prompt or raw
+agent stdout in this file. Local file only — no dashboard, no
 `inspect postmortem`, no upload.
+**`[log].agent_reasons`** (`.deviate/config.toml`, default `false`)
+gates a short assembled-prompt block asking for a one-line handover
+`rationale`. Setup does not write the key. Pre/post/runner logging
+never checks the flag.
 Skill frontmatter version is `3.0.0`; its description covers Meso preparation and Micro
 queue draining. The drift-check test
 `test_deviatdd_skill_troubleshooting_section_matches_logger` parses

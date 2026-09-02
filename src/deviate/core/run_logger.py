@@ -81,6 +81,9 @@ class TaskLogger:
                 f"TaskLogger requires non-empty issue_id and task_id "
                 f"(got issue_id={issue_id!r}, task_id={task_id!r})"
             )
+        self.root = root
+        self.issue_id = issue_id
+        self.task_id = task_id
         self.log_dir = root / ".deviate" / "logs" / issue_id
         self.log_file = self.log_dir / f"{task_id}.log"
         self._sink = _LogSink(self.log_file)
@@ -154,6 +157,11 @@ def set_task_logger(logger: TaskLogger | None) -> None:
     _current_log.get().set_task(logger)
 
 
+def get_task_logger() -> TaskLogger | None:
+    """Return the active :class:`TaskLogger`, or ``None`` if unset."""
+    return _current_log.get()._task
+
+
 def log_event(event: str, **kwargs: object) -> None:
     """Dispatch an event to every active sink (run + task)."""
     _current_log.get().dispatch(event, **kwargs)
@@ -184,3 +192,61 @@ def append_verdicts_record(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
+def read_verdicts_records(
+    root: Path, issue_id: str, task_id: str
+) -> list[dict[str, object]]:
+    """Parse the per-task verdicts JSONL, skipping blank lines."""
+    path = verdicts_log_path(root, issue_id, task_id)
+    if not path.exists():
+        return []
+    records: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, dict):
+            records.append(row)
+    return records
+
+
+def raw_sidecar_dir(root: Path, issue_id: str, task_id: str) -> Path:
+    """Directory for verbatim agent stdout: ``<task>.raw/``."""
+    return root / ".deviate" / "logs" / issue_id / f"{task_id}.raw"
+
+
+def next_raw_sidecar_path(root: Path, issue_id: str, task_id: str, phase: str) -> Path:
+    """Return ``<task>.raw/<phase>-<n>.log`` for the next invoke of *phase*."""
+    raw_dir = raw_sidecar_dir(root, issue_id, task_id)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    slug = (phase or "agent").strip().lower() or "agent"
+    slug = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in slug)
+    n = 1
+    while (raw_dir / f"{slug}-{n}.log").exists():
+        n += 1
+    return raw_dir / f"{slug}-{n}.log"
+
+
+def write_raw_sidecar(
+    root: Path,
+    issue_id: str,
+    task_id: str,
+    phase: str,
+    *,
+    stdout: str,
+    prompt: str = "",
+) -> Path | None:
+    """Write verbatim agent stdout (and optional prompt) next to the transcript.
+
+    Returns the stdout sidecar path, or ``None`` when ids are missing.
+    Does not write into the run/task transcript.
+    """
+    if not issue_id or not task_id or task_id == "?":
+        return None
+    path = next_raw_sidecar_path(root, issue_id, task_id, phase)
+    path.write_text(stdout, encoding="utf-8")
+    if prompt:
+        prompt_path = path.with_name(f"{path.stem}.prompt.log")
+        prompt_path.write_text(prompt, encoding="utf-8")
+    return path

@@ -132,6 +132,7 @@ class CycleResult:
     session: SessionState | None = None
     ledger_path: Path | None = None
     cycle_ends: list[dict[str, object]] = field(default_factory=list)
+    loop_events: list[dict[str, object]] = field(default_factory=list)
 
     @property
     def ledger_statuses(self) -> list[str]:
@@ -374,6 +375,37 @@ def reject_then_pass_steps(task_id: str, *, ac: str) -> list[CycleStep]:
     ]
 
 
+def two_revert_green_then_pass_steps(task_id: str, *, ac: str) -> list[CycleStep]:
+    """Two consecutive ``revert_green`` JUDGE rejects, then pass + REFACTOR."""
+    return [
+        CycleStep(
+            phase="RED", handover=red_handover_yaml(task_id), files=red_files(task_id)
+        ),
+        CycleStep(
+            phase="GREEN",
+            handover=green_handover_yaml(task_id),
+            files=green_files(task_id),
+        ),
+        CycleStep(phase="JUDGE", handover=judge_fail_yaml(task_id)),
+        CycleStep(
+            phase="GREEN",
+            handover=green_handover_yaml(task_id),
+            files=green_files(task_id),
+        ),
+        CycleStep(phase="JUDGE", handover=judge_fail_yaml(task_id)),
+        CycleStep(
+            phase="GREEN",
+            handover=green_handover_yaml(task_id),
+            files=green_files(task_id),
+        ),
+        CycleStep(
+            phase="JUDGE",
+            handover=judge_pass_yaml(task_id, ac=ac, next_action="continue_refactor"),
+        ),
+        CycleStep(phase="REFACTOR", handover=refactor_handover_yaml(task_id)),
+    ]
+
+
 def skip_refactor_steps(task_id: str, *, ac: str) -> list[CycleStep]:
     """Complete a task via JUDGE ``skip_refactor`` (no REFACTOR phase)."""
     return [
@@ -548,6 +580,7 @@ def _install_common_patches(
     current_phase: dict[str, str],
     decisions: list[dict[str, object]],
     cycle_ends: list[dict[str, object]] | None = None,
+    loop_events: list[dict[str, object]] | None = None,
 ) -> None:
     import deviate.cli.micro as micro
 
@@ -558,6 +591,8 @@ def _install_common_patches(
             decisions.append({"event": event, **kwargs})
         if event == "CYCLE_END" and cycle_ends is not None:
             cycle_ends.append({"event": event, **kwargs})
+        if event == "LOOP_DETECTED" and loop_events is not None:
+            loop_events.append({"event": event, **kwargs})
         real_log(event, **kwargs)
 
     def fake_test_cmd(
@@ -633,6 +668,7 @@ def run_auto_cycle(
     current_phase = {"name": start_phase or "RED"}
     decisions: list[dict[str, object]] = []
     cycle_ends: list[dict[str, object]] = []
+    loop_events: list[dict[str, object]] = []
     phases: list[str] = []
     prompts: dict[str, list[str]] = {}
     _install_common_patches(
@@ -641,6 +677,7 @@ def run_auto_cycle(
         current_phase=current_phase,
         decisions=decisions,
         cycle_ends=cycle_ends,
+        loop_events=loop_events,
     )
 
     def fake_invoke(
@@ -691,6 +728,7 @@ def run_auto_cycle(
         session=load_session(seeded.root),
         ledger_path=seeded.ledger_path,
         cycle_ends=cycle_ends,
+        loop_events=loop_events,
     )
 
 
@@ -706,6 +744,7 @@ def run_manual_cycle(
     current_phase = {"name": ""}
     decisions: list[dict[str, object]] = []
     cycle_ends: list[dict[str, object]] = []
+    loop_events: list[dict[str, object]] = []
     phases: list[str] = []
     prompts: dict[str, list[str]] = {}
     _install_common_patches(
@@ -714,6 +753,7 @@ def run_manual_cycle(
         current_phase=current_phase,
         decisions=decisions,
         cycle_ends=cycle_ends,
+        loop_events=loop_events,
     )
 
     task = seeded.task(task_id)
@@ -773,6 +813,7 @@ def run_manual_cycle(
         session=load_session(seeded.root),
         ledger_path=seeded.ledger_path,
         cycle_ends=cycle_ends,
+        loop_events=loop_events,
     )
 
 

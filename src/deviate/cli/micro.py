@@ -49,9 +49,12 @@ from deviate.core.run_logger import (
     RunLogger,
     TaskLogger,
     append_verdicts_record,
+    get_task_logger,
     log_event,
+    read_verdicts_records,
     set_run_logger,
     set_task_logger,
+    write_raw_sidecar,
 )
 from deviate.core.worktree import find_worktree_for_branch
 from deviate.prompts.assembly import assemble_prompt
@@ -184,6 +187,7 @@ class _CycleTrace:
     phase_decisions: list[str] = field(default_factory=list)
     reject_count: int = 0
     last_blast: str = "none"
+    max_streak: int = 0
 
 
 _current_cycle_trace: contextvars.ContextVar[_CycleTrace | None] = (
@@ -556,6 +560,41 @@ class _AgentInvokeResult:
         return (self.manifest, self.tail)[index]
 
 
+def _resolve_sidecar_issue_id() -> str:
+    """Issue id for raw sidecars: TaskLogger first, then session.json."""
+    task_log = get_task_logger()
+    if task_log is not None and getattr(task_log, "issue_id", ""):
+        return str(task_log.issue_id)
+    session_path = Path.cwd() / ".deviate" / "session.json"
+    if session_path.exists():
+        try:
+            return SessionState.load(session_path).active_issue_id or ""
+        except Exception:
+            return ""
+    return ""
+
+
+def _write_invoke_sidecars(
+    *,
+    task_id: str,
+    phase: str,
+    stdout: str,
+    prompt: str = "",
+) -> None:
+    """Write verbatim agent stdout (and prompt) beside the scannable transcript."""
+    issue_id = _resolve_sidecar_issue_id()
+    if not issue_id or not task_id or task_id == "?":
+        return
+    write_raw_sidecar(
+        Path.cwd(),
+        issue_id,
+        task_id,
+        phase,
+        stdout=stdout,
+        prompt=prompt,
+    )
+
+
 def _unpack_agent_invoke(
     result: object,
 ) -> tuple[HandoverManifest | None, str, bool]:
@@ -591,7 +630,6 @@ def _invoke_agent(
         phase=phase,
         backend=backend_name,
         model=model or "(default)",
-        prompt=prompt,
     )
     try:
         reasoning_effort = (
@@ -622,26 +660,23 @@ def _invoke_agent(
         c.print("")
         status = getattr(manifest, "status", "?")
         verdict = getattr(manifest, "verdict", "")
-        manifest_json = manifest.model_dump_json()
+        next_action = getattr(manifest, "next_action", None) or ""
+        raw_text = "\n".join(raw_lines)
+        _write_invoke_sidecars(
+            task_id=task_id, phase=phase, stdout=raw_text, prompt=prompt
+        )
         agent_result_kwargs: dict[str, object] = {
             "task_id": task_id,
             "phase": phase,
             "status": status,
             "verdict": verdict,
-            "manifest": manifest_json,
+            "next_action": next_action,
         }
         if backend_name == "pi":
             agent_result_kwargs["pi_session_stats"] = _extract_pi_session_stats(
-                "\n".join(raw_lines)
+                raw_text
             )
         _log_run("AGENT_RESULT", **agent_result_kwargs)
-        if raw_lines:
-            _log_run(
-                "AGENT_RAW_OUTPUT",
-                task_id=task_id,
-                phase=phase,
-                raw_output="\n".join(raw_lines),
-            )
         # Last 50 non-blank stdout lines from the agent invocation, used
         # by the phase runner as a fallback diagnostic when the
         # manifest's `rationale` is empty (the prior "unknown" symptom).
@@ -658,6 +693,9 @@ def _invoke_agent(
     except AgentTimeoutError as exc:
         partial_output = exc.partial_stdout or ""
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
+        _write_invoke_sidecars(
+            task_id=task_id, phase=phase, stdout=partial_output, prompt=prompt
+        )
         _log_run(
             "AGENT_TIMEOUT",
             task_id=task_id,
@@ -3032,7 +3070,7 @@ def _evaluation_test_integrity_value(manifest: HandoverManifest) -> object:
     return getattr(evaluation, "test_integrity", None)
 
 
-def _note_cycle_verdict(action: str | None) -> None:
+def _note_cycle_verdict(action: str | None, streak: int) -> None:
     """Update the active cycle trace with this JUDGE application's blast."""
     trace = _current_cycle_trace.get()
     if trace is None:
@@ -3041,6 +3079,25 @@ def _note_cycle_verdict(action: str | None) -> None:
     trace.last_blast = blast
     if blast != "none":
         trace.reject_count += 1
+    if streak > trace.max_streak:
+        trace.max_streak = streak
+
+
+def _reject_streak_for(
+    root: Path, issue_id: str, task_id: str, blast: str
+) -> tuple[int, bool]:
+    """Consecutive same-blast rejects on this task; ``loop`` when streak >= 2."""
+    if blast == "none":
+        return 0, False
+    streak = 1
+    for row in reversed(read_verdicts_records(root, issue_id, task_id)):
+        if row.get("event") == "cycle_end":
+            continue
+        if row.get("blast") == blast:
+            streak += 1
+        else:
+            break
+    return streak, streak >= 2
 
 
 def _append_judge_verdict_record(
@@ -3057,6 +3114,8 @@ def _append_judge_verdict_record(
     tid = str(task.get("id") or "?")
     issue_id = str(task.get("issue_id") or "")
     final = next_action or ""
+    blast = _blast_for_action(next_action)
+    streak, loop = _reject_streak_for(Path.cwd(), issue_id, tid, blast)
     normalized_raw = (
         JUDGE_REVERT_ACTION_ALIASES.get(next_action_raw, next_action_raw)
         if next_action_raw
@@ -3070,15 +3129,25 @@ def _append_judge_verdict_record(
         "next_action": final,
         "next_action_raw": next_action_raw,
         "coerced": normalized_raw != final,
-        "blast": _blast_for_action(next_action),
+        "blast": blast,
         "feedback": feedback,
         "feedback_source": feedback_source,
         "violations": _violation_categories(manifest),
         "test_integrity": _evaluation_test_integrity_value(manifest),
         "failure_kind": session.failure_kind or "",
+        "streak": streak,
+        "loop": loop,
     }
     append_verdicts_record(Path.cwd(), issue_id, tid, record)
-    _note_cycle_verdict(next_action)
+    _note_cycle_verdict(next_action, streak)
+    if loop:
+        _log_run(
+            "LOOP_DETECTED",
+            task_id=tid,
+            issue_id=issue_id,
+            blast=blast,
+            streak=streak,
+        )
 
 
 def _emit_cycle_end(task: dict, ledger_path: Path, trace: _CycleTrace) -> None:
@@ -3092,6 +3161,7 @@ def _emit_cycle_end(task: dict, ledger_path: Path, trace: _CycleTrace) -> None:
         "phase_decisions": list(trace.phase_decisions),
         "reject_count": trace.reject_count,
         "last_blast": trace.last_blast,
+        "max_streak": trace.max_streak,
     }
     _log_run("CYCLE_END", **payload)
     record: dict[str, object] = {

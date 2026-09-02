@@ -8,9 +8,11 @@ from pydantic import ValidationError
 from deviate.state.config import (
     AgentConfig,
     DeviateConfig,
+    LogConfig,
     ProfileConfig,
     SessionState,
     resolve_agent_export_mode,
+    resolve_agent_reasons,
     resolve_base_branch,
     resolve_claim_remote,
     resolve_execution_profile,
@@ -42,6 +44,8 @@ class TestDeviateConfig:
         assert config.timeout_seconds == 1800
         assert config.agent_export_mode == "local"
         assert config.base_branch == "main"
+        assert config.log.agent_reasons is False
+        assert LogConfig().agent_reasons is False
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
@@ -211,6 +215,21 @@ class TestDeviateConfig:
             'claim_remote = "false"\n', encoding="utf-8"
         )
         assert resolve_claim_remote(tmp_path) is False
+
+    def test_resolve_agent_reasons_default_false(self, tmp_path: Path) -> None:
+        assert resolve_agent_reasons(tmp_path) is False
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text('profile = "full"\n', encoding="utf-8")
+        assert resolve_agent_reasons(tmp_path) is False
+
+    def test_resolve_agent_reasons_true(self, tmp_path: Path) -> None:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        (dot_dir / "config.toml").write_text(
+            "[log]\nagent_reasons = true\n", encoding="utf-8"
+        )
+        assert resolve_agent_reasons(tmp_path) is True
 
     def test_profile_rejects_default_string(self):
         with pytest.raises(ValidationError):

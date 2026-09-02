@@ -176,6 +176,19 @@ def normalize_task_id(ref: str) -> str:
     return ref.rstrip(":")
 
 
+class LogConfig(BaseModel):
+    """``[log]`` table in ``.deviate/config.toml``.
+
+    Runner / pre / post transcripts never consult this table. It only
+    gates whether assembled phase prompts ask the agent for a one-line
+    handover ``rationale``.
+    """
+
+    agent_reasons: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
 class DeviateConfig(BaseModel):
     # Micro-run default when ``deviate micro run --profile`` is omitted.
     # Must be a real execution profile — never the unused string "default".
@@ -197,6 +210,8 @@ class DeviateConfig(BaseModel):
     base_branch: str = Field(default="main", min_length=1)
     # Push the claim branch as a distributed lock (opt-in)
     claim_remote: bool = Field(default=False)
+    # Agent-prompt rationale hint (default off). Setup does not write this.
+    log: LogConfig = Field(default_factory=LogConfig)
 
     model_config = {"extra": "forbid"}
 
@@ -296,6 +311,22 @@ def resolve_agent_deadline(root: Path) -> int:
         if isinstance(config_value, int) and config_value > 0:
             return config_value
     return DeviateConfig().timeout_seconds
+
+
+def resolve_agent_reasons(root: Path) -> bool:
+    """Return ``[log].agent_reasons`` from ``.deviate/config.toml``.
+
+    Default ``False`` when the file, table, or key is absent, or when
+    the value is not a bool. Setup does not write this key.
+    """
+    data = _load_deviate_config_toml(root)
+    if not isinstance(data, dict):
+        return False
+    log = data.get("log", {})
+    if not isinstance(log, dict):
+        return False
+    value = log.get("agent_reasons", False)
+    return value if isinstance(value, bool) else False
 
 
 def resolve_claim_remote(root: Path) -> bool:

@@ -1483,7 +1483,6 @@ class TestInstallDeviatddSkill:
             "PHASE_SKIP",
             "INVOKE_AGENT",
             "AGENT_RESULT",
-            "AGENT_RAW_OUTPUT",
             "AGENT_TIMEOUT",
             "AGENT_ERROR",
             "AGENT_NOT_AVAILABLE",
@@ -1537,9 +1536,9 @@ class TestInstallDeviatddSkill:
         for required in (
             "INVOKE_AGENT",
             "AGENT_RESULT",
-            "AGENT_RAW_OUTPUT",
             "TASK_FAILED",
             "PHASE_DECISION",
+            "CYCLE_END",
         ):
             assert required in section, (
                 f"Troubleshooting section must mention {required}; "
