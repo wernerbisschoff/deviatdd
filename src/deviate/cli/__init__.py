@@ -62,6 +62,7 @@ from deviate.core.commands import (
     install_command,
     parse_optional_packs,
 )
+from deviate.core.worktree import worktree_gitignore_entries
 from deviate.ui.checkbox import checkbox_select
 from deviate.ui.render import is_interactive
 
@@ -1570,18 +1571,19 @@ def _strip_root_gitignore_entries(workdir: Path, entries: tuple[str, ...]) -> No
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Exclude DeviaTDD personal artifacts via ``.git/info/exclude``.
 
-    The seven entry groups (agent commands/prompts/skills, ``.worktrees/``,
-    ``.deviate/``, ``.zvec-grep/``) are operator-local and must never dirty
-    the shared ``.gitignore``. Entries already present in a root
-    ``.gitignore`` from older setups are removed. Outside a git repo,
-    falls back to the previous ``.gitignore`` provisioning.
+    The seven entry groups (agent commands/prompts/skills, worktrees
+    ``wt/`` and sticky ``.worktrees/``, ``.deviate/``, ``.zvec-grep/``)
+    are operator-local and must never dirty the shared ``.gitignore``.
+    Entries already present in a root ``.gitignore`` from older setups
+    are removed. Outside a git repo, falls back to the previous
+    ``.gitignore`` provisioning.
     """
     entries = (
         "*/commands/deviate-*.md",
         "*/prompts/deviate-*.md",
         "*/skills/deviatdd/",
         "*/skills/deviate-*/",
-        ".worktrees/",
+        *worktree_gitignore_entries(),
         ".deviate/",
         ".zvec-grep/",
     )

@@ -112,7 +112,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   discovers slash commands from `.omp/prompts/`). All five command
   directories are excluded from version control via the local
   `.git/info/exclude` (see `_ensure_root_gitignore` in `src/deviate/cli/__init__.py`),
-  which also excludes `.deviate/`, `.worktrees/`, and `.zvec-grep/` by default.
+  which also excludes `.deviate/`, `wt/`, `.worktrees/`, and `.zvec-grep/` by default.
   The shared root `.gitignore` is never touched. Additionally, both `deviate setup` and `deviate init pre` provision a project-root
   `.gitattributes` declaring `merge=union` for `specs/issues.jsonl` and
   `specs/**/tasks.jsonl` (see `_ensure_root_gitattributes` at
@@ -199,13 +199,13 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `.deviate/session.json` — Current session state snapshot
   * `.deviate/.gitignore` — Excludes session.json and runtime state
     directories from version control
-  * `<gitdir>/info/exclude` — Updated with seven concise DeviaTDD
+  * `<gitdir>/info/exclude` — Updated with eight concise DeviaTDD
     exclusions: `*/commands/deviate-*.md`,
     `*/prompts/deviate-*.md` (covers every supported agent directory
     — ``.claude/commands/``, ``.opencode/commands/``,
     ``.factory/commands/``, ``.pi/prompts/`` — and any future agent
     that follows the same flat-file convention), `*/skills/deviatdd/`,
-    `*/skills/deviate-*/`, `.worktrees/`, `.deviate/`, and `.zvec-grep/`. The single-level
+    `*/skills/deviate-*/`, `wt/`, `.worktrees/`, `.deviate/`, and `.zvec-grep/`. The single-level
     ``*/`` prefix is deliberate: a broader ``**/deviate-*.md`` would
     silently ignore the deviatdd project's own command sources at
     ``src/deviate/prompts/commands/deviate-*.md`` (three directories
@@ -362,8 +362,9 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   single-level wildcard covers every selected-agent skill install
   (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
   with one pattern. `*/skills/deviate-*/` covers Codex per-command
-  skill dirs. The entries tuple also carries `.worktrees/` and
-  `.deviate/` so per-project runtime state is untracked by default
+  skill dirs. The entries tuple also carries `wt/`, `.worktrees/`,
+  `.deviate/`, and `.zvec-grep/` so per-project runtime state is
+  untracked by default
   for new consumer setups. The single-level prefix (`*/`, not `**/`) is critical: it
   scopes the pattern to the project root, never matching the
   source-of-truth at `src/deviate/prompts/skills/deviatdd/` (three
@@ -564,7 +565,9 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Selects and claims an issue. If `--issue` is given, selects that specific
   issue and fails if unclaimable. If omitted, iterates `select_unblocked_candidates()` in a
-  try-claim loop. Each claim creates a git worktree at `.worktrees/feat/{epic}/{issue}/`,
+  try-claim loop. Each claim creates a git worktree at `wt/feat/{epic}/{issue}/`
+  (sticky `.worktrees/feat/{epic}/{issue}/` when that directory already exists
+  and `wt/` does not; when both exist, new trees go under `wt/`),
   runs mise setup (plus `mise run setup:integration` when that task is defined), writes the claim to the worktree's ledger, pushes the branch to remote,
   and emits a JSON contract with spec_target, worktree_path, branch_name, traceability
   status, constitution commands, etc. If no feature workspace exists yet, invokes
@@ -596,7 +599,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
   worktree.
 * `--local`: claim the issue locally only. Creates the worktree, writes the CLAIM row, and commits. Skips the remote-branch pre-check and `git push`. If the local branch `feat/<epic>/<slug>` already exists, returns success with `ALREADY_CLAIMED_LOCAL` and reuses the existing worktree (no ledger re-write). Useful for air-gapped or no-remote workflows. Tradeoff: local branch is the only claim signal, so a manual `git checkout -b feat/<epic>/<slug>` will also short-circuit as already-claimed. Omitted `--local` honors `.deviate/config.toml` `claim_remote` (default `false`; absent file or absent key resolves to `false`). Explicit `--local` always wins over `claim_remote = true`. Existing `claim_remote = true` configs still push. Local mode is distinct from `--no-setup`: it still creates the worktree and writes the ledger claim. When push-as-lock is on (`claim_remote = true`, no `--local`) and `git push` of `feat/<epic>/<NNN>-*` or `feat/adhoc/<NNN>-*` is rejected because the name exists, `_try_claim_issue` increments the ordinal and retries the push, at most 3 times. Collision retry does not set `--local`. Non-name-collision push errors still print `PUSH_STDERR` and follow `--force` or rollback.
 * `--branch <name>` / `--base <name>`: use the named branch as the start point for the new worktree. If omitted, use the current branch.
-* `--second-worktree`: re-open an ALREADY-CLAIMED issue in an additional worktree. Pass the issue positionally or via `--issue` — discovery always skips issues whose `feat/{epic}/{issue}` worktree already exists locally, which is exactly the precondition of `--second-worktree`, so discovery can never find the target. Creates branch `feat/<epic>/<slug>-rN` (N auto-increments past every existing local `feat/<epic>/<slug>-rN` branch, starting at 2) with worktree at `.worktrees/<branch>`, start point HEAD — so the specs, plan, and tasks committed on the first worktree's branch ride along. Implies `--local` semantics: skips the remote-branch pre-check and never takes the `ALREADY_CLAIMED_LOCAL` reuse short-circuit (that reuse is the point being defeated). The ledger claim write is skipped naturally (`CLAIM_SKIP`); the branch is still pushed for backup. Branch→issue resolution across plan/tasks/micro/review strips the `-rN` suffix (exact slug match always wins first), so all pre/post commands and the runner work unchanged inside the new worktree. Caveats: both worktrees see the same PENDING task rows — partition manually with `deviate micro run --task <id>`; spec edits after branch-off diverge per branch.
+* `--second-worktree`: re-open an ALREADY-CLAIMED issue in an additional worktree. Pass the issue positionally or via `--issue` — discovery always skips issues whose `feat/{epic}/{issue}` worktree already exists locally, which is exactly the precondition of `--second-worktree`, so discovery can never find the target. Creates branch `feat/<epic>/<slug>-rN` (N auto-increments past every existing local `feat/<epic>/<slug>-rN` branch, starting at 2) with worktree at `wt/<branch>` (sticky `.worktrees/<branch>` when that directory already exists and `wt/` does not), start point HEAD — so the specs, plan, and tasks committed on the first worktree's branch ride along. Implies `--local` semantics: skips the remote-branch pre-check and never takes the `ALREADY_CLAIMED_LOCAL` reuse short-circuit (that reuse is the point being defeated). The ledger claim write is skipped naturally (`CLAIM_SKIP`); the branch is still pushed for backup. Branch→issue resolution across plan/tasks/micro/review strips the `-rN` suffix (exact slug match always wins first), so all pre/post commands and the runner work unchanged inside the new worktree. Caveats: both worktrees see the same PENDING task rows — partition manually with `deviate micro run --task <id>`; spec edits after branch-off diverge per branch.
 
 #### `deviate plan pre [--issue <id>] [--dry-run]`
 
@@ -1419,7 +1422,8 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `blocked_by` dependencies are not COMPLETED unless `--force` is set.
 * **Pipeline Steps (in order):**
   1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run, local)`, which creates a
-     linked worktree at `.worktrees/feat/{epic}/{issue}/`, copies `.claude/`, `.opencode/`,
+     linked worktree at `wt/feat/{epic}/{issue}/` (sticky `.worktrees/` when that
+     directory already exists and `wt/` does not; both present → new trees under `wt/`), copies `.claude/`, `.opencode/`,
      `.factory/`, `.pi/`, `.omp/` agent skill directories and `.env` (if present) into the
      worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
      during setup), then `mise run setup:integration` when that task is defined in the worktree's
@@ -1477,8 +1481,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   ``--no-setup`` were passed: it skips the SPECIFY step, resolves the active issue
   from the current branch's ``feat/{epic}/{issue}`` slug, and continues with PLAN +
   TASKS in the existing worktree. This makes ``deviate meso run`` a safe continuation
-  command after re-entering a worktree (e.g. ``cd .worktrees/feat/<epic>/<issue>``
-  followed by ``deviate meso run`` resumes the pipeline for that issue). Operators
+  command after re-entering a worktree (e.g. ``cd wt/feat/<epic>/<issue>``
+  or sticky ``cd .worktrees/feat/<epic>/<issue>``, then
+  ``deviate meso run`` resumes the pipeline for that issue). Operators
   who want to force the SPECIFY cycle can pass ``--issue <other-id>`` (which bypasses
   the auto-detect branch entirely) or invoke ``deviate meso run`` from outside the
   worktree.

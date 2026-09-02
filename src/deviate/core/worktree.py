@@ -5,6 +5,58 @@ from pathlib import Path
 
 from deviate.core._shared import git_env as _git_env
 
+DEFAULT_WORKTREE_ROOT_NAME = "wt"
+LEGACY_WORKTREE_ROOT_NAME = ".worktrees"
+WORKTREE_ROOT_DIRNAMES: frozenset[str] = frozenset(
+    {DEFAULT_WORKTREE_ROOT_NAME, LEGACY_WORKTREE_ROOT_NAME}
+)
+
+
+def worktree_gitignore_entries() -> tuple[str, ...]:
+    """Root ``.gitignore`` patterns for both legal worktree roots."""
+    return (f"{DEFAULT_WORKTREE_ROOT_NAME}/", f"{LEGACY_WORKTREE_ROOT_NAME}/")
+
+
+def resolve_worktree_root(repo: Path) -> Path:
+    """Return the directory under which NEW worktrees should be created.
+
+    One root per consumer repo:
+
+    - Neither ``wt/`` nor ``.worktrees/`` exists → ``wt/``
+    - Only ``.worktrees/`` exists → ``.worktrees/`` (sticky compat)
+    - Only ``wt/`` exists → ``wt/``
+    - Both exist → ``wt/`` for new trees
+
+    Never renames ``.worktrees`` → ``wt``. Git stores absolute worktree
+    paths; a rename without ``git worktree move`` would break trees.
+    Existing trees are operated wherever ``git worktree list`` already
+    has them (see ``find_worktree_for_branch``).
+    """
+    repo = Path(repo)
+    default = repo / DEFAULT_WORKTREE_ROOT_NAME
+    legacy = repo / LEGACY_WORKTREE_ROOT_NAME
+    if legacy.is_dir() and not default.is_dir():
+        return legacy
+    return default
+
+
+def expected_branch_from_worktree_path(path: Path) -> str | None:
+    """Return the full git branch encoded after a legal worktree-root dirname.
+
+    The only legal worktree-root dirnames are ``wt`` and ``.worktrees``.
+    The remainder is the full branch (including any suffix), not a
+    stripped issue slug. Returns ``None`` when *path* is not under either
+    root — callers must not parse an issue id out of an arbitrary folder.
+    """
+    parts = Path(path).parts
+    for i, part in enumerate(parts):
+        if part in WORKTREE_ROOT_DIRNAMES:
+            remainder = parts[i + 1 :]
+            if remainder:
+                return "/".join(remainder)
+            return None
+    return None
+
 
 def find_worktree_for_branch(branch: str, repo: Path | None = None) -> Path | None:
     """Return the worktree path for an existing branch, or None."""

@@ -348,7 +348,7 @@ Classify each entry:
   certainly mid-task WIP; halt and surface to user.
 - Untracked files / directories → back them up to
   `/tmp/deviatdd-cleanup-<UTC>/` via `mv` (NOT delete), then proceed.
-- `.deviate/`, `.mise/`, `.venv/`, `__pycache__/`, `.worktrees/` →
+- `.deviate/`, `.mise/`, `.venv/`, `__pycache__/`, `.worktrees/`, `wt/` →
   explicitly preserved by `_execute_rollback`'s `git clean -fd`
   contract; do nothing with them.
 
@@ -366,7 +366,7 @@ Only after step 3 affirmatively clears:
 
 ```bash
 git reset --hard HEAD
-git clean -fd    # WITHOUT -x: preserves .deviate/, .mise/, .venv/, __pycache__/, .worktrees/
+git clean -fd    # WITHOUT -x: preserves .deviate/, .mise/, .venv/, __pycache__/, .worktrees/, wt/
 ```
 
 Then re-invoke for the next pending task:
@@ -375,7 +375,6 @@ Then re-invoke for the next pending task:
 # Inside the worktree:
 deviate micro run <TASK_ID>
 ```
-
 
 ## Dispatch to slash commands (when micro alone is not enough)
 

@@ -1190,6 +1190,7 @@ class TestSetupLocalExclude:
         "*/prompts/deviate-*.md",
         "*/skills/deviatdd/",
         "*/skills/deviate-*/",
+        "wt/",
         ".worktrees/",
         ".deviate/",
         ".zvec-grep/",

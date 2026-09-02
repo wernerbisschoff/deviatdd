@@ -756,8 +756,9 @@ class TestInitAgentFlag:
             ).exists()
 
     def test_init_writes_root_gitignore_for_all_agent_dirs(self, tmp_path: Path):
-        """``deviate setup`` writes agent artifacts, worktrees, and zvec-grep
-        state to the project-root ``.gitignore``.
+        """``deviate setup`` writes agent artifacts, both worktree roots,
+        and zvec-grep state to the project-root ``.gitignore`` fallback
+        (non-git workdir).
         """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -765,6 +766,7 @@ class TestInitAgentFlag:
             root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
             assert "*/commands/deviate-*.md" in root_gi
             assert "*/prompts/deviate-*.md" in root_gi
+            assert "wt/" in root_gi
             assert ".worktrees/" in root_gi
             assert ".zvec-grep/" in root_gi
 
@@ -816,6 +818,7 @@ class TestInitAgentFlag:
             for entry in (
                 "*/commands/deviate-*.md",
                 "*/prompts/deviate-*.md",
+                "wt/",
                 ".worktrees/",
                 ".zvec-grep/",
             ):
