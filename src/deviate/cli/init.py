@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import NoReturn
 
@@ -10,6 +11,9 @@ from rich.console import Console
 
 init_app = typer.Typer(no_args_is_help=True)
 console = Console()
+
+_E2E_DIR_CANDIDATES = (Path("tests/e2e"), Path("e2e"), Path("test/e2e"))
+_COMPOSE_FILE_CANDIDATES = (Path("docker-compose.yml"), Path("compose.yaml"))
 
 
 def _fail_with(reason: str) -> NoReturn:
@@ -40,17 +44,6 @@ def _get_test_command(project_type: str) -> str:
         "go": "go test ./...",
     }
     return commands.get(project_type, "true")
-
-
-def _get_zero_test_pass_command(project_type: str) -> str:
-    commands = {
-        "elixir_phoenix": "mix test || true",
-        "python": "uv run pytest || true",
-        "node": "npm test || true",
-        "rust": "cargo test || true",
-        "go": "go test ./... || true",
-    }
-    return commands.get(project_type, "echo 'No test framework' || true")
 
 
 def _get_lint_command(project_type: str) -> str:
@@ -121,28 +114,248 @@ def _get_dev_command(project_type: str, repo_root: Path) -> str:
     return "echo 'No dev server configured'"
 
 
-def _generate_mise_toml(project_type: str, repo_root: Path) -> str:
+def _node_pkg_manager(repo_root: Path) -> str:
+    if (repo_root / "pnpm-lock.yaml").exists():
+        return "pnpm"
+    if (repo_root / "yarn.lock").exists():
+        return "yarn"
+    return "npm"
+
+
+_INTEG_DIR_CANDIDATES = (
+    Path("tests/integration"),
+    Path("test/integration"),
+    Path("tests/integ"),
+)
+
+
+def _discover_existing_dir(
+    repo_root: Path, candidates: tuple[Path, ...]
+) -> Path | None:
+    for rel in candidates:
+        if (repo_root / rel).is_dir():
+            return rel
+    return None
+
+
+def _unit_stub_path(project_type: str) -> Path:
     if project_type == "elixir_phoenix":
-        return """# Mise configuration for Elixir/Phoenix project
+        return Path("test")
+    return Path("tests/unit")
+
+
+def _integ_stub_path(project_type: str, repo_root: Path) -> Path:
+    existing = _discover_existing_dir(repo_root, _INTEG_DIR_CANDIDATES)
+    if existing is not None:
+        return existing
+    if project_type == "elixir_phoenix":
+        return Path("test/integration")
+    return Path("tests/integration")
+
+
+def _existing_e2e_dir(repo_root: Path) -> Path | None:
+    return _discover_existing_dir(repo_root, _E2E_DIR_CANDIDATES)
+
+
+def _layer_paths(project_type: str, repo_root: Path) -> tuple[Path, Path]:
+    return (
+        _unit_stub_path(project_type),
+        _integ_stub_path(project_type, repo_root),
+    )
+
+
+def _has_compose_file(repo_root: Path) -> bool:
+    return any((repo_root / rel).is_file() for rel in _COMPOSE_FILE_CANDIDATES)
+
+
+def _toml_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _allow_empty_pytest(command: str) -> str:
+    """Treat pytest exit 5 (no tests collected) as success for an empty stub.
+
+    Assertion failures (exit 1) still fail. This is not ``|| true``.
+    """
+    return f"{command} || {{ [ $? -eq 5 ]; }}"
+
+
+def _unit_run(project_type: str, repo_root: Path) -> str:
+    unit, _ = _layer_paths(project_type, repo_root)
+    unit_s = unit.as_posix()
+    if project_type == "elixir_phoenix":
+        return "mix test"
+    if project_type == "python":
+        return f"uv run pytest {unit_s}"
+    if project_type == "node":
+        return f"{_node_pkg_manager(repo_root)} test -- {unit_s}"
+    if project_type == "rust":
+        return "cargo test --lib"
+    if project_type == "go":
+        return f"go test ./{unit_s}/..."
+    return f"pytest {unit_s}"
+
+
+def _integ_run(project_type: str, repo_root: Path) -> str:
+    _, integ = _layer_paths(project_type, repo_root)
+    integ_s = integ.as_posix()
+    if project_type == "elixir_phoenix":
+        return f"mix test {integ_s}"
+    if project_type == "python":
+        return _allow_empty_pytest(f"uv run pytest {integ_s}")
+    if project_type == "node":
+        return f"{_node_pkg_manager(repo_root)} test -- --passWithNoTests {integ_s}"
+    if project_type == "rust":
+        return "cargo test --tests"
+    if project_type == "go":
+        return f"go test ./{integ_s}/..."
+    return _allow_empty_pytest(f"pytest {integ_s}")
+
+
+def _e2e_run(project_type: str, repo_root: Path) -> str:
+    e2e = _existing_e2e_dir(repo_root)
+    e2e_s = (e2e or Path("tests/e2e")).as_posix()
+    if project_type == "elixir_phoenix":
+        return f"mix test {e2e_s}"
+    if project_type == "python":
+        return _allow_empty_pytest(f"uv run pytest {e2e_s}")
+    if project_type == "node":
+        return f"{_node_pkg_manager(repo_root)} test -- --passWithNoTests {e2e_s}"
+    if project_type == "rust":
+        return "cargo test --tests"
+    if project_type == "go":
+        return f"go test ./{e2e_s}/..."
+    return _allow_empty_pytest(f"pytest {e2e_s}")
+
+
+def _doctor_run(project_type: str, repo_root: Path) -> str:
+    if project_type == "elixir_phoenix":
+        command = "elixir --version && mix --version"
+    elif project_type == "python":
+        command = "python3 --version && uv --version"
+    elif project_type == "node":
+        pkg = _node_pkg_manager(repo_root)
+        command = f"node --version && {pkg} --version"
+    elif project_type == "rust":
+        command = "rustc --version && cargo --version"
+    elif project_type == "go":
+        command = "go version"
+    else:
+        command = "python3 --version"
+    if _has_compose_file(repo_root):
+        command += " && docker compose config"
+    return command
+
+
+def _named_mise_tasks(project_type: str, repo_root: Path) -> dict[str, str]:
+    # Write ``integration`` so ``mise integration`` works. The runner
+    # (_resolve_verification_command) also accepts ``integ`` as an alias
+    # when a repo already defines that name; init does not emit ``integ``.
+    tasks = {
+        "unit": _unit_run(project_type, repo_root),
+        "integration": _integ_run(project_type, repo_root),
+        "doctor": _doctor_run(project_type, repo_root),
+    }
+    if _existing_e2e_dir(repo_root) is not None:
+        tasks["e2e"] = _e2e_run(project_type, repo_root)
+    return tasks
+
+
+def _ensure_stub_dirs(project_type: str, repo_root: Path) -> list[str]:
+    created: list[str] = []
+    for rel in _layer_paths(project_type, repo_root):
+        # unit + integration stubs only; e2e is never created here
+        path = repo_root / rel
+        path.mkdir(parents=True, exist_ok=True)
+        has_real_entries = any(entry.name != ".gitkeep" for entry in path.iterdir())
+        if has_real_entries:
+            continue
+        gitkeep = path / ".gitkeep"
+        if gitkeep.exists():
+            continue
+        gitkeep.write_text("", encoding="utf-8")
+        created.append(str(rel / ".gitkeep"))
+    return created
+
+
+def _mise_task_names(content: str) -> set[str]:
+    try:
+        data = tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        return set()
+    tasks = data.get("tasks")
+    if isinstance(tasks, dict):
+        return {str(key) for key in tasks}
+    return set()
+
+
+def _render_named_task(name: str, run: str) -> str:
+    return f"[tasks.{name}]\nrun = {_toml_string(run)}\n"
+
+
+def _merge_mise_toml(content: str, named: dict[str, str]) -> str:
+    try:
+        tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        return content
+    existing = _mise_task_names(content)
+    additions = [
+        _render_named_task(name, run)
+        for name, run in named.items()
+        if name not in existing
+    ]
+    if not additions:
+        return content
+    if content and not content.endswith("\n"):
+        content += "\n"
+    if content and not content.endswith("\n\n"):
+        content += "\n"
+    return content + "\n".join(additions)
+
+
+def _apply_mise_toml(project_type: str, repo_root: Path) -> bool:
+    path = repo_root / "mise.toml"
+    named = _named_mise_tasks(project_type, repo_root)
+    if not path.exists():
+        path.write_text(_generate_mise_toml(project_type, repo_root), encoding="utf-8")
+        return True
+    original = path.read_text(encoding="utf-8")
+    merged = _merge_mise_toml(original, named)
+    if merged == original:
+        return False
+    path.write_text(merged, encoding="utf-8")
+    return True
+
+
+def _generate_mise_toml(project_type: str, repo_root: Path) -> str:
+    named = _named_mise_tasks(project_type, repo_root)
+    unit = _toml_string(named["unit"])
+    integration = _toml_string(named["integration"])
+    doctor = _toml_string(named["doctor"])
+    e2e_line = ""
+    if "e2e" in named:
+        e2e_line = f"e2e = {_toml_string(named['e2e'])}\n"
+    if project_type == "elixir_phoenix":
+        return f"""# Mise configuration for Elixir/Phoenix project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
-# ZERO-TEST-PASS: test task uses || true to pass when no tests exist
 
 [tools]
 elixir = "latest"
 erlang = "latest"
 
 [tasks]
-# DeviaTDD zero-test-pass invariant: passes even with zero tests written
-test = "mix test || true"
-test-raw = "mix test"
-setup = { depends = ["hooks"], run = "mix deps.get && mix deps.compile" }
+unit = {unit}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
+setup = {{ depends = ["hooks"], run = "mix deps.get && mix deps.compile" }}
 lint = "mix credo --strict"
 format = "mix format"
 format-check = "mix format --check-formatted"
-fix = { depends = ["format", "lint"] }
-check = { depends = ["format-check", "lint", "test"] }
-pre-commit = { depends = ["format-check", "lint"] }
-pre-push = { depends = ["test"] }
+fix = {{ depends = ["format", "lint"] }}
+check = {{ depends = ["format-check", "lint", "unit"] }}
+pre-commit = {{ depends = ["format-check", "lint"] }}
+pre-push = {{ depends = ["unit"] }}
+doctor = {doctor}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "mix phx.server"
 clean = "mix clean && rm -rf _build deps .fetch"
@@ -151,113 +364,131 @@ clean = "mix clean && rm -rf _build deps .fetch"
         dev_cmd = _get_dev_command(project_type, repo_root)
         return f"""# Mise configuration for Python project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
-# ZERO-TEST-PASS: test task uses || true to pass when no tests exist
 
 [tools]
 python = "3.12"
 uv = "latest"
 
 [tasks]
-# DeviaTDD zero-test-pass invariant: passes even with zero tests written
-test = "uv run pytest || true"
-test-raw = "uv run pytest"
+# Runner also accepts `integ` as an alias (_resolve_verification_command).
+# Init writes `integration` so `mise integration` works.
+# Empty integration: pytest exit 5 (no tests collected) is success. Not || true.
+unit = {unit}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "uv sync --extra dev" }}
 lint = "uv run ruff check"
 format = "uv run ruff format"
 format-check = "uv run ruff format --check"
 fix = {{ depends = ["format", "lint"] }}
-check = {{ depends = ["format-check", "lint", "test"] }}
+check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
-pre-push = {{ depends = ["test"] }}
+pre-push = {{ depends = ["unit"] }}
+doctor = {doctor}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "{dev_cmd}"
 clean = "rm -rf .venv dist build __pycache__"
 """
     if project_type == "node":
-        pkg_manager = "npm"
-        if (repo_root / "pnpm-lock.yaml").exists():
-            pkg_manager = "pnpm"
-        elif (repo_root / "yarn.lock").exists():
-            pkg_manager = "yarn"
+        pkg_manager = _node_pkg_manager(repo_root)
         return f"""# Mise configuration for Node.js project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
-# ZERO-TEST-PASS: test task uses || true to pass when no tests exist
 
 [tools]
 node = "lts"
 {pkg_manager} = "latest"
 
 [tasks]
-# DeviaTDD zero-test-pass invariant: passes even with zero tests written
-test = "{pkg_manager} test || true"
-test-raw = "{pkg_manager} test"
+unit = {unit}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "{pkg_manager} install" }}
 lint = "{pkg_manager} run lint 2>/dev/null || echo 'No lint configured'"
 format = "{pkg_manager} run format 2>/dev/null || echo 'No formatter configured'"
 format-check = "{pkg_manager} run format:check 2>/dev/null || echo 'No format check configured'"
 fix = {{ depends = ["format", "lint"] }}
-check = {{ depends = ["format-check", "lint", "test"] }}
+check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
-pre-push = {{ depends = ["test"] }}
+pre-push = {{ depends = ["unit"] }}
+doctor = {doctor}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "{pkg_manager} run dev 2>/dev/null || {pkg_manager} run start"
 clean = "rm -rf node_modules dist build"
 """
     if project_type == "rust":
-        return """# Mise configuration for Rust project
+        return f"""# Mise configuration for Rust project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
-# ZERO-TEST-PASS: test task uses || true to pass when no tests exist
 
 [tools]
 rust = "stable"
 
 [tasks]
-# DeviaTDD zero-test-pass invariant: passes even with zero tests written
-test = "cargo test || true"
-test-raw = "cargo test"
-setup = { depends = ["hooks"], run = "cargo fetch" }
+unit = {unit}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
+setup = {{ depends = ["hooks"], run = "cargo fetch" }}
 lint = "cargo clippy -- -D warnings"
 format = "cargo fmt"
 format-check = "cargo fmt --check"
-fix = { depends = ["format", "lint"] }
-check = { depends = ["format-check", "lint", "test"] }
-pre-commit = { depends = ["format-check", "lint"] }
-pre-push = { depends = ["test"] }
+fix = {{ depends = ["format", "lint"] }}
+check = {{ depends = ["format-check", "lint", "unit"] }}
+pre-commit = {{ depends = ["format-check", "lint"] }}
+pre-push = {{ depends = ["unit"] }}
+doctor = {doctor}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "cargo run"
 clean = "cargo clean"
 """
     if project_type == "go":
-        return """# Mise configuration for Go project
+        return f"""# Mise configuration for Go project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
-# ZERO-TEST-PASS: test task uses || true to pass when no tests exist
 
 [tools]
 go = "latest"
 
 [tasks]
-# DeviaTDD zero-test-pass invariant: passes even with zero tests written
-test = "go test ./... || true"
-test-raw = "go test ./..."
-setup = { depends = ["hooks"], run = "go mod download" }
+unit = {unit}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
+setup = {{ depends = ["hooks"], run = "go mod download" }}
 lint = "golangci-lint run 2>/dev/null || echo 'No linter configured'"
 format = "gofmt -w ."
 format-check = "gofmt -l ."
-fix = { depends = ["format", "lint"] }
-check = { depends = ["format-check", "lint", "test"] }
-pre-commit = { depends = ["format-check", "lint"] }
-pre-push = { depends = ["test"] }
+fix = {{ depends = ["format", "lint"] }}
+check = {{ depends = ["format-check", "lint", "unit"] }}
+pre-commit = {{ depends = ["format-check", "lint"] }}
+pre-push = {{ depends = ["unit"] }}
+doctor = {doctor}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "go run ."
 clean = "go clean"
 """
     if project_type == "unknown":
-        return """# Mise configuration for an unclassified project
+        e2e_block = ""
+        if "e2e" in named:
+            e2e_block = (
+                f"\n[tasks.e2e]\n"
+                f"run = {_toml_string(named['e2e'])}\n"
+                f'description = "End-to-end tests. Empty stub: pytest exit 5 is success."\n'
+            )
+        return f"""# Mise configuration for an unclassified project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
 
+[tasks.unit]
+run = {unit}
+description = "Fast hermetic unit tests"
+
+[tasks.integration]
+run = {integration}
+description = "Integration tests. Empty stub: pytest exit 5 is success. Runner also accepts integ as an alias."
+{e2e_block}
 [tasks.test]
-run = "pytest"
-description = "Run the default Python test command"
+depends = ["unit"]
+description = "Back-compat alias of unit"
+
+[tasks.doctor]
+run = {doctor}
+description = "Cheap toolchain check"
 
 [tasks.lint]
 run = "ruff check && ruff format --check"
@@ -270,6 +501,14 @@ description = "Format Python sources"
 [tasks.format-check]
 run = "ruff format --check"
 description = "Check Python formatting"
+
+[tasks.pre-commit]
+depends = ["format-check", "lint"]
+description = "Commit hook: format-check + lint"
+
+[tasks.pre-push]
+depends = ["unit"]
+description = "Push hook: unit tests only"
 """
     _fail_with(f"Unknown project type: {project_type}")
 
@@ -387,11 +626,13 @@ def pre() -> None:
 
     artifacts_created = []
 
-    if not has_mise_toml:
-        mise_content = _generate_mise_toml(project_type, repo_root)
-        (repo_root / "mise.toml").write_text(mise_content, encoding="utf-8")
+    artifacts_created.extend(_ensure_stub_dirs(project_type, repo_root))
+
+    if _apply_mise_toml(project_type, repo_root):
         has_mise_toml = True
         artifacts_created.append("mise.toml")
+    else:
+        has_mise_toml = (repo_root / "mise.toml").exists()
 
     if not has_specs_dir:
         (repo_root / "specs").mkdir(exist_ok=True)
@@ -475,6 +716,17 @@ def post() -> None:
     artifacts = []
     if (repo_root / "mise.toml").exists():
         artifacts.append("mise.toml")
+    for rel in (
+        Path("tests/unit") / ".gitkeep",
+        Path("tests/integration") / ".gitkeep",
+        Path("tests/e2e") / ".gitkeep",
+        Path("test") / ".gitkeep",
+        Path("test/integration") / ".gitkeep",
+        Path("test/e2e") / ".gitkeep",
+        Path("e2e") / ".gitkeep",
+    ):
+        if (repo_root / rel).is_file():
+            artifacts.append(str(rel))
     if (repo_root / "specs").is_dir():
         artifacts.append("specs/")
     if (repo_root / "specs" / "constitution.md").exists():

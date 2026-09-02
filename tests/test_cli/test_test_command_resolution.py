@@ -18,10 +18,17 @@ from deviate.core.constitution import extract_commands
 runner = CliRunner()
 
 
+def _task_run(config: dict, name: str) -> str:
+    task = config["tasks"][name]
+    if isinstance(task, str):
+        return task
+    return str(task["run"])
+
+
 def test_unknown_project_mise_dispatches_test_and_lint(tmp_path: Path) -> None:
     config = tomllib.loads(_generate_mise_toml("unknown", tmp_path))
 
-    assert config["tasks"]["test"]["run"] == "pytest"
+    assert _task_run(config, "unit") == "pytest tests/unit"
     assert config["tasks"]["lint"]["run"] == "ruff check && ruff format --check"
 
 
@@ -35,7 +42,9 @@ def test_init_pre_scaffolds_mise_for_unknown_project(tmp_git_repo: Path) -> None
     assert contract["existing_artifacts"]["mise_toml"] is True
 
     config = tomllib.loads((tmp_git_repo / "mise.toml").read_text(encoding="utf-8"))
-    assert config["tasks"]["test"]["run"] == "pytest"
+    assert _task_run(config, "unit") == "pytest tests/unit"
+    assert "integration" in config["tasks"]
+    assert "e2e" not in config["tasks"]
 
 
 def test_init_pre_preserves_existing_mise(tmp_git_repo: Path) -> None:
@@ -47,7 +56,12 @@ def test_init_pre_preserves_existing_mise(tmp_git_repo: Path) -> None:
         result = runner.invoke(cli, ["init", "pre"])
 
     assert result.exit_code == 0, result.output
-    assert mise_path.read_text(encoding="utf-8") == original
+    config = tomllib.loads(mise_path.read_text(encoding="utf-8"))
+    assert _task_run(config, "test") == "custom-test"
+    assert "unit" in config["tasks"]
+    assert "integration" in config["tasks"]
+    assert "e2e" not in config["tasks"]
+    assert "|| true" not in _task_run(config, "unit")
 
 
 def test_extract_python_test_command_alias(tmp_path: Path) -> None:
