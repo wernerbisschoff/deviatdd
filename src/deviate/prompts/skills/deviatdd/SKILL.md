@@ -163,7 +163,10 @@ events to two sinks under `.deviate/logs/` via the dispatcher in
   One JSON object per JUDGE application (pass and reject), plus a
   final `cycle_end` object when `_run_tdd_cycle` leaves. JSONL, not
   the `[<UTC iso>] EVENT` transcript format. Read this first when
-  asking why JUDGE failed RED or GREEN.
+  asking why JUDGE failed RED or GREEN. A reject that rolled back
+  carries `head_sha` / `reset_to` / `recovery_ref` — `git show
+  <head_sha>` or `git switch <recovery_ref>` inspects the discarded
+  tree. The same three fields are on the post-reset `tasks.jsonl` row.
 - **Raw agent sidecar** — `.deviate/logs/<ISSUE_ID>/<TASK_ID>.raw/<phase>-<n>.log`
   (optional `<phase>-<n>.prompt.log`). Verbatim stdout lives here so the
   main transcript stays scannable.

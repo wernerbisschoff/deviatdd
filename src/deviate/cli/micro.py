@@ -88,6 +88,7 @@ from deviate.state.ledger import (
     TaskEvidenceBundle,
     TaskRecord,
     append_rollback_snapshot,
+    append_task_event,
     append_task_transition,
 )
 
@@ -2328,6 +2329,15 @@ def _recovery_branch_for(task_id: str, attempt: int) -> str:
     return f"{_RECOVERY_REF_PREFIX}/{sanitized}/attempt-{int(attempt)}"
 
 
+@dataclass(frozen=True, slots=True)
+class _RollbackTrace:
+    """Discarded-commit index written to verdicts.jsonl and tasks.jsonl."""
+
+    head_sha: str = ""
+    reset_to: str = ""
+    recovery_ref: str = ""
+
+
 def _execute_rollback(
     root: Path,
     *,
@@ -2336,7 +2346,7 @@ def _execute_rollback(
     phase: str = "JUDGE",
     task_id: str,
     attempt: int,
-) -> str:
+) -> _RollbackTrace:
     """Reset HEAD and clean untracked state back to ``boundary_sha``.
 
     F3 (commit-before-judge rollback safety): the agent's pre-reset HEAD
@@ -2393,7 +2403,8 @@ def _execute_rollback(
     # landing between ``git reset`` and ``git clean``. Earlier attempts
     # keep their distinct refs (attempt-0, attempt-1, ...) so a second
     # rollback cannot silently clobber the first.
-    if commit_sha != boundary_sha:
+    preserved = commit_sha != boundary_sha
+    if preserved:
         _preserve_agent_work(
             root,
             commit_sha=commit_sha,
@@ -2442,7 +2453,11 @@ def _execute_rollback(
         capture_output=True,
         env=_git_env(),
     )
-    return boundary_sha
+    return _RollbackTrace(
+        head_sha=commit_sha,
+        reset_to=boundary_sha,
+        recovery_ref=recovery_branch if preserved else "",
+    )
 
 
 def _preserve_agent_work(
@@ -3109,6 +3124,7 @@ def _append_judge_verdict_record(
     next_action_raw: str,
     feedback: str,
     feedback_source: str,
+    rollback: _RollbackTrace = _RollbackTrace(),
 ) -> None:
     """Write one JUDGE application to ``.verdicts.jsonl`` (pass and reject)."""
     tid = str(task.get("id") or "?")
@@ -3138,6 +3154,10 @@ def _append_judge_verdict_record(
         "streak": streak,
         "loop": loop,
     }
+    if next_action in {"revert_red", "revert_green"}:
+        record["head_sha"] = rollback.head_sha
+        record["reset_to"] = rollback.reset_to
+        record["recovery_ref"] = rollback.recovery_ref
     append_verdicts_record(Path.cwd(), issue_id, tid, record)
     _note_cycle_verdict(next_action, streak)
     if loop:
@@ -3173,6 +3193,57 @@ def _emit_cycle_end(task: dict, ledger_path: Path, trace: _CycleTrace) -> None:
     append_verdicts_record(Path.cwd(), issue_id, tid, record)
 
 
+def _repo_relpath(root: Path, path: Path) -> str:
+    """Return *path* relative to *root* for ``git add``."""
+    resolved = path if path.is_absolute() else root / path
+    try:
+        return resolved.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _append_judge_revert_jsonl(
+    root: Path,
+    task: dict,
+    feedback: str,
+    judge_action: str,
+    ledger_path: Path | None,
+    rollback: _RollbackTrace = _RollbackTrace(),
+) -> Path | None:
+    """Append one always-on revert row. Call only after the blast-radius reset."""
+    if judge_action not in {"revert_red", "revert_green"}:
+        return None
+    dest = (
+        ledger_path
+        if ledger_path is not None and ledger_path.suffix == ".jsonl"
+        else None
+    )
+    tid = str(task.get("id") or "")
+    if dest is None and tid and tid != "?":
+        found = _find_task_record(root, tid)
+        dest = found[1] if found else None
+    if dest is None:
+        return None
+    landing = "PENDING" if judge_action == "revert_red" else "RED"
+    description = str(task.get("description") or "").strip() or "judge revert"
+    append_task_event(
+        TaskRecord(
+            id=tid,
+            issue_id=str(task.get("issue_id") or ""),
+            description=description,
+            status=landing,
+            execution_mode=task.get("execution_mode", "TDD"),
+            judge_action=judge_action,  # type: ignore[arg-type]
+            judge_feedback=feedback,
+            head_sha=rollback.head_sha or None,
+            reset_to=rollback.reset_to or None,
+            recovery_ref=rollback.recovery_ref or None,
+        ),
+        dest,
+    )
+    return dest
+
+
 def _commit_judge_feedback_and_advance(
     root: Path,
     task: dict,
@@ -3181,17 +3252,37 @@ def _commit_judge_feedback_and_advance(
     c: Console,
     session: SessionState,
     session_path: Path,
+    *,
+    ledger_path: Path | None = None,
+    judge_action: str | None = None,
+    rollback: _RollbackTrace = _RollbackTrace(),
 ) -> SessionState:
-    """Persist JUDGE feedback and advance the committed RED boundary."""
+    """Persist JUDGE feedback after rollback and advance the RED boundary.
+
+    Writes ``tasks.jsonl`` (``judge_action`` / ``judge_feedback``) and
+    ``tasks.md`` only after the caller has already reset to the blast-radius
+    SHA, then stages those two paths in one ``docs(<tid>): add judge
+    feedback for retry`` commit. Does not stage ``session.json``.
+    """
     tid = task.get("id", "?")
     prior_red_sha = session.red_commit_sha
-    session.pending_judge_feedback = {
+    pending: dict[str, str] = {
         "task_id": str(tid),
         "feedback": feedback,
         "feedback_source": feedback_source,
     }
+    if judge_action:
+        pending["judge_action"] = judge_action
+    session.pending_judge_feedback = pending
     session.save(session_path)
     feedback_preview = feedback.replace("\n", " ")[:200]
+
+    staged: list[str] = []
+    jsonl_path = _append_judge_revert_jsonl(
+        root, task, feedback, judge_action or "", ledger_path, rollback=rollback
+    )
+    if jsonl_path is not None:
+        staged.append(_repo_relpath(root, jsonl_path))
 
     tasks_md = _resolve_tasks_md(root, task)
     if tasks_md is not None:
@@ -3222,16 +3313,18 @@ def _commit_judge_feedback_and_advance(
                 lines_added=added_lines,
                 feedback=feedback,
             )
+            staged.append(_repo_relpath(root, tasks_md))
     else:
         c.print(f"  [dim]TASKS_MD_SKIP[/] {tid}: no tasks.md resolved for issue")
         _log_run("TASKS_MD_SKIP", task_id=tid, reason="no_tasks_md_resolved")
 
-    subprocess.run(
-        ["git", "add", "-A"],
-        cwd=root,
-        capture_output=True,
-        env=_git_env(),
-    )
+    if staged:
+        subprocess.run(
+            ["git", "add", "--", *staged],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
     judge_msg = format_commit_message(
         f"docs({tid}): add judge feedback for retry",
         root,
@@ -3286,7 +3379,8 @@ def _commit_judge_feedback_and_advance(
         text=True,
         env=_git_env(),
     ).stdout.strip()
-    _maybe_advance_red_sha_past_feedback(session, root, prior_red_sha, fb_head)
+    if judge_action != "revert_red":
+        _maybe_advance_red_sha_past_feedback(session, root, prior_red_sha, fb_head)
     session.pending_judge_feedback = None
     session.save(session_path)
     return session
@@ -3311,11 +3405,13 @@ def _resume_pending_judge_feedback(
         c,
         session,
         session_path,
+        judge_action=pending.get("judge_action"),
     )
-    session.pending_judge_action = "revert_green"
+    action = pending.get("judge_action") or "revert_green"
+    session.pending_judge_action = action
     session.train_feedback = pending["feedback"]
     session.judge_rejected = True
-    session = session.force_transition_to("GREEN")
+    session = session.force_transition_to("RED" if action == "revert_red" else "GREEN")
     session.save(session_path)
     return session
 
@@ -3687,6 +3783,7 @@ def _apply_judge_verdict(
         # rollback anchor sits (red_commit_sha vs red_commit_sha^) and
         # in WHICH phase the runner hands control to next.
         feedback, feedback_source = _judge_feedback_from_manifest(manifest)
+        rollback = _RollbackTrace()
 
         def _record_reject_verdict() -> None:
             # After rollback: ``git clean -fd`` deletes unignored
@@ -3699,6 +3796,7 @@ def _apply_judge_verdict(
                 next_action_raw=next_action_raw,
                 feedback=feedback,
                 feedback_source=feedback_source,
+                rollback=rollback,
             )
 
         if not feedback:
@@ -3751,55 +3849,21 @@ def _apply_judge_verdict(
                     else ""
                 )
                 if pre_red:
-                    # F3 (rollback safety): capture the agent's work BEFORE
-                    # the destructive reset so a parent SIGTERM landing
-                    # between ``git reset`` and ``git clean`` doesn't
-                    # strand the agent's commit. Same recovery-ref
-                    # identity rules as ``_execute_rollback`` apply.
-                    branch = subprocess.run(
-                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                        cwd=root,
-                        capture_output=True,
-                        text=True,
-                        env=_git_env(),
-                    ).stdout.strip()
-                    head_sha = subprocess.run(
-                        ["git", "rev-parse", "HEAD"],
-                        cwd=root,
-                        capture_output=True,
-                        text=True,
-                        env=_git_env(),
-                    ).stdout.strip()
                     rollback_attempts += 1
-                    if head_sha != pre_red:
-                        _preserve_agent_work(
-                            root,
-                            commit_sha=head_sha,
-                            branch=branch,
-                            red_sha=pre_red,
-                            reason=feedback,
-                            recovery_branch=_recovery_branch_for(
-                                tid, rollback_attempts
-                            ),
-                        )
-                    subprocess.run(
-                        ["git", "reset", "--hard", pre_red],
-                        cwd=root,
-                        capture_output=True,
-                        env=_git_env(),
-                    )
-                    subprocess.run(
-                        ["git", "clean", "-fd"],
-                        cwd=root,
-                        capture_output=True,
-                        env=_git_env(),
+                    rollback = _execute_rollback(
+                        root,
+                        boundary_sha=pre_red,
+                        reason=feedback,
+                        phase="JUDGE",
+                        task_id=tid,
+                        attempt=rollback_attempts,
                     )
                 elif session.red_commit_sha:
                     # No pre-RED anchor, but ``session.red_commit_sha`` is
                     # known — fall back to that explicit boundary so the
                     # runner is never stuck and never guesses.
                     rollback_attempts += 1
-                    _execute_rollback(
+                    rollback = _execute_rollback(
                         root,
                         boundary_sha=session.red_commit_sha,
                         reason=feedback,
@@ -3832,6 +3896,18 @@ def _apply_judge_verdict(
                             action=action,
                         )
                         session.save(session_path)
+                        session = _commit_judge_feedback_and_advance(
+                            root,
+                            task,
+                            feedback,
+                            feedback_source,
+                            c,
+                            session,
+                            session_path,
+                            ledger_path=ledger_path,
+                            judge_action="revert_red",
+                            rollback=rollback,
+                        )
                         _record_reject_verdict()
                         return session
                     # No pre-RED anchor AND no RED boundary in session.
@@ -3861,6 +3937,18 @@ def _apply_judge_verdict(
                     action=action,
                 )
                 session.save(session_path)
+                session = _commit_judge_feedback_and_advance(
+                    root,
+                    task,
+                    feedback,
+                    feedback_source,
+                    c,
+                    session,
+                    session_path,
+                    ledger_path=ledger_path,
+                    judge_action="revert_red",
+                    rollback=rollback,
+                )
                 _record_reject_verdict()
                 return session
 
@@ -3870,7 +3958,7 @@ def _apply_judge_verdict(
             # state inside ``_execute_rollback`` itself.
             boundary_sha = _require_revert_green_boundary(session, tid)
             rollback_attempts += 1
-            _execute_rollback(
+            rollback = _execute_rollback(
                 root,
                 boundary_sha=boundary_sha,
                 reason=feedback,
@@ -3891,7 +3979,16 @@ def _apply_judge_verdict(
         # RED-phase failing-test SHA already exists. An empty SHA stays
         # empty so TRAIN cannot roll back to a docs-feedback commit.
         session = _commit_judge_feedback_and_advance(
-            root, task, feedback, feedback_source, c, session, session_path
+            root,
+            task,
+            feedback,
+            feedback_source,
+            c,
+            session,
+            session_path,
+            ledger_path=ledger_path,
+            judge_action="revert_green",
+            rollback=rollback,
         )
         session.pending_judge_action = "revert_green"
         session.train_feedback = feedback
@@ -5087,7 +5184,7 @@ def _run_execute_phase(
                 # it from session state or ``HEAD~1``. ``attempt`` is the
                 # JUDGE-attempt counter so each discarded commit lands on
                 # ``tmp/deviate-agent-work/<tid>/attempt-<N>``.
-                _execute_rollback(
+                exec_rollback = _execute_rollback(
                     root,
                     boundary_sha=pre_execute_sha,
                     reason=feedback,
@@ -5099,8 +5196,18 @@ def _run_execute_phase(
                 c.print(
                     f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with retry"
                 )
+                exec_rollback = _RollbackTrace()
             session = _commit_judge_feedback_and_advance(
-                root, task, feedback, feedback_source, c, session, session_path
+                root,
+                task,
+                feedback,
+                feedback_source,
+                c,
+                session,
+                session_path,
+                ledger_path=ledger_path,
+                judge_action=judge_action,
+                rollback=exec_rollback,
             )
             if attempt < max_judge_attempts - 1:
                 train_feedback = feedback

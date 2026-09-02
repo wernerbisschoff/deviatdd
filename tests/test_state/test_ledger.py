@@ -13,6 +13,7 @@ from deviate.state.ledger import (
     TaskRecord,
     append_issue_record,
     append_issue_transition,
+    append_task_event,
     append_task_record,
     resolve_issue_record,
 )
@@ -291,6 +292,55 @@ class TestTaskRecord:
         data = json.loads(record.model_dump_json())
         restored = TaskRecord.model_validate(data)
         assert restored == record
+
+    def test_task_record_judge_fields_optional(self):
+        record = TaskRecord(
+            id="TSK-001-21",
+            issue_id="iss-021",
+            description="Judge revert row",
+            status="RED",
+            judge_action="revert_green",
+            judge_feedback="The next GREEN attempt must: fix the error path.",
+        )
+        assert record.judge_action == "revert_green"
+        assert "error path" in (record.judge_feedback or "")
+        dumped = json.loads(record.model_dump_json())
+        restored = TaskRecord.model_validate(dumped)
+        assert restored.judge_action == "revert_green"
+        lean = TaskRecord(
+            id="TSK-001-22",
+            issue_id="iss-022",
+            description="No judge fields",
+        )
+        assert lean.judge_action is None
+        assert lean.judge_feedback is None
+
+    def test_append_task_event_repeats_status(self, tmp_path: Path):
+        from deviate.state.ledger import append_task_transition
+
+        ledger = tmp_path / "tasks.jsonl"
+        first = TaskRecord(
+            id="TSK-001-23",
+            issue_id="iss-023",
+            description="Original RED",
+            status="RED",
+        )
+        assert append_task_transition(first, ledger) is True
+        append_task_event(
+            TaskRecord(
+                id="TSK-001-23",
+                issue_id="iss-023",
+                description="Original RED",
+                status="RED",
+                judge_action="revert_green",
+                judge_feedback="retry GREEN",
+            ),
+            ledger,
+        )
+        lines = [json.loads(line) for line in ledger.read_text().splitlines() if line]
+        assert len(lines) == 2
+        assert lines[1]["judge_action"] == "revert_green"
+        assert lines[1]["status"] == "RED"
 
     def test_task_record_acceptance_criteria_defaults_to_none(self):
         record = TaskRecord(

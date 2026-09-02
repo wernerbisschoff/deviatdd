@@ -2546,7 +2546,7 @@ class TestExecuteRollbackUntrackedCleanup:
             attempt=0,
         )
 
-        assert red_sha_returned == red_sha
+        assert red_sha_returned.reset_to == red_sha
 
         # Untracked artifact must be gone
         assert not scratch.exists(), (
