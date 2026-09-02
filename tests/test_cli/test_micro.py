@@ -2174,30 +2174,19 @@ class TestJudgeTrainRollback:
             f"expected parent {expected_parent}; got {resolved}"
         )
 
-    def test_pre_red_sha_logs_warning_when_subject_does_not_match(
+    def test_pre_red_sha_logs_warning_when_parent_cannot_be_resolved(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """When red_commit_sha^'s subject isn't a RED-phase convention, log a warning
-        and fall back to the safe default.
-        """
+        """PRE_RED_AMBIGUOUS only when the true pre-RED parent cannot be resolved."""
         from deviate.cli.micro import _resolve_pre_red_sha
 
         root = tmp_git_repo
         monkeypatch.chdir(root)
 
-        # Build a custom commit whose parent is NOT a RED-phase subject.
-        (root / "feature.py").write_text("def feature(): pass")
-        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
-        subprocess.run(
-            ["git", "commit", "-m", "chore: arbitrary commit (not RED)"],
-            cwd=root,
-            env=_git_env(),
-            check=True,
-        )
-        arbitrary_sha = subprocess.run(
+        initial = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=root,
             capture_output=True,
@@ -2208,21 +2197,11 @@ class TestJudgeTrainRollback:
         import logging
 
         with caplog.at_level(logging.WARNING):
-            result = _resolve_pre_red_sha(root, arbitrary_sha)
-        # Result is still the parent SHA — failure here is non-fatal. The warning
-        # is the operator-visible signal.
-        expected_parent = subprocess.run(
-            ["git", "rev-parse", f"{arbitrary_sha}^"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout.strip()
-        assert result == expected_parent
-        assert any(
-            "PRE_RED_AMBIGUOUS" in rec.message or "ambiguous" in rec.message.lower()
-            for rec in caplog.records
-        ), "warning log must fire when the parent subject isn't a RED-phase convention"
+            result = _resolve_pre_red_sha(root, initial)
+        assert result == ""
+        assert any("PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records), (
+            "warning log must fire when the RED commit's parent cannot be resolved"
+        )
 
     @patch("deviate.cli.micro.subprocess.run")
     def test_commit_judge_feedback_and_advance_raises_phase_failed_on_git_commit_failure(
