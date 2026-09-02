@@ -1455,9 +1455,10 @@ def _build_auto_prompt(
     ``{task_content}`` is this task's ``tasks.md`` markdown card (GH-150),
     never the ledger JSON row and never sibling cards. JUDGE receives
     the GH-118 Judge-Feedback-stripped card. ``train_feedback`` fills
-    the ``{train_feedback}`` placeholder. Escalate paths pass a short
-    note from ``_inject_escalate_note``; GREEN-train paths pass the
-    standing GREEN dump. Empty on first RED.
+    the ``{train_feedback}`` placeholder. Escalate keeps a JUDGE
+    payload when present and otherwise passes a short note from
+    ``_inject_escalate_note``; GREEN-train paths pass the standing
+    GREEN dump. Empty on first RED.
     """
     issue_id = task.get("issue_id", "")
     task_id = task.get("id", "")
@@ -1542,6 +1543,21 @@ def _is_green_test_failure(session: SessionState) -> bool:
     if session.failure_kind:
         return False
     return session.train_feedback.startswith(_GREEN_TEST_FAILURE_PREFIX)
+
+
+def _is_green_train_dump(text: str) -> bool:
+    """True when *text* is a GREEN pytest dump, not a JUDGE payload.
+
+    Escalate must wipe that dump so retry RED does not ingest raw
+    ``<test_output>``. Structured JUDGE ``violations`` / ``train_feedback``
+    stay (GH-170).
+    """
+    stripped = text.lstrip()
+    if not stripped:
+        return False
+    if stripped.startswith(_GREEN_TEST_FAILURE_PREFIX):
+        return True
+    return "<test_output>" in stripped
 
 
 _NON_TDD_EXECUTION_MODES = frozenset({"EXECUTE", "IMMEDIATE", "DIRECT"})
@@ -4786,7 +4802,16 @@ def _rollback_pre_red_if_resolvable(
     attempt: int,
     reason: str,
 ) -> None:
-    """Reset to the pre-RED SHA when git can resolve a full 40-char SHA."""
+    """Reset to the pre-RED SHA when git can resolve a full 40-char SHA.
+
+    Skip when ``_apply_judge_verdict`` already reset and HEAD is the
+    post-``revert_red`` feedback commit — a second reset to that
+    commit's parent would drop the persist (GH-170).
+    """
+    if session.pending_judge_action == "revert_red":
+        head_subject = _git_commit_subject(root, "HEAD")
+        if head_subject and _JUDGE_FEEDBACK_SUBJECT_RE.match(head_subject):
+            return
     red_sha = session.red_commit_sha
     if not red_sha or not re.fullmatch(r"[a-f0-9]{40}", red_sha):
         return
@@ -4819,7 +4844,18 @@ def _inject_escalate_note(
     *,
     reason: str,
 ) -> None:
-    """Replace GREEN ``train_feedback`` with a short note and persist it."""
+    """Keep a JUDGE payload; replace only a GREEN dump or empty feedback.
+
+    ``_apply_judge_verdict`` already stores the ``_judge_feedback_from_manifest``
+    text (``train_feedback`` or normalized ``violations``) on the session.
+    Replacing that with ``previous cycle failed because test defect``
+    drops the recommendations retry RED must see (GH-170). The generic
+    escalate note is the fallback only when the payload is empty or is
+    a GREEN pytest dump.
+    """
+    existing = session.train_feedback.strip()
+    if existing and not _is_green_train_dump(session.train_feedback):
+        return
     session.train_feedback = _short_escalate_note(
         reason=reason,
         failure_kind=session.failure_kind,
@@ -4842,8 +4878,11 @@ def _escalate_to_new_red(
 ) -> SessionState:
     """Escalate to a fresh RED. Stop after three escalates.
 
-    Counters persist first. Then GREEN ``train_feedback`` is replaced
-    with a short note so retry RED does not receive the GREEN dump.
+    Counters persist first. A GREEN pytest dump in ``train_feedback`` is
+    replaced with a short note so retry RED does not ingest it. A JUDGE
+    payload already on the session (normalized ``violations`` /
+    ``train_feedback``) is kept. When HEAD is already the post-reset
+    ``revert_red`` feedback commit, escalate does not reset again.
     """
     tid = task.get("id", "?")
     task_desc = task.get("description", "")
