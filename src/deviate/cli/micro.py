@@ -4243,15 +4243,6 @@ def _apply_judge_verdict(
         rollback_attempts = 0
         try:
             if action == "revert_red":
-                standing_red = session.red_commit_sha.strip()
-                if standing_red and not _is_ancestor(root, standing_red, "HEAD"):
-                    raise PhaseFailedError(
-                        f"ROLLBACK_STALE_RED_SHA: revert_red for {tid} "
-                        f"stored red_commit_sha={standing_red} is not an "
-                        f"ancestor of HEAD and no rewritten RED commit was "
-                        f"found on the current branch. Refusing to reset; "
-                        f"the active branch is unchanged."
-                    )
                 pre_red = (
                     _resolve_pre_red_sha(root, session.red_commit_sha)
                     if session.red_commit_sha
