@@ -170,9 +170,7 @@ class TestThirdGreenRunsAfterTwoRevertGreenTestFailures:
             f"third GREEN must run, not escalate; decisions={result.decisions!r}"
         )
         reroutes = [
-            d
-            for d in result.decisions
-            if d.get("decision") == "reroute_to_green"
+            d for d in result.decisions if d.get("decision") == "reroute_to_green"
         ]
         assert reroutes, (
             f"expected reroute_to_green before TRAIN 3/3; got {result.decisions!r}"
@@ -180,9 +178,9 @@ class TestThirdGreenRunsAfterTwoRevertGreenTestFailures:
         assert "TRAIN (3/3)" in result.output, (
             f"TRAIN 3/3 must print for the third GREEN; output={result.output!r}"
         )
-        assert not any(
-            "PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records
-        ), f"two revert_green trains must not log PRE_RED_AMBIGUOUS; {caplog.text}"
+        assert not any("PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records), (
+            f"two revert_green trains must not log PRE_RED_AMBIGUOUS; {caplog.text}"
+        )
 
 
 class TestThirdGreenFailEscalates:
@@ -261,9 +259,9 @@ class TestResolvePreRedWalksPastDocsFeedback:
             f"not docs parent {docs1[:7]}; got {resolved}"
         )
         assert resolved != docs1
-        assert not any(
-            "PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records
-        ), caplog.text
+        assert not any("PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records), (
+            caplog.text
+        )
 
         _commit(
             root,

@@ -2199,9 +2199,9 @@ class TestJudgeTrainRollback:
         with caplog.at_level(logging.WARNING):
             result = _resolve_pre_red_sha(root, initial)
         assert result == ""
-        assert any(
-            "PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records
-        ), "warning log must fire when the RED commit's parent cannot be resolved"
+        assert any("PRE_RED_AMBIGUOUS" in rec.message for rec in caplog.records), (
+            "warning log must fire when the RED commit's parent cannot be resolved"
+        )
 
     @patch("deviate.cli.micro.subprocess.run")
     def test_commit_judge_feedback_and_advance_raises_phase_failed_on_git_commit_failure(

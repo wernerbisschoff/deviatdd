@@ -304,8 +304,7 @@ def judge_revert_green_yaml(
         f"task_id: {task_id}\n"
         'verdict: "COMPLIANCE_VIOLATION"\n'
         "next_action: revert_green\n"
-        "train_feedback: |\n"
-        + "".join(f"  {line}\n" for line in body.splitlines())
+        "train_feedback: |\n" + "".join(f"  {line}\n" for line in body.splitlines())
     )
 
 
