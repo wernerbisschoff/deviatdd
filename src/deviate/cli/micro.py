@@ -2437,7 +2437,9 @@ def _execute_rollback(
     committed GREEN losing commit content when ``HEAD~1`` resolves to the
     wrong parent). Empty / whitespace ``boundary_sha`` raises
     ``PhaseFailedError`` BEFORE ``git reset`` runs so the runner never
-    wipes work without an explicit anchor.
+    wipes work without an explicit anchor. A ``boundary_sha`` that is
+    not an ancestor of HEAD raises ``ROLLBACK_STALE_BOUNDARY`` and
+    leaves the active branch unchanged (GH-168: rebase-rewritten RED).
 
     ``task_id`` and ``attempt`` thread the recovery ref identity: the
     caller chooses what counts as a distinct attempt (typically one
@@ -2453,6 +2455,13 @@ def _execute_rollback(
             f"SessionState.red_commit_sha or HEAD~1."
         )
     boundary_sha = boundary_sha.strip()
+    if not _is_ancestor(root, boundary_sha, "HEAD"):
+        raise PhaseFailedError(
+            f"ROLLBACK_STALE_BOUNDARY: refusing to reset to {boundary_sha} "
+            f"which is not an ancestor of HEAD (phase={phase}, "
+            f"task_id={task_id!r}, attempt={attempt}). The active branch "
+            f"is unchanged."
+        )
     recovery_branch = _recovery_branch_for(task_id, attempt)
 
     branch = subprocess.run(
@@ -2631,6 +2640,99 @@ def _git_parent_sha(root: Path, sha: str) -> str:
     return _git_capture(root, "rev-parse", f"{sha}^")
 
 
+def _git_full_sha(root: Path, rev: str) -> str:
+    """Return the full SHA for ``rev``, or empty when git cannot resolve it."""
+    return _git_capture(root, "rev-parse", "--verify", rev)
+
+
+def _is_ancestor(root: Path, maybe_ancestor: str, descendant: str = "HEAD") -> bool:
+    """Return True when ``maybe_ancestor`` is an ancestor of ``descendant``."""
+    sha = (maybe_ancestor or "").strip()
+    if not sha:
+        return False
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, descendant],
+        cwd=root,
+        capture_output=True,
+        env=_git_env(),
+    )
+    return result.returncode == 0
+
+
+def _head_commit_subjects(root: Path) -> list[tuple[str, str]]:
+    """Return ``(sha, subject)`` pairs from ``git log HEAD``, newest first."""
+    raw = _git_capture(root, "log", "--format=%H%x00%s", "HEAD")
+    rows: list[tuple[str, str]] = []
+    for line in raw.splitlines():
+        if "\0" not in line:
+            continue
+        sha, subject = line.split("\0", 1)
+        if sha:
+            rows.append((sha, subject))
+    return rows
+
+
+def _resolve_rewritten_sha(root: Path, stored_sha: str) -> str:
+    """Return the on-branch SHA that ``stored_sha`` became after a rewrite.
+
+    A commit-train rebase (or any history rewrite) keeps the commit
+    subject and changes the object id. When ``stored_sha`` is still an
+    ancestor of HEAD it is returned as-is. Otherwise the current branch
+    is searched for an exact subject match. If the stored object is gone
+    and has no subject, the newest RED-phase commit on HEAD is used.
+    Empty string means "do not reset" — the caller must preserve HEAD.
+    """
+    stored = (stored_sha or "").strip()
+    if not stored:
+        return ""
+    full = _git_full_sha(root, stored) or stored
+    if _is_ancestor(root, full, "HEAD"):
+        return _git_full_sha(root, full) or full
+    subject = _git_commit_subject(root, full)
+    train = _head_commit_subjects(root)
+    if subject:
+        for sha, train_subject in train:
+            if train_subject == subject:
+                return sha
+        return ""
+    for sha, train_subject in train:
+        if _PRE_RED_SHA_PARENT_RE.match(train_subject):
+            return sha
+    return ""
+
+
+def _refresh_session_commit_anchors(root: Path, session: SessionState) -> bool:
+    """Remap session RED / JUDGE-RED SHAs after an internal rebase rewrite.
+
+    GREEN and HEAD anchors are live git refs (``HEAD`` and the GREEN-phase
+    subject on the current train); they are not persisted on
+    ``SessionState``. Call this after any commit-train rebase and before
+    any rollback that trusts ``session.red_commit_sha``.
+    """
+    changed = False
+    old_red = session.red_commit_sha.strip()
+    if old_red:
+        resolved = _resolve_rewritten_sha(root, old_red)
+        if resolved and resolved != old_red:
+            if session.judge_red_commit_sha.strip() == old_red:
+                session.judge_red_commit_sha = resolved
+            session.red_commit_sha = resolved
+            _log_run(
+                "RED_SHA_REWRITTEN",
+                old_sha=old_red,
+                new_sha=resolved,
+            )
+            changed = True
+    judge = session.judge_red_commit_sha.strip()
+    standing = session.red_commit_sha.strip()
+    if judge and judge != standing:
+        resolved_judge = _resolve_rewritten_sha(root, judge)
+        if resolved_judge and resolved_judge != judge:
+            session.judge_red_commit_sha = resolved_judge
+            changed = True
+    return changed
+
+
 def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
     """Return True when a docs-feedback SHA chains back to a RED-phase commit."""
     current = sha.strip()
@@ -2703,8 +2805,15 @@ def _resolve_judge_diff_base(root: Path, red_commit_sha: str) -> str:
     return red_commit_sha.strip()
 
 
-def _require_revert_green_boundary(session: SessionState, tid: str) -> str:
-    """Return the RED SHA for ``revert_green``, or raise if it is missing."""
+def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) -> str:
+    """Return the on-branch RED SHA for ``revert_green``, or raise.
+
+    Empty ``session.red_commit_sha`` is ``ROLLBACK_BOUNDARY_MISSING``.
+    After a commit-train rebase the stored SHA may no longer be an
+    ancestor of HEAD: remap it by subject (or newest RED-phase commit)
+    via ``_refresh_session_commit_anchors``. If it is still not an
+    ancestor, raise ``ROLLBACK_STALE_RED_SHA`` and do not reset.
+    """
     sha = session.red_commit_sha.strip()
     if not sha:
         raise PhaseFailedError(
@@ -2712,16 +2821,26 @@ def _require_revert_green_boundary(session: SessionState, tid: str) -> str:
             f"has no session.red_commit_sha to roll back to. "
             f"Refusing to fall back to HEAD~1."
         )
-    return sha
+    _refresh_session_commit_anchors(root, session)
+    sha = session.red_commit_sha.strip()
+    if _is_ancestor(root, sha, "HEAD"):
+        return _git_full_sha(root, sha) or sha
+    raise PhaseFailedError(
+        f"ROLLBACK_STALE_RED_SHA: revert_green for {tid} stored "
+        f"red_commit_sha={sha} is not an ancestor of HEAD and no "
+        f"rewritten RED commit was found on the current branch. "
+        f"Refusing to reset; the active branch is unchanged."
+    )
 
 
 def _is_fatal_missing_revert_green_boundary(action: str, exc: BaseException) -> bool:
-    """Return True when TDD ``revert_green`` has no RED boundary SHA."""
-    return (
-        action == "revert_green"
-        and isinstance(exc, PhaseFailedError)
-        and "ROLLBACK_BOUNDARY_MISSING" in str(exc)
-    )
+    """Return True when rollback must stop and leave the branch intact."""
+    if not isinstance(exc, PhaseFailedError):
+        return False
+    text = str(exc)
+    if "ROLLBACK_STALE_RED_SHA" in text or "ROLLBACK_STALE_BOUNDARY" in text:
+        return True
+    return action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in text
 
 
 def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) -> None:
@@ -3729,6 +3848,12 @@ def _run_judge_phase(
     tid = task.get("id", "?")
     backend = agent or "pi"
     root = Path.cwd()
+    if _refresh_session_commit_anchors(root, session):
+        session.save(session_path)
+        c.print(
+            f"  [yellow]RED_SHA_REWRITTEN[/] remapped "
+            f"{session.red_commit_sha[:7]} after commit-train rebase"
+        )
 
     diff = _assemble_judge_injected_diff(
         root,
@@ -3940,6 +4065,13 @@ def _apply_judge_verdict(
         )
         _raise_judge_manifest_invalid(tid, schema_errors)
     root = Path.cwd()
+    prior_red = session.red_commit_sha
+    if _refresh_session_commit_anchors(root, session):
+        session.save(session_path)
+        c.print(
+            f"  [yellow]RED_SHA_REWRITTEN[/] {prior_red[:7]} \u2192 "
+            f"{session.red_commit_sha[:7]} (commit-train rebase)"
+        )
     suite_still_red = _is_green_test_failure(session)
     suite_test_dump = session.train_feedback if suite_still_red else ""
     verdict = getattr(manifest, "verdict", "")
@@ -4111,6 +4243,15 @@ def _apply_judge_verdict(
         rollback_attempts = 0
         try:
             if action == "revert_red":
+                standing_red = session.red_commit_sha.strip()
+                if standing_red and not _is_ancestor(root, standing_red, "HEAD"):
+                    raise PhaseFailedError(
+                        f"ROLLBACK_STALE_RED_SHA: revert_red for {tid} "
+                        f"stored red_commit_sha={standing_red} is not an "
+                        f"ancestor of HEAD and no rewritten RED commit was "
+                        f"found on the current branch. Refusing to reset; "
+                        f"the active branch is unchanged."
+                    )
                 pre_red = (
                     _resolve_pre_red_sha(root, session.red_commit_sha)
                     if session.red_commit_sha
@@ -4222,10 +4363,10 @@ def _apply_judge_verdict(
                 return session
 
             # revert_green: rollback to RED then advance the boundary.
-            # ``boundary_sha`` is the active RED commit, threaded from
-            # ``session.red_commit_sha`` — never inferred from session
-            # state inside ``_execute_rollback`` itself.
-            boundary_sha = _require_revert_green_boundary(session, tid)
+            # ``boundary_sha`` is the active RED commit, remapped through
+            # ``_require_revert_green_boundary`` so a rebase-rewritten
+            # SHA is used — never the stale pre-rebase object.
+            boundary_sha = _require_revert_green_boundary(root, session, tid)
             rollback_attempts += 1
             rollback = _execute_rollback(
                 root,
@@ -7580,6 +7721,12 @@ def judge_post(
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
+    if _refresh_session_commit_anchors(root, session):
+        session.save(session_path)
+        console.print(
+            f"  [yellow]RED_SHA_REWRITTEN[/] remapped "
+            f"{session.red_commit_sha[:7]} after commit-train rebase"
+        )
     task, ledger_path = _resolve_judge_post_task(root, handover, session)
     injected_diff = _assemble_judge_injected_diff(
         root,
