@@ -180,6 +180,30 @@ class TestSecondWorktreeCliFlag:
         assert result.exit_code == 0, result.output
         assert not captured.get("second")
 
+    def test_specify_second_worktree_honors_issue_option(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`deviate specify --second-worktree --issue <id>` forwards <id>,
+        bypassing discovery that skips locally-worktree'd issues."""
+        _seed_claimed_issue(tmp_git_repo)
+        captured: dict[str, object] = {}
+
+        def fake_try_claim(record, **kwargs):  # noqa: ARG001
+            captured.update(kwargs)
+            captured["record"] = record
+            return {"worktree_path": str(tmp_git_repo / ".worktrees" / "fake")}
+
+        monkeypatch.setattr("deviate.cli.meso._try_claim_issue", fake_try_claim)
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(
+                cli, ["specify", "--second-worktree", "--issue", ISSUE_ID]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured.get("second") is True
+        assert captured["record"].issue_id == ISSUE_ID
+
 
 class TestResolverStripsSecondWorktreeSuffix:
     """Branch→issue resolution must strip the -rN suffix (exact slug first)."""

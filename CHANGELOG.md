@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`deviate specify` honors `--issue` when the positional issue ID is omitted.** Bare `specify` ignored `--issue` and ran BACKLOG discovery, whose local-worktree guard always skips the already-claimed issues `--second-worktree` targets — `specify --second-worktree --issue <id>` could never claim and exited `NO_CLAIMABLE_ISSUES`. `--issue` now resolves the issue directly; discovery still runs when both are omitted. Also fixes the `NO_CLAIMABLE_ISSUES` message losing its second argument, which rendered as `no unblocked BACKLOG issue  available`. Pinned by `tests/test_meso/test_second_worktree.py::TestSecondWorktreeCliFlag::test_specify_second_worktree_honors_issue_option`.
+
 ### Changed
 
 - **TDD tasks are stamped `unit` | `integration` | `e2e`.** Tasks / `/deviate-tasks` no longer emit `Sociable_Unit` / `Solitary_Unit` as runner values. Sociable vs solitary stays a RED style rule (`prefer-sociable`, `mock-only-externals`) inside unit tests and must still run with the DB down under `mise unit`. One TDD task = one layer = one RED; GREEN cannot edit tests and shares the same resolved verification command. RED writes only the stamped layer. The runner and `red pre` / `green pre` resolve the layer and inject `test_strategy`, `test_write_dir`, and `test_command` (`mise unit` / `mise integration` / `mise e2e`) — the agent must not infer the layer from `tasks.md`. The runner may still run cheaper rungs after an integration/e2e RED. An integration-stamped task with no integ suite fails loud (`VERIFICATION_UNRESOLVED`) at pre — it does not fall back to `mise test`. Closing sweep: user-facing + e2e exists → `[E2E]` Verification_Batch with the full existing ladder; else if integ exists → `[VERIFY]` unit-if-exists + integ; else no extra sweep. Never emit empty e2e files; never require integ to be set up. Pinned by `tests/test_cli/test_mise_verification.py`, `tests/test_meso/test_auto_prompt_templates.py`, and `tests/test_core/test_tasks_ledger.py`.

@@ -2218,15 +2218,17 @@ def specify(
     elif issue_id == "post":
         _specify_post(force=force)
     elif issue_id is None:
-        discovered = _discover_claimable_issue(local=_effective_local(local))
-        if discovered is None:
+        # Explicit --issue wins over discovery: --second-worktree targets an
+        # already-claimed issue, which discovery always skips.
+        resolved = issue or _discover_claimable_issue(local=_effective_local(local))
+        if resolved is None:
             console.print(
-                "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue ",
-                "available to claim",
+                "[red]NO_CLAIMABLE_ISSUES[/] no unblocked BACKLOG issue "
+                "available to claim"
             )
             raise typer.Exit(code=1)
         _specify_pre(
-            issue_id=discovered,
+            issue_id=resolved,
             force=force,
             dry_run=dry_run,
             local=local,
