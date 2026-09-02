@@ -7,23 +7,29 @@ to REFACTOR (``continue_refactor``, or ``skip_refactor`` when
 ``revert_red`` / ``revert_green`` / legacy ``revert_to_red``, or send
 the ledger back to RED.
 
-Real rejects (``COMPLIANCE_FAIL`` / ``COMPLIANCE_VIOLATION``, Test
-Integrity after GREEN PASS → ``revert_red`` / GH-149) stay unchanged.
+A mislabeled ``COMPLIANCE_VIOLATION`` + ``revert_green`` whose
+``train_feedback`` is only a ``REFACTOR NOTE:`` (unused import, warning,
+style) is the same advice after GREEN's suite is green. Structured Test
+Integrity (GH-149) and real spec/compliance failures still revert.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import subprocess
 from contextlib import chdir
 from pathlib import Path
 import pytest
 from rich.console import Console
 
 from deviate.cli.micro import (
+    _GREEN_TEST_FAILURE_PREFIX,
     _apply_judge_verdict,
     _build_auto_prompt,
     _coerce_judge_action,
+    _feedback_is_refactor_only,
+    _verdict_is_clean_pass,
 )
 from deviate.core.agent import AgentBackend, HandoverManifest
 from deviate.state.config import SessionState
@@ -38,6 +44,17 @@ _NOTE = (
     "root.html.heex template file."
 )
 _PASS_FEEDBACK = "COMPLIANCE_PASS: No correctness issues.\n\n" + _NOTE
+# Live MeepleInn TSK-002-01 shape: unused-import note labeled as a violation.
+_LIVE_UNUSED_IMPORT_NOTE = (
+    "REFACTOR NOTE: unused import of Phoenix.ConnTest in "
+    "test/meepleinn_web/layouts_test.exs; assertions use "
+    "render_component only, producing an unused-import warning "
+    "at compile time"
+)
+_SPEC_GAP_FEEDBACK = (
+    "COMPLIANCE_VIOLATION: missing AC-PLAN-001 behavior. "
+    "The next GREEN attempt must: implement the error path."
+)
 
 
 def _task() -> dict[str, str]:
@@ -196,6 +213,33 @@ def _apply(
     return session, buf.getvalue(), ledger_path
 
 
+def _head_sha(root: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+        check=True,
+    ).stdout.strip()
+
+
+class TestFeedbackIsRefactorOnly:
+    """``_feedback_is_refactor_only`` pins the live unused-import body."""
+
+    def test_live_unused_import_note(self) -> None:
+        assert _feedback_is_refactor_only(_LIVE_UNUSED_IMPORT_NOTE) is True
+
+    def test_compliance_pass_preamble_plus_note(self) -> None:
+        assert _feedback_is_refactor_only(_PASS_FEEDBACK) is True
+
+    def test_spec_gap_is_not_refactor_only(self) -> None:
+        assert _feedback_is_refactor_only(_SPEC_GAP_FEEDBACK) is False
+
+    def test_empty_is_not_refactor_only(self) -> None:
+        assert _feedback_is_refactor_only("") is False
+
+
 class TestCoercePassPlusRefactorNote:
     """``_coerce_judge_action`` must not honor revert on a clean PASS."""
 
@@ -262,6 +306,28 @@ class TestCoercePassPlusRefactorNote:
             f"GH-149: Test Integrity after GREEN PASS must stay "
             f"revert_red; got {result!r}"
         )
+
+    def test_violation_plus_unused_import_note_drops_revert_green(self) -> None:
+        manifest = _manifest(
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_green",
+            train_feedback=_LIVE_UNUSED_IMPORT_NOTE,
+        )
+        assert _verdict_is_clean_pass("COMPLIANCE_VIOLATION", manifest) is True
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION")
+        assert result not in {"revert_red", "revert_green", "revert_to_red"}, (
+            f"refactor-only COMPLIANCE_VIOLATION must drop revert_green; got {result!r}"
+        )
+
+    def test_real_spec_violation_still_reverts(self) -> None:
+        manifest = _manifest(
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_green",
+            train_feedback=_SPEC_GAP_FEEDBACK,
+        )
+        assert _verdict_is_clean_pass("COMPLIANCE_VIOLATION", manifest) is False
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION")
+        assert result == "revert_green"
 
 
 class TestApplyPassPlusRefactorNote:
@@ -407,6 +473,141 @@ class TestApplyPassPlusRefactorNote:
         assert session.pending_judge_action == "revert_red"
         assert session.current_phase == "RED"
 
+    def test_violation_plus_unused_import_note_keeps_green(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """Live TSK-002-01 shape: suite green + VIOLATION + revert_green
+        + ``REFACTOR NOTE: unused import`` → continue_refactor, GREEN kept.
+        """
+        red_sha, ledger = _seed_green_repo(tmp_git_repo)
+        green_sha = _head_sha(tmp_git_repo)
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = SessionState.load(session_path)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        manifest = _manifest(
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_green",
+            train_feedback=_LIVE_UNUSED_IMPORT_NOTE,
+        )
+        with chdir(tmp_git_repo):
+            session = _apply_judge_verdict(
+                _task(),
+                ledger,
+                session,
+                session_path,
+                console,
+                manifest,
+                injected_diff="",
+            )
+        output = buf.getvalue()
+        assert "JUDGE_REJECTED" not in output, output
+        assert session.judge_rejected is False
+        assert session.pending_judge_action == "continue_refactor"
+        assert session.current_phase != "RED"
+        assert session.current_phase != "GREEN"
+        assert _LIVE_UNUSED_IMPORT_NOTE in session.train_feedback
+        assert "RED" not in _ledger_statuses(ledger)
+        assert _head_sha(tmp_git_repo) == green_sha, (
+            f"GREEN commit must be kept; harness must not reset to {red_sha[:7]}"
+        )
+        assert (tmp_git_repo / "impl.py").exists()
+
+    def test_violation_plus_note_no_refactor_skips(self, tmp_git_repo: Path) -> None:
+        session, output, ledger = _apply(
+            tmp_git_repo,
+            _manifest(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_green",
+                train_feedback=_LIVE_UNUSED_IMPORT_NOTE,
+            ),
+            no_refactor=True,
+        )
+        assert "JUDGE_REJECTED" not in output, output
+        assert session.pending_judge_action == "skip_refactor"
+        assert session.judge_rejected is False
+        assert "RED" not in _ledger_statuses(ledger)
+
+    def test_suite_still_red_does_not_continue_refactor(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GREEN TEST_FAILURE remap stays; do not polish a red suite."""
+        _red_sha, ledger = _seed_green_repo(tmp_git_repo)
+        green_sha = _head_sha(tmp_git_repo)
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = SessionState.load(session_path)
+        session.train_feedback = (
+            f"{_GREEN_TEST_FAILURE_PREFIX}\n1 failed in layouts_test.exs"
+        )
+        session.failure_kind = ""
+        session.save(session_path)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        manifest = _manifest(
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_green",
+            train_feedback=_LIVE_UNUSED_IMPORT_NOTE,
+        )
+        with chdir(tmp_git_repo):
+            session = _apply_judge_verdict(
+                _task(),
+                ledger,
+                session,
+                session_path,
+                console,
+                manifest,
+                injected_diff="",
+            )
+        assert session.pending_judge_action != "continue_refactor"
+        assert session.current_phase == "GREEN"
+        assert session.judge_rejected is False
+        assert _head_sha(tmp_git_repo) == green_sha
+        assert "COMPLETED" not in _ledger_statuses(ledger)
+
+    def test_test_defect_overlay_still_reverts_red(self, tmp_git_repo: Path) -> None:
+        """``failure_kind=test_defect`` must keep revert_red even if the
+        body looks like a REFACTOR NOTE."""
+        _red_sha, ledger = _seed_green_repo(tmp_git_repo)
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = SessionState.load(session_path)
+        session.failure_kind = "test_defect"
+        session.save(session_path)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        manifest = _manifest(
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_green",
+            train_feedback=_LIVE_UNUSED_IMPORT_NOTE,
+        )
+        with chdir(tmp_git_repo):
+            session = _apply_judge_verdict(
+                _task(),
+                ledger,
+                session,
+                session_path,
+                console,
+                manifest,
+                injected_diff="",
+            )
+        assert "JUDGE_REJECTED" in buf.getvalue()
+        assert session.pending_judge_action == "revert_red"
+        assert session.current_phase == "RED"
+
+    def test_spec_violation_still_resets_green(self, tmp_git_repo: Path) -> None:
+        session, output, ledger = _apply(
+            tmp_git_repo,
+            _manifest(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_green",
+                train_feedback=_SPEC_GAP_FEEDBACK,
+            ),
+        )
+        assert "JUDGE_REJECTED" in output, output
+        assert session.judge_rejected is True
+        assert session.pending_judge_action == "revert_green"
+        assert session.current_phase == "GREEN"
+        assert "RED" in _ledger_statuses(ledger)
+
 
 class TestJudgePromptRefactorNoteIsAdvice:
     """auto/judge.md must tell the model a REFACTOR NOTE is not a revert."""
@@ -423,6 +624,10 @@ class TestJudgePromptRefactorNoteIsAdvice:
         assert "skip_refactor" in text
         lowered = text.lower()
         assert "optional advice" in lowered or "optional" in lowered
+        assert "unused import" in lowered
+        assert "warning" in lowered
+        assert "style" in lowered
+        assert "never" in lowered and "compliance_violation" in lowered
         assert "$ARGUMENTS" not in text
 
     def test_manual_overlay_keeps_arguments_at_end(self) -> None:
