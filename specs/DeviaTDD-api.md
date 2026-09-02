@@ -117,7 +117,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   discovers slash commands from `.omp/prompts/`). All five command
   directories are excluded from version control via the project-root
   `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:905`),
-  which also ignores `.deviate/` and `.worktrees/` by default.
+  which also ignores `.deviate/`, `wt/`, and `.worktrees/` by default.
   Additionally, both `deviate setup` and `deviate init pre` provision a project-root
   `.gitattributes` declaring `merge=union` for `specs/issues.jsonl` and
   `specs/**/tasks.jsonl` (see `_ensure_root_gitattributes` at
@@ -211,7 +211,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
     — ``.claude/commands/``, ``.opencode/commands/``,
     ``.factory/commands/``, ``.pi/prompts/`` — and any future agent
     that follows the same flat-file convention), `*/skills/deviatdd/`,
-    `.worktrees/`, and `.deviate/`. The single-level
+    `wt/`, `.worktrees/`, and `.deviate/`. The single-level
     ``*/`` prefix is deliberate: a broader ``**/deviate-*.md`` would
     silently ignore the deviatdd project's own command sources at
     ``src/deviate/prompts/commands/deviate-*.md`` (three directories
@@ -364,7 +364,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   single-level wildcard covers every selected-agent skill install
   (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
   with one pattern. `*/skills/deviate-*/` covers Codex per-command
-  skill dirs. The entries tuple also carries `.worktrees/` and
+  skill dirs. The entries tuple also carries `wt/`, `.worktrees/`, and
   `.deviate/` so per-project runtime state is untracked by default
   for new consumer setups. The single-level prefix (`*/`, not `**/`) is critical: it
   scopes the pattern to the project root, never matching the
@@ -550,7 +550,9 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Source:** `src/deviate/cli/meso.py`
 * **Description:** Selects and claims an issue. If `--issue` is given, selects that specific
   issue and fails if unclaimable. If omitted, iterates `select_unblocked_candidates()` in a
-  try-claim loop. Each claim creates a git worktree at `.worktrees/feat/{epic}/{issue}/`,
+  try-claim loop. Each claim creates a git worktree at `wt/feat/{epic}/{issue}/`
+  (sticky `.worktrees/feat/{epic}/{issue}/` when that directory already exists
+  and `wt/` does not; when both exist, new trees go under `wt/`),
   runs mise setup, writes the claim to the worktree's ledger, pushes the branch to remote,
   and emits a JSON contract with spec_target, worktree_path, branch_name, traceability
   status, constitution commands, etc. If no feature workspace exists yet, invokes
@@ -1303,7 +1305,8 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `blocked_by` dependencies are not COMPLETED unless `--force` is set.
 * **Pipeline Steps (in order):**
   1. **Claim (SPECIFY):** Calls `_specify_pre(issue_id, force, dry_run, local)`, which creates a
-     linked worktree at `.worktrees/feat/{epic}/{issue}/`, copies `.claude/`, `.opencode/`,
+     linked worktree at `wt/feat/{epic}/{issue}/` (sticky `.worktrees/` when that
+     directory already exists and `wt/` does not; both present → new trees under `wt/`), copies `.claude/`, `.opencode/`,
      `.factory/`, `.pi/`, `.omp/` agent skill directories and `.env` (if present) into the
      worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
      during setup), claims the issue via `claim_issue()`, and commits the claim to the
@@ -1359,8 +1362,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   ``--no-setup`` were passed: it skips the SPECIFY step, resolves the active issue
   from the current branch's ``feat/{epic}/{issue}`` slug, and continues with PLAN +
   TASKS in the existing worktree. This makes ``deviate meso run`` a safe continuation
-  command after re-entering a worktree (e.g. ``cd .worktrees/feat/<epic>/<issue>``
-  followed by ``deviate meso run`` resumes the pipeline for that issue). Operators
+  command after re-entering a worktree (e.g. ``cd wt/feat/<epic>/<issue>``
+  or sticky ``cd .worktrees/feat/<epic>/<issue>``, then
+  ``deviate meso run`` resumes the pipeline for that issue). Operators
   who want to force the SPECIFY cycle can pass ``--issue <other-id>`` (which bypasses
   the auto-detect branch entirely) or invoke ``deviate meso run`` from outside the
   worktree.

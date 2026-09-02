@@ -456,7 +456,7 @@ class TestSpecifyLocalFlag:
             f"claim_remote=false must not invoke git push: {push_calls}"
         )
 
-        worktree = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001-loc"
+        worktree = tmp_git_repo / "wt" / "feat" / "test-epic" / "iss-001-loc"
         assert worktree.is_dir(), f"worktree missing at {worktree}"
         assert result is not None
         assert Path(result["worktree_path"]).resolve() == worktree.resolve()
@@ -545,7 +545,7 @@ class TestSpecifyLocalFlag:
             f"absent claim_remote must not invoke git push: {push_calls}"
         )
 
-        worktree = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001-loc"
+        worktree = tmp_git_repo / "wt" / "feat" / "test-epic" / "iss-001-loc"
         assert worktree.is_dir(), f"worktree missing at {worktree}"
         assert result is not None
         assert Path(result["worktree_path"]).resolve() == worktree.resolve()
@@ -561,6 +561,103 @@ class TestSpecifyLocalFlag:
 
         output = "\n".join(printed)
         assert "LOCAL_ONLY" in output, output
+
+
+class TestWorktreeRootResolution:
+    """New claims follow resolve_worktree_root: default wt/, sticky .worktrees/."""
+
+    def _seed_backlog(self, tmp_git_repo: Path, issue_id: str = "ISS-001-WT") -> None:
+        import subprocess
+        from datetime import datetime, timezone
+
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+        from tests.conftest import _git_env
+
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir(exist_ok=True)
+        ledger = specs_dir / "issues.jsonl"
+        append_issue_transition(
+            IssueRecord(
+                issue_id=issue_id,
+                type="feature",
+                title="Worktree root claim",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001-wt.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            ledger,
+        )
+        subprocess.run(
+            ["git", "add", "specs/issues.jsonl"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "seed backlog"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+
+    def _claim(self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+        from datetime import datetime, timezone
+
+        from deviate.cli.meso import _try_claim_issue
+        from deviate.state.ledger import IssueRecord
+
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+        issue = IssueRecord(
+            issue_id="ISS-001-WT",
+            type="feature",
+            title="Worktree root claim",
+            source_file="specs/test-epic/issues/iss-001-wt.md",
+            timestamp=datetime.now(timezone.utc),
+        )
+        result = _try_claim_issue(
+            issue,
+            tmp_git_repo,
+            tmp_git_repo / "specs" / "issues.jsonl",
+            local=True,
+        )
+        assert result is not None
+        return result
+
+    def test_fresh_repo_creates_under_wt(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._seed_backlog(tmp_git_repo)
+        result = self._claim(tmp_git_repo, monkeypatch)
+        worktree = tmp_git_repo / "wt" / "feat" / "test-epic" / "iss-001-wt"
+        assert worktree.is_dir(), f"worktree missing at {worktree}"
+        assert Path(result["worktree_path"]).resolve() == worktree.resolve()
+        assert not (tmp_git_repo / ".worktrees").exists()
+
+    def test_legacy_dir_stays_sticky(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_git_repo / ".worktrees").mkdir()
+        self._seed_backlog(tmp_git_repo)
+        result = self._claim(tmp_git_repo, monkeypatch)
+        worktree = tmp_git_repo / ".worktrees" / "feat" / "test-epic" / "iss-001-wt"
+        assert worktree.is_dir(), f"worktree missing at {worktree}"
+        assert Path(result["worktree_path"]).resolve() == worktree.resolve()
+        assert not (tmp_git_repo / "wt").exists()
+
+    def test_both_dirs_new_claim_under_wt(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_git_repo / "wt").mkdir()
+        (tmp_git_repo / ".worktrees").mkdir()
+        self._seed_backlog(tmp_git_repo)
+        result = self._claim(tmp_git_repo, monkeypatch)
+        worktree = tmp_git_repo / "wt" / "feat" / "test-epic" / "iss-001-wt"
+        assert worktree.is_dir(), f"worktree missing at {worktree}"
+        assert Path(result["worktree_path"]).resolve() == worktree.resolve()
+        leftover = list((tmp_git_repo / ".worktrees").iterdir())
+        assert leftover == [], f"new claim leaked into .worktrees/: {leftover}"
 
 
 class TestSpecifyPushFailure:

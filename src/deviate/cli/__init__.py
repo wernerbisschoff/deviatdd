@@ -57,6 +57,7 @@ from deviate.core.commands import (
     install_command,
     parse_optional_packs,
 )
+from deviate.core.worktree import worktree_gitignore_entries
 from deviate.ui.checkbox import checkbox_select
 from deviate.ui.render import is_interactive
 
@@ -1502,7 +1503,8 @@ def _ensure_root_gitignore(workdir: Path) -> None:
       ``<agent>/prompts/`` — the core DeviaTDD command library.
     - The ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
     - Codex per-command skills under ``.agents/skills/deviate-*/``.
-    - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
+    - ``wt/`` and ``.worktrees/`` — isolated task worktrees managed by
+      DeviaTDD (default ``wt/``; sticky ``.worktrees/`` compat).
     - ``.deviate/`` — per-project runtime state and local config.
     """
     entries = (
@@ -1510,7 +1512,7 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         "*/prompts/deviate-*.md",
         "*/skills/deviatdd/",
         "*/skills/deviate-*/",
-        ".worktrees/",
+        *worktree_gitignore_entries(),
         ".deviate/",
     )
     gitignore_path = workdir / ".gitignore"

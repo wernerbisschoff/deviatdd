@@ -338,7 +338,7 @@ deviate merge --issue {ISSUE_ID} --delete-branch [--delete-worktree]
    when ``origin`` is not configured; surfaces ``PUSH_WARN`` and continues
    when the remote is unreachable.
 3. **Worktree cleanup** — if the branch is still checked out in a worktree
-   (e.g. the pre-squash worktree at ``.worktrees/feat-*``), the worktree is
+   (e.g. the pre-squash worktree at ``wt/feat-*`` or sticky ``.worktrees/feat-*``), the worktree is
    ``git worktree remove --force``-ed first so ``git branch -D`` does not
    fail with ``branch … used by worktree``. ``--delete-worktree`` adds an
    independent removal of the worktree at ``cwd`` (useful when ``cwd`` is a
