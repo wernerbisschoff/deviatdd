@@ -291,6 +291,24 @@ def judge_fail_yaml(
     )
 
 
+def judge_revert_green_yaml(
+    task_id: str,
+    *,
+    feedback: str = "implementation misses the RED contract",
+) -> str:
+    """JUDGE ``COMPLIANCE_VIOLATION`` + ``revert_green`` (TRAIN GREEN)."""
+    body = feedback if feedback.endswith("\n") else feedback + "\n"
+    return (
+        "phase: JUDGE\n"
+        "status: SUCCESS\n"
+        f"task_id: {task_id}\n"
+        'verdict: "COMPLIANCE_VIOLATION"\n'
+        "next_action: revert_green\n"
+        "train_feedback: |\n"
+        + "".join(f"  {line}\n" for line in body.splitlines())
+    )
+
+
 def judge_pass_plus_note_yaml(
     task_id: str,
     *,

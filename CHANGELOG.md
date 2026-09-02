@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **TDD GREEN budget now runs TRAIN 3/3 as a real GREEN, then escalates.** `green_attempts` increments at the start of each `_run_green_phase` (including the first) so three GREEN phase runs happen before `green_budget_exhausted`. `_train_green_or_escalate` no longer increments — incrementing there burned the last slot on escalate after two `revert_green` TEST_FAILURE cycles. `revert_red` / `test_defect` still escalate immediately; `_MAX_GREEN_ATTEMPTS` stays 3; `TRAIN_EXHAUSTED` still prints only after three RED escalates.
+
+- **Escalate pre-RED walk no longer lands on a stacked docs-feedback SHA.** `_resolve_pre_red_sha` reuses `_resolve_judge_diff_base` to walk `docs(...): add judge feedback for retry` commits to the real RED-phase failing-test SHA, then returns that RED commit's parent. `PRE_RED_AMBIGUOUS` only when that true pre-RED parent cannot be resolved. `revert_green` still resets to the TRAIN boundary (feedback or RED), not pre-RED.
+
 - **JUDGE `COMPLIANCE_PASS` + `REFACTOR NOTE` proceeds to REFACTOR instead of rejecting.** A clean pass that also emits a `REFACTOR NOTE:` (or leftover `next_action: revert_red` / legacy `revert_to_red`) no longer sets `JUDGE_REJECTED` or `revert_red` / `revert_green`. The runner defaults to `continue_refactor` (or `skip_refactor` when `--no-refactor`), injects the note into the REFACTOR `{train_feedback}` placeholder, and leaves GH-149 Test Integrity `revert_red` unchanged. ([#158](https://github.com/wernerbisschoff/deviatdd/issues/158))
 
 - RED/GREEN/REFACTOR `pre` JSON, auto prompts, and the runner share one verification resolver: when mise is present, `test_command` is the resolved `mise test` / `mise unit` / `mise integ` / `mise exec -- …` string (plus the allowlisted task names that exist), and `_run_test_cmd` executes that same command after optional `mise doctor` preflight. ([#156](https://github.com/wernerbisschoff/deviatdd/issues/156))

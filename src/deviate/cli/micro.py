@@ -2010,6 +2010,17 @@ def _run_green_phase(
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
     _require_green_entry_red_sha(root, session, tid)
+    session.green_attempts += 1
+    session.save(session_path)
+    _emit_green_train(
+        c,
+        attempt=session.green_attempts,
+        reason=(
+            "re-running GREEN with judge feedback"
+            if session.train_feedback
+            else "GREEN phase"
+        ),
+    )
     manifest, timeout_ctx, timed_out = _unpack_agent_invoke(
         _invoke_agent(
             prompt,
@@ -2672,25 +2683,25 @@ def _require_green_entry_red_sha(root: Path, session: SessionState, tid: str) ->
 def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
     """Return the SHA to reset to for ``next_action="revert_red"``.
 
-    The pre-RED anchor is ``red_commit_sha^`` — the commit just before the
-    task's RED phase landed. When ``red_sha^`` does not look like a
-    RED-phase commit (defensive regex check on its subject), log a
-    ``PRE_RED_AMBIGUOUS`` warning so the operator knows the resolution is
-    best-effort, but still return the parent so the rollback can proceed.
+    ``session.red_commit_sha`` may point at a stacked
+    ``docs(...): add judge feedback for retry`` commit (GH-88 TRAIN
+    boundary). Walk those subjects via ``_resolve_judge_diff_base`` to
+    the RED-phase failing-test SHA, then return that RED commit's
+    parent — the true pre-RED. ``PRE_RED_AMBIGUOUS`` only when that
+    parent cannot be resolved.
     """
-    parent = _git_parent_sha(root, red_sha)
-    if not parent:
+    if not red_sha or not red_sha.strip():
         return ""
-    subject = _git_commit_subject(root, parent)
-    if not _PRE_RED_SHA_PARENT_RE.match(subject):
+    real_red = _resolve_judge_diff_base(root, red_sha.strip())
+    parent = _git_parent_sha(root, real_red)
+    if not parent:
         logging.getLogger(__name__).warning(
-            "PRE_RED_AMBIGUOUS: red_commit_sha %s's parent (%s) has "
-            "subject %r; expected a RED-phase commit. Falling back to "
-            "red_sha^ anyway.",
+            "PRE_RED_AMBIGUOUS: cannot resolve parent of RED-phase SHA %s "
+            "(walked from red_commit_sha %s)",
+            (real_red[:7] if real_red else "?"),
             red_sha[:7],
-            parent[:7],
-            subject,
         )
+        return ""
     return parent
 
 
@@ -4667,13 +4678,14 @@ def _train_green_or_escalate(
     no_judge: bool,
     root: Path,
 ) -> tuple[SessionState, bool]:
-    """Count one GREEN train. Escalate when ``green_attempts`` reaches ``_MAX_GREEN_ATTEMPTS``.
+    """Retry GREEN, or escalate when three GREEN phase runs have already started.
+
+    ``green_attempts`` is counted at GREEN start. This helper must not
+    increment — incrementing here burns TRAIN 3/3 on escalate.
 
     Returns ``(session, True)`` after a new RED dispatch, or
     ``(session, False)`` when GREEN should retry the standing RED contract.
     """
-    session.green_attempts += 1
-    session.save(session_path)
     if session.green_attempts < _MAX_GREEN_ATTEMPTS:
         return session, False
     session = _escalate_to_new_red(
@@ -4865,6 +4877,9 @@ def _run_tdd_cycle_impl(
         if pre_green == "complete":
             judge_passed = True
             break
+        if session.green_attempts >= _MAX_GREEN_ATTEMPTS:
+            session = _escalate("green_budget_exhausted")
+            continue
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="GREEN", description=task_desc
         )
@@ -4879,11 +4894,6 @@ def _run_tdd_cycle_impl(
                 session, escalated = _train()
                 if escalated:
                     continue
-                _emit_green_train(
-                    c,
-                    attempt=session.green_attempts,
-                    reason=("GREEN phase post-cleanup failed, retrying with feedback"),
-                )
                 _log_run(
                     "PHASE_DECISION",
                     task_id=tid,
@@ -4946,17 +4956,6 @@ def _run_tdd_cycle_impl(
                 )
             session = session.force_transition_to("GREEN")
             session.save(session_path)
-            if session.pending_judge_action == "revert_green" or session.judge_rejected:
-                train_reason = "re-running GREEN with judge feedback"
-            else:
-                train_reason = (
-                    "tests still failing, re-running GREEN with test feedback"
-                )
-            _emit_green_train(
-                c,
-                attempt=session.green_attempts,
-                reason=train_reason,
-            )
             session.judge_rejected = False
             session.save(session_path)
             _log_run(
@@ -4987,17 +4986,6 @@ def _run_tdd_cycle_impl(
                 )
             session = session.force_transition_to("GREEN")
             session.save(session_path)
-            if session.pending_judge_action == "revert_green" or session.judge_rejected:
-                train_reason = "re-running GREEN with judge feedback"
-            else:
-                train_reason = (
-                    "tests still failing, re-running GREEN with test feedback"
-                )
-            _emit_green_train(
-                c,
-                attempt=session.green_attempts,
-                reason=train_reason,
-            )
             session.judge_rejected = False
             session.save(session_path)
             _log_run(

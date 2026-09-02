@@ -1,7 +1,8 @@
 """Two-counter TDD retry pins (ISS-ADH-017 / AC-PLAN-001..005).
 
 GREEN trains three times against one standing RED contract on
-``revert_green``, then escalates. Cycle 1 does not print
+``revert_green`` (each GREEN start counts, including the first;
+TRAIN 3/3 is a real GREEN), then escalates. Cycle 1 does not print
 ``TRAIN_EXHAUSTED``. ``revert_red`` escalates immediately; three
 escalates print ``TRAIN_EXHAUSTED`` and stop. Counters seed from
 ``SessionState`` so a crash mid-train cannot zero the budget via a
@@ -127,6 +128,8 @@ def _install_always_revert_green_stubs(
         session_path_arg = args[3]
         assert isinstance(session_path_arg, Path)
         current = SessionState.load(session_path_arg)
+        current.green_attempts += 1
+        current.save(session_path_arg)
         green_attempts_at_green.append(current.green_attempts)
         feedback_at_green.append(current.train_feedback)
         sha_at_green.append(current.red_commit_sha)
@@ -227,10 +230,10 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
             "AC-PLAN-001: after 3 revert_green trains the runner must "
             f"dispatch a new _run_red_phase; got {call_log!r}"
         )
-        assert green_attempts_at_green[:3] == [0, 1, 2], (
-            "AC-PLAN-001: first GREEN of a fresh RED does not increment; "
-            "each revert_green then adds 1 to green_attempts before the "
-            f"next GREEN. got {green_attempts_at_green!r}"
+        assert green_attempts_at_green[:3] == [1, 2, 3], (
+            "AC-PLAN-001: each GREEN start (including the first) increments "
+            "green_attempts so TRAIN 3/3 is a real GREEN; got "
+            f"{green_attempts_at_green!r}"
         )
         first_contract_greens = call_log[: call_log.index("RED", 1)]
         n_green_before_escalate = first_contract_greens.count("GREEN")
@@ -257,7 +260,7 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
         A crash mid-GREEN-train reloads ``.deviate/session.json``. The
         runner must not assign ``train_attempts = 0`` and give the task
         three fresh trains. Seeded ``green_attempts == 2`` plus one
-        ``revert_green`` reaches 3 and escalates.
+        GREEN start reaches 3 and escalates after that GREEN fails.
         """
         root = tmp_git_repo
         monkeypatch.chdir(root)
@@ -296,9 +299,9 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
         green_attempts_at_green = traces["green_attempts_at_green"]
         assert isinstance(green_attempts_at_green, list)
 
-        assert green_attempts_at_green[0] == 2, (
-            "AC-PLAN-001: re-entry must seed from session.green_attempts=2; "
-            f"got {green_attempts_at_green!r}"
+        assert green_attempts_at_green[0] == 3, (
+            "AC-PLAN-001: re-entry seeds green_attempts=2 and counts the "
+            f"next GREEN start as 3; got {green_attempts_at_green!r}"
         )
         assert "TRAIN_EXHAUSTED" not in output, (
             "AC-PLAN-001: loaded green_attempts=2 must not be wiped by a "
