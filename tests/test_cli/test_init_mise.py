@@ -125,7 +125,9 @@ def test_fresh_init_defines_unit_integration_doctor_not_e2e(
     assert not (tmp_git_repo / "e2e").exists()
 
 
-@pytest.mark.parametrize("project_type", ["python", "elixir_phoenix", "node", "rust", "go"])
+@pytest.mark.parametrize(
+    "project_type", ["python", "elixir_phoenix", "node", "rust", "go"]
+)
 def test_fresh_init_pre_push_depends_on_unit(
     tmp_git_repo: Path, project_type: str
 ) -> None:
@@ -172,10 +174,7 @@ def test_e2e_task_added_only_when_layer_exists(tmp_git_repo: Path) -> None:
 def test_existing_mise_without_unit_adds_named_tasks(tmp_git_repo: Path) -> None:
     _seed_project(tmp_git_repo, "python")
     (tmp_git_repo / "mise.toml").write_text(
-        "[tools]\n"
-        'python = "3.11"\n\n'
-        "[tasks.custom]\n"
-        'run = "echo keep-me"\n',
+        '[tools]\npython = "3.11"\n\n[tasks.custom]\nrun = "echo keep-me"\n',
         encoding="utf-8",
     )
 
@@ -193,10 +192,7 @@ def test_existing_mise_without_unit_adds_named_tasks(tmp_git_repo: Path) -> None
 def test_existing_mise_with_unit_does_not_rewrite_command(tmp_git_repo: Path) -> None:
     _seed_project(tmp_git_repo, "python")
     (tmp_git_repo / "mise.toml").write_text(
-        "[tasks.unit]\n"
-        'run = "custom-unit"\n\n'
-        "[tasks.watch]\n"
-        'run = "echo watch"\n',
+        '[tasks.unit]\nrun = "custom-unit"\n\n[tasks.watch]\nrun = "echo watch"\n',
         encoding="utf-8",
     )
 
