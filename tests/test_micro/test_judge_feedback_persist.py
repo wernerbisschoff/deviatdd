@@ -4,14 +4,30 @@
 (``judge_action`` + ``judge_feedback``) and ``tasks.md`` Judge Feedback,
 then make one ``docs(<tid>): add judge feedback for retry`` commit that
 contains both files. Writing JSONL before the reset would vanish.
+
+GH-170: ``revert_red`` with structured ``violations`` (no ``train_feedback``)
+must persist that payload and keep it through escalate-to-RED. A second
+pre-RED reset must not delete the feedback commit.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from pathlib import Path
 
+import pytest
+from rich.console import Console
+
+from deviate.cli.micro import (
+    PhaseFailedError,
+    _build_auto_prompt,
+    _escalate_to_new_red,
+    _run_tdd_cycle,
+)
+from deviate.core.agent import HandoverManifest
+from deviate.state.config import SessionState
 from tests.conftest import _git_env
 from tests.helpers.cycle_driver import load_verdicts
 from tests.test_micro.test_judge_refactor_note_routing import (
@@ -19,6 +35,7 @@ from tests.test_micro.test_judge_refactor_note_routing import (
     _TASK_ID,
     _manifest,
     _seed_green_repo,
+    _task,
 )
 from tests.test_micro.test_judge_verdicts import _apply_existing
 
@@ -249,3 +266,189 @@ class TestJudgeRevertPersistsAfterReset:
             expected_head=green_sha,
             expected_reset=pre_red,
         )
+
+
+_REWRITE_RECOMMENDATION = (
+    "Rewrite the RED tests to submit requests through the real application "
+    "transport and assert committed rows, balance mutations, idempotency "
+    "outcomes, snapshots, whitelist status, concurrency, and rollback."
+)
+_IDEMPOTENCY_RECOMMENDATION = (
+    "Implement transactional idempotency admission that serializes the unique "
+    "key and returns one committed row with one reservation under concurrent "
+    "PostgreSQL requests."
+)
+_VIOLATIONS_ONLY = [
+    {
+        "category": "Test Integrity Violation",
+        "severity": "CRITICAL",
+        "detail": ("RED tests mock the transport instead of exercising the live app."),
+        "recommendation": _REWRITE_RECOMMENDATION,
+    },
+    {
+        "category": "Spec Non-Compliance",
+        "severity": "HIGH",
+        "detail": "Concurrent admission is not serialized on the unique key.",
+        "recommendation": _IDEMPOTENCY_RECOMMENDATION,
+    },
+]
+
+
+def _violations_only_manifest() -> HandoverManifest:
+    return _manifest(
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_red",
+        train_feedback="",
+        violations=_VIOLATIONS_ONLY,
+    )
+
+
+def _mock_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "deviate.cli.micro._run_pytest",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=["pytest"], returncode=1, stdout="1 failed", stderr=""
+        ),
+    )
+
+
+class TestRevertRedViolationsReachRetryRed:
+    """GH-170: violations-only revert_red keeps Judge Feedback through escalate."""
+
+    def test_revert_red_violations_only_persist_on_head(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        _apply_existing(tmp_git_repo, ledger_path, _violations_only_manifest())
+
+        assert "add judge feedback for retry" in _head_subject(tmp_git_repo)
+        md_rel = (
+            ledger_path.relative_to(tmp_git_repo)
+            .as_posix()
+            .replace("tasks.jsonl", "tasks.md")
+        )
+        md_text = _head_blob(tmp_git_repo, md_rel)
+        assert "**Judge Feedback**" in md_text
+        assert _REWRITE_RECOMMENDATION in md_text
+        assert _IDEMPOTENCY_RECOMMENDATION in md_text
+        rows = _jsonl_rows(
+            _head_blob(tmp_git_repo, ledger_path.relative_to(tmp_git_repo).as_posix())
+        )
+        row = _latest_judge_row(rows)
+        assert row["judge_action"] == "revert_red"
+        assert _REWRITE_RECOMMENDATION in str(row["judge_feedback"])
+
+    def test_escalate_keeps_violation_payload_and_feedback_commit(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Escalate after apply must not wipe violations or the persist commit.
+
+        Re-point ``red_commit_sha`` at the feedback commit so a naive second
+        pre-RED rollback would delete it. Retry RED must still see the
+        recommendation text, not ``previous cycle failed because test defect``.
+        """
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        session = _apply_existing(
+            tmp_git_repo, ledger_path, _violations_only_manifest()
+        )
+        feedback_sha = _head_sha(tmp_git_repo)
+        feedback_parent = _parent_sha(tmp_git_repo)
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session.red_commit_sha = feedback_sha
+        session.save(session_path)
+
+        captured_feedback: list[str] = []
+        captured_prompts: list[str] = []
+
+        def _red(*args: object, **kwargs: object) -> SessionState:
+            session_arg = args[2]
+            session_path_arg = args[3]
+            assert isinstance(session_arg, SessionState)
+            assert isinstance(session_path_arg, Path)
+            captured_feedback.append(session_arg.train_feedback)
+            captured_prompts.append(
+                _build_auto_prompt(
+                    "red",
+                    _task(),
+                    Path.cwd(),
+                    train_feedback=session_arg.train_feedback,
+                )
+            )
+            session_arg.red_commit_sha = "b" * 40
+            session_arg.save(session_path_arg)
+            return session_arg
+
+        monkeypatch.chdir(tmp_git_repo)
+        _mock_pytest(monkeypatch)
+        monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        session = _escalate_to_new_red(
+            _task(),
+            ledger_path,
+            session,
+            session_path,
+            console,
+            agent=None,
+            monitor=None,
+            no_judge=False,
+            root=tmp_git_repo,
+            reason="test_defect",
+        )
+
+        assert captured_feedback, "retry RED must run after escalate"
+        retry = captured_feedback[0]
+        prompt = captured_prompts[0]
+        assert _REWRITE_RECOMMENDATION in retry, retry
+        assert _IDEMPOTENCY_RECOMMENDATION in retry, retry
+        assert "previous cycle failed because" not in retry, retry
+        assert _REWRITE_RECOMMENDATION in prompt, prompt
+        assert "previous cycle failed because" not in prompt, prompt
+        assert session.train_feedback == retry
+        assert _head_sha(tmp_git_repo) == feedback_sha, (
+            "escalate must not reset to a parent of the feedback commit; "
+            f"HEAD={_head_sha(tmp_git_repo)} parent={feedback_parent} "
+            f"feedback={feedback_sha}"
+        )
+        assert _head_sha(tmp_git_repo) != feedback_parent
+
+    def test_tdd_cycle_revert_red_keeps_violations_on_retry_red(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``pending == revert_red`` in ``_run_tdd_cycle`` must not replace payload."""
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        session = _apply_existing(
+            tmp_git_repo, ledger_path, _violations_only_manifest()
+        )
+        feedback_sha = _head_sha(tmp_git_repo)
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session.red_commit_sha = feedback_sha
+        session.save(session_path)
+
+        captured_feedback: list[str] = []
+
+        def _red(*args: object, **kwargs: object) -> SessionState:
+            session_arg = args[2]
+            session_path_arg = args[3]
+            assert isinstance(session_arg, SessionState)
+            assert isinstance(session_path_arg, Path)
+            captured_feedback.append(session_arg.train_feedback)
+            session_arg.red_commit_sha = "c" * 40
+            session_arg.save(session_path_arg)
+            raise PhaseFailedError("stop-after-retry-red")
+
+        monkeypatch.chdir(tmp_git_repo)
+        _mock_pytest(monkeypatch)
+        monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        with pytest.raises(PhaseFailedError, match="stop-after-retry-red"):
+            _run_tdd_cycle(_task(), ledger_path, console, start_phase="GREEN")
+
+        assert captured_feedback, "cycle escalate must dispatch retry RED"
+        retry = captured_feedback[0]
+        assert _REWRITE_RECOMMENDATION in retry, retry
+        assert "previous cycle failed because" not in retry, retry
+        assert _head_sha(tmp_git_repo) == feedback_sha

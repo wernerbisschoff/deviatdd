@@ -4640,13 +4640,18 @@ class TestRunnerLoopRestartsRedOnRevertRed:
     ) -> None:
         """The first ``revert_red`` dispatches a second RED.
 
-        Escalate accounting increments ``red_attempts``, resets
-        ``green_attempts`` to 0, and injects a short escalate note into
-        ``session.train_feedback`` for the retry RED (AC-PLAN-004).
+        Escalate accounting increments ``red_attempts`` and resets
+        ``green_attempts`` to 0. GH-170: real ``_apply_judge_verdict``
+        persist keeps structured violation text on ``train_feedback``
+        and ``tasks.md`` after reset — not
+        ``previous cycle failed because``, and not the GREEN dump
+        (AC-PLAN-004/005).
         """
-        from deviate.cli.micro import (
-            _run_tdd_cycle,
-        )
+        import io
+
+        from rich.console import Console as RichConsole
+
+        from deviate.cli.micro import _apply_judge_verdict, _run_tdd_cycle
         from deviate.state.config import SessionState
         from deviate.state.ledger import TaskRecord, append_task_transition
 
@@ -4662,6 +4667,10 @@ class TestRunnerLoopRestartsRedOnRevertRed:
             ),
         )
 
+        source = "specs/002-deviatdd-gap-analysis/issues/005-micro-layer-integrity.md"
+        issue_md = root / source
+        issue_md.parent.mkdir(parents=True)
+        issue_md.write_text("# micro-layer integrity\n", encoding="utf-8")
         ledger_dir = (
             root / "specs" / "002-deviatdd-gap-analysis" / "005-micro-layer-integrity"
         )
@@ -4674,16 +4683,81 @@ class TestRunnerLoopRestartsRedOnRevertRed:
             "execution_mode": "TDD",
         }
         append_task_transition(TaskRecord(**task), ledger_path)
+        (ledger_dir / "tasks.md").write_text(
+            f"- [ ] {task['id']}: {task['description']}\n", encoding="utf-8"
+        )
+        (root / "specs" / "issues.jsonl").write_text(
+            json.dumps({"issue_id": "ISS-002-005", "source_file": source}) + "\n",
+            encoding="utf-8",
+        )
+        (root / "specs" / "constitution.md").write_text(
+            "# constitution\n", encoding="utf-8"
+        )
+        gitignore = root / ".gitignore"
+        gitignore.write_text(".deviate/\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "chore: seed meso artifacts"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        (root / "feature.py").write_text("def feature(): pass\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"test({task['id']}): RED phase"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
+        red_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        (root / "impl.py").write_text("def impl(): pass\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=root, env=_git_env(), check=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"feat({task['id']}): GREEN phase"],
+            cwd=root,
+            env=_git_env(),
+            check=True,
+        )
 
         session_path = root / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
-        SessionState(active_issue_id="ISS-002-005").save(session_path)
+        SessionState(
+            active_issue_id="ISS-002-005",
+            current_phase="GREEN",
+            red_commit_sha=red_sha,
+        ).save(session_path)
 
         call_log: list[str] = []
-        test_defect_rationale = (
+        judge_violation = (
             "RED test asserts the wrong tenant (Tenant A) where the "
             "spec requires isolation from Tenant B."
         )
+        green_dump_marker = "UNIQUE_GREEN_DUMP_MARKER_AC_PLAN_004"
+        green_dump = (
+            "<test_output>\n"
+            "FAILED tests/test_cli/test_micro.py::test_foo\n"
+            f"{green_dump_marker}\n"
+            "</test_output>\n"
+        )
+        tasks_md_rel = ledger_dir.relative_to(root).as_posix() + "/tasks.md"
+
+        def _head_tasks_md() -> str:
+            return subprocess.run(
+                ["git", "show", f"HEAD:{tasks_md_rel}"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+                check=True,
+            ).stdout
 
         def _red(*args, **kwargs):
             call_log.append("RED")
@@ -4693,15 +4767,25 @@ class TestRunnerLoopRestartsRedOnRevertRed:
                 current.red_commit_sha = "abc123def"
                 current.save(session_path_arg)
             if call_log.count("RED") >= 2:
-                assert "previous cycle failed because" in current.train_feedback, (
-                    "AC-PLAN-004/005: escalate RED must get a short "
-                    "'previous cycle failed because' note, not the GREEN "
+                assert judge_violation in current.train_feedback, (
+                    "GH-170: escalate RED must keep the JUDGE violation "
+                    f"payload; got {current.train_feedback!r}"
+                )
+                assert "previous cycle failed because" not in current.train_feedback, (
+                    "GH-170: escalate must not replace real feedback with "
+                    f"the generic note; got {current.train_feedback!r}"
+                )
+                assert "<test_output>" not in current.train_feedback, (
+                    "AC-PLAN-004/005: escalate RED must omit the GREEN "
                     f"dump; got {current.train_feedback!r}"
                 )
-                assert test_defect_rationale not in current.train_feedback, (
-                    "AC-PLAN-004/005: escalate RED must omit the raw GREEN "
-                    f"rationale dump; got {current.train_feedback!r}"
+                assert green_dump_marker not in current.train_feedback, (
+                    "AC-PLAN-004/005: escalate RED must omit the GREEN "
+                    f"dump marker; got {current.train_feedback!r}"
                 )
+                md_text = _head_tasks_md()
+                assert "**Judge Feedback**" in md_text, md_text
+                assert judge_violation in md_text, md_text
                 assert current.pending_judge_action == "revert_red"
                 assert current.red_attempts >= 1, (
                     "AC-PLAN-002: revert_red must increment red_attempts "
@@ -4718,10 +4802,8 @@ class TestRunnerLoopRestartsRedOnRevertRed:
             session_path_arg = args[3]
             current = SessionState.load(session_path_arg)
             if call_log.count("GREEN") == 1:
-                # First GREEN: emit a test_defect failure so JUDGE
-                # has something to reject with ``revert_red``.
                 current.failure_kind = "test_defect"
-                current.train_feedback = test_defect_rationale
+                current.train_feedback = green_dump
             else:
                 current.failure_kind = ""
                 current.train_feedback = ""
@@ -4730,16 +4812,41 @@ class TestRunnerLoopRestartsRedOnRevertRed:
 
         def _judge(*args, **kwargs):
             call_log.append("JUDGE")
+            session_arg = args[2]
             session_path_arg = args[3]
-            current = SessionState.load(session_path_arg)
             if call_log.count("JUDGE") == 1:
-                current.judge_rejected = True
-                current.pending_judge_action = "revert_red"
-                current.train_feedback = test_defect_rationale
-            else:
-                current.judge_rejected = False
-                current.pending_judge_action = "skip_refactor"
-                current.train_feedback = ""
+                manifest = HandoverManifest.model_construct(
+                    phase="JUDGE",
+                    status="PASS",
+                    task_id=task["id"],
+                    verdict="COMPLIANCE_VIOLATION",
+                    next_action="revert_red",
+                    train_feedback="",
+                    rationale="",
+                    violations=[
+                        {
+                            "category": "Test Integrity Violation",
+                            "severity": "CRITICAL",
+                            "detail": judge_violation,
+                            "recommendation": (
+                                "Re-author the RED test so it isolates Tenant B."
+                            ),
+                        }
+                    ],
+                )
+                return _apply_judge_verdict(
+                    task,
+                    ledger_path,
+                    session_arg,
+                    session_path_arg,
+                    RichConsole(file=io.StringIO(), force_terminal=False, width=200),
+                    manifest,
+                    injected_diff="",
+                )
+            current = SessionState.load(session_path_arg)
+            current.judge_rejected = False
+            current.pending_judge_action = "skip_refactor"
+            current.train_feedback = ""
             current.save(session_path_arg)
             return current
 
