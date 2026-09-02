@@ -2338,6 +2338,20 @@ class _RollbackTrace:
     recovery_ref: str = ""
 
 
+def _as_rollback_trace(value: object) -> _RollbackTrace:
+    """Accept a real trace; treat mocks / missing attrs as empty strings."""
+    if isinstance(value, _RollbackTrace):
+        return value
+    head = getattr(value, "head_sha", "")
+    reset = getattr(value, "reset_to", "")
+    ref = getattr(value, "recovery_ref", "")
+    return _RollbackTrace(
+        head_sha=head if isinstance(head, str) else "",
+        reset_to=reset if isinstance(reset, str) else "",
+        recovery_ref=ref if isinstance(ref, str) else "",
+    )
+
+
 def _execute_rollback(
     root: Path,
     *,
@@ -3155,6 +3169,7 @@ def _append_judge_verdict_record(
         "loop": loop,
     }
     if next_action in {"revert_red", "revert_green"}:
+        rollback = _as_rollback_trace(rollback)
         record["head_sha"] = rollback.head_sha
         record["reset_to"] = rollback.reset_to
         record["recovery_ref"] = rollback.recovery_ref
@@ -3213,6 +3228,7 @@ def _append_judge_revert_jsonl(
     """Append one always-on revert row. Call only after the blast-radius reset."""
     if judge_action not in {"revert_red", "revert_green"}:
         return None
+    rollback = _as_rollback_trace(rollback)
     dest = (
         ledger_path
         if ledger_path is not None and ledger_path.suffix == ".jsonl"
@@ -3264,6 +3280,7 @@ def _commit_judge_feedback_and_advance(
     SHA, then stages those two paths in one ``docs(<tid>): add judge
     feedback for retry`` commit. Does not stage ``session.json``.
     """
+    rollback = _as_rollback_trace(rollback)
     tid = task.get("id", "?")
     prior_red_sha = session.red_commit_sha
     pending: dict[str, str] = {
