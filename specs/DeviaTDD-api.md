@@ -29,6 +29,17 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `specs/constitution.md` — that bootstrap is owned by `deviate research pre` (see below),
   so a fresh project reports `is_greenfield=true` until `/research` populates the
   constitution. `deviate init pre` continues to scaffold the constitution independently.
+  It also writes or merges `<repo_root>/mise.toml` with the named tasks RED/GREEN
+  resolve: always `unit` (fast hermetic command, no `|| true`), `integration`
+  (`mise integration`), and `doctor` (cheap toolchain check; may append
+  `docker compose config` when `docker-compose.yml` / `compose.yaml` exists — never
+  `docker compose up`). `e2e` is added only when `tests/e2e`, `e2e/`, or `test/e2e`
+  already exists. Fresh scaffolds set `pre-commit` = format-check + lint and
+  `pre-push` = `unit` only; `test` remains a back-compat alias of `unit`. Empty
+  stub dirs are created at `tests/unit` + `tests/integration` (Elixir:
+  `test/unit` + `test/integration`). An existing `mise.toml` is not overwritten:
+  only missing `unit` / `integration` / `doctor` (and `e2e` when that layer
+  exists) are inserted. Init does not write `.deviate/config.toml`.
   Successful `deviate setup` prints a next-step hint to run `/deviate-init` as the
   first agent prompt (Codex: the `deviate-init` skill) and notes that init is a
   no-op if the repo is already scaffolded.

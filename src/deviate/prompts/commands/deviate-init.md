@@ -1,6 +1,6 @@
 ---
 name: deviate-init
-description: Initialize a repo with DeviaTDD conventions — mise.toml (zero-test-pass), specs/ + issues.jsonl, constitution.md scaffold.
+description: Initialize a repo with DeviaTDD conventions — mise.toml (unit + integration + doctor), specs/ + issues.jsonl, constitution.md scaffold.
 category: deviatdd-macro-layer
 version: 1.0.0
 layer: macro
@@ -34,7 +34,7 @@ This phase operates inside the **MACRO LAYER** — initial project scaffolding f
 
 1. **Pre/Post Script Lifecycle**: The init phase begins with `deviate init pre` (detects project type, scaffolds DeviaTDD structure, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes. The phase ends with `deviate init post` (validates artifacts, stages for commit, returns status).
 
-2. **Zero-Test-Pass Invariant**: The `mise test` task MUST exit 0 when no tests are written yet. This is essential for DeviaTDD's Micro Layer to execute — the RED phase writes failing tests, then GREEN phase passes them. If `mise test` fails on a green-field project, the entire workflow blocks.
+2. **Named mise tasks**: `deviate init pre` writes or merges `mise.toml` with `unit`, `integration`, and `doctor`. `unit` is the fast hermetic command and MUST NOT use `|| true` — RED must be able to fail. `e2e` is added only when `tests/e2e`, `e2e/`, or `test/e2e` already exists.
 
 3. **Project Type Detection**: Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`.
 
@@ -46,20 +46,19 @@ This phase operates inside the **MACRO LAYER** — initial project scaffolding f
 
 You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAYER / PHASE_INIT**. Your objective is to scaffold a repository with DeviaTDD conventions:
 
-1. A `mise.toml` (not `.mise.toml`) with DeviaTDD-aware tasks — specifically a `test` task that **passes when no tests exist** (zero-test-pass invariant)
-2. A `specs/` directory containing:
+1. A `mise.toml` (not `.mise.toml`) with the named tasks RED/GREEN resolve: `unit`, `integration`, `doctor` (and `e2e` only when that layer already exists). `unit` has no `|| true`.
+2. Language-native stub dirs: `tests/unit` + `tests/integration` (Elixir: `test/unit` + `test/integration`) so RED knows where to write.
+3. A `specs/` directory containing:
    - `specs/constitution.md` — project governance document
    - `specs/issues.jsonl` — append-only issue ledger (empty, or with initial entry)
-3. Symlink `AGENTS.md` ↔ `CLAUDE.md` (via `_linkify_governance_files`)
+4. Symlink `AGENTS.md` ↔ `CLAUDE.md` (via `_linkify_governance_files`)
 
-**CRITICAL: Zero-Test-Pass Invariant**
-The `mise test` task MUST exit 0 when no tests are written yet. This is essential for DeviaTDD's Micro Layer to execute — the RED phase writes failing tests, then GREEN phase passes them. If `mise test` fails on a green-field project, the entire workflow blocks.
-
-**Python projects**: `uv run pytest || true` (pytest exits 1 when no tests collected)
-**Elixir projects**: Use `mix test || true` or a shell guard that checks for test files first
-**Node projects**: `npm test || true`
-**Go projects**: `go test ./... || true`
-**Rust projects**: `cargo test || true`
+**Named mise contract**
+- `unit` — fast hermetic command (pytest / mix test / cargo test --lib / npm test / go test). No `|| true`.
+- `integration` — `mise integration`, scoped to the integration stub/layer. Empty integration may collect zero tests.
+- `doctor` — cheap toolchain check (python/uv, mix/elixir, node, rustc/cargo, go). If `docker-compose.yml` / `compose.yaml` exists, may include `docker compose config`. Never `docker compose up`.
+- Hooks: `pre-commit` = format-check + lint; `pre-push` = `unit` only.
+- Existing `mise.toml` is merged: insert missing `unit` / `integration` / `doctor`; do not overwrite existing commands.
 
 </system_instructions>
 
@@ -74,7 +73,7 @@ deviate init pre
 The pre-script emits a JSON contract to stdout containing:
 - `repo_root`, `git_branch`, `timestamp`
 - `project_type` (python, elixir, node, rust, go, etc.)
-- `test_command` — the zero-test-pass-aware test command
+- `test_command` — the resolved unit/test command
 - `mise_available` — whether mise is installed
 - `existing_artifacts` — what DeviaTDD scaffolding already exists
 - `artifacts_created` — list of files/directories created by this run
@@ -84,7 +83,7 @@ The pre-script emits a JSON contract to stdout containing:
 <step id="project_analysis">
 Analyze the project state from the contract:
 1. Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`
-2. Determine appropriate test command with zero-test-pass guarantee
+2. Confirm `mise.toml` defines `unit`, `integration`, and `doctor`
 3. Check what DeviaTDD artifacts already exist (`specs/`, `issues.jsonl`, `constitution.md`)
 </step>
 
@@ -132,8 +131,8 @@ The post-script:
 
 ### mise.toml
 - Path: `<repo_root>/mise.toml`
-- Purpose: DeviaTDD task definitions with zero-test-pass invariant
-- Key task: `test = "... || true"` pattern
+- Purpose: DeviaTDD named tasks (`unit`, `integration`, `doctor`)
+- Key tasks: `unit` (no `|| true`), `integration`, `doctor`; `pre-push` depends on `unit`
 
 ### specs/constitution.md
 - Path: `<repo_root>/specs/constitution.md`
@@ -156,8 +155,8 @@ The post-script:
 | Condition | Action |
 | :--- | :--- |
 | Not a git repository | Return FAILURE with reason "Not a git repository" |
-| Unknown project type | Scaffold with generic `test = "echo 'No test framework' || true"` |
-| mise.toml already exists | Skip generation, emit warning in contract |
+| Unknown project type | Scaffold `unit = "pytest tests/unit"` plus `integration` and `doctor` |
+| mise.toml already exists | Merge missing `unit` / `integration` / `doctor`; do not overwrite existing commands |
 | constitution.md already exists | Skip generation, note in contract |
 | Project is already DeviaTDD-compliant | Return SUCCESS with existing artifacts listed |
 | Git hooks fail | Report failure but stage artifacts anyway |

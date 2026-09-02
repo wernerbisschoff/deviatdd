@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`deviate init` scaffolds the named mise tasks RED/GREEN resolve.** Fresh `mise.toml` always defines `unit`, `integration`, and `doctor` (language-specific commands; no `|| true` on `unit`). Empty stub dirs are created at `tests/unit` + `tests/integration` (Elixir: `test/unit` + `test/integration`) so RED knows where to write. `e2e` is added only when `tests/e2e`, `e2e/`, or `test/e2e` already exists. `pre-push` depends on `unit` only. An existing `mise.toml` is merged: missing `unit` / `integration` / `doctor` are inserted; existing commands and tool pins are left untouched. Pinned by `tests/test_cli/test_init_mise.py`.
+
 ### Removed
 
 - **Product layer is gone.** `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, the optional `product` pack, `deviate flows sync`, `deviate inspect flows coverage`, `specs/_product/`, `flow_refs`, and the flow ledger API (`FlowRecord`, `seed_flow_ledger`, …) are deleted — not optional, not tombstoned. Three layers remain: Macro, Meso, Micro. Shard still writes User Stories + ATDD on the issue; RED encodes those scenarios as failing tests. GREEN still cannot edit tests. Historical `issues.jsonl` rows that carry `flow_refs` still parse (the field is ignored). Constitution 0.10.0 records the removal; 0.6.0 / 0.7.0 stay as history.
