@@ -144,8 +144,7 @@ class TestViolationRefactorNoteKeepsGreen:
         )
         statuses = result.statuses_for(_TASK_A.task_id)
         assert statuses.count("RED") == 1, (
-            f"{mode}: ledger must not return to RED; got {statuses!r}\n"
-            f"{result.output}"
+            f"{mode}: ledger must not return to RED; got {statuses!r}\n{result.output}"
         )
         assert statuses[-1] == "COMPLETED"
         assert result.session is not None

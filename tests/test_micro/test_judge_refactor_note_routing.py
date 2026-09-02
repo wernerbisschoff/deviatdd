@@ -316,8 +316,7 @@ class TestCoercePassPlusRefactorNote:
         assert _verdict_is_clean_pass("COMPLIANCE_VIOLATION", manifest) is True
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION")
         assert result not in {"revert_red", "revert_green", "revert_to_red"}, (
-            f"refactor-only COMPLIANCE_VIOLATION must drop revert_green; "
-            f"got {result!r}"
+            f"refactor-only COMPLIANCE_VIOLATION must drop revert_green; got {result!r}"
         )
 
     def test_real_spec_violation_still_reverts(self) -> None:
@@ -510,14 +509,11 @@ class TestApplyPassPlusRefactorNote:
         assert _LIVE_UNUSED_IMPORT_NOTE in session.train_feedback
         assert "RED" not in _ledger_statuses(ledger)
         assert _head_sha(tmp_git_repo) == green_sha, (
-            "GREEN commit must be kept; harness must not reset to "
-            f"{red_sha[:7]}"
+            f"GREEN commit must be kept; harness must not reset to {red_sha[:7]}"
         )
         assert (tmp_git_repo / "impl.py").exists()
 
-    def test_violation_plus_note_no_refactor_skips(
-        self, tmp_git_repo: Path
-    ) -> None:
+    def test_violation_plus_note_no_refactor_skips(self, tmp_git_repo: Path) -> None:
         session, output, ledger = _apply(
             tmp_git_repo,
             _manifest(
@@ -568,9 +564,7 @@ class TestApplyPassPlusRefactorNote:
         assert _head_sha(tmp_git_repo) == green_sha
         assert "COMPLETED" not in _ledger_statuses(ledger)
 
-    def test_test_defect_overlay_still_reverts_red(
-        self, tmp_git_repo: Path
-    ) -> None:
+    def test_test_defect_overlay_still_reverts_red(self, tmp_git_repo: Path) -> None:
         """``failure_kind=test_defect`` must keep revert_red even if the
         body looks like a REFACTOR NOTE."""
         _red_sha, ledger = _seed_green_repo(tmp_git_repo)
