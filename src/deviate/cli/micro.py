@@ -2345,6 +2345,44 @@ def _rollback_index_field(value: object) -> str | None:
     return None
 
 
+def _planned_revert_anchor(
+    root: Path,
+    *,
+    session: SessionState,
+    action: str,
+    tid: str,
+    attempt: int = 1,
+) -> _RollbackTrace:
+    """Preview-only planned index for the manual confirm prompt.
+
+    After reset, ``_execute_rollback``'s ``_RollbackTrace`` is the
+    source of truth — this planner must not be reused as the
+    post-reset log.
+    """
+    head_sha = _git_capture(root, "rev-parse", "HEAD")
+    if action == "revert_green":
+        reset_to = (session.red_commit_sha or "").strip()
+    elif session.red_commit_sha:
+        reset_to = (
+            _resolve_pre_red_sha(root, session.red_commit_sha)
+            or session.red_commit_sha.strip()
+        )
+    else:
+        reset_to = ""
+    return _RollbackTrace(
+        head_sha=head_sha,
+        reset_to=reset_to,
+        recovery_ref=_recovery_branch_for(tid, attempt),
+    )
+
+
+def _print_judge_revert_anchor(c: Console, rollback: _RollbackTrace) -> None:
+    """Print the three required revert-index fields."""
+    c.print(f"  head_sha={rollback.head_sha}")
+    c.print(f"  reset_to={rollback.reset_to}")
+    c.print(f"  recovery_ref={rollback.recovery_ref}")
+
+
 def _execute_rollback(
     root: Path,
     *,
@@ -3113,7 +3151,7 @@ def _reject_streak_for(
         return 0, False
     streak = 1
     for row in reversed(read_verdicts_records(root, issue_id, task_id)):
-        if row.get("event") == "cycle_end":
+        if row.get("event"):
             continue
         if row.get("blast") == blast:
             streak += 1
@@ -3724,6 +3762,55 @@ def _run_judge_phase(
         declared_paths=declared_paths,
         red_baseline=red_baseline,
         no_refactor=no_refactor,
+        assume_yes=True,
+    )
+
+
+def _confirm_manual_judge_revert(
+    c: Console,
+    *,
+    tid: str,
+    action: str,
+    blast: str,
+    feedback_preview: str,
+    head_sha: str,
+    reset_to: str,
+    recovery_ref: str,
+    assume_yes: bool,
+) -> None:
+    """Print the failing-tree anchor. Raise if manual revert is not confirmed.
+
+    Auto / ``--yes`` (``assume_yes=True``) is a no-op so ``micro run``
+    never prompts. Manual ``judge post`` prints blast + the three
+    required fields, then confirms on a TTY or fails closed with
+    ``JUDGE_REVERT_CONFIRM_REQUIRED``.
+    """
+    if assume_yes:
+        return
+    c.print(f"  [red]JUDGE compliance failed[/] {tid} action={action} blast={blast}")
+    c.print(f"  feedback: {feedback_preview}")
+    _print_judge_revert_anchor(
+        c,
+        _RollbackTrace(head_sha=head_sha, reset_to=reset_to, recovery_ref=recovery_ref),
+    )
+    if _review_stdin_usable():
+        if typer.confirm(
+            "Reset the working tree now? The failing tree stays until you confirm.",
+            default=False,
+        ):
+            return
+        c.print(
+            "  [yellow]JUDGE_REVERT_DECLINED[/] tree unchanged. "
+            "Re-run with `deviate judge post --yes` or `--revert`."
+        )
+        raise JudgeRevertDeclinedError(
+            f"JUDGE_REVERT_DECLINED: head_sha={head_sha} "
+            f"reset_to={reset_to} recovery_ref={recovery_ref}"
+        )
+    c.print("[red]JUDGE_REVERT_CONFIRM_REQUIRED[/]")
+    raise JudgeRevertConfirmRequiredError(
+        f"JUDGE_REVERT_CONFIRM_REQUIRED: head_sha={head_sha} "
+        f"reset_to={reset_to} recovery_ref={recovery_ref}"
     )
 
 
@@ -3738,6 +3825,7 @@ def _apply_judge_verdict(
     declared_paths: Sequence[str] | None = None,
     red_baseline: list[str] | None = None,
     no_refactor: bool = False,
+    assume_yes: bool = True,
 ) -> SessionState:
     """Apply JUDGE handover side effects shared by auto and ``judge post``.
 
@@ -3748,6 +3836,10 @@ def _apply_judge_verdict(
     ``no_refactor`` defaults an omitted pass action to ``skip_refactor``
     instead of ``continue_refactor``. Agent-declared ``continue_refactor``
     still enters REFACTOR.
+
+    ``assume_yes`` defaults True so auto ``micro run`` / ``_run_judge_phase``
+    revert immediately. Manual ``judge post`` passes False unless the
+    operator supplied ``--yes`` / ``--revert``.
     """
     tid = task.get("id", "?")
     root = Path.cwd()
@@ -3794,11 +3886,15 @@ def _apply_judge_verdict(
         # rollback anchor sits (red_commit_sha vs red_commit_sha^) and
         # in WHICH phase the runner hands control to next.
         feedback, feedback_source = _judge_feedback_from_manifest(manifest)
+        planned = _planned_revert_anchor(
+            root, session=session, action=action, tid=tid, attempt=1
+        )
         rollback = _RollbackTrace()
 
         def _record_reject_verdict() -> None:
             # After rollback: ``git clean -fd`` deletes unignored
             # ``.deviate/logs/*.verdicts.jsonl`` if we write too early.
+            # ``rollback`` is ``_execute_rollback``'s trace after reset.
             _append_judge_verdict_record(
                 task,
                 manifest,
@@ -3809,6 +3905,33 @@ def _apply_judge_verdict(
                 feedback_source=feedback_source,
                 rollback=rollback,
             )
+
+        def _record_pending_anchor() -> None:
+            issue_id = str(task.get("issue_id") or "")
+            append_verdicts_record(
+                root,
+                issue_id,
+                str(tid),
+                {
+                    "event": "revert_pending",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "task_id": tid,
+                    "issue_id": issue_id,
+                    "head_sha": planned.head_sha,
+                    "reset_to": planned.reset_to,
+                    "recovery_ref": planned.recovery_ref,
+                    "blast": _blast_for_action(action),
+                    "next_action": action,
+                    "feedback": feedback,
+                },
+            )
+
+        def _announce_reverted() -> None:
+            _print_judge_revert_anchor(c, rollback)
+            if rollback.recovery_ref:
+                c.print(
+                    f"  Inspect discarded commit: git switch {rollback.recovery_ref}"
+                )
 
         if not feedback:
             c.print(
@@ -3839,7 +3962,44 @@ def _apply_judge_verdict(
             action=action,
             feedback_source=feedback_source,
             feedback=feedback,
+            head_sha=planned.head_sha,
+            reset_to=planned.reset_to,
+            recovery_ref=planned.recovery_ref,
         )
+        try:
+            _confirm_manual_judge_revert(
+                c,
+                tid=str(tid),
+                action=action,
+                blast=_blast_for_action(action),
+                feedback_preview=feedback_preview,
+                head_sha=planned.head_sha,
+                reset_to=planned.reset_to,
+                recovery_ref=planned.recovery_ref,
+                assume_yes=assume_yes,
+            )
+        except JudgeRevertConfirmRequiredError:
+            _record_pending_anchor()
+            _log_run(
+                "JUDGE_REVERT_CONFIRM_REQUIRED",
+                task_id=tid,
+                action=action,
+                head_sha=planned.head_sha,
+                reset_to=planned.reset_to,
+                recovery_ref=planned.recovery_ref,
+            )
+            raise
+        except JudgeRevertDeclinedError:
+            _record_pending_anchor()
+            _log_run(
+                "JUDGE_REVERT_DECLINED",
+                task_id=tid,
+                action=action,
+                head_sha=planned.head_sha,
+                reset_to=planned.reset_to,
+                recovery_ref=planned.recovery_ref,
+            )
+            raise
         session.save(session_path)
 
         # Rollback to the anchor that the action names. Both branches MUST
@@ -3960,6 +4120,7 @@ def _apply_judge_verdict(
                     judge_action="revert_red",
                     rollback=rollback,
                 )
+                _announce_reverted()
                 _record_reject_verdict()
                 return session
 
@@ -4014,6 +4175,7 @@ def _apply_judge_verdict(
         )
         session = session.force_transition_to("GREEN")
         session.save(session_path)
+        _announce_reverted()
         _record_reject_verdict()
         return session
 
@@ -5271,6 +5433,14 @@ def _run_execute_phase(
 
 class PhaseFailedError(Exception):
     pass
+
+
+class JudgeRevertConfirmRequiredError(PhaseFailedError):
+    """Manual ``judge post`` refuses to reset without TTY confirmation or ``--yes``."""
+
+
+class JudgeRevertDeclinedError(Exception):
+    """Operator declined the manual revert prompt; the failing tree is unchanged."""
 
 
 class EnvNotReadyError(PhaseFailedError):
@@ -7289,6 +7459,16 @@ def judge_post(
     manifest: str | None = typer.Argument(
         None, help="Path to JUDGE handover YAML (stdin when omitted)"
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip the revert confirmation and reset immediately (scripts).",
+    ),
+    revert: bool = typer.Option(
+        False,
+        "--revert",
+        help="Same as --yes: reset without prompting.",
+    ),
 ) -> None:
     """Apply JUDGE verdict side effects: revert, tasks.md feedback, commit."""
     root = Path.cwd()
@@ -7318,7 +7498,11 @@ def judge_post(
             console,
             handover,
             injected_diff=injected_diff,
+            assume_yes=yes or revert,
         )
+    except JudgeRevertDeclinedError as exc:
+        console.print(f"[yellow]{exc}[/]")
+        raise typer.Exit(code=0) from exc
     except PhaseFailedError as exc:
         console.print(f"[red]{exc}[/]")
         raise typer.Exit(code=1) from exc

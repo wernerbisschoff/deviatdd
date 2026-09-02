@@ -191,9 +191,15 @@ for triage:
 - `AGENT_RESULT` — summary only: `status=`, `verdict=`,
   `next_action=` (when present). Full stdout is in the raw sidecar,
   not this event.
-- `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE`
+- `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE`,
+  `JUDGE_REVERT_CONFIRM_REQUIRED`, `JUDGE_REVERT_DECLINED`
   — judge-specific. `JUDGE_REFACTOR_NOTE` carries `note=` (the
-  refactor hint), not `note_preview=`.
+  refactor hint), not `note_preview=`. `JUDGE_REJECTED` and the
+  confirm/decline events carry `head_sha=`, `reset_to=`,
+  `recovery_ref=` (`tmp/deviate-agent-work/<task>/attempt-N`) so
+  later review is `rg head_sha` then `git switch <recovery_ref>`
+  (not `git stash`). Manual `judge post` does not reset until
+  TTY confirm or `--yes` / `--revert`.
 - `POST_CMD_FAILURE` — `_execute_post_cmd` hook failure; carries
   `uncommitted_count=` and `files=` (the dirty files the hook refused),
   NOT `returncode=`/`stderr=`.

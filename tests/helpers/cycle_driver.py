@@ -788,7 +788,9 @@ def run_manual_cycle(
                     )
                 manifest_path = seeded.root.parent / f"judge-{tid}.yaml"
                 manifest_path.write_text(step.handover, encoding="utf-8")
-                post = _runner.invoke(cli, ["judge", "post", str(manifest_path)])
+                post = _runner.invoke(
+                    cli, ["judge", "post", str(manifest_path), "--yes"]
+                )
             elif label == "RED":
                 post = _runner.invoke(cli, ["red", "post", "--task-id", tid])
             else:

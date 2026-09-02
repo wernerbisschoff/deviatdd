@@ -150,12 +150,26 @@ class TestApplyJudgeVerdictWritesVerdictsJsonl:
         assert row["loop"] is False
 
     def test_compliance_fail_revert_green_blast_green(self, tmp_git_repo: Path) -> None:
+        import subprocess
+
+        from tests.conftest import _git_env
+
         feedback = (
             "COMPLIANCE_FAIL: missing behavior. "
             "The next GREEN attempt must: implement the error path."
         )
-        _apply(
+        red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        green_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        _apply_existing(
             tmp_git_repo,
+            ledger_path,
             _manifest(
                 verdict="COMPLIANCE_FAIL",
                 next_action="revert_green",
@@ -174,6 +188,18 @@ class TestApplyJudgeVerdictWritesVerdictsJsonl:
         assert "missing behavior" in str(row["feedback"])
         assert row["streak"] == 1
         assert row["loop"] is False
+        assert row["head_sha"] == green_sha
+        assert row["reset_to"] == red_sha
+        preserved = subprocess.run(
+            ["git", "rev-parse", str(row["recovery_ref"])],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert row["head_sha"] == preserved
+        assert row["recovery_ref"] == f"tmp/deviate-agent-work/{_TASK_ID}/attempt-1"
 
     def test_test_integrity_after_green_pass_coerces_to_red(
         self, tmp_git_repo: Path

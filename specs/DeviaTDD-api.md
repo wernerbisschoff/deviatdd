@@ -280,8 +280,12 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   (summary: `status=`, `verdict=`, `next_action=` when present —
   not the full manifest JSON), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and
   `partial_stdout=`; harness verdict for a hung RED or hung GREEN), `AGENT_ERROR`, `AGENT_NOT_AVAILABLE`,
-  `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`,
+  `JUDGE_REJECTED` (also carries `head_sha=`, `reset_to=`,
+  `recovery_ref=` on revert routes), `JUDGE_AGENT_NO_FEEDBACK`,
   `JUDGE_REFACTOR_NOTE` (carries `note=`, the refactor hint),
+  `JUDGE_REVERT_CONFIRM_REQUIRED` (manual `judge post` non-TTY
+  without `--yes`; carries `head_sha=`, `reset_to=`,
+  `recovery_ref=`), `JUDGE_REVERT_DECLINED` (TTY No),
   `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`, `TASKS_MD_SKIP`,
   `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE` (carries
   `uncommitted_count=` and `files=`, the dirty files the hook
@@ -312,7 +316,14 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   task), `loop` (`true` when `streak >= 2`). On a revert that rolls
   back: `head_sha` (HEAD before reset), `reset_to` (blast-radius SHA),
   `recovery_ref` (`tmp/deviate-agent-work/<task>/attempt-<N>`, empty
-  when HEAD already equaled the boundary). When the cycle leaves, one
+  when HEAD already equaled the boundary) — taken from
+  `_execute_rollback`'s `_RollbackTrace` after reset (same values on
+  the post-reset `tasks.jsonl` row). Logged `head_sha` equals
+  `git rev-parse <recovery_ref>` when the ref was written. A
+  `{"event":"revert_pending", ...}` row is appended when manual
+  `judge post` prints the confirm prompt but does not reset
+  (non-TTY `JUDGE_REVERT_CONFIRM_REQUIRED` or TTY decline); event
+  rows do not count toward `streak`. When the cycle leaves, one
   `{"event":"cycle_end", ...}` object is appended to the same
   file with `completed`, `phase_decisions`, `reject_count`,
   `last_blast`, and `max_streak`. Do not put the full prompt or raw
@@ -795,10 +806,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   lines, checks for compliance violations, and emits JSON verdict
   (`COMPLIANCE_VIOLATION` or `COMPLIANCE_PASS`).
 
-#### `deviate judge post [<manifest>]`
+#### `deviate judge post [<manifest>] [--yes] [--revert]`
 
 * **Source:** `src/deviate/cli/micro.py` (`judge_post` on `judge_app`)
-* **Description:** Manual-mode counterpart to the auto JUDGE side effects. Reads the JUDGE handover (manifest path or stdin YAML) and applies the same post-verdict work `_run_judge_phase` owns after the agent returns. Coerces `next_action` via `_coerce_judge_action`, the unmatched-PASS rewrite, and the GREEN TEST_FAILURE remap from GH-100. `revert_green` rolls GREEN back to `session.red_commit_sha`; `revert_red` rolls RED+GREEN back to `red_commit_sha^`. Both reuse `_execute_rollback` / `_resolve_pre_red_sha` — there is no second rollback path. Train feedback is appended to the rejected task card in `tasks.md` and committed by `_commit_judge_feedback_and_advance`, which advances `red_commit_sha` past that feedback commit when a real RED SHA exists. Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) do not revert; they update session/ledger the same way auto does. Rejection without actionable feedback is `JUDGE_AGENT_NO_FEEDBACK`. A missing RED boundary on `revert_green` is fatal (`ROLLBACK_BOUNDARY_MISSING`). Prints the route and returns. The agent does not `git reset` or edit `tasks.md` itself. Auto `micro run` stays on `_run_judge_phase` and does not shell out to this command. Cycle regressions for this handover (and the matching auto `_run_tdd_cycle` path) go in `tests/helpers/cycle_driver.py` fixtures — same YAML on both entrypoints; new coerce branches alone are not enough.
+* **Description:** Manual-mode counterpart to the auto JUDGE side effects. Reads the JUDGE handover (manifest path or stdin YAML) and applies the same post-verdict work `_run_judge_phase` owns after the agent returns. Coerces `next_action` via `_coerce_judge_action`, the unmatched-PASS rewrite, and the GREEN TEST_FAILURE remap from GH-100. On `revert_green` / `revert_red` the command **does not reset until the operator confirms** — the failing GREEN (or RED+GREEN) tree stays so they can inspect it. It prints compliance failed, `blast` (`red` / `green`), a feedback preview, and the required index fields `head_sha` (HEAD before reset), `reset_to` (the boundary), and `recovery_ref` (`tmp/deviate-agent-work/<task>/attempt-N`). TTY: `typer.confirm`; Yes → `_preserve_agent_work` then reset then feedback commit; No → no reset, write a `revert_pending` verdicts row with those three fields, print `deviate judge post --yes` / `--revert` to revert later (ledger / `tasks.md` is skipped). Non-TTY without `--yes` / `--revert`: do not revert, do not hang; exit non-zero with `JUDGE_REVERT_CONFIRM_REQUIRED` plus the three fields. `--yes` / `--revert` skip the prompt and revert. After a revert, print `git switch <recovery_ref>` (not `git stash`). Post-reset `head_sha` / `reset_to` / `recovery_ref` come from `_execute_rollback`'s `_RollbackTrace` (not a parallel always-attempt-1 planner) and are written on the reject `.verdicts.jsonl` row and the post-reset `tasks.jsonl` row. Auto `_run_judge_phase` / `_apply_judge_verdict(..., assume_yes=True)` still reverts immediately with no prompt. `revert_green` rolls GREEN back to `session.red_commit_sha`; `revert_red` rolls RED+GREEN back to `red_commit_sha^`. Both reuse `_execute_rollback` / `_resolve_pre_red_sha` / `_preserve_agent_work` — there is no second rollback path and no stash. Train feedback is appended to the rejected task card in `tasks.md` and committed by `_commit_judge_feedback_and_advance` only after a confirmed revert. Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) do not revert; they update session/ledger the same way auto does. Rejection without actionable feedback is `JUDGE_AGENT_NO_FEEDBACK`. A missing RED boundary on `revert_green` is fatal (`ROLLBACK_BOUNDARY_MISSING`). Prints the route and returns. The agent does not `git reset` or edit `tasks.md` itself. Auto `micro run` stays on `_run_judge_phase` and does not shell out to this command. Cycle regressions for this handover (and the matching auto `_run_tdd_cycle` path) go in `tests/helpers/cycle_driver.py` fixtures — same YAML on both entrypoints; new coerce branches alone are not enough.
 
 #### `deviate refactor pre [--task <id>]`
 
