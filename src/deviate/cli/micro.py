@@ -3191,6 +3191,7 @@ def _coerce_judge_action(
     verdict: str,
     *,
     failure_kind: str = "",
+    green_suite_pass: bool = True,
 ) -> str | None:
     """Return the manifest's ``next_action`` if valid; default to
     ``revert_green`` on violation when the field is absent; ``None`` on
@@ -3205,8 +3206,12 @@ def _coerce_judge_action(
     After GREEN PASS (``failure_kind`` empty / not mechanical), a
     ``COMPLIANCE_VIOLATION`` with structured Test Integrity also forces
     ``revert_red`` — even when ``next_action`` is omitted or
-    ``revert_green``. Mechanical overlay keeps the agent's three-way
-    choice. Spec-only gaps stay ``revert_green``.
+    ``revert_green``. The inverse also holds: a declared ``revert_red``
+    **without** that signal is coerced to ``revert_green`` (keep RED;
+    train GREEN). Agents often emit ``revert_red`` to mean "GREEN
+    failed." Mechanical overlay and GREEN TEST_FAILURE
+    (``green_suite_pass=False``) keep the agent's declared revert.
+    Spec-only gaps stay ``revert_green``.
 
     A clean ``COMPLIANCE_PASS`` (no compliance / Test Integrity failure)
     ignores revert ``next_action`` values, including the legacy
@@ -3227,6 +3232,14 @@ def _coerce_judge_action(
         # Pre-rename manifests may carry the legacy destination-named
         # routes; normalize before membership so they route identically.
         next_action = JUDGE_REVERT_ACTION_ALIASES.get(next_action, next_action)
+    if (
+        green_suite_pass
+        and _verdict_is_fail(verdict)
+        and failure_kind not in {"mechanical", "test_defect", "no_failing_test"}
+        and not _manifest_signals_test_integrity(manifest)
+        and next_action == "revert_red"
+    ):
+        return "revert_green"
     if _verdict_is_clean_pass(verdict, manifest):
         # GH-158: revert_* on a clean pass (often copied from the YAML
         # enum, or leftover ``revert_to_red``) must not reject. Forward
@@ -3265,6 +3278,30 @@ _FILE_LINE_CITATION_RE = re.compile(
 )
 # ``tests/foo.py:121 and :153`` leftover after the first citation is reduced.
 _BARE_AND_LINE_RE = re.compile(r"\s+and\s+:\d+\b")
+
+
+_NEXT_GREEN_ATTEMPT_RE = re.compile(r"The next GREEN attempt must:", re.IGNORECASE)
+_NEXT_RED_ATTEMPT_RE = re.compile(r"The next RED attempt must:", re.IGNORECASE)
+
+
+def _ensure_red_directed_feedback(feedback: str) -> str:
+    """Rewrite GREEN-directed / REFACTOR NOTE text for a kept ``revert_red``.
+
+    Genuine Test Integrity / ``test_defect`` trains the next RED. Empty
+    input stays empty so the caller can raise ``JUDGE_AGENT_NO_FEEDBACK``.
+    """
+    text = _coerce_feedback_text(feedback)
+    if not text.strip():
+        return ""
+    if _NEXT_RED_ATTEMPT_RE.search(text):
+        return text
+    if _NEXT_GREEN_ATTEMPT_RE.search(text):
+        return _NEXT_GREEN_ATTEMPT_RE.sub("The next RED attempt must:", text, count=1)
+    stripped = text.lstrip()
+    if stripped.upper().startswith("REFACTOR NOTE:"):
+        body = stripped.split(":", 1)[1].strip()
+        return f"The next RED attempt must: {body}" if body else ""
+    return f"The next RED attempt must: {text}"
 
 
 def _strip_revert_line_citations(feedback: str) -> str:
@@ -4169,7 +4206,12 @@ def _apply_judge_verdict(
         session.failure_kind == "no_failing_test"
         and verdict.upper() == "COMPLIANCE_PASS"
     )
-    action = _coerce_judge_action(manifest, verdict, failure_kind=session.failure_kind)
+    action = _coerce_judge_action(
+        manifest,
+        verdict,
+        failure_kind=session.failure_kind,
+        green_suite_pass=not suite_still_red,
+    )
     if _verdict_is_clean_pass(verdict, manifest) and action in _REVERT_JUDGE_ACTIONS:
         # Defense in depth: a leftover revert on a clean pass (legacy
         # ``revert_to_red`` / copied enum) is ignored before the
@@ -4204,6 +4246,8 @@ def _apply_judge_verdict(
         # rollback anchor sits (red_commit_sha vs red_commit_sha^) and
         # in WHICH phase the runner hands control to next.
         feedback, feedback_source = _judge_feedback_from_manifest(manifest)
+        if action == "revert_red":
+            feedback = _ensure_red_directed_feedback(feedback)
         planned = _planned_revert_anchor(
             root, session=session, action=action, tid=tid, attempt=1
         )

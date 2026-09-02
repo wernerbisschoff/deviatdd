@@ -284,7 +284,8 @@ class TestRevertRedAfterRebaseAndReplay:
             task_id=_TASK_ID,
             verdict="COMPLIANCE_VIOLATION",
             next_action="revert_red",
-            rationale="RED test asserts the wrong contract",
+            rationale="The next RED attempt must: author an honest test.",
+            evaluation={"test_integrity": "FAIL"},
         )
 
         with chdir(tmp_git_repo):
@@ -329,6 +330,7 @@ class TestRevertRedAfterRebaseAndReplay:
             verdict="COMPLIANCE_VIOLATION",
             next_action="revert_red",
             rationale="The next RED attempt must: author an honest test.",
+            evaluation={"test_integrity": "FAIL"},
         )
 
         def _apply() -> None:

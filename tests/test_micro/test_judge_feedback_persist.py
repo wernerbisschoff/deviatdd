@@ -236,6 +236,7 @@ class TestJudgeRevertPersistsAfterReset:
                 verdict="COMPLIANCE_VIOLATION",
                 next_action="revert_red",
                 train_feedback=feedback,
+                extra={"evaluation": {"test_integrity": "FAIL"}},
             ),
         )
         assert _head_sha(tmp_git_repo) != red_sha
@@ -452,3 +453,179 @@ class TestRevertRedViolationsReachRetryRed:
         assert _REWRITE_RECOMMENDATION in retry, retry
         assert "previous cycle failed because" not in retry, retry
         assert _head_sha(tmp_git_repo) == feedback_sha
+
+
+def _is_ancestor(root: Path, commit: str, of: str = "HEAD") -> bool:
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, of],
+            cwd=root,
+            env=_git_env(),
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+class TestMislabeledRevertRedAfterGreenPass:
+    """After GREEN PASS, ``revert_red`` without Test Integrity keeps RED."""
+
+    def test_spec_gap_revert_red_coerces_to_revert_green_and_keeps_red(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        feedback = (
+            "COMPLIANCE_VIOLATION: implementation misses the AC. "
+            "The next GREEN attempt must: implement the error path."
+        )
+        session = _apply_existing(
+            tmp_git_repo,
+            ledger_path,
+            _manifest(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_red",
+                train_feedback=feedback,
+                extra={
+                    "violations": [
+                        {
+                            "category": "Spec Non-Compliance",
+                            "file": "impl.py",
+                            "detail": "error path missing",
+                            "severity": "CRITICAL",
+                            "recommendation": "Implement the missing slice.",
+                        }
+                    ],
+                    "evaluation": {"test_integrity": "PASS"},
+                },
+            ),
+        )
+        assert session.pending_judge_action == "revert_green", (
+            "mis-labeled revert_red after GREEN PASS must coerce to "
+            f"revert_green; got {session.pending_judge_action!r}"
+        )
+        assert (tmp_git_repo / "feature.py").exists(), (
+            "RED test commit must stay when JUDGE only failed GREEN"
+        )
+        assert not (tmp_git_repo / "impl.py").exists(), (
+            "GREEN implementation must be discarded on coerced revert_green"
+        )
+        assert _is_ancestor(tmp_git_repo, red_sha), (
+            f"RED SHA {red_sha} must remain an ancestor after coerce"
+        )
+        assert session.red_commit_sha, "revert_green must keep a RED boundary"
+        assert "The next GREEN attempt must:" in session.train_feedback
+        md_rel = (
+            ledger_path.relative_to(tmp_git_repo)
+            .as_posix()
+            .replace("tasks.jsonl", "tasks.md")
+        )
+        assert "The next GREEN attempt must:" in _head_blob(tmp_git_repo, md_rel)
+
+    def test_integrity_fail_keeps_revert_red_and_persists_red_feedback(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        feedback = (
+            "The next RED attempt must: author a test that actually fails the AC."
+        )
+        session = _apply_existing(
+            tmp_git_repo,
+            ledger_path,
+            _manifest(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_red",
+                train_feedback=feedback,
+                extra={
+                    "violations": [
+                        {
+                            "category": "Test Integrity Violation",
+                            "file": "feature.py",
+                            "detail": "filename-only test",
+                            "severity": "CRITICAL",
+                            "recommendation": "Assert the AC.",
+                        }
+                    ],
+                    "evaluation": {"test_integrity": "FAIL"},
+                },
+            ),
+        )
+        assert session.pending_judge_action == "revert_red"
+        assert not (tmp_git_repo / "feature.py").exists(), (
+            "genuine Test Integrity revert_red must discard RED"
+        )
+        assert not (tmp_git_repo / "impl.py").exists()
+        assert not _is_ancestor(tmp_git_repo, red_sha), (
+            "RED SHA must not survive a genuine revert_red"
+        )
+        assert "The next RED attempt must:" in session.train_feedback
+        assert "actually fails the AC" in session.train_feedback
+        md_rel = (
+            ledger_path.relative_to(tmp_git_repo)
+            .as_posix()
+            .replace("tasks.jsonl", "tasks.md")
+        )
+        assert "The next RED attempt must:" in _head_blob(tmp_git_repo, md_rel)
+
+    def test_integrity_revert_red_empty_feedback_does_not_discard_red(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        with pytest.raises(PhaseFailedError, match="JUDGE_AGENT_NO_FEEDBACK"):
+            _apply_existing(
+                tmp_git_repo,
+                ledger_path,
+                _manifest(
+                    verdict="COMPLIANCE_VIOLATION",
+                    next_action="revert_red",
+                    train_feedback="",
+                    extra={"evaluation": {"test_integrity": "FAIL"}},
+                ),
+            )
+        assert (tmp_git_repo / "feature.py").exists(), (
+            "empty revert_red must not discard RED"
+        )
+        assert (tmp_git_repo / "impl.py").exists(), (
+            "empty revert_red must not discard GREEN either"
+        )
+        assert _is_ancestor(tmp_git_repo, red_sha)
+        assert _head_sha(tmp_git_repo) != red_sha, "GREEN commit must still be HEAD"
+
+    def test_integrity_revert_red_green_only_feedback_rewrites_to_red(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+        session = _apply_existing(
+            tmp_git_repo,
+            ledger_path,
+            _manifest(
+                verdict="COMPLIANCE_VIOLATION",
+                next_action="revert_red",
+                train_feedback=(
+                    "The next GREEN attempt must: author an honest failing test."
+                ),
+                extra={
+                    "violations": [
+                        {
+                            "category": "Test Integrity Violation",
+                            "file": "feature.py",
+                            "detail": "assert True",
+                            "severity": "CRITICAL",
+                            "recommendation": "Assert the AC.",
+                        }
+                    ],
+                    "evaluation": {"test_integrity": "FAIL"},
+                },
+            ),
+        )
+        assert session.pending_judge_action == "revert_red"
+        assert "The next RED attempt must:" in session.train_feedback
+        assert "author an honest failing test" in session.train_feedback
+        assert "The next GREEN attempt must:" not in session.train_feedback
+        md_rel = (
+            ledger_path.relative_to(tmp_git_repo)
+            .as_posix()
+            .replace("tasks.jsonl", "tasks.md")
+        )
+        md_text = _head_blob(tmp_git_repo, md_rel)
+        assert "The next RED attempt must:" in md_text
+        assert not (tmp_git_repo / "feature.py").exists()

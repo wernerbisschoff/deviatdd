@@ -103,12 +103,16 @@ class TestCoerceJudgeActionAcceptsNewNamesAndAliases:
         from deviate.cli.micro import _coerce_judge_action
         from deviate.core.agent import HandoverManifest
 
+        extra: dict[str, object] = {}
+        if declared in {"revert_red", "revert_before"}:
+            extra["evaluation"] = {"test_integrity": "FAIL"}
         manifest = HandoverManifest.model_construct(
             phase="JUDGE",
             status="SUCCESS",
             verdict="COMPLIANCE_VIOLATION",
             task_id="TSK-RENAME-01",
             next_action=declared,
+            **extra,
         )
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION")
         assert result == expected, (

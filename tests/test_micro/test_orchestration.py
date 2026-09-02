@@ -2424,6 +2424,12 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
     assert "next RED" in judge_prompt, (
         "revert_red train_feedback must be framed as the next RED's memory"
     )
+    assert 'Never emit `revert_red` to mean "GREEN failed."' in judge_prompt or (
+        "Never emit `revert_red` to mean “GREEN failed.”" in judge_prompt
+    ), "JUDGE prompt must say never use revert_red to mean GREEN failed"
+    assert "The next RED attempt must:" in mapping_window, (
+        "Tests-wrong mapping must require RED-directed train_feedback"
+    )
 
 
 class TestYellowHandoffContract:

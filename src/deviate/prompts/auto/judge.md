@@ -169,6 +169,7 @@ Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's
 - **COMPLIANCE_PASS (no Category of Violations)** → `next_action: continue_refactor` or `skip_refactor` (or `proceed_to_refactor_no_diff` for empty GREEN). A `REFACTOR NOTE:` is optional advice for REFACTOR; it is not a reason to revert. Do not emit `revert_red` / `revert_green` on a pass.
 - **Test is honest; implementation/scope is wrong** → `next_action: revert_green` (discard GREEN, keep RED). `train_feedback` addresses the next GREEN (`The next GREEN attempt must:`). Typical categories: Spec Non-Compliance, No-Shortcut, Scope, Security, Constitution — with `test_integrity: PASS`.
 - **Test is wrong, weak, filename-only, or does not actually validate the task AC (Test Integrity)** → `next_action: revert_red` (discard RED+GREEN). `train_feedback` addresses the next RED (`The next RED attempt must:`). Set `test_integrity: FAIL` and/or category `Test Integrity Violation`.
+- **Never swap the verbs after GREEN PASS:** Implementation/scope wrong, tests honest → `revert_green` only. Never emit `revert_red` to mean "GREEN failed." Tests wrong → `revert_red` only, and `train_feedback` starts with `The next RED attempt must:`.
 - Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged.
 
 Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their documented three-way (or single-outcome) choice. Do not collapse those rows into this GREEN PASS mapping.

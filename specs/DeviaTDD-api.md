@@ -1115,15 +1115,25 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     (GH-158). Omitted / ignored-revert pass actions default to
     `continue_refactor`, or `skip_refactor` when `--no-refactor`. The note is
     injected into the REFACTOR `{train_feedback}` placeholder; it is not sent
-    as GREEN/RED train feedback. After GREEN PASS (empty `session.failure_kind`),
+    as GREEN/RED train feedback.     After GREEN PASS (empty `session.failure_kind`, suite green — not
+    GREEN TEST_FAILURE / `suite_still_red`),
     a `COMPLIANCE_VIOLATION` with structured Test Integrity
     (`violations[].category` matching Test Integrity / `Test Integrity Violation`,
     and/or `evaluation.test_integrity: FAIL`) is coerced to `revert_red`
-    even when `next_action` is omitted or `revert_green`. An honest-test
+    even when `next_action` is omitted or `revert_green`. The inverse also
+    holds: a declared `revert_red` **without** that signal (and without
+    `failure_kind: test_defect` / `no_failing_test`) is coerced to
+    `revert_green` — keep RED, train GREEN. Agents must not use
+    `revert_red` to mean "GREEN failed." An honest-test
     implementation/scope gap (`test_integrity: PASS`, Spec Non-Compliance)
-    stays `revert_green`. Mechanical overlay is not coerced by Test Integrity.
-    The runner does not parse `train_feedback` for routing (only to extract a
-    pass-path `REFACTOR NOTE:` for REFACTOR). EXECUTE and
+    stays `revert_green`. Kept `revert_red` requires RED-directed
+    `train_feedback` (`The next RED attempt must:`); GREEN-directed text
+    (`The next GREEN attempt must:` / `REFACTOR NOTE:`) is rewritten, and
+    empty feedback is `JUDGE_AGENT_NO_FEEDBACK` (GH-170 persist of
+    structured `violations` still runs). Mechanical overlay is not
+    coerced by Test Integrity. The runner does not parse `train_feedback`
+    for routing (only to extract a pass-path `REFACTOR NOTE:` for
+    REFACTOR, and to rewrite a kept `revert_red` note). EXECUTE and
     IMMEDIATE judge paths stay ungated.
   * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
     `REFACTOR` when invoked, the cycle resumes from that phase via the
@@ -1831,9 +1841,14 @@ truth for the override (`test_defect` / `no_failing_test` on a violation map to
 structured Test Integrity (`violations[].category` matching Test Integrity,
 including `Test Integrity Violation`, and/or `evaluation.test_integrity: FAIL`)
 also forces `revert_red` even when the agent omitted `next_action` or set
-`revert_green`. Honest-test implementation/scope gaps stay `revert_green`.
+`revert_green`. After GREEN PASS the inverse also holds: a declared
+`revert_red` without that Test Integrity / `test_defect` / `no_failing_test`
+signal is coerced to `revert_green` (keep RED; train GREEN). Kept
+`revert_red` requires RED-directed `train_feedback` (`The next RED attempt
+must:`); GREEN-directed or empty feedback is rewritten or
+`JUDGE_AGENT_NO_FEEDBACK`. Honest-test implementation/scope gaps stay `revert_green`.
 Mechanical overlay keeps the agent's three-way choice. The runner does not
-parse `train_feedback` for routing. `_run_tdd_cycle` honours
+parse `train_feedback` for routing except to rewrite a kept `revert_red` note. `_run_tdd_cycle` honours
 `pending_judge_action == "revert_red"` (set by JUDGE or the override) by
 escalating now: reset `green_attempts` to 0, increment `red_attempts`, persist
 both on `.deviate/session.json`, dispatch `_run_red_phase(task, ...,

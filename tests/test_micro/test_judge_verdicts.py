@@ -248,6 +248,7 @@ class TestApplyJudgeVerdictWritesVerdictsJsonl:
             verdict="COMPLIANCE_VIOLATION",
             next_action="revert_red",
             train_feedback="The next RED attempt must: author an honest test.",
+            extra={"evaluation": {"test_integrity": "FAIL"}},
         )
         logger = TaskLogger(tmp_git_repo, _ISSUE_ID, _TASK_ID)
         set_task_logger(logger)

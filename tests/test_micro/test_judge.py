@@ -244,8 +244,9 @@ class TestJudgePost:
         next_action: str,
         rationale: str = "GREEN drifted from the spec",
         status: str = "PASS",
+        extra_yaml: str = "",
     ) -> str:
-        return (
+        text = (
             "phase: JUDGE\n"
             f"status: {status}\n"
             f"task_id: {self._TASK_ID}\n"
@@ -253,6 +254,9 @@ class TestJudgePost:
             f"next_action: {next_action}\n"
             f'rationale: "{rationale}"\n'
         )
+        if extra_yaml:
+            text += extra_yaml if extra_yaml.endswith("\n") else extra_yaml + "\n"
+        return text
 
     def _invoke_judge_post(self, root: Path, yaml_text: str, *extra: str):
         """Write the handover outside the repo and invoke ``judge post``."""
@@ -338,7 +342,8 @@ class TestJudgePost:
             self._handover_yaml(
                 verdict="COMPLIANCE_VIOLATION",
                 next_action="revert_red",
-                rationale="RED test asserts the wrong contract",
+                rationale="The next RED attempt must: author an honest test.",
+                extra_yaml="evaluation:\n  test_integrity: FAIL\n",
             ),
             "--yes",
         )

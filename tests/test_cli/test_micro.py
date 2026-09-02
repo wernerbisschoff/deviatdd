@@ -1565,8 +1565,9 @@ class TestJudgeTrainRollback:
                 phase="JUDGE",
                 status="SUCCESS",
                 verdict="COMPLIANCE_VIOLATION",
-                rationale="Implementation drifted from spec",
+                rationale="The next RED attempt must: author an honest test.",
                 next_action="revert_red",
+                evaluation={"test_integrity": "FAIL"},
             ),
             "",
         )
@@ -2710,6 +2711,74 @@ class TestCoerceJudgeActionTestIntegrity:
             f"without a Test Integrity category; got {result!r}"
         )
 
+    def test_green_pass_mislabeled_revert_red_without_integrity_is_revert_green(
+        self,
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            next_action="revert_red",
+            violations=[_SPEC_ONLY_VIOLATION],
+            evaluation={"test_integrity": "PASS"},
+        )
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_green", (
+            "GREEN PASS + COMPLIANCE_VIOLATION + revert_red without Test "
+            "Integrity must coerce to revert_green (keep RED); "
+            f"got {result!r}"
+        )
+
+    def test_green_pass_mislabeled_revert_red_no_category_is_revert_green(
+        self,
+    ) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(next_action="revert_red")
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_green", (
+            "GREEN PASS + revert_red with no integrity category / "
+            f"test_integrity FAIL must coerce to revert_green; got {result!r}"
+        )
+
+    def test_green_pass_revert_red_with_integrity_stays_revert_red(self) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(
+            next_action="revert_red",
+            violations=[_TEST_INTEGRITY_VIOLATION],
+            evaluation={"test_integrity": "FAIL"},
+        )
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_red", (
+            "GREEN PASS + revert_red + test_integrity FAIL must keep "
+            f"revert_red; got {result!r}"
+        )
+
+    def test_legacy_revert_before_without_integrity_is_revert_green(self) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(next_action="revert_before")
+        result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
+        assert result == "revert_green", (
+            "legacy revert_before without Test Integrity must invert to "
+            f"revert_green after GREEN PASS; got {result!r}"
+        )
+
+    def test_suite_still_red_keeps_declared_revert_red(self) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(next_action="revert_red")
+        result = _coerce_judge_action(
+            manifest,
+            "COMPLIANCE_VIOLATION",
+            failure_kind="",
+            green_suite_pass=False,
+        )
+        assert result == "revert_red", (
+            "GREEN TEST_FAILURE / suite_still_red must keep declared "
+            f"revert_red; invert is GREEN-PASS only; got {result!r}"
+        )
+
     def test_mechanical_overlay_keeps_declared_revert_green(self) -> None:
         from deviate.cli.micro import _coerce_judge_action
 
@@ -2726,6 +2795,17 @@ class TestCoerceJudgeActionTestIntegrity:
             f"Test Integrity must not coerce revert_red; got {result!r}"
         )
 
+    def test_mechanical_overlay_keeps_declared_revert_red(self) -> None:
+        from deviate.cli.micro import _coerce_judge_action
+
+        manifest = _judge_violation_manifest(next_action="revert_red")
+        result = _coerce_judge_action(
+            manifest, "COMPLIANCE_VIOLATION", failure_kind="mechanical"
+        )
+        assert result == "revert_red", (
+            f"mechanical overlay must keep declared revert_red; got {result!r}"
+        )
+
     @pytest.mark.parametrize("failure_kind", ["test_defect", "no_failing_test"])
     def test_existing_failure_kind_force_revert_red_still_holds(
         self, failure_kind: str
@@ -2740,6 +2820,42 @@ class TestCoerceJudgeActionTestIntegrity:
             f"{failure_kind!r} + COMPLIANCE_VIOLATION must still force "
             f"revert_red; got {result!r}"
         )
+
+
+class TestEnsureRedDirectedFeedback:
+    """Kept ``revert_red`` must train the next RED, not GREEN."""
+
+    def test_rewrites_green_directed_prefix(self) -> None:
+        from deviate.cli.micro import _ensure_red_directed_feedback
+
+        result = _ensure_red_directed_feedback(
+            "The next GREEN attempt must: author an honest failing test."
+        )
+        assert result.startswith("The next RED attempt must:"), result
+        assert "author an honest failing test" in result
+        assert "The next GREEN attempt must:" not in result
+
+    def test_keeps_red_directed_text(self) -> None:
+        from deviate.cli.micro import _ensure_red_directed_feedback
+
+        text = "The next RED attempt must: drop the tautological assert."
+        assert _ensure_red_directed_feedback(text) == text
+
+    def test_rewrites_refactor_note_to_red(self) -> None:
+        from deviate.cli.micro import _ensure_red_directed_feedback
+
+        result = _ensure_red_directed_feedback(
+            "REFACTOR NOTE: the test asserts the filename only."
+        )
+        assert result.startswith("The next RED attempt must:"), result
+        assert "filename only" in result
+        assert "REFACTOR NOTE:" not in result
+
+    def test_empty_stays_empty_for_no_feedback(self) -> None:
+        from deviate.cli.micro import _ensure_red_directed_feedback
+
+        assert _ensure_red_directed_feedback("") == ""
+        assert _ensure_red_directed_feedback("   ") == ""
 
 
 class TestFindTaskRecord:
