@@ -6,6 +6,7 @@ from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
@@ -467,3 +468,313 @@ class TestAutoRedPersistedFeedback:
         # The card keeps its history bullet; with no persisted block injected
         # it must appear exactly once.
         assert prompt.count(stale_persisted_feedback) == 1
+
+
+def _seed_red_task(
+    root: Path, *, task_id: str = "TSK-179-01"
+) -> tuple[dict, Path, Path]:
+    from tests.conftest import _git_env as isolation_git_env
+
+    task = {
+        "id": task_id,
+        "issue_id": "ISS-004-002",
+        "description": "Wire the root layout",
+        "status": "PENDING",
+        "execution_mode": "TDD",
+    }
+    ledger_path = root / "specs" / "004-002" / "tasks.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_ledger(ledger_path, TaskRecord(**task))
+    session_path = root / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="IDLE").save(session_path)
+    subprocess.run(["git", "add", "."], cwd=root, env=isolation_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: seed 179"],
+        cwd=root,
+        env=isolation_git_env(),
+        check=True,
+    )
+    return task, ledger_path, session_path
+
+
+class TestRedVerificationClassification:
+    """GH-179 / GH-180: exit 127 is ENV_NOT_READY, not no_failing_test."""
+
+    def test_uncommitted_failing_test_goes_to_green_not_judge(
+        self, tmp_git_repo: Path, monkeypatch
+    ) -> None:
+        from deviate.cli.micro import _run_red_phase
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        task, ledger_path, session_path = _seed_red_task(root)
+        session = SessionState.load(session_path)
+        test_path = root / "test" / "meepleinn_web" / "shell_wiring_test.exs"
+        judge_calls: list[str] = []
+
+        def _red_agent(*_args: object, **_kwargs: object):
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            test_path.write_text(
+                "defmodule MeepleInnWeb.ShellWiringTest do\n"
+                "  use ExUnit.Case\n"
+                '  test "root layout", do: assert MeepleInnWeb.Layouts\n'
+                "end\n",
+                encoding="utf-8",
+            )
+            return (
+                HandoverManifest(
+                    phase="RED",
+                    status="PASS",
+                    task_id=task["id"],
+                    test_file="test/meepleinn_web/shell_wiring_test.exs",
+                ),
+                "",
+            )
+
+        failing = subprocess.CompletedProcess(
+            args=["mix", "test"],
+            returncode=1,
+            stdout="1 test, 1 failure",
+            stderr="",
+        )
+        with (
+            patch("deviate.cli.micro._invoke_agent", side_effect=_red_agent),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._run_test_cmd", return_value=failing),
+            patch(
+                "deviate.cli.micro._run_format_cmd",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+            patch(
+                "deviate.cli.micro._run_judge_phase",
+                side_effect=lambda *a, **k: judge_calls.append("JUDGE") or session,
+            ),
+        ):
+            result = _run_red_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+
+        assert result.red_commit_sha, (
+            "runner-visible failing RED must land a RED commit for GREEN"
+        )
+        assert not judge_calls, (
+            "uncommitted failing test must not go to JUDGE revert_red; "
+            f"got {judge_calls!r}"
+        )
+        assert result.failure_kind != "no_failing_test"
+        log = subprocess.run(
+            ["git", "log", "-1", "--pretty=format:%s"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "RED phase" in log.stdout
+        assert test_path.is_file()
+
+    def test_exit_127_is_env_not_ready_not_judge(
+        self, tmp_git_repo: Path, monkeypatch
+    ) -> None:
+        from deviate.cli.micro import EnvNotReadyError, _run_red_phase
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        task, ledger_path, session_path = _seed_red_task(root, task_id="TSK-179-02")
+        session = SessionState.load(session_path)
+        judge_calls: list[str] = []
+        missing = subprocess.CompletedProcess(
+            args=["mix", "test"],
+            returncode=127,
+            stdout="",
+            stderr="mix: command not found",
+        )
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                return_value=(
+                    HandoverManifest(phase="RED", status="PASS", task_id=task["id"]),
+                    "",
+                ),
+            ),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._run_test_cmd", return_value=missing),
+            patch(
+                "deviate.cli.micro._run_judge_phase",
+                side_effect=lambda *a, **k: judge_calls.append("JUDGE") or session,
+            ),
+        ):
+            with pytest.raises(EnvNotReadyError, match="ENV_NOT_READY") as excinfo:
+                _run_red_phase(
+                    task, ledger_path, session, session_path, Console(quiet=True)
+                )
+
+        assert not judge_calls
+        assert "mix test" in str(excinfo.value)
+        assert "127" in str(excinfo.value)
+        assert "RED_NO_FAILING_TEST" not in str(excinfo.value)
+
+    def test_pytest_exit_5_still_adjudicates_no_failing_test(
+        self, tmp_git_repo: Path, monkeypatch
+    ) -> None:
+        from deviate.cli.micro import _run_red_phase
+        from deviate.state.config import SessionState as SS
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        task, ledger_path, session_path = _seed_red_task(root, task_id="TSK-179-03")
+        session = SessionState.load(session_path)
+        no_tests = subprocess.CompletedProcess(
+            args=["pytest"],
+            returncode=5,
+            stdout="collected 0 items / no tests collected",
+            stderr="",
+        )
+        adjudicated: list[str] = []
+
+        def _judge(*_a: object, **_k: object) -> SS:
+            adjudicated.append("JUDGE")
+            current = SS.load(session_path)
+            current.pending_judge_action = "revert_red"
+            current.failure_kind = "no_failing_test"
+            current.save(session_path)
+            return current
+
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                return_value=(
+                    HandoverManifest(phase="RED", status="PASS", task_id=task["id"]),
+                    "",
+                ),
+            ),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._run_test_cmd", return_value=no_tests),
+            patch("deviate.cli.micro._run_judge_phase", side_effect=_judge),
+        ):
+            result = _run_red_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+
+        assert adjudicated == ["JUDGE"]
+        assert result.pending_judge_action == "revert_red"
+        assert result.failure_kind == "no_failing_test"
+
+    def test_already_satisfied_still_adjudicates(
+        self, tmp_git_repo: Path, monkeypatch
+    ) -> None:
+        from deviate.cli.micro import _run_red_phase
+        from deviate.state.config import SessionState as SS
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        present = root / "tests" / "test_passing.py"
+        present.parent.mkdir(parents=True, exist_ok=True)
+        present.write_text("def test_pass():\n    assert True\n", encoding="utf-8")
+        task, ledger_path, session_path = _seed_red_task(root, task_id="TSK-179-05")
+        session = SessionState.load(session_path)
+        passing = subprocess.CompletedProcess(
+            args=["pytest"], returncode=0, stdout="1 passed", stderr=""
+        )
+        adjudicated: list[str] = []
+
+        def _judge(*_a: object, **_k: object) -> SS:
+            adjudicated.append("JUDGE")
+            current = SS.load(session_path)
+            current.pending_judge_action = "skip_refactor"
+            current.last_judge_verdict = "COMPLIANCE_PASS"
+            current.failure_kind = "no_failing_test"
+            current.save(session_path)
+            return current
+
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                return_value=(
+                    HandoverManifest(
+                        phase="RED",
+                        status="PASS",
+                        task_id=task["id"],
+                        failure_kind="already_satisfied",
+                        files=["tests/test_passing.py"],
+                        test_file="tests/test_passing.py",
+                    ),
+                    "",
+                ),
+            ),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="prompt"),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._emit_phase_callout"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._run_test_cmd", return_value=passing),
+            patch("deviate.cli.micro._run_judge_phase", side_effect=_judge),
+        ):
+            result = _run_red_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+
+        assert adjudicated == ["JUDGE"]
+        assert result.pending_judge_action == "skip_refactor"
+
+    def test_run_single_maps_train_exhausted_to_task_failed(
+        self, tmp_git_repo: Path, monkeypatch
+    ) -> None:
+        import typer
+        from deviate.cli.micro import PhaseFailedError, _run_single
+
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        task, ledger_path, _session_path = _seed_red_task(root, task_id="TSK-179-06")
+        (root / "specs" / "issues.jsonl").write_text(
+            json.dumps(
+                {
+                    "issue_id": "ISS-004-002",
+                    "source_file": "specs/004-002/issues/002.md",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        def _boom(*_a: object, **_k: object) -> None:
+            raise PhaseFailedError(
+                "TRAIN_EXHAUSTED: TSK-179-06 reached 3 RED escalates"
+            )
+
+        with (
+            patch(
+                "deviate.cli.micro._resolve_task_context",
+                return_value=(task, ledger_path),
+            ),
+            patch(
+                "deviate.cli.micro._exit_if_already_done",
+                return_value=(task, ledger_path, "PENDING"),
+            ),
+            patch("deviate.cli.micro._dispatch_task", side_effect=_boom),
+            pytest.raises(typer.Exit) as excinfo,
+        ):
+            _run_single("TSK-179-06", root, Console(quiet=True))
+
+        assert excinfo.value.exit_code == 1
+        rows = [
+            json.loads(line)
+            for line in ledger_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert any(row.get("status") == "FAILED" for row in rows)

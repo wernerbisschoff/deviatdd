@@ -26,6 +26,7 @@ that the returned object is structured — never a shell call.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -36,8 +37,10 @@ from deviate.cli._safe_commands import (
     SAFE_EXECUTABLES,
     SafeCommand,
     is_safe_test_command,
+    maybe_wrap_mise_exec,
     parse_safe_command,
     run_safe_command,
+    toolchain_env,
 )
 from deviate.cli import micro
 
@@ -252,6 +255,69 @@ class TestRunSafeCommandNeverSpawnsShell:
             result = run_safe_command("pytest tests/ -v", tmp_path)
         assert result.returncode == 127
         assert "missing binary" in (result.stderr or "")
+
+
+class TestMiseToolchainPath:
+    """GH-179: verification must see mise shims, not a bare GUI PATH."""
+
+    def test_run_safe_command_finds_mix_on_mise_shims(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        shim_dir = tmp_path / "mise-shims"
+        shim_dir.mkdir()
+        mix = shim_dir / "mix"
+        mix.write_text(
+            "#!/bin/sh\necho '1 test, 1 failure'\nexit 1\n", encoding="utf-8"
+        )
+        mix.chmod(0o755)
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+        with (
+            patch("deviate.cli._safe_commands.resolve_mise_binary", return_value=None),
+            patch(
+                "deviate.cli._safe_commands._mise_shim_dirs", return_value=[shim_dir]
+            ),
+        ):
+            result = run_safe_command("mix test", tmp_path)
+        assert result.returncode == 1, result.stderr
+        assert "1 failure" in (result.stdout or "")
+
+    def test_toolchain_env_prepends_mise_binary_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mise_dir = tmp_path / "local" / "bin"
+        mise_dir.mkdir(parents=True)
+        mise = mise_dir / "mise"
+        mise.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        mise.chmod(0o755)
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+        env = toolchain_env(
+            cwd=tmp_path,
+            mise_candidates=[mise],
+            shim_dirs=[],
+        )
+        assert str(mise_dir) in env["PATH"].split(os.pathsep)
+        assert env["PATH"].split(os.pathsep)[0] == str(mise_dir)
+
+    def test_maybe_wrap_mise_exec_when_bare_tool_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env = {"PATH": "/usr/bin:/bin"}
+        mise = tmp_path / "mise"
+        mise.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        mise.chmod(0o755)
+        with patch("deviate.cli._safe_commands.resolve_mise_binary", return_value=mise):
+            wrapped = maybe_wrap_mise_exec("mix test", tmp_path, env)
+        assert wrapped == "mise exec -- mix test"
+
+    def test_maybe_wrap_skips_when_shim_already_on_path(self, tmp_path: Path) -> None:
+        shim_dir = tmp_path / "shims"
+        shim_dir.mkdir()
+        mix = shim_dir / "mix"
+        mix.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        mix.chmod(0o755)
+        env = {"PATH": str(shim_dir)}
+        assert maybe_wrap_mise_exec("mix test", tmp_path, env) == "mix test"
+        assert maybe_wrap_mise_exec("mise test", tmp_path, env) == "mise test"
 
 
 class TestPredicateShieldsUntrustedSources:

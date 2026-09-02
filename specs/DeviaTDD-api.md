@@ -784,9 +784,15 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   write and no commit. Match, or an omitted ``--task-id``, keeps the existing
   post behavior.
   `deviate micro run`'s internal RED phase (`_run_red_phase`) applies the same contract: when the
-  test command exits 0 (all tests passed), collects no tests (pytest exit 5), or resolves to no
-  command at all (returncode 127), it does NOT die — it routes the decision to JUDGE
-  (``failure_kind: no_failing_test``). On a test-bearing TDD task, already-exists COMPLETE
+  test command exits 0 (all tests passed) or collects no tests (pytest exit 5), it does NOT die —
+  it routes the decision to JUDGE (``failure_kind: no_failing_test``). Exit 127 /
+  command-not-found / ``No test command configured`` is ``ENV_NOT_READY`` — not JUDGE,
+  not ``revert_red``. ``_run_test_cmd`` / ``_execute_test_command`` / ``run_safe_command``
+  run verification with mise shims and ``mise bin-paths`` on PATH (and wrap a missing
+  bare tool as ``mise exec --`` when a ``mise`` binary exists) so login-shell toolchains
+  resolve under a GUI/Cursor PATH. Single-task ``deviate micro run`` maps
+  ``TRAIN_EXHAUSTED`` to a clean ``TASK_FAILED`` ledger row (no traceback at
+  ``run_command``). On a test-bearing TDD task, already-exists COMPLETE
   requires a non-empty ``files`` set and/or ``test_file`` that names regression tests present
   in the injected ``<diff>`` or HEAD (constitution §3 Testing Protocols; §5 Definition of Done).
   Empty ``files`` / ``test_file`` is a RED defect (``PhaseFailedError``); the ledger writes no
@@ -1769,7 +1775,7 @@ All state transitions are append-only. No existing line is ever modified or over
 | `train_feedback` | `str` (default `""`) | Last failure feedback injected as `<train_feedback>` into the next GREEN / retry RED prompt. Escalate keeps a JUDGE payload already on the session (normalized `violations` / `train_feedback` from `_judge_feedback_from_manifest`). A GREEN pytest dump is replaced with a short `previous cycle failed because …` note; that note is the fallback only when the payload is empty. |
 | `green_attempts` | `int` (default `0`) | GREEN-train count against the standing RED contract; max 3; persist via `save()` to `.deviate/session.json`; copied through `transition_to` / `force_transition_to` |
 | `red_attempts` | `int` (default `0`) | RED-escalate count for the current task; max 3; `TRAIN_EXHAUSTED` after three escalates; persist via `save()`; copied through transitions |
-| `failure_kind` | `Literal["", "mechanical", "test_defect", "no_failing_test"]` (default `""`) | Discriminator set by GREEN on failure-class routing, or by RED no-failing-test adjudication; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong, `no_failing_test` = RED test command exited 0 / collected no tests / resolved to no command) |
+| `failure_kind` | `Literal["", "mechanical", "test_defect", "no_failing_test"]` (default `""`) | Discriminator set by GREEN on failure-class routing, or by RED no-failing-test adjudication; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong, `no_failing_test` = RED test command exited 0 or collected no tests — not command-not-found, not exit 127) |
 | `judge_rejected` | `bool` (default `False`) | `True` while the JUDGE verdict on the current cycle is a rejection |
 | `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_red`, `revert_green`, `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off. A forward route is valid only for the task + RED SHA recorded in `judge_task_id` / `judge_red_commit_sha` (GH-148). |
 | `red_commit_sha` | `str` (default `""`) | SHA of the task's RED-phase failing-test commit. GREEN entry (`_require_green_entry_red_sha`) refuses empty or whitespace SHA (`GREEN_ENTRY_REFUSED`) and refuses a `docs(...): add judge feedback` SHA that does not rest on a RED-phase ancestor. A `test(...): RED phase` subject, a TRAIN feedback SHA that rests on that ancestor, and any other resolvable non-empty SHA may enter GREEN. After any internal rebase / commit-train rewrite, `_refresh_session_commit_anchors` remaps this field (and `judge_red_commit_sha` when it still equals the pre-rewrite RED) to the rewritten object by exact subject-match on `git log HEAD` (GH-168). GREEN and HEAD anchors are live git refs, not extra session fields. The TDD JUDGE runner reads the remapped SHA and threads it into `_execute_rollback(boundary_sha=..., task_id=..., attempt=...)` on `revert_green`. After a TRAIN feedback commit, this field may point at that docs-feedback SHA (rollback / GREEN-entry boundary). The injected JUDGE diff does not use that SHA as the range base: `_resolve_judge_diff_base` walks back through `_JUDGE_FEEDBACK_SUBJECT_RE` subjects to the RED-phase failing-test commit and diffs `{red_sha}^..HEAD` (GH-88 / GH-90). Each phase records its own boundary only after the commit lands. The runner no longer reads this field implicitly inside `_execute_rollback`; the boundary MUST be supplied by the caller. EXECUTE JUDGE uses `pre_execute_sha` (captured before the first EXECUTE attempt) instead. |

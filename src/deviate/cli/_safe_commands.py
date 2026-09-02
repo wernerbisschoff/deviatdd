@@ -46,6 +46,7 @@ import shutil
 import signal
 import subprocess
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,6 +62,135 @@ TEST_TIMEOUT_EXIT_CODE: int = 124
 #: (e.g. tokio's SIGTERM drain in ``gloss serve``) but short enough
 #: that the orchestrator does not block the operator's feedback loop.
 _TIMEOUT_GRACE_SECONDS: float = 5.0
+
+#: Well-known ``mise`` install locations when GUI / Cursor PATH has no
+#: login-shell shims. Checked after ``shutil.which("mise")``.
+_MISE_BINARY_CANDIDATES: tuple[Path, ...] = (
+    Path.home() / ".local" / "bin" / "mise",
+    Path.home() / ".local" / "share" / "mise" / "shims" / "mise",
+    Path.home() / ".cargo" / "bin" / "mise",
+    Path("/opt/homebrew/bin/mise"),
+    Path("/usr/local/bin/mise"),
+    Path("/home/linuxbrew/.linuxbrew/bin/mise"),
+)
+
+#: Default mise shim directories (``mix``, ``pytest``, … live here).
+_MISE_SHIM_CANDIDATES: tuple[Path, ...] = (
+    Path.home() / ".local" / "share" / "mise" / "shims",
+    Path.home() / ".mise" / "shims",
+)
+
+
+def resolve_mise_binary(
+    candidates: Sequence[Path] | None = None,
+) -> Path | None:
+    """Return an executable ``mise`` binary, even when GUI PATH lacks it."""
+    found = shutil.which("mise")
+    if found:
+        return Path(found)
+    for candidate in candidates if candidates is not None else _MISE_BINARY_CANDIDATES:
+        path = Path(candidate)
+        try:
+            if path.is_file() and os.access(path, os.X_OK):
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def _mise_shim_dirs(extra: Sequence[Path] | None = None) -> list[Path]:
+    dirs: list[Path] = []
+    for candidate in extra if extra is not None else _MISE_SHIM_CANDIDATES:
+        path = Path(candidate)
+        try:
+            if path.is_dir():
+                dirs.append(path)
+        except OSError:
+            continue
+    return dirs
+
+
+def _mise_bin_paths(mise: Path, cwd: Path, env: dict[str, str]) -> list[str]:
+    """Ask ``mise bin-paths`` for project tool dirs. Empty on any failure."""
+    try:
+        result = subprocess.run(
+            [str(mise), "bin-paths"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def toolchain_env(
+    base: Mapping[str, str] | None = None,
+    *,
+    cwd: Path | None = None,
+    mise_candidates: Sequence[Path] | None = None,
+    shim_dirs: Sequence[Path] | None = None,
+) -> dict[str, str]:
+    """Copy ``base`` (or ``os.environ``) and prepend mise shims / bin-paths.
+
+    GUI and Cursor often inherit a non-login PATH that has no mise
+    shims, so a bare ``mix`` / ``pytest`` / ``mise`` 127s. Login shells
+    find those tools. This env is the login-equivalent without
+    ``bash -lc``.
+    """
+    env = dict(os.environ)
+    if base is not None:
+        env.update(base)
+    prefixes: list[str] = []
+    mise = resolve_mise_binary(mise_candidates)
+    if mise is not None:
+        prefixes.append(str(mise.parent))
+        if cwd is not None:
+            prefixes.extend(_mise_bin_paths(mise, cwd, env))
+    for shim in _mise_shim_dirs(shim_dirs):
+        prefixes.append(str(shim))
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for prefix in prefixes:
+        if prefix and prefix not in seen:
+            seen.add(prefix)
+            ordered.append(prefix)
+    if ordered:
+        current = env.get("PATH", "")
+        env["PATH"] = (
+            os.pathsep.join((*ordered, current))
+            if current
+            else os.pathsep.join(ordered)
+        )
+    return env
+
+
+def maybe_wrap_mise_exec(command: str, cwd: Path, env: dict[str, str]) -> str:
+    """Wrap a bare allowlisted command as ``mise exec -- …`` when needed.
+
+    Already-``mise`` commands stay as-is. If the executable is already
+    on the toolchain PATH (mise shims), leave it — the shim is the
+    mise-native entry. Only wrap when the binary is missing from PATH
+    but a ``mise`` binary exists so the project toolchain can inject it.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return command
+    if not tokens:
+        return command
+    head = Path(tokens[0]).name
+    if head == "mise":
+        return command
+    if shutil.which(tokens[0], path=env.get("PATH", "")):
+        return command
+    if resolve_mise_binary() is None:
+        return command
+    return f"mise exec -- {command}"
 
 
 # ---------------------------------------------------------------------------
@@ -448,9 +578,10 @@ def run_safe_command(
                 f"  original: {command!r}"
             ),
         )
+    merged = toolchain_env(env, cwd=Path(cwd))
     popen_kwargs: dict[str, object] = {
         "cwd": str(cwd),
-        "env": env,
+        "env": merged,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "text": True,

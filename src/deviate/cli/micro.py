@@ -81,7 +81,9 @@ from deviate.ui.render import stdout_lock
 
 from deviate.cli._safe_commands import (
     is_safe_test_command,
+    maybe_wrap_mise_exec,
     run_safe_command,
+    toolchain_env,
 )
 from deviate.state.ledger import (
     RollbackSnapshot,
@@ -1710,15 +1712,62 @@ def _is_no_tests_collected(proc: subprocess.CompletedProcess) -> bool:
 
 
 def _is_no_test_command(proc: subprocess.CompletedProcess) -> bool:
-    """Return whether the test command could not be resolved.
+    """Return whether the harness could not resolve or spawn a test command.
 
-    ``_run_test_cmd`` returns ``returncode == 127`` with a fixed
-    diagnostic when no command configures and no project is detected,
-    so the RED phase can route that to the same JUDGE adjudication as
-    a pytest ``exit 5`` (``_is_no_tests_collected``)."""
-    if proc.returncode != 127:
+    Exit 127 — including ``mix: command not found``, a missing mise
+    binary, and the ``No test command configured`` sentinel — is an
+    environment failure, not a no-failing-test adjudication.
+    """
+    return proc.returncode == 127
+
+
+_ENV_NOT_READY_MARKERS = (
+    "command not found",
+    "no such file or directory",
+    "no test command",
+    "task not found",
+    "no task `",
+    "no task '",
+    "not a valid task",
+    "mise error no task",
+)
+
+
+def _verification_command_label(proc: subprocess.CompletedProcess) -> str:
+    args = proc.args
+    if isinstance(args, (list, tuple)) and args:
+        return " ".join(str(part) for part in args)
+    if isinstance(args, str) and args.strip():
+        return args.strip()
+    return "verification command"
+
+
+def _is_verification_env_not_ready(proc: subprocess.CompletedProcess) -> bool:
+    """True when verification never ran because the environment is broken.
+
+    Any exit 127 from the verification subprocess is environment — not
+    ``RED_NO_FAILING_TEST``. A login shell may resolve ``mix`` via mise
+    shims while this runner's GUI PATH does not.
+    """
+    if proc.returncode == 127:
+        return True
+    if proc.returncode == 0:
         return False
-    return "no test command" in f"{proc.stderr or ''}".lower()
+    output = f"{proc.stdout or ''}\n{proc.stderr or ''}".lower()
+    return any(marker in output for marker in _ENV_NOT_READY_MARKERS)
+
+
+def _env_not_ready_message(proc: subprocess.CompletedProcess, tid: str) -> str:
+    command = _verification_command_label(proc)
+    detail = (proc.stderr or proc.stdout or "").strip()
+    suffix = f": {detail}" if detail else ""
+    return (
+        f"ENV_NOT_READY: verification command could not be executed for "
+        f"{tid}: {command} (exit {proc.returncode}){suffix}. "
+        "The runner subprocess PATH may lack mise shims "
+        "(~/.local/share/mise/shims); use `mise exec -- <command>` or "
+        "install mise on the login PATH."
+    )
 
 
 def _run_red_phase(
@@ -1794,11 +1843,9 @@ def _run_red_phase(
     scope = _build_scope(issue_id, tid)
 
     test_result = _run_test_cmd(root, task)
-    if (
-        test_result.returncode == 0
-        or _is_no_tests_collected(test_result)
-        or _is_no_test_command(test_result)
-    ):
+    if _is_verification_env_not_ready(test_result):
+        raise EnvNotReadyError(_env_not_ready_message(test_result, tid))
+    if test_result.returncode == 0 or _is_no_tests_collected(test_result):
         return _adjudicate_red_no_failing_test(
             task,
             ledger_path,
@@ -2141,6 +2188,8 @@ def _run_green_phase(
     scope = _build_scope(issue_id, tid)
 
     test_result = _run_test_cmd(root, task)
+    if _is_verification_env_not_ready(test_result):
+        raise EnvNotReadyError(_env_not_ready_message(test_result, tid))
     if test_result.returncode != 0:
         failure_output = test_result.stdout or ""
         if test_result.stderr:
@@ -5754,10 +5803,12 @@ class JudgeRevertDeclinedError(Exception):
 
 
 class EnvNotReadyError(PhaseFailedError):
-    """``mise doctor`` failed — deps, ports, or DB are not ready.
+    """Verification could not run — missing binary, mise, or doctor.
 
-    This is an environment outage, not a RED/GREEN test outcome and not
-    ``failure_kind: mechanical``. No phase ledger row is written.
+    Exit 127 / command-not-found / ``mise doctor`` failure is an
+    environment outage, not a RED/GREEN test outcome and not
+    ``failure_kind: mechanical`` or ``no_failing_test``. No phase
+    ledger row is written; agent work is left on disk (not revert_red).
     """
 
 
@@ -5908,16 +5959,32 @@ def _run_single(
     else:
         start_phase = _start_phase_from_status(status)
 
-    _dispatch_task(
-        task,
-        ledger_file,
-        c,
-        no_judge=no_judge,
-        no_refactor=no_refactor,
-        agent=agent,
-        batch_mode=False,
-        start_phase=start_phase,
-    )
+    try:
+        _dispatch_task(
+            task,
+            ledger_file,
+            c,
+            no_judge=no_judge,
+            no_refactor=no_refactor,
+            agent=agent,
+            batch_mode=False,
+            start_phase=start_phase,
+        )
+    except (typer.Exit, ReviewRequiresTtyError):
+        raise
+    except EnvNotReadyError as exc:
+        tid = task.get("id", "?")
+        c.print(f"  [red]ENV_NOT_READY[/] {tid}: {exc}")
+        _log_run("ENV_NOT_READY", task_id=tid, error=str(exc))
+        raise typer.Exit(code=1) from exc
+    except PhaseFailedError as exc:
+        # TRAIN_EXHAUSTED and other cycle hard-stops must not traceback
+        # at ``run_command``.
+        tid = task.get("id", "?")
+        c.print(f"  [red]FAILED[/] {tid}: {exc}")
+        _log_run("TASK_FAILED", task_id=tid, error=str(exc))
+        _append_status_transition(task, "FAILED", ledger_file)
+        raise typer.Exit(code=1) from exc
 
 
 def _execute_task_with_retry(
@@ -7465,7 +7532,9 @@ def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProces
     process-group isolation so SIGTERM/SIGKILL reach every descendant.
     """
     timeout = _resolve_test_timeout_seconds(cwd)
-    return run_safe_command(command, cwd, timeout=timeout)
+    env = toolchain_env(cwd=cwd)
+    command = maybe_wrap_mise_exec(command, cwd, env)
+    return run_safe_command(command, cwd, env=env, timeout=timeout)
 
 
 def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedProcess:
@@ -7718,6 +7787,11 @@ def red_post(
     )
     pending_for_cmd = _resolve_first_pending(root, early_session.active_issue_id or "")
     proc = _run_test_cmd(root, pending_for_cmd[0] if pending_for_cmd else None)
+    if _is_verification_env_not_ready(proc):
+        console.print(
+            f"[red]ENV_NOT_READY[/] {_env_not_ready_message(proc, task_id or '?')}"
+        )
+        raise typer.Exit(code=1)
 
     if proc.returncode == 0:
         console.print(
