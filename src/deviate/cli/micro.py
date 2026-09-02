@@ -3935,7 +3935,16 @@ def _rewrite_unmatched_tdd_pass(
     declared_paths: Sequence[str] | None = None,
     skip_token_citation: bool = False,
 ) -> str | None:
-    """Force unmatched TDD PASS onto ``revert_green`` with runner feedback."""
+    """Rewrite unmatched TDD forward routes to ``revert_green``.
+
+    A clean ``COMPLIANCE_PASS`` (GH-185) keeps *action* even when evidence
+    quotes fail the substring gate. Do not log ``JUDGE_EVIDENCE_REJECTED``
+    and do not rewrite to ``revert_green``. A ``REFACTOR NOTE`` is not a
+    verdict. ``COMPLIANCE_VIOLATION`` still uses the declared revert
+    mapping; this helper does not invent a fourth verb.
+    """
+    if _verdict_is_clean_pass(getattr(manifest, "verdict", "") or "", manifest):
+        return action
     if not _is_test_bearing_tdd(task):
         return action
     if action is not None and action not in _TDD_EVIDENCE_GATE_ROUTES:
@@ -4230,10 +4239,11 @@ def _apply_judge_verdict(
         and session.failure_kind not in {"test_defect", "no_failing_test"}
     ):
         # Defense in depth: a leftover revert on a clean pass (legacy
-        # ``revert_to_red`` / copied enum) is ignored before the
-        # unmatched-PASS rewrite. Do not undo the test_defect /
-        # no_failing_test force-``revert_red``. The evidence gate can
-        # still force ``revert_green`` when citations do not match.
+        # ``revert_to_red`` / copied enum) is ignored. Do not undo the
+        # test_defect / no_failing_test force-``revert_red``. A clean
+        # pass keeps the forward route even when evidence quotes
+        # mismatch (GH-185); ``_rewrite_unmatched_tdd_pass`` returns
+        # the action unchanged and does not log ``JUDGE_EVIDENCE_REJECTED``.
         action = None
     if no_failing_pass and (action is None or action in _TDD_EVIDENCE_GATE_ROUTES):
         # Already-exists route: JUDGE ruled the behavior exists at HEAD and

@@ -12,6 +12,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.cli.micro import PhaseFailedError
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
@@ -3122,6 +3123,27 @@ def _assert_reverted_to_red(session: SessionState, ledger_path: Path) -> None:
     )
 
 
+def _assert_completed_evidence_missing_keeps_green(
+    repo: Path,
+    manifest: HandoverManifest,
+    red_sha: str,
+    *,
+    green_sha: str,
+) -> None:
+    """GH-185: a clean pass does not revert GREEN.
+
+    ``skip_refactor`` with unmatched citations fail-closes at the
+    COMPLETED write (``COMPLETED_EVIDENCE_MISSING``), not via
+    ``revert_green``.
+    """
+    with pytest.raises(PhaseFailedError, match="COMPLETED_EVIDENCE_MISSING"):
+        _run_tdd_judge(repo, manifest, red_sha)
+    head = _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert head == green_sha, (
+        f"GH-185: GREEN commit must stay; before={green_sha} after={head}"
+    )
+
+
 def _assert_forward(
     session: SessionState,
     ledger_path: Path,
@@ -3158,25 +3180,6 @@ def _seed_already_exists(repo: Path, *, include_test: bool = True) -> str:
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("unrelated HEAD commit\n", encoding="utf-8")
     return _gate_commit(repo, "docs: unrelated HEAD commit", "docs/note.txt")
-
-
-def _assert_already_satisfied_not_completed(
-    session: SessionState,
-    ledger_path: Path,
-) -> None:
-    """AC-PLAN-005: unmatched already-exists PASS cannot COMPLETE."""
-    action = session.pending_judge_action
-    assert action in {"revert_red", "revert_green"}, (
-        f"Expected revert_red or revert_green, got {action!r}"
-    )
-    assert session.train_feedback.strip() != "", (
-        "Runner-authored feedback must name the missing declared test path"
-    )
-    statuses = _ledger_statuses(ledger_path)
-    assert "COMPLETED" not in statuses, (
-        f"Declared files absent from snapshot must not COMPLETE, "
-        f"statuses={statuses!r} feedback={session.train_feedback!r}"
-    )
 
 
 def _run_already_satisfied_cycle(
@@ -3438,40 +3441,43 @@ class TestJudgeDiffBaseWalksPastFeedback:
 
 
 class TestTddJudgeEvidenceGate:
-    """TSK-020-03 / TSK-028-02: TDD gate is task-scoped (AC-PLAN-001..004).
+    """TSK-020-03 / TSK-028-02 / GH-185: TDD gate is task-scoped.
 
+    A clean COMPLIANCE_PASS keeps the agent's forward route (GH-185).
+    Unmatched skip_refactor citations fail-close at COMPLETED write.
     Constitution §3 Testing Protocols. Flow References: [].
     """
 
     def test_missing_evidence_does_not_complete(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(evidence=None),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_empty_evidence_does_not_complete(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(evidence=[]),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_rewritten_pass_keeps_judge_train_feedback(
         self, tmp_git_repo: Path
     ) -> None:
-        """GH-102: evidence-gate rewrite must not replace judge train_feedback."""
+        """GH-185: a clean pass is not rewritten; judge note stays for REFACTOR."""
         red_sha = _seed_red_green(tmp_git_repo)
         judge_fb = (
-            "UUID is not JSON-serializable for AC-PLAN-001. "
-            f"See {_GATE_TEST_PATH}:12. "
-            "The next GREEN attempt must: dump UUID as str."
+            "REFACTOR NOTE: UUID is not JSON-serializable for AC-PLAN-001; "
+            "not blocking. REFACTOR may dump UUID as str."
         )
-        session, _, ledger = _run_tdd_judge(
+        session, output, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(
                 next_action="continue_refactor",
@@ -3480,36 +3486,34 @@ class TestTddJudgeEvidenceGate:
             ),
             red_sha,
         )
-        _assert_reverted_to_red(session, ledger)
-        assert "UUID is not JSON-serializable" in session.train_feedback, (
-            "GH-102: persist the judge train_feedback after the evidence-gate "
-            f"rewrite; got {session.train_feedback!r}"
+        assert "JUDGE_REJECTED" not in output, output
+        _assert_forward(
+            session,
+            ledger,
+            action="continue_refactor",
+            completed=False,
         )
-        assert f"{_GATE_TEST_PATH}:12" not in session.train_feedback, (
-            "GH-102: GH-103 citation strip still applies on the revert route; "
+        assert "UUID is not JSON-serializable" in session.train_feedback, (
+            "GH-185: REFACTOR NOTE stays on the pass path; "
             f"got {session.train_feedback!r}"
         )
         assert "JUDGE evidence is missing" not in session.train_feedback, (
-            "GH-102: generic evidence-gate string must not replace judge "
-            f"train_feedback; got {session.train_feedback!r}"
-        )
-        tasks_md = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
-        body = tasks_md.read_text(encoding="utf-8")
-        assert "UUID is not JSON-serializable" in body, (
-            f"GH-102: tasks.md must keep judge train_feedback; got {body!r}"
-        )
-        assert "JUDGE evidence is missing" not in body, (
-            f"GH-102: tasks.md must not persist the generic gate string; got {body!r}"
+            "GH-185: generic evidence-gate string must not replace the note; "
+            f"got {session.train_feedback!r}"
         )
 
     def test_rewritten_pass_keeps_judge_violations(self, tmp_git_repo: Path) -> None:
-        """GH-102: evidence-gate rewrite must persist judge violations."""
+        """GH-185: Acceptance violations on a clean PASS do not revert GREEN."""
         red_sha = _seed_red_green(tmp_git_repo)
-        session, _, ledger = _run_tdd_judge(
+        session, output, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(
                 next_action="continue_refactor",
                 evidence=[],
+                train_feedback=(
+                    "REFACTOR NOTE: UUID serialization polish is out of "
+                    "scope for this slice; not blocking."
+                ),
                 violations=[
                     {
                         "category": "Acceptance",
@@ -3521,25 +3525,14 @@ class TestTddJudgeEvidenceGate:
             ),
             red_sha,
         )
-        _assert_reverted_to_red(session, ledger)
-        assert (
-            "UUID is not JSON-serializable (AC-PLAN-001)" in session.train_feedback
-        ), (
-            "GH-102: persist formatted judge violations after the evidence-gate "
-            f"rewrite; got {session.train_feedback!r}"
+        assert "JUDGE_REJECTED" not in output, output
+        _assert_forward(
+            session,
+            ledger,
+            action="continue_refactor",
+            completed=False,
         )
-        assert "JUDGE evidence is missing" not in session.train_feedback, (
-            "GH-102: generic evidence-gate string must not replace judge "
-            f"violations; got {session.train_feedback!r}"
-        )
-        tasks_md = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
-        body = tasks_md.read_text(encoding="utf-8")
-        assert "UUID is not JSON-serializable (AC-PLAN-001)" in body, (
-            f"GH-102: tasks.md must keep judge violations; got {body!r}"
-        )
-        assert "JUDGE evidence is missing" not in body, (
-            f"GH-102: tasks.md must not persist the generic gate string; got {body!r}"
-        )
+        assert session.judge_rejected is False
 
     def test_mid_plan_this_task_evidence_completes(self, tmp_git_repo: Path) -> None:
         """AC-PLAN-001 / AC-PLAN-004: omitting later-shard AC-PLAN-002 is legal.
@@ -3571,61 +3564,70 @@ class TestTddJudgeEvidenceGate:
     def test_missing_this_task_token_does_not_complete_mid_plan(
         self, tmp_git_repo: Path
     ) -> None:
-        """AC-PLAN-003: ISS-ADH-020 stays fail-closed on this-task tokens."""
+        """GH-185: skip_refactor with no this-task evidence does not COMPLETE.
+
+        Fail-closed at the COMPLETED write, not by rewriting PASS to
+        ``revert_green``.
+        """
         red_sha = _seed_red_green(
             tmp_git_repo,
             acs=("AC-PLAN-001", "AC-PLAN-002"),
             card_acs=("AC-PLAN-001",),
         )
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(evidence=[]),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_hallucinated_path_does_not_complete(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(
                 evidence=[_gate_evidence(test_path="tests/hallucinated.py")],
             ),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_empty_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(evidence=[_gate_evidence(test_quote="")]),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_short_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(
             tmp_git_repo,
             test_body=_GATE_SHORT_TEST_BODY,
         )
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(evidence=[_gate_evidence(test_quote="assert True")]),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_wrong_file_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(
                 evidence=[_gate_evidence(test_quote=_GATE_IMPL_QUOTE)],
             ),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_matching_quotes_keep_forward_route(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
@@ -3688,25 +3690,24 @@ class TestTddJudgeEvidenceGate:
 
     def test_already_exists_missing_test_file_fails(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_already_exists(tmp_git_repo, include_test=False)
-        session, _, ledger = _run_tdd_judge(
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        _assert_completed_evidence_missing_keeps_green(
             tmp_git_repo,
             _gate_manifest(
                 next_action="skip_refactor",
                 evidence=[_gate_evidence()],
             ),
             red_sha,
+            green_sha=green_sha,
         )
-        _assert_reverted_to_red(session, ledger)
 
     def test_already_satisfied_declared_files_missing_from_diff_fails(
         self, tmp_git_repo: Path
     ) -> None:
-        """AC-PLAN-005 / AO-022-02: declared files must sit in diff or HEAD.
+        """GH-185: a clean pass keeps skip_refactor; GREEN is not discarded.
 
-        JUDGE ``skip_refactor`` plus matching ISS-ADH-020 quotes still cannot
-        COMPLETE when RED/JUDGE ``files`` name a path absent from the
-        injected ``<diff>`` and from ``_evidence_head_contents``. Constitution
-        §3: mock ``_run_pytest``. Flow References: [].
+        Declared-path membership is no longer a JUDGE-time rewrite to
+        ``revert_green``. Matching this-task quotes may COMPLETE.
         """
         missing = "tests/ghost_regression.py"
         red_sha = _seed_already_exists(tmp_git_repo)
@@ -3720,21 +3721,22 @@ class TestTddJudgeEvidenceGate:
             ),
             red_sha,
         )
-        _assert_already_satisfied_not_completed(session, ledger)
-        assert missing in session.train_feedback or missing in output, (
-            "AC-PLAN-005: runner-authored feedback must name the missing "
-            f"declared path {missing!r}; feedback={session.train_feedback!r}\n"
-            f"{output}"
+        assert "JUDGE_REJECTED" not in output, output
+        assert session.pending_judge_action != "revert_green"
+        assert session.judge_rejected is False
+        _assert_forward(
+            session,
+            ledger,
+            action="skip_refactor",
+            completed=True,
         )
 
-    def test_already_satisfied_path_named_only_in_tasks_md_does_not_complete(
+    def test_already_satisfied_path_named_only_in_tasks_md_keeps_pass(
         self, tmp_git_repo: Path
     ) -> None:
-        """AC-PLAN-005: a path that lives only in tasks.md / rationale fails.
+        """GH-185: a clean pass is not rewritten because tasks.md names a path.
 
-        Cross-check is path membership against the injected diff and HEAD,
-        not semantic reading of class names. Constitution §3. Flow
-        References: [].
+        Matching this-task quotes keep skip_refactor. GREEN stays.
         """
         ghost = "tests/test_gates.py"
         red_sha = _seed_already_exists(tmp_git_repo)
@@ -3744,7 +3746,7 @@ class TestTddJudgeEvidenceGate:
             + "\nClass TestGreenAdvisoryGate lives in tests/test_gates.py\n",
             encoding="utf-8",
         )
-        session, _, ledger = _run_tdd_judge(
+        session, output, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(
                 next_action="skip_refactor",
@@ -3754,10 +3756,13 @@ class TestTddJudgeEvidenceGate:
             ),
             red_sha,
         )
-        _assert_already_satisfied_not_completed(session, ledger)
-        assert ghost in session.train_feedback, (
-            "AC-PLAN-005: feedback must name the tasks.md-only path; "
-            f"feedback={session.train_feedback!r}"
+        assert "JUDGE_REJECTED" not in output, output
+        assert session.pending_judge_action != "revert_green"
+        _assert_forward(
+            session,
+            ledger,
+            action="skip_refactor",
+            completed=True,
         )
 
     def test_already_satisfied_declared_files_in_snapshot_completes_and_keeps_file(
@@ -3820,14 +3825,13 @@ class TestTddJudgeEvidenceGate:
             f"kept={kept} statuses={statuses!r} call_log={call_log!r}\n{output}"
         )
 
-    def test_already_satisfied_declared_files_absent_from_cycle_does_not_complete(
+    def test_already_satisfied_declared_files_absent_from_cycle_does_not_train_green(
         self, tmp_git_repo: Path
     ) -> None:
-        """AC-PLAN-005: RED-named files missing from dirty diff and HEAD.
+        """GH-185: a clean already-exists PASS is not rewritten to revert_green.
 
-        A test-bearing TDD already_satisfied claim that names a path the
-        snapshot never saw cannot write COMPLETED. Constitution §3. Flow
-        References: [].
+        RED still requires a non-empty ``files`` set. GREEN must not invent
+        tests. The JUDGE evidence gate no longer discards GREEN on a pass.
         """
         missing = "tests/ghost_regression.py"
         statuses, call_log, output, _ledger = _run_already_satisfied_cycle(
@@ -3836,14 +3840,12 @@ class TestTddJudgeEvidenceGate:
             red_test_file=missing,
             rationale=("Required behavior already exists in tests/ghost_regression.py"),
         )
-        assert "COMPLETED" not in statuses, (
-            "AC-PLAN-005: RED-declared path absent from diff and HEAD must "
-            f"not COMPLETE; statuses={statuses!r} call_log={call_log!r}\n"
-            f"{output}"
-        )
         assert "GREEN" not in call_log, (
-            "AC-PLAN-005: GREEN must not invent missing tests; "
+            "GH-185: GREEN must not invent missing tests; "
             f"call_log={call_log!r}\n{output}"
+        )
+        assert "revert_green" not in output, (
+            f"GH-185: clean PASS must not train GREEN; call_log={call_log!r}\n{output}"
         )
 
     def test_no_ac_plan_empty_evidence_completes(self, tmp_git_repo: Path) -> None:
