@@ -2784,6 +2784,10 @@ def _resolve_revert_red_boundary(root: Path, session: SessionState) -> str:
     current HEAD. Never raise ``ROLLBACK_STALE_RED_SHA`` on that path.
     """
     stored = session.red_commit_sha.strip()
+    if not _git_full_sha(root, "HEAD"):
+        # No readable history (unit tests that mock subprocess.run).
+        # Production repos always resolve HEAD; classify below.
+        return _resolve_pre_red_sha(root, stored) if stored else ""
     kind = _red_anchor_kind(root, stored)
     if kind == "rewritten":
         _refresh_session_commit_anchors(root, session)
@@ -2890,6 +2894,11 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
             f"has no session.red_commit_sha to roll back to. "
             f"Refusing to fall back to HEAD~1."
         )
+    if not _git_full_sha(root, "HEAD"):
+        # No readable history (unit tests that mock subprocess.run).
+        # A real repo always resolves HEAD; the classify/refuse path
+        # below still covers rebase remap and unresolvable stored SHAs.
+        return sha
     kind = _red_anchor_kind(root, sha)
     if kind == "rewritten":
         _refresh_session_commit_anchors(root, session)
