@@ -735,28 +735,37 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Resolves the task context from `tasks.jsonl`, emits JSON contract with
-  `task_id`, `test_command`, `lint_command`, `spec_dir`, and `task_entry` (this task's
+  `task_id`, `test_strategy` (`unit` | `integration` | `e2e`), `test_write_dir` (init-convention
+  directory for that layer), `test_command` (this layer's named mise task only — `mise unit` /
+  `mise integration` / `mise e2e`; never inject `mise integ` when `mise integration` exists),
+  `lint_command`, `spec_dir`, and `task_entry` (this task's
   `tasks.md` card via `_task_card_text`, mirroring `green_pre` — it carries persisted
   `**Judge Feedback**` bullets so the manual RED agent receives correction history that
-  manual mode cannot inject as `<train_feedback>`).
+  manual mode cannot inject as `<train_feedback>`). The runner determines the layer and
+  **explicitly passes** those three fields; the agent must not infer the layer by reading
+  `tasks.md` (card **Test Strategy** is a fallback only when the contract field is missing).
 
 #### `deviate red post [--task-id <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Runs the project's resolved test command (language-agnostic: `mix test`,
   `cargo test`, `npm test`, `go test ./...`, or `pytest` chosen via `_resolve_verification_command`
-  — the same resolver used by `deviate red|green|refactor pre`, `_build_auto_prompt` `{test_command}`,
-  and `_run_test_cmd`. Classify from the task card **Test Strategy** (`unit` | `integration` | `e2e`)
+  — the layer command injected by `deviate red|green|refactor pre` and `_build_auto_prompt`
+  `{test_command}` / `{test_strategy}` / `{test_write_dir}`. `_run_test_cmd` still walks
+  `_resolve_verification_rungs` (cheaper existing rungs, then this layer). Classify from the
+  task card **Test Strategy** (`unit` | `integration` | `e2e`)
   and `execution_mode: E2E` first; `Sociable_Unit` / `Solitary_Unit` are not runner values.
   Resolution order: (1) if the declared verification is **partial** (a file,
   `-k` / `--keyword`, or node id) and the repo has `mise.toml` / `.mise.toml`, wrap it as
   `mise exec -- <declared>` so the command still uses the repo `.venv`; never expand a partial run
-  into `mise test` / `mise unit` / `mise e2e`; (2) **verification ladder** (exists = allowlisted
-  mise task, or conventional `tests/unit` / `tests/integration` / `tests/e2e` when no mise):
+  into `mise test` / `mise unit` / `mise e2e`; (2) **injected layer command** is this task's
+  named mise task only (`mise unit` / `mise integration` / `mise e2e`; prefer `integration`
+  over the `integ` alias). The **runner ladder** (exists = allowlisted
+  mise task, or conventional `tests/unit` / `tests/integration` / `tests/e2e` when no mise) is:
   `unit` → unit only (never integ/e2e; never fall back to `mise test` / the full tree);
-  `integration` → unit (if it exists) then integ — if integ is not defined the task cannot
+  `integration` → unit (if it exists) then integration — if integration is not defined the task cannot
   resolve (`VERIFICATION_UNRESOLVED` at pre, no silent `mise test`);
-  `e2e` → unit (if exists) then integ (if exists) then e2e. Missing cheaper rung = skip, not
+  `e2e` → unit (if exists) then integration (if exists) then e2e. Missing cheaper rung = skip, not
   fail. Do not invent integ/e2e; (3) unstamped / keyword-ambiguous cards keep the previous
   `mise test` / `mise unit` fallback; (4) no mise → conventional layer paths when those
   directories exist, else the declared Verification if it is already scoped. Pre JSON also lists
@@ -809,8 +818,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 #### `deviate green pre [--task <id>]`
 
 * **Source:** `src/deviate/cli/micro.py`
-* **Description:** Resolves task context, emits JSON contract with `test_file` and
-  `implementation_targets` (all `src/**/*.py` files).
+* **Description:** Resolves task context, emits JSON contract with `test_file`,
+  `implementation_targets` (all `src/**/*.py` files), and the same layer contract as
+  `red pre` (`test_strategy`, `test_write_dir`, `test_command` — this layer's named
+  mise task only). GREEN must not write tests.
 
 #### `deviate green post`
 
@@ -840,7 +851,8 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   (the RED+GREEN commits). When that git range is empty or unavailable, it
   falls back to the task `Files:` list minus tests. Test files are never
   included. The contract also carries the documented handover fields:
-  `status`, `task_id`, `task_title`, `task_type`, `test_command`,
+  `status`, `task_id`, `task_title`, `task_type`, `test_strategy`,
+  `test_write_dir`, `test_command`,
   `lint_command`, `spec_dir`, `verification`, `repo_root`, `git_branch`,
   `timestamp`. Auto `_build_auto_prompt("refactor")` injects the same scoped
   list; it does not glob `src/**/*.py`.

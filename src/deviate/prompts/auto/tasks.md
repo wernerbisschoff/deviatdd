@@ -64,18 +64,18 @@ For each workstation cluster:
 1. **Group Items**: Cluster into Batched Logical Units (vertical slices).
 2. **Assign Execution_Mode**: Type `Verification_Batch` is always **IMMEDIATE** (hard type→mode lock — never TDD). For other types, use the decision tree — TDD for new business logic, state mutations, integration boundaries, or non-trivial ACs; IMMEDIATE for config, docs, constants, trivial boilerplate. Never emit `Mode: TDD` for `Verification_Batch`.
 3. **Assign Test Strategy**: Stamp every TDD task `unit` | `integration` | `e2e`. Default is **unit**. Migration / live-DB acceptance criteria → **integration**, not default unit. Need both a DB-free contract and a live-DB proof → two TDD tasks. Read `verification_suites` from the `deviate tasks pre` contract — do not invent integ/e2e. If `integration` is not in `verification_suites`, do not stamp `integration` (an integration-stamped task cannot resolve).
-4. **Assign Verification**: Collect **only** that layer plus cheaper rungs that already exist:
-   - `unit` → unit-scoped command (`mise unit` or `pytest tests/unit/...`). Never integ/e2e. Never `pytest tests/` / the whole tree.
-   - `integration` → unit (if it exists) then integ. Integration cannot resolve if integ does not exist — fail loud, do not silently run `mise test`.
-   - `e2e` → unit (if exists) then integ (if exists) then e2e.
-   Missing cheaper rung = skip, not fail. Do not invent integ/e2e.
+4. **Assign Verification**: Stamp **Verification** as this layer's named mise task. Prefer `mise integration` (never a short alias) when that task exists:
+   - `unit` → write only under the unit dir (`tests/unit/` or Elixir `test/` excluding `test/integration`); Verification ``mise unit``. Never integration/e2e. Never `pytest tests/` / the whole tree.
+   - `integration` → write only under the integration dir (`tests/integration/` or `test/integration/`); Verification ``mise integration``. Never create files under the unit dir. The runner may still run unit for regression after. Integration cannot resolve if `integration` is not in `verification_suites` — fail loud, do not silently run `mise test`.
+   - `e2e` → write only under the e2e dir (`tests/e2e/`); Verification ``mise e2e``.
+   Missing cheaper rung = skip, not fail. Do not invent integration/e2e.
 5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name the layer folder/tag and forbid the other layer.
 6. **File Rationale**: Explain WHY each file is touched.
 7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
 9. **Closing verification task** (issue-end, last, no forward Dependency). Never emit empty e2e files. Never require integ to be set up.
-   - If the issue is user-facing AND an e2e command/task exists (`e2e` in `verification_suites` or constitution ``E2E command``): emit a closing `[E2E]` **Verification_Batch** / `IMMEDIATE` / **Test Strategy** `e2e` whose Verification is the full existing ladder (unit, integ if exists, e2e). **Files** restricted to ``tests/e2e/``; **Details** name the concrete happy-path + one critical-failure user scenario from the issue's User Stories + ATDD.
-   - Else if integ exists (`integration` in `verification_suites`): emit a closing `[VERIFY]` **Verification_Batch** / `IMMEDIATE` / **Test Strategy** `integration` running unit (if exists) + integ. This catches a unit-only issue that regresses integ.
+   - If the issue is user-facing AND an e2e command/task exists (`e2e` in `verification_suites` or constitution ``E2E command``): emit a closing `[E2E]` **Verification_Batch** / `IMMEDIATE` / **Test Strategy** `e2e` whose Verification is the full existing ladder (`mise unit`, `mise integration` if exists, `mise e2e`). **Files** restricted to ``tests/e2e/``; **Details** name the concrete happy-path + one critical-failure user scenario from the issue's User Stories + ATDD.
+   - Else if integration exists (`integration` in `verification_suites`): emit a closing `[VERIFY]` **Verification_Batch** / `IMMEDIATE` / **Test Strategy** `integration` running `mise unit` (if exists) + `mise integration`. This catches a unit-only issue that regresses integration.
    - Else: no extra closing sweep (unit tasks already ran unit).
    Skip any closing task for issues touching only library/config/schema internals with no user-facing workflow.
 </step>

@@ -1495,7 +1495,8 @@ def _build_auto_prompt(
             prd_content = prd_path.read_text(encoding="utf-8")
 
     task_content = _this_task_prompt_card(root, task, phase=phase)
-    test_command = _resolve_verification_command(root, task)
+    layer = _layer_contract_fields(root, task)
+    test_command = layer["test_command"]
     lint_command = _resolve_lint_command(root)
     verification_command = test_command
     verification_binary = test_command
@@ -1511,6 +1512,8 @@ def _build_auto_prompt(
         "issue_id": issue_id,
         "feature_slug": feature_slug,
         "test_command": test_command,
+        "test_strategy": layer["test_strategy"],
+        "test_write_dir": layer["test_write_dir"],
         "lint_command": lint_command,
         "verification_command": verification_command,
         "verification_binary": verification_binary,
@@ -6804,7 +6807,7 @@ def red_pre(
     # slash-command bodies do no placeholder substitution.
     contract = {
         "task_id": task_data.get("id", ""),
-        "test_command": _pre_test_command(root, task_data),
+        **_pre_layer_contract(root, task_data),
         "lint_command": "mise run lint",
         "spec_dir": spec_dir,
         "task_entry": _task_card_text(root, task_data),
@@ -7064,10 +7067,10 @@ def _suite_rung_command(root: Path, kind: str) -> str | None:
         if kind == "unit" and "unit" in defined:
             return "mise unit"
         if kind == "integ":
-            if "integ" in defined:
-                return "mise integ"
             if "integration" in defined:
                 return "mise integration"
+            if "integ" in defined:
+                return "mise integ"
         if kind == "e2e" and "e2e" in defined:
             return "mise e2e"
         return None
@@ -7203,14 +7206,76 @@ def _usable_constitution_command(root: Path) -> str:
     return command
 
 
-def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
-    """Single verification-command resolver for pre, prompt, and runner.
+def _resolve_test_write_dir(root: Path, strategy: str | None) -> str:
+    """Init-convention directory for this Test Strategy layer."""
+    from deviate.cli.init import (
+        _detect_project_type,
+        _existing_e2e_dir,
+        _integ_stub_path,
+        _unit_stub_path,
+    )
 
-    Implements the Test Strategy ladder so pre JSON, ``{test_command}``,
-    and ``_run_test_cmd`` share one result. Multiple rungs join with
-    `` && `` for display; the runner executes each rung separately.
+    project_type = _detect_project_type(root)
+    if strategy == "unit":
+        return _unit_stub_path(project_type).as_posix()
+    if strategy == "integration":
+        return _integ_stub_path(project_type, root).as_posix()
+    if strategy == "e2e":
+        existing = _existing_e2e_dir(root)
+        return (existing or Path("tests/e2e")).as_posix()
+    return ""
+
+
+def _product_strategy_name(kind: str | None) -> str:
+    if kind == "integ":
+        return "integration"
+    if kind in {"unit", "e2e"}:
+        return kind
+    return ""
+
+
+def _resolve_layer_command(root: Path, task: dict | None = None) -> str:
+    """This task's own rung — what pre / ``{test_command}`` inject.
+
+    An integration RED runs ``mise integration`` (or ``mise integ`` if that
+    is the only defined name). The runner may still execute cheaper rungs
+    after the agent via :func:`_resolve_verification_rungs`.
     """
-    return _LADDER_JOIN.join(_resolve_verification_rungs(root, task))
+    rungs = _resolve_verification_rungs(root, task)
+    if not rungs:
+        return ""
+    declared = _task_verification_command(root, task)
+    kind = _classify_suite_kind(root, task, declared)
+    if kind in {"unit", "integ", "e2e"}:
+        layer = _suite_rung_command(root, kind)
+        if layer:
+            return layer
+        if declared and _is_partial_verification(declared):
+            return rungs[0]
+        return rungs[-1]
+    return rungs[0] if len(rungs) == 1 else _LADDER_JOIN.join(rungs)
+
+
+def _layer_contract_fields(root: Path, task: dict | None) -> dict[str, str]:
+    declared = _task_verification_command(root, task) if task else ""
+    strategy = _extract_test_strategy(root, task) or _product_strategy_name(
+        _classify_suite_kind(root, task, declared)
+    )
+    return {
+        "test_strategy": strategy,
+        "test_write_dir": _resolve_test_write_dir(root, strategy),
+        "test_command": _resolve_layer_command(root, task),
+    }
+
+
+def _resolve_verification_command(root: Path, task: dict | None = None) -> str:
+    """Layer command for pre JSON and ``{test_command}`` injection.
+
+    Stamped tasks get that layer's named mise task (``mise unit`` /
+    ``mise integration`` / ``mise e2e``). The runner still walks cheaper
+    existing rungs via :func:`_resolve_verification_rungs`.
+    """
+    return _resolve_layer_command(root, task)
 
 
 def _doctor_required_for_task(root: Path, task: dict | None) -> bool:
@@ -7292,9 +7357,18 @@ def _fail_pre_if_doctor_failed(doctor: dict[str, object] | None) -> None:
 
 
 def _pre_test_command(root: Path, task: dict | None) -> str:
-    """Resolve the shared verification ladder or fail loud at phase pre."""
+    """Resolve the layer command or fail loud at phase pre."""
     try:
         return _resolve_verification_command(root, task)
+    except VerificationUnresolvedError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
+
+
+def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
+    """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
+    try:
+        return _layer_contract_fields(root, task)
     except VerificationUnresolvedError as exc:
         console.print(f"[red]{exc}[/]")
         raise typer.Exit(code=1) from exc
@@ -7395,10 +7469,11 @@ def _execute_test_command(command: str, cwd: Path) -> subprocess.CompletedProces
 
 
 def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedProcess:
-    """Run the same resolved ladder that pre JSON and the prompt advertise.
+    """Run the verification ladder (cheaper existing rungs, then this layer).
 
-    Doctor preflight (when required for this task's rungs) runs first. Then
-    each rung from :func:`_resolve_verification_rungs` is executed through
+    Pre JSON and ``{test_command}`` inject this layer only. Doctor preflight
+    (when required for this task's rungs) runs first. Then each rung from
+    :func:`_resolve_verification_rungs` is executed through
     :func:`run_safe_command`. Stop at the first failure.
     """
     doctor = _maybe_run_doctor(root, task)
@@ -7745,7 +7820,7 @@ def green_pre(
         "task_entry": task_entry.strip(),
         "test_file": str(test_files[0]) if test_files else "",
         "implementation_targets": [str(f) for f in src_files],
-        "test_command": _pre_test_command(root, task_data),
+        **_pre_layer_contract(root, task_data),
     }
     doctor = _attach_mise_pre(root, contract, task_data)
     print(json.dumps(contract, ensure_ascii=False))
@@ -8049,7 +8124,7 @@ def refactor_pre(
         "task_id": task_data.get("id", ""),
         "task_title": task_data.get("description", ""),
         "task_type": _task_type_from_card(card),
-        "test_command": _pre_test_command(root, task_data),
+        **_pre_layer_contract(root, task_data),
         "lint_command": _resolve_lint_command(root) or "mise run lint",
         "spec_dir": spec_dir,
         "verification": _task_verification_command(root, task_data),

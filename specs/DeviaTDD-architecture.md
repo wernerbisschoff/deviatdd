@@ -639,15 +639,19 @@ The remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
 ## 7. Multi-Framework Testing Abstraction
 
 DeviaTDD's current implementation (`src/deviate/cli/micro.py`) runs tests through the
-language-agnostic `_run_test_cmd()` → `_resolve_verification_command()` (shared with
-`deviate red|green|refactor pre` and `_build_auto_prompt` `{test_command}`): classify from
-the task card **Test Strategy** (`unit` | `integration` | `e2e`) and `execution_mode: E2E`
+language-agnostic `_run_test_cmd()` → `_resolve_verification_rungs()` (runner ladder) plus
+`_resolve_verification_command()` / `_layer_contract_fields()` (injected layer). `deviate
+red|green|refactor pre` and `_build_auto_prompt` inject `test_strategy`, `test_write_dir`,
+and `test_command` (this layer only: `mise unit` / `mise integration` / `mise e2e`; never
+`mise integ` when `mise integration` exists). The agent must not infer the layer by reading
+`tasks.md`. Classify from the
+task card **Test Strategy** (`unit` | `integration` | `e2e`) and `execution_mode: E2E`
 first. A partial declared verification (file / `-k` / node id) becomes `mise exec --
-<command>` when `mise.toml` / `.mise.toml` is present. Otherwise the resolver implements
-the verification ladder so pre, `{test_command}`, and `_run_test_cmd` share it: `unit` →
+<command>` when `mise.toml` / `.mise.toml` is present. The runner still walks cheaper
+existing rungs after an integration/e2e RED: `unit` →
 unit only (never integ/e2e, never `mise test`); `integration` → unit (if it exists) then
-integ (fail loud with `VERIFICATION_UNRESOLVED` if integ is undefined); `e2e` → unit (if
-exists) then integ (if exists) then e2e. Missing cheaper rungs are skipped, not invented.
+integration (fail loud with `VERIFICATION_UNRESOLVED` if integration is undefined); `e2e` → unit (if
+exists) then integration (if exists) then e2e. Missing cheaper rungs are skipped, not invented.
 `mise doctor` is preflight only when defined **and** this task actually runs integ/e2e (or
 an unstamped full suite) — a unit-stamped sociable test must still run with the DB down
 under `mise unit`. Without mise, map layers to conventional `tests/unit` /

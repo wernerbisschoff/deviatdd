@@ -291,7 +291,7 @@ class TestResolveVerificationCommand:
         assert "integ" not in resolved
         assert resolved != "mise test"
 
-    def test_integration_strategy_runs_unit_then_integ_when_both_exist(
+    def test_integration_strategy_injects_layer_command_not_the_ladder(
         self, tmp_path: Path
     ) -> None:
         _write_mise(
@@ -300,11 +300,31 @@ class TestResolveVerificationCommand:
             '[tasks.integ]\nrun = "pytest -m integ"\n'
             '[tasks.test]\nrun = "pytest"\n',
         )
-        resolved = micro._resolve_verification_command(
-            tmp_path, _make_task(test_strategy="integration")
-        )
-        assert resolved == "mise unit && mise integ"
+        task = _make_task(test_strategy="integration")
+        resolved = micro._resolve_verification_command(tmp_path, task)
+        assert resolved == "mise integ"
+        assert "&&" not in resolved
         assert "mise test" not in resolved
+        assert micro._resolve_verification_rungs(tmp_path, task) == [
+            "mise unit",
+            "mise integ",
+        ]
+
+    def test_integration_strategy_prefers_mise_integration_over_integ(
+        self, tmp_path: Path
+    ) -> None:
+        _write_mise(
+            tmp_path,
+            '[tasks.unit]\nrun = "pytest -m unit"\n'
+            '[tasks.integ]\nrun = "pytest -m integ"\n'
+            '[tasks.integration]\nrun = "pytest -m integration"\n',
+        )
+        task = _make_task(test_strategy="integration")
+        assert micro._resolve_verification_command(tmp_path, task) == "mise integration"
+        assert micro._resolve_verification_rungs(tmp_path, task) == [
+            "mise unit",
+            "mise integration",
+        ]
 
     def test_integration_strategy_runs_integ_only_when_unit_absent(
         self, tmp_path: Path
@@ -374,10 +394,15 @@ class TestResolveVerificationCommand:
             '[tasks.integ]\nrun = "pytest -m integ"\n'
             '[tasks.e2e]\nrun = "playwright"\n',
         )
-        resolved = micro._resolve_verification_command(
-            tmp_path, _make_task(execution_mode="E2E")
-        )
-        assert resolved == "mise unit && mise integ && mise e2e"
+        task = _make_task(execution_mode="E2E")
+        resolved = micro._resolve_verification_command(tmp_path, task)
+        assert resolved == "mise e2e"
+        assert "&&" not in resolved
+        assert micro._resolve_verification_rungs(tmp_path, task) == [
+            "mise unit",
+            "mise integ",
+            "mise e2e",
+        ]
 
     def test_allowlisted_tasks_omit_unrelated_names(self, tmp_path: Path) -> None:
         _write_mise(
@@ -494,11 +519,39 @@ class TestPromptAndRunnerShareResolver:
         task = _make_task(test_strategy="unit")
         red = micro._build_auto_prompt("red", task, tmp_path)
         green = micro._build_auto_prompt("green", task, tmp_path)
-        assert "mise unit" in red and "mise unit" in green
-        assert "mise integ" not in red
-        assert "mise integ" not in green
+        assert re.search(r"```bash\n\s*mise unit\n\s*```", red)
+        assert re.search(r"```bash\n\s*mise unit\n\s*```", green)
+        assert "```bash\nmise integ\n```" not in red
+        assert "```bash\nmise integ\n```" not in green
         assert "```bash\nmise test\n```" not in red
         assert "```bash\nmise test\n```" not in green
+        assert "Layer: unit" in red
+        assert "Write tests only in: tests/unit" in red
+        assert "Run only: mise unit" in red
+        assert "Layer: unit" in green
+        assert "Run only: mise unit" in green
+
+    def test_red_and_green_prompts_inject_integration_layer_contract(
+        self, tmp_path: Path
+    ) -> None:
+        _write_mise(
+            tmp_path,
+            '[tasks.unit]\nrun = "pytest -m unit"\n'
+            '[tasks.integration]\nrun = "pytest -m integration"\n',
+        )
+        task = _make_task(test_strategy="integration")
+        red = micro._build_auto_prompt("red", task, tmp_path)
+        green = micro._build_auto_prompt("green", task, tmp_path)
+        assert "Layer: integration" in red
+        assert "Write tests only in: tests/integration" in red
+        assert "Run only: mise integration" in red
+        assert re.search(r"```bash\n\s*mise integration\n\s*```", red)
+        assert re.search(r"```bash\n\s*mise integration\n\s*```", green)
+        assert "```bash\nmise unit\n```" not in red
+        assert "```bash\nmise integ\n```" not in red
+        assert re.search(r"mise integ(?!ration)", red) is None
+        assert "Layer: integration" in green
+        assert "Run only: mise integration" in green
 
     def test_transcript_logs_exact_command(self, tmp_git_repo: Path) -> None:
         root = tmp_git_repo
@@ -806,6 +859,93 @@ class TestPhasePreMiseContract:
             result = runner.invoke(cli, ["red", "pre", "--task", "TSK-001-01"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output[result.output.find("{") :])
+        assert data["test_command"] == "mise unit"
+        assert data["test_strategy"] == "unit"
+        assert data["test_write_dir"] == "tests/unit"
+
+    def test_red_pre_unit_contract_has_write_dir_and_mise_unit(
+        self, tmp_git_repo: Path
+    ) -> None:
+        root = tmp_git_repo
+        (root / "pyproject.toml").write_text(
+            "[project]\nname = 'demo'\n", encoding="utf-8"
+        )
+        _write_mise(
+            root,
+            '[tasks.unit]\nrun = "pytest -m unit"\n'
+            '[tasks.integration]\nrun = "pytest -m integration"\n',
+        )
+        _seed_pre_workspace(root, test_strategy="unit")
+        with chdir(root):
+            result = runner.invoke(cli, ["red", "pre", "--task", "TSK-001-01"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output[result.output.find("{") :])
+        assert data["test_strategy"] == "unit"
+        assert data["test_write_dir"] == "tests/unit"
+        assert data["test_command"] == "mise unit"
+
+    def test_red_pre_integration_contract_has_write_dir_and_mise_integration(
+        self, tmp_git_repo: Path
+    ) -> None:
+        root = tmp_git_repo
+        (root / "pyproject.toml").write_text(
+            "[project]\nname = 'demo'\n", encoding="utf-8"
+        )
+        _write_mise(
+            root,
+            '[tasks.unit]\nrun = "pytest -m unit"\n'
+            '[tasks.integration]\nrun = "pytest -m integration"\n',
+        )
+        _seed_pre_workspace(root, test_strategy="integration")
+        with chdir(root):
+            result = runner.invoke(cli, ["red", "pre", "--task", "TSK-001-01"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output[result.output.find("{") :])
+        assert data["test_strategy"] == "integration"
+        assert data["test_write_dir"] == "tests/integration"
+        assert data["test_command"] == "mise integration"
+
+    def test_green_pre_shares_integration_layer_contract(
+        self, tmp_git_repo: Path
+    ) -> None:
+        root = tmp_git_repo
+        (root / "pyproject.toml").write_text(
+            "[project]\nname = 'demo'\n", encoding="utf-8"
+        )
+        _write_mise(
+            root,
+            '[tasks.unit]\nrun = "pytest -m unit"\n'
+            '[tasks.integration]\nrun = "pytest -m integration"\n',
+        )
+        _seed_pre_workspace(
+            root, test_strategy="integration", status="RED", phase="RED"
+        )
+        with chdir(root):
+            result = runner.invoke(cli, ["green", "pre", "--task", "TSK-001-01"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output[result.output.find("{") :])
+        assert data["test_strategy"] == "integration"
+        assert data["test_write_dir"] == "tests/integration"
+        assert data["test_command"] == "mise integration"
+
+    def test_red_pre_elixir_write_dirs_follow_init_stubs(
+        self, tmp_git_repo: Path
+    ) -> None:
+        root = tmp_git_repo
+        (root / "mix.exs").write_text(
+            "defmodule Demo.MixProject do\nend\n", encoding="utf-8"
+        )
+        _write_mise(
+            root,
+            '[tasks.unit]\nrun = "mix test"\n'
+            '[tasks.integration]\nrun = "mix test test/integration"\n',
+        )
+        _seed_pre_workspace(root, test_strategy="unit")
+        with chdir(root):
+            result = runner.invoke(cli, ["red", "pre", "--task", "TSK-001-01"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output[result.output.find("{") :])
+        assert data["test_write_dir"] == "test"
         assert data["test_command"] == "mise unit"
 
     def test_red_pre_runs_doctor_and_records_ok(self, tmp_git_repo: Path) -> None:

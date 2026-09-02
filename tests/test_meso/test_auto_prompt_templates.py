@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from importlib.resources import as_file, files
 from pathlib import Path
 
@@ -443,12 +444,27 @@ class TestLayerStampedPrompts:
 
     def test_red_reads_test_strategy_and_forbids_other_layer(self):
         auto = _read_template("red.md")
-        assert "Test Strategy" in auto
-        assert "task_content" in auto
-        assert "only that layer" in auto.lower() or "only in that layer" in auto.lower()
-        assert "forbid" in auto.lower()
+        assert "Layer: {test_strategy}" in auto
+        assert "Write tests only in: {test_write_dir}" in auto
+        assert "Run only: {test_command}" in auto
+        assert "Do not write tests in any other layer directory." in auto
+        assert (
+            "Do not put an integration test in the unit directory. "
+            "Do not put a unit test in the integration directory."
+        ) in auto
         assert "mise unit" in auto
+        assert "mise integration" in auto
+        assert re.search(r"mise integ(?!ration)", auto) is None
         assert "pytest tests/" not in auto
+        assert "fall back" in auto.lower()
+
+    def test_green_gets_layer_command_and_must_not_write_tests(self):
+        auto = _read_template("green.md")
+        assert "{test_command}" in auto
+        assert "Layer: {test_strategy}" in auto
+        assert "Run only: {test_command}" in auto
+        assert "NEVER modify test files" in auto or "must not write" in auto.lower()
+        assert re.search(r"mise integ(?!ration)", auto) is None
 
     def test_red_keeps_transport_and_honeycomb(self):
         auto = _read_template("red.md")

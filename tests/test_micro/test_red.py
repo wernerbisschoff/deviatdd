@@ -118,6 +118,8 @@ class TestRedPre:
             )
             data = json.loads(result.output)
             assert "task_id" in data
+            assert "test_strategy" in data
+            assert "test_write_dir" in data
             assert "test_command" in data
             assert "lint_command" in data
             assert "spec_dir" in data
