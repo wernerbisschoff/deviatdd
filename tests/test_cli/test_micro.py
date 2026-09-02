@@ -2756,8 +2756,15 @@ class TestCoerceJudgeActionTestIntegrity:
 
     def test_legacy_revert_before_without_integrity_is_revert_green(self) -> None:
         from deviate.cli.micro import _coerce_judge_action
+        from deviate.core.agent import HandoverManifest
 
-        manifest = _judge_violation_manifest(next_action="revert_before")
+        manifest = HandoverManifest.model_construct(
+            phase="JUDGE",
+            status="SUCCESS",
+            verdict="COMPLIANCE_VIOLATION",
+            task_id="TSK-149-01",
+            next_action="revert_before",
+        )
         result = _coerce_judge_action(manifest, "COMPLIANCE_VIOLATION", failure_kind="")
         assert result == "revert_green", (
             "legacy revert_before without Test Integrity must invert to "
