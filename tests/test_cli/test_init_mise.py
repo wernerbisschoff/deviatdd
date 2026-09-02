@@ -31,22 +31,13 @@ _UNIT_DIR = {
     "unknown": "tests/unit",
 }
 
-_INTEG_DIR = {
+_INTEGRATION_DIR = {
     "python": "tests/integration",
     "elixir_phoenix": "test/integration",
     "node": "tests/integration",
     "rust": "tests/integration",
     "go": "tests/integration",
     "unknown": "tests/integration",
-}
-
-_E2E_DIR = {
-    "python": "tests/e2e",
-    "elixir_phoenix": "test/e2e",
-    "node": "tests/e2e",
-    "rust": "tests/e2e",
-    "go": "tests/e2e",
-    "unknown": "tests/e2e",
 }
 
 _UNIT_CMD_TOKEN = {
@@ -58,22 +49,13 @@ _UNIT_CMD_TOKEN = {
     "unknown": "tests/unit",
 }
 
-_INTEG_CMD_TOKEN = {
+_INTEGRATION_CMD_TOKEN = {
     "python": "tests/integration",
     "elixir_phoenix": "test/integration",
     "node": "tests/integration",
     "rust": "--tests",
     "go": "tests/integration",
     "unknown": "tests/integration",
-}
-
-_E2E_CMD_TOKEN = {
-    "python": "tests/e2e",
-    "elixir_phoenix": "test/e2e",
-    "node": "tests/e2e",
-    "rust": "--tests",
-    "go": "tests/e2e",
-    "unknown": "tests/e2e",
 }
 
 
@@ -112,7 +94,7 @@ def _load_mise(repo: Path) -> dict:
     "project_type",
     ["python", "elixir_phoenix", "node", "rust", "go", "unknown"],
 )
-def test_fresh_init_defines_all_three_tasks_and_dirs(
+def test_fresh_init_defines_unit_and_integration_not_e2e(
     tmp_git_repo: Path, project_type: str
 ) -> None:
     if project_type != "unknown":
@@ -123,25 +105,25 @@ def test_fresh_init_defines_all_three_tasks_and_dirs(
     tasks = config["tasks"]
 
     assert "unit" in tasks
-    assert "integ" in tasks
-    assert "e2e" in tasks
+    assert "integration" in tasks
     assert "doctor" in tasks
+    assert "integ" not in tasks
+    assert "e2e" not in tasks
 
     unit_run = _task_run(config, "unit")
-    integ_run = _task_run(config, "integ")
-    e2e_run = _task_run(config, "e2e")
+    integration_run = _task_run(config, "integration")
     assert "|| true" not in unit_run
-    assert "|| true" not in integ_run
-    assert "|| true" not in e2e_run
+    assert "|| true" not in integration_run
     assert _UNIT_CMD_TOKEN[project_type] in unit_run
-    assert _INTEG_CMD_TOKEN[project_type] in integ_run
-    assert _E2E_CMD_TOKEN[project_type] in e2e_run
-    assert _INTEG_DIR[project_type] not in unit_run or project_type == "elixir_phoenix"
-    assert _E2E_DIR[project_type] not in unit_run or project_type == "elixir_phoenix"
+    assert _INTEGRATION_CMD_TOKEN[project_type] in integration_run
+    if project_type != "elixir_phoenix":
+        assert _INTEGRATION_DIR[project_type] not in unit_run
 
     assert (tmp_git_repo / _UNIT_DIR[project_type]).is_dir()
-    assert (tmp_git_repo / _INTEG_DIR[project_type]).is_dir()
-    assert (tmp_git_repo / _E2E_DIR[project_type]).is_dir()
+    assert (tmp_git_repo / _INTEGRATION_DIR[project_type]).is_dir()
+    assert not (tmp_git_repo / "tests" / "e2e").exists()
+    assert not (tmp_git_repo / "e2e").exists()
+    assert not (tmp_git_repo / "test" / "e2e").exists()
 
 
 @pytest.mark.parametrize(
@@ -155,25 +137,34 @@ def test_fresh_init_pre_push_depends_on_unit_only(
     config = _load_mise(tmp_git_repo)
     assert _task_depends(config, "pre-push") == ["unit"]
     pre_commit = _task_depends(config, "pre-commit")
+    assert "integration" not in pre_commit
     assert "integ" not in pre_commit
     assert "e2e" not in pre_commit
     assert "unit" not in pre_commit
 
 
-def test_python_empty_integ_e2e_treat_pytest_exit_5_as_success(
+def test_python_empty_integration_treats_pytest_exit_5_as_success(
     tmp_git_repo: Path,
 ) -> None:
     _seed_project(tmp_git_repo, "python")
     _init_pre(tmp_git_repo)
     config = _load_mise(tmp_git_repo)
-    integ = _task_run(config, "integ")
-    e2e = _task_run(config, "e2e")
+    integration = _task_run(config, "integration")
     unit = _task_run(config, "unit")
-    assert "$? -eq 5" in integ
-    assert "$? -eq 5" in e2e
+    assert "$? -eq 5" in integration
     assert "$? -eq 5" not in unit
-    assert "|| true" not in integ
-    assert "|| true" not in e2e
+    assert "|| true" not in integration
+
+
+def test_e2e_task_added_only_when_layer_exists(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "python")
+    (tmp_git_repo / "tests" / "e2e").mkdir(parents=True)
+
+    _init_pre(tmp_git_repo)
+    config = _load_mise(tmp_git_repo)
+    assert "e2e" in config["tasks"]
+    assert "tests/e2e" in _task_run(config, "e2e")
+    assert "|| true" not in _task_run(config, "e2e")
 
 
 def test_existing_layer_dir_is_not_wiped(tmp_git_repo: Path) -> None:
@@ -185,7 +176,7 @@ def test_existing_layer_dir_is_not_wiped(tmp_git_repo: Path) -> None:
 
     _init_pre(tmp_git_repo)
     assert marker.exists()
-    assert "tests/integration" in _task_run(_load_mise(tmp_git_repo), "integ")
+    assert "tests/integration" in _task_run(_load_mise(tmp_git_repo), "integration")
 
 
 def test_elixir_uses_test_root_for_unit(tmp_git_repo: Path) -> None:
@@ -194,11 +185,13 @@ def test_elixir_uses_test_root_for_unit(tmp_git_repo: Path) -> None:
     config = _load_mise(tmp_git_repo)
     assert _task_run(config, "unit") == "mix test"
     assert (tmp_git_repo / "test" / "integration").is_dir()
-    assert (tmp_git_repo / "test" / "e2e").is_dir()
+    assert not (tmp_git_repo / "test" / "e2e").exists()
     assert not (tmp_git_repo / "test" / "unit").exists()
 
 
-def test_existing_mise_without_named_tasks_adds_all_four(tmp_git_repo: Path) -> None:
+def test_existing_mise_without_named_tasks_adds_unit_and_integration(
+    tmp_git_repo: Path,
+) -> None:
     _seed_project(tmp_git_repo, "python")
     (tmp_git_repo / "mise.toml").write_text(
         '[tools]\npython = "3.11"\n\n[tasks.custom]\nrun = "echo keep-me"\n',
@@ -210,9 +203,10 @@ def test_existing_mise_without_named_tasks_adds_all_four(tmp_git_repo: Path) -> 
     assert config["tools"]["python"] == "3.11"
     assert _task_run(config, "custom") == "echo keep-me"
     assert "unit" in config["tasks"]
-    assert "integ" in config["tasks"]
-    assert "e2e" in config["tasks"]
+    assert "integration" in config["tasks"]
     assert "doctor" in config["tasks"]
+    assert "integ" not in config["tasks"]
+    assert "e2e" not in config["tasks"]
     assert "|| true" not in _task_run(config, "unit")
 
 
@@ -227,8 +221,8 @@ def test_existing_mise_with_unit_does_not_rewrite_command(tmp_git_repo: Path) ->
     config = _load_mise(tmp_git_repo)
     assert _task_run(config, "unit") == "custom-unit"
     assert _task_run(config, "watch") == "echo watch"
-    assert "integ" in config["tasks"]
-    assert "e2e" in config["tasks"]
+    assert "integration" in config["tasks"]
+    assert "e2e" not in config["tasks"]
 
 
 def test_init_mise_merge_is_idempotent(tmp_git_repo: Path) -> None:
@@ -252,13 +246,13 @@ def test_doctor_includes_compose_config_when_compose_exists(
     assert "docker compose up" not in doctor
 
 
-def test_generate_unknown_emits_unit_integ_e2e(tmp_path: Path) -> None:
+def test_generate_unknown_emits_unit_and_integration_not_e2e(tmp_path: Path) -> None:
     config = tomllib.loads(_generate_mise_toml("unknown", tmp_path))
     assert "unit" in config["tasks"]
     assert _task_run(config, "unit") == "pytest tests/unit"
     assert "|| true" not in _task_run(config, "unit")
-    assert "integ" in config["tasks"]
-    assert "e2e" in config["tasks"]
+    assert "integration" in config["tasks"]
     assert "doctor" in config["tasks"]
-    assert "$? -eq 5" in _task_run(config, "integ")
-    assert "$? -eq 5" in _task_run(config, "e2e")
+    assert "integ" not in config["tasks"]
+    assert "e2e" not in config["tasks"]
+    assert "$? -eq 5" in _task_run(config, "integration")

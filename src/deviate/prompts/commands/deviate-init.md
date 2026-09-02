@@ -34,7 +34,7 @@ This phase operates inside the **MACRO LAYER** — initial project scaffolding f
 
 1. **Pre/Post Script Lifecycle**: The init phase begins with `deviate init pre` (detects project type, scaffolds DeviaTDD structure, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes. The phase ends with `deviate init post` (validates artifacts, stages for commit, returns status).
 
-2. **Named mise tasks**: `deviate init pre` writes or merges `mise.toml` with `unit`, `integ`, `e2e`, and `doctor`. `unit` MUST NOT use `|| true` — RED must be able to fail. Empty `integ` / `e2e` stubs may collect zero tests (pytest exit 5 is success on those tasks only).
+2. **Named mise tasks**: `deviate init pre` writes or merges `mise.toml` with `unit`, `integration` (`mise integration`), and `doctor`. `unit` MUST NOT use `|| true` — RED must be able to fail. Empty `integration` may collect zero tests (pytest exit 5 is success). `e2e` is added only when `tests/e2e`, `e2e/`, or `test/e2e` already exists. The runner also accepts `integ` as an alias; init writes `integration`.
 
 3. **Project Type Detection**: Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`.
 
@@ -46,8 +46,8 @@ This phase operates inside the **MACRO LAYER** — initial project scaffolding f
 
 You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAYER / PHASE_INIT**. Your objective is to scaffold a repository with DeviaTDD conventions:
 
-1. A `mise.toml` (not `.mise.toml`) with the named tasks RED/GREEN resolve: `unit`, `integ`, `e2e`, `doctor`. `unit` has no `|| true`.
-2. Language-native stub dirs: `tests/unit` + `tests/integration` + `tests/e2e` (Elixir: `test/` stays unit; add `test/integration` + `test/e2e`) so RED knows where to write. Do not wipe existing layer folders.
+1. A `mise.toml` (not `.mise.toml`) with the named tasks RED/GREEN resolve: `unit`, `integration`, `doctor`. `unit` has no `|| true`. `e2e` only when that layer already exists.
+2. Language-native stub dirs: `tests/unit` + `tests/integration` (Elixir: `test/` stays unit; add `test/integration`) so RED knows where to write. Do not wipe existing layer folders. Do not create `e2e` stubs.
 3. A `specs/` directory containing:
    - `specs/constitution.md` — project governance document
    - `specs/issues.jsonl` — append-only issue ledger (empty, or with initial entry)
@@ -55,11 +55,11 @@ You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAY
 
 **Named mise contract**
 - `unit` — fast hermetic command (pytest / mix test / cargo test --lib / npm test / go test). No `|| true`.
-- `integ` — `mise integ`, scoped to the integration stub/layer. Empty stub may collect zero tests; pytest exit 5 is success. Not `|| true`.
-- `e2e` — `mise e2e`, scoped to the e2e stub/layer. Same empty-collection rule as `integ`.
+- `integration` — `mise integration`, scoped to the integration stub/layer. Empty stub may collect zero tests; pytest exit 5 is success. Not `|| true`. The runner also accepts `integ` as an alias; init writes `integration`.
+- `e2e` — only when `tests/e2e`, `e2e/`, or `test/e2e` already exists.
 - `doctor` — cheap toolchain check (python/uv, mix/elixir, node, rustc/cargo, go). If `docker-compose.yml` / `compose.yaml` exists, may include `docker compose config`. Never `docker compose up`.
-- Hooks: `pre-commit` = format-check + lint; `pre-push` = `unit` only. Never `integ` or `e2e` on hooks.
-- Existing `mise.toml` is merged: insert missing `unit` / `integ` / `e2e` / `doctor`; do not overwrite existing commands or tests.
+- Hooks: `pre-commit` = format-check + lint; `pre-push` = `unit` only. Never `integration` or `e2e` on hooks.
+- Existing `mise.toml` is merged: insert missing `unit` / `integration` / `doctor` (and `e2e` when that layer exists); do not overwrite existing commands or tests.
 
 </system_instructions>
 
@@ -84,7 +84,7 @@ The pre-script emits a JSON contract to stdout containing:
 <step id="project_analysis">
 Analyze the project state from the contract:
 1. Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`
-2. Confirm `mise.toml` defines `unit`, `integ`, `e2e`, and `doctor`
+2. Confirm `mise.toml` defines `unit`, `integration`, and `doctor`
 3. Check what DeviaTDD artifacts already exist (`specs/`, `issues.jsonl`, `constitution.md`)
 </step>
 
@@ -132,8 +132,8 @@ The post-script:
 
 ### mise.toml
 - Path: `<repo_root>/mise.toml`
-- Purpose: DeviaTDD named tasks (`unit`, `integ`, `e2e`, `doctor`)
-- Key tasks: `unit` (no `|| true`), `integ`, `e2e`, `doctor`; `pre-push` depends on `unit`
+- Purpose: DeviaTDD named tasks (`unit`, `integration`, `doctor`)
+- Key tasks: `unit` (no `|| true`), `integration`, `doctor`; `pre-push` depends on `unit`
 
 ### specs/constitution.md
 - Path: `<repo_root>/specs/constitution.md`
@@ -156,8 +156,8 @@ The post-script:
 | Condition | Action |
 | :--- | :--- |
 | Not a git repository | Return FAILURE with reason "Not a git repository" |
-| Unknown project type | Scaffold `unit` / `integ` / `e2e` / `doctor` (pytest; exit 5 success on integ/e2e) |
-| mise.toml already exists | Merge missing `unit` / `integ` / `e2e` / `doctor`; do not overwrite existing commands |
+| Unknown project type | Scaffold `unit` / `integration` / `doctor` (pytest; exit 5 success on integration) |
+| mise.toml already exists | Merge missing `unit` / `integration` / `doctor`; do not overwrite existing commands |
 | constitution.md already exists | Skip generation, note in contract |
 | Project is already DeviaTDD-compliant | Return SUCCESS with existing artifacts listed |
 | Git hooks fail | Report failure but stage artifacts anyway |

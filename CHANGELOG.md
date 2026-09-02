@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`deviate init` scaffolds the named mise tasks RED/GREEN resolve.** Fresh `mise.toml` always defines `unit`, `integ`, `e2e`, and `doctor` (language-specific commands; no `|| true` on `unit`). Empty stub dirs are created at `tests/unit` + `tests/integration` + `tests/e2e` (Elixir: `test/` stays unit; add `test/integration` + `test/e2e`) so RED knows where to write. Empty `integ` / `e2e` treat pytest exit 5 (no tests collected) as success; assertion failures still fail. `pre-push` depends on `unit` only. An existing `mise.toml` is merged: missing `unit` / `integ` / `e2e` / `doctor` are inserted; existing commands, tool pins, and layer folders are left untouched. Pinned by `tests/test_cli/test_init_mise.py`.
+- **`deviate init` scaffolds the named mise tasks RED/GREEN resolve.** Fresh `mise.toml` always defines `unit`, `integration` (`mise integration`), and `doctor` (language-specific commands; no `|| true` on `unit`). Empty stub dirs are created at `tests/unit` + `tests/integration` (Elixir: `test/` stays unit; add `test/integration`) so RED knows where to write. `e2e` is added only when `tests/e2e`, `e2e/`, or `test/e2e` already exists. Empty `integration` treats pytest exit 5 (no tests collected) as success; assertion failures still fail. The runner still accepts `integ` as an alias when a repo already defines that name; init writes `integration`. `pre-push` depends on `unit` only. An existing `mise.toml` is merged: missing `unit` / `integration` / `doctor` are inserted; existing commands, tool pins, and layer folders are left untouched. Pinned by `tests/test_cli/test_init_mise.py`.
 
 ### Removed
 

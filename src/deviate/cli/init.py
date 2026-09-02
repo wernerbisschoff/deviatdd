@@ -153,20 +153,14 @@ def _integ_stub_path(project_type: str, repo_root: Path) -> Path:
     return Path("tests/integration")
 
 
-def _e2e_stub_path(project_type: str, repo_root: Path) -> Path:
-    existing = _discover_existing_dir(repo_root, _E2E_DIR_CANDIDATES)
-    if existing is not None:
-        return existing
-    if project_type == "elixir_phoenix":
-        return Path("test/e2e")
-    return Path("tests/e2e")
+def _existing_e2e_dir(repo_root: Path) -> Path | None:
+    return _discover_existing_dir(repo_root, _E2E_DIR_CANDIDATES)
 
 
-def _layer_paths(project_type: str, repo_root: Path) -> tuple[Path, Path, Path]:
+def _layer_paths(project_type: str, repo_root: Path) -> tuple[Path, Path]:
     return (
         _unit_stub_path(project_type),
         _integ_stub_path(project_type, repo_root),
-        _e2e_stub_path(project_type, repo_root),
     )
 
 
@@ -187,7 +181,7 @@ def _allow_empty_pytest(command: str) -> str:
 
 
 def _unit_run(project_type: str, repo_root: Path) -> str:
-    unit, _, _ = _layer_paths(project_type, repo_root)
+    unit, _ = _layer_paths(project_type, repo_root)
     unit_s = unit.as_posix()
     if project_type == "elixir_phoenix":
         return "mix test"
@@ -203,7 +197,7 @@ def _unit_run(project_type: str, repo_root: Path) -> str:
 
 
 def _integ_run(project_type: str, repo_root: Path) -> str:
-    _, integ, _ = _layer_paths(project_type, repo_root)
+    _, integ = _layer_paths(project_type, repo_root)
     integ_s = integ.as_posix()
     if project_type == "elixir_phoenix":
         return f"mix test {integ_s}"
@@ -219,8 +213,8 @@ def _integ_run(project_type: str, repo_root: Path) -> str:
 
 
 def _e2e_run(project_type: str, repo_root: Path) -> str:
-    _, _, e2e = _layer_paths(project_type, repo_root)
-    e2e_s = e2e.as_posix()
+    e2e = _existing_e2e_dir(repo_root)
+    e2e_s = (e2e or Path("tests/e2e")).as_posix()
     if project_type == "elixir_phoenix":
         return f"mix test {e2e_s}"
     if project_type == "python":
@@ -254,17 +248,23 @@ def _doctor_run(project_type: str, repo_root: Path) -> str:
 
 
 def _named_mise_tasks(project_type: str, repo_root: Path) -> dict[str, str]:
-    return {
+    # Write ``integration`` so ``mise integration`` works. The runner
+    # (_resolve_verification_command) also accepts ``integ`` as an alias
+    # when a repo already defines that name; init does not emit ``integ``.
+    tasks = {
         "unit": _unit_run(project_type, repo_root),
-        "integ": _integ_run(project_type, repo_root),
-        "e2e": _e2e_run(project_type, repo_root),
+        "integration": _integ_run(project_type, repo_root),
         "doctor": _doctor_run(project_type, repo_root),
     }
+    if _existing_e2e_dir(repo_root) is not None:
+        tasks["e2e"] = _e2e_run(project_type, repo_root)
+    return tasks
 
 
 def _ensure_stub_dirs(project_type: str, repo_root: Path) -> list[str]:
     created: list[str] = []
     for rel in _layer_paths(project_type, repo_root):
+        # unit + integration stubs only; e2e is never created here
         path = repo_root / rel
         path.mkdir(parents=True, exist_ok=True)
         has_real_entries = any(entry.name != ".gitkeep" for entry in path.iterdir())
@@ -330,9 +330,11 @@ def _apply_mise_toml(project_type: str, repo_root: Path) -> bool:
 def _generate_mise_toml(project_type: str, repo_root: Path) -> str:
     named = _named_mise_tasks(project_type, repo_root)
     unit = _toml_string(named["unit"])
-    integ = _toml_string(named["integ"])
-    e2e = _toml_string(named["e2e"])
+    integration = _toml_string(named["integration"])
     doctor = _toml_string(named["doctor"])
+    e2e_line = ""
+    if "e2e" in named:
+        e2e_line = f"e2e = {_toml_string(named['e2e'])}\n"
     if project_type == "elixir_phoenix":
         return f"""# Mise configuration for Elixir/Phoenix project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
@@ -343,9 +345,8 @@ erlang = "latest"
 
 [tasks]
 unit = {unit}
-integ = {integ}
-e2e = {e2e}
-test = {{ depends = ["unit"] }}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "mix deps.get && mix deps.compile" }}
 lint = "mix credo --strict"
 format = "mix format"
@@ -369,12 +370,12 @@ python = "3.12"
 uv = "latest"
 
 [tasks]
-# integ/e2e: pytest exit 5 (no tests collected) is success for an empty stub.
-# Assertion failures still fail. unit has no || true — RED must be able to fail.
+# Runner also accepts `integ` as an alias (_resolve_verification_command).
+# Init writes `integration` so `mise integration` works.
+# Empty integration: pytest exit 5 (no tests collected) is success. Not || true.
 unit = {unit}
-integ = {integ}
-e2e = {e2e}
-test = {{ depends = ["unit"] }}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "uv sync --extra dev" }}
 lint = "uv run ruff check"
 format = "uv run ruff format"
@@ -399,9 +400,8 @@ node = "lts"
 
 [tasks]
 unit = {unit}
-integ = {integ}
-e2e = {e2e}
-test = {{ depends = ["unit"] }}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "{pkg_manager} install" }}
 lint = "{pkg_manager} run lint 2>/dev/null || echo 'No lint configured'"
 format = "{pkg_manager} run format 2>/dev/null || echo 'No formatter configured'"
@@ -424,9 +424,8 @@ rust = "stable"
 
 [tasks]
 unit = {unit}
-integ = {integ}
-e2e = {e2e}
-test = {{ depends = ["unit"] }}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "cargo fetch" }}
 lint = "cargo clippy -- -D warnings"
 format = "cargo fmt"
@@ -449,9 +448,8 @@ go = "latest"
 
 [tasks]
 unit = {unit}
-integ = {integ}
-e2e = {e2e}
-test = {{ depends = ["unit"] }}
+integration = {integration}
+{e2e_line}test = {{ depends = ["unit"] }}
 setup = {{ depends = ["hooks"], run = "go mod download" }}
 lint = "golangci-lint run 2>/dev/null || echo 'No linter configured'"
 format = "gofmt -w ."
@@ -466,6 +464,13 @@ dev = "go run ."
 clean = "go clean"
 """
     if project_type == "unknown":
+        e2e_block = ""
+        if "e2e" in named:
+            e2e_block = (
+                f"\n[tasks.e2e]\n"
+                f"run = {_toml_string(named['e2e'])}\n"
+                f'description = "End-to-end tests. Empty stub: pytest exit 5 is success."\n'
+            )
         return f"""# Mise configuration for an unclassified project
 # Scaffolded by /deviate-init — DeviaTDD scaffolding
 
@@ -473,14 +478,10 @@ clean = "go clean"
 run = {unit}
 description = "Fast hermetic unit tests"
 
-[tasks.integ]
-run = {integ}
-description = "Integration tests. Empty stub: pytest exit 5 is success."
-
-[tasks.e2e]
-run = {e2e}
-description = "End-to-end tests. Empty stub: pytest exit 5 is success."
-
+[tasks.integration]
+run = {integration}
+description = "Integration tests. Empty stub: pytest exit 5 is success. Runner also accepts integ as an alias."
+{e2e_block}
 [tasks.test]
 depends = ["unit"]
 description = "Back-compat alias of unit"
