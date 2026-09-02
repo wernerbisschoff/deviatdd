@@ -2391,7 +2391,7 @@ def _planned_revert_anchor(
         reset_to = (session.red_commit_sha or "").strip()
     elif session.red_commit_sha:
         reset_to = (
-            _resolve_pre_red_sha(root, session.red_commit_sha)
+            _resolve_revert_red_boundary(root, session)
             or session.red_commit_sha.strip()
         )
     else:
@@ -2672,6 +2672,46 @@ def _head_commit_subjects(root: Path) -> list[tuple[str, str]]:
     return rows
 
 
+def _red_anchor_kind(root: Path, stored_sha: str) -> str:
+    """Classify a stored RED SHA relative to the current branch (GH-168).
+
+    ``current`` — stored SHA is an ancestor of HEAD (use it).
+    ``rewritten`` — rebase/rewrite: a same-subject (or RED-phase) commit
+        exists on HEAD and is a different object (remap, then reset).
+        Checked before already-reverted so a replayed RED is remapped
+        even when the pre-rebase parent is still on this history.
+    ``already_reverted`` — HEAD was reset behind the stored SHA
+        (``HEAD`` is an ancestor of the stored object), the stored
+        object's parent is still an ancestor of HEAD (a later
+        ``docs(...): add judge feedback`` commit sits beside the
+        discarded RED), or the object is dangling after ``reset --hard``
+        and no rewritten RED is on the branch. A second ``revert_red``
+        must not raise ``ROLLBACK_STALE_RED_SHA``.
+    ``missing`` — stored SHA is off this history and cannot be remapped.
+    """
+    stored = (stored_sha or "").strip()
+    if not stored:
+        return "missing"
+    full = _git_full_sha(root, stored)
+    if full and _is_ancestor(root, full, "HEAD"):
+        return "current"
+    rewritten = _resolve_rewritten_sha(root, stored)
+    if (
+        rewritten
+        and (not full or rewritten != full)
+        and _is_ancestor(root, rewritten, "HEAD")
+    ):
+        return "rewritten"
+    if full and _is_ancestor(root, "HEAD", full):
+        return "already_reverted"
+    parent = _git_parent_sha(root, full) if full else ""
+    if parent and _is_ancestor(root, parent, "HEAD"):
+        return "already_reverted"
+    if not full:
+        return "already_reverted"
+    return "missing"
+
+
 def _resolve_rewritten_sha(root: Path, stored_sha: str) -> str:
     """Return the on-branch SHA that ``stored_sha`` became after a rewrite.
 
@@ -2731,6 +2771,34 @@ def _refresh_session_commit_anchors(root: Path, session: SessionState) -> bool:
             session.judge_red_commit_sha = resolved_judge
             changed = True
     return changed
+
+
+def _resolve_revert_red_boundary(root: Path, session: SessionState) -> str:
+    """Return the SHA ``revert_red`` should reset to, or empty.
+
+    Classify the stored SHA before remapping so a discarded RED is not
+    confused with a rebase rewrite. A rewritten RED remaps first so
+    ``red^`` is the current train's pre-RED (keeps unrelated commits).
+    When the stored SHA is already behind HEAD because a prior
+    ``revert_red`` discarded it (``already_reverted``), no-op onto
+    current HEAD. Never raise ``ROLLBACK_STALE_RED_SHA`` on that path.
+    """
+    stored = session.red_commit_sha.strip()
+    kind = _red_anchor_kind(root, stored)
+    if kind == "rewritten":
+        _refresh_session_commit_anchors(root, session)
+        stored = session.red_commit_sha.strip()
+        return _resolve_pre_red_sha(root, stored) if stored else ""
+    if kind == "already_reverted":
+        return _git_full_sha(root, "HEAD")
+    if not stored:
+        return ""
+    if kind == "current":
+        return _resolve_pre_red_sha(root, stored)
+    pre_red = _resolve_pre_red_sha(root, stored)
+    if pre_red and _is_ancestor(root, pre_red, "HEAD"):
+        return pre_red
+    return _git_full_sha(root, "HEAD")
 
 
 def _feedback_sha_rests_on_red_phase(root: Path, sha: str) -> bool:
@@ -2810,9 +2878,10 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
 
     Empty ``session.red_commit_sha`` is ``ROLLBACK_BOUNDARY_MISSING``.
     After a commit-train rebase the stored SHA may no longer be an
-    ancestor of HEAD: remap it by subject (or newest RED-phase commit)
-    via ``_refresh_session_commit_anchors``. If it is still not an
-    ancestor, raise ``ROLLBACK_STALE_RED_SHA`` and do not reset.
+    ancestor of HEAD: classify first, then remap a rewritten RED by
+    subject via ``_refresh_session_commit_anchors``. Already-reverted
+    and unresolvable SHAs raise ``ROLLBACK_STALE_RED_SHA`` and do not
+    reset — that refuse is ``revert_green`` only.
     """
     sha = session.red_commit_sha.strip()
     if not sha:
@@ -2821,9 +2890,12 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
             f"has no session.red_commit_sha to roll back to. "
             f"Refusing to fall back to HEAD~1."
         )
-    _refresh_session_commit_anchors(root, session)
-    sha = session.red_commit_sha.strip()
-    if _is_ancestor(root, sha, "HEAD"):
+    kind = _red_anchor_kind(root, sha)
+    if kind == "rewritten":
+        _refresh_session_commit_anchors(root, session)
+        sha = session.red_commit_sha.strip()
+        kind = _red_anchor_kind(root, sha)
+    if kind == "current" and _is_ancestor(root, sha, "HEAD"):
         return _git_full_sha(root, sha) or sha
     raise PhaseFailedError(
         f"ROLLBACK_STALE_RED_SHA: revert_green for {tid} stored "
@@ -4243,11 +4315,7 @@ def _apply_judge_verdict(
         rollback_attempts = 0
         try:
             if action == "revert_red":
-                pre_red = (
-                    _resolve_pre_red_sha(root, session.red_commit_sha)
-                    if session.red_commit_sha
-                    else ""
-                )
+                pre_red = _resolve_revert_red_boundary(root, session)
                 if pre_red:
                     rollback_attempts += 1
                     rollback = _execute_rollback(

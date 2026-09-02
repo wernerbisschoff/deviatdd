@@ -9,9 +9,12 @@ Pinned behaviour:
 - ``_refresh_session_commit_anchors`` remaps ``red_commit_sha`` (and
   ``judge_red_commit_sha``) to the rewritten SHA.
 - ``revert_green`` resets to the rewritten RED, not the stale SHA.
+- ``revert_red`` remaps a rewritten RED to the current-train parent
+  (keeps unrelated commits) and no-ops a second call after HEAD is
+  already behind the stored SHA.
 - The unrelated rebased commit remains on the active branch.
-- A stale SHA that cannot be remapped refuses the reset and leaves HEAD
-  where it is.
+- A stale SHA that cannot be remapped refuses ``revert_green`` and
+  leaves HEAD where it is.
 """
 
 from __future__ import annotations
@@ -221,6 +224,144 @@ class TestRefreshSessionCommitAnchors:
 
         assert changed is False
         assert session.red_commit_sha == red
+
+
+class TestRedAnchorKind:
+    """Rebase rewrite vs already-applied revert_red must not be confused."""
+
+    def test_kind_rewritten_after_rebase_and_already_reverted_after_reset(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _red_anchor_kind, _resolve_revert_red_boundary
+
+        shas = _rebase_red_green_onto_docs(tmp_git_repo)
+        assert _red_anchor_kind(tmp_git_repo, shas["stale_red"]) == "rewritten", (
+            "rebase must classify the pre-rewrite RED as rewritten, not already_reverted"
+        )
+        assert _red_anchor_kind(tmp_git_repo, shas["rewritten_red"]) == "current"
+
+        subprocess.run(
+            ["git", "reset", "--hard", shas["docs_sha"]],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        assert _is_ancestor(tmp_git_repo, "HEAD", shas["rewritten_red"])
+        assert (
+            _red_anchor_kind(tmp_git_repo, shas["rewritten_red"]) == "already_reverted"
+        )
+        session = SessionState(
+            current_phase="GREEN", red_commit_sha=shas["rewritten_red"]
+        )
+        boundary = _resolve_revert_red_boundary(tmp_git_repo, session)
+        assert _is_ancestor(tmp_git_repo, boundary, "HEAD"), (
+            "second revert_red must no-op or reset to the already-applied "
+            f"pre-RED; got {boundary!r}"
+        )
+
+
+class TestRevertRedAfterRebaseAndReplay:
+    """revert_red remaps a rewritten RED and does not raise after a prior reset."""
+
+    def test_revert_red_after_rebase_resets_to_rewritten_parent_and_keeps_docs(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _apply_judge_verdict
+
+        shas = _rebase_red_green_onto_docs(tmp_git_repo)
+        task, ledger = _seed_judge_ledger(tmp_git_repo)
+        session_path = _write_session(
+            tmp_git_repo,
+            red_commit_sha=shas["stale_red"],
+            judge_red_commit_sha=shas["stale_red"],
+            active_issue_id="001-001",
+        )
+        session = SessionState.load(session_path)
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="PASS",
+            task_id=_TASK_ID,
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_red",
+            rationale="RED test asserts the wrong contract",
+        )
+
+        with chdir(tmp_git_repo):
+            _apply_judge_verdict(
+                task,
+                ledger,
+                session,
+                session_path,
+                Console(),
+                manifest,
+                injected_diff="diff --git a/feat.py b/feat.py\n",
+            )
+
+        subjects = _log_oneline(tmp_git_repo)
+        assert _DOCS_SUBJECT in subjects, (
+            "revert_red after rebase must keep the unrelated docs commit; "
+            f"log={subjects!r}"
+        )
+        assert _RED_SUBJECT not in subjects
+        assert _GREEN_SUBJECT not in subjects
+        assert (tmp_git_repo / "FLOW.md").exists()
+        assert not (tmp_git_repo / "test_feat.py").exists()
+        assert not _is_ancestor(tmp_git_repo, shas["stale_red"], "HEAD")
+
+    def test_second_revert_red_after_reset_does_not_raise(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import PhaseFailedError, _apply_judge_verdict
+
+        red = _commit_file(tmp_git_repo, "test_feat.py", "assert False\n", _RED_SUBJECT)
+        _commit_file(
+            tmp_git_repo, "feat.py", "def feat():\n    return 1\n", _GREEN_SUBJECT
+        )
+        task, ledger = _seed_judge_ledger(tmp_git_repo)
+        session_path = _write_session(
+            tmp_git_repo, red_commit_sha=red, active_issue_id="001-001"
+        )
+        manifest = HandoverManifest(
+            phase="JUDGE",
+            status="PASS",
+            task_id=_TASK_ID,
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_red",
+            rationale="The next RED attempt must: author an honest test.",
+        )
+
+        def _apply() -> None:
+            session = SessionState.load(session_path)
+            with chdir(tmp_git_repo):
+                _apply_judge_verdict(
+                    task,
+                    ledger,
+                    session,
+                    session_path,
+                    Console(),
+                    manifest,
+                    injected_diff="",
+                )
+
+        _apply()
+        session = SessionState.load(session_path)
+        session.red_commit_sha = red
+        session.current_phase = "GREEN"
+        session.pending_judge_action = ""
+        session.judge_rejected = False
+        session.failure_kind = ""
+        session.save(session_path)
+        try:
+            _apply()
+        except PhaseFailedError as exc:
+            raise AssertionError(
+                "second revert_red after HEAD is already behind the stored "
+                f"RED must not raise; got {exc}"
+            ) from exc
+        assert _is_ancestor(tmp_git_repo, "HEAD", red) or not _is_ancestor(
+            tmp_git_repo, red, "HEAD"
+        )
 
 
 class TestRevertGreenAfterRebase:
