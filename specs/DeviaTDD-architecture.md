@@ -709,7 +709,10 @@ The orchestrator must maintain and enforce these structural constraints across a
 10. **The Issue-Scoped Resolution & Sweep:** task-resolution across micro, e2e, and meso is
     **issue-scoped**, not global. The active issue is resolved from `session.active_issue_id`,
     falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against
-    `specs/issues.jsonl`. A leftover session id that conflicts with a known feature-branch
+    `specs/issues.jsonl`. A `-rN` suffix on the branch slug (a second worktree for the same
+    issue, created by `deviate specify <id> --second-worktree`) is stripped before the ledger
+    lookup; the exact slug always wins when both forms exist. A leftover session id that
+    conflicts with a known feature-branch
     issue yields to the branch, even when the leftover issue still has a `tasks.md` in this
     checkout. The worktree `.deviate/session.json` is rewritten to that branch issue. An
     unresolved non-`feat/` branch keeps a valid session id. This fallback is shared by

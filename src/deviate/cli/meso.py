@@ -191,6 +191,28 @@ def _next_claim_slug(epic_slug: str, issue_slug: str, repo_path: Path) -> str | 
     return f"{next_n:03d}-{rest}"
 
 
+def _next_second_slug(epic_slug: str, issue_slug: str, repo_path: Path) -> str:
+    """Return ``<issue_slug>-rN`` with N one past every existing local
+    ``feat/<epic>/<issue_slug>-rN`` branch (N starts at 2)."""
+    base = f"feat/{epic_slug}/{issue_slug}"
+    prefix_len = len(base) + 1  # +1 for the '-' before the suffix
+    result = subprocess.run(
+        ["git", "for-each-ref", "refs/heads/", "--format=%(refname:short)"],
+        cwd=repo_path,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    numbers = [1]
+    for ref in result.stdout.splitlines():
+        if ref.startswith(base + "-"):
+            m = re.fullmatch(r"r(\d+)", ref[prefix_len:])
+            if m:
+                numbers.append(int(m.group(1)))
+    return f"{issue_slug}-r{max(numbers) + 1}"
+
+
 def _print_push_stderr(stderr: str) -> None:
     if stderr:
         console.print(f"[yellow]PUSH_STDERR[/] {stderr}")
@@ -598,15 +620,24 @@ def _try_claim_issue(
     dry_run: bool = False,
     local: bool = False,
     base_branch: str | None = None,
+    second: bool = False,
 ) -> dict | None:
     """Attempt to claim a single issue end-to-end.
 
     Returns a metadata dict on success, ``None`` if the issue cannot be
     claimed (branch on remote, worktree error, or push race).
+
+    With ``second=True`` the claim re-opens the SAME issue in an additional
+    worktree: branch ``feat/<epic>/<slug>-rN`` (N auto-increments from
+    existing local branches), start point HEAD so the specs committed on the
+    first worktree's branch ride along. No remote-collision guard — the
+    base branch already exists by definition.
     """
     resolved_id = issue.issue_id
     epic_slug = _resolve_bucket_dir(issue.source_file)
     issue_slug = _source_stem(issue.source_file)
+    if second:
+        issue_slug = _next_second_slug(epic_slug, issue_slug, repo_root)
     branch = f"feat/{epic_slug}/{issue_slug}"
     spec_target_rel = f"specs/{epic_slug}/{issue_slug}/spec.md"
 
@@ -615,8 +646,12 @@ def _try_claim_issue(
     console.print(f"[green]BRANCH[/] {branch}")
 
     # ── Remote branch check (non-dry-run, non-local only) ──────────────
-    if local:
-        console.print("[yellow]LOCAL_ONLY[/] skipping remote check")
+    if local or second:
+        console.print(
+            "[yellow]LOCAL_ONLY[/] skipping remote check"
+            if local
+            else "[yellow]SECOND_WORKTREE[/] skipping remote check"
+        )
     elif not dry_run and remote is not None:
         if branch_exists_on_remote(branch, repo=repo_root, remote=remote):
             console.print(
@@ -635,7 +670,7 @@ def _try_claim_issue(
         # chosen "already claimed" signal. NOTE: this can false-positive on a
         # manual `git checkout -b` that pre-dated any claim; the user picked
         # this semantic explicitly for the no-remote workflow.
-        if local:
+        if local and not second:
             existing_path = find_worktree_for_branch(branch, repo=repo_root)
             if existing_path is not None:
                 console.print(
@@ -763,6 +798,7 @@ def _specify_pre(
     dry_run: bool = False,
     local: bool = False,
     base_branch: str | None = None,
+    second: bool = False,
 ) -> dict | None:
     ledger_path = _resolve_specs_root() / "issues.jsonl"
     if issue_id is None:
@@ -778,8 +814,9 @@ def _specify_pre(
         ledger_path=ledger_path,
         force=force,
         dry_run=dry_run,
-        local=_effective_local(local),
+        local=_effective_local(local) if not second else True,
         base_branch=base_branch,
+        second=second,
     )
     if result is None:
         console.print(f"[red]CLAIM_FAILED[/] could not claim {issue_id}")
@@ -2146,6 +2183,15 @@ def specify(
     issue: str | None = typer.Option(
         None, "--issue", help="Issue ID for pre subcommand"
     ),
+    second: bool = typer.Option(
+        False,
+        "--second-worktree",
+        help=(
+            "Re-open the SAME issue in an additional worktree: branch "
+            "feat/<epic>/<slug>-rN (N auto-increments), specs inherited from "
+            "the existing branch. Requires the issue to be claimed already."
+        ),
+    ),
 ) -> None:
     """Claim an issue and create its worktree.
 
@@ -2155,6 +2201,10 @@ def specify(
     advance session state and does NOT run plan or tasks. To advance from
     the claim, run ``deviate plan pre`` or invoke the ``/deviate-plan`` slash
     command inside the new worktree.
+
+    With ``--second-worktree``, re-open an already-claimed issue in an
+    additional worktree (branch ``feat/<epic>/<slug>-rN``) instead of
+    claiming the next issue.
     """
     if issue_id == "pre":
         _specify_pre(
@@ -2163,6 +2213,7 @@ def specify(
             dry_run=dry_run,
             local=local,
             base_branch=base_branch,
+            second=second,
         )
     elif issue_id == "post":
         _specify_post(force=force)
@@ -2180,6 +2231,7 @@ def specify(
             dry_run=dry_run,
             local=local,
             base_branch=base_branch,
+            second=second,
         )
     else:
         _specify_pre(
@@ -2188,6 +2240,7 @@ def specify(
             dry_run=dry_run,
             local=local,
             base_branch=base_branch,
+            second=second,
         )
 
 

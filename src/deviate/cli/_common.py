@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 
 from deviate.core._shared import git_env as _git_env
+from deviate.core._shared import issue_slug_variants
 from deviate.core.constitution import resolve_constitution, validate_constitution
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import TransitionViolationError
@@ -159,6 +160,7 @@ def _build_slim_prompt(phase: str, contract: dict[str, str]) -> str:
 # Branch → issue resolution (shared by micro, html, future commands)
 # ---------------------------------------------------------------------------
 
+
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
 
 
@@ -183,15 +185,17 @@ def resolve_issue_id_from_branch(root: Path) -> str | None:
     m = _BRANCH_SLUG_RE.match(branch)
     if not m:
         return None
-    bucket, slug = m.group(1), m.group(2)
-    target = f"{bucket}/issues/{slug}.md"
+    bucket = m.group(1)
     ledger_path = root / "specs" / "issues.jsonl"
     if not ledger_path.exists():
         return None
     from deviate.state.ledger import _read_ledger
 
-    for rec in _read_ledger(ledger_path):
-        src = rec.get("source_file", "")
-        if src.endswith(target):
-            return rec.get("issue_id")
+    records = _read_ledger(ledger_path)
+    for slug in issue_slug_variants(m.group(2)):
+        target = f"{bucket}/issues/{slug}.md"
+        for rec in records:
+            src = rec.get("source_file", "")
+            if src.endswith(target):
+                return rec.get("issue_id")
     return None

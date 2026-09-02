@@ -22,7 +22,10 @@ import typer
 import yaml
 from rich.console import Console
 
-from deviate.core._shared import JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS
+from deviate.core._shared import (
+    JUDGE_FEEDBACK_COMMIT_TIMEOUT_SECONDS,
+    issue_slug_variants,
+)
 from deviate.core.agent import (
     BACKEND_COMMANDS,
     AgentBackend,
@@ -1075,15 +1078,16 @@ def _resolve_issue_id_from_branch(root: Path) -> str | None:
     if not m:
         return None
     bucket = m.group(1)
-    slug = m.group(2)
-    target = f"{bucket}/issues/{slug}.md"
     ledger_path = root / "specs" / "issues.jsonl"
     if not ledger_path.exists():
         return None
-    for rec in _read_ledger_records(ledger_path):
-        src = rec.get("source_file", "")
-        if target in src:
-            return rec.get("issue_id")
+    records = _read_ledger_records(ledger_path)
+    for slug in issue_slug_variants(m.group(2)):
+        target = f"{bucket}/issues/{slug}.md"
+        for rec in records:
+            src = rec.get("source_file", "")
+            if target in src:
+                return rec.get("issue_id")
     return None
 
 

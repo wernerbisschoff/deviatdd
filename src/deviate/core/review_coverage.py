@@ -10,6 +10,8 @@ from typing import Any
 
 from deviate.core.issues import resolve_issue_artifact_path
 from deviate.core.judge_evidence import _AC_TOKEN, resolve_task_ac_tokens
+
+from deviate.core._shared import issue_slug_variants
 from deviate.state.ledger import _read_ledger
 
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
@@ -57,16 +59,19 @@ def resolve_review_issue_id(
     if match is None:
         return None
     root = repo_path or Path.cwd()
-    target = f"{match.group(1)}/issues/{match.group(2)}.md"
+    bucket = match.group(1)
     ledger = root / "specs" / "issues.jsonl"
     if not ledger.exists():
         return None
-    for rec in _read_ledger(ledger):
-        source = rec.get("source_file", "")
-        if isinstance(source, str) and source.endswith(target):
-            issue_id = rec.get("issue_id")
-            if isinstance(issue_id, str) and issue_id:
-                return issue_id
+    records = _read_ledger(ledger)
+    for slug in issue_slug_variants(match.group(2)):
+        target = f"{bucket}/issues/{slug}.md"
+        for rec in records:
+            source = rec.get("source_file", "")
+            if isinstance(source, str) and source.endswith(target):
+                issue_id = rec.get("issue_id")
+                if isinstance(issue_id, str) and issue_id:
+                    return issue_id
     return None
 
 
