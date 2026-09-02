@@ -215,12 +215,12 @@ class TestJudgePost:
             f'rationale: "{rationale}"\n'
         )
 
-    def _invoke_judge_post(self, root: Path, yaml_text: str):
+    def _invoke_judge_post(self, root: Path, yaml_text: str, *extra: str):
         """Write the handover outside the repo and invoke ``judge post``."""
         manifest = root.parent / "judge-handover.yaml"
         manifest.write_text(yaml_text, encoding="utf-8")
         with chdir(root):
-            return runner.invoke(cli, ["judge", "post", str(manifest)])
+            return runner.invoke(cli, ["judge", "post", str(manifest), *extra])
 
     def test_manual_overlay_names_revert_and_feedback(self) -> None:
         from importlib.resources import files
@@ -261,6 +261,7 @@ class TestJudgePost:
                 next_action="revert_green",
                 rationale="missing error path",
             ),
+            "--yes",
         )
 
         assert result.exit_code == 0, result.output
@@ -300,6 +301,7 @@ class TestJudgePost:
                 next_action="revert_red",
                 rationale="RED test asserts the wrong contract",
             ),
+            "--yes",
         )
 
         assert result.exit_code == 0, result.output
@@ -406,6 +408,186 @@ class TestJudgePost:
             result = runner.invoke(cli, ["judge", "post"], input=yaml_text)
         assert result.exit_code == 0, result.output
         assert "continue_refactor" in result.output, result.output
+
+
+class TestJudgePostRevertConfirm:
+    """Manual ``judge post`` must not reset until the operator confirms."""
+
+    _TASK_ID = TestJudgePost._TASK_ID
+    _ISSUE_ID = TestJudgePost._ISSUE_ID
+
+    def _rev_parse(self, root: Path, rev: str = "HEAD") -> str:
+        return TestJudgePost._rev_parse(self, root, rev)
+
+    def _commit(self, root: Path, message: str) -> None:
+        return TestJudgePost._commit(self, root, message)
+
+    def _seed(self, root: Path) -> tuple[str, str, Path]:
+        return TestJudgePost._seed_judge_post_repo(self, root)
+
+    def _handover(self, *, next_action: str = "revert_green") -> str:
+        return TestJudgePost._handover_yaml(
+            self,
+            verdict="COMPLIANCE_VIOLATION",
+            next_action=next_action,
+            rationale="missing error path",
+        )
+
+    def _invoke(self, root: Path, yaml_text: str, *extra: str):
+        return TestJudgePost._invoke_judge_post(self, root, yaml_text, *extra)
+
+    def _recovery_ref(self, attempt: int = 1) -> str:
+        from deviate.cli.micro import _recovery_branch_for
+
+        return _recovery_branch_for(self._TASK_ID, attempt)
+
+    def test_non_tty_without_yes_leaves_head_and_requires_confirm(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, green_sha, _ledger = self._seed(tmp_git_repo)
+        result = self._invoke(tmp_git_repo, self._handover())
+
+        assert result.exit_code != 0, result.output
+        assert "JUDGE_REVERT_CONFIRM_REQUIRED" in result.output, result.output
+        assert f"head_sha={green_sha}" in result.output, result.output
+        assert "reset_to=" in result.output, result.output
+        assert f"recovery_ref={self._recovery_ref()}" in result.output, result.output
+        assert self._rev_parse(tmp_git_repo) == green_sha
+        assert (tmp_git_repo / "impl.py").exists()
+        refs = subprocess.run(
+            ["git", "rev-parse", "--verify", self._recovery_ref()],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        assert refs.returncode != 0, (
+            "non-TTY confirm-required must not create the recovery ref"
+        )
+
+    def test_yes_reverts_logs_anchor_and_keeps_recovery_ref(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha, green_sha, ledger = self._seed(tmp_git_repo)
+        recovery_ref = self._recovery_ref()
+        result = self._invoke(tmp_git_repo, self._handover(), "--yes")
+
+        assert result.exit_code == 0, result.output
+        assert f"head_sha={green_sha}" in result.output, result.output
+        assert f"reset_to={red_sha}" in result.output, result.output
+        assert f"recovery_ref={recovery_ref}" in result.output, result.output
+        assert "git switch" in result.output, result.output
+        assert "git stash" not in result.output.lower(), result.output
+        assert not (tmp_git_repo / "impl.py").exists()
+        assert (tmp_git_repo / "feature.py").exists()
+
+        preserved = self._rev_parse(tmp_git_repo, recovery_ref)
+        assert preserved == green_sha
+        assert f"head_sha={preserved}" in result.output
+
+        from deviate.core.run_logger import read_verdicts_records
+
+        rows = [
+            row
+            for row in read_verdicts_records(
+                tmp_git_repo, self._ISSUE_ID, self._TASK_ID
+            )
+            if row.get("event") != "cycle_end"
+        ]
+        assert rows, "expected a reject verdicts JSONL row after --yes"
+        row = rows[-1]
+        assert row["head_sha"] == green_sha
+        assert row["reset_to"] == red_sha
+        assert row["recovery_ref"] == recovery_ref
+        assert row["head_sha"] == self._rev_parse(
+            tmp_git_repo, str(row["recovery_ref"])
+        )
+        task_rows = [
+            json.loads(line)
+            for line in ledger.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        persisted = [item for item in task_rows if item.get("judge_action")]
+        assert persisted, f"expected a post-reset tasks.jsonl row, got {task_rows!r}"
+        task_row = persisted[-1]
+        assert task_row["head_sha"] == green_sha
+        assert task_row["reset_to"] == red_sha
+        assert task_row["recovery_ref"] == recovery_ref
+        assert task_row["head_sha"] == self._rev_parse(
+            tmp_git_repo, str(task_row["recovery_ref"])
+        )
+
+        subject = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert "add judge feedback" in subject, subject
+        assert self._rev_parse(tmp_git_repo) != green_sha
+
+    def test_revert_flag_matches_yes(self, tmp_git_repo: Path) -> None:
+        _red_sha, green_sha, _ledger = self._seed(tmp_git_repo)
+        recovery_ref = self._recovery_ref()
+        result = self._invoke(tmp_git_repo, self._handover(), "--revert")
+
+        assert result.exit_code == 0, result.output
+        assert self._rev_parse(tmp_git_repo, recovery_ref) == green_sha
+        assert not (tmp_git_repo / "impl.py").exists()
+
+    def test_auto_apply_judge_verdict_reverts_without_prompt(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _apply_judge_verdict
+        from deviate.core.agent import HandoverManifest
+        from rich.console import Console
+        import inspect
+        import io
+
+        red_sha, green_sha, ledger_path = self._seed(tmp_git_repo)
+        sig = inspect.signature(_apply_judge_verdict)
+        assert sig.parameters["assume_yes"].default is True
+        from deviate.cli.micro import _run_judge_phase
+
+        assert "assume_yes=True" in inspect.getsource(_run_judge_phase)
+
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = SessionState.load(session_path)
+        manifest = HandoverManifest.model_construct(
+            phase="JUDGE",
+            status="FAIL",
+            task_id=self._TASK_ID,
+            verdict="COMPLIANCE_VIOLATION",
+            next_action="revert_green",
+            rationale="missing error path",
+        )
+        buf = io.StringIO()
+        with chdir(tmp_git_repo):
+            _apply_judge_verdict(
+                {
+                    "id": self._TASK_ID,
+                    "issue_id": self._ISSUE_ID,
+                    "description": "JUDGE phase task",
+                    "status": "GREEN",
+                    "execution_mode": "TDD",
+                },
+                ledger_path,
+                session,
+                session_path,
+                Console(file=buf, force_terminal=False, width=200),
+                manifest,
+                injected_diff="",
+            )
+        output = buf.getvalue()
+        assert "JUDGE_REVERT_CONFIRM_REQUIRED" not in output
+        assert not (tmp_git_repo / "impl.py").exists()
+        recovery_ref = self._recovery_ref()
+        assert self._rev_parse(tmp_git_repo, recovery_ref) == green_sha
+        session = SessionState.load(session_path)
+        assert session.pending_judge_action == "revert_green"
+        assert session.red_commit_sha != red_sha or session.current_phase == "GREEN"
 
 
 class TestJudgePromptDiffSection:
