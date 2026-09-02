@@ -229,7 +229,7 @@ against protected modules declared in `spec.md` `Module:` declarations.
 
 Manual phase execution is supported via individual `pre`/`post` subcommands:
 `deviate red pre/post`, `deviate green pre/post`, `deviate judge pre/post`, etc. These are used for interactive
-or agent-driven TDD where full automation is not desired. `deviate judge post [<manifest>]` reads the JUDGE handover and applies the same rollback / `tasks.md` feedback / session-ledger updates as `_run_judge_phase` (`_apply_judge_verdict`); auto `micro run` does not shell out to the new CLI.
+or agent-driven TDD where full automation is not desired. `deviate judge post [<manifest>] [--yes] [--revert]` reads the JUDGE handover and applies the same rollback / `tasks.md` feedback / session-ledger updates as `_run_judge_phase` (`_apply_judge_verdict`) **after operator confirm** on `revert_green` / `revert_red`: print `head_sha` / `reset_to` / `recovery_ref`, leave the failing tree in place, TTY `typer.confirm` or non-TTY `JUDGE_REVERT_CONFIRM_REQUIRED`. `--yes` / `--revert` skip the prompt. Auto `_apply_judge_verdict(..., assume_yes=True)` still reverts immediately; `micro run` does not shell out to the new CLI. After revert, `git switch <recovery_ref>` inspects the discarded commit (`_preserve_agent_work`; no stash).
 
 All `pre` subcommands accept `--json` (emit the phase contract as JSON to stdout) and
 `--quiet` (suppress rich console diagnostic output). These flags enable programmatic
@@ -1045,8 +1045,11 @@ reason string actually used), `feedback_source`, `violations`
 `evaluation` if present, else `null`), `failure_kind` (session
 at judge time), `streak` (consecutive same-blast rejects),
 `loop` (`true` when `streak >= 2`). On a revert that rolls back:
-`head_sha`, `reset_to`, `recovery_ref` (same values as the
-post-reset `tasks.jsonl` row). When the cycle leaves, one
+`head_sha`, `reset_to`, `recovery_ref` from `_execute_rollback`'s
+`_RollbackTrace` (same values as the post-reset `tasks.jsonl`
+row). A `{"event":"revert_pending", ...}` row is written when
+manual `judge post` shows the confirm prompt but does not reset.
+Event rows do not count toward `streak`. When the cycle leaves, one
 `{"event":"cycle_end", ...}` object is appended to the same
 file with `completed`, `phase_decisions`, `reject_count`,
 `last_blast`, and `max_streak`. Do not put the full prompt or raw
