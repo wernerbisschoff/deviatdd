@@ -158,6 +158,7 @@ class TaskRecord(BaseModel):
         "FAILED",
     ] = "PENDING"
     execution_mode: Literal["TDD", "DIRECT", "EXECUTE", "E2E", "IMMEDIATE"] = "TDD"
+    test_strategy: Literal["unit", "integration", "e2e"] | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     security_profile: SecurityProfile | None = None

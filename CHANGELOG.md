@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **TDD tasks are stamped `unit` | `integration` | `e2e`.** Tasks / `/deviate-tasks` no longer emit `Sociable_Unit` / `Solitary_Unit` as runner values. Sociable vs solitary stays a RED style rule (`prefer-sociable`, `mock-only-externals`) inside unit tests and must still run with the DB down under `mise unit`. One TDD task = one layer = one RED; GREEN cannot edit tests and shares the same resolved verification command. RED writes only the stamped layer. Verification is a ladder: unit → unit only; integration → unit (if it exists) then integ; e2e → unit then integ then e2e (skip missing cheaper rungs; never invent integ/e2e). An integration-stamped task with no integ suite fails loud (`VERIFICATION_UNRESOLVED`) at pre — it does not fall back to `mise test`. Closing sweep: user-facing + e2e exists → `[E2E]` Verification_Batch with the full existing ladder; else if integ exists → `[VERIFY]` unit-if-exists + integ; else no extra sweep. Never emit empty e2e files; never require integ to be set up. Pinned by `tests/test_cli/test_mise_verification.py`, `tests/test_meso/test_auto_prompt_templates.py`, and `tests/test_core/test_tasks_ledger.py`.
+
 ### Removed
 
 - **Product layer is gone.** `/deviate-flows`, `/deviate-architecture`, `/deviate-release`, the optional `product` pack, `deviate flows sync`, `deviate inspect flows coverage`, `specs/_product/`, `flow_refs`, and the flow ledger API (`FlowRecord`, `seed_flow_ledger`, …) are deleted — not optional, not tombstoned. Three layers remain: Macro, Meso, Micro. Shard still writes User Stories + ATDD on the issue; RED encodes those scenarios as failing tests. GREEN still cannot edit tests. Historical `issues.jsonl` rows that carry `flow_refs` still parse (the field is ignored). Constitution 0.10.0 records the removal; 0.6.0 / 0.7.0 stay as history.
