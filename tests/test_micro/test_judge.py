@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import pytest
 import subprocess
 from contextlib import chdir
@@ -4298,3 +4299,345 @@ class TestJudgePromptStripsJudgeFeedback:
         assert self._RATIONALE in injected
         assert "AC-PLAN-001" in injected
         assert "**Judge Feedback**" not in injected
+
+
+# ---------------------------------------------------------------------------
+# GH-167: malformed JUDGE PASS (string evidence / parse_errors) is a JUDGE
+# execution failure, not a compliance rejection of GREEN.
+# Constitution §3: pytest under tests/; git isolation via tmp_git_repo +
+# _git_env(); mock _invoke_agent and _run_pytest.
+# ---------------------------------------------------------------------------
+
+_GH167_PASS_PROSE = (
+    "The migration and versioned aggregate satisfy the assigned "
+    "schema and separation scenarios."
+)
+
+
+def _string_evidence_pass_yaml(task_id: str = _GATE_TASK_ID) -> str:
+    """COMPLIANCE_PASS + continue_refactor with string evidence items."""
+    return (
+        "phase: JUDGE\n"
+        f'status: "PASS"\n'
+        f'task_id: "{task_id}"\n'
+        "next_action: continue_refactor\n"
+        'verdict: "COMPLIANCE_PASS"\n'
+        "evidence:\n"
+        '  - "The migration satisfies AC-PLAN-001"\n'
+        '  - "versioned aggregate satisfies AC-PLAN-002"\n'
+        "train_feedback: |\n"
+        f"  {_GH167_PASS_PROSE}\n"
+        "evaluation:\n"
+        "  security_checks: pass\n"
+    )
+
+
+def _recovered_string_evidence_manifest(
+    task_id: str = _GATE_TASK_ID,
+) -> HandoverManifest:
+    """Parse the GH-167 string-evidence YAML the same way production does."""
+    from deviate.core.agent import AgentBackend
+
+    manifest = AgentBackend.parse_output(_string_evidence_pass_yaml(task_id), "cli")
+    assert manifest.parse_errors, (
+        "string evidence items must recover with parse_errors, "
+        f"got {manifest.parse_errors!r}"
+    )
+    assert any(
+        "EvidenceItem" in err or "evidence" in err for err in manifest.parse_errors
+    )
+    assert manifest.verdict == "COMPLIANCE_PASS"
+    assert manifest.next_action == "continue_refactor"
+    return manifest
+
+
+def _missing_keys_evidence_yaml(task_id: str = _GATE_TASK_ID) -> str:
+    """Evidence objects that omit required EvidenceItem keys."""
+    return (
+        "phase: JUDGE\n"
+        f'status: "PASS"\n'
+        f'task_id: "{task_id}"\n'
+        "next_action: continue_refactor\n"
+        'verdict: "COMPLIANCE_PASS"\n'
+        "evidence:\n"
+        "  - ac: AC-PLAN-001\n"
+        "    test_path: tests/example.py\n"
+        "train_feedback: |\n"
+        f"  {_GH167_PASS_PROSE}\n"
+    )
+
+
+def _run_tdd_judge_invokes(
+    repo: Path,
+    manifests: list[HandoverManifest],
+    red_sha: str,
+) -> tuple[SessionState, str, Path, MagicMock]:
+    """Drive ``_run_judge_phase`` with an ordered list of invoke returns."""
+    from deviate.cli.micro import _run_judge_phase
+    import io
+
+    task = {
+        "id": _GATE_TASK_ID,
+        "issue_id": _GATE_ISSUE_ID,
+        "description": "GH-167 malformed JUDGE manifest must not revert GREEN",
+        "status": "GREEN",
+        "execution_mode": "TDD",
+    }
+    ledger_path = repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+    session = SessionState(
+        current_phase="GREEN",
+        red_commit_sha=red_sha,
+        active_issue_id=_GATE_ISSUE_ID,
+    )
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=200)
+    invoke = MagicMock(side_effect=[(manifest, "") for manifest in manifests])
+    mock_pytest = patch(
+        "deviate.cli.micro._run_pytest",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        ),
+    )
+    with (
+        chdir(repo),
+        patch("deviate.cli.micro._invoke_agent", invoke),
+        patch("deviate.cli.micro._build_auto_prompt", return_value="test prompt"),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        mock_pytest,
+    ):
+        session_out = _run_judge_phase(
+            task, ledger_path, session, session_path, console
+        )
+    return session_out, buf.getvalue(), ledger_path, invoke
+
+
+def _seed_gh167_judge_post_repo(repo: Path) -> tuple[str, str, Path]:
+    """Seed RED+GREEN with AC-PLAN tokens and a GREEN ledger row for judge post."""
+    red_sha = _seed_red_green(repo)
+    green_sha = _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
+    ledger_path = repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+    _write_ledger(
+        ledger_path,
+        _make_task_record(
+            task_id=_GATE_TASK_ID,
+            issue_id=_GATE_ISSUE_ID,
+            status="GREEN",
+        ),
+    )
+    session = SessionState(
+        active_issue_id=_GATE_ISSUE_ID,
+        current_phase="GREEN",
+        red_commit_sha=red_sha,
+    )
+    session.save(repo / ".deviate" / "session.json")
+    return red_sha, green_sha, ledger_path
+
+
+def _invoke_judge_post_yaml(root: Path, yaml_text: str):
+    manifest = root.parent / "judge-handover-gh167.yaml"
+    manifest.write_text(yaml_text, encoding="utf-8")
+    with chdir(root):
+        return runner.invoke(cli, ["judge", "post", str(manifest)])
+
+
+def _assert_green_preserved(repo: Path, green_sha: str) -> None:
+    head = _gate_git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert head == green_sha, (
+        f"GH-167: GREEN commit must stay HEAD; expected {green_sha}, got {head}"
+    )
+    assert (repo / _GATE_IMPL_PATH).exists(), (
+        "GH-167: GREEN implementation must remain on disk"
+    )
+    tasks_md = repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
+    body = tasks_md.read_text(encoding="utf-8")
+    assert _GH167_PASS_PROSE not in body, (
+        f"GH-167: must not append pass-prose as Judge Feedback; got {body!r}"
+    )
+
+
+class TestJudgeManifestInvalidKeepsGreen:
+    """GH-167: schema/parse failures retry or refuse; they do not revert GREEN."""
+
+    def test_string_evidence_parse_errors_keep_green_and_retry_or_invalid(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import PhaseFailedError
+
+        red_sha = _seed_red_green(tmp_git_repo)
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        malformed = _recovered_string_evidence_manifest()
+        assert malformed.parse_errors
+        assert not malformed.evidence
+
+        with pytest.raises(PhaseFailedError, match="JUDGE_MANIFEST_INVALID"):
+            _run_tdd_judge_invokes(
+                tmp_git_repo,
+                [malformed, malformed, malformed],
+                red_sha,
+            )
+
+        _assert_green_preserved(tmp_git_repo, green_sha)
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.pending_judge_action != "revert_green", (
+            f"GH-167: action must not become revert_green; "
+            f"got {session.pending_judge_action!r}"
+        )
+        assert session.judge_rejected is False
+
+    def test_string_evidence_retries_then_accepts_valid_pass(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
+        malformed = _recovered_string_evidence_manifest()
+        valid = _gate_manifest(
+            next_action="continue_refactor",
+            evidence=[_gate_evidence()],
+        )
+        session, _, ledger, invoke = _run_tdd_judge_invokes(
+            tmp_git_repo,
+            [malformed, malformed, valid],
+            red_sha,
+        )
+        assert invoke.call_count == 3, (
+            f"GH-167: JUDGE must retry on the same GREEN tree; "
+            f"got {invoke.call_count} invokes"
+        )
+        _assert_green_preserved(tmp_git_repo, green_sha)
+        _assert_forward(
+            session,
+            ledger,
+            action="continue_refactor",
+            completed=False,
+        )
+
+    def test_judge_post_string_evidence_refuses_without_reset(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, green_sha, _ledger = _seed_gh167_judge_post_repo(tmp_git_repo)
+        result = _invoke_judge_post_yaml(tmp_git_repo, _string_evidence_pass_yaml())
+        assert result.exit_code != 0, result.output
+        assert "JUDGE_MANIFEST_INVALID" in result.output, result.output
+        _assert_green_preserved(tmp_git_repo, green_sha)
+        session = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert session.pending_judge_action != "revert_green", (
+            f"judge post must not reset; pending={session.pending_judge_action!r}"
+        )
+
+    def test_judge_post_missing_evidence_keys_refuses_without_reset(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _red_sha, green_sha, _ledger = _seed_gh167_judge_post_repo(tmp_git_repo)
+        result = _invoke_judge_post_yaml(tmp_git_repo, _missing_keys_evidence_yaml())
+        assert result.exit_code != 0, result.output
+        assert "JUDGE_MANIFEST_INVALID" in result.output, result.output
+        _assert_green_preserved(tmp_git_repo, green_sha)
+
+    def test_valid_compliance_violation_still_reverts_green(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="revert_green",
+                verdict="COMPLIANCE_VIOLATION",
+                evidence=None,
+                train_feedback=(
+                    "The next GREEN attempt must: implement increment for AC-PLAN-001."
+                ),
+            ),
+            red_sha,
+        )
+        _assert_reverted_to_red(session, ledger)
+        assert not (tmp_git_repo / _GATE_IMPL_PATH).exists(), (
+            "valid COMPLIANCE_VIOLATION must still discard GREEN"
+        )
+
+    def test_valid_pass_structured_ac_plan_continues_refactor(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, _, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="continue_refactor",
+                evidence=[_gate_evidence()],
+            ),
+            red_sha,
+        )
+        _assert_forward(
+            session,
+            ledger,
+            action="continue_refactor",
+            completed=False,
+        )
+        assert (tmp_git_repo / _GATE_IMPL_PATH).exists()
+
+
+class TestJudgePromptEvidenceExamples:
+    """GH-167: JUDGE examples must show AC-PLAN evidence objects, not strings."""
+
+    def _auto_text(self) -> str:
+        from importlib.resources import files
+
+        return (
+            files("deviate.prompts.auto")
+            .joinpath("judge.md")
+            .read_text(encoding="utf-8")
+        )
+
+    def _manual_text(self) -> str:
+        from importlib.resources import files
+
+        return (
+            files("deviate.prompts.commands")
+            .joinpath("deviate-judge.md")
+            .read_text(encoding="utf-8")
+        )
+
+    def test_auto_and_manual_examples_use_ac_plan_objects(self) -> None:
+        for label, text in (
+            ("auto/judge.md", self._auto_text()),
+            ("commands/deviate-judge.md", self._manual_text()),
+        ):
+            assert 'ac: "AC-PLAN-001"' in text, (
+                f'{label} must show ac: "AC-PLAN-001" evidence objects'
+            )
+            assert "test_path:" in text, f"{label} must show test_path"
+            assert "test_quote:" in text, f"{label} must show test_quote"
+            assert "impl_path:" in text, f"{label} must show impl_path"
+            assert "impl_quote:" in text, f"{label} must show impl_quote"
+            assert "verdict:" in text, f"{label} must show verdict"
+            assert "next_action:" in text, f"{label} must show next_action"
+            assert "train_feedback:" in text, f"{label} must show train_feedback"
+            assert "security_checks" in text, (
+                f"{label} must show evaluation.security_checks"
+            )
+            assert not re.search(
+                r"^evidence:\n(?:  - \"[^\"]+\"\n)+",
+                text,
+                re.MULTILINE,
+            ), f"{label} must not show string evidence items as the happy path"
+
+    def test_judge_evaluation_criteria_say_ac_plan_not_ac_nn(self) -> None:
+        text = self._auto_text()
+        criteria = text.split("<evaluation_criteria>")[1].split(
+            "</evaluation_criteria>"
+        )[0]
+        constraints = text.split("<constraints>")[1].split("</constraints>")[0]
+        for section_name, section in (
+            ("evaluation_criteria", criteria),
+            ("constraints", constraints),
+        ):
+            assert "AC-PLAN-NNN" in section, (
+                f"{section_name} must name AC-PLAN-NNN for JUDGE evidence"
+            )
+            assert "acceptance criteria (AC-NN)" not in section, (
+                f"{section_name} must not use AC-NN for JUDGE evidence"
+            )
+            assert "validate the AC-NN" not in section, (
+                f"{section_name} must not cite AC-NN as the evidence token"
+            )
