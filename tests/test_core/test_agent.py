@@ -604,6 +604,7 @@ class TestAgentBackendErrors:
         mock_proc.stdin = MagicMock()
         mock_proc.stdout = BlockingPipe()
         mock_proc.stderr = iter(())
+        mock_proc.poll.return_value = None
         mock_proc.kill.side_effect = release.set
         ticks = iter((0.0, 0.0, 0.051))
 
@@ -617,10 +618,10 @@ class TestAgentBackendErrors:
         ):
             AgentBackend()._invoke_streaming(
                 mock_proc,
-                ["pi", "-p"],
+                ["claude", "-p", "--permission-mode", "auto"],
                 "prompt",
                 timeout_secs=10,
-                backend_name="pi",
+                backend_name="claude",
                 output_callback=lambda _line: None,
             )
 
@@ -644,6 +645,7 @@ class TestAgentBackendErrors:
         mock_proc.stdin = MagicMock()
         mock_proc.stdout = BlockingPipe()
         mock_proc.stderr = iter(())
+        mock_proc.poll.return_value = None
         mock_proc.kill.side_effect = release.set
         ticks = iter((0.0, 0.0, 0.021))
 
@@ -657,10 +659,10 @@ class TestAgentBackendErrors:
         ):
             AgentBackend()._invoke_streaming(
                 mock_proc,
-                ["pi", "-p"],
+                ["claude", "-p", "--permission-mode", "auto"],
                 "prompt",
                 timeout_secs=10,
-                backend_name="pi",
+                backend_name="claude",
                 output_callback=lambda _line: None,
                 stall_timeout=0.01,
             )
@@ -723,6 +725,7 @@ class TestAgentBackendErrors:
         mock_proc.stdin = MagicMock()
         mock_proc.stdout = BlockingStdout()
         mock_proc.stderr = PeriodicStderr()
+        mock_proc.poll.return_value = None
         mock_proc.kill.side_effect = release.set
 
         stall_budget = 0.15
@@ -732,10 +735,10 @@ class TestAgentBackendErrors:
             try:
                 AgentBackend()._invoke_streaming(
                     mock_proc,
-                    ["pi", "-p"],
+                    ["claude", "-p", "--permission-mode", "auto"],
                     "prompt",
                     timeout_secs=10,
-                    backend_name="pi",
+                    backend_name="claude",
                     output_callback=lambda _line: None,
                     stall_timeout=stall_budget,
                 )
@@ -766,6 +769,148 @@ class TestAgentBackendErrors:
         from deviate.core.agent import STREAM_STALL_TIMEOUT_SECONDS
 
         assert STREAM_STALL_TIMEOUT_SECONDS == 900
+
+    def test_buffered_print_cli_detects_pi_and_omp_print_mode(self) -> None:
+        """GH-166: only ``pi -p`` / ``omp -p`` are known non-streaming print CLIs."""
+        from deviate.core.agent import _is_buffered_print_cli
+
+        assert _is_buffered_print_cli("pi", ["pi", "-p"])
+        assert _is_buffered_print_cli("omp", ["omp", "-p"])
+        assert _is_buffered_print_cli(
+            "pi", ["pi", "-p", "--model", "crof/glm-5.3-flash"]
+        )
+        assert not _is_buffered_print_cli("pi", ["pi", "--mode", "rpc", "--no-session"])
+        assert not _is_buffered_print_cli(
+            "claude", ["claude", "-p", "--permission-mode", "auto"]
+        )
+        assert not _is_buffered_print_cli("opencode", ["opencode", "run"])
+        assert not _is_buffered_print_cli("codex", ["codex", "exec"])
+        assert not _is_buffered_print_cli("droid", ["droid", "exec"])
+
+    @pytest.mark.timeout(3)
+    @pytest.mark.parametrize(
+        ("backend_name", "cmd"),
+        [("pi", ["pi", "-p"]), ("omp", ["omp", "-p"])],
+    )
+    def test_buffered_print_cli_alive_child_does_not_stall_on_empty_stdout(
+        self, backend_name: str, cmd: list[str]
+    ) -> None:
+        """GH-166: a live print-mode CLI with empty stdout is working, not hung."""
+        import time as time_mod
+
+        emit = threading.Event()
+
+        class BufferedUntilExit:
+            def __init__(self) -> None:
+                self._emitted = False
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if self._emitted:
+                    raise StopIteration
+                if not emit.wait(timeout=2.0):
+                    raise StopIteration
+                self._emitted = True
+                return b"phase: GREEN\nstatus: PASS\n"
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BufferedUntilExit()
+        mock_proc.stderr = iter(())
+        mock_proc.poll.return_value = None
+        mock_proc.returncode = 0
+
+        stall_budget = 0.15
+        result: list[tuple[str, str]] = []
+        raised: list[BaseException] = []
+
+        def run() -> None:
+            try:
+                result.append(
+                    AgentBackend()._invoke_streaming(
+                        mock_proc,
+                        cmd,
+                        "prompt",
+                        timeout_secs=10,
+                        backend_name=backend_name,
+                        output_callback=lambda _line: None,
+                        stall_timeout=stall_budget,
+                    )
+                )
+            except BaseException as exc:
+                raised.append(exc)
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        time_mod.sleep(stall_budget + 0.2)
+        assert worker.is_alive(), (
+            f"silence stall killed a live {backend_name} -p child "
+            "before it flushed stdout"
+        )
+        emit.set()
+        worker.join(timeout=1.0)
+        assert not worker.is_alive()
+        assert not raised, f"expected success, got {raised}"
+        assert result
+        stdout, _stderr = result[0]
+        assert "GREEN" in stdout
+        assert "PASS" in stdout
+
+    @pytest.mark.timeout(3)
+    def test_buffered_print_cli_silent_child_still_hits_wall_timeout(self) -> None:
+        """GH-166: skipping silence stall must not disable the wall deadline."""
+        from deviate.core.agent import AgentTimeoutError
+
+        release = threading.Event()
+
+        class BlockingPipe:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release.wait()
+                raise StopIteration
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = BlockingPipe()
+        mock_proc.stderr = iter(())
+        mock_proc.poll.return_value = None
+        mock_proc.kill.side_effect = release.set
+
+        wall_clock = 0.2
+        raised: list[BaseException] = []
+
+        def run() -> None:
+            try:
+                AgentBackend()._invoke_streaming(
+                    mock_proc,
+                    ["pi", "-p"],
+                    "prompt",
+                    timeout_secs=wall_clock,
+                    backend_name="pi",
+                    output_callback=lambda _line: None,
+                    stall_timeout=0.05,
+                )
+            except BaseException as exc:
+                raised.append(exc)
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        worker.join(timeout=1.5)
+        if worker.is_alive():
+            release.set()
+            worker.join(timeout=1.0)
+            pytest.fail("silent live pi -p child ignored the wall-clock deadline")
+
+        assert raised, "expected wall-clock AgentTimeoutError"
+        exc = raised[0]
+        assert isinstance(exc, AgentTimeoutError)
+        assert "STALL_DETECTED" not in str(exc)
+        assert "SMART_STALL_DETECTED" not in str(exc)
+        assert "timeout" in str(exc).lower() or "timed out" in str(exc).lower()
 
     @pytest.mark.timeout(3)
     def test_invoke_streaming_wall_clock_timeout_on_stdout_trickle(self) -> None:

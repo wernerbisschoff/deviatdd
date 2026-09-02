@@ -6,7 +6,8 @@
 # Happy path: installed constants stay 900s GREEN / 3600s EXECUTE, and
 # `deviate micro --help` exits 0.
 # Critical-failure path: mocked Popen pipes trip STALL_DETECTED at a
-# sub-second budget when only stderr keeps arriving. No live `pi -p`.
+# sub-second budget when only stderr keeps arriving on a streaming
+# backend (claude). Print-mode `pi -p` is excluded (GH-166). No live agent.
 #
 # Each test starts in a fresh tmpdir so `deviate` does not pick up the host
 # repo's `.deviate/session.json` or `specs/` state.
@@ -100,10 +101,10 @@ def run_stream():
     try:
         AgentBackend()._invoke_streaming(
             proc,
-            ["pi", "-p"],
+            ["claude", "-p", "--permission-mode", "auto"],
             "prompt",
             timeout_secs=10,
-            backend_name="pi",
+            backend_name="claude",
             output_callback=lambda _line: None,
             stall_timeout=stall_budget,
         )

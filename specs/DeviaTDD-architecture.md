@@ -809,7 +809,11 @@ handing the manifest to the rest of the pipeline:
    Periodic stdout keeps the watchdog warm. A few minutes of
    stdout silence inside that 900s budget does not trip the
    detector. EXECUTE passes `stall_timeout=3600`. A stdout-silent
-   stall raises `AgentTimeoutError(STALL_DETECTED)`. The same
+   stall raises `AgentTimeoutError(STALL_DETECTED)` on streaming
+   backends. Print-mode `pi -p` / `omp -p` buffer all stdout
+   until process exit, so silence stall and the 0 B/s smart-stall
+   gate do not fire on a live print-mode child; the wall-clock
+   `timeout_secs` remains the deadline (GH-166). The same
    poll loop honors `timeout_secs` from the single consolidated
    `DeviateConfig.timeout_seconds` (default 1800s, resolved by
    `resolve_agent_deadline` in `src/deviate/state/config.py`) beside
