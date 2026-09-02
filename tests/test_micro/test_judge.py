@@ -48,6 +48,44 @@ def _write_ledger(ledger_path: Path, *records: TaskRecord) -> None:
         ledger_path.open("a", encoding="utf-8").write(line)
 
 
+def _seed_red_green_ancestor(repo: Path, task_id: str) -> str:
+    """Commit RED then GREEN so ``red_commit_sha`` is an ancestor of HEAD."""
+    test_path = repo / "tests" / "test_feat.py"
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    test_path.write_text("assert False\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "--", str(test_path)], cwd=repo, env=_git_env(), check=True
+    )
+    subprocess.run(
+        ["git", "commit", "-m", f"test({task_id}): RED phase - failing test"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    red_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    impl = repo / "feat.py"
+    impl.write_text("def feat():\n    return 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "--", str(impl)], cwd=repo, env=_git_env(), check=True
+    )
+    subprocess.run(
+        ["git", "commit", "-m", f"feat({task_id}): GREEN phase - implementation"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    return red_sha
+
+
 class TestJudgePre:
     def test_judge_pre_clean_diff(self, tmp_git_repo: Path):
         with chdir(tmp_git_repo):
@@ -1313,12 +1351,10 @@ class TestJudgeFeedbackLogging:
     @patch("deviate.cli.micro._make_agent_output_callback")
     @patch("deviate.cli.micro._log_run")
     @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_prints_train_feedback_not_empty_rationale(
         self,
         mock_cwd: MagicMock,
-        mock_subprocess: MagicMock,
         mock_done: MagicMock,
         mock_log: MagicMock,
         mock_callback: MagicMock,
@@ -1327,7 +1363,7 @@ class TestJudgeFeedbackLogging:
         mock_resolve: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
-        tmp_path: Path,
+        tmp_git_repo: Path,
     ) -> None:
         """JUDGE_REJECTED print shows train_feedback even when rationale is empty.
 
@@ -1344,15 +1380,12 @@ class TestJudgeFeedbackLogging:
 
         import io
 
-        cwd = tmp_path
+        cwd = tmp_git_repo
         mock_cwd.return_value = cwd
         mock_build.return_value = "test prompt"
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_subprocess.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
 
         mock_agent.return_value = (
             HandoverManifest(
@@ -1373,10 +1406,10 @@ class TestJudgeFeedbackLogging:
             "status": "PENDING",
             "execution_mode": "TDD",
         }
-        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path = tmp_git_repo / "tasks.jsonl"
         session = SessionState()
-        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
-        session_path = tmp_path / ".deviate" / "session.json"
+        session.red_commit_sha = _seed_red_green_ancestor(tmp_git_repo, "TSK-011-05")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Capture console output to assert the train_feedback text appears
@@ -1403,12 +1436,10 @@ class TestJudgeFeedbackLogging:
     @patch("deviate.cli.micro._make_agent_output_callback")
     @patch("deviate.cli.micro._log_run")
     @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_logs_tasks_md_feedback_change(
         self,
         mock_cwd: MagicMock,
-        mock_subprocess: MagicMock,
         mock_done: MagicMock,
         mock_log: MagicMock,
         mock_callback: MagicMock,
@@ -1417,7 +1448,7 @@ class TestJudgeFeedbackLogging:
         mock_resolve: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
-        tmp_path: Path,
+        tmp_git_repo: Path,
     ) -> None:
         """JUDGE_REJECTED path prints and logs TASKS_MD_FEEDBACK with line count.
 
@@ -1432,20 +1463,17 @@ class TestJudgeFeedbackLogging:
 
         import io
 
-        cwd = tmp_path
+        cwd = tmp_git_repo
         mock_cwd.return_value = cwd
         mock_build.return_value = "test prompt"
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_subprocess.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
 
         # Seed the issue ledger + tasks.md. The source_file must follow the
         # production convention specs/<epic>/issues/<slug>.md so
         # _find_tasks_md_for_issue derives the right path.
-        specs_dir = tmp_path / "specs"
+        specs_dir = tmp_git_repo / "specs"
         (specs_dir / "adhoc" / "001-test-issue-pad-name").mkdir(parents=True)
         (specs_dir / "issues.jsonl").write_text(
             json.dumps(
@@ -1482,10 +1510,10 @@ class TestJudgeFeedbackLogging:
             "status": "PENDING",
             "execution_mode": "TDD",
         }
-        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path = tmp_git_repo / "tasks.jsonl"
         session = SessionState()
-        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
-        session_path = tmp_path / ".deviate" / "session.json"
+        session.red_commit_sha = _seed_red_green_ancestor(tmp_git_repo, "TSK-001-01")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
         buf = io.StringIO()
@@ -1530,12 +1558,10 @@ class TestJudgeFeedbackLogging:
     @patch("deviate.cli.micro._make_agent_output_callback")
     @patch("deviate.cli.micro._log_run")
     @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_uses_summary_when_rationale_empty(
         self,
         mock_cwd: MagicMock,
-        mock_subprocess: MagicMock,
         mock_done: MagicMock,
         mock_log: MagicMock,
         mock_callback: MagicMock,
@@ -1544,7 +1570,7 @@ class TestJudgeFeedbackLogging:
         mock_resolve: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
-        tmp_path: Path,
+        tmp_git_repo: Path,
     ) -> None:
         """JUDGE_REJECTED falls back to summary when rationale is empty.
 
@@ -1560,15 +1586,12 @@ class TestJudgeFeedbackLogging:
 
         import io
 
-        cwd = tmp_path
+        cwd = tmp_git_repo
         mock_cwd.return_value = cwd
         mock_build.return_value = "test prompt"
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_subprocess.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
 
         manifest = HandoverManifest(
             phase="JUDGE",
@@ -1591,10 +1614,10 @@ class TestJudgeFeedbackLogging:
             "status": "PENDING",
             "execution_mode": "TDD",
         }
-        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path = tmp_git_repo / "tasks.jsonl"
         session = SessionState()
-        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
-        session_path = tmp_path / ".deviate" / "session.json"
+        session.red_commit_sha = _seed_red_green_ancestor(tmp_git_repo, "TSK-011-05")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
         buf = io.StringIO()
@@ -1618,12 +1641,10 @@ class TestJudgeFeedbackLogging:
     @patch("deviate.cli.micro._make_agent_output_callback")
     @patch("deviate.cli.micro._log_run")
     @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_builds_feedback_from_violations(
         self,
         mock_cwd: MagicMock,
-        mock_subprocess: MagicMock,
         mock_done: MagicMock,
         mock_log: MagicMock,
         mock_callback: MagicMock,
@@ -1632,7 +1653,7 @@ class TestJudgeFeedbackLogging:
         mock_resolve: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
-        tmp_path: Path,
+        tmp_git_repo: Path,
     ) -> None:
         """JUDGE_REJECTED builds multi-line feedback from the violations list.
 
@@ -1647,15 +1668,12 @@ class TestJudgeFeedbackLogging:
 
         import io
 
-        cwd = tmp_path
+        cwd = tmp_git_repo
         mock_cwd.return_value = cwd
         mock_build.return_value = "test prompt"
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_subprocess.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
 
         manifest = HandoverManifest(
             phase="JUDGE",
@@ -1687,10 +1705,10 @@ class TestJudgeFeedbackLogging:
             "status": "PENDING",
             "execution_mode": "TDD",
         }
-        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path = tmp_git_repo / "tasks.jsonl"
         session = SessionState()
-        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
-        session_path = tmp_path / ".deviate" / "session.json"
+        session.red_commit_sha = _seed_red_green_ancestor(tmp_git_repo, "TSK-011-05")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
         buf = io.StringIO()
@@ -1899,12 +1917,10 @@ class TestJudgeFeedbackLogging:
     @patch("deviate.cli.micro._make_agent_output_callback")
     @patch("deviate.cli.micro._log_run")
     @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
     def test_judge_rejected_builds_feedback_from_string_violations(
         self,
         mock_cwd: MagicMock,
-        mock_subprocess: MagicMock,
         mock_done: MagicMock,
         mock_log: MagicMock,
         mock_callback: MagicMock,
@@ -1913,7 +1929,7 @@ class TestJudgeFeedbackLogging:
         mock_resolve: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
-        tmp_path: Path,
+        tmp_git_repo: Path,
     ) -> None:
         """GH-143: JUDGE_REJECTED with string-list violations persists feedback.
 
@@ -1929,15 +1945,12 @@ class TestJudgeFeedbackLogging:
 
         import io
 
-        cwd = tmp_path
+        cwd = tmp_git_repo
         mock_cwd.return_value = cwd
         mock_build.return_value = "test prompt"
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_subprocess.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
 
         string_violation = "Protected module modified: src/deviate/cli/micro.py"
         manifest = HandoverManifest(
@@ -1967,10 +1980,10 @@ class TestJudgeFeedbackLogging:
             "status": "PENDING",
             "execution_mode": "TDD",
         }
-        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path = tmp_git_repo / "tasks.jsonl"
         session = SessionState()
-        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
-        session_path = tmp_path / ".deviate" / "session.json"
+        session.red_commit_sha = _seed_red_green_ancestor(tmp_git_repo, "TSK-011-05")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
         buf = io.StringIO()
@@ -2043,12 +2056,10 @@ class TestRevertFeedbackStripsLineCitations:
     @patch("deviate.cli.micro._make_agent_output_callback")
     @patch("deviate.cli.micro._log_run")
     @patch("deviate.cli.micro._phase_already_done")
-    @patch("deviate.cli.micro.subprocess.run")
     @patch("deviate.cli.micro.Path.cwd")
     def test_persisted_feedback_omits_discarded_file_line(
         self,
         mock_cwd: MagicMock,
-        mock_subprocess: MagicMock,
         mock_done: MagicMock,
         mock_log: MagicMock,
         mock_callback: MagicMock,
@@ -2057,7 +2068,7 @@ class TestRevertFeedbackStripsLineCitations:
         mock_resolve: MagicMock,
         mock_rollback: MagicMock,
         mock_pytest: MagicMock,
-        tmp_path: Path,
+        tmp_git_repo: Path,
         next_action: str,
     ) -> None:
         """Feedback with ``tests/foo.py:121`` is stored without that citation."""
@@ -2068,17 +2079,14 @@ class TestRevertFeedbackStripsLineCitations:
 
         import io
 
-        cwd = tmp_path
+        cwd = tmp_git_repo
         mock_cwd.return_value = cwd
         mock_build.return_value = "test prompt"
         mock_callback.return_value = None
         mock_resolve.return_value = None
         mock_done.return_value = False
-        mock_subprocess.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
 
-        specs_dir = tmp_path / "specs"
+        specs_dir = tmp_git_repo / "specs"
         (specs_dir / "adhoc" / "001-test-issue-pad-name").mkdir(parents=True)
         (specs_dir / "issues.jsonl").write_text(
             json.dumps(
@@ -2116,10 +2124,10 @@ class TestRevertFeedbackStripsLineCitations:
             "status": "PENDING",
             "execution_mode": "TDD",
         }
-        ledger_path = tmp_path / "tasks.jsonl"
+        ledger_path = tmp_git_repo / "tasks.jsonl"
         session = SessionState()
-        session.red_commit_sha = "deadbeef1234567890abcdef1234567890abcdef"
-        session_path = tmp_path / ".deviate" / "session.json"
+        session.red_commit_sha = _seed_red_green_ancestor(tmp_git_repo, "TSK-001-01")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
         session_path.parent.mkdir(parents=True, exist_ok=True)
 
         buf = io.StringIO()
