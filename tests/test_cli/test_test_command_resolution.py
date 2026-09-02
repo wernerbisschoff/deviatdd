@@ -43,7 +43,8 @@ def test_init_pre_scaffolds_mise_for_unknown_project(tmp_git_repo: Path) -> None
 
     config = tomllib.loads((tmp_git_repo / "mise.toml").read_text(encoding="utf-8"))
     assert _task_run(config, "unit") == "pytest tests/unit"
-    assert "integration" in config["tasks"]
+    assert "integ" in config["tasks"]
+    assert "e2e" in config["tasks"]
 
 
 def test_init_pre_preserves_existing_mise(tmp_git_repo: Path) -> None:
@@ -58,7 +59,8 @@ def test_init_pre_preserves_existing_mise(tmp_git_repo: Path) -> None:
     config = tomllib.loads(mise_path.read_text(encoding="utf-8"))
     assert _task_run(config, "test") == "custom-test"
     assert "unit" in config["tasks"]
-    assert "integration" in config["tasks"]
+    assert "integ" in config["tasks"]
+    assert "e2e" in config["tasks"]
     assert "|| true" not in _task_run(config, "unit")
 
 

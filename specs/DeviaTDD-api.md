@@ -30,16 +30,20 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   so a fresh project reports `is_greenfield=true` until `/research` populates the
   constitution. `deviate init pre` continues to scaffold the constitution independently.
   It also writes or merges `<repo_root>/mise.toml` with the named tasks RED/GREEN
-  resolve: always `unit` (fast hermetic command, no `|| true`), `integration`
-  (`mise integration`), and `doctor` (cheap toolchain check; may append
-  `docker compose config` when `docker-compose.yml` / `compose.yaml` exists — never
-  `docker compose up`). `e2e` is added only when `tests/e2e`, `e2e/`, or `test/e2e`
-  already exists. Fresh scaffolds set `pre-commit` = format-check + lint and
-  `pre-push` = `unit` only; `test` remains a back-compat alias of `unit`. Empty
-  stub dirs are created at `tests/unit` + `tests/integration` (Elixir:
-  `test/unit` + `test/integration`). An existing `mise.toml` is not overwritten:
-  only missing `unit` / `integration` / `doctor` (and `e2e` when that layer
-  exists) are inserted. Init does not write `.deviate/config.toml`.
+  resolve: always `unit`, `integ` (`mise integ`), `e2e`, and `doctor`. `unit` is
+  the fast hermetic command and has no `|| true` — RED must be able to fail.
+  Empty `integ` / `e2e` stubs may collect zero tests; pytest exit 5 (no tests
+  collected) is treated as success on those two tasks only — assertion failures
+  still fail. `doctor` is a cheap toolchain check (may append `docker compose
+  config` when `docker-compose.yml` / `compose.yaml` exists — never
+  `docker compose up`). Fresh scaffolds set `pre-commit` = format-check + lint
+  and `pre-push` = `unit` only; `test` remains a back-compat alias of `unit`.
+  Empty stub dirs are always created: `tests/unit` + `tests/integration` +
+  `tests/e2e` (Elixir: `test/` stays unit; add `test/integration` + `test/e2e`,
+  or reuse an existing `tests/e2e` / `e2e/` convention). Existing layer folders
+  are not wiped. An existing `mise.toml` is not overwritten: only missing
+  `unit` / `integ` / `e2e` / `doctor` are inserted. Init does not write
+  `.deviate/config.toml`.
   Successful `deviate setup` prints a next-step hint to run `/deviate-init` as the
   first agent prompt (Codex: the `deviate-init` skill) and notes that init is a
   no-op if the repo is already scaffolded.

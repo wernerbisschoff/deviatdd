@@ -98,12 +98,14 @@ Breaks a business goal down into standard development project containers.
   `deviate init pre` / `deviate init post` and scaffolds `specs/constitution.md`,
   `mise.toml`, and `specs/issues.jsonl`. Existing constitution / issues ledger files
   are left untouched. `mise.toml` is created when missing, or merged when present:
-  missing allowlisted tasks `unit`, `integration`, and `doctor` are inserted (and
-  `e2e` only when `tests/e2e`, `e2e/`, or `test/e2e` already exists); existing
-  commands and tool pins are not rewritten. Init always creates language-native
-  stub dirs (`tests/unit` + `tests/integration`, or Elixir `test/unit` +
-  `test/integration`) so RED knows where to write. `pre-push` depends on `unit`
-  only. `unit` has no `|| true` — RED must be able to fail.
+  missing allowlisted tasks `unit`, `integ`, `e2e`, and `doctor` are inserted;
+  existing commands and tool pins are not rewritten. Init always creates
+  language-native stub dirs (`tests/unit` + `tests/integration` + `tests/e2e`;
+  Elixir: `test/` stays unit, plus `test/integration` + `test/e2e`) so RED
+  knows where to write. Existing layer folders are not wiped. `pre-push`
+  depends on `unit` only. `unit` has no `|| true` — RED must be able to fail.
+  Empty `integ` / `e2e` stubs treat pytest exit 5 (no tests collected) as
+  success; assertion failures still fail.
 
 * **Active Domain Discipline (HITL gates):** `/deviate-research` Gate 1 and `/deviate-prd` Ambiguity Interrogation actively challenge terms and edge cases. Plan + Tasks produce the current acceptance contract and decomposition; the system auto-advances from Tasks into Micro with no human-approval step.
 
