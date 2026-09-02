@@ -1022,8 +1022,30 @@ captured), `AGENT_TIMEOUT` (carries `error=`, `partial_stderr=`, and `partial_st
 the refactor hint), `TASKS_MD_NO_MATCH`, `TASKS_MD_FEEDBACK`,
 `TASKS_MD_SKIP`, `FEEDBACK_COMMIT_FAILED`, `POST_CMD_FAILURE`
 (carries `uncommitted_count=` and `files=`, the dirty files the
-hook refused — NOT `returncode=` / `stderr=`). Skill frontmatter
-version is `3.0.0`; its description covers Meso preparation and Micro
+hook refused — NOT `returncode=` / `stderr=`), `CYCLE_END`
+(emitted when a task leaves `_run_tdd_cycle` — complete, fail,
+or skip; carries `task_id=`, `completed=`, `phase_decisions=`
+(PHASE_DECISION `action=` values in order this run),
+`reject_count=`, `last_blast=` (`red` / `green` / `none`)).
+**Per-task JUDGE postmortem** (structured JSONL, not the
+transcript format): `.deviate/logs/<ISSUE_ID>/<TASK_ID>.verdicts.jsonl`.
+One JSON object per JUDGE application (pass and reject), written
+from `_apply_judge_verdict` so auto and `judge post` share it.
+Fields: `ts` (UTC ISO), `task_id`, `issue_id`, `verdict` (raw),
+`next_action` (after coerce / GH-149 / GH-158), `next_action_raw`
+(agent-declared; empty if omitted), `coerced` (bool),
+`blast` (`red` / `green` / `none` — `revert_red` → red,
+`revert_green` → green, forward/pass → none), `feedback` (the
+reason string actually used), `feedback_source`, `violations`
+(category strings, else `[]`), `test_integrity` (from
+`evaluation` if present, else `null`), `failure_kind` (session
+at judge time). When the cycle leaves, one
+`{"event":"cycle_end", ...}` object is appended to the same
+file with `completed`, `phase_decisions`, `reject_count`, and
+`last_blast`. Do not put the full prompt or `AGENT_RAW_OUTPUT`
+in this file. Local file only — no dashboard, no
+`inspect postmortem`, no upload.
+Skill frontmatter version is `3.0.0`; its description covers Meso preparation and Micro
 queue draining. The drift-check test
 `test_deviatdd_skill_troubleshooting_section_matches_logger` parses
 `micro.py` for `_log_run("<NAME>", ...)` calls and asserts every

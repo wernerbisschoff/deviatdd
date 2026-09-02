@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -156,3 +157,30 @@ def set_task_logger(logger: TaskLogger | None) -> None:
 def log_event(event: str, **kwargs: object) -> None:
     """Dispatch an event to every active sink (run + task)."""
     _current_log.get().dispatch(event, **kwargs)
+
+
+def verdicts_log_path(root: Path, issue_id: str, task_id: str) -> Path:
+    """Per-task JUDGE postmortem file: ``.deviate/logs/<issue>/<task>.verdicts.jsonl``."""
+    return root / ".deviate" / "logs" / issue_id / f"{task_id}.verdicts.jsonl"
+
+
+def append_verdicts_record(
+    root: Path,
+    issue_id: str,
+    task_id: str,
+    record: dict[str, object],
+) -> None:
+    """Append one JSON object to the per-task verdicts JSONL.
+
+    Skips the write when ``issue_id`` or ``task_id`` is missing so a
+    half-resolved task never creates ``.deviate/logs//?.verdicts.jsonl``.
+    Does not go through :class:`_LogSink` — this file is JSONL, not the
+    ``[<ts>] EVENT`` transcript format. Never store prompts or
+    ``AGENT_RAW_OUTPUT`` here.
+    """
+    if not issue_id or not task_id or task_id == "?":
+        return
+    path = verdicts_log_path(root, issue_id, task_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")

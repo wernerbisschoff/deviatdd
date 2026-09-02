@@ -6,13 +6,14 @@ import os
 import re
 import shlex
 
+import contextvars
 import subprocess
 import time
 import logging
 import sys
 import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal, NoReturn
 from pathlib import Path, PurePosixPath
@@ -47,6 +48,7 @@ from deviate.core.profile import canonicalize_profile, resolve_profile
 from deviate.core.run_logger import (
     RunLogger,
     TaskLogger,
+    append_verdicts_record,
     log_event,
     set_run_logger,
     set_task_logger,
@@ -175,13 +177,35 @@ def _log(msg: str) -> None:
         console.print(f"[dim]{msg}[/]")
 
 
+@dataclass
+class _CycleTrace:
+    """In-run collector for ``CYCLE_END`` / verdicts.jsonl ``cycle_end``."""
+
+    phase_decisions: list[str] = field(default_factory=list)
+    reject_count: int = 0
+    last_blast: str = "none"
+
+
+_current_cycle_trace: contextvars.ContextVar[_CycleTrace | None] = (
+    contextvars.ContextVar("_current_cycle_trace", default=None)
+)
+
+
 def _log_run(event: str, **kwargs: object) -> None:
     """Write to every active sink (run + task loggers).
 
     Per-task transcripts land in ``.deviate/logs/<issue>/<task>.log``
     while a chronological copy of every event continues into the
     per-run file under ``.deviate/logs/run_<UTC>.log``.
+    ``PHASE_DECISION`` actions are also recorded on the active cycle
+    trace so ``CYCLE_END`` can list them in order.
     """
+    if event == "PHASE_DECISION":
+        trace = _current_cycle_trace.get()
+        if trace is not None:
+            action = kwargs.get("action")
+            if action is not None and str(action) != "":
+                trace.phase_decisions.append(str(action))
     log_event(event, **kwargs)
 
 
@@ -2960,6 +2984,125 @@ def _judge_feedback_from_manifest(manifest: HandoverManifest) -> tuple[str, str]
     return _strip_revert_line_citations(text), source
 
 
+def _blast_for_action(action: str | None) -> str:
+    """Map a routed JUDGE action to the postmortem blast radius."""
+    if action == "revert_red":
+        return "red"
+    if action == "revert_green":
+        return "green"
+    return "none"
+
+
+def _declared_next_action_raw(manifest: HandoverManifest) -> str:
+    """Agent-declared ``next_action`` before coerce; empty if omitted."""
+    raw = getattr(manifest, "next_action", None)
+    if raw is None:
+        raw = _manifest_extra(manifest).get("next_action")
+    if raw is None or raw == "":
+        return ""
+    return str(raw)
+
+
+def _violation_categories(manifest: HandoverManifest) -> list[str]:
+    """Category strings from ``violations``; empty list when absent."""
+    violations = _manifest_field(manifest, "violations")
+    if not isinstance(violations, list):
+        return []
+    categories: list[str] = []
+    for item in violations:
+        if isinstance(item, str) and item.strip():
+            categories.append(item)
+            continue
+        if isinstance(item, dict):
+            category = item.get("category")
+        else:
+            category = getattr(item, "category", None)
+        if category:
+            categories.append(str(category))
+    return categories
+
+
+def _evaluation_test_integrity_value(manifest: HandoverManifest) -> object:
+    """``evaluation.test_integrity`` when present; otherwise ``None``."""
+    evaluation = _manifest_field(manifest, "evaluation")
+    if evaluation is None:
+        return None
+    if isinstance(evaluation, dict):
+        return evaluation.get("test_integrity")
+    return getattr(evaluation, "test_integrity", None)
+
+
+def _note_cycle_verdict(action: str | None) -> None:
+    """Update the active cycle trace with this JUDGE application's blast."""
+    trace = _current_cycle_trace.get()
+    if trace is None:
+        return
+    blast = _blast_for_action(action)
+    trace.last_blast = blast
+    if blast != "none":
+        trace.reject_count += 1
+
+
+def _append_judge_verdict_record(
+    task: dict,
+    manifest: HandoverManifest,
+    *,
+    session: SessionState,
+    next_action: str | None,
+    next_action_raw: str,
+    feedback: str,
+    feedback_source: str,
+) -> None:
+    """Write one JUDGE application to ``.verdicts.jsonl`` (pass and reject)."""
+    tid = str(task.get("id") or "?")
+    issue_id = str(task.get("issue_id") or "")
+    final = next_action or ""
+    normalized_raw = (
+        JUDGE_REVERT_ACTION_ALIASES.get(next_action_raw, next_action_raw)
+        if next_action_raw
+        else ""
+    )
+    record: dict[str, object] = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "task_id": tid,
+        "issue_id": issue_id,
+        "verdict": getattr(manifest, "verdict", "") or "",
+        "next_action": final,
+        "next_action_raw": next_action_raw,
+        "coerced": normalized_raw != final,
+        "blast": _blast_for_action(next_action),
+        "feedback": feedback,
+        "feedback_source": feedback_source,
+        "violations": _violation_categories(manifest),
+        "test_integrity": _evaluation_test_integrity_value(manifest),
+        "failure_kind": session.failure_kind or "",
+    }
+    append_verdicts_record(Path.cwd(), issue_id, tid, record)
+    _note_cycle_verdict(next_action)
+
+
+def _emit_cycle_end(task: dict, ledger_path: Path, trace: _CycleTrace) -> None:
+    """``CYCLE_END`` transcript event + ``cycle_end`` JSONL object."""
+    tid = str(task.get("id") or "?")
+    issue_id = str(task.get("issue_id") or "")
+    completed = _phase_already_done(ledger_path, tid, "COMPLETED")
+    payload: dict[str, object] = {
+        "task_id": tid,
+        "completed": completed,
+        "phase_decisions": list(trace.phase_decisions),
+        "reject_count": trace.reject_count,
+        "last_blast": trace.last_blast,
+    }
+    _log_run("CYCLE_END", **payload)
+    record: dict[str, object] = {
+        "event": "cycle_end",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "issue_id": issue_id,
+        **payload,
+    }
+    append_verdicts_record(Path.cwd(), issue_id, tid, record)
+
+
 def _commit_judge_feedback_and_advance(
     root: Path,
     task: dict,
@@ -3434,6 +3577,7 @@ def _apply_judge_verdict(
     suite_still_red = _is_green_test_failure(session)
     suite_test_dump = session.train_feedback if suite_still_red else ""
     verdict = getattr(manifest, "verdict", "")
+    next_action_raw = _declared_next_action_raw(manifest)
     no_failing_pass = (
         session.failure_kind == "no_failing_test"
         and verdict.upper() == "COMPLIANCE_PASS"
@@ -3473,6 +3617,20 @@ def _apply_judge_verdict(
         # rollback anchor sits (red_commit_sha vs red_commit_sha^) and
         # in WHICH phase the runner hands control to next.
         feedback, feedback_source = _judge_feedback_from_manifest(manifest)
+
+        def _record_reject_verdict() -> None:
+            # After rollback: ``git clean -fd`` deletes unignored
+            # ``.deviate/logs/*.verdicts.jsonl`` if we write too early.
+            _append_judge_verdict_record(
+                task,
+                manifest,
+                session=session,
+                next_action=action,
+                next_action_raw=next_action_raw,
+                feedback=feedback,
+                feedback_source=feedback_source,
+            )
+
         if not feedback:
             c.print(
                 f"  [red]JUDGE_AGENT_NO_FEEDBACK[/] {tid}: judge returned "
@@ -3486,6 +3644,7 @@ def _apply_judge_verdict(
                 action=action,
                 manifest=manifest.model_dump_json(),
             )
+            _record_reject_verdict()
             raise PhaseFailedError(
                 f"JUDGE_AGENT_NO_FEEDBACK for {tid}: judge returned "
                 f"{action} with no actionable feedback"
@@ -3603,11 +3762,13 @@ def _apply_judge_verdict(
                             action=action,
                         )
                         session.save(session_path)
+                        _record_reject_verdict()
                         return session
                     # No pre-RED anchor AND no RED boundary in session.
                     # The runner no longer falls back to ``HEAD~1``; raise
                     # so the operator can see why rollback was refused
                     # instead of silently losing commits.
+                    _record_reject_verdict()
                     raise PhaseFailedError(
                         f"ROLLBACK_BOUNDARY_MISSING: revert_red for {tid} "
                         f"has no pre-RED anchor (session.red_commit_sha is "
@@ -3630,6 +3791,7 @@ def _apply_judge_verdict(
                     action=action,
                 )
                 session.save(session_path)
+                _record_reject_verdict()
                 return session
 
             # revert_green: rollback to RED then advance the boundary.
@@ -3648,6 +3810,7 @@ def _apply_judge_verdict(
             )
         except Exception as e:
             if _is_fatal_missing_revert_green_boundary(action, e):
+                _record_reject_verdict()
                 raise
             c.print(
                 f"  [yellow]ROLLBACK_FAILED[/] {e} \u2014 proceeding with "
@@ -3673,6 +3836,7 @@ def _apply_judge_verdict(
         )
         session = session.force_transition_to("GREEN")
         session.save(session_path)
+        _record_reject_verdict()
         return session
 
     # ---- Forward routes (verdict=COMPLIANCE_PASS, JUDGE decides the polish) -
@@ -3718,6 +3882,19 @@ def _apply_judge_verdict(
         # GH-158: omitted / ignored-revert pass defaults to REFACTOR,
         # or skip when the operator passed ``--no-refactor``.
         action = "skip_refactor" if no_refactor else "continue_refactor"
+    pass_feedback, pass_source = _judge_feedback_from_manifest(manifest)
+    if not pass_feedback:
+        pass_feedback = extracted_note or refactor_note
+        pass_source = "train_feedback" if pass_feedback else ""
+    _append_judge_verdict_record(
+        task,
+        manifest,
+        session=session,
+        next_action=action,
+        next_action_raw=next_action_raw,
+        feedback=pass_feedback,
+        feedback_source=pass_source,
+    )
     if suite_still_red:
         # GREEN TEST_FAILURE: implementation ran, suite still red.
         # Honor only revert_green / revert_red (already returned above).
@@ -4337,6 +4514,37 @@ def _train_green_or_escalate(
 
 
 def _run_tdd_cycle(
+    task: dict,
+    ledger_path: Path,
+    c: Console,
+    no_judge: bool = False,
+    no_refactor: bool = False,
+    agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
+    start_phase: str | None = None,
+) -> None:
+    """RED → GREEN → JUDGE → REFACTOR. Always emits ``CYCLE_END`` on leave."""
+    trace = _CycleTrace()
+    token = _current_cycle_trace.set(trace)
+    try:
+        _run_tdd_cycle_impl(
+            task,
+            ledger_path,
+            c,
+            no_judge=no_judge,
+            no_refactor=no_refactor,
+            agent=agent,
+            monitor=monitor,
+            start_phase=start_phase,
+        )
+    finally:
+        try:
+            _emit_cycle_end(task, ledger_path, trace)
+        finally:
+            _current_cycle_trace.reset(token)
+
+
+def _run_tdd_cycle_impl(
     task: dict,
     ledger_path: Path,
     c: Console,
