@@ -3440,6 +3440,108 @@ class TestJudgeDiffBaseWalksPastFeedback:
         _require_green_entry_red_sha(tmp_git_repo, session, _GATE_TASK_ID)
 
 
+# Real 1x1 PNG (IHDR length is NUL-prefixed, so git classifies it binary).
+_PNG_1X1 = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+)
+# PNG signature + high bytes, no NUL — git may emit this as a text hunk.
+_PNG_NO_NUL = b"\x89PNG\r\n\x1a\n" + bytes(range(1, 256)) * 80
+_LATIN1_CSS = b"body{font-family:'Caf\xe9'}\n/* byte \xd9 latin-1 */\n"
+_PNG_PATH = "priv/static/images/stein_full_256x.png"
+_PNG_NO_NUL_PATH = "priv/static/images/icon_no_nul.png"
+_CSS_PATH = "priv/static/app.css"
+_IMPL_PATH = "lib/shell.py"
+
+
+def _write_bytes(repo: Path, relpath: str, data: bytes) -> None:
+    path = repo / relpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def _commit_paths(repo: Path, message: str, *relpaths: str) -> str:
+    subprocess.run(
+        ["git", "add", "--", *relpaths], cwd=repo, env=_git_env(), check=True
+    )
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _seed_red_green_with_binary_assets(repo: Path) -> str:
+    """RED text test + GREEN PNG / latin-1 CSS / UTF-8 impl. Returns red SHA."""
+    test_rel = "tests/test_shell.py"
+    _write_gate_file(repo, test_rel, "def test_shell() -> None:\n    assert False\n")
+    red_sha = _commit_paths(
+        repo, "test(TSK-186-01): RED phase - failing test", test_rel
+    )
+    _write_bytes(repo, _PNG_PATH, _PNG_1X1)
+    _write_bytes(repo, _PNG_NO_NUL_PATH, _PNG_NO_NUL)
+    _write_bytes(repo, _CSS_PATH, _LATIN1_CSS)
+    _write_gate_file(repo, _IMPL_PATH, "def shell() -> str:\n    return 'ok'\n")
+    _commit_paths(
+        repo,
+        "feat(TSK-186-01): GREEN phase - implementation",
+        _PNG_PATH,
+        _PNG_NO_NUL_PATH,
+        _CSS_PATH,
+        _IMPL_PATH,
+    )
+    return red_sha
+
+
+class TestJudgeInjectedDiffBinarySafe:
+    """GH-186: JUDGE injected diff must not crash on binary / non-UTF-8 files."""
+
+    def test_png_and_latin1_css_do_not_raise(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.micro import _assemble_judge_injected_diff
+
+        red_sha = _seed_red_green_with_binary_assets(tmp_git_repo)
+        injected = _assemble_judge_injected_diff(
+            tmp_git_repo,
+            red_commit_sha=red_sha,
+            red_baseline=None,
+        )
+        png_size = len(_PNG_1X1)
+        no_nul_size = len(_PNG_NO_NUL)
+        assert f"Binary file {_PNG_PATH} added ({png_size} bytes)" in injected
+        assert f"Binary file {_PNG_NO_NUL_PATH} added ({no_nul_size} bytes)" in injected
+        assert "\x89PNG" not in injected
+        assert "Binary files " not in injected
+        assert _CSS_PATH in injected
+        assert "font-family" in injected
+        assert f"Binary file {_CSS_PATH}" not in injected
+        assert _IMPL_PATH in injected
+        assert "return 'ok'" in injected
+
+    def test_untracked_png_is_stubbed_not_dumped(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.micro import _assemble_judge_injected_diff
+
+        red_sha = _seed_red_green_with_binary_assets(tmp_git_repo)
+        dirty = "priv/static/images/untracked.png"
+        _write_bytes(tmp_git_repo, dirty, _PNG_1X1)
+        injected = _assemble_judge_injected_diff(
+            tmp_git_repo,
+            red_commit_sha=red_sha,
+            red_baseline=None,
+        )
+        assert f"Binary file {dirty} added ({len(_PNG_1X1)} bytes)" in injected
+        assert "\x89PNG" not in injected
+
+
 class TestTddJudgeEvidenceGate:
     """TSK-020-03 / TSK-028-02 / GH-185: TDD gate is task-scoped.
 
