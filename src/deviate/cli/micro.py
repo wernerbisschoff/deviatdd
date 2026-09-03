@@ -3765,6 +3765,240 @@ _MAX_JUDGE_MANIFEST_ATTEMPTS = 3
 _EVIDENCE_SCHEMA_ERROR_RE = re.compile(r"(?i)(^|\.)evidence(\.|:)|EvidenceItem")
 
 
+_JUDGE_DIFF_CHUNK = re.compile(r"(?=^diff --git )", re.MULTILINE)
+_JUDGE_DIFF_HEADER = re.compile(r"^diff --git a/(.+?) b/(.+)$")
+_BINARY_SUFFIXES = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".ico",
+        ".bmp",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
+        ".pdf",
+        ".zip",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
+        ".wasm",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".exe",
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".ogg",
+        ".webm",
+        ".sqlite",
+        ".bin",
+        ".class",
+        ".o",
+    }
+)
+_BINARY_MAGIC_PREFIXES = (
+    b"\x89PNG\r\n\x1a\n",
+    b"\xff\xd8\xff",
+    b"GIF87a",
+    b"GIF89a",
+    b"%PDF-",
+    b"PK\x03\x04",
+    b"\x1f\x8b",
+    b"wOFF",
+    b"wOF2",
+    b"\x00asm",
+)
+
+
+def _decode_git_diff_bytes(raw: bytes | str) -> str:
+    """Decode git stdout without crashing on latin-1 or binary bytes.
+
+    Tests that patch ``subprocess.run`` still return ``str`` stdout; accept
+    that so mocked JUDGE paths keep working. Real git calls return bytes.
+    """
+    if isinstance(raw, str):
+        return raw
+    return raw.decode("utf-8", errors="replace")
+
+
+def _coerce_git_stdout(raw: bytes | str | None) -> bytes:
+    """Normalize subprocess stdout to bytes (mocks may still return ``str``)."""
+    if raw is None:
+        return b""
+    if isinstance(raw, str):
+        return raw.encode("utf-8", errors="replace")
+    return raw
+
+
+def _run_git_stdout_bytes(args: list[str], root: Path) -> bytes:
+    return _coerce_git_stdout(
+        subprocess.run(
+            args,
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        ).stdout
+    )
+
+
+def _bytes_look_binary(data: bytes) -> bool:
+    if not data:
+        return False
+    sample = data[:8192]
+    if b"\x00" in sample:
+        return True
+    return any(sample.startswith(prefix) for prefix in _BINARY_MAGIC_PREFIXES)
+
+
+def _path_has_binary_suffix(rel: str) -> bool:
+    return Path(rel).suffix.lower() in _BINARY_SUFFIXES
+
+
+def _read_path_sample(root: Path, rel: str, rev_spec: str | None) -> bytes:
+    wt = root / rel
+    if wt.is_file():
+        try:
+            with wt.open("rb") as handle:
+                return handle.read(8192)
+        except OSError:
+            return b""
+    specs: list[str] = []
+    if rev_spec and ".." in rev_spec:
+        old, new = rev_spec.split("..", 1)
+        specs.extend((f"{new}:{rel}", f"{old}:{rel}"))
+    specs.append(f"HEAD:{rel}")
+    for spec in specs:
+        raw = _run_git_stdout_bytes(["git", "show", spec], root)
+        if raw:
+            return raw[:8192]
+    return b""
+
+
+def _path_is_binary(root: Path, rel: str, rev_spec: str | None) -> bool:
+    if _path_has_binary_suffix(rel):
+        return True
+    return _bytes_look_binary(_read_path_sample(root, rel, rev_spec))
+
+
+def _binary_change_word(status: str) -> str:
+    code = status[:1]
+    if code in {"A", "?"}:
+        return "added"
+    if code == "D":
+        return "deleted"
+    return "modified"
+
+
+def _binary_file_size(
+    root: Path, rel: str, status: str, rev_spec: str | None
+) -> int | None:
+    wt = root / rel
+    if wt.is_file():
+        try:
+            return wt.stat().st_size
+        except OSError:
+            pass
+    specs: list[str] = []
+    if rev_spec and ".." in rev_spec:
+        old, new = rev_spec.split("..", 1)
+        if status.startswith("D"):
+            specs.append(f"{old}:{rel}")
+        else:
+            specs.extend((f"{new}:{rel}", f"{old}:{rel}"))
+    specs.append(f"HEAD:{rel}")
+    for spec in specs:
+        shown = subprocess.run(
+            ["git", "cat-file", "-s", spec],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        )
+        if shown.returncode == 0:
+            try:
+                return int(shown.stdout.strip())
+            except ValueError:
+                continue
+    return None
+
+
+def _binary_stub_line(rel: str, status: str, size: int | None) -> str:
+    change = _binary_change_word(status)
+    if size is not None:
+        return f"Binary file {rel} {change} ({size} bytes)"
+    return f"Binary file {rel} {change}"
+
+
+def _chunk_change_status(chunk: str) -> str:
+    if re.search(r"^new file mode ", chunk, re.MULTILINE):
+        return "A"
+    if re.search(r"^deleted file mode ", chunk, re.MULTILINE):
+        return "D"
+    return "M"
+
+
+def _primary_chunk_path(chunk: str) -> str | None:
+    lines = chunk.splitlines()
+    if not lines:
+        return None
+    match = _JUDGE_DIFF_HEADER.match(lines[0])
+    if match is None:
+        return None
+    left, right = match.group(1), match.group(2)
+    if right != "/dev/null":
+        return right
+    if left != "/dev/null":
+        return left
+    return None
+
+
+def _chunk_is_git_binary(chunk: str) -> bool:
+    return bool(
+        re.search(r"^Binary files .+ differ$", chunk, re.MULTILINE)
+        or re.search(r"^GIT binary patch$", chunk, re.MULTILINE)
+    )
+
+
+def _sanitize_judge_diff(
+    root: Path,
+    raw: bytes,
+    *,
+    rev_spec: str | None,
+) -> str:
+    """Decode *raw* with replace and swap binary hunks for one-line stubs."""
+    text = _decode_git_diff_bytes(raw)
+    if not text.strip():
+        return text
+    out: list[str] = []
+    for chunk in _JUDGE_DIFF_CHUNK.split(text):
+        if not chunk.strip():
+            continue
+        rel = _primary_chunk_path(chunk)
+        is_binary = _chunk_is_git_binary(chunk) or (
+            rel is not None and _path_is_binary(root, rel, rev_spec)
+        )
+        if not is_binary or rel is None:
+            out.append(chunk.rstrip("\n"))
+            continue
+        status = _chunk_change_status(chunk)
+        size = _binary_file_size(root, rel, status, rev_spec)
+        out.append(_binary_stub_line(rel, status, size))
+    return "\n".join(out)
+
+
+def _git_diff_for_judge(root: Path, rev_spec: str) -> str:
+    """``git diff <rev_spec>`` for JUDGE: never strict-decode, stub binaries."""
+    raw = _run_git_stdout_bytes(["git", "diff", rev_spec], root)
+    return _sanitize_judge_diff(root, raw, rev_spec=rev_spec)
+
+
 def _untracked_file_paths(root: Path, status_path: str) -> list[str]:
     """Expand a ``git status --short`` untracked path to file paths."""
     if not status_path:
@@ -3787,15 +4021,15 @@ def _untracked_no_index_diffs(root: Path, status: str) -> list[str]:
             continue
         path = status_line[3:].strip().strip('"')
         for rel in _untracked_file_paths(root, path):
-            parts.append(
-                subprocess.run(
-                    ["git", "diff", "--no-index", "--", "/dev/null", rel],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    env=_git_env(),
-                ).stdout
+            if _path_is_binary(root, rel, None):
+                size = _binary_file_size(root, rel, "A", None)
+                parts.append(_binary_stub_line(rel, "A", size))
+                continue
+            raw = _run_git_stdout_bytes(
+                ["git", "diff", "--no-index", "--", "/dev/null", rel],
+                root,
             )
+            parts.append(_sanitize_judge_diff(root, raw, rev_spec=None))
     return parts
 
 
@@ -3814,27 +4048,18 @@ def _assemble_judge_injected_diff(
     (``_resolve_judge_diff_base``) so the RED test stays in range.
     No RED commit keeps the prior ``HEAD~1`` single-commit behavior.
     The RED-adjudication path uses an empty committed diff; uncommitted
-    tests surface in dirty hunks.
+    tests surface in dirty hunks. Content diffs are captured as bytes and
+    decoded with ``errors='replace'`` so latin-1 CSS cannot crash JUDGE.
+    Real binary paths are replaced with a one-line stub (added / modified
+    / deleted + size when known). Never ``git diff --text`` / ``-a``.
     """
     if red_commit_sha:
         diff_base = _resolve_judge_diff_base(root, red_commit_sha)
-        committed_diff = subprocess.run(
-            ["git", "diff", f"{diff_base}^..HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout
+        committed_diff = _git_diff_for_judge(root, f"{diff_base}^..HEAD")
     elif red_baseline is not None:
         committed_diff = ""
     else:
-        committed_diff = subprocess.run(
-            ["git", "diff", "HEAD~1..HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout
+        committed_diff = _git_diff_for_judge(root, "HEAD~1..HEAD")
     status = subprocess.run(
         ["git", "status", "--short"],
         cwd=root,
@@ -3844,15 +4069,7 @@ def _assemble_judge_injected_diff(
     ).stdout
     dirty_parts: list[str] = []
     if status.strip():
-        dirty_parts.append(
-            subprocess.run(
-                ["git", "diff", "HEAD"],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                env=_git_env(),
-            ).stdout
-        )
+        dirty_parts.append(_git_diff_for_judge(root, "HEAD"))
         dirty_parts.extend(_untracked_no_index_diffs(root, status))
     return "\n".join(part for part in [committed_diff, *dirty_parts] if part)
 
@@ -5659,13 +5876,7 @@ def _run_execute_phase(
         if not has_spec:
             break
 
-        diff = subprocess.run(
-            ["git", "diff", f"{pre_execute_sha}..HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_git_env(),
-        ).stdout
+        diff = _git_diff_for_judge(root, f"{pre_execute_sha}..HEAD")
         if not diff.strip():
             c.print(f"  [dim]JUDGE_SKIP \u2014 no diff in commit for {tid}[/]")
             break
