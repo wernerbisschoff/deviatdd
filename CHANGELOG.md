@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tasks generation rejects mixed-layer TDD cards.** One TDD task = one Test Strategy = one write dir = one verification command (`unit` \| `integration` \| `e2e`). `deviate tasks post` fails with `MIXED_TEST_LAYER` and does not commit when a TDD card names more than one layer (two stamps, two layer write dirs, or two layer Verification commands). Need both a DB-free contract and a live-DB proof → two TDD tasks, not one card listing both test files. Existing consumer `tasks.md` files are not rewritten — regenerate after this fix. Micro/RED dispatch does not fail-closed on historical mixed cards; #175 single-layer inject is unchanged. Pinned by `tests/unit/test_core/test_tasks_ledger.py` and `tests/unit/test_cli/test_meso_contracts.py`. ([#182](https://github.com/wernerbisschoff/deviatdd/issues/182))
+
 - Give JUDGE a GREEN-only diff for phase attribution. Keep RED changes and runner feedback out of GREEN scope accusations.
 - Retain every complete JUDGE feedback round in one RED/GREEN training section. Preserve earlier constraints and exclude feedback from acceptance cards.
 - Give malformed JUDGE retries explicit validation errors and the evidence schema. Preserve GREEN and report exhaustion without a traceback.
