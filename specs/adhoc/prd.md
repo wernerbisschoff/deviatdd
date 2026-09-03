@@ -599,3 +599,15 @@
   1. AC-ADHOC-037-01 / AO-037-01: TTY omitted `--packs` shows a checkbox list (one named optional pack per row). Default confirm installs none. Toggling `product`+`pr` installs those two packs only. Selection is not written to `config.toml`. Tests mock the TUI helper, not glyphs.
   2. AC-ADHOC-037-02 / AO-037-02: `--packs` is unchanged. Non-TTY omitted `--packs` installs default-only and does not prompt. Agent picker, libref, `claim_remote`, pack membership, JUDGE, and Gate 3 bodies stay untouched.
 
+
+## FR-ADHOC-038: Test Tree Migration to tests/unit Convention
+
+- **Description**: Test suites live under `tests/unit/` per the micro-runner suite convention (`_CONVENTIONAL_SUITE_DIRS` maps unit to `tests/unit` only); `mise unit`, `mise integration`, and `mise e2e` point at real suites, not empty stubs.
+- **Preconditions**: `mise unit` currently runs `tests/` minus integration dirs (~111s, 1910 tests, over the 30s budget); `tests/unit/` and `tests/integration/` hold only stubs; `_CONVENTIONAL_SUITE_DIRS` in `src/deviate/cli/micro.py` maps unit to `tests/unit` only; gh issue 205 describes the remaining work.
+- **Inputs/Outputs**: Input — existing suites (`tests/test_cli`, `test_core`, `test_macro`, `test_meso`, `test_micro`, `test_state`, `test_ui`, `test_release`, `tests/core`), `mise.toml` task rows, hardcoded `tests/test_*` paths in `specs/`. Output — suites migrated under `tests/unit/`, fixed imports, updated task rows and spec paths, working stub tasks.
+- **User Stories**:
+  1. US-038-01: As a developer running the micro loop, I want `mise unit` to collect the real unit suites under `tests/unit/` so RED does not loop into TRAIN_EXHAUSTED on exit 5. *(Ref: FR-ADHOC-038)*
+  2. US-038-02: As a developer, I want `mise integration` and `mise e2e` to target real suites (bats for e2e) so stub rot does not hide failures. *(Ref: FR-ADHOC-038)*
+- **Acceptance Outline** (implementation-independent; no Gherkin in the issue file):
+  1. AC-ADHOC-038-01 / AO-038-01: Real suites run from `tests/unit/`; intra-suite imports resolve after the move; no exit-5 empty collection on `mise unit`.
+  2. AC-ADHOC-038-02 / AO-038-02: Hardcoded `tests/test_*` paths in `specs/` Verification lines and docs resolve to the new layout; runner scoping still parses them. `mise integration` and `mise e2e` point at real suites.
