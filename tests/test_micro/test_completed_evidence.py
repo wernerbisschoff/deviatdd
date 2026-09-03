@@ -531,16 +531,12 @@ class TestCompletedAfterRefactorQuoteDrift:
             _gate_manifest(
                 next_action="continue_refactor",
                 evidence=[_gate_evidence()],
-                train_feedback=(
-                    "REFACTOR NOTE: indent the assertion; not blocking."
-                ),
+                train_feedback=("REFACTOR NOTE: indent the assertion; not blocking."),
             ),
             red_sha,
         )
         assert "COMPLETED_EVIDENCE_MISSING" not in output, output
-        _assert_forward(
-            session, ledger, action="continue_refactor", completed=False
-        )
+        _assert_forward(session, ledger, action="continue_refactor", completed=False)
         session_path = tmp_git_repo / ".deviate" / "session.json"
         session.save(session_path)
         passing = _passing_proc()
@@ -593,9 +589,9 @@ class TestCompletedAfterRefactorQuoteDrift:
         assert items[0]["ac"] == "AC-PLAN-001"
         assert items[0]["test_quote"] == _GATE_TEST_QUOTE
         assert items[0]["impl_path"] == _GATE_IMPL_PATH
-        assert _GATE_TEST_QUOTE not in (
-            tmp_git_repo / _GATE_TEST_PATH
-        ).read_text(encoding="utf-8")
+        assert _GATE_TEST_QUOTE not in (tmp_git_repo / _GATE_TEST_PATH).read_text(
+            encoding="utf-8"
+        )
 
     def test_append_completed_when_head_no_longer_has_judge_quote(
         self, tmp_git_repo: Path
