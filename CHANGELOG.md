@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **README phase-transparency table names `COVERAGE_INCOMPLETE` as the `review pre` fail-closed token.** The review row keeps its comments-only default and not-a-merge-gate wording.
+
 - **Optional `product` pack is back for greenfield scope tracking.** `deviate setup --packs product` installs `/deviate-flows`, `/deviate-architecture`, and `/deviate-release`, which author standalone planning artifacts under `specs/_product/` (flow catalog + index, cross-epic architecture + domain model, release plan). The pack never gates execution, writes no ledger, and defines no `flow_refs` contract — `FLOW-NN` IDs are prose anchors within product artifacts only, and no Macro/Meso/Micro phase reads `specs/_product/`. Constitution 0.11.0 records the optional layer. Pinned by `tests/test_product_pack.py`.
 
 ### Fixed
