@@ -196,3 +196,70 @@ def test_prune_pre_in_flight_spec_lists_and_unmatched_surfaced(tmp_path: Path) -
     assert "unmatched_acs" in contract
     assert any("plan.md" in p for p in contract["spec_keeps"])
     assert any("tasks.md" in p for p in contract["spec_keeps"])
+
+
+@pytest.mark.behavioral
+def test_prune_post_rewrite_mixed_case_rejects_with_zero_writes(tmp_path: Path) -> None:
+    """AC-PLAN-005: mixed-case rewrite intent exits nonzero with zero writes."""
+    _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    keep_before = (tmp_path / "tests" / "test_099_keep.py").read_bytes()
+    with chdir(tmp_path):
+        result = runner.invoke(
+            cli, ["prune", "post", "--issue", "ISS-ADH-099", "ReWrItE"]
+        )
+    assert result.exit_code == 1
+    contract = json.loads(result.stdout)
+    assert contract["status"] == "LEDGER_REWRITE_REJECTED"
+    assert (tmp_path / "tests" / "test_099_keep.py").read_bytes() == keep_before
+    assert snapshot_ledgers(tmp_path) == before
+
+
+@pytest.mark.behavioral
+def test_prune_post_failure_keeps_cycle_markdown_and_ledgers(tmp_path: Path) -> None:
+    """AC-PLAN-004/005: post on FAILURE exits nonzero; ledgers and cycle markdown stay."""
+    _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    with chdir(tmp_path):
+        result = runner.invoke(cli, ["prune", "post", "--issue", "ISS-ADH-404"])
+    assert result.exit_code == 1
+    contract = json.loads(result.stdout)
+    assert contract["status"] == "FAILURE"
+    assert contract["spec_deletes"] == []
+    issue_dir = tmp_path / "specs" / "adhoc" / "099-prune-fixture"
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
+    assert snapshot_ledgers(tmp_path) == before
+
+
+@pytest.mark.behavioral
+def test_prune_post_missing_flows_skipped_without_creation(tmp_path: Path) -> None:
+    """AC-PLAN-006: missing flows ledger is skipped, never created; ledgers identical."""
+    _seed_completed_issue(tmp_path)
+    assert not (tmp_path / "specs" / "_product" / "flows.jsonl").exists()
+    before = snapshot_ledgers(tmp_path)
+    with chdir(tmp_path):
+        result = runner.invoke(cli, ["prune", "post", "--issue", "ISS-ADH-099"])
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "specs" / "_product" / "flows.jsonl").exists()
+    assert snapshot_ledgers(tmp_path) == before
+
+
+@pytest.mark.behavioral
+def test_prune_post_compaction_keeps_cycle_markdown_ledgers_untouched(
+    tmp_path: Path,
+) -> None:
+    """AC-PLAN-004/005: compaction intent keeps plan.md/tasks.md and ledger bytes."""
+    _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    with chdir(tmp_path):
+        result = runner.invoke(
+            cli, ["prune", "post", "--issue", "ISS-ADH-099", "COMPACT"]
+        )
+    assert result.exit_code == 1
+    contract = json.loads(result.stdout)
+    assert contract["status"] == "LEDGER_REWRITE_REJECTED"
+    issue_dir = tmp_path / "specs" / "adhoc" / "099-prune-fixture"
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
+    assert snapshot_ledgers(tmp_path) == before

@@ -318,3 +318,78 @@ def test_in_flight_thin_never_unlinks_spec_files(tmp_path: Path) -> None:
     )
     assert (issue_dir / "plan.md").is_file()
     assert (issue_dir / "tasks.md").is_file()
+
+
+@pytest.mark.behavioral
+def test_ledger_paths_returns_only_existing_ledgers_including_flows(
+    tmp_path: Path,
+) -> None:
+    """AC-PLAN-006: ledger_paths lists existing flows ledger; missing one stays absent."""
+    from deviate.core.prune import ledger_paths
+
+    _seed_completed_issue(tmp_path)
+    flows = tmp_path / "specs" / "_product" / "flows.jsonl"
+    assert flows not in ledger_paths(tmp_path)
+    flows.parent.mkdir(parents=True)
+    flows.write_text('{"flow":"f1"}\n', encoding="utf-8")
+    found = ledger_paths(tmp_path)
+    assert flows in found
+    assert tmp_path / "specs" / "issues.jsonl" in found
+    assert any(p.name == "tasks.jsonl" for p in found)
+
+
+@pytest.mark.behavioral
+def test_ledger_snapshot_flows_byte_identical_after_apply(tmp_path: Path) -> None:
+    """AC-PLAN-004/006: apply keeps issues/tasks/flows bytes identical; missing flows uncreated."""
+    issue_dir = _seed_completed_issue(tmp_path)
+    flows = tmp_path / "specs" / "_product" / "flows.jsonl"
+    flows.parent.mkdir(parents=True)
+    flows.write_text('{"flow":"f1"}\n', encoding="utf-8")
+    before = snapshot_ledgers(tmp_path)
+    assert str(flows) in before
+    plan = build_prune_plan(tmp_path, "ISS-ADH-099")
+    apply_prune(tmp_path, plan)
+    assert snapshot_ledgers(tmp_path) == before
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
+
+
+@pytest.mark.behavioral
+def test_ledger_rewrite_mixed_case_rejected_with_zero_writes(tmp_path: Path) -> None:
+    """AC-PLAN-005: mixed-case compact/squash/rewrite intent stops prune with zero writes."""
+    issue_dir = _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    keep = tmp_path / "tests" / "test_099_keep.py"
+    keep_before = keep.read_bytes()
+    for intent in ("CoMpAcT the ledger", "SQUASH audit trail", "ReWrItE flows.jsonl"):
+        plan = build_prune_plan(tmp_path, "ISS-ADH-099", intent=intent)
+        assert plan.status == "LEDGER_REWRITE_REJECTED"
+        apply_prune(tmp_path, plan)
+    assert keep.read_bytes() == keep_before
+    assert (issue_dir / "plan.md").is_file()
+    assert snapshot_ledgers(tmp_path) == before
+
+
+@pytest.mark.behavioral
+def test_ledger_failure_plan_applies_zero_writes(tmp_path: Path) -> None:
+    """AC-PLAN-005: FAILURE contract applies zero writes even with drops listed."""
+    from deviate.core.prune import PrunePlan, TestItem
+
+    issue_dir = _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    keep = tmp_path / "tests" / "test_099_keep.py"
+    keep_before = keep.read_bytes()
+    plan = PrunePlan(status="FAILURE", issue_id="ISS-ADH-099", reason="ISSUE_NOT_FOUND")
+    plan.test_drop.append(
+        TestItem(
+            path=keep.relative_to(tmp_path),
+            name="test_public_ac_adhoc_099_01",
+            kind="drop",
+            source="x",
+        )
+    )
+    apply_prune(tmp_path, plan)
+    assert keep.is_file()
+    assert keep.read_bytes() == keep_before
+    assert snapshot_ledgers(tmp_path) == before
+    assert (issue_dir / "plan.md").is_file()
