@@ -242,7 +242,7 @@ Embedded from the adhoc conversation analysis. All phases ranked by token/cost R
 - Review structured diff appendix in contract: ≤ 800 tokens (vs full raw diff which can be 8000+)
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets (new module)** — `tests/core/test_treesitter.py`:
+- **Unit Sandbox Targets (new module)** — `tests/unit/core/test_treesitter.py`:
   - `test_language_dispatch_python` — `.py` → python grammar
   - `test_language_dispatch_typescript` — `.ts` → typescript grammar
   - `test_language_dispatch_rust` — `.rs` → rust grammar
@@ -275,27 +275,27 @@ Embedded from the adhoc conversation analysis. All phases ranked by token/cost R
   - `test_cyclomatic_complexity` — function with if/for/while/switch → complexity ≥ threshold
   - `test_query_file_coverage` — all 9 `.scm` query files compile without error
 - **Integration Sandbox Targets**:
-  - `tests/test_micro/test_judge.py` — verify structured diff section appears in judge prompt (with language annotations)
-  - `tests/test_micro/test_refactor.py` — verify upgraded `_check_return_type_mismatch` catches dead code in Python + JS + Rust
-  - `tests/test_meso/test_plan.py` — verify file structure appendix appears in plan prompt (with language annotations)
-  - `tests/test_cli/test_review.py` — verify structured merge-base diff appendix appears in review contract (with language annotations, per-file symbol changes, change type classification: added/removed/modified/renamed)
+  - `tests/unit/test_micro/test_judge.py` — verify structured diff section appears in judge prompt (with language annotations)
+  - `tests/unit/test_micro/test_refactor.py` — verify upgraded `_check_return_type_mismatch` catches dead code in Python + JS + Rust
+  - `tests/unit/test_meso/test_plan.py` — verify file structure appendix appears in plan prompt (with language annotations)
+  - `tests/unit/test_cli/test_review.py` — verify structured merge-base diff appendix appears in review contract (with language annotations, per-file symbol changes, change type classification: added/removed/modified/renamed)
 
 ## Demonstration Path
 ```bash
 # Unit tests for the new multi-language module
-mise run test tests/core/test_treesitter.py -v
+mise run test tests/unit/core/test_treesitter.py -v
 
 # Verify JUDGE prompt contains structured diff section
-mise run test tests/test_micro/test_judge.py -v
+mise run test tests/unit/test_micro/test_judge.py -v
 
 # Verify REFACTOR dead-code detection across languages
-mise run test tests/test_micro/test_refactor.py -v
+mise run test tests/unit/test_micro/test_refactor.py -v
 
 # Verify PLAN prompt contains file structure appendix
-mise run test tests/test_meso/test_plan.py -v
+mise run test tests/unit/test_meso/test_plan.py -v
 
 # Verify REVIEW contract contains structured merge-base diff appendix
-mise run test tests/test_cli/test_review.py -v
+mise run test tests/unit/test_cli/test_review.py -v
 
 # Full suite regression
 mise run test

@@ -9,15 +9,15 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_epic.py -v`
+  - **Verification**: `pytest tests/unit/test_core/test_epic.py -v`
   - **Estimated Time**: 60 minutes
   - **Flow References**: `[]`
   - **Files**:
     - `src/deviate/core/epic.py`
-    - `tests/test_core/test_epic.py`
+    - `tests/unit/test_core/test_epic.py`
   - **Rationale**: US-019-02 / `AC-PLAN-002` require `allocate_feature_bucket` to count already-fetched `refs/remotes/origin/feat/<NNN>-*` so two `research pre` calls do not reuse epic `005`. `epic.py` owns `_find_next_epic_num` and `allocate_feature_bucket`. `test_epic.py` is the pin surface. `**Flow References**: []` matches plan.md `## Product Layer Anchors`.
   - **Details**:
-    - **Red**: In `tests/test_core/test_epic.py`, seed `refs/remotes/origin/feat/005-acceptance-gates` on `tmp_git_repo` with `cwd=<tmp_git_repo>` and `env=_git_env()`. Assert `allocate_feature_bucket` on an unnumbered slug creates a bucket whose number is greater than `005` when local `specs/` has no `005-*` directory. Assert `allocate_feature_bucket("005-acceptance-gates")` stays idempotent and reuses that numbered path.
+    - **Red**: In `tests/unit/test_core/test_epic.py`, seed `refs/remotes/origin/feat/005-acceptance-gates` on `tmp_git_repo` with `cwd=<tmp_git_repo>` and `env=_git_env()`. Assert `allocate_feature_bucket` on an unnumbered slug creates a bucket whose number is greater than `005` when local `specs/` has no `005-*` directory. Assert `allocate_feature_bucket("005-acceptance-gates")` stays idempotent and reuses that numbered path.
     - **Green**: In `src/deviate/core/epic.py`, add one helper that lists `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat` with `cwd` at `repo_path` (default `Path.cwd()`) and `env=git_env()`. Parse `feat/<NNN>-*` as epic prefixes and `feat/adhoc/<NNN>-*` as the adhoc series. Fold remote epic prefixes into `_find_next_epic_num` as `max(local numbered dirs ∪ remote prefixes) + 1`. Keep numbered-slug idempotency in `allocate_feature_bucket`.
     - **Refactor**: Keep a single helper. Do not add a second counter. Do not call `ls-remote` on the hot path. Optional `git fetch --prune` stays allocation-time only.
     - **Edge Cases**: Missing origin remote yields local-dir max only, not an error. Local-only `feat/005-*` branches are ignored. `feat/005-*/003-*` must not leak epic issue `003` into the adhoc series. Tests must not hit the network.
@@ -34,12 +34,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_macro_contracts.py -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_macro_contracts.py -v`
   - **Estimated Time**: 75 minutes
   - **Flow References**: `[]`
   - **Files**:
     - `src/deviate/cli/macro.py`
-    - `tests/test_cli/test_macro_contracts.py`
+    - `tests/unit/test_cli/test_macro_contracts.py`
   - **Rationale**: US-019-01 / `AC-PLAN-001` require next adhoc id `018` when origin has `feat/adhoc/017-*` and the local ledger has no `017` row. The same slice pins `AC-PLAN-004`: a local-only `feat/adhoc/019-*` does not reserve `019`. `macro.py` owns `_compute_next_issue_id`. `test_macro_contracts.py` is the next-id pin surface. `**Flow References**: []` matches plan.md `## Product Layer Anchors`.
   - **Details**:
     - **Red**: Seed `refs/remotes/origin/feat/adhoc/017-*` in `tmp_git_repo` with `_git_env()`. Assert `_compute_next_issue_id(..., epic_slug="adhoc")` returns `ISS-018` or `ISS-ADH-018` when local `specs/issues.jsonl` has no `017` row. Pin that a ledger row `ISS-ADH-017` counts as ordinal `017` (same series as `ISS-017`). Pin that a local-only unpushed `feat/adhoc/019-*` with no origin `feat/adhoc/019-*` still emits `019`.
@@ -60,16 +60,16 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_meso.py tests/test_meso/test_specify.py -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_meso.py tests/unit/test_meso/test_specify.py -v`
   - **Estimated Time**: 75 minutes
   - **Flow References**: `[]`
   - **Files**:
     - `src/deviate/cli/meso.py`
-    - `tests/test_cli/test_meso.py`
-    - `tests/test_meso/test_specify.py`
-  - **Rationale**: US-019-03 / `AC-PLAN-003` require `_try_claim_issue` to increment from rejected `feat/adhoc/018-*` to `019` and retry push. Collision retry must not set `local=True`. Explicit `--local` and `claim_remote = false` stay the ISS-ADH-017 skip. `TestSpecifyPushFailure` and `TestSpecifyLocalFlag` plus `tests/test_meso/test_specify.py` are the pin surfaces. `**Flow References**: []` matches plan.md `## Product Layer Anchors`.
+    - `tests/unit/test_cli/test_meso.py`
+    - `tests/unit/test_meso/test_specify.py`
+  - **Rationale**: US-019-03 / `AC-PLAN-003` require `_try_claim_issue` to increment from rejected `feat/adhoc/018-*` to `019` and retry push. Collision retry must not set `local=True`. Explicit `--local` and `claim_remote = false` stay the ISS-ADH-017 skip. `TestSpecifyPushFailure` and `TestSpecifyLocalFlag` plus `tests/unit/test_meso/test_specify.py` are the pin surfaces. `**Flow References**: []` matches plan.md `## Product Layer Anchors`.
   - **Details**:
-    - **Red**: In `tests/test_cli/test_meso.py`, when the first `git push` of `feat/adhoc/018-*` is rejected because that name exists, assert a retry at `019` that succeeds, and assert `local` stays false. Keep non-name-collision rollback / `PUSH_STDERR` / `--force` pins. Keep explicit `--local` skip-push tests. In `tests/test_meso/test_specify.py`, assert collision retry does not call the local skip path and does not change `claim_remote` default `true`. Use `tmp_git_repo` + `_git_env()`. Do not invoke un-mocked `deviate.cli.micro._run_pytest`.
+    - **Red**: In `tests/unit/test_cli/test_meso.py`, when the first `git push` of `feat/adhoc/018-*` is rejected because that name exists, assert a retry at `019` that succeeds, and assert `local` stays false. Keep non-name-collision rollback / `PUSH_STDERR` / `--force` pins. Keep explicit `--local` skip-push tests. In `tests/unit/test_meso/test_specify.py`, assert collision retry does not call the local skip path and does not change `claim_remote` default `true`. Use `tmp_git_repo` + `_git_env()`. Do not invoke un-mocked `deviate.cli.micro._run_pytest`.
     - **Green**: In `_try_claim_issue`, when `git push` of `feat/.../NNN-*` is rejected because the name exists, recompute `NNN+1` from the shared helper and retry push, at most 3 times. Do not pass `local=True`. Non-name-collision push errors still print `PUSH_STDERR` and follow `--force` or rollback. Explicit `--local` and `claim_remote = false` still skip push.
     - **Refactor**: Keep one claim path. Do not add a second local counter. Do not retarget two-counter retry in `src/deviate/cli/micro.py`.
     - **Edge Cases**: Cap retries at 3. After 3 name collisions, surface the last push error. `BRANCH_ON_REMOTE` pre-check behavior stays for discovery; collision increment is the rejected-push path. Do not delete remote or local feat branches.

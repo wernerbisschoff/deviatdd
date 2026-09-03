@@ -30,14 +30,14 @@ from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from tests.conftest import _git_env
 from tests.helpers.cycle_driver import load_verdicts
-from tests.test_micro.test_judge_refactor_note_routing import (
+from tests.unit.test_micro.test_judge_refactor_note_routing import (
     _ISSUE_ID,
     _TASK_ID,
     _manifest,
     _seed_green_repo,
     _task,
 )
-from tests.test_micro.test_judge_verdicts import _apply_existing
+from tests.unit.test_micro.test_judge_verdicts import _apply_existing
 
 
 def _head_sha(root: Path) -> str:

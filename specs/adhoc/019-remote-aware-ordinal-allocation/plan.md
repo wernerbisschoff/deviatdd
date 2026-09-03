@@ -65,19 +65,19 @@
   - **Current State**: Step 6 uses `ISS-NNN` and file `NNN-slug.md` with no remote-ref rule, so agents can mint a second `017`.
   - **Changes Required**: Instruct the compiler to take `max(origin ledger, current ledger, remote feat/adhoc/<NNN>-*) + 1`. Parse `ISS-ADH-NNN` and `ISS-NNN` as one series. Do not use `max(local ledger)+1` or local-only branches.
   - **Integration Surface**: `_compute_next_issue_id` behavior; issue file `specs/adhoc/issues/{NNN}-{slug}.md`.
-- **tests/test_cli/test_macro_contracts.py**: Pin adhoc next-id against remote-tracking refs.
+- **tests/unit/test_cli/test_macro_contracts.py**: Pin adhoc next-id against remote-tracking refs.
   - **Current State**: Tests cover per-epic labels and local-ledger adhoc `ISS-NNN` fallback. No origin `feat/adhoc/017-*` case. No `ISS-ADH-NNN` parse pin.
   - **Changes Required**: Seed `refs/remotes/origin/feat/adhoc/017-*` in `tmp_git_repo` with `_git_env()`. Assert next id ordinal is `018` when the local ledger has no `017`. Pin `ISS-ADH-017` counting as `017`. Pin a local-only unpushed `feat/adhoc/019-*` that does not reserve `019`.
   - **Integration Surface**: `_compute_next_issue_id`.
-- **tests/test_core/test_epic.py**: Pin `allocate_feature_bucket` against remote epic prefixes.
+- **tests/unit/test_core/test_epic.py**: Pin `allocate_feature_bucket` against remote epic prefixes.
   - **Current State**: Tests cover `discover_epic` and the missing-`explore.md` warning. No `allocate_feature_bucket` remote pin.
   - **Changes Required**: Seed `refs/remotes/origin/feat/005-*`. Assert an unnumbered slug allocates above `005`. Assert `005-acceptance-gates` stays idempotent.
   - **Integration Surface**: `_find_next_epic_num`, `allocate_feature_bucket`.
-- **tests/test_cli/test_meso.py**: Pin push name-collision increment and no `--local` fallback.
+- **tests/unit/test_cli/test_meso.py**: Pin push name-collision increment and no `--local` fallback.
   - **Current State**: `TestSpecifyPushFailure` pins stderr, rollback, and race-keep. `TestSpecifyLocalFlag` pins explicit `--local`.
   - **Changes Required**: When push rejects because the name exists, assert a retry at `NNN+1` and assert `local` stays false. Keep non-name-collision rollback. Keep explicit `--local` skip-push tests.
   - **Integration Surface**: `_try_claim_issue`.
-- **tests/test_meso/test_specify.py**: Keep `--local` / `claim_remote = false` as the optional skip.
+- **tests/unit/test_meso/test_specify.py**: Keep `--local` / `claim_remote = false` as the optional skip.
   - **Current State**: Local-flag forwarding and config-false skip-push are pinned.
   - **Changes Required**: Collision retry must not call the local skip path. Do not change `claim_remote` default `true`.
   - **Integration Surface**: `_specify_pre`, `_try_claim_issue`.
@@ -96,15 +96,15 @@
 
 ## Implementation Strategy
 - **Phase 1**: Shared remote ordinal helper
-  - **Files**: `src/deviate/core/epic.py`, `tests/test_core/test_epic.py`
+  - **Files**: `src/deviate/core/epic.py`, `tests/unit/test_core/test_epic.py`
   - **Approach**: Collect ordinals from `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat` with `cwd` at the repo root and `env=git_env()`. Parse `feat/adhoc/<NNN>-*` for the adhoc series and `feat/<NNN>-*` for epic prefixes. Skip local-only branches. Seed remote-tracking refs in `tmp_git_repo`. Do not call `ls-remote` on the hot path.
-  - **Verification**: `mise run test tests/test_core/test_epic.py` — remote `005-*` raises the next epic number; numbered slugs stay idempotent.
+  - **Verification**: `mise run test tests/unit/test_core/test_epic.py` — remote `005-*` raises the next epic number; numbered slugs stay idempotent.
 - **Phase 2**: Remote-aware `_compute_next_issue_id`
-  - **Files**: `src/deviate/cli/macro.py`, `tests/test_cli/test_macro_contracts.py`
+  - **Files**: `src/deviate/cli/macro.py`, `tests/unit/test_cli/test_macro_contracts.py`
   - **Approach**: Union ordinals from current `specs/issues.jsonl`, `git show origin/<base_branch>:specs/issues.jsonl` when that blob exists, and remote feat refs from Phase 1. Parse `ISS-ADH-NNN` and `ISS-NNN` as one adhoc series. Keep per-epic compound ids. Missing origin blob is zero extra ordinals, not an error.
   - **Verification**: Origin `feat/adhoc/017-*` with empty local ledger yields ordinal `018`. `ISS-ADH-017` counts. Local-only `feat/adhoc/019-*` does not reserve `019`.
 - **Phase 3**: Claim name-collision increment
-  - **Files**: `src/deviate/cli/meso.py`, `tests/test_cli/test_meso.py`, `tests/test_meso/test_specify.py`
+  - **Files**: `src/deviate/cli/meso.py`, `tests/unit/test_cli/test_meso.py`, `tests/unit/test_meso/test_specify.py`
   - **Approach**: On rejected push whose cause is an existing `feat/.../NNN-*` name, recompute `NNN+1` from the helper and retry push, at most 3 times. Do not pass `local=True`. Non-name-collision failures still print `PUSH_STDERR` and follow `--force` or rollback. Explicit `--local` / `claim_remote = false` still skip push.
   - **Verification**: First rejected `018-*` retries `019` and succeeds. Collision path never records a local-only win. Existing local-flag tests still pass.
 - **Phase 4**: Adhoc prompt plus specs and changelog

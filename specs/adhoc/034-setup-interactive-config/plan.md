@@ -88,24 +88,24 @@
 - **src/deviate/core/commands.py**: Own the pack map and filter discovered stems.
   - **Current State**: `discover_commands` returns every `*.md` stem with no pack filter.
   - **Changes Required**: Add default/optional pack membership and a filter used by install. Fail a unit test when a packaged stem is unclassified.
-  - **Integration Surface**: `_install_commands_to_agents`; `_install_codex_command_skills`; `tests/test_core/test_commands.py`.
+  - **Integration Surface**: `_install_commands_to_agents`; `_install_codex_command_skills`; `tests/unit/test_core/test_commands.py`.
 - **src/deviate/cli/__init__.py**: Interactive packs, allowlist TOML, libref gate, agent-key filter.
   - **Current State**: Agent prompt exists; all commands install; `model_dump` writes every field; libref is PATH-detected and always seeded.
   - **Changes Required**: Add `--packs` and `_prompt_pack_selection`. Serialize via an allowlist. Gate libref on `--libref` only. Strip dead Pi keys for non-pi/omp backends. Keep Codex if-empty upserts.
-  - **Integration Surface**: `DeviateConfig`; `compose_command_body`; `tests/test_cli/test_setup.py`.
+  - **Integration Surface**: `DeviateConfig`; `compose_command_body`; `tests/unit/test_cli/test_setup.py`.
 - **src/deviate/state/config.py**: Make `profile` a real execution profile.
   - **Current State**: `profile: str = "default"`. Unused `ProfileConfig` already types `full`/`fast`/`secure`.
   - **Changes Required**: Type `profile` as `Literal["full","fast","secure"] = "full"`. Keep `use_libref` in-memory; do not require it on disk.
-  - **Integration Surface**: `_scaffold_dotfiles`; `tests/test_state/test_config.py`.
+  - **Integration Surface**: `_scaffold_dotfiles`; `tests/unit/test_state/test_config.py`.
 - **src/deviate/cli/micro.py**: Read config profile when `--profile` is omitted.
   - **Current State**: Typer default is `"full"` and never reads `DeviateConfig.profile`.
   - **Changes Required**: Resolve implicit profile from config, coercing missing/`default`/invalid to `"full"`. Explicit `--profile` still wins.
-  - **Integration Surface**: `resolve_profile`; `tests/test_cli/test_micro.py`.
+  - **Integration Surface**: `resolve_profile`; `tests/unit/test_cli/test_micro.py`.
 - **src/deviate/prompts/core/core.md**: Remove always-on libref mandate from the composed core.
   - **Current State**: Invariant 7 mandates `libref` in every installed command.
   - **Changes Required**: Move the mandate to a compose overlay used only when `--libref` is set.
   - **Integration Surface**: `compose_command_body`; `deviate.prompts.assembly.load_template` if it injects the same core.
-- **tests/test_cli/test_setup.py**: Pin packs, libref-absent, agent-block keys, Codex no-clobber.
+- **tests/unit/test_cli/test_setup.py**: Pin packs, libref-absent, agent-block keys, Codex no-clobber.
   - **Current State**: Pins per-agent isolation and Codex Luna/reasoning. Codex tests assert every discovered command skill.
   - **Changes Required**: Assert default-vs-optional packs; libref-absent; backend-specific `[agent]` keys; update Codex assertions to the selected pack set.
   - **Integration Surface**: `CliRunner` + temp `chdir`.
@@ -116,11 +116,11 @@
 
 ## Implementation Strategy
 - **Phase 1**: Pack map and setup filter
-  - **Files**: `src/deviate/core/commands.py`, `src/deviate/cli/__init__.py`, `tests/test_core/test_commands.py`, `tests/test_cli/test_setup.py`
+  - **Files**: `src/deviate/core/commands.py`, `src/deviate/cli/__init__.py`, `tests/unit/test_core/test_commands.py`, `tests/unit/test_cli/test_setup.py`
   - **Approach**: Encode default and optional packs. Filter `discover_commands` results before install. Add `--packs` and a Rich prompt whose default is `none`.
   - **Verification**: Default setup has `deviate-red` and lacks `deviate-pr`; `--packs pr` adds `deviate-pr`.
 - **Phase 2**: Allowlist config + profile + agent keys
-  - **Files**: `src/deviate/state/config.py`, `src/deviate/cli/__init__.py`, `src/deviate/cli/micro.py`, `tests/test_state/test_config.py`, `tests/test_cli/test_setup.py`
+  - **Files**: `src/deviate/state/config.py`, `src/deviate/cli/__init__.py`, `src/deviate/cli/micro.py`, `tests/unit/test_state/test_config.py`, `tests/unit/test_cli/test_setup.py`
   - **Approach**: Change `profile` default to `full`. Allowlist-serialize TOML. Filter `[agent]` keys by backend. Wire micro run implicit profile.
   - **Verification**: Fresh config has `profile = "full"` and no `pi_rpc` for Claude; pi may have `transport`; micro coerce test passes.
 - **Phase 3**: Libref opt-in and Codex keep
@@ -135,7 +135,7 @@ Setup reads flags and optional TTY answers into `PackSelection`, `LibrefOptIn`, 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | Existing Codex tests assert every packaged command skill | High | High | Update those tests to the selected pack set; keep Luna/reasoning no-clobber tests |
-| `DeviateConfig.profile == "default"` tests fail | Medium | High | Update `tests/test_state/test_config.py`; coerce legacy values on read |
+| `DeviateConfig.profile == "default"` tests fail | Medium | High | Update `tests/unit/test_state/test_config.py`; coerce legacy values on read |
 | New command stem is unclassified | Medium | Medium | Unit test that every `discover_commands()` stem is classified |
 | Libref leftover in composed `core.md` | High | Medium | Overlay gate plus substring asserts on installed bodies |
 | FLOW_CONTEXT_UNAVAILABLE — no existing flow mapping is available | Medium | Low | Preserve empty flow references and plan the requested setup behavior without creating flow work |

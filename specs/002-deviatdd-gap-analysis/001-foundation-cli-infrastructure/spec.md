@@ -70,11 +70,11 @@
 
 | Tier | Target | Command |
 |------|--------|---------|
-| Unit | `tests/test_core/test_profile.py` | `pytest tests/test_core/test_profile.py -v` |
-| Unit | `tests/test_cli/test_common.py` | `pytest tests/test_cli/test_common.py -v` |
-| Unit | `tests/test_cli/test_init.py` | `pytest tests/test_cli/test_init.py::test_resolve_placeholder_* -v` |
-| Unit | `tests/test_cli/test_micro.py` | `pytest tests/test_cli/test_micro.py::test_run_pytest_json_* -v` |
-| Unit | `tests/test_state/test_config.py` | `pytest tests/test_state/test_config.py::test_profile_config* test_pytest_report_config* -v` |
+| Unit | `tests/unit/test_core/test_profile.py` | `pytest tests/unit/test_core/test_profile.py -v` |
+| Unit | `tests/unit/test_cli/test_common.py` | `pytest tests/unit/test_cli/test_common.py -v` |
+| Unit | `tests/unit/test_cli/test_init.py` | `pytest tests/unit/test_cli/test_init.py::test_resolve_placeholder_* -v` |
+| Unit | `tests/unit/test_cli/test_micro.py` | `pytest tests/unit/test_cli/test_micro.py::test_run_pytest_json_* -v` |
+| Unit | `tests/unit/test_state/test_config.py` | `pytest tests/unit/test_state/test_config.py::test_profile_config* test_pytest_report_config* -v` |
 
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER
 

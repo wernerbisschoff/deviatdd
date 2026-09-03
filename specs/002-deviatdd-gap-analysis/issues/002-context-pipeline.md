@@ -73,10 +73,10 @@ type: feature
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- `tests/test_cli/test_context.py` — `test_context_pre_emits_contract`, `test_context_pre_missing_deviate`, `test_context_post_updates_governance`, `test_context_post_symlink_enforcement`, `test_context_combined_updates_governance_and_commits`, `test_context_combined_missing_deviate`
-- `tests/test_cli/test_macro.py` — `test_explore_post_auto_triggers_context`, `test_explore_post_no_context_sync`
-- `tests/test_cli/test_meso.py` — `test_specify_post_auto_triggers_context`
-- `tests/test_core/test_context.py` — `test_resolve_workspace_context`, `test_context_contract_paths_relative`
+- `tests/unit/test_cli/test_context.py` — `test_context_pre_emits_contract`, `test_context_pre_missing_deviate`, `test_context_post_updates_governance`, `test_context_post_symlink_enforcement`, `test_context_combined_updates_governance_and_commits`, `test_context_combined_missing_deviate`
+- `tests/unit/test_cli/test_macro.py` — `test_explore_post_auto_triggers_context`, `test_explore_post_no_context_sync`
+- `tests/unit/test_cli/test_meso.py` — `test_specify_post_auto_triggers_context`
+- `tests/unit/test_core/test_context.py` — `test_resolve_workspace_context`, `test_context_contract_paths_relative`
 
 ## [DEMONSTRATION_PATH]
 
@@ -101,5 +101,5 @@ print(f'Context OK: status={contract[\"status\"]}')
 "
 
 # Run tests
-pytest tests/test_cli/test_context.py tests/test_core/test_context.py -v --no-header -q
+pytest tests/unit/test_cli/test_context.py tests/unit/test_core/test_context.py -v --no-header -q
 ```

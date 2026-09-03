@@ -20,7 +20,7 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 - **Modify** `src/deviate/prompts/core/core.md` — move invariant 7 (libref mandate) behind a compose-time overlay so default installs carry no libref token.
 - **Modify** `src/deviate/prompts/assembly.py` (if auto-path composition also injects `core.md`) so the same overlay gate applies.
 - **Keep** Codex Luna / reasoning upserts (`_apply_codex_setup_defaults`, `CODEX_DEFAULT_MODEL`).
-- **Add** tests in `tests/test_cli/test_setup.py` and `tests/test_state/test_config.py` (and a profile-default test in `tests/test_cli/test_micro.py` if the runner wiring needs it).
+- **Add** tests in `tests/unit/test_cli/test_setup.py` and `tests/unit/test_state/test_config.py` (and a profile-default test in `tests/unit/test_cli/test_micro.py` if the runner wiring needs it).
 - **Modify** `CHANGELOG.md` `[Unreleased]`.
 - **Do not modify** ISS-ADH-030 ACs; do not merge PR #125.
 
@@ -69,13 +69,13 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 | Risk ID | Risk | Likelihood | Impact | Mitigation | Owner | Source Anchor |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | RSK-001 | New command stem is not in the pack map and is silently skipped | M | M | CI test: every `discover_commands()` stem is classified | commands | `src/deviate/core/commands.py` `discover_commands` |
-| RSK-002 | Existing tests assert `setup --agent X` installs `deviate-red.md` and every Codex command skill | H | H | Keep default-pack install of micro commands; update Codex tests to assert default set, not all 26 | setup tests | `tests/test_cli/test_setup.py` |
-| RSK-003 | `DeviateConfig.profile` type change breaks tests that set `profile="test"` or assert `"default"` | H | M | Update `tests/test_state/test_config.py`; coerce legacy `"default"` at read | config | `tests/test_state/test_config.py` `assert config.profile == "default"` |
+| RSK-002 | Existing tests assert `setup --agent X` installs `deviate-red.md` and every Codex command skill | H | H | Keep default-pack install of micro commands; update Codex tests to assert default set, not all 26 | setup tests | `tests/unit/test_cli/test_setup.py` |
+| RSK-003 | `DeviateConfig.profile` type change breaks tests that set `profile="test"` or assert `"default"` | H | M | Update `tests/unit/test_state/test_config.py`; coerce legacy `"default"` at read | config | `tests/unit/test_state/test_config.py` `assert config.profile == "default"` |
 | RSK-004 | `_apply_governance` still upserts libref into CLAUDE.md/AGENTS.md on a no-`--libref` run | M | H | Gate the `libref_seed.md` upsert on the same `--libref` flag | setup | `src/deviate/cli/__init__.py` `_apply_governance` |
 | RSK-005 | Composed commands still contain `core.md` invariant 7 after install | M | H | Overlay gate in `compose_command_body` / `load_template` | commands | `src/deviate/prompts/core/core.md` |
 | RSK-006 | `_write_agent_block_to_config` leaves stale `pi_rpc`/`transport` when switching an existing file to Codex | M | M | When writing a non-pi/omp backend, strip those keys from the `[agent]` table | setup | `src/deviate/cli/__init__.py` `_write_agent_block_to_config` |
 | RSK-007 | ISS-ADH-030 operators confuse this slice with gitignore-all-of-`.deviate` | L | M | New issue `coordinates_with: [ISS-ADH-030]`; 030 stays BACKLOG | adhoc | `specs/adhoc/issues/030-config-rework.md` |
-| RSK-008 | Codex Luna / reasoning upserts get clobbered by allowlist rewrite | L | H | Keep `_apply_codex_setup_defaults` if-empty semantics; pin existing no-clobber tests | setup | `tests/test_cli/test_setup.py` `test_setup_codex_does_not_clobber_custom_models_default` |
+| RSK-008 | Codex Luna / reasoning upserts get clobbered by allowlist rewrite | L | H | Keep `_apply_codex_setup_defaults` if-empty semantics; pin existing no-clobber tests | setup | `tests/unit/test_cli/test_setup.py` `test_setup_codex_does_not_clobber_custom_models_default` |
 
 ## Constitutional Alignment Audit
 
@@ -86,7 +86,7 @@ ISS-ADH-030 stays BACKLOG. This epic does not reopen gitignore-all-of-`.deviate`
 | "Config: TOML via `.deviate/config.toml`; `[models]` section" (§2) | Allowlist dump still writes TOML; `[models]` only when Codex seeds or user already has it | Aligned | No new store |
 | "Framework: Typer (CLI entry points) with Rich for terminal I/O" (§2) | Pack prompt uses existing `rich.prompt.Prompt`; `--packs` is a Typer option | Aligned | No new prompt library |
 | "No persistent database runtime (all state tracked in JSONL ledgers and TOML config)" (§2) | Pack choice is a setup-time install filter; not a new ledger | Aligned | Config remains TOML |
-| "Test command: `pytest tests/ -v`" (§3) | Pin behavior with pytest in `tests/test_cli/test_setup.py` and `tests/test_state/test_config.py` | Aligned | |
+| "Test command: `pytest tests/ -v`" (§3) | Pin behavior with pytest in `tests/unit/test_cli/test_setup.py` and `tests/unit/test_state/test_config.py` | Aligned | |
 | "CHANGELOG.md updated under `[Unreleased]` for user-visible changes" (§5) | Required in the implementation commit | Aligned | Default-pack change is user-visible |
 
 ## Pending HITL Decisions

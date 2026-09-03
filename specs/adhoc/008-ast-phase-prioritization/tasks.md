@@ -9,7 +9,7 @@
   - **Type**: Infra_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/core/test_treesitter.py -v -k "dispatch or parser or query_compile or unknown" `
+  - **Verification**: `pytest tests/unit/core/test_treesitter.py -v -k "dispatch or parser or query_compile or unknown" `
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/core/treesitter.py`
@@ -34,7 +34,7 @@
     - `src/deviate/core/treesitter/queries/hcl.scm`
     - `src/deviate/core/treesitter/queries/kotlin.scm`
     - `src/deviate/core/treesitter/queries/swift.scm`
-    - `tests/core/test_treesitter.py`
+    - `tests/unit/core/test_treesitter.py`
   - **Rationale**: US-008-04 (language auto-detection from file extension), AC-ADHOC-008-04, AC-ADHOC-008-05, AC-ADHOC-008-07, AC-ADHOC-008-08. The EXTENSION_MAP is the single source of truth for all language dispatch. Parser caching keeps per-file overhead ≤10ms. Query files are the static data all analysis functions consume — they must be written first so analysis function TDD has patterns to test against. Graceful degradation for unknown extensions (.rb) and missing `tree-sitter-languages` is tested via ImportError fallback.
   - **Details**:
     - **Red**: Write `test_language_dispatch_*` tests (19 tests, one per grammar ID) asserting `get_parser(filepath)` returns correct grammar for each extension. Write `test_unknown_extension_logs_warning` for `.rb`. Write `test_parser_caching` verifying same grammar returns cached parser. Write `test_missing_tree_sitter_languages` (mock ImportError) asserting all public functions return empty structures. Write `test_query_file_coverage` asserting all 21 `.scm` files compile without error.
@@ -47,11 +47,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/core/test_treesitter.py -v -k "symbols or structure or incremental or dead_code or duplicate or complexity" `
+  - **Verification**: `pytest tests/unit/core/test_treesitter.py -v -k "symbols or structure or incremental or dead_code or duplicate or complexity" `
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/core/treesitter.py`
-    - `tests/core/test_treesitter.py`
+    - `tests/unit/core/test_treesitter.py`
   - **Rationale**: US-008-01 (structured diff for JUDGE), US-008-02 (file structure for PLAN), US-008-03 (dead-code/duplication/complexity for REFACTOR), US-008-05 (merge-base structured diff for REVIEW). AC-ADHOC-008-01 through AC-ADHOC-008-03. All 6 analysis functions dispatch through the same pipeline (get_parser → Parser.parse → Query → matched nodes) and never reference a specific language by name. This task covers AC-ADHOC-008-04 (auto-detection) and AC-ADHOC-008-05 (graceful degradation) as all functions inherit language dispatch from TSK-008-01.
   - **Details**:
     - **Red**: Write `test_extract_changed_symbols_single_function` (Python diff with one changed function), `test_extract_changed_symbols_mixed_languages` (diff spanning `.py` + `.rs`), `test_extract_changed_symbols_empty_diff`. Write `test_extract_file_structure_python` (classes + functions + imports), `test_extract_file_structure_typescript` (interface + class), `test_extract_file_structure_rust` (struct + impl + trait). Write `test_incremental_parse_changed_ranges` (two parses, verify only changed ranges re-parsed). Write `test_dead_code_detection` (unused function flagged), `test_duplicate_block_detection` (similar AST subtrees ≥5 lines), `test_cyclomatic_complexity` (function with if/for/while ≥10). Write `test_analysis_graceful_degradation` (unknown extension returns empty).
@@ -71,12 +71,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_micro/test_judge.py -v -k "structured_diff" `
+  - **Verification**: `pytest tests/unit/test_micro/test_judge.py -v -k "structured_diff" `
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
     - `src/deviate/prompts/auto/judge.md`
-    - `tests/test_micro/test_judge.py`
+    - `tests/unit/test_micro/test_judge.py`
   - **Rationale**: US-008-01 (structured diff summary for JUDGE), AC-ADHOC-008-01. JUDGE is the HIGH-ROI phase on V4 Pro — structured diff reduces ~3000 token raw diffs to ~500 token tables. The agent still receives the raw diff for full context but parses the structured summary first for language-aware classification. Depends on TSK-008-02 (`extract_changed_symbols`).
   - **Details**:
     - **Red**: Write `test_judge_prompt_contains_structured_diff` — mock `extract_changed_symbols` to return a known `SymbolChange` list, invoke `_run_judge_phase`, assert the output judge prompt contains `## Structured Diff Summary` with `| Language | Kind | Name | Change |` rows. Write `test_judge_prompt_empty_diff` — empty diff produces no structured section. Write `test_judge_prompt_mixed_language_diff` — diff spanning `.py` + `.rs` produces rows with both languages. Write `test_judge_prompt_graceful_degradation` — `extract_changed_symbols` returns empty list, prompt proceeds without structured section.
@@ -89,12 +89,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_meso/test_plan_structure_injection.py -v`
+  - **Verification**: `pytest tests/unit/test_meso/test_plan_structure_injection.py -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/cli/meso.py`
     - `src/deviate/prompts/auto/plan.md`
-    - `tests/test_meso/test_plan_structure_injection.py`
+    - `tests/unit/test_meso/test_plan_structure_injection.py`
   - **Rationale**: US-008-02 (file structure appendix for PLAN), AC-ADHOC-008-02. PLAN is the HIGH-ROI phase on V4 Pro — pre-scanning target files reduces 50x token cost by providing structure instead of raw file content. Depends on TSK-008-02 (`extract_file_structure`).
   - **Details**:
     - **Red**: Write `test_plan_pre_injects_file_structure` — create a temp worktree with a Python file containing classes and functions, invoke `_plan_pre`, assert the emitted JSON contract contains a `file_structure` key with per-file `{language, symbols}` entries. Write `test_plan_pre_missing_workstation_file` — file in topology mapping doesn't exist → log warning, skip. Write `test_plan_pre_mixed_languages` — workstation files include `.py`, `.ts`, `.rs` → structure includes all three languages. Write `test_plan_pre_no_topology_section` — issue file missing `## System Topology Mapping` → no `file_structure` key.
@@ -114,11 +114,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_micro/test_refactor.py -v -k "check_return or dead_code or duplicate or complexity" `
+  - **Verification**: `pytest tests/unit/test_micro/test_refactor.py -v -k "check_return or dead_code or duplicate or complexity" `
   - **Estimated Time**: 75 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_refactor.py`
+    - `tests/unit/test_micro/test_refactor.py`
   - **Rationale**: US-008-03 (multi-language dead-code/duplication/complexity for REFACTOR), AC-ADHOC-008-03. REFACTOR is MEDIUM-ROI — currently Python-only via `ast.parse`. Upgrading to tree-sitter extends checks to all 20 languages without per-language special casing. Depends on TSK-008-02 (all analysis functions).
   - **Details**:
     - **Red**: Write `test_check_return_type_mismatch_python_uses_treesitter` — verify `_check_return_type_mismatch` no longer imports `ast` and uses tree-sitter parser. Write `test_dead_code_detected_in_python` — Python file with unused function → issue reported. Write `test_dead_code_detected_in_javascript` — JS file with unused function → issue reported. Write `test_dead_code_detected_in_rust` — Rust file with unused function → issue reported. Write `test_duplicate_blocks_detected` — file with copy-pasted blocks → duplicate issues reported. Write `test_complexity_warning` — function with ≥10 decision points → complexity issue reported. Write `test_non_supported_language_graceful` — `.rb` file → empty issues list, no crash. Write `test_syntax_error_no_crash` — file with syntax errors → empty or partial results.
@@ -138,7 +138,7 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_review.py -v -k "structured_diff" `
+  - **Verification**: `pytest tests/unit/test_cli/test_review.py -v -k "structured_diff" `
   - **Estimated Time**: 75 minutes
   - **Files**:
     - `src/deviate/cli/review.py`
@@ -146,7 +146,7 @@
     - `src/deviate/prompts/auto/judge.md`
     - `src/deviate/prompts/auto/plan.md`
     - `pyproject.toml`
-    - `tests/test_cli/test_review.py`
+    - `tests/unit/test_cli/test_review.py`
   - **Rationale**: US-008-05 (merge-base structured diff for REVIEW), AC-ADHOC-008-09, AC-ADHOC-008-10. REVIEW is HIGH-ROI — structured merge-base diff catches renames, signature shifts, dead code, and duplicate blocks that raw text diffs hide. Updating SKILL.md aligns with tools-review's six-domain format. pyproject.toml adds `tree-sitter` and `tree-sitter-languages` dependencies required by all prior tasks. Depends on TSK-008-02 (`extract_file_structure`).
   - **Details**:
     - **Red**: Write `test_review_pre_contains_structured_diff` — in a temp git repo with Python, TS, and Rust files changed between merge-base and HEAD, invoke `review pre`, assert contract contains `structured_diff` key with per-file symbol changes annotated as `| Language | Kind | Name | Change |`. Write `test_review_pre_change_types` — verify change types: function added in HEAD returns `added`, function removed returns `removed`, function signature changed returns `modified`, function renamed returns `renamed`. Write `test_review_pre_merge_base_not_found` — no common ancestor → `structured_diff` absent, raw diff present. Write `test_review_pre_binary_files` — binary files in diff → marked as `| n/a | binary | <filename> | skipped |`.
@@ -169,11 +169,11 @@
   - **Verification**: `mise run test && mise run check`
   - **Estimated Time**: 45 minutes
   - **Files**:
-    - `tests/core/test_treesitter.py`
-    - `tests/test_micro/test_judge.py`
-    - `tests/test_micro/test_refactor.py`
-    - `tests/test_cli/test_review.py`
-    - `tests/test_meso/test_plan_structure_injection.py`
+    - `tests/unit/core/test_treesitter.py`
+    - `tests/unit/test_micro/test_judge.py`
+    - `tests/unit/test_micro/test_refactor.py`
+    - `tests/unit/test_cli/test_review.py`
+    - `tests/unit/test_meso/test_plan_structure_injection.py`
     - `tests/e2e/test_ast_integration.bats`
   - **Rationale**: AC-ADHOC-008-06 (no regressions in excluded phases), AC-ADHOC-008-07 (dependencies importable), AC-ADHOC-008-10 (REVIEW multi-domain output). E2E bats test verifies the CLI integration paths work end-to-end: `deviate judge post` receives structured diff, `deviate plan pre` emits file structure, `deviate refactor post` runs multi-language checks, `deviate review pre` emits structured merge-base diff. Full suite regression ensures no breakage in RED, GREEN, YELLOW, TASKS, or MACRO phases.
   - **Details**:
@@ -201,7 +201,7 @@
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/micro.py` — touched by TSK-008-03 (lines 1108-1137) and TSK-008-05 (lines 2507-2538)
-- `tests/core/test_treesitter.py` — touched by TSK-008-01 and TSK-008-02
+- `tests/unit/core/test_treesitter.py` — touched by TSK-008-01 and TSK-008-02
 - `pyproject.toml` — touched by TSK-008-06
 
 ---

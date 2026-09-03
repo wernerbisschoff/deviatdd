@@ -12,7 +12,7 @@
 - **Prompt assembly** — `_build_auto_prompt` at `src/deviate/cli/micro.py:1383` fills `{task_content}` and `{train_feedback}` placeholders from `src/deviate/prompts/auto/{phase}.md`; layer preamble routing lives in `src/deviate/prompts/assembly.py::_LAYER_MAP` (`red`/`green`/`refactor`/`judge`/`execute` → `"micro"`).
 - **Manual prompt derivation already shared** — `src/deviate/core/commands.py:185-194` (`_manual_phase`) maps the 11 overlapping phases to `auto/{phase}.md`; `_derive_manual_body` splices the auto core byte-identically at install time. The prompt TEXT is single-source; the runtime CONTRACT (pre) and SIDE EFFECTS (post) are the duplication target.
 - **Auto prompt templates** — `src/deviate/prompts/auto/red.md`, `green.md`, `judge.md`, `refactor.md` (exist on disk; also `execute.md` and the macro/meso templates).
-- **Tests touching these seams** — `tests/test_micro/test_red.py` (GH-154 AC-6 `deviate red post --task-id`), `tests/test_micro/test_judge.py` (manual `deviate judge post`), `tests/test_micro/test_cycle_driver.py`, `tests/test_meso/test_prompt_assembly.py` (asserts `deviate red pre` in the RED template retry contract).
+- **Tests touching these seams** — `tests/unit/test_micro/test_red.py` (GH-154 AC-6 `deviate red post --task-id`), `tests/unit/test_micro/test_judge.py` (manual `deviate judge post`), `tests/unit/test_micro/test_cycle_driver.py`, `tests/unit/test_meso/test_prompt_assembly.py` (asserts `deviate red pre` in the RED template retry contract).
 
 [Exclusions]: Design decisions (which kernel signature, module placement, which contract fields are shared vs surface-specific — deferred to `/research`); implementation code, tests, config files, or scripts; the macro/meso `pre`/`post` cycle driver (`src/deviate/cli/macro.py::_cycle_phase:1081-1126`); E2E hardening for manual flows (the scan found no bats coverage asserting `deviate red pre|post` — observed only); any change to the append-only ledger protocol, session state shape, or HITL gates.
 
@@ -35,7 +35,7 @@
 - `src/deviate/prompts/assembly.py`: `_LAYER_MAP` (layer routing manifest for 11 phases) and `_AUTO_DIR = "deviate.prompts.auto"`.
 
 ### Test Runner Configuration
-- `mise run test` → `uv run pytest --testmon-noselect tests/ -v`. Test root `tests/`; micro-layer tests in `tests/test_micro/` (18 files incl. `test_red.py`, `test_green.py`, `test_judge.py`, `test_refactor.py`, `test_cycle_driver.py`); prompt tests in `tests/test_meso/test_prompt_assembly.py` and `tests/test_meso/test_auto_prompt_templates.py`.
+- `mise run test` → `uv run pytest --testmon-noselect tests/ -v`. Test root `tests/`; micro-layer tests in `tests/unit/test_micro/` (18 files incl. `test_red.py`, `test_green.py`, `test_judge.py`, `test_refactor.py`, `test_cycle_driver.py`); prompt tests in `tests/unit/test_meso/test_prompt_assembly.py` and `tests/unit/test_meso/test_auto_prompt_templates.py`.
 - AGENTS.md performance rule: tests that reach `_run_pytest` (`src/deviate/cli/micro.py:5315`, invoked from `refactor_post:7114`) MUST mock `deviate.cli.micro._run_pytest` with a `CompletedProcess` fixture. This constraint applies to any new kernel-level tests.
 - Git isolation fixtures: `tests/conftest.py` (`_git_env`, `tmp_git_repo`).
 
@@ -100,7 +100,7 @@ def _run_red_phase(
     )
 ```
 
-- **Quality, Safety & Observability**: Safety filters guard every command path — `is_safe_test_command` is applied in `_task_verification_command`, `_constitution_test_command`, and again in the execution layer `run_safe_command`. Test classification (`_is_no_tests_collected` for pytest exit 5, `_is_no_test_command` for exit 127) routes the auto RED no-failing-test case to JUDGE adjudication. Observability: `_log_run("PHASE_START", task_id=tid, phase="RED")`, `_emit_phase_callout`, `OrchestrationMonitor` via `_make_agent_output_callback(monitor, tid, "RED")`. The manual post commands print fixed Rich status tokens (`RED_POST_OK`, `GREEN_POST_OK`, `JUDGE_POST_OK route=...`, `REFACTOR_POST_OK`) that the prompt `retry contracts` reference (`tests/test_meso/test_prompt_assembly.py:70` asserts `deviate red pre` appears in the RED template).
+- **Quality, Safety & Observability**: Safety filters guard every command path — `is_safe_test_command` is applied in `_task_verification_command`, `_constitution_test_command`, and again in the execution layer `run_safe_command`. Test classification (`_is_no_tests_collected` for pytest exit 5, `_is_no_test_command` for exit 127) routes the auto RED no-failing-test case to JUDGE adjudication. Observability: `_log_run("PHASE_START", task_id=tid, phase="RED")`, `_emit_phase_callout`, `OrchestrationMonitor` via `_make_agent_output_callback(monitor, tid, "RED")`. The manual post commands print fixed Rich status tokens (`RED_POST_OK`, `GREEN_POST_OK`, `JUDGE_POST_OK route=...`, `REFACTOR_POST_OK`) that the prompt `retry contracts` reference (`tests/unit/test_meso/test_prompt_assembly.py:70` asserts `deviate red pre` appears in the RED template).
 
 ```python
 def _is_no_test_command(proc: subprocess.CompletedProcess) -> bool:
@@ -139,11 +139,11 @@ def _invoke_agent(
 | `src/deviate/cli/micro.py` | py | `_invoke_agent:550` — shared agent invocation (backend, model, phase, monitor callback) | `def _invoke_agent(\n    prompt: str,\n    c: Console,\n    backend_name: str = "pi",\n    task_id: str = "",\n    phase: str = "",\n    output_callback: Callable[[str], None] \| None = None,\n    model: str \| None = None,` |
 | `src/deviate/core/commands.py` | py | Manual slash-command derivation — auto core spliced byte-identically into manual bodies | `    phase = _manual_phase(name)\n    if phase is None:\n        return raw\n    auto_body = _read_auto_body(phase)\n    if auto_body is None:\n        return None\n    fm_match = _YAML_FM_RE.match(raw)` |
 | `src/deviate/prompts/assembly.py` | py | Layer routing manifest — micro phases share the `"micro"` preamble | `    # Micro layer — shared preamble\n    "red": "micro",\n    "green": "micro",\n    "refactor": "micro",\n    "judge": "micro",\n    "execute": "micro",\n}` |
-| `src/deviate/prompts/auto/red.md` | md | Canonical RED prompt core used by auto runner and (via splice) manual command | (file resource; loaded by `_read_auto_body` in `src/deviate/core/commands.py`) — referenced verbatim in `tests/test_meso/test_prompt_assembly.py`: `for marker in ("Retry Contract", "deviate red pre"):` |
+| `src/deviate/prompts/auto/red.md` | md | Canonical RED prompt core used by auto runner and (via splice) manual command | (file resource; loaded by `_read_auto_body` in `src/deviate/core/commands.py`) — referenced verbatim in `tests/unit/test_meso/test_prompt_assembly.py`: `for marker in ("Retry Contract", "deviate red pre"):` |
 | `pyproject.toml` | toml | Project manifest — 4 runtime deps, CLI entry point | `requires-python = ">=3.13"\ndependencies = [\n    "typer>=0.12",\n    "rich>=13.0",\n    "pydantic>=2.0",\n    "pyyaml>=6.0.3",\n]` |
 | `mise.toml` | toml | Task runner definitions — test and E2E commands | `[tasks.test]\nrun = "uv run pytest --testmon-noselect tests/ -v"` |
-| `tests/test_micro/test_red.py` | py | GH-154 AC-6: manual `deviate red post --task-id` matches pending record | `    """GH-154 AC-6: ``deviate red post --task-id`` matches the pending record."""` |
-| `tests/test_micro/test_judge.py` | py | Manual judge post applies auto-mode verdict side effects | `    """Manual ``deviate judge post`` applies auto-mode JUDGE side effects."""` |
+| `tests/unit/test_micro/test_red.py` | py | GH-154 AC-6: manual `deviate red post --task-id` matches pending record | `    """GH-154 AC-6: ``deviate red post --task-id`` matches the pending record."""` |
+| `tests/unit/test_micro/test_judge.py` | py | Manual judge post applies auto-mode verdict side effects | `    """Manual ``deviate judge post`` applies auto-mode JUDGE side effects."""` |
 | `specs/constitution.md` | md | Governance: 3-layer architecture, model routing, testing protocols (v0.10.0) | `- **Three-Layer Architecture**: Macro (feature scoping: Explore → Research → PRD → Shard), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR).` |
 
 ## Scope Sizing
@@ -151,11 +151,11 @@ def _invoke_agent(
 | Metric | Value |
 | :--- | :--- |
 | Estimated Complexity | Medium |
-| Files Likely Modified | 3-5: `src/deviate/cli/micro.py` (extract kernels, thin the 8 CLI commands), `src/deviate/cli/macro.py` (if the meso `_cycle_phase` reuses the same seam — verify at research), plus `tests/test_micro/*` and `CHANGELOG.md` (behavior-adjacent refactor: verify exemption or add bullet) |
+| Files Likely Modified | 3-5: `src/deviate/cli/micro.py` (extract kernels, thin the 8 CLI commands), `src/deviate/cli/macro.py` (if the meso `_cycle_phase` reuses the same seam — verify at research), plus `tests/unit/test_micro/*` and `CHANGELOG.md` (behavior-adjacent refactor: verify exemption or add bullet) |
 | New Modules Required | No — kernels extract into the existing `src/deviate/cli/micro.py` (or an adjacent core module already in the package) |
 | New Persistence / Data Models | No — `issues.jsonl` / `tasks.jsonl` / `session.json` shapes unchanged (constitution §1 Append-Only Ledger Protocol holds) |
 | New External Integrations | No — same agent backends via `_invoke_agent` |
-| Upstream / Cross-Cutting Concerns | Status-token and exit-code contract (`*_POST_OK`, `TEST_NOT_FOUND`, `LEDGER_UPDATE_FAILED`) is consumed by prompt `retry contracts` in `src/deviate/prompts/auto/*.md` and asserted in `tests/test_meso/test_prompt_assembly.py:70`; contract JSON emitted by `pre` commands is an installed interface for external agents. Kernel extraction must keep both stable or update prompts + tests in the same change. |
+| Upstream / Cross-Cutting Concerns | Status-token and exit-code contract (`*_POST_OK`, `TEST_NOT_FOUND`, `LEDGER_UPDATE_FAILED`) is consumed by prompt `retry contracts` in `src/deviate/prompts/auto/*.md` and asserted in `tests/unit/test_meso/test_prompt_assembly.py:70`; contract JSON emitted by `pre` commands is an installed interface for external agents. Kernel extraction must keep both stable or update prompts + tests in the same change. |
 | Rationale | The change is a behavior-preserving consolidation inside one module plus test updates: 8 CLI commands become thin wrappers over 2 kernel steps per phase, reusing the existing `_apply_judge_verdict` seam as the template. No new modules, persistence, or integrations; the cross-cutting concern is the status-token/contract surface shared with prompts. |
 
 ## Status Summary

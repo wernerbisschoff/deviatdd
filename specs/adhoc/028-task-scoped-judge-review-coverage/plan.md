@@ -79,7 +79,7 @@
 - **src/deviate/core/judge_evidence.py**: Own task-scoped token resolution and stop plan-wide fallback.
   - **Current State**: `evaluate_judge_evidence` extracts every `AC-PLAN-NNN` from `<authoritative_acceptance_contract source="plan.md">` via `_extract_ac_plan_tokens`. Quote, path, and uniqueness-floor checks already exist.
   - **Changes Required**: Accept an explicit `required_tokens` list. Do not fall back to the full plan set. Add `resolve_task_ac_tokens` with first-hit order: non-empty `acceptance_criteria` `criterion_id`s, else `AC-PLAN-NNN` tokens in this task's `tasks.md` card, else no AC tokens. Keep `_AC_TOKEN`, exact-substring, path-in-diff, uniqueness floor, empty-GREEN, and `skip_refactor` HEAD rules.
-  - **Integration Surface**: `_rewrite_unmatched_tdd_pass`; review coverage helper; `tests/test_core/test_judge_evidence.py`.
+  - **Integration Surface**: `_rewrite_unmatched_tdd_pass`; review coverage helper; `tests/unit/test_core/test_judge_evidence.py`.
 - **src/deviate/cli/micro.py**: Pass resolved task tokens into the gate and inject the task card.
   - **Current State**: `_rewrite_unmatched_tdd_pass` passes `_resolve_spec_md(root, task)` as `plan_contract`. Synthesized PENDING dicts omit `acceptance_criteria`. `_build_auto_prompt` dumps `json.dumps(task)` only.
   - **Changes Required**: Resolve tokens from the live task dict plus the `tasks.md` card before `evaluate_judge_evidence`. Read the card when the in-memory dict omits `acceptance_criteria`. Inject the card next to the plan contract in the JUDGE prompt. Keep EXECUTE, IMMEDIATE, and DIRECT ungated. Keep ISS-ADH-022 `declared_paths` checks.
@@ -95,20 +95,20 @@
 - **src/deviate/cli/review.py**: Fail-close Gate 3 when a plan AC is unclaimed.
   - **Current State**: `pre` always emits `status: READY` with no coverage field. `post` writes any supplied report.
   - **Changes Required**: Resolve the branch issue, scan `plan.md` for `AC-PLAN-NNN`, and claim tokens from this-issue COMPLETED rows via the same first-hit resolver. Honor a persisted evidence row only when a COMPLETED raw JSONL object already carries one. On a miss, exit non-zero and emit a non-PASS contract. `post` must not persist a PASS report over a miss. Vacuous complete when `plan.md` or tokens are absent.
-  - **Integration Surface**: `resolve_issue_id_from_branch`; coverage helper; `tests/test_cli/test_review.py`.
+  - **Integration Surface**: `resolve_issue_id_from_branch`; coverage helper; `tests/unit/test_cli/test_review.py`.
 - **src/deviate/core/review_coverage.py**: Unit-testable plan-versus-COMPLETED coverage helper.
   - **Current State**: File does not exist. Review has no AC coverage scan.
   - **Changes Required**: Parse plan tokens, latest this-issue task rows, and `tasks.md` cards. Return uncovered tokens with no agent call. Reuse `resolve_task_ac_tokens`. Do not add a #84 persistence field.
-  - **Integration Surface**: `review.pre` / `review.post`; `tests/test_cli/test_review.py`.
-- **tests/test_core/test_judge_evidence.py**: Invert plan-wide omit and keep this-task fail-closed pins.
+  - **Integration Surface**: `review.pre` / `review.post`; `tests/unit/test_cli/test_review.py`.
+- **tests/unit/test_core/test_judge_evidence.py**: Invert plan-wide omit and keep this-task fail-closed pins.
   - **Current State**: `test_partial_coverage_fails_for_omitted_token` fails when plan lists `AC-PLAN-002` and evidence omits it.
   - **Changes Required**: Pass when the omitted token is not this task's required set. Keep missing this-task token, empty quote, path miss, paraphrase, and uniqueness-floor failures. Pin resolver precedence.
   - **Integration Surface**: `evaluate_judge_evidence`; `resolve_task_ac_tokens`.
-- **tests/test_micro/test_judge.py**: Pin mid-plan COMPLETE and prompt wording.
+- **tests/unit/test_micro/test_judge.py**: Pin mid-plan COMPLETE and prompt wording.
   - **Current State**: `_seed_gate_issue` writes a `tasks.md` card with no AC tokens. `_run_tdd_judge` task dict omits `acceptance_criteria`. `test_partial_evidence_does_not_complete` treats a second plan token as required.
   - **Changes Required**: Seed this-task tokens so ISS-ADH-020 pins stay fail-closed. COMPLETE a GREEN-passing task whose evidence covers only the task tokens while the plan lists more. Assert the auto prompt no longer requires every plan AC. Mock `_run_pytest`. Use `tmp_git_repo` plus `_git_env()`.
   - **Integration Surface**: `_run_judge_phase`; `_build_auto_prompt`.
-- **tests/test_cli/test_review.py**: Pin coverage fail-close and full-claim PASS.
+- **tests/unit/test_cli/test_review.py**: Pin coverage fail-close and full-claim PASS.
   - **Current State**: `test_review_pre_emits_contract` asserts `status == READY` and exit 0 on a repo with no `plan.md`.
   - **Changes Required**: Keep the no-plan repo vacuously READY. Add fixtures where an unclaimed plan AC fail-closes, and where COMPLETED claims cover every plan token. PENDING, FAILED, and sibling-issue rows must not claim. Use `tmp_git_repo` plus `_git_env()`.
   - **Integration Surface**: `deviate review pre` / `post`.
@@ -127,17 +127,17 @@
 
 ## Implementation Strategy
 - **Phase 1**: Task-scoped evidence helper
-  - **Files**: `src/deviate/core/judge_evidence.py`, `tests/test_core/test_judge_evidence.py`
+  - **Files**: `src/deviate/core/judge_evidence.py`, `tests/unit/test_core/test_judge_evidence.py`
   - **Approach**: Add `resolve_task_ac_tokens` with first-hit order. Change `evaluate_judge_evidence` to require that explicit list. Invert `test_partial_coverage_fails_for_omitted_token` when the omitted token is not this task's. Keep ISS-ADH-020 quote pins.
-  - **Verification**: `pytest tests/test_core/test_judge_evidence.py -q --tb=short`
+  - **Verification**: `pytest tests/unit/test_core/test_judge_evidence.py -q --tb=short`
 - **Phase 2**: Wire JUDGE and update prompts
-  - **Files**: `src/deviate/cli/micro.py`, `src/deviate/prompts/auto/judge.md`, `src/deviate/prompts/commands/deviate-judge.md`, `tests/test_micro/test_judge.py`
+  - **Files**: `src/deviate/cli/micro.py`, `src/deviate/prompts/auto/judge.md`, `src/deviate/prompts/commands/deviate-judge.md`, `tests/unit/test_micro/test_judge.py`
   - **Approach**: Resolve tokens from the task dict and the `tasks.md` card inside `_rewrite_unmatched_tdd_pass`. Inject the card next to the plan contract. Seed this-task tokens in gate fixtures so existing fail-closed tests stay red-then-green. Add a mid-plan COMPLETE case. Remove cite-every-plan wording.
-  - **Verification**: `pytest tests/test_micro/test_judge.py -q --tb=short`
+  - **Verification**: `pytest tests/unit/test_micro/test_judge.py -q --tb=short`
 - **Phase 3**: Gate 3 plan-AC coverage
-  - **Files**: `src/deviate/core/review_coverage.py`, `src/deviate/cli/review.py`, `tests/test_cli/test_review.py`
+  - **Files**: `src/deviate/core/review_coverage.py`, `src/deviate/cli/review.py`, `tests/unit/test_cli/test_review.py`
   - **Approach**: Scan `plan.md` tokens against this-issue COMPLETED claims. Fail-close `pre` and `post` on a miss. Honor persisted evidence only when a COMPLETED raw row already has it. Keep no-plan repos vacuously READY.
-  - **Verification**: `pytest tests/test_cli/test_review.py -q --tb=short`
+  - **Verification**: `pytest tests/unit/test_cli/test_review.py -q --tb=short`
 - **Phase 4**: Specs and changelog
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Update the mechanical evidence gate and `deviate review pre` contracts in the same implementation commit. Append one `[Unreleased]` bullet.

@@ -17,8 +17,8 @@ type: feature
   - `src/deviate/state/ledger.py` — MODIFY: add `SecurityProfile` Pydantic model + `TaskRecord.security_profile` field
   - `src/deviate/prompts/commands/deviate-plan.md` — MODIFY: add `## Security Profile` section template (prose-only, recommendation)
   - `src/deviate/prompts/auto/judge.md` — MODIFY: add `security_checks: {pass | fail | warn}` to the YAML manifest schema; instruct the agent to populate it as a *required* field based on the existing flat security scan plus any `security_profile.body` content
-  - `tests/test_state/test_security_profile.py` — NEW: 5 ledger round-trip tests
-  - `tests/test_micro/test_judge_prompt.py` — APPEND: 1 prompt-assembly test asserting `security_checks` is required + vocabulary pinned
+  - `tests/unit/test_state/test_security_profile.py` — NEW: 5 ledger round-trip tests
+  - `tests/unit/test_micro/test_judge_prompt.py` — APPEND: 1 prompt-assembly test asserting `security_checks` is required + vocabulary pinned
   - `CHANGELOG.md` — MODIFY: Unreleased bullet
 
 ## [THE_PROBLEM_CONTRACT]
@@ -105,7 +105,7 @@ The field is optional; the prompt template is internal; the public API doesn't c
 
 ### TSK-004-001-01 — RED: 6 failing tests
 
-Create `tests/test_state/test_security_profile.py` with 5 tests; append `test_judge_prompt_declares_security_checks_as_required_field` to `tests/test_micro/test_judge_prompt.py`. Tests run → all 6 fail with concrete errors (`ImportError: cannot import name 'SecurityProfile'`, `KeyError: 'security_checks'` in the rendered prompt).
+Create `tests/unit/test_state/test_security_profile.py` with 5 tests; append `test_judge_prompt_declares_security_checks_as_required_field` to `tests/unit/test_micro/test_judge_prompt.py`. Tests run → all 6 fail with concrete errors (`ImportError: cannot import name 'SecurityProfile'`, `KeyError: 'security_checks'` in the rendered prompt).
 
 ### TSK-004-001-01 — GREEN: ledger model + field
 

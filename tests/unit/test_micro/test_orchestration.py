@@ -2566,7 +2566,7 @@ class TestTwoCounterStubJudgeLoops:
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from tests.test_micro.test_two_counter_retry import (
+        from tests.unit.test_micro.test_two_counter_retry import (
             _install_always_revert_green_stubs,
             _mock_pytest,
             _seed_workspace,
@@ -2600,7 +2600,7 @@ class TestTwoCounterStubJudgeLoops:
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from tests.test_micro.test_two_counter_retry import (
+        from tests.unit.test_micro.test_two_counter_retry import (
             _install_always_revert_red_stubs,
             _mock_pytest,
             _seed_workspace,
@@ -2629,7 +2629,7 @@ class TestTwoCounterStubJudgeLoops:
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from tests.test_micro.test_two_counter_retry import (
+        from tests.unit.test_micro.test_two_counter_retry import (
             _install_coerce_violation_stubs,
             _mock_pytest,
             _seed_workspace,

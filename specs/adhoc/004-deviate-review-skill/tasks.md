@@ -31,12 +31,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_review.py::test_review_pre_emits_contract tests/test_cli/test_review.py::test_review_pre_finds_constitution tests/test_cli/test_review.py::test_review_pre_diff_against_main tests/test_cli/test_review.py::test_review_pre_empty_diff -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_review.py::test_review_pre_emits_contract tests/unit/test_cli/test_review.py::test_review_pre_finds_constitution tests/unit/test_cli/test_review.py::test_review_pre_diff_against_main tests/unit/test_cli/test_review.py::test_review_pre_empty_diff -v`
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/cli/review.py`
-    - `tests/test_cli/test_review.py`
-  - **Rationale**: `review.py` is the implementation workstation for all pre command logic (US-001, AC-001-1/2/3/9). `tests/test_cli/test_review.py` is the mandatory test file for all review unit tests, covering contract shape, constitution path, and diff computation.
+    - `tests/unit/test_cli/test_review.py`
+  - **Rationale**: `review.py` is the implementation workstation for all pre command logic (US-001, AC-001-1/2/3/9). `tests/unit/test_cli/test_review.py` is the mandatory test file for all review unit tests, covering contract shape, constitution path, and diff computation.
   - **Details**:
     - **Red**: Write `test_review_pre_emits_contract()` asserting `deviate review pre` (via `runner.invoke`) produces valid JSON with `status`, `diff`, `constitution_path`, `prd_path`, `base_branch`, `report_exists`, `timestamp` keys. Mock git state using `tmp_git_repo` fixture and `_git_env()`.
     - **Red**: Write `test_review_pre_finds_constitution()` asserting contract `constitution_path` points to `.resolve()` of `specs/constitution.md`. Create a dummy `specs/constitution.md` in `tmp_git_repo`.
@@ -57,12 +57,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_review.py::test_review_pre_resolves_prd_epic_first tests/test_cli/test_review.py::test_review_pre_falls_back_to_adhoc_prd tests/test_cli/test_review.py::test_review_pre_no_prd_warning tests/test_cli/test_review.py::test_review_pre_custom_base tests/test_cli/test_review.py::test_review_pre_existing_report_warning -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_review.py::test_review_pre_resolves_prd_epic_first tests/unit/test_cli/test_review.py::test_review_pre_falls_back_to_adhoc_prd tests/unit/test_cli/test_review.py::test_review_pre_no_prd_warning tests/unit/test_cli/test_review.py::test_review_pre_custom_base tests/unit/test_cli/test_review.py::test_review_pre_existing_report_warning -v`
   - **Estimated Time**: 60 minutes
   - **Dependency**: TSK-004-02
   - **Files**:
     - `src/deviate/cli/review.py`
-    - `tests/test_cli/test_review.py`
+    - `tests/unit/test_cli/test_review.py`
   - **Rationale**: Extends the pre command with PRD anchoring (US-001, AC-001-4/5/6), report existence detection (AC-001-7), custom base branch override (AC-001-8), and self-contained branch-targeted mode (US-006, AC-006-1/2). All logic lives in `review.py`; the test file extends with 5 additional test cases.
   - **Details**:
     - **Red**: Write `test_review_pre_resolves_prd_epic_first()` — create both `specs/{epic}/prd.md` and `specs/adhoc/prd.md` in `tmp_git_repo`, assert `prd_path` in contract points to epic PRD.
@@ -89,12 +89,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_review.py::test_review_post_persists_report tests/test_cli/test_review.py::test_review_post_no_artifact tests/test_cli/test_review.py::test_review_post_no_commit -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_review.py::test_review_post_persists_report tests/unit/test_cli/test_review.py::test_review_post_no_artifact tests/unit/test_cli/test_review.py::test_review_post_no_commit -v`
   - **Estimated Time**: 45 minutes
   - **Dependency**: TSK-004-01
   - **Files**:
     - `src/deviate/cli/review.py`
-    - `tests/test_cli/test_review.py`
+    - `tests/unit/test_cli/test_review.py`
   - **Rationale**: Post command is the second half of the review lifecycle (US-004, AC-004-1/2/3/4). `review.py` holds all post logic. `test_review.py` adds 3 tests for report writing, directory creation, no-commit enforcement, and graceful no-op.
   - **Details**:
     - **Red**: Write `test_review_post_persists_report()` — invoke `deviate review post` with report content, assert file written to `.deviate/review/reports/review-report-{timestamp}.md` with matching content.
@@ -152,7 +152,7 @@
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/review.py` — touched by TSK-004-01, TSK-004-02, TSK-004-03, TSK-004-04 (sequential execution avoids conflicts)
-- `tests/test_cli/test_review.py` — touched by TSK-004-02, TSK-004-03, TSK-004-04 (sequential addition of test cases)
+- `tests/unit/test_cli/test_review.py` — touched by TSK-004-02, TSK-004-03, TSK-004-04 (sequential addition of test cases)
 
 ## Universal Test Constraints (ALL TASKS)
 

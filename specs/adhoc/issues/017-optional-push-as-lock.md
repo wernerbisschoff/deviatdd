@@ -21,8 +21,8 @@ flow_refs: []
   - `src/deviate/cli/meso.py::_claim_and_setup` — TARGET: inherits config via `_specify_pre` so `deviate plan pre` outside a worktree also skips push when `claim_remote = false`.
   - `src/deviate/cli/__init__.py::run_command` — TARGET: add `--local` and forward to `_meso_run` so auto-claim on `deviate run` does not push when local.
   - `src/deviate/cli/__init__.py::setup` / `_scaffold_dotfiles` / `_merge_flag_keys` / `_CONFIG_TOML_COMMENTS` — TARGET: persist `claim_remote` on new configs (default `true`); `--no-claim-remote` (and optional interactive prompt when TTY and the flag is omitted) writes `false` without clobbering `[models]`, `timeout_seconds`, `backend`, or other keys.
-  - `tests/test_state/test_config.py` — TARGET: default / round-trip / `resolve_claim_remote` absent-key = true.
-  - `tests/test_cli/test_meso.py` / `tests/test_meso/test_specify.py` / `tests/test_meso/test_meso_orchestration.py` — TARGET: config-false skips push; `--local` overrides config-true; discovery does not skip origin branches in local mode; meso run / run forward `--local`; `--no-setup` still drops worktree.
+  - `tests/unit/test_state/test_config.py` — TARGET: default / round-trip / `resolve_claim_remote` absent-key = true.
+  - `tests/unit/test_cli/test_meso.py` / `tests/unit/test_meso/test_specify.py` / `tests/unit/test_meso/test_meso_orchestration.py` — TARGET: config-false skips push; `--local` overrides config-true; discovery does not skip origin branches in local mode; meso run / run forward `--local`; `--no-setup` still drops worktree.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document `claim_remote`, `--local` on meso run / run, and that Atomic Concurrency Protocol push-as-lock is optional.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible config key and flags.
 - **Upstream Evidence**:
@@ -125,13 +125,13 @@ Claiming an issue creates a worktree on `feat/{epic}/{issue}`, writes ledger BAC
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_state/test_config.py` — `test_config_claim_remote_field_default` (`True`); round-trip; `resolve_claim_remote` true / false / key-absent / no-file.
-  - `tests/test_cli/test_meso.py::TestSpecifyLocalFlag` — keep existing `local=True` pins; add config-false path that never calls `branch_exists_on_remote` or `git push`.
-  - `tests/test_meso/test_specify.py` — omitted `--local` with `claim_remote = false` forwards `local=True` into `_specify_pre`; `--local` with `claim_remote = true` still forwards `True`.
-  - `tests/test_meso/test_meso_orchestration.py::TestDiscoverClaimableIssue` — local mode (flag or config-false) returns the first BACKLOG even when `branch_exists_on_remote` is True; default mode still skips origin branches.
+  - `tests/unit/test_state/test_config.py` — `test_config_claim_remote_field_default` (`True`); round-trip; `resolve_claim_remote` true / false / key-absent / no-file.
+  - `tests/unit/test_cli/test_meso.py::TestSpecifyLocalFlag` — keep existing `local=True` pins; add config-false path that never calls `branch_exists_on_remote` or `git push`.
+  - `tests/unit/test_meso/test_specify.py` — omitted `--local` with `claim_remote = false` forwards `local=True` into `_specify_pre`; `--local` with `claim_remote = true` still forwards `True`.
+  - `tests/unit/test_meso/test_meso_orchestration.py::TestDiscoverClaimableIssue` — local mode (flag or config-false) returns the first BACKLOG even when `branch_exists_on_remote` is True; default mode still skips origin branches.
 - **Integration Sandbox Targets**:
-  - `tests/test_meso/test_meso_orchestration.py` — `meso run --local` calls `_specify_pre(..., local=True)`; `meso run` without flag with `claim_remote = false` does the same; `--no-setup` still does not call `_specify_pre`.
-  - `tests/test_cli/` (run / setup) — `deviate run --local` forwards to `_meso_run`; `deviate setup --no-claim-remote` writes `claim_remote = false` without clobbering other keys.
+  - `tests/unit/test_meso/test_meso_orchestration.py` — `meso run --local` calls `_specify_pre(..., local=True)`; `meso run` without flag with `claim_remote = false` does the same; `--no-setup` still does not call `_specify_pre`.
+  - `tests/unit/test_cli/` (run / setup) — `deviate run --local` forwards to `_meso_run`; `deviate setup --no-claim-remote` writes `claim_remote = false` without clobbering other keys.
 
 ## Demonstration Path
 ```bash
@@ -150,7 +150,7 @@ rg -n "claim_remote" .deviate/config.toml
 # deviate meso run --issue ISS-ADH-017 --local
 
 # 4. Targeted tests
-mise run test tests/test_state/test_config.py tests/test_cli/test_meso.py tests/test_meso/test_specify.py tests/test_meso/test_meso_orchestration.py -v
+mise run test tests/unit/test_state/test_config.py tests/unit/test_cli/test_meso.py tests/unit/test_meso/test_specify.py tests/unit/test_meso/test_meso_orchestration.py -v
 
 # 5. Lint / types / full suite
 mise run lint

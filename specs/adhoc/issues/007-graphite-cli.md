@@ -93,12 +93,12 @@ Enable DeviaTDD users who use Graphite's stacked-changes workflow to replace nat
 
 ## Multi-Tiered Verification Targets
 - **Unit Sandbox Targets**:
-  - `tests/test_state/test_config.py`: test `DeviateConfig(graphite=True)` serialization and `DeviateConfig()` default `graphite=False`
-  - `tests/test_cli/test_init.py::test_init_with_graphite_flag`: `runner.invoke(cli, ["init", "--graphite"])` → verify `graphite = true` in config.toml
-  - `tests/test_cli/test_init.py::test_init_without_graphite_flag`: `runner.invoke(cli, ["init"])` → verify `graphite` absent or `false`
-  - `tests/test_cli/test_init.py::test_init_graphite_governance_section`: verify Graphite section in CLAUDE.md/AGENTS.md when graphite is true
-  - `tests/test_cli/test_feature.py::test_feature_create_with_graphite`: mock `subprocess.run` to assert `["gt", "create", "-am", ...]` called when graphite = true
-  - `tests/test_cli/test_meso.py::test_pr_run_with_graphite`: mock `subprocess.run` to assert `["gt", "submit", "--stack"]` called
+  - `tests/unit/test_state/test_config.py`: test `DeviateConfig(graphite=True)` serialization and `DeviateConfig()` default `graphite=False`
+  - `tests/unit/test_cli/test_init.py::test_init_with_graphite_flag`: `runner.invoke(cli, ["init", "--graphite"])` → verify `graphite = true` in config.toml
+  - `tests/unit/test_cli/test_init.py::test_init_without_graphite_flag`: `runner.invoke(cli, ["init"])` → verify `graphite` absent or `false`
+  - `tests/unit/test_cli/test_init.py::test_init_graphite_governance_section`: verify Graphite section in CLAUDE.md/AGENTS.md when graphite is true
+  - `tests/unit/test_cli/test_feature.py::test_feature_create_with_graphite`: mock `subprocess.run` to assert `["gt", "create", "-am", ...]` called when graphite = true
+  - `tests/unit/test_cli/test_meso.py::test_pr_run_with_graphite`: mock `subprocess.run` to assert `["gt", "submit", "--stack"]` called
 - **Integration Sandbox Targets**:
   - `tests/test_integration/test_init_export_cycle.py`: verify graphite flag does not break init cycle
 

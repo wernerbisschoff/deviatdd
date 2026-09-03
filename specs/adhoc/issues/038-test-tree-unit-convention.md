@@ -17,7 +17,7 @@ issue_id: ISS-ADH-038
 
 ## Scope Boundaries
 ### Hard Inclusions
-- Move real suites (`tests/test_cli`, `test_core`, `test_macro`, `test_meso`, `test_micro`, `test_state`, `test_ui`, `test_release`, `tests/core`) under `tests/unit/` per `_CONVENTIONAL_SUITE_DIRS`
+- Move real suites (`tests/unit/test_cli`, `test_core`, `test_macro`, `test_meso`, `test_micro`, `test_state`, `test_ui`, `test_release`, `tests/unit/core`) under `tests/unit/` per `_CONVENTIONAL_SUITE_DIRS`
 - Rewrite intra-suite absolute imports broken by the move
 - Update hardcoded `tests/test_*` paths in `specs/` Verification lines and DeviaTDD docs
 - Point `mise integration` and `mise e2e` at real suites (bats for e2e)

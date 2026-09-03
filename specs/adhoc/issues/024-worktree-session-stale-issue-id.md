@@ -19,8 +19,8 @@ flow_refs: []
   - `src/deviate/state/config.py::SessionState.active_issue_id` — TARGET: worktree session cache must be rewritten to the claimed/branch issue. Do not add fields.
   - `src/deviate/cli/meso.py::_meso_run` — TARGET: `MESO_ALREADY_COMPLETE` currently prints and returns *before* `session.active_issue_id = issue_id`. It must still key the worktree session to the claimed issue. The `.deviate/` `copytree` into a new worktree must not leave the previous issue's id in the worktree session (write-then-copy, or write the worktree session after copy).
   - `src/deviate/cli/meso.py::_claim_and_setup` — REFERENCE: already sets `session.active_issue_id = issue_id` then copies `.deviate/` into the worktree. Keep that order; do not regress it.
-  - `tests/test_cli/test_micro.py::TestResolveTaskContextUsesBranch` — TARGET: keep `test_stale_session_issue_rekeys_to_branch_issue` (GH-54, no board for the leftover issue) and add the stronger mismatch case plus a persist pin.
-  - `tests/test_meso/test_meso_resume.py` / `tests/test_meso/test_meso_orchestration.py` — TARGET: `MESO_ALREADY_COMPLETE` and worktree claim leave `active_issue_id` equal to the claimed issue in the worktree session.
+  - `tests/unit/test_cli/test_micro.py::TestResolveTaskContextUsesBranch` — TARGET: keep `test_stale_session_issue_rekeys_to_branch_issue` (GH-54, no board for the leftover issue) and add the stronger mismatch case plus a persist pin.
+  - `tests/unit/test_meso/test_meso_resume.py` / `tests/unit/test_meso/test_meso_orchestration.py` — TARGET: `MESO_ALREADY_COMPLETE` and worktree claim leave `active_issue_id` equal to the claimed issue in the worktree session.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document that a known feature-branch issue beats a leftover session id, and that meso claim / already-complete rewrite the worktree session.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible queue/session fix. An earlier GH-54 bullet covers only the "no tasks board" re-key; this slice is the remaining sticky-id + meso write hole.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices.
@@ -106,16 +106,16 @@ A claimed feature worktree can carry a previous issue's `active_issue_id` in its
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_cli/test_micro.py::TestResolveTaskContextUsesBranch::test_stale_session_issue_rekeys_to_branch_issue` — keep the GH-54 pin (leftover issue has no board).
-  - `tests/test_cli/test_micro.py` — new pin: leftover session issue *has* a `tasks.md`, branch maps to a different issue with unchecked tasks → `_resolve_task_context(None, root)` returns the branch issue's pending task and `session.json` is rewritten.
-  - `tests/test_meso/test_meso_resume.py` — `MESO_ALREADY_COMPLETE` with a leftover `active_issue_id` writes the claimed issue into the worktree session.
+  - `tests/unit/test_cli/test_micro.py::TestResolveTaskContextUsesBranch::test_stale_session_issue_rekeys_to_branch_issue` — keep the GH-54 pin (leftover issue has no board).
+  - `tests/unit/test_cli/test_micro.py` — new pin: leftover session issue *has* a `tasks.md`, branch maps to a different issue with unchecked tasks → `_resolve_task_context(None, root)` returns the branch issue's pending task and `session.json` is rewritten.
+  - `tests/unit/test_meso/test_meso_resume.py` — `MESO_ALREADY_COMPLETE` with a leftover `active_issue_id` writes the claimed issue into the worktree session.
 - **Integration Sandbox Targets**:
-  - `tests/test_cli/test_micro.py` or `tests/test_micro/test_run.py` — CLI `deviate micro run` in a `tmp_git_repo` feature-branch checkout whose session names a previous issue and whose branch issue `tasks.md` has unchecked tasks: stdout must not contain `NO_PENDING_TASKS`; resolved/dispatched `issue_id` is the branch issue. Mock `_run_pytest` and the agent cycle so the suite stays under 30s.
-  - `tests/test_meso/test_meso_orchestration.py` — worktree claim/copy leaves the *worktree* `.deviate/session.json` keyed to the claimed issue, not the previous main-repo id.
+  - `tests/unit/test_cli/test_micro.py` or `tests/unit/test_micro/test_run.py` — CLI `deviate micro run` in a `tmp_git_repo` feature-branch checkout whose session names a previous issue and whose branch issue `tasks.md` has unchecked tasks: stdout must not contain `NO_PENDING_TASKS`; resolved/dispatched `issue_id` is the branch issue. Mock `_run_pytest` and the agent cycle so the suite stays under 30s.
+  - `tests/unit/test_meso/test_meso_orchestration.py` — worktree claim/copy leaves the *worktree* `.deviate/session.json` keyed to the claimed issue, not the previous main-repo id.
 
 ## Demonstration Path
 
 ```bash
 # Mocked resolve + meso session pins (no live agent, no un-mocked pytest)
-uv run pytest tests/test_cli/test_micro.py tests/test_meso/test_meso_resume.py tests/test_meso/test_meso_orchestration.py -q -k "stale_session or rekey or ALREADY_COMPLETE or worktree"
+uv run pytest tests/unit/test_cli/test_micro.py tests/unit/test_meso/test_meso_resume.py tests/unit/test_meso/test_meso_orchestration.py -q -k "stale_session or rekey or ALREADY_COMPLETE or worktree"
 ```

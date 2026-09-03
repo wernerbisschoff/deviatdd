@@ -34,12 +34,12 @@ flow_refs: []
   - `src/deviate/prompts/commands/deviate-flows.md` — NO CHANGE today (slash command already manages sign-off commit). The current command emits the canonical `flows-<domain>.md` files + `index.md` row but does not invoke `deviate flows sync` to seed the ledger; that's a separate scope decision deferred from this issue (see Open Questions).
   - `specs/DeviaTDD-api.md` — REMOVE `FLOW_DEPRECATED` and `FLOW_IMPLEMENTATION_EVIDENCE_ADDED` from the event-type taxonomy.
   - `specs/constitution.md:33,98` — DROP mention of retired event types in §2 Database and §9 Version History.
-  - `tests/test_macro/test_explore.py` — NEW: `test_explore_post_commits_flows_ledger_atomically`. Asserts working tree is clean post-call when flows ledger had changes.
-  - `tests/test_cli/test_release.py` — NEW: covers parse + idempotent + missing-table paths for the new `deviate release tag-included` command.
-  - `tests/test_state/test_ledger.py` — DROP tests for retired event types. UPDATE `_derive_impl_status` tests for the simplified Literal.
-  - `tests/test_cli/test_inspect.py:812,871` — DROP corresponding test cases.
-  - `tests/test_core/test_flow_confirmation.py:454,490` — DROP corresponding test cases.
-  - `tests/test_micro/test_orchestration.py` — DROP any test asserting `flow_alignment` (verify by grep).
+  - `tests/unit/test_macro/test_explore.py` — NEW: `test_explore_post_commits_flows_ledger_atomically`. Asserts working tree is clean post-call when flows ledger had changes.
+  - `tests/unit/test_cli/test_release.py` — NEW: covers parse + idempotent + missing-table paths for the new `deviate release tag-included` command.
+  - `tests/unit/test_state/test_ledger.py` — DROP tests for retired event types. UPDATE `_derive_impl_status` tests for the simplified Literal.
+  - `tests/unit/test_cli/test_inspect.py:812,871` — DROP corresponding test cases.
+  - `tests/unit/test_core/test_flow_confirmation.py:454,490` — DROP corresponding test cases.
+  - `tests/unit/test_micro/test_orchestration.py` — DROP any test asserting `flow_alignment` (verify by grep).
 - **Upstream Evidence**:
   - `git log --follow --pretty=format:"%H %s" -- specs/_product/flows.jsonl` → single commit (`69a630e`). The ledger has been modified exactly once, by accident, as a side effect of `_run_flow_ledger_cycle` running inside the squash-merge worktree for that fix.
   - `specs/_product/flows.jsonl` live data: 2 rows, both `FLOW_REFERENCED_BY_ISSUE`. Zero identity rows. Zero `FLOW_DISCOVERED`/`FLOW_DOCUMENTED`/`FLOW_CONFIRMED_IMPLEMENTED`.
@@ -103,10 +103,10 @@ The cost is prompt bloat in every meso/micro phase, with no enforcement value be
 
 ```bash
 # Slice 1 verification
-mise run test tests/test_macro/test_explore.py -v -k atomic
+mise run test tests/unit/test_macro/test_explore.py -v -k atomic
 
 # Slice 2 verification
-mise run test tests/test_cli/test_release.py -v
+mise run test tests/unit/test_cli/test_release.py -v
 
 # Slice 3 verification
 grep -rn "flow_alignment" src/deviate/prompts/ tests/ # should return nothing

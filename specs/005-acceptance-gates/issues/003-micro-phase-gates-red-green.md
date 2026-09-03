@@ -22,8 +22,8 @@ flow_refs: []
   - `src/deviate/cli/micro.py:1290` — REFERENCE: `session.train_feedback = ""` clears feedback after a pass; unchanged.
   - `src/deviate/core/run_logger.py` — REFERENCE: `log_event` facility for the `RED_PASSED_WARNING` observability event.
   - `src/deviate/state/ledger.py:81-98` — REFERENCE: `TaskRecord` (with the optional `acceptance_criteria` field from issue `005-002`) drives `model_validate` in the runners; the advisory never becomes a status.
-  - `tests/test_micro/test_red.py` — TARGET: extend with advisory behavior; mock `deviate.cli.micro._run_pytest`.
-  - `tests/test_micro/test_green.py` — TARGET: extend with gate and JUDGE-routing behavior; mock `deviate.cli.micro._run_pytest`.
+  - `tests/unit/test_micro/test_red.py` — TARGET: extend with advisory behavior; mock `deviate.cli.micro._run_pytest`.
+  - `tests/unit/test_micro/test_green.py` — TARGET: extend with gate and JUDGE-routing behavior; mock `deviate.cli.micro._run_pytest`.
 - **Upstream Evidence**:
   - `specs/005-acceptance-gates/prd.md:14` — Hard directive: replace RED pass-rejection with a non-blocking `RedHandoffAdvisory` carried in-memory to GREEN.
   - `specs/005-acceptance-gates/prd.md:15` — Hard directive: GREEN keeps `train_feedback` routing to JUDGE; no new retry mechanism.
@@ -49,7 +49,7 @@ GREEN becomes the blocking gate: returncode 0 appends the GREEN transition; a no
 - RED appends its `RED` transition row on every completed run.
 - `_run_green_phase` requires `_run_test_cmd` returncode 0; non-zero routes to JUDGE via `session.train_feedback`.
 - JUDGE retry stays bounded by `_MAX_JUDGE_FEEDBACK = 3`; no new retry algorithm or backoff.
-- Tests in `tests/test_micro/test_red.py` and `tests/test_micro/test_green.py` mock `deviate.cli.micro._run_pytest`.
+- Tests in `tests/unit/test_micro/test_red.py` and `tests/unit/test_micro/test_green.py` mock `deviate.cli.micro._run_pytest`.
 
 ### Defensive Exclusions
 
@@ -102,8 +102,8 @@ GREEN becomes the blocking gate: returncode 0 appends the GREEN transition; a no
 
 ## Multi-Tiered Verification Targets
 
-- **Unit**: `tests/test_micro/test_red.py` — advisory on pass (severity `warning`), advisory on fail (severity `ok`), no `PhaseFailedError` on pass, `RED_PASSED_WARNING` log, crash discards advisory, absent test file skips.
-- **Unit**: `tests/test_micro/test_green.py` — GREEN pass appends transition; GREEN failure routes to JUDGE with `train_feedback`; warning advisory does not block start; `_MAX_JUDGE_FEEDBACK` bound intact.
+- **Unit**: `tests/unit/test_micro/test_red.py` — advisory on pass (severity `warning`), advisory on fail (severity `ok`), no `PhaseFailedError` on pass, `RED_PASSED_WARNING` log, crash discards advisory, absent test file skips.
+- **Unit**: `tests/unit/test_micro/test_green.py` — GREEN pass appends transition; GREEN failure routes to JUDGE with `train_feedback`; warning advisory does not block start; `_MAX_JUDGE_FEEDBACK` bound intact.
 - **Integration**: `deviate micro run <task_id>` in a temporary worktree with a mocked test command; assert the RED and GREEN transition rows and the advisory handoff.
 
 ## Demonstration Path
@@ -111,7 +111,7 @@ GREEN becomes the blocking gate: returncode 0 appends the GREEN transition; a no
 ```bash
 # 1. Unit verification — RED checkpoint and GREEN gate behavior
 #    (all CLI-reaching tests mock deviate.cli.micro._run_pytest)
-uv run pytest tests/test_micro/test_red.py tests/test_micro/test_green.py -v
+uv run pytest tests/unit/test_micro/test_red.py tests/unit/test_micro/test_green.py -v
 
 # 2. Integration: a RED run with a passing suite completes with a warning
 #    (temporary worktree; task in PENDING; _run_pytest mocked to return

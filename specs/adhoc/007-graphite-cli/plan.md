@@ -48,7 +48,7 @@
 - **Phase 1**: Add `graphite` field to `DeviateConfig` and `resolve_graphite_config()` helper
   - **Files**: `src/deviate/state/config.py`, `src/deviate/cli/__init__.py`
   - **Approach**: Add `graphite: bool = Field(default=False)` to `DeviateConfig` (line 98-106). Add `resolve_graphite_config(root: Path) -> bool` to `cli/__init__.py` that reads `.deviate/config.toml` via `tomllib.load` and returns `data.get("graphite", False)`. Gracefully handles FileNotFoundError and TOMLDecodeError returning False.
-  - **Verification**: Unit test `test_config_graphite_field_default` and `test_config_graphite_field_explicit_true` in `tests/test_state/test_config.py`. Unit test `test_resolve_graphite_config_true` and `test_resolve_graphite_config_false` in `tests/test_cli/test_init.py`.
+  - **Verification**: Unit test `test_config_graphite_field_default` and `test_config_graphite_field_explicit_true` in `tests/unit/test_state/test_config.py`. Unit test `test_resolve_graphite_config_true` and `test_resolve_graphite_config_false` in `tests/unit/test_cli/test_init.py`.
 
 - **Phase 2**: Thread `--graphite` flag through `deviate init` to config persistence and governance
   - **Files**: `src/deviate/cli/__init__.py`, `src/deviate/prompts/governance/graphite_seed.md` (new)

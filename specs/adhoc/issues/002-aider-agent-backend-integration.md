@@ -126,14 +126,14 @@ class DeviateConfig(BaseModel):
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- **Unit Tests**: `tests/test_core/test_agent.py` — Aider-specific invocation, config validation, output parsing
+- **Unit Tests**: `tests/unit/test_core/test_agent.py` — Aider-specific invocation, config validation, output parsing
 - **Integration Tests**: `tests/test_integration/test_aider_backend.py` — Full aider invocation in automated pipeline, Tamper Guard interaction
 
 ## [DEMONSTRATION_PATH]
 
 ```bash
 # Verify aider backend
-pytest tests/test_core/test_agent.py -v -k aider
+pytest tests/unit/test_core/test_agent.py -v -k aider
 
 # Verify aider integration in pipeline
 pytest tests/test_integration/test_aider_backend.py -v

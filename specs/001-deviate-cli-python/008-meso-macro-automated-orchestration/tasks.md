@@ -52,12 +52,12 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_meso/test_prompt_assembly.py -v`
+  - **Verification**: `pytest tests/unit/test_meso/test_prompt_assembly.py -v`
   - **Estimated Time**: 60 minutes
   - **Dependency**: TSK-008-01
   - **Files**:
     - `src/deviate/prompts/assembly.py`
-    - `tests/test_meso/test_prompt_assembly.py`
+    - `tests/unit/test_meso/test_prompt_assembly.py`
   - **Rationale**: US-004 requires constitution and CLAUDE.md injection into every automated prompt. US-003 AC-3 requires `TEMPLATE_MISSING` error for missing templates. This module provides `load_template(template_name)`, `inject_constitution(prompt, const_path, claude_path)`, and `assemble_prompt(template_name, context_vars)` functions consumed by both meso and macro pipelines.
   - **Details**:
     - **Red**: Write `test_load_template_success()` — asserts `load_template("specify")` returns non-empty string matching expected static prefix pattern.
@@ -111,12 +111,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_meso/test_meso_orchestration.py -v`
+  - **Verification**: `pytest tests/unit/test_meso/test_meso_orchestration.py -v`
   - **Estimated Time**: 90 minutes
   - **Dependency**: TSK-008-02
   - **Files**:
     - `src/deviate/cli/meso.py`
-    - `tests/test_meso/test_meso_orchestration.py`
+    - `tests/unit/test_meso/test_meso_orchestration.py`
   - **Rationale**: US-001 requires `deviate meso` to sequence _specify_pre → agent (slim prompt) → _specify_post → _tasks_pre → agent (slim prompt) → _tasks_post. US-005 (recovery) requires resuming at interrupted phase. US-006 (dry-run) requires stdout-only emission. US-007 (force) requires bypassing pre-flight guards. These are all additions to `src/deviate/cli/meso.py`.
   - **Details**:
     - **Red**: Write `test_meso_full_pipeline_success()` — mocks `_invoke_agent`, asserts pipeline calls pre→agent→post in correct order, session ends in IDLE.
@@ -143,12 +143,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_macro/test_macro_orchestration.py -v`
+  - **Verification**: `pytest tests/unit/test_macro/test_macro_orchestration.py -v`
   - **Estimated Time**: 90 minutes
   - **Dependency**: TSK-008-02
   - **Files**:
     - `src/deviate/cli/macro.py`
-    - `tests/test_macro/test_macro_orchestration.py`
+    - `tests/unit/test_macro/test_macro_orchestration.py`
   - **Rationale**: US-002 requires `deviate macro` to sequence explore_pre→agent→explore_post→research_pre→agent→research_post→prd_pre→agent→prd_post→shard_pre→agent→shard_post. US-005 (resume via `--from`) and US-006 (dry-run) are macro-specific behaviors. All additions target `src/deviate/cli/macro.py`.
   - **Details**:
     - **Red**: Write `test_macro_full_pipeline_success()` — mocks agent, asserts all four phases run in order: explore→research→prd→shard, session ends in IDLE, shard issues registered in ledger.

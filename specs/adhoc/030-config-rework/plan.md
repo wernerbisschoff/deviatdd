@@ -104,17 +104,17 @@
 
 ## Implementation Strategy
 - **Phase 1**: Consolidate the timeout schema
-  - **Files**: `src/deviate/state/config.py`, `src/deviate/cli/meso.py`, `src/deviate/cli/micro.py`, `src/deviate/core/agent.py`, `.deviate/config.toml`, `tests/test_state/test_config.py`
+  - **Files**: `src/deviate/state/config.py`, `src/deviate/cli/meso.py`, `src/deviate/cli/micro.py`, `src/deviate/core/agent.py`, `.deviate/config.toml`, `tests/unit/test_state/test_config.py`
   - **Approach**: Remove `AgentConfig.timeout`; route the agent-process wall-clock and test deadline from the single `timeout_seconds`; keep `extra = "forbid"` so a stale `graphite` key raises; keep `resolve_phase_model` order intact.
-  - **Verification**: `pytest tests/test_state/test_config.py -v` passes; `grep -rn "timeout"` confirms one consolidated field; `ruff check .`.
+  - **Verification**: `pytest tests/unit/test_state/test_config.py -v` passes; `grep -rn "timeout"` confirms one consolidated field; `ruff check .`.
 - **Phase 2**: Per-agent install and auto-detection in `setup`
-  - **Files**: `src/deviate/cli/__init__.py`, `tests/test_cli/test_setup.py`, `tests/test_integration/test_skill_installation.py`
+  - **Files**: `src/deviate/cli/__init__.py`, `tests/unit/test_cli/test_setup.py`, `tests/test_integration/test_skill_installation.py`
   - **Approach**: When `--agent` is given, install commands and skills only to that agent via `_get_agent_command_dir`/`_get_agent_skill_dir`; when omitted, call `detect_agents` and target exactly the detected installed agents; fail closed on unknown/uninstalled names; keep the `[agent].backend` write unchanged.
-  - **Verification**: `pytest tests/test_cli/test_setup.py tests/test_integration/test_skill_installation.py -v`; assert `INSTALL` + exit code 0 and no cross-agent writes.
+  - **Verification**: `pytest tests/unit/test_cli/test_setup.py tests/test_integration/test_skill_installation.py -v`; assert `INSTALL` + exit code 0 and no cross-agent writes.
 - **Phase 3**: Git-ignore `.deviate/` by default
-  - **Files**: `src/deviate/cli/__init__.py`, `.gitignore`, `.deviate/.gitignore`, `tests/test_cli/test_setup.py`
+  - **Files**: `src/deviate/cli/__init__.py`, `.gitignore`, `.deviate/.gitignore`, `tests/unit/test_cli/test_setup.py`
   - **Approach**: Extend `_ensure_gitignore`/`_ensure_root_gitignore` to provision an entry that makes `.deviate/` untracked by default for new consumer setups; report the provisioning step on `deviate setup`.
-  - **Verification**: `git check-ignore .deviate/` resolves in a fresh temp consumer; `pytest tests/test_cli/test_setup.py -v`.
+  - **Verification**: `git check-ignore .deviate/` resolves in a fresh temp consumer; `pytest tests/unit/test_cli/test_setup.py -v`.
 - **Phase 4**: Spec, governance, and changelog alignment
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `AGENTS.md`, `CHANGELOG.md`
   - **Approach**: Update the specs to the per-agent install, auto-detect, git-ignore-by-default, and single-timeout behavior; remove the `AGENTS.md` Graphite section; append a user-visible CHANGELOG bullet.
@@ -130,7 +130,7 @@
 ## Risk Assessment
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| Install-to-all → per-agent change breaks the pinned `tests/test_integration/test_skill_installation.py` contract | High | Medium | Update the integration asserts while preserving `INSTALL` + exit code 0 for `setup --agent opencode`; add unit coverage in `tests/test_cli/test_setup.py`. |
+| Install-to-all → per-agent change breaks the pinned `tests/test_integration/test_skill_installation.py` contract | High | Medium | Update the integration asserts while preserving `INSTALL` + exit code 0 for `setup --agent opencode`; add unit coverage in `tests/unit/test_cli/test_setup.py`. |
 | Auto-detection confuses an installed agent directory with a name merely declared in `AGENT_TO_BACKEND` | Medium | Medium | Target only the installed agent dirs returned by `detect_agents`; fail closed on unknown or uninstalled names. |
 | Consolidating the timeout changes agent or test deadlines and regresses the GREEN-hang guard | High | Low | Keep `gt=0` validation on the single field; default 1800; route both agent and test deadlines from `timeout_seconds`. |
 | Git-ignoring `.deviate/` untracks currently committed files in existing consumers | Medium | Medium | Apply ignore-by-default to new provisioning only; preserve already-tracked history per AO-030-01 Boundary. |
@@ -151,6 +151,6 @@ Constraints: no new dependencies without checksum; no hardcoded secrets in confi
 
 ## Constitutional Alignment
 - **Architecture**: Aligns with the four-layer architecture and config-driven model routing (constitution §1). The `[models]` resolution order (phase key → `default` → backend-native) is preserved; the timeout and git-ignore rework touches CLI provisioning and config schema only.
-- **Testing**: Uses pytest (`tests/`) for the new `tests/test_state/test_config.py`, `tests/test_cli/test_setup.py`, and `tests/test_integration/test_skill_installation.py` cases; ruff lint and `mise run check` gate completion; GREEN writes only to `src/` and permitted paths.
+- **Testing**: Uses pytest (`tests/`) for the new `tests/unit/test_state/test_config.py`, `tests/unit/test_cli/test_setup.py`, and `tests/test_integration/test_skill_installation.py` cases; ruff lint and `mise run check` gate completion; GREEN writes only to `src/` and permitted paths.
 - **Git Isolation**: The plan runs in the dedicated `feat/adhoc/030-config-rework` worktree; commits are automatic at phase boundaries; no `git checkout -b` or branch-mutating micro commands; `.deviate/` ignore-by-default governs new consumer provisioning without disturbing tracked history.
 - **Product Layer**: `flow_refs` is empty (`[]`), so the rework preserves the existing user-visible behavior of config-driven model routing and setup provisioning without authoring or synchronizing any Product-layer flows; this is traceability context, not a deliverables pipeline.

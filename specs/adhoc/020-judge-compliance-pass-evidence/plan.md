@@ -87,19 +87,19 @@
   - **Current State**: Approval YAML has no `evidence`. Default-pass wording is present in the approval path.
   - **Changes Required**: Mirror the auto schema and the no-default-pass constraint. Keep EXECUTE out of this skill.
   - **Integration Surface**: `deviate setup` install mirror of the manual skill.
-- **tests/test_core/test_agent.py**: Pin first-class `evidence` parse and round-trip.
+- **tests/unit/test_core/test_agent.py**: Pin first-class `evidence` parse and round-trip.
   - **Current State**: `TestHandoverManifestModel` pins extra-allow and `files` round-trip. No `evidence` pin.
   - **Changes Required**: YAML with citation items round-trips on `HandoverManifest.evidence`. Unknown extra keys still parse. Omitted `evidence` stays valid for non-judge phases.
   - **Integration Surface**: `HandoverManifest`.
-- **tests/test_micro/test_judge.py**: Pin gate fail-closed and pass-open plus prompt text.
+- **tests/unit/test_micro/test_judge.py**: Pin gate fail-closed and pass-open plus prompt text.
   - **Current State**: Many `_run_judge_phase` tests mock `_invoke_agent` with bare `COMPLIANCE_PASS` and mock `_build_auto_prompt` to `"test prompt"` (no AC-PLAN tokens). Prompt tests require `COMPLIANCE_PASS` vocabulary, not default-pass strings.
   - **Changes Required**: With a plan contract that lists `AC-PLAN-001`, PASS with empty/missing/partial evidence, hallucinated paths, empty quotes, short quotes, or quotes from the wrong file hunk does not COMPLETE and forces `revert_to_red`. Matching quotes pass. `proceed_to_refactor_no_diff` requires `test_quote` only. `skip_refactor` already-exists accepts HEAD quotes and fails when the test file is missing. No-AC-PLAN empty evidence is allowed. Auto judge prompt contains an `evidence` schema key and does not contain "Default to COMPLIANCE_PASS" or "When in doubt, pass." Use `tmp_git_repo` + `_git_env()` / `cwd=<tmp_git_repo>` for git. Mock `_invoke_agent`. Do not call un-mocked `_run_pytest`. Keep existing mocked no-AC-PLAN PASS tests green.
   - **Integration Surface**: `_run_judge_phase`; `_build_auto_prompt`; `src/deviate/core/judge_evidence.py`.
-- **tests/test_core/test_judge_evidence.py**: Unit-test the helper without an agent.
+- **tests/unit/test_core/test_judge_evidence.py**: Unit-test the helper without an agent.
   - **Current State**: File does not exist.
   - **Changes Required**: Feed plan-contract text, injected-diff text, evidence list, `next_action`, and optional HEAD contents. Pin token extract, path map, substring match, uniqueness floor, empty-GREEN impl-quote skip, and already-exists HEAD fallback.
   - **Integration Surface**: `src/deviate/core/judge_evidence.py`.
-- **tests/test_micro/test_green.py**: Align empty-GREEN comments with the `test_quote` rule.
+- **tests/unit/test_micro/test_green.py**: Align empty-GREEN comments with the `test_quote` rule.
   - **Current State**: Class and test docstrings say the JUDGE edge table emits `COMPLIANCE_PASS` with note `NO_DIFF` for empty diffs.
   - **Changes Required**: Update comments and any assertion that treats empty-GREEN as bare `COMPLIANCE_PASS` + `NO_DIFF` so they match the dirty-diff `test_quote` rule. Do not change GREEN routing.
   - **Integration Surface**: JUDGE prompt edge table; `_run_green_phase` still hands empty PASS to JUDGE.
@@ -118,21 +118,21 @@
 
 ## Implementation Strategy
 - **Phase 1**: First-class `evidence` field
-  - **Files**: `src/deviate/core/agent.py`, `tests/test_core/test_agent.py`
+  - **Files**: `src/deviate/core/agent.py`, `tests/unit/test_core/test_agent.py`
   - **Approach**: Add a nested model (or typed dict) with `ac`, `test_path`, `test_quote`, `impl_path`, `impl_quote`. Default `evidence` so RED/GREEN YAML without the key still parses. Keep `extra: allow`.
-  - **Verification**: `uv run pytest tests/test_core/test_agent.py -q --tb=short` — round-trip plus extra-key pin.
+  - **Verification**: `uv run pytest tests/unit/test_core/test_agent.py -q --tb=short` — round-trip plus extra-key pin.
 - **Phase 2**: Pure evidence helper
-  - **Files**: `src/deviate/core/judge_evidence.py`, `tests/test_core/test_judge_evidence.py`
+  - **Files**: `src/deviate/core/judge_evidence.py`, `tests/unit/test_core/test_judge_evidence.py`
   - **Approach**: Parse `AC-PLAN-\d{3}` only from the plan-contract block, not from `judge.md`. Split the injected diff by file headers. Require every token to have a citation. Path must appear in those headers unless `next_action == skip_refactor` and HEAD contents are supplied. Quote must be an exact substring of that file's hunk (or HEAD text on that edge). Uniqueness floor: ≥ 12 non-whitespace characters, or the full added line if shorter. `proceed_to_refactor_no_diff` skips impl quote. Missing named test file fails.
-  - **Verification**: `uv run pytest tests/test_core/test_judge_evidence.py -q --tb=short` — no agent, no git network.
+  - **Verification**: `uv run pytest tests/unit/test_core/test_judge_evidence.py -q --tb=short` — no agent, no git network.
 - **Phase 3**: Wire the gate into TDD `_run_judge_phase`
-  - **Files**: `src/deviate/cli/micro.py`, `tests/test_micro/test_judge.py`
+  - **Files**: `src/deviate/cli/micro.py`, `tests/unit/test_micro/test_judge.py`
   - **Approach**: After `_invoke_agent` and `_coerce_judge_action`, if the action is a forward PASS route, call the helper with the already-built `diff`, `_resolve_spec_md` text, `manifest.evidence`, and `next_action`. On fail, set action to `revert_to_red`, attach runner-authored feedback, and take the existing rejection path so the task does not COMPLETE. Do not gate `COMPLIANCE_VIOLATION`. Do not call the helper from `_run_execute_phase`. Seed RED+GREEN commits in `tmp_git_repo` with `_git_env()`. Mock `_invoke_agent`. Do not call un-mocked `_run_pytest`.
-  - **Verification**: `uv run pytest tests/test_micro/test_judge.py -q --tb=short` — fail-closed, pass-open, empty-GREEN, already-exists, no-AC-PLAN.
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_judge.py -q --tb=short` — fail-closed, pass-open, empty-GREEN, already-exists, no-AC-PLAN.
 - **Phase 4**: Prompts, green comments, specs, changelog
-  - **Files**: `src/deviate/prompts/auto/judge.md`, `src/deviate/prompts/commands/deviate-judge.md`, `tests/test_micro/test_green.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
+  - **Files**: `src/deviate/prompts/auto/judge.md`, `src/deviate/prompts/commands/deviate-judge.md`, `tests/unit/test_micro/test_green.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Add `evidence` to the YAML schema. Remove "Default to COMPLIANCE_PASS" and "When in doubt, pass." Replace the empty-diff `NO_DIFF` pass row with the dirty-diff `test_quote` rule. Update GREEN docstrings that cite that row. Document the TDD-only gate in API and architecture in the same implementation commit. Append the `[Unreleased]` bullet.
-  - **Verification**: Prompt pins in `tests/test_micro/test_judge.py`. Same-commit spec and changelog review against constitution §5 and AGENTS.md Spec Alignment.
+  - **Verification**: Prompt pins in `tests/unit/test_micro/test_judge.py`. Same-commit spec and changelog review against constitution §5 and AGENTS.md Spec Alignment.
 
 ## Data Flow Analysis
 - **Inputs**: Judge YAML (`verdict`, `next_action`, `evidence`), injected `<diff>` already built in `_run_judge_phase`, plan contract from `_resolve_spec_md`, optional HEAD file bytes on `skip_refactor`.

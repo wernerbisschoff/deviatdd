@@ -527,7 +527,7 @@ class TestSpecifyCollisionRetryKeepsRemoteClaim:
 
         from deviate.cli.meso import _specify_pre
         from deviate.state.config import resolve_claim_remote
-        from tests.test_cli.test_meso import seed_adhoc_018_origin_rejecting_name
+        from tests.unit.test_cli.test_meso import seed_adhoc_018_origin_rejecting_name
 
         seed_adhoc_018_origin_rejecting_name(tmp_git_repo)
         (tmp_git_repo / ".deviate").mkdir(exist_ok=True)

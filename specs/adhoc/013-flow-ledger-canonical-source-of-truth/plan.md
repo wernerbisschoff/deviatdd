@@ -43,12 +43,12 @@
   - **Changes Required**: Add `### Added` subsection with a single bullet summarizing (a) the new `specs/_product/flows.jsonl` ledger, (b) the `load_flow_coverage` derivation, (c) the new drift-flag surface in the `deviate explore post` Flow Coverage Report.
   - **Integration Surface**: Mirrors the CHANGELOG Discipline cross-cutting rule from AGENTS.md.
 
-- **`tests/test_state/test_ledger.py`**: Target — extend with five new tests (one class per model + helpers).
+- **`tests/unit/test_state/test_ledger.py`**: Target — extend with five new tests (one class per model + helpers).
   - **Current State**: 573-line file with classes for `IssueRecord`, `AdhocRecord`, `TaskRecord`, `RollbackSnapshot` round-trip + append behavior. Imports `ValidationError` from `pydantic` at line 6 — same import path used by the new tests.
   - **Changes Required**: Add a `TestFlowRecord` class with `test_flow_record_validates_against_canonical_regex` (asserts `FLOW-1` rejected, `FLOW-04` accepted, `flow-04` rejected) + `test_flow_record_round_trip_byte_equal` (parse + re-emit byte equality). Add a `TestFlowEvent` class with `test_flow_event_requires_reference_field_for_linked_events` (cross-validator on `FLOW_REFERENCED_BY_ISSUE` / `FLOW_INCLUDED_IN_RELEASE` / `FLOW_CONFIRMED_IMPLEMENTED` with all-None references). Add a `TestAppendFlowEvent` class with `test_append_flow_event_idempotent` (compound-key uniqueness). Add a `TestLoadFlowCoverage` class with `test_load_flow_coverage_detects_documented_but_not_implemented` (seed events, assert `drift_flag == "DOCUMENTED_BUT_NOT_IMPLEMENTED"`).
   - **Integration Surface**: Reuses existing `tmp_path` fixture from pytest; no new fixtures needed.
 
-- **`tests/test_macro/test_explore.py:1-74`**: Target — extend with one new test for the report rendering.
+- **`tests/unit/test_macro/test_explore.py:1-74`**: Target — extend with one new test for the report rendering.
   - **Current State**: Tests `explore --help`, `explore pre` transitions, and IDLE gating. Uses `CliRunner` from `typer.testing` and `chdir(tmp_path)` context. Imports `cli` from `deviate.cli` (re-exported via `deviate/cli/__init__.py:15`).
   - **Changes Required**: Add `test_explore_post_renders_flow_coverage_table` (seed `specs/_product/flows/index.md` with four flows + empty `flows.jsonl`, run `explore post`, assert stdout contains `FLOW-04` and `DOCUMENTED_BUT_NOT_IMPLEMENTED`). Add `test_explore_post_skips_orphaned_flow_refs` (seed `issues.jsonl` row with `flow_refs: ["FLOW-99"]`, assert command exits 0 and emits warning).
   - **Integration Surface**: None new — same `CliRunner` + `chdir` pattern.
@@ -57,12 +57,12 @@
 - **Phase 1**: Pydantic models + append helpers in `src/deviate/state/ledger.py`.
   - **Files**: `src/deviate/state/ledger.py`
   - **Approach**: Add `FlowRecord`, `FlowEvent`, `FlowCoverage` models at the end of the module (after `AdhocRecord` at line 343); add `append_flow_record` / `append_flow_event` helpers after `_append_with_compound_key` (line 142); add `load_flow_coverage` after `select_unblocked_candidates` (line 407). The `flow_id` field validator imports `_FLOW_REF_PATTERN` from `src/deviate/cli/adhoc.py` — but to avoid a circular import (the macro/adhoc modules already import from `state.ledger`), duplicate the regex **only as a module-level constant** in `state.ledger.py` (e.g. `_FLOW_REF_PATTERN = re.compile(r"^FLOW-\d{2,}$")`) and add a comment block stating the canonical source is `src/deviate/cli/adhoc.py:19` (matches the "reuse the canonical regex" hard-inclusion while avoiding the import cycle).
-  - **Verification**: `mise run test tests/test_state/test_ledger.py -v` — all four new tests pass; existing 18+ tests still pass.
+  - **Verification**: `mise run test tests/unit/test_state/test_ledger.py -v` — all four new tests pass; existing 18+ tests still pass.
 
 - **Phase 2**: Explore-post seeding + report rendering in `src/deviate/cli/macro.py`.
   - **Files**: `src/deviate/cli/macro.py`
   - **Approach**: Add `_parse_flows_index(path) -> list[FlowRecord]` (parses the markdown table at `specs/_product/flows/index.md:3-8` via a small regex — strip `|`, split, validate against the `Active` / `Deprecated` literal, return `FlowRecord` list). Add `_seed_flow_ledger(ledger_path, flows_index_path)` which calls `append_flow_record` per missing flow + `append_flow_event` for `FLOW_DISCOVERED` + `FLOW_DOCUMENTED`. Add `_reverse_index_issue_flow_refs(issues_ledger_path, flows_ledger_path)` which iterates `IssueRecord` rows, looks up the source issue file for `created_at`, and appends `FLOW_REFERENCED_BY_ISSUE` events. Add `_render_flow_coverage_report(rows: list[FlowCoverage])` which builds a Rich `Table` with the six columns and yellow-highlights the four drift rows. Hook all three into `explore_post` after the existing `_run_pre_commit_hooks()` / `commit_artifact()` calls but before `_save_session`.
-  - **Verification**: `mise run test tests/test_macro/test_explore.py -v` — both new tests pass; existing 4 tests still pass.
+  - **Verification**: `mise run test tests/unit/test_macro/test_explore.py -v` — both new tests pass; existing 4 tests still pass.
 
 - **Phase 3**: `.gitattributes` seed + repo `.gitattributes` sync.
   - **Files**: `src/deviate/cli/__init__.py`, `.gitattributes` (repo root)
@@ -103,8 +103,8 @@
 - **`src/deviate/cli/macro.py` ↔ `specs/_product/flows/index.md`**: New helper `_parse_flows_index(path)` consumes the markdown table format with `|`-delimited columns. Schema breakage (column reorder, header rename) breaks the seed step — log `FLOWS_INDEX_PARSE_FAILED` and halt.
 - **`src/deviate/cli/macro.py` ↔ `specs/issues.jsonl`**: Reverse-index reads `IssueRecord.flow_refs` via the existing `_read_ledger` (line 40) helper. No schema changes required.
 - **`src/deviate/cli/__init__.py` ↔ `.gitattributes` (repo + downstream)**: `DEVIATE_GITATTRIBUTES_SEED` is the single source of truth for the union-merge rules. The existing `_ensure_root_gitattributes` (line 720) is idempotent — adding `specs/_product/flows.jsonl merge=union` to the seed auto-provisions downstream repos and merges the rule into the in-repo `.gitattributes`.
-- **`tests/test_state/test_ledger.py` ↔ `src/deviate/state/ledger.py`**: New tests import the three new models + three new helpers. Reuse `tmp_path` + `Path` patterns from existing tests.
-- **`tests/test_macro/test_explore.py` ↔ `src/deviate/cli/macro.py::explore_post`**: New tests use `CliRunner` + `chdir(tmp_path)` — no fixture changes required.
+- **`tests/unit/test_state/test_ledger.py` ↔ `src/deviate/state/ledger.py`**: New tests import the three new models + three new helpers. Reuse `tmp_path` + `Path` patterns from existing tests.
+- **`tests/unit/test_macro/test_explore.py` ↔ `src/deviate/cli/macro.py::explore_post`**: New tests use `CliRunner` + `chdir(tmp_path)` — no fixture changes required.
 - **`CHANGELOG.md` ↔ `specs/constitution.md §5`**: The bullet cross-references the new ledger + drift-flag surface; mirrors the AGENTS.md CHANGELOG Discipline cross-cutting rule.
 
 ## Target File Structure
@@ -129,11 +129,11 @@ The following target workstation files have been pre-scanned with structural ana
 - **Functions**: `_ensure_root_gitattributes` (720-760) — idempotent union-merge rule provisioner
 - **Plan additions**: One new line in `DEVIATE_GITATTRIBUTES_SEED` (`specs/_product/flows.jsonl merge=union`); comment header updated to mention the new ledger.
 
-### `tests/test_state/test_ledger.py` (Python, 572 lines)
+### `tests/unit/test_state/test_ledger.py` (Python, 572 lines)
 - **Classes**: `TestIssueRecord` (line 19), `TestAdhocRecord`, `TestTaskRecord`, `TestRollbackSnapshot`, etc. Imports `ValidationError` from `pydantic` at line 6.
 - **Plan additions**: New classes `TestFlowRecord`, `TestFlowEvent`, `TestAppendFlowEvent`, `TestLoadFlowCoverage` (appended after existing test classes). Imports extended with the three new models + three new helpers.
 
-### `tests/test_macro/test_explore.py` (Python, 74 lines)
+### `tests/unit/test_macro/test_explore.py` (Python, 74 lines)
 - **Classes**: `TestExploreCommand` (line 12) — contains `test_explore_help`, `test_explore_pre_transitions_from_idle`, `test_explore_pre_rejects_if_not_idle`, `test_explore_pre_missing_session_file_defaults_idle`, `test_explore_pre_missing_dotdeviate_dir_error`. Uses `CliRunner` + `chdir(tmp_path)`.
 - **Plan additions**: Two new tests `test_explore_post_renders_flow_coverage_table` + `test_explore_post_skips_orphaned_flow_refs` (appended inside `TestExploreCommand`).
 

@@ -17,9 +17,9 @@ flow_refs: []
   - Helper (prefer next to `_run_judge_phase` or a small sibling in `src/deviate/cli/micro.py` / `src/deviate/core/`) — TARGET: extract AC-PLAN tokens from the injected authoritative plan contract; map diff paths to hunk text; substring-check quotes. Keep it unit-testable without spawning an agent.
   - `src/deviate/prompts/auto/judge.md` — TARGET: require `evidence` in the YAML schema; drop "Default to COMPLIANCE_PASS" and "When in doubt, pass."; empty evidence is not a pass when AC-PLAN tokens exist.
   - `src/deviate/prompts/commands/deviate-judge.md` — TARGET: same schema and constraint edits on the manual skill.
-  - `tests/test_core/test_agent.py` — TARGET: pin first-class `evidence` parse/round-trip.
-  - `tests/test_micro/test_judge.py` — TARGET: pin gate fail-closed and pass-open; pin prompt schema/constraint text.
-  - `tests/test_micro/test_green.py` — TARGET: update comments/assertions that currently treat the JUDGE edge table as bare `COMPLIANCE_PASS` + `NO_DIFF` for empty diffs, so they match the empty-GREEN `test_quote` rule.
+  - `tests/unit/test_core/test_agent.py` — TARGET: pin first-class `evidence` parse/round-trip.
+  - `tests/unit/test_micro/test_judge.py` — TARGET: pin gate fail-closed and pass-open; pin prompt schema/constraint text.
+  - `tests/unit/test_micro/test_green.py` — TARGET: update comments/assertions that currently treat the JUDGE edge table as bare `COMPLIANCE_PASS` + `NO_DIFF` for empty diffs, so they match the empty-GREEN `test_quote` rule.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document the evidence field and the TDD-only mechanical PASS gate in the same implementation commit.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible PASS contract change.
 - **Classification for plan/tasks**: production Python with observable fail-to-pass behavior (a PASS YAML without matching quotes cannot COMPLETE). Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices; this gate is TDD judge only.
@@ -140,14 +140,14 @@ JUDGE is the only phase that decides whether GREEN's code satisfies the plan. Te
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_core/test_agent.py` — `HandoverManifest` parses and round-trips `evidence`.
-  - `tests/test_micro/test_judge.py` — PASS with empty evidence and AC-PLAN tokens is rejected; hallucinated path/quote is rejected; matching quotes pass; `proceed_to_refactor_no_diff` requires test_quote only; `skip_refactor` already-exists accepts HEAD quotes and fails when the test file is missing; no-AC-PLAN empty evidence is allowed.
-  - `tests/test_micro/test_judge.py` — auto judge prompt contains an `evidence` schema key and does not contain "Default to COMPLIANCE_PASS" or "When in doubt, pass."
+  - `tests/unit/test_core/test_agent.py` — `HandoverManifest` parses and round-trips `evidence`.
+  - `tests/unit/test_micro/test_judge.py` — PASS with empty evidence and AC-PLAN tokens is rejected; hallucinated path/quote is rejected; matching quotes pass; `proceed_to_refactor_no_diff` requires test_quote only; `skip_refactor` already-exists accepts HEAD quotes and fails when the test file is missing; no-AC-PLAN empty evidence is allowed.
+  - `tests/unit/test_micro/test_judge.py` — auto judge prompt contains an `evidence` schema key and does not contain "Default to COMPLIANCE_PASS" or "When in doubt, pass."
 - **Integration Sandbox Targets**:
   - `_run_judge_phase` with mocked `_invoke_agent` on a `tmp_git_repo` that has a RED test commit + GREEN impl commit: PASS YAML without quotes does not COMPLETE; PASS YAML with matching quotes proceeds.
 
 ## Demonstration Path
 
 ```bash
-uv run pytest tests/test_core/test_agent.py tests/test_micro/test_judge.py -q --tb=short
+uv run pytest tests/unit/test_core/test_agent.py tests/unit/test_micro/test_judge.py -q --tb=short
 ```

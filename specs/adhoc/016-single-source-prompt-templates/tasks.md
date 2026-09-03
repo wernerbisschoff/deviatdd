@@ -9,14 +9,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test tests/test_core/test_commands.py`
+  - **Verification**: `mise run test tests/unit/test_core/test_commands.py`
   - **Estimated Time**: 90 minutes
   - **Flow References**: `[]`
   - **Files**:
     - `src/deviate/core/commands.py`
     - `src/deviate/prompts/assembly.py`
-    - `tests/test_core/test_commands.py`
-  - **Rationale**: Implements `US-016-01` and `AC-PLAN-001` (derivation from `auto/{phase}.md` + overlay, no duplicate middle) and `AC-PLAN-004` (idempotent reinstall + auto-only `load_template`). `compose_command_body` (lines 55-133) and `install_command` (lines 189-243) are the manual derivation path; the rework must read the canonical middle from `auto/{phase}.md` and splice the overlay around it. `assembly.py::load_template` must keep emitting the auto core body only. `tests/test_core/test_commands.py` asserts the derived output.
+    - `tests/unit/test_core/test_commands.py`
+  - **Rationale**: Implements `US-016-01` and `AC-PLAN-001` (derivation from `auto/{phase}.md` + overlay, no duplicate middle) and `AC-PLAN-004` (idempotent reinstall + auto-only `load_template`). `compose_command_body` (lines 55-133) and `install_command` (lines 189-243) are the manual derivation path; the rework must read the canonical middle from `auto/{phase}.md` and splice the overlay around it. `assembly.py::load_template` must keep emitting the auto core body only. `tests/unit/test_core/test_commands.py` asserts the derived output.
   - **Details**:
     - **Red**: Write `test_install_derives_from_auto_core(tmp_path, tmp_git_repo)` asserting installing `deviate-red` into `tmp_path` produces a `deviate-red.md` whose composed middle equals the core body read from `deviate.prompts.auto/red.md`, with platform `name`/`description` frontmatter only and a manual pre/post-script lifecycle; write `test_install_returns_false_on_unchanged_reinstall(tmp_path)` asserting a second identical install returns `False`; write `test_load_template_emits_auto_core_only()` asserting `load_template("red")` contains no manual-overlay marker.
     - **Green**: Add a deterministic `_MANUAL_PHASE_MAPPING` mapping each of the 11 manual phase names (red, green, refactor, judge, execute, plan, tasks, explore, research, prd, shard) to its canonical `auto/{phase}.md` resource. Rework `compose_command_body(raw, core_dir, ...)` so it takes the auto core body and the per-phase manual overlay instead of a hand-maintained `raw` duplicate. Update `install_command` to resolve the source in `auto/`, compose from the auto core + overlay, strip frontmatter, and write idempotently (`False` when `target_path` equals `composed`).
@@ -36,7 +36,7 @@
   - **Type**: Config
   - **Mode**: IMMEDIATE
   - **Test Strategy**: Integration
-  - **Verification**: `mise run format-check` then `mise run test tests/test_core/test_commands.py`
+  - **Verification**: `mise run format-check` then `mise run test tests/unit/test_core/test_commands.py`
   - **Estimated Time**: 90 minutes
   - **Flow References**: `[]`
   - **Files**:
@@ -69,13 +69,13 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Solitary_Unit
-  - **Verification**: `mise run test tests/test_meso/test_auto_prompt_templates.py`
+  - **Verification**: `mise run test tests/unit/test_meso/test_auto_prompt_templates.py`
   - **Estimated Time**: 60 minutes
   - **Flow References**: `[]`
   - **Files**:
-    - `tests/test_meso/test_auto_prompt_templates.py`
-    - `tests/test_meso/test_prompt_assembly.py`
-  - **Rationale**: Implements `US-016-03` and `AC-PLAN-003` (drift guard over the 11 overlapping phases). `tests/test_meso/test_auto_prompt_templates.py` currently pins slim-template composition only (lines 58-61 `test_composed_template_has_context_marker`); it gains the identical-middle assert and auto-semantics pins. `tests/test_meso/test_prompt_assembly.py` verifies `load_template` emits the auto core only with no overlay leakage (`AC-PLAN-004`).
+    - `tests/unit/test_meso/test_auto_prompt_templates.py`
+    - `tests/unit/test_meso/test_prompt_assembly.py`
+  - **Rationale**: Implements `US-016-03` and `AC-PLAN-003` (drift guard over the 11 overlapping phases). `tests/unit/test_meso/test_auto_prompt_templates.py` currently pins slim-template composition only (lines 58-61 `test_composed_template_has_context_marker`); it gains the identical-middle assert and auto-semantics pins. `tests/unit/test_meso/test_prompt_assembly.py` verifies `load_template` emits the auto core only with no overlay leakage (`AC-PLAN-004`).
   - **Details**:
     - **Red**: Write `test_auto_and_manual_middle_identical(tmp_path)` asserting the installed derived middle (via `install_command(name, tmp_path)`) equals `deviate.prompts.auto/{phase}.md` byte-for-byte for each of the 11 phases — the test fails with a diff when an unrelated line is added to an auto middle. Write `test_auto_red_uses_pass_failure_kind()` asserting `auto/red.md` declares `status: "PASS"` + `failure_kind` and never `status: "FAIL"`. Write `test_manual_red_matches_auto_semantics(tmp_path)` asserting the derived RED no longer emits `status: "FAIL"`/abort-on-passing-test. Write `test_load_template_has_no_manual_overlay_leakage()` in `test_prompt_assembly.py`.
     - **Green**: Read the auto core and the derived installed middle via `importlib.resources`/`install_command` against `tmp_path`; compare normalized middle lines and assert equality. No production-code change is expected — the drift-guard is a regression lock over `TSK-016-01`/`TSK-016-02`.
@@ -153,7 +153,7 @@
 - Greenfield `specs/constitution.md` absence must not break derivation — keep constitution injection best-effort and non-fatal (current `OSError`-tolerant path).
 
 **Merge Conflict Boundaries**:
-- Files touched by multiple phases: `src/deviate/core/commands.py` (TSK-016-01 only), `tests/test_core/test_commands.py` (TSK-016-01 only), `tests/test_meso/test_auto_prompt_templates.py` and `tests/test_meso/test_prompt_assembly.py` (TSK-016-03 only), the 11 `commands/deviate-{phase}.md` files (TSK-016-02 only), spec/changelog files (TSK-016-04 only), `tests/e2e/test_single_source_prompts.bats` (TSK-016-05 only). No file is touched by more than one task, so merge conflicts are avoided.
+- Files touched by multiple phases: `src/deviate/core/commands.py` (TSK-016-01 only), `tests/unit/test_core/test_commands.py` (TSK-016-01 only), `tests/unit/test_meso/test_auto_prompt_templates.py` and `tests/unit/test_meso/test_prompt_assembly.py` (TSK-016-03 only), the 11 `commands/deviate-{phase}.md` files (TSK-016-02 only), spec/changelog files (TSK-016-04 only), `tests/e2e/test_single_source_prompts.bats` (TSK-016-05 only). No file is touched by more than one task, so merge conflicts are avoided.
 
 **Product-Layer Anchors** (mirrored from plan.md):
 - **Flow References**: `[]`

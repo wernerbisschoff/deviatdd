@@ -15,10 +15,10 @@ flow_refs: []
   - `src/deviate/cli/micro.py` — TARGET: `_run_tdd_cycle` (~2932–3175) holds a local `train_attempts = 0` / `max_train_attempts = 3` and **zeros** it on `pending_judge_action == "revert_before"` (~2959 and ~3074–3078). Replace with session-backed `green_attempts` / `red_attempts`. Escalate after 3 GREEN trains; `TRAIN_EXHAUSTED` only after 3 RED escalates. Keep `_coerce_judge_action` mapping `test_defect` / `no_failing_test` → `revert_before`.
   - `src/deviate/state/config.py` — TARGET: `SessionState` (~255–331). Add `green_attempts: int = 0` and `red_attempts: int = 0`. Copy both fields through `transition_to` / `force_transition_to` (those constructors currently list fields explicitly and would silently drop new counters). Persist via existing `save()` to `.deviate/session.json`.
   - `src/deviate/cli/micro.py::_run_red_phase` (~1165) / `_build_auto_prompt` (~1021) — TARGET: escalate path must wipe GREEN `train_feedback` and inject a **short** escalate note (`previous cycle failed because …`) as `{train_feedback}` for the retry RED; do not forward the raw GREEN dump.
-  - `src/deviate/ui/pipeline.py` — REFERENCE: `TrainIndicator` still renders GREEN 1/3–3/3. Optionally surface RED escalate `n/3` without breaking the literal `TRAIN` token tests in `tests/test_ui/test_pipeline.py`.
-  - `tests/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore` (~4252) — TARGET: today documents that `revert_before` **resets** `train_attempts`; retarget so `revert_before` is an escalate (`red_attempts += 1`, `green_attempts = 0`) and a third escalate stops.
-  - `tests/test_micro/test_orchestration.py` — TARGET: TRAIN / `TRAIN_EXHAUSTED` / HITL pins (~564, ~731, ~1544, ~1602). Add always-`revert_before` and always-`revert_to_red` stub-JUDGE loops.
-  - `tests/test_state/test_config.py` — TARGET: JSON round-trip + `transition_to` copy of the new counters.
+  - `src/deviate/ui/pipeline.py` — REFERENCE: `TrainIndicator` still renders GREEN 1/3–3/3. Optionally surface RED escalate `n/3` without breaking the literal `TRAIN` token tests in `tests/unit/test_ui/test_pipeline.py`.
+  - `tests/unit/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore` (~4252) — TARGET: today documents that `revert_before` **resets** `train_attempts`; retarget so `revert_before` is an escalate (`red_attempts += 1`, `green_attempts = 0`) and a third escalate stops.
+  - `tests/unit/test_micro/test_orchestration.py` — TARGET: TRAIN / `TRAIN_EXHAUSTED` / HITL pins (~564, ~731, ~1544, ~1602). Add always-`revert_before` and always-`revert_to_red` stub-JUDGE loops.
+  - `tests/unit/test_state/test_config.py` — TARGET: JSON round-trip + `transition_to` copy of the new counters.
   - `specs/DeviaTDD-api.md` (~662, ~795, ~1346, ~1359, ~1394) and `specs/DeviaTDD-architecture.md` (~51, ~282, ~289, ~400, ~659) — TARGET: replace single `max_train_attempts = 3` / "resetting `train_attempts`" language with the two-counter contract (spec-alignment mandate).
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible retry-budget change.
 
@@ -117,9 +117,9 @@ flow_refs: []
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_state/test_config.py` — `SessionState` round-trip of `green_attempts` / `red_attempts`; `transition_to` / `force_transition_to` copy; missing-key load defaults to 0.
-  - `tests/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore` — retarget from "reset train_attempts" to escalate accounting; third escalate stops.
-  - New (or extended) `tests/test_micro/test_orchestration.py` / `tests/test_micro/test_two_counter_retry.py`:
+  - `tests/unit/test_state/test_config.py` — `SessionState` round-trip of `green_attempts` / `red_attempts`; `transition_to` / `force_transition_to` copy; missing-key load defaults to 0.
+  - `tests/unit/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore` — retarget from "reset train_attempts" to escalate accounting; third escalate stops.
+  - New (or extended) `tests/unit/test_micro/test_orchestration.py` / `tests/unit/test_micro/test_two_counter_retry.py`:
     - `test_always_revert_to_red_trains_green_three_times_then_escalates` — no `TRAIN_EXHAUSTED` on the first cycle.
     - `test_always_revert_before_stops_after_three_escalates` — `TRAIN_EXHAUSTED`, no fourth `_run_red_phase`.
     - `test_counters_persist_across_session_reload` — save/load after increment.
@@ -131,7 +131,7 @@ flow_refs: []
 
 ```bash
 # Mocked TDD-loop pins (no live agent, no un-mocked pytest)
-uv run pytest tests/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore tests/test_state/test_config.py tests/test_micro/test_orchestration.py -q
+uv run pytest tests/unit/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore tests/unit/test_state/test_config.py tests/unit/test_micro/test_orchestration.py -q
 # After implementation, the always-revert_before stub must print TRAIN_EXHAUSTED
 # and the always-revert_to_red stub must escalate rather than exhaust on cycle 1.
 ```

@@ -87,26 +87,26 @@
   - **Integration Surface**: `_run_judge_phase` line 2418 already passes `failure_kind=session.failure_kind`.
 
 - **`src/deviate/ui/pipeline.py:374` (`TrainIndicator`)**: REFERENCE — keep the literal `TRAIN` token and GREEN 1/3–3/3.
-  - **Current State**: `render(attempt, maximum, phase="GREEN")` always emits `TRAIN` and cells `n/3`. Tests in `tests/test_ui/test_pipeline.py` pin the token.
+  - **Current State**: `render(attempt, maximum, phase="GREEN")` always emits `TRAIN` and cells `n/3`. Tests in `tests/unit/test_ui/test_pipeline.py` pin the token.
   - **Changes Required**: Pass `green_attempts` as `attempt` on GREEN train so 1/3–3/3 stays meaningful (first GREEN of a fresh RED does not increment). Optionally pass `phase="RED"` with `red_attempts` on escalate. Do not break the `TRAIN` token tests.
   - **Integration Surface**: `_run_tdd_cycle` call sites at lines 3017, 3137, 3155.
 
-- **`tests/test_state/test_config.py:151` (`TestSessionState`)**: TARGET — pin JSON round-trip, defaults, and transition copy.
+- **`tests/unit/test_state/test_config.py:151` (`TestSessionState`)**: TARGET — pin JSON round-trip, defaults, and transition copy.
   - **Current State**: `test_json_round_trip` (line 187) and `test_default_values` (line 152) omit the new counters. Transition tests (line 212+) assert only `current_phase`.
   - **Changes Required**: Assert defaults 0/0. Round-trip non-zero counters. Load JSON missing the keys as 0/0. Assert `transition_to` and `force_transition_to` copy both integers.
   - **Integration Surface**: `SessionState.save` / `load` / `model_validate`.
 
-- **`tests/test_cli/test_micro.py:4231` (`TestRunnerLoopRestartsRedOnRevertBefore`)**: TARGET — retarget reset-budget docs to escalate accounting.
+- **`tests/unit/test_cli/test_micro.py:4231` (`TestRunnerLoopRestartsRedOnRevertBefore`)**: TARGET — retarget reset-budget docs to escalate accounting.
   - **Current State**: `test_revert_before_dispatches_red_again` (line 4244) documents that `revert_before` resets `train_attempts` and dispatches a second RED. Stubs `_run_red_phase` / `_run_green_phase` / `_run_judge_phase` / `_finish_tdd_cycle`.
   - **Changes Required**: Keep the RED restart. Assert `red_attempts` increments, `green_attempts` resets to 0, and a third escalate stops with `TRAIN_EXHAUSTED`. Mock `deviate.cli.micro._run_pytest` on any path that would invoke it.
   - **Integration Surface**: `_run_tdd_cycle` with patched phase helpers.
 
-- **`tests/test_micro/test_orchestration.py`**: TARGET — add always-`revert_to_red` and always-`revert_before` stub-JUDGE loops.
+- **`tests/unit/test_micro/test_orchestration.py`**: TARGET — add always-`revert_to_red` and always-`revert_before` stub-JUDGE loops.
   - **Current State**: Pins around lines 564, 731, 1544, 1602 assert `TRAIN_EXHAUSTED` is the wrong path for HITL / forward-route cases. No two-counter matrix exists.
   - **Changes Required**: Extend with patched `_run_red_phase` / `_run_green_phase` / `_run_judge_phase` (no live agent, no un-mocked pytest) covering both stub-JUDGE matrices plus `failure_kind: test_defect` coerce.
   - **Integration Surface**: `_run_tdd_cycle` / `deviate micro run` orchestration.
 
-- **`tests/test_micro/test_two_counter_retry.py`**: TARGET — new focused pins listed in the issue verification targets.
+- **`tests/unit/test_micro/test_two_counter_retry.py`**: TARGET — new focused pins listed in the issue verification targets.
   - **Current State**: File does not exist.
   - **Changes Required**: Add `test_always_revert_to_red_trains_green_three_times_then_escalates` (no `TRAIN_EXHAUSTED` on cycle 1), `test_always_revert_before_stops_after_three_escalates` (`TRAIN_EXHAUSTED`, no fourth `_run_red_phase`), `test_counters_persist_across_session_reload`, `test_escalate_injects_short_note_not_green_dump`. Mock `_run_pytest`.
   - **Integration Surface**: `_run_tdd_cycle` + `SessionState.save` / `load`.
@@ -129,24 +129,24 @@
 ## Implementation Strategy
 
 - **Phase 1**: Persist counters on `SessionState`
-  - **Files**: `src/deviate/state/config.py`, `tests/test_state/test_config.py`
+  - **Files**: `src/deviate/state/config.py`, `tests/unit/test_state/test_config.py`
   - **Approach**: Add `green_attempts` and `red_attempts` with default 0. Copy both fields in `transition_to` and `force_transition_to`. Rely on existing `save` / `load`. Pin round-trip, missing-key defaults, and transition copy.
-  - **Verification**: `uv run pytest tests/test_state/test_config.py -q`
+  - **Verification**: `uv run pytest tests/unit/test_state/test_config.py -q`
 
 - **Phase 2**: Two-counter loop in `_run_tdd_cycle`
   - **Files**: `src/deviate/cli/micro.py`
   - **Approach**: Seed from the session. Delete `train_attempts = 0`. Map `revert_to_red` to GREEN train (`green_attempts += 1`, save, retry GREEN). Map `revert_before` / coerce / GREEN-budget exhaust to escalate (`green_attempts = 0`, `red_attempts += 1`, save, consume `pending_judge_action` once). Evaluate `red_attempts >= 3` before another RED. Clear both counters in `_finish_tdd_cycle` and on `TRAIN_EXHAUSTED`. Leave `_execute_rollback` / `_resolve_pre_red_sha` / `_coerce_judge_action` / EXECUTE `max_judge_attempts` unchanged.
-  - **Verification**: `uv run pytest tests/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore tests/test_micro/test_two_counter_retry.py -q`
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore tests/unit/test_micro/test_two_counter_retry.py -q`
 
 - **Phase 3**: Escalate note for retry RED
   - **Files**: `src/deviate/cli/micro.py` (`_run_tdd_cycle` escalate branch, `_build_auto_prompt` consumer)
   - **Approach**: On escalate, replace GREEN `train_feedback` with a short `previous cycle failed because …` note. Keep GREEN-train feedback on `revert_to_red`. `_run_red_phase` already threads `session.train_feedback` into `_build_auto_prompt`.
-  - **Verification**: `uv run pytest tests/test_micro/test_two_counter_retry.py -k escalate -q`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_two_counter_retry.py -k escalate -q`
 
 - **Phase 4**: Orchestration pins and spec alignment
-  - **Files**: `tests/test_micro/test_orchestration.py`, `tests/test_cli/test_micro.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
+  - **Files**: `tests/unit/test_micro/test_orchestration.py`, `tests/unit/test_cli/test_micro.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Add always-`revert_to_red` and always-`revert_before` stub-JUDGE loops. Keep HITL / forward-route `TRAIN_EXHAUSTED` negatives. Update API and architecture text in the same commit. Append the `[Unreleased]` bullet. Mock `_run_pytest` on every path that would invoke it.
-  - **Verification**: `uv run pytest tests/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore tests/test_state/test_config.py tests/test_micro/test_orchestration.py tests/test_micro/test_two_counter_retry.py -q`
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_micro.py::TestRunnerLoopRestartsRedOnRevertBefore tests/unit/test_state/test_config.py tests/unit/test_micro/test_orchestration.py tests/unit/test_micro/test_two_counter_retry.py -q`
 
 ## Data Flow Analysis
 
@@ -194,6 +194,6 @@ Constraints: no new dependencies; no hardcoded secrets; do not un-gitignore `.de
 ## Constitutional Alignment
 
 - **Architecture**: Aligns with constitution §1 four-layer model and Micro-layer TDD (RED → GREEN → JUDGE → REFACTOR). The change stays inside the micro runner and session JSON. It does not skip a layer and does not add Product-layer work. Session Continuity (§1) keeps one LLM session across RED → GREEN → REFACTOR; JUDGE stays on its own model. Append-only ledgers stay append-only: retry RED still uses `bypass_phase_done=True` so a fresh RED row is appended.
-- **Testing**: pytest unit and orchestration tests in `tests/test_state/test_config.py`, `tests/test_cli/test_micro.py`, `tests/test_micro/test_orchestration.py`, and `tests/test_micro/test_two_counter_retry.py`. Coverage target stays ≥ 80% (constitution §3). The full suite stays under 30 seconds by mocking `_run_pytest`.
+- **Testing**: pytest unit and orchestration tests in `tests/unit/test_state/test_config.py`, `tests/unit/test_cli/test_micro.py`, `tests/unit/test_micro/test_orchestration.py`, and `tests/unit/test_micro/test_two_counter_retry.py`. Coverage target stays ≥ 80% (constitution §3). The full suite stays under 30 seconds by mocking `_run_pytest`.
 - **Git Isolation**: constitution §1 Git Isolation and §2 session JSON under `.deviate/`. Counters live in gitignored `.deviate/session.json`, so `git reset --hard` at the pre-RED boundary does not roll the budget back. Micro agents do not run branch-mutating git. Escalate reuses the existing `revert_before` SHA.
 - **Product Layer**: `flow_refs` is empty. This issue bounds `deviate micro` retry inside C1 and does not alter FLOW-04 RPC streaming named in `specs/_product/release-next.md`. This section is traceability only.

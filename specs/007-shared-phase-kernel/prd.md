@@ -34,7 +34,7 @@ Source anchor — `specs/007-shared-phase-kernel/design.md` `[Summary]`:
 - Convert the eight manual commands to thin wrappers over the kernels.
 - Delegate per-phase steps of `_run_red_phase`, `_run_green_phase`, `_run_refactor_phase` to the kernels.
 - Unify the manual RED no-failing-test adjudication into `_red_post_kernel` (design decision K5, `HITL-002` RESOLVED).
-- Update `tests/test_micro/*` for kernel coverage; update `CHANGELOG.md` under `[Unreleased]` for the manual RED adjudication behavior change.
+- Update `tests/unit/test_micro/*` for kernel coverage; update `CHANGELOG.md` under `[Unreleased]` for the manual RED adjudication behavior change.
 
 ### Out-of-Scope Boundaries (Defensive Exclusions)
 
@@ -273,7 +273,7 @@ Epic `007-shared-phase-kernel` carries `FR-007-01` … `FR-007-09`. Every FR imp
 - **Inputs/Outputs**: Inputs — kernel outcomes. Outputs — unchanged tokens, literals, and contract keys consumed by prompts, tests, and external agents.
 - **State Transition**: None (compatibility invariants over all transitions).
 - **Exception Strategy**: Any drift is a test failure; regression tests assert each token on both surfaces (RSK-001) and the contract key set (RSK-005).
-- **Source Anchors**: `specs/007-shared-phase-kernel/design.md` `## Risk Register` `RSK-001`, `RSK-002`, `RSK-005`; `specs/007-shared-phase-kernel/explore.md` `## Quality, Safety & Observability` (fixed token list); `tests/test_meso/test_prompt_assembly.py` retry-contract coupling.
+- **Source Anchors**: `specs/007-shared-phase-kernel/design.md` `## Risk Register` `RSK-001`, `RSK-002`, `RSK-005`; `specs/007-shared-phase-kernel/explore.md` `## Quality, Safety & Observability` (fixed token list); `tests/unit/test_meso/test_prompt_assembly.py` retry-contract coupling.
 - **Acceptance Outline**:
   1. `AC-007-09-01` / `AO-017`: regression tests assert each fixed status token on both the auto and manual surfaces, and the prompt retry contracts still reference tokens that exist in the code.
   2. `AC-007-09-02` / `AO-018`: a contract-JSON regression test proves existing `MicroPhaseKernel` keys keep names and value semantics across both surfaces, and per-phase commit tests compare full commit message literals before and after the change.

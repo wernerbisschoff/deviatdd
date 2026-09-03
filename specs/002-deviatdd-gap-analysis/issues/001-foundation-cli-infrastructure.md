@@ -92,11 +92,11 @@ type: feature
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- `tests/test_core/test_profile.py` — `test_resolve_profile_fast`, `test_resolve_profile_secure_override`, `test_resolve_profile_invalid`
-- `tests/test_cli/test_run.py` — `test_run_with_profile`, `test_run_with_flag_overrides`
-- `tests/test_cli/test_common.py` — `test_with_json_quiet_json_flag`, `test_with_json_quiet_quiet_flag`, `test_with_json_quiet_both`
-- `tests/test_cli/test_init.py` — `test_resolve_placeholder_complete`, `test_resolve_placeholder_missing_pyproject`
-- `tests/test_cli/test_micro.py` — `test_run_pytest_json_report_enabled`, `test_run_pytest_json_report_fallback`
+- `tests/unit/test_core/test_profile.py` — `test_resolve_profile_fast`, `test_resolve_profile_secure_override`, `test_resolve_profile_invalid`
+- `tests/unit/test_cli/test_run.py` — `test_run_with_profile`, `test_run_with_flag_overrides`
+- `tests/unit/test_cli/test_common.py` — `test_with_json_quiet_json_flag`, `test_with_json_quiet_quiet_flag`, `test_with_json_quiet_both`
+- `tests/unit/test_cli/test_init.py` — `test_resolve_placeholder_complete`, `test_resolve_placeholder_missing_pyproject`
+- `tests/unit/test_cli/test_micro.py` — `test_run_pytest_json_report_enabled`, `test_run_pytest_json_report_fallback`
 
 ## [DEMONSTRATION_PATH]
 
@@ -126,5 +126,5 @@ print(f'{len(result)} placeholders resolved: {result}')
 "
 
 # Run tests
-pytest tests/test_core/test_profile.py tests/test_cli/test_common.py tests/test_cli/test_init.py tests/test_cli/test_micro.py -v --no-header -q
+pytest tests/unit/test_core/test_profile.py tests/unit/test_cli/test_common.py tests/unit/test_cli/test_init.py tests/unit/test_cli/test_micro.py -v --no-header -q
 ```

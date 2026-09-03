@@ -36,7 +36,7 @@
 - **src/deviate/prompts/commands/deviate-review.md**: role is the fold target for the ponytail ladder inside the Pragmatism domain
   - **Current State**: Carries one over-engineering line and the no-helper rule; ladder text is absent
   - **Changes Required**: Add the explicit pre-write ladder to the drift line; keep heading set unchanged
-  - **Integration Surface**: `src/deviate/cli/review.py` contract; `tests/test_meso/test_auto_prompt_templates.py` pins
+  - **Integration Surface**: `src/deviate/cli/review.py` contract; `tests/unit/test_meso/test_auto_prompt_templates.py` pins
 - **src/deviate/prompts/commands/deviate-pr.md**: role is the dual-purpose body contract reference
   - **Current State**: Defines `{SUMMARY}` / `{CHANGES}` / `{CLOSES}` body and title format
   - **Changes Required**: None expected; update only if verification exposes a contract gap
@@ -49,11 +49,11 @@
   - **Current State**: `commit_scope` strips legacy prefix; emoji detection returns False here
   - **Changes Required**: None expected; reference only
   - **Integration Surface**: `_pr_title` and `format_commit_message`
-- **tests/test_meso/test_auto_prompt_templates.py**: role is the prompt-text pin for the fold
+- **tests/unit/test_meso/test_auto_prompt_templates.py**: role is the prompt-text pin for the fold
   - **Current State**: Pins over-engineering presence and heading absence
   - **Changes Required**: Extend pins to assert ladder text and continued heading absence
   - **Integration Surface**: `deviate-review.md` content
-- **tests/test_meso/test_pr_platform.py / tests/test_cli/test_meso.py**: role is the title and body pin for squash-merge compliance
+- **tests/unit/test_meso/test_pr_platform.py / tests/unit/test_cli/test_meso.py**: role is the title and body pin for squash-merge compliance
   - **Current State**: Pin adhoc and numbered scopes on title paths
   - **Changes Required**: Add compound-prefix and body-format pins for both platform paths
   - **Integration Surface**: `_pr_title`, `_gitlab_push_options`, `_run_gh_pr_create`
@@ -68,13 +68,13 @@
 
 ## Implementation Strategy
 - **Phase 1**: Fold ladder into review prompt and pin prompt text
-  - **Files**: `src/deviate/prompts/commands/deviate-review.md`, `tests/test_meso/test_auto_prompt_templates.py`
+  - **Files**: `src/deviate/prompts/commands/deviate-review.md`, `tests/unit/test_meso/test_auto_prompt_templates.py`
   - **Approach**: Extend the existing drift line with the ladder; assert ladder present and headings absent
-  - **Verification**: Run `pytest tests/test_meso/test_auto_prompt_templates.py -q`
+  - **Verification**: Run `pytest tests/unit/test_meso/test_auto_prompt_templates.py -q`
 - **Phase 2**: Verify and fix PR title and body compliance on both platform paths
-  - **Files**: `src/deviate/cli/meso.py`, `tests/test_cli/test_meso.py`, `tests/test_meso/test_pr_platform.py`
+  - **Files**: `src/deviate/cli/meso.py`, `tests/unit/test_cli/test_meso.py`, `tests/unit/test_meso/test_pr_platform.py`
   - **Approach**: Widen prefix-strip coverage; pin title form and body push options per platform
-  - **Verification**: Run `pytest tests/test_cli/test_meso.py tests/test_meso/test_pr_platform.py -q`
+  - **Verification**: Run `pytest tests/unit/test_cli/test_meso.py tests/unit/test_meso/test_pr_platform.py -q`
 - **Phase 3**: Mirror specs and changelog in the same commit
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Record folded pruning and verified squash behavior; add `[Unreleased]` bullet

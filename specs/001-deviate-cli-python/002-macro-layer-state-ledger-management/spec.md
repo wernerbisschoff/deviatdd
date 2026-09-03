@@ -8,7 +8,7 @@
   - `src/deviate/cli/macro.py` — Macro-layer subcommand definitions (explore, research, prd, shard)
   - `src/deviate/state/ledger.py` — `IssueRecord` Pydantic model and `specs/issues.jsonl` append logic
   - `src/deviate/state/session.py` — Session state machine with transition enforcement
-  - `tests/test_macro/` — Unit test suite for macro-layer commands
+  - `tests/unit/test_macro/` — Unit test suite for macro-layer commands
 - **Upstream Dependencies**: `ISS-001-001` (`[FR-001]` Package Scaffold & Bootstrap) — provides `src/deviate/cli/__init__.py` Typer app mount point
 - **Downstream Consumers**: Meso-layer (`/specify`, `/tasks`) consumes `shard` output (`IssueRecord` entries in `specs/issues.jsonl`)
 
@@ -43,12 +43,12 @@ The current codebase has the package scaffold (`ISS-001-001`) but lacks macro-la
 
 ## MULTI_TIERED_VERIFICATION_TARGETS
 - **Unit Tests**:
-  - `tests/test_macro/test_explore.py` — Explore subcommand dispatch and session transition
-  - `tests/test_macro/test_research.py` — Research subcommand dispatch and session transition
-  - `tests/test_macro/test_prd.py` — PRD subcommand dispatch, artifact validation, session transition
-  - `tests/test_macro/test_shard.py` — Shard subcommand dispatch, ledger append, idempotency, session reset
-  - `tests/test_macro/test_session_state.py` — Session state machine transitions and violation detection
-  - `tests/test_macro/test_ledger.py` — `IssueRecord` model validation, JSONL append, duplicate detection
+  - `tests/unit/test_macro/test_explore.py` — Explore subcommand dispatch and session transition
+  - `tests/unit/test_macro/test_research.py` — Research subcommand dispatch and session transition
+  - `tests/unit/test_macro/test_prd.py` — PRD subcommand dispatch, artifact validation, session transition
+  - `tests/unit/test_macro/test_shard.py` — Shard subcommand dispatch, ledger append, idempotency, session reset
+  - `tests/unit/test_macro/test_session_state.py` — Session state machine transitions and violation detection
+  - `tests/unit/test_macro/test_ledger.py` — `IssueRecord` model validation, JSONL append, duplicate detection
 - **Integration Tests**:
   - `tests/test_integration/test_macro_ledger_append.py` — Full `deviate shard` cycle writes to `specs/issues.jsonl`
   - `tests/test_integration/test_macro_full_cycle.py` — End-to-end IDLE → EXPLORE → RESEARCH → PRD → SHARD → IDLE

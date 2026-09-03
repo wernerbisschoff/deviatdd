@@ -9,12 +9,12 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_constitution.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_core/test_constitution.py -v --no-header -q`
   - **Estimated Time**: 45 minutes
   - **Files**:
     - `src/deviate/core/constitution.py`
     - `src/deviate/prompts/constitution_seed.md`
-    - `tests/test_core/test_constitution.py`
+    - `tests/unit/test_core/test_constitution.py`
   - **Rationale**: US-005 (FR-014) requires `validate_placeholders()` to audit all 6 `${VARIABLE}` tokens in `constitution_seed.md`. Currently only 2 of 6 exist (PROJECT_NAME, REPO_ROOT). The function returns a `PlaceholderAuditResult` with `all_present`, `variables`, and `missing`. The seed template gets patched with TARGET_BACKEND_FRAMEWORK, TARGET_PACKAGE_MANAGER, TARGET_TEST_RUNNER, TARGET_COVERAGE_MINIMUM plus surrounding context. Tests cover all 3 acceptance scenarios: all present, missing detected, FileNotFoundError.
   - **Details**:
     - **Red**: Write `test_validate_placeholders_all_present()` — create a seed file with all 6 `${VARIABLE}` tokens, call `validate_placeholders()`, assert `result.all_present is True` and `result.variables` contains all 6 names. Write `test_validate_placeholders_missing_variable()` — create seed missing one variable, assert `all_present is False` and `result.missing` lists the absent one. Write `test_validate_placeholders_file_not_found()` — pass a non-existent path, assert `FileNotFoundError`.
@@ -32,12 +32,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_constitution.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_cli/test_constitution.py -v --no-header -q`
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/cli/constitution.py` (NEW)
     - `src/deviate/cli/__init__.py` (MODIFY)
-    - `tests/test_cli/test_constitution.py` (NEW)
+    - `tests/unit/test_cli/test_constitution.py` (NEW)
   - **Rationale**: US-001 (FR-005) requires `constitution pre` to validate `specs/constitution.md`, extract test/lint/typecheck commands, and emit a JSON contract — with FAILURE on missing file (AC-005-01) or missing sections (AC-005-02). US-002 (FR-005) requires `constitution post <manifest>` to validate section structure and commit (AC-005-03, AC-005-04). Registration in `cli/__init__.py` makes `deviate constitution` discoverable. Tests mock `Path.cwd()` and use `tmp_git_repo` for git commit operations.
   - **Details**:
     - **Red**: Write `test_constitution_pre_emits_commands()` — create `specs/constitution.md` with valid `## TESTING_PROTOCOLS` containing test/lint/typecheck commands, invoke `runner.invoke(app, ["constitution", "pre"])`, assert stdout contains valid JSON with keys `test_command`, `lint_command`, `typecheck_command` and exit 0. Write `test_constitution_pre_missing_file()` — no constitution file, invoke, assert JSON `status: FAILURE` and non-zero exit. Write `test_constitution_pre_missing_section()` — create constitution without `## TESTING_PROTOCOLS`, invoke, assert JSON `status: FAILURE` and `reason` lists missing section. Write `test_constitution_post_valid_manifest()` — mock git, invoke post with valid manifest, assert exit 0. Write `test_constitution_post_invalid_sections()` — invoke with manifest referencing missing section, assert non-zero exit.
@@ -55,15 +55,15 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_inspect.py tests/test_state/test_ledger.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_cli/test_inspect.py tests/unit/test_state/test_ledger.py -v --no-header -q`
   - **Estimated Time**: 90 minutes
   - **Dependency**: TSK-004-01 (uses `filter_tasks()` pattern)
   - **Files**:
     - `src/deviate/cli/inspect.py` (NEW)
     - `src/deviate/state/ledger.py` (MODIFY)
     - `src/deviate/cli/__init__.py` (MODIFY)
-    - `tests/test_cli/test_inspect.py` (NEW)
-    - `tests/test_state/test_ledger.py` (MODIFY)
+    - `tests/unit/test_cli/test_inspect.py` (NEW)
+    - `tests/unit/test_state/test_ledger.py` (MODIFY)
   - **Rationale**: US-003 (FR-006) requires `issues list` to parse `specs/issues.jsonl` bottom-up with `--type`, `--status`, `--json` filters, and detect orphan claims on SPECIFIED issues via `git ls-remote --heads` (scenarios 1-7). US-004 (FR-006) requires `tasks list` to parse the active issue's `tasks.jsonl` with status derivation (scenarios 8-10). Both share the `_read_ledger_strict()` parser — `filter_tasks()` extends the ledger module for task filtering. Orphan claim detection adds `git ls-remote` integration with three outcomes: true (branch missing), false (branch exists), null (remote unreachable). Registration in `cli/__init__.py` makes both commands discoverable.
   - **Details**:
     - **Red**:
@@ -95,7 +95,7 @@
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/__init__.py` — touched by TSK-004-02 (constitution_app registration) and TSK-004-03 (inspect_app registration). Lines are additive with no overlap (`add_typer` calls appended at the bottom).
-- `tests/test_state/test_ledger.py` — touched by TSK-004-01 (placeholder audit) and TSK-004-03 (filter_tasks). These add different test classes, no overlap.
+- `tests/unit/test_state/test_ledger.py` — touched by TSK-004-01 (placeholder audit) and TSK-004-03 (filter_tasks). These add different test classes, no overlap.
 
 ---
 

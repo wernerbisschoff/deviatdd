@@ -67,11 +67,11 @@
 
 | Tier | Target | Command |
 |---|---|---|
-| Unit — Complexity Gate | `tests/test_core/test_complexity.py` — `test_complexity_gate_classify_low`, `test_complexity_gate_classify_medium`, `test_complexity_gate_classify_high` | `pytest tests/test_core/test_complexity.py -v --no-header -q` |
-| Unit — AdhocRecord | `tests/test_state/test_ledger.py` — `test_adhoc_record_schema`, `test_adhoc_record_status_transitions` | `pytest tests/test_state/test_ledger.py -v --no-header -q` |
-| Unit — Adhoc CLI | `tests/test_cli/test_adhoc.py` — `test_adhoc_pre_low_complexity`, `test_adhoc_pre_medium_complexity`, `test_adhoc_pre_high_complexity_rejected`, `test_adhoc_pre_high_complexity_skip_gates`, `test_adhoc_post_completes_record`, `test_adhoc_post_missing_manifest` | `pytest tests/test_cli/test_adhoc.py -v --no-header -q` |
-| Unit — Feature Create | `tests/test_cli/test_feature.py` — `test_feature_create_scaffold`, `test_feature_create_existing_branch`, `test_feature_create_explicit_slug` | `pytest tests/test_cli/test_feature.py -v --no-header -q` |
-| Integration — Meso | `tests/test_cli/test_meso.py` — `test_specify_pre_invokes_feature_create` | `pytest tests/test_cli/test_meso.py -v --no-header -q` |
+| Unit — Complexity Gate | `tests/unit/test_core/test_complexity.py` — `test_complexity_gate_classify_low`, `test_complexity_gate_classify_medium`, `test_complexity_gate_classify_high` | `pytest tests/unit/test_core/test_complexity.py -v --no-header -q` |
+| Unit — AdhocRecord | `tests/unit/test_state/test_ledger.py` — `test_adhoc_record_schema`, `test_adhoc_record_status_transitions` | `pytest tests/unit/test_state/test_ledger.py -v --no-header -q` |
+| Unit — Adhoc CLI | `tests/unit/test_cli/test_adhoc.py` — `test_adhoc_pre_low_complexity`, `test_adhoc_pre_medium_complexity`, `test_adhoc_pre_high_complexity_rejected`, `test_adhoc_pre_high_complexity_skip_gates`, `test_adhoc_post_completes_record`, `test_adhoc_post_missing_manifest` | `pytest tests/unit/test_cli/test_adhoc.py -v --no-header -q` |
+| Unit — Feature Create | `tests/unit/test_cli/test_feature.py` — `test_feature_create_scaffold`, `test_feature_create_existing_branch`, `test_feature_create_explicit_slug` | `pytest tests/unit/test_cli/test_feature.py -v --no-header -q` |
+| Integration — Meso | `tests/unit/test_cli/test_meso.py` — `test_specify_pre_invokes_feature_create` | `pytest tests/unit/test_cli/test_meso.py -v --no-header -q` |
 | Full verification | Constitution lint + test | `ruff check . && pytest tests/ -v --no-header -q` |
 
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER

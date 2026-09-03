@@ -68,17 +68,17 @@
   - **Changes Required**: Do not swallow `AgentTimeoutError`. Do not pass a GREEN `stall_timeout` override. Do not fold EXECUTE back to 900s. Add a pin only if `invoke` no longer reaches this handler on first stall.
   - **Integration Surface**: `_invoke_agent`; `_run_execute_phase`; `EXECUTE_STALL_TIMEOUT_SECONDS`.
 
-- **tests/test_core/test_agent.py**: Pin stderr-only stall, first-stall surface, and existing GH-53 / stdout pins.
+- **tests/unit/test_core/test_agent.py**: Pin stderr-only stall, first-stall surface, and existing GH-53 / stdout pins.
   - **Current State**: `test_streaming_agent_detects_stdout_stall` covers silent pipes. `test_streaming_agent_stall_timeout_override_is_honored` cites the per-invoke budget. `test_streaming_agent_output_completes_without_stall` covers stdout progress. `test_agent_timeout_retry` and `test_agent_timeout_retry_twice_then_raises` cover blocking `TimeoutExpired` plus the 30s sleep.
   - **Changes Required**: Keep those pins. Add a patched-budget pin: periodic stderr plus silent stdout raises `AgentTimeoutError` matching `STALL_DETECTED` and puts the diagnostic text on `partial_stderr`. Add an `invoke` pin: a streaming `STALL_DETECTED` re-raises without `time.sleep(30)` and without a second `_dispatch_invocation`. Pin `STREAM_STALL_TIMEOUT_SECONDS == 900`. Use mocked `Popen` pipes and sub-second budgets. Do not sleep 900s.
   - **Integration Surface**: `_invoke_streaming`; `invoke`; `AgentTimeoutError`.
 
-- **tests/core/test_smart_stall.py**: Touch only if stderr bytes still feed the rate window.
+- **tests/unit/core/test_smart_stall.py**: Touch only if stderr bytes still feed the rate window.
   - **Current State**: Tests check constant sanity and offline byte-rate math. They do not drive `_invoke_streaming`.
   - **Changes Required**: Leave the file unchanged when `read_stderr` stops calling `record_bytes`. If GREEN still samples stderr bytes, add a pin that sparse stderr cannot suppress the hard `STALL_DETECTED` trip.
   - **Integration Surface**: `STREAM_STALL_MIN_BYTES_PER_SECOND`; `record_bytes`.
 
-- **tests/test_cli/test_micro.py**: Optional harness-log pin.
+- **tests/unit/test_cli/test_micro.py**: Optional harness-log pin.
   - **Current State**: No required GREEN stall pin lives here.
   - **Changes Required**: Add a pin only if needed to prove `_invoke_agent` logs `AGENT_TIMEOUT` when `invoke` raises `AgentTimeoutError`. Mock `AgentBackend.invoke` and `deviate.cli.micro._run_pytest`.
   - **Integration Surface**: `_invoke_agent`.
@@ -100,9 +100,9 @@
 
 ## Implementation Strategy
 - **Phase 1**: RED stall and retry pins
-  - **Files**: `tests/test_core/test_agent.py`, `tests/test_cli/test_micro.py`
+  - **Files**: `tests/unit/test_core/test_agent.py`, `tests/unit/test_cli/test_micro.py`
   - **Approach**: Keep the silent-stream pin, the GH-53 override pin, and the stdout-completes pin. Add a sub-second stderr-only stall that expects `STALL_DETECTED` plus `partial_stderr`. Add an `invoke` pin that a streaming stall does not sleep 30s or retry a second full budget. Keep the blocking `TimeoutExpired` 30s retry pins. Mock pipes. Do not sleep 900s. Mock `_run_pytest` if a CLI pin is added.
-  - **Verification**: `uv run pytest tests/test_core/test_agent.py tests/core/test_smart_stall.py -q -k "stall"` fails on the new stderr-only and first-stall pins.
+  - **Verification**: `uv run pytest tests/unit/test_core/test_agent.py tests/unit/core/test_smart_stall.py -q -k "stall"` fails on the new stderr-only and first-stall pins.
 
 - **Phase 2**: GREEN stdout-only hard deadline
   - **Files**: `src/deviate/core/agent.py`
@@ -153,7 +153,7 @@ Constraints: no new dependencies; no hardcoded secrets; no un-mocked `_run_pytes
 
 ## Constitutional Alignment
 - **Architecture**: The change stays in Micro-layer agent dispatch inside C1. It does not skip a layer. It does not add ledger row types. Session Continuity is unchanged.
-- **Testing**: pytest pins under `tests/test_core/test_agent.py` (and optional CLI). RED writes failing pins first. GREEN writes `src/` plus the listed spec and changelog files. Coverage target remains >= 80% (constitution §3).
+- **Testing**: pytest pins under `tests/unit/test_core/test_agent.py` (and optional CLI). RED writes failing pins first. GREEN writes `src/` plus the listed spec and changelog files. Coverage target remains >= 80% (constitution §3).
 - **Git Isolation**: Work stays on the pre-configured issue worktree. Micro agents do not run branch-mutating git. The slice never deletes a branch.
 - **Product Layer**: `flow_refs` stays `[]`. FLOW-04 remains RPC TUI live-stream, not stall-clock policy. This slice does not author or index Product-layer flows.
 - **Definition of Done**: The hang fix is user-visible, so `CHANGELOG.md` `[Unreleased]` updates in the same implementation commit (constitution §5).

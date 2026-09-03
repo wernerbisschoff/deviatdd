@@ -87,43 +87,43 @@
   - **Changes Required**: §2 update enumerates only the five retained event types. §9 appends a 0.8.0 entry: *"Retired `FLOW_DEPRECATED` and `FLOW_IMPLEMENTATION_EVIDENCE_ADDED` event types; no producers existed. `FlowImplementationStatus` simplified to `["CONFIRMED_IMPLEMENTED", "UNCONFIRMED"]`."*
   - **Integration Surface**: Constitutional doc only.
 
-- **tests/test_macro/test_explore.py**: NEW test.
+- **tests/unit/test_macro/test_explore.py**: NEW test.
   - **Current State**: 322 lines; `test_explore_post_does_not_seed_flow_identity_or_documented_events` at line 285 is the closest existing test.
   - **Changes Required**: Add `test_explore_post_commits_flows_ledger_atomically` — set up git repo, write `explore.md` and `flows/index.md`, write a stub `issues.jsonl` with one row carrying `flow_refs=["FLOW-04"]`. Run `deviate explore post`. Assert `git status` exits 0 with empty output (working tree clean). Assert `git log -1 --name-only` includes both `specs/explore/test-slug.md` and `specs/_product/flows.jsonl`.
 
-- **tests/test_cli/test_release.py**: NEW file.
+- **tests/unit/test_cli/test_release.py**: NEW file.
   - **Current State**: Does not exist.
   - **Changes Required**: Three tests: (1) `test_release_tag_included_appends_event` — write a `release-next.md` with one `## Included Flows` row, invoke the command, parse `flows.jsonl`, assert one `FLOW_INCLUDED_IN_RELEASE` row. (2) `test_release_tag_included_idempotent` — invoke twice, assert no duplicate rows. (3) `test_release_tag_included_missing_table` — write a `release-next.md` without the table, assert exit code 1 and `RELEASE_INCLUDED_FLOWS_MISSING` stderr banner.
 
-- **tests/test_state/test_ledger.py**: UPDATE existing tests.
+- **tests/unit/test_state/test_ledger.py**: UPDATE existing tests.
   - **Current State**: Tests for `FlowEvent`, `FlowRecord`, `_derive_impl_status`.
   - **Changes Required**: Drop tests that assert `FLOW_DEPRECATED` and `FLOW_IMPLEMENTATION_EVIDENCE_ADDED` validity. Update `_derive_impl_status` tests to drop `PARTIALLY_IMPLEMENTED` assertions. Add a regression test: `test_flow_event_rejects_retired_event_types` — assert Pydantic `ValidationError` for both retired types.
 
-- **tests/test_cli/test_inspect.py:812,871**, **tests/test_core/test_flow_confirmation.py:454,490**: DROP tests that reference retired event types.
+- **tests/unit/test_cli/test_inspect.py:812,871**, **tests/unit/test_core/test_flow_confirmation.py:454,490**: DROP tests that reference retired event types.
 
-- **tests/test_micro/test_orchestration.py**: DROP `flow_alignment` assertions (verify by grep first).
+- **tests/unit/test_micro/test_orchestration.py**: DROP `flow_alignment` assertions (verify by grep first).
 
 ## Implementation Strategy
 
 ### Phase 1 — Slice 1 (commit ordering)
 
-Five-line fix to `src/deviate/cli/macro.py`. Move `_run_flow_ledger_cycle` call to before the commit, switch to `stage_and_commit([explore_path, flows_ledger_path])`. Add one test asserting the working tree is clean. Verify with `mise run test tests/test_macro/test_explore.py -v -k atomic`.
+Five-line fix to `src/deviate/cli/macro.py`. Move `_run_flow_ledger_cycle` call to before the commit, switch to `stage_and_commit([explore_path, flows_ledger_path])`. Add one test asserting the working tree is clean. Verify with `mise run test tests/unit/test_macro/test_explore.py -v -k atomic`.
 
 ### Phase 2 — Slice 2 (release CLI)
 
-New `src/deviate/cli/release.py` with `tag-included` subcommand. Register in `src/deviate/cli/__init__.py`. Update `/deviate-release` workflow step 2.5b. Three new tests in `tests/test_cli/test_release.py`. Verify with `mise run test tests/test_cli/test_release.py -v`.
+New `src/deviate/cli/release.py` with `tag-included` subcommand. Register in `src/deviate/cli/__init__.py`. Update `/deviate-release` workflow step 2.5b. Three new tests in `tests/unit/test_cli/test_release.py`. Verify with `mise run test tests/unit/test_cli/test_release.py -v`.
 
 ### Phase 3 — Slice 5 (retire dead event types)
 
-Drop `FLOW_DEPRECATED` and `FLOW_IMPLEMENTATION_EVIDENCE_ADDED` from `FlowEvent.event_type`. Drop `PARTIALLY_IMPLEMENTED` branch from `_derive_impl_status`. Drop `_implementation_evidence_paths`. Update tests. Verify with `mise run test tests/test_state/test_ledger.py tests/test_cli/test_inspect.py tests/test_core/test_flow_confirmation.py -v`.
+Drop `FLOW_DEPRECATED` and `FLOW_IMPLEMENTATION_EVIDENCE_ADDED` from `FlowEvent.event_type`. Drop `PARTIALLY_IMPLEMENTED` branch from `_derive_impl_status`. Drop `_implementation_evidence_paths`. Update tests. Verify with `mise run test tests/unit/test_state/test_ledger.py tests/unit/test_cli/test_inspect.py tests/unit/test_core/test_flow_confirmation.py -v`.
 
 ### Phase 4 — Slice 3 (micro ceremony)
 
-Remove `Flow-Anchored Implementation` from `micro-shared.md`. Remove `flow_alignment` from `judge.md` (both auto and commands). Remove flow-anchored language from `red.md`, `green.md`, `refactor.md`. Drop test assertions. Verify with `mise run test tests/test_micro/ -v`.
+Remove `Flow-Anchored Implementation` from `micro-shared.md`. Remove `flow_alignment` from `judge.md` (both auto and commands). Remove flow-anchored language from `red.md`, `green.md`, `refactor.md`. Drop test assertions. Verify with `mise run test tests/unit/test_micro/ -v`.
 
 ### Phase 5 — Slice 4 (meso ceremony)
 
-Remove `Flow Reference Propagation` from `meso-shared.md`. Remove `## Product Layer Anchors` from `plan.md`. Remove `**Flow References**` from `tasks.md`. Update slash-command counterparts. Verify with `mise run test tests/test_meso/ -v`.
+Remove `Flow Reference Propagation` from `meso-shared.md`. Remove `## Product Layer Anchors` from `plan.md`. Remove `**Flow References**` from `tasks.md`. Update slash-command counterparts. Verify with `mise run test tests/unit/test_meso/ -v`.
 
 ### Phase 6 — Documentation + final verification
 

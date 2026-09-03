@@ -191,7 +191,7 @@ optional packs (`review`, `walkthrough`); default setup does not install them.
     `push_gate` step, then asks the operator whether to `git push` (which fires the real
     `pre-push` hook and re-runs the gate) or stop and push manually. The gate body must stay
     byte-equivalent to `.githooks/pre-push` — divergence is pinned by
-    `tests/test_meso/test_auto_prompt_templates.py::TestMergePromptPushGate::test_hook_and_prompt_agree_on_gate_body`.
+    `tests/unit/test_meso/test_auto_prompt_templates.py::TestMergePromptPushGate::test_hook_and_prompt_agree_on_gate_body`.
     The squash-merge commit and the ledger transition inside it are durable on `{base_branch}`
     regardless of the push outcome; only the network push is opt-in.
 
@@ -1117,9 +1117,9 @@ scopes the pattern to the project root, never matching the
 deviatdd project's own source at
 `src/deviate/prompts/skills/deviatdd/` (three directories deep).
 
-**Tests:** `TestInstallDeviatddSkill` in `tests/test_cli/test_init.py`
+**Tests:** `TestInstallDeviatddSkill` in `tests/unit/test_cli/test_init.py`
 and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` /
-`TestSetupPerAgentInstall` in `tests/test_cli/test_setup.py` cover
+`TestSetupPerAgentInstall` in `tests/unit/test_cli/test_setup.py` cover
 selected-agent-only install (TTY pick / `--agent` pin; leftover dirs are not sprayed), Codex skills +
 `backend = "codex"` + Luna/`reasoning_effort` upsert, idempotence,
 gitignore entry presence + idempotence, the safety-gate fragments in

@@ -11,8 +11,8 @@
   - `src/deviate/state/session.py` — `SessionState` phase transitions (`SHARD` → `SPECIFY` → `TASKS` → `IDLE`)
   - `specs/{issue_id}/tasks.jsonl` — Issue-specific task ledger (append-only)
   - `specs/issues.jsonl` — Global issue ledger (read-only during meso phase)
-  - `tests/test_meso/test_specify.py` — Unit tests for `deviate specify`
-  - `tests/test_meso/test_tasks.py` — Unit tests for `deviate tasks`
+  - `tests/unit/test_meso/test_specify.py` — Unit tests for `deviate specify`
+  - `tests/unit/test_meso/test_tasks.py` — Unit tests for `deviate tasks`
   - `tests/test_integration/test_meso_task_ledger.py` — Integration tests for meso task append cycle
 
 ## THE_PROBLEM_CONTRACT
@@ -49,9 +49,9 @@ As a task engineer working within the DeviaTDD workflow, I need the `deviate spe
 
 | Tier | Target | Description |
 |------|--------|-------------|
-| Unit | `tests/test_meso/test_specify.py` | `deviate specify` issue resolution, state transitions, error paths |
-| Unit | `tests/test_meso/test_tasks.py` | `deviate tasks` TaskRecord generation, append, idempotency, schema validation |
-| Unit | `tests/test_state/test_ledger.py` | `TaskRecord` Pydantic model field validation |
+| Unit | `tests/unit/test_meso/test_specify.py` | `deviate specify` issue resolution, state transitions, error paths |
+| Unit | `tests/unit/test_meso/test_tasks.py` | `deviate tasks` TaskRecord generation, append, idempotency, schema validation |
+| Unit | `tests/unit/test_state/test_ledger.py` | `TaskRecord` Pydantic model field validation |
 | Integration | `tests/test_integration/test_meso_task_ledger.py` | Full specify → tasks append cycle with real JSONL files |
 
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER

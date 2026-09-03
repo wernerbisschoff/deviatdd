@@ -8,7 +8,7 @@
 - [x] T001: Package Structure & Pydantic State Models
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
-  - **Verification**: `pytest tests/test_state/test_config.py -v`
+  - **Verification**: `pytest tests/unit/test_state/test_config.py -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/__init__.py`
@@ -16,9 +16,9 @@
     - `src/deviate/state/config.py`
     - `src/deviate/main.py`
     - `src/deviate/cli/__init__.py`
-    - `tests/test_state/__init__.py`
-    - `tests/test_state/test_config.py`
-  - **Rationale**: `src/deviate/__init__.py` and `src/deviate/state/__init__.py` make the package importable. `src/deviate/state/config.py` defines `DeviateConfig` and `SessionState` per the data-model schema (US-002-CONF: schema validation, default values, `extra="forbid"`). `src/deviate/main.py` exposes the Typer app instance for CLI invocation. `src/deviate/cli/__init__.py` creates the Typer sub-app shell (init command wiring added in T003). `tests/test_state/test_config.py` validates model defaults, field constraints, IO round-trips, and edge cases (US-002-CONF scenarios).
+    - `tests/unit/test_state/__init__.py`
+    - `tests/unit/test_state/test_config.py`
+  - **Rationale**: `src/deviate/__init__.py` and `src/deviate/state/__init__.py` make the package importable. `src/deviate/state/config.py` defines `DeviateConfig` and `SessionState` per the data-model schema (US-002-CONF: schema validation, default values, `extra="forbid"`). `src/deviate/main.py` exposes the Typer app instance for CLI invocation. `src/deviate/cli/__init__.py` creates the Typer sub-app shell (init command wiring added in T003). `tests/unit/test_state/test_config.py` validates model defaults, field constraints, IO round-trips, and edge cases (US-002-CONF scenarios).
   - **Details**:
     - **Implementation**: Create `src/deviate/__init__.py` with `__version__ = "0.1.0"`.
     - **Implementation**: Create `src/deviate/state/__init__.py` (empty, package marker).
@@ -26,9 +26,9 @@
     - **Implementation**: Implement `SessionState(BaseModel)` in `state/config.py` with fields: `current_phase: str = "IDLE"`, `active_issue_id: Optional[str] = None`, `last_command: str = ""`, `timestamp: datetime = Field(default_factory=datetime.utcnow)`, and a `@field_validator("current_phase")` that accepts only the 11 valid DeviaTDD phase names.
     - **Implementation**: Create `src/deviate/main.py` with `import typer; app = typer.Typer()` and register `cli` sub-app via `app.add_typer()`.
     - **Implementation**: Create `src/deviate/cli/__init__.py` with `import typer; cli = typer.Typer()` (shell only; no commands yet).
-    - **Implementation**: Write `tests/test_state/test_config.py` covering: `DeviateConfig` default values, `extra="forbid"` rejection, `timeout_seconds > 0` enforcement, `SessionState` default phase and timestamp, phase validator rejection of invalid values, JSON round-trip fidelity.
+    - **Implementation**: Write `tests/unit/test_state/test_config.py` covering: `DeviateConfig` default values, `extra="forbid"` rejection, `timeout_seconds > 0` enforcement, `SessionState` default phase and timestamp, phase validator rejection of invalid values, JSON round-trip fidelity.
     - **Edge Cases**: Extra forbidden keys cause `ValidationError`; `timeout_seconds=0` and `-1` are rejected; `current_phase="INVALID"` raises `ValueError` listing valid phases; `None` serializes/deserializes correctly for `active_issue_id`.
-    - **Acceptance**: `pytest tests/test_state/test_config.py -v` exits 0. All model instances are importable from `src.deviate.state.config`.
+    - **Acceptance**: `pytest tests/unit/test_state/test_config.py -v` exits 0. All model instances are importable from `src.deviate.state.config`.
 
 - [x] T002: Prompt Seed Resources
   - **Type**: Infra_Batch
@@ -60,14 +60,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_init.py -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py -v`
   - **Estimated Time**: 90 minutes
   - **Dependency**: T001, T002
   - **Files**:
     - `src/deviate/cli/__init__.py`
-    - `tests/test_cli/__init__.py`
-    - `tests/test_cli/test_init.py`
-  - **Rationale**: `src/deviate/cli/__init__.py` receives the `init` command definition and all business logic (US-001-SCAF: directory + file scaffolding; US-003-CONS: constitution provisioning; US-004-GOV: governance file append/overwrite; US-005-RECOV: partial recovery). `tests/test_cli/test_init.py` tests every spec scenario via `CliRunner` isolated invocations against temp directories. All init behavior shares one logical capability per the workstation mandate.
+    - `tests/unit/test_cli/__init__.py`
+    - `tests/unit/test_cli/test_init.py`
+  - **Rationale**: `src/deviate/cli/__init__.py` receives the `init` command definition and all business logic (US-001-SCAF: directory + file scaffolding; US-003-CONS: constitution provisioning; US-004-GOV: governance file append/overwrite; US-005-RECOV: partial recovery). `tests/unit/test_cli/test_init.py` tests every spec scenario via `CliRunner` isolated invocations against temp directories. All init behavior shares one logical capability per the workstation mandate.
   - **Details**:
     - **Red**: Write `test_init_creates_dotfile_structure` asserting `.deviate/config.toml` and `.deviate/session.json` exist after `deviate init` on clean dir.
     - **Red**: Write `test_init_creates_constitution` asserting `specs/constitution.md` exists and contains resolved `${VARIABLE}` placeholders (US-003-CONS).
@@ -85,7 +85,7 @@
       - Wire `--generate-constitution` flag (default: False).
     - **Refactor**: Extract helper functions `_ensure_dir`, `_write_if_missing`, `_upsert_governance_block` for readability. Ensure Rich `console.print()` for idempotency skip messages.
     - **Edge Cases**: Handle `permission denied` gracefully with clear error; gracefully handle empty existing `CLAUDE.md` (treat as absent); handle `specs/` directory already existing but without `constitution.md`; handle trailing whitespace/newlines in governance block boundary detection.
-    - **Acceptance**: `pytest tests/test_cli/test_init.py -v` passes all 6 test cases. Running `deviate init` twice on same directory produces no file changes on second run and exits 0.
+    - **Acceptance**: `pytest tests/unit/test_cli/test_init.py -v` passes all 6 test cases. Running `deviate init` twice on same directory produces no file changes on second run and exits 0.
 
 ## Phase 3: Integration & Performance Gates
 **Goal**: Verify the full `deviate init` cycle end-to-end and validate performance constraints (`L_max <= 500ms`).
@@ -131,6 +131,6 @@
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/__init__.py` — T001 (skeleton: `cli = typer.Typer()`) and T003 (command: `@cli.command()` decorator and function below). No other tasks touch this file.
-- `tests/test_state/test_config.py` — T001 only.
-- `tests/test_cli/test_init.py` — T003 only.
+- `tests/unit/test_state/test_config.py` — T001 only.
+- `tests/unit/test_cli/test_init.py` — T003 only.
 - `tests/test_integration/test_init_export_cycle.py` — T004 only.

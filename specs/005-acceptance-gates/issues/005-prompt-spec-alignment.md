@@ -20,7 +20,7 @@ flow_refs: []
   - `specs/DeviaTDD-api.md` — MODIFY: document the `**Verification Mode**: <automated|manual|deferred>` contract line, the `TaskRecord.acceptance_criteria` field, the `RedHandoffAdvisory` handoff, and the GREEN/REFACTOR gate semantics (spec-alignment mandate, `AGENTS.md` `📐 Spec Alignment`).
   - `specs/DeviaTDD-architecture.md` — MODIFY: document the RED checkpoint, GREEN gate with JUDGE routing, and REFACTOR regression gate in the phase state machine (spec-alignment mandate).
   - `CHANGELOG.md` — MODIFY: append a bullet under `[Unreleased]` for the user-visible gate behavior changes (CHANGELOG discipline, constitution §5).
-  - `tests/test_meso/test_auto_prompt_templates.py` — TARGET: extend or add checks that the red/green/refactor templates carry the new semantics and no stale rejection statements.
+  - `tests/unit/test_meso/test_auto_prompt_templates.py` — TARGET: extend or add checks that the red/green/refactor templates carry the new semantics and no stale rejection statements.
 - **Upstream Evidence**:
   - `specs/005-acceptance-gates/prd.md:17` — Hard directive: update `src/deviate/prompts/commands/` and `src/deviate/prompts/auto/`.
   - `specs/005-acceptance-gates/prd.md:18` — Hard directive: update `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` in the same commit; append a `CHANGELOG.md` entry.
@@ -84,7 +84,7 @@ The gate behavior from issues `005-001` through `005-004` is implemented. This i
 
 ## Multi-Tiered Verification Targets
 
-- **Unit**: `tests/test_meso/test_auto_prompt_templates.py` — content checks on the red/green/refactor templates; reject stale rejection statements.
+- **Unit**: `tests/unit/test_meso/test_auto_prompt_templates.py` — content checks on the red/green/refactor templates; reject stale rejection statements.
 - **Static**: `grep` scans for forbidden phrases (see Demonstration Path).
 - **Review**: spec-alignment review compares `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` against the runner behavior; changelog bullet presence checked.
 
@@ -98,7 +98,7 @@ grep -rn "**Verification Mode**" specs/DeviaTDD-api.md
 # expected: at least one match documenting the contract line
 
 # 2. Unit verification — prompt template content tests
-uv run pytest tests/test_meso/test_auto_prompt_templates.py -v
+uv run pytest tests/unit/test_meso/test_auto_prompt_templates.py -v
 
 # 3. Changelog discipline — bullet present under [Unreleased]
 awk '/^## \[Unreleased\]/{f=1} f && /acceptance gate|Verification Mode|RED checkpoint|REFACTOR regression/{print; found=1} END{exit !found}' CHANGELOG.md

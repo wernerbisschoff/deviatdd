@@ -115,15 +115,15 @@ The DeviaTDD workflow routes all phase agent invocations through `opencode run` 
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 - **Unit Sandbox Targets**:
-  - `tests/test_state/test_config.py::test_model_config_defaults` — empty models dict on fresh config
-  - `tests/test_state/test_config.py::test_model_config_round_trip` — serialization preserves map
-  - `tests/test_state/test_config.py::test_model_config_phase_lookup` — known phase returns model, unknown returns None
-  - `tests/core/test_agent.py::test_agent_command_with_model` — command contains `--model`
-  - `tests/core/test_agent.py::test_agent_command_without_model` — command has no `--model`
-  - `tests/core/test_agent.py::test_agent_command_droid_backend` — command includes `--model` for droid backend
-  - `tests/core/test_agent.py::test_agent_command_claude_backend` — no `--model` for claude backend
-  - `tests/core/test_agent.py::test_agent_command_default_fallback` — `default` key applies when phase not in dict
-  - `tests/core/test_agent.py::test_agent_command_phase_overrides_default` — specific phase overrides `default`
+  - `tests/unit/test_state/test_config.py::test_model_config_defaults` — empty models dict on fresh config
+  - `tests/unit/test_state/test_config.py::test_model_config_round_trip` — serialization preserves map
+  - `tests/unit/test_state/test_config.py::test_model_config_phase_lookup` — known phase returns model, unknown returns None
+  - `tests/unit/core/test_agent.py::test_agent_command_with_model` — command contains `--model`
+  - `tests/unit/core/test_agent.py::test_agent_command_without_model` — command has no `--model`
+  - `tests/unit/core/test_agent.py::test_agent_command_droid_backend` — command includes `--model` for droid backend
+  - `tests/unit/core/test_agent.py::test_agent_command_claude_backend` — no `--model` for claude backend
+  - `tests/unit/core/test_agent.py::test_agent_command_default_fallback` — `default` key applies when phase not in dict
+  - `tests/unit/core/test_agent.py::test_agent_command_phase_overrides_default` — specific phase overrides `default`
   - `tests/cli/test_micro.py::test_phase_routes_model[RED]` — RED uses configured model
   - `tests/cli/test_micro.py::test_phase_routes_model[JUDGE]` — JUDGE uses configured model
 - **Integration Sandbox Targets**:
@@ -151,6 +151,6 @@ EOF
 python3 -c "import tomllib; print(tomllib.load(open('.deviate/config.toml','rb'))['models'])"
 
 # 3. Run unit tests for model routing
-pytest tests/test_state/test_config.py::test_model_config -v
-pytest tests/core/test_agent.py -v
+pytest tests/unit/test_state/test_config.py::test_model_config -v
+pytest tests/unit/core/test_agent.py -v
 ```

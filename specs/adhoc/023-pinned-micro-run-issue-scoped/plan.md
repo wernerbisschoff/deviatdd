@@ -33,7 +33,7 @@
 **Scenario AC-PLAN-003: Return this issue's record or a synthesized PENDING when the branch issue is known**
 - **Source Outline**: `AO-023-02`
 - **Upstream Traceability**: `US-023-01`, `FR-ADHOC-023`, `AC-ADHOC-023-02`
-- **Current-Code Evidence**: `src/deviate/cli/micro.py:_find_task_record`; `tests/test_micro/test_e2e.py:test_find_task_record_prefers_branch_issue`
+- **Current-Code Evidence**: `src/deviate/cli/micro.py:_find_task_record`; `tests/unit/test_micro/test_e2e.py:test_find_task_record_prefers_branch_issue`
 - **Given**: `_resolve_issue_id_from_branch` returns `001-002`, a sibling ledger has COMPLETED `TSK-001-04`, and `001-002` has zero JSONL rows for that id.
 - **When**: `_find_task_record(root, "TSK-001-04")` or `_resolve_task_context("TSK-001-04", root)` runs.
 - **Then**: The hit is a `001-002` record or a synthesized PENDING with `issue_id=001-002`, never the sibling COMPLETED row.
@@ -51,7 +51,7 @@
 **Scenario AC-PLAN-005: Keep unscoped same-id lookup when no active issue resolves**
 - **Source Outline**: `AO-023-02`
 - **Upstream Traceability**: `US-023-01`, `FR-ADHOC-023`, `AC-ADHOC-023-02`
-- **Current-Code Evidence**: `tests/test_cli/test_micro.py:TestFindTaskRecord`; `src/deviate/cli/micro.py:_find_task_record`
+- **Current-Code Evidence**: `tests/unit/test_cli/test_micro.py:TestFindTaskRecord`; `src/deviate/cli/micro.py:_find_task_record`
 - **Given**: A test uses `tmp_path` with no feature branch and no resolvable `active_issue_id`.
 - **When**: `_find_task_record` looks up a TSK that exists as one latest record.
 - **Then**: The helper still returns that same-id record, and only a known active issue is forbidden from receiving another issue's row.
@@ -60,7 +60,7 @@
 **Scenario AC-PLAN-006: Keep TASK_ALREADY_DONE for this issue's own terminal status**
 - **Source Outline**: `AO-023-03`
 - **Upstream Traceability**: `US-023-02`, `FR-ADHOC-023`, `AC-ADHOC-023-03`
-- **Current-Code Evidence**: `src/deviate/cli/micro.py:_run_single`; `tests/test_micro/test_run.py:test_run_skips_already_completed_task`
+- **Current-Code Evidence**: `src/deviate/cli/micro.py:_run_single`; `tests/unit/test_micro/test_run.py:test_run_skips_already_completed_task`
 - **Given**: The session `current_phase` is `IDLE` and this issue's latest status is `COMPLETED`, `REFACTOR`, `JUDGE`, or `YELLOW`.
 - **When**: The operator runs `deviate micro run` with that same TSK.
 - **Then**: The runner prints `TASK_ALREADY_DONE` and exits 0.
@@ -90,17 +90,17 @@
   - **Changes Required**: When the active issue is known (branch via `_resolve_issue_id_from_branch`, else `session.active_issue_id` after the existing GH-54 re-key), `_find_task_record` must not return a record whose `issue_id` differs. On a miss, `_resolve_task_context` must reuse `_find_all_pending_tasks(root, issue_id=active)` to pick this issue's synthesized PENDING, or raise `TASK_NOT_FOUND`. `_run_single` may take the `TASK_ALREADY_DONE` exit only when the resolved record belongs to the active issue. Do not fork a second scanner. Do not revert `_collect_latest_task_records` to id-only dedup. Do not change TSK id format. Leave bare / `--all` on the existing issue-id filter unless a shared helper is required. `execute post` keeps calling `_find_task_record`; the scoped lookup must not complete a sibling task.
   - **Integration Surface**: `_resolve_issue_id_from_branch`; `SessionState.active_issue_id`; `_find_all_pending_tasks`; `_resolve_pending_feedback_task`; `_run_all`; `run_command`.
 
-- **tests/test_micro/test_e2e.py**: Extend the branch-preference pin to the empty-ledger hole.
+- **tests/unit/test_micro/test_e2e.py**: Extend the branch-preference pin to the empty-ledger hole.
   - **Current State**: `test_find_task_record_prefers_branch_issue` seeds both issues with JSONL rows, so the branch hit exists and `preferred` is unused.
   - **Changes Required**: Add or extend a case: sibling COMPLETED `TSK-001-04`, active issue has zero ledger rows, branch checkout of the pending issue. The hit must be this issue (synthesized PENDING or `None`), never the sibling COMPLETED row. Use `tmp_git_repo` + `_git_env()` / `cwd=<tmp_git_repo>`.
   - **Integration Surface**: `_find_task_record`; `_resolve_issue_id_from_branch`.
 
-- **tests/test_cli/test_micro.py**: Unit-pin scoped lookup and keep unscoped latest-status tests green.
+- **tests/unit/test_cli/test_micro.py**: Unit-pin scoped lookup and keep unscoped latest-status tests green.
   - **Current State**: `TestFindTaskRecord` uses `tmp_path` with one issue and no feature branch. Those tests must keep returning the single same-id record.
   - **Changes Required**: Add a unit pin that two issues share `TSK-005-07` and a known branch issue returns only that issue's record (or `None` / synthesized PENDING), never the foreign COMPLETED row. Keep `test_find_task_record_returns_latest_status` and `test_find_task_record_multiple_entries_returns_last` green.
   - **Integration Surface**: `_find_task_record`; `_resolve_task_context`.
 
-- **tests/test_micro/test_run.py**: CLI-pin the skip hole and keep same-issue `TASK_ALREADY_DONE`.
+- **tests/unit/test_micro/test_run.py**: CLI-pin the skip hole and keep same-issue `TASK_ALREADY_DONE`.
   - **Current State**: `test_run_skips_already_completed_task` and `test_task_already_done_triggers_for_judge_latest` pin IDLE plus this issue's COMPLETED / JUDGE exit 0.
   - **Changes Required**: Add a CLI pin: `deviate micro run TSK-001-04` in a `tmp_git_repo` feature-branch worktree whose `tasks.md` lists the TSK and whose JSONL is empty, while a sibling ledger is COMPLETED. Output must not contain `TASK_ALREADY_DONE`. Dispatch / resolve uses the branch `issue_id`. Mock `deviate.cli.micro._run_pytest` and the agent cycle. Keep the same-issue already-done tests green.
   - **Integration Surface**: `_run_single`; `_resolve_task_context`; `cli`.
@@ -122,19 +122,19 @@
 
 ## Implementation Strategy
 - **Phase 1**: Issue-scoped lookup and PENDING synthesis
-  - **Files**: `src/deviate/cli/micro.py`, `tests/test_micro/test_e2e.py`, `tests/test_cli/test_micro.py`
+  - **Files**: `src/deviate/cli/micro.py`, `tests/unit/test_micro/test_e2e.py`, `tests/unit/test_cli/test_micro.py`
   - **Approach**: Share the existing GH-54 active-issue resolution (branch wins when the session issue has no tasks board). When that issue is known, `_find_task_record` returns only a matching `issue_id` row and never `preferred`. If the JSONL miss happens on a pinned id, `_resolve_task_context` calls `_find_all_pending_tasks(root, issue_id=active)` and returns the matching synthesized PENDING, or prints `TASK_NOT_FOUND` and exits 1. Tests without a resolvable issue keep the current single-record fallback. Do not rewrite `_collect_latest_task_records`.
-  - **Verification**: `uv run pytest tests/test_micro/test_e2e.py tests/test_cli/test_micro.py -q -k "find_task_record or TASK_NOT_FOUND or prefers_branch"`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_e2e.py tests/unit/test_cli/test_micro.py -q -k "find_task_record or TASK_NOT_FOUND or prefers_branch"`
 
 - **Phase 2**: Issue-owned `TASK_ALREADY_DONE` and CLI pin
-  - **Files**: `src/deviate/cli/micro.py`, `tests/test_micro/test_run.py`
+  - **Files**: `src/deviate/cli/micro.py`, `tests/unit/test_micro/test_run.py`
   - **Approach**: In `_run_single`, compare `task["issue_id"]` to the active issue before the IDLE + terminal-status exit. A foreign record must re-resolve this issue or raise `TASK_ALREADY_DONE` is forbidden; use `TASK_NOT_FOUND` when this issue has no matching pending or ledger row. Add the sibling-COMPLETED CLI pin. Mock `_run_pytest` and `_invoke_agent`. Keep `test_run_skips_already_completed_task` and `test_task_already_done_triggers_for_judge_latest` green.
-  - **Verification**: `uv run pytest tests/test_micro/test_run.py -q -k "already_done or TASK_ALREADY_DONE or pinned or TSK-001-04"`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_run.py -q -k "already_done or TASK_ALREADY_DONE or pinned or TSK-001-04"`
 
 - **Phase 3**: Specs and changelog
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: In the same implementation commit, document that pinned `micro run <task-id>` is issue-scoped and that `TSK-NNN-NN` is a per-issue namespace. Append the `[Unreleased]` bullet. Do not author Product-layer flows.
-  - **Verification**: `uv run pytest tests/test_micro/test_e2e.py tests/test_micro/test_run.py tests/test_cli/test_micro.py -q -k "find_task_record or TASK_ALREADY_DONE or already_done or pinned"`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_e2e.py tests/unit/test_micro/test_run.py tests/unit/test_cli/test_micro.py -q -k "find_task_record or TASK_ALREADY_DONE or already_done or pinned"`
 
 ## Data Flow Analysis
 - **Inputs**: Pinned `task_id`; branch from `_git_branch` / `_resolve_issue_id_from_branch`; `SessionState.active_issue_id`; latest rows from `_collect_latest_task_records`; this issue's `tasks.md` via `_find_all_pending_tasks`.

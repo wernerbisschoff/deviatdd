@@ -69,7 +69,7 @@ As a developer migrating from bash to Python CLI, I need the macro (explore, res
 - **FR-007-BACKWARD**: New Python code maintains backward compatibility with bash skills at all times.
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
-- **Unit Tests**: `tests/test_cli/test_macro_contracts.py`, `tests/test_cli/test_meso_contracts.py`, `tests/test_core/test_validation.py`
+- **Unit Tests**: `tests/unit/test_cli/test_macro_contracts.py`, `tests/unit/test_cli/test_meso_contracts.py`, `tests/unit/test_core/test_validation.py`
 - **Integration Tests**: `tests/test_integration/test_parity.py` (runs both bash and Python CLI, compares contract outputs)
 - **Backward compat**: Each bash script in `~/.claude/skills/deviate-*.sh` still runs and produces valid output after changes.
 
@@ -87,7 +87,7 @@ ls ~/.claude/skills/deviate-*.sh  # bash scripts still present
 bash ~/.claude/skills/deviate-specify/SKILL.md --validate  # still functional
 
 # Full test suite
-pytest tests/test_cli/test_macro_contracts.py -v
-pytest tests/test_cli/test_meso_contracts.py -v
+pytest tests/unit/test_cli/test_macro_contracts.py -v
+pytest tests/unit/test_cli/test_meso_contracts.py -v
 pytest tests/test_integration/test_parity.py -v
 ```

@@ -20,7 +20,7 @@
 - **Source Outline**: `AO-002`
 - **Upstream Traceability**: `US-005-03`, `FR-005-02`, `AC-005-02-01`
 - **Current-Code Evidence**: `src/deviate/core/tasks_ledger.py:15`
-- **Given**: a `tasks.md` whose task `TSK-005-01` carries an `**Acceptance Criteria**:` bullet that declares `AC-PLAN-001 (automated, tests/test_core/test_tasks_ledger.py)` and `AC-PLAN-002 (manual)`
+- **Given**: a `tasks.md` whose task `TSK-005-01` carries an `**Acceptance Criteria**:` bullet that declares `AC-PLAN-001 (automated, tests/unit/test_core/test_tasks_ledger.py)` and `AC-PLAN-002 (manual)`
 - **When**: `generate_jsonl_from_md` runs on that `tasks.md`
 - **Then**: the returned `TSK-005-01` `TaskRecord` carries an `acceptance_criteria` list whose two `CriterionLink` entries match the declared `criterion_id`, `verification_mode`, and `test_ref` values
 - **Verification Mode**: automated
@@ -76,17 +76,17 @@
   - **Integration Surface**: Called by meso task-validation flows; error strings feed task-ledger inspection.
 - **`specs/005-acceptance-gates/002-task-acceptance-traceability/tasks.md`**: TARGET — per-task criterion references (input artifact).
   - **Current State**: The file does not exist yet; the tasks phase authors it. The sibling slice `specs/005-acceptance-gates/001-verification-mode-metadata/tasks.md` shows the bullet convention (per-task `**Mode**:`, `**Files**:`, `**Verification**:` bullets); no `tasks.md` anywhere in `specs/` carries an `**Acceptance Criteria**:` bullet today, so this plan pins the syntax.
-  - **Changes Required**: Each task that implements or verifies an `AC-PLAN-NNN` scenario declares one `- **Acceptance Criteria**:` bullet with comma-separated entries of the form `AC-PLAN-NNN (mode[, test_ref])`, where `mode` is `automated`, `manual`, or `deferred`. An `automated` entry includes the test path as `test_ref` (for example `AC-PLAN-001 (automated, tests/test_core/test_tasks_ledger.py)`). A task with no criterion references omits the bullet.
+  - **Changes Required**: Each task that implements or verifies an `AC-PLAN-NNN` scenario declares one `- **Acceptance Criteria**:` bullet with comma-separated entries of the form `AC-PLAN-NNN (mode[, test_ref])`, where `mode` is `automated`, `manual`, or `deferred`. An `automated` entry includes the test path as `test_ref` (for example `AC-PLAN-001 (automated, tests/unit/test_core/test_tasks_ledger.py)`). A task with no criterion references omits the bullet.
   - **Integration Surface**: Parsed by `generate_jsonl_from_md`; the ids name `AC-PLAN-NNN` scenarios in this plan's `## Acceptance Contract`.
 - **`deviate meso tasks pre`** (`src/deviate/cli/meso.py:939-1037`): GATE — emits the traced rows through the generation path and blocks on invalid links.
   - **Current State**: `_tasks_pre` (line 939) validates the plan contract via `validate_acceptance_contract` at line 1004 (the 005-001 behavior, now at `src/deviate/core/validation.py:162`) and blocks on `PLAN_ACCEPTANCE_CONTRACT_INVALID` / `PLAN_ACCEPTANCE_CONTRACT_MISSING`; it does not itself rewrite rows. `_tasks_post` (line 1040) commits `tasks.md`. The meso flow consumes the generator in `src/deviate/core/tasks_ledger.py`.
   - **Changes Required**: None in this issue. The defensive exclusion in the issue scope (`005-002` §Defensive Exclusions) forbids gate-behavior work here; gate behavior belongs to issues `005-003` and `005-004`. Invalid links fail inside `CriterionLink` construction, so any consumer of `generate_jsonl_from_md` raises before a row is appended.
   - **Integration Surface**: The gate validates the contract whose ids `CriterionLink` references; the integration tier of this issue drives a fixture `tasks.md` through `generate_jsonl_from_md` and `validate_tasks_jsonl`, the exact code path `specs/005-acceptance-gates/data-model.md:190` documents (Flow: Acceptance Traceability, step 3).
-- **`tests/test_core/test_tasks_ledger.py`**: TARGET — extend generation tests with link propagation and rejection.
+- **`tests/unit/test_core/test_tasks_ledger.py`**: TARGET — extend generation tests with link propagation and rejection.
   - **Current State**: `TestGenerateJsonlFromMd` covers basic parsing (ids, issue ids, descriptions, modes, empty files); `TestValidateTasksJsonl` covers row-level rejections including the `extra="forbid"` case.
   - **Changes Required**: Add propagation cases (single link, multiple links, mixed modes, `manual` without `test_ref`, `automated` with `test_ref`, a task without a bullet), rejection cases (malformed `criterion_id`, `automated` link with null `test_ref`, a `verification_mode` outside the literals, an unparseable entry), and the null-never-empty-list assertion. Extend `TestValidateTasksJsonl` with a valid-links row, a malformed-link row, and a legacy row without the field.
   - **Integration Surface**: The functions under test are the same generator and row validator the meso flow consumes.
-- **`tests/test_state/test_ledger.py`**: TARGET — extend `TaskRecord` parse tests; legacy rows without the field still parse.
+- **`tests/unit/test_state/test_ledger.py`**: TARGET — extend `TaskRecord` parse tests; legacy rows without the field still parse.
   - **Current State**: `TestTaskRecord` (line 150) covers creation, explicit status/mode, invalid status/mode, extra-field rejection, id format, empty description, and serialization round-trip; `TestAppendTaskRecord` covers append behavior.
   - **Changes Required**: Add a round-trip test with a populated `acceptance_criteria` list, a legacy-row parse test (dict without the field yields `None`), a `CriterionLink` accept/reject set, and an `extra="forbid"` regression that a genuinely unknown field still fails. Keep append-only semantics intact (no rewrite of existing rows).
   - **Integration Surface**: The model under test is the same `TaskRecord` the micro phase runners validate at `src/deviate/cli/micro.py:1154` and later.
@@ -94,17 +94,17 @@
 ## Implementation Strategy
 
 - **Phase 1**: `CriterionLink` model and the additive `TaskRecord` field
-  - **Files**: `src/deviate/state/ledger.py`, `tests/test_state/test_ledger.py`
+  - **Files**: `src/deviate/state/ledger.py`, `tests/unit/test_state/test_ledger.py`
   - **Approach**: Add `CriterionLink(BaseModel)` before `TaskRecord` with `criterion_id`, `verification_mode: Literal["automated", "manual", "deferred"]`, `test_ref: str | None = None`, and `model_config = {"extra": "forbid"}`. Add a `field_validator("criterion_id")` matching `^AC-PLAN-\d{3}$` and a `model_validator(mode="after")` rejecting an `automated` link with a null `test_ref`. Add `acceptance_criteria: list[CriterionLink] | None = None` to `TaskRecord` after `security_profile`, before `model_config`. RED writes the round-trip, legacy-parse, extra-forbid, and `CriterionLink` accept/reject tests first.
-  - **Verification**: `uv run pytest tests/test_state/test_ledger.py -v`
+  - **Verification**: `uv run pytest tests/unit/test_state/test_ledger.py -v`
 - **Phase 2**: Link parsing and propagation in the generator
-  - **Files**: `src/deviate/core/tasks_ledger.py`, `tests/test_core/test_tasks_ledger.py`
+  - **Files**: `src/deviate/core/tasks_ledger.py`, `tests/unit/test_core/test_tasks_ledger.py`
   - **Approach**: Add `_CRITERIA_LINE_PATTERN` for the `**Acceptance Criteria**:` bullet and `_LINK_PATTERN` for `AC-PLAN-NNN (mode[, test_ref])` entries. Track `current_criteria` inside `generate_jsonl_from_md`, reset per task, and pass it to `_build_task_record`. In `_build_task_record`, parse entries into `CriterionLink` instances; raise a named `ValueError` for unparseable entries and let the `CriterionLink` validators raise `pydantic.ValidationError` for malformed ids, illegal modes, and automated links without `test_ref`. Pass `None` when no links exist. RED writes the propagation and rejection tests first.
-  - **Verification**: `uv run pytest tests/test_core/test_tasks_ledger.py -v`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_tasks_ledger.py -v`
 - **Phase 3**: Row-validator coverage and full check bundle
-  - **Files**: `tests/test_core/test_tasks_ledger.py`, `tests/test_state/test_ledger.py`
+  - **Files**: `tests/unit/test_core/test_tasks_ledger.py`, `tests/unit/test_state/test_ledger.py`
   - **Approach**: Extend `TestValidateTasksJsonl` with valid-link, malformed-link, and legacy-row cases so `validate_tasks_jsonl` behavior is pinned without any structural change to it. Confirm the change touches only `ledger.py`, `tasks_ledger.py`, and their tests; run the full bundle. No CLI command in the new tests hits `_run_pytest`, so no `subprocess.CompletedProcess` mock is needed and the suite stays under 30 seconds.
-  - **Verification**: `uv run pytest tests/test_core/test_tasks_ledger.py tests/test_state/test_ledger.py -v`, then `mise run check`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_tasks_ledger.py tests/unit/test_state/test_ledger.py -v`, then `mise run check`
 
 ## Data Flow Analysis
 
@@ -145,6 +145,6 @@ Constraints: no new dependencies (stdlib `re` only); no hardcoded secrets; no ch
 ## Constitutional Alignment
 
 - **Architecture**: The change sits in the Meso layer (task generation carries criteria traceability into `specs/**/tasks.jsonl` rows) and feeds the Micro layer (phase runners parse the additive field). It implements the `acceptance_criteria` field and `CriterionLink` schema from `specs/005-acceptance-gates/data-model.md` and satisfies the append-only ledger protocol of `specs/constitution.md` §1 — the field is additive, and no existing JSONL line is ever modified.
-- **Testing**: pytest unit tests in `tests/test_core/test_tasks_ledger.py` and `tests/test_state/test_ledger.py`; coverage target stays at or above 80%; the new tests are pure unit tests that make no CLI and no git calls, so the full suite stays under the 30-second contract (`AGENTS.md` test-performance pointer). `mise run check` (lint, format-check, types, full suite) is the final gate.
+- **Testing**: pytest unit tests in `tests/unit/test_core/test_tasks_ledger.py` and `tests/unit/test_state/test_ledger.py`; coverage target stays at or above 80%; the new tests are pure unit tests that make no CLI and no git calls, so the full suite stays under the 30-second contract (`AGENTS.md` test-performance pointer). `mise run check` (lint, format-check, types, full suite) is the final gate.
 - **Git Isolation**: The orchestrator commits at phase boundaries; this plan's tests use only `tmp_path` fixtures and make zero branch-mutating or `git` calls, so the git-isolation invariants and the append-only ledger protocol remain intact.
 - **Product Layer**: `flow_refs` is `[]` per the issue frontmatter, mirrored verbatim in `## Product Layer Anchors`; the release Goal (FLOW-04, subprocess RPC/TUI) is orthogonal and untouched. This plan adds no Product-layer, DeviaTDD setup, skill, flow-authoring, or workflow-ledger work; it only hardens the requested application behavior (task-to-criterion and criterion-to-test traceability) that the meso generation path delivers.

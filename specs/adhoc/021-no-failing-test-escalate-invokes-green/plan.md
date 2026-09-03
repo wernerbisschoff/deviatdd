@@ -51,7 +51,7 @@
 **Scenario AC-PLAN-005: Keep `revert_to_red` TRAIN when a real RED SHA exists**
 - **Source Outline**: `AO-021-03`
 - **Upstream Traceability**: `US-021-03`, `FR-ADHOC-021`, `AC-ADHOC-021-03`
-- **Current-Code Evidence**: `src/deviate/cli/micro.py:_run_judge_phase` (`_execute_rollback(boundary_sha=session.red_commit_sha)` then `_commit_judge_feedback_and_advance`); `tests/test_cli/test_micro.py:test_judge_revert_to_red_advances_red_commit_sha`
+- **Current-Code Evidence**: `src/deviate/cli/micro.py:_run_judge_phase` (`_execute_rollback(boundary_sha=session.red_commit_sha)` then `_commit_judge_feedback_and_advance`); `tests/unit/test_cli/test_micro.py:test_judge_revert_to_red_advances_red_commit_sha`
 - **Given**: `session.red_commit_sha` is a RED-phase failing-test commit.
 - **When**: JUDGE returns `revert_to_red`.
 - **Then**: the runner rolls back to that SHA, advances the boundary past the feedback commit, and retries GREEN.
@@ -93,22 +93,22 @@
   - **Changes Required**: Advance `red_commit_sha` onto the feedback commit only when the pre-call SHA is already a RED-phase failing-test commit. If the SHA is empty, leave it empty (or raise) so TRAIN cannot roll back to a docs commit.
   - **Integration Surface**: `_run_judge_phase` `revert_to_red` success path; `_resume_pending_judge_feedback`.
 
-- **`tests/test_micro/test_orchestration.py`**: TARGET — pin `revert_before` / `no_failing_test` never GREEN.
+- **`tests/unit/test_micro/test_orchestration.py`**: TARGET — pin `revert_before` / `no_failing_test` never GREEN.
   - **Current State**: `test_micro_red_no_failing_test_routes_to_judge_skip_refactor` covers the already-satisfied `skip_refactor` path only.
   - **Changes Required**: Add a stub-JUDGE always-`revert_before` case (name may be `test_no_failing_test_revert_before_invokes_red_not_green`). After two adjudications, agent phases contain RED and JUDGE only, never GREEN, until a failing test is committed or the task fails. Keep `_run_pytest` mocked.
   - **Integration Surface**: `_run_tdd_cycle` / `deviate micro run` with patched `_invoke_agent` / `_run_test_cmd`.
 
-- **`tests/test_micro/test_two_counter_retry.py`**: TARGET — pin escalate does not dispatch GREEN without a SHA.
+- **`tests/unit/test_micro/test_two_counter_retry.py`**: TARGET — pin escalate does not dispatch GREEN without a SHA.
   - **Current State**: File pins ISS-ADH-017 3/3 caps and the coerce matrix. It does not pin empty-SHA GREEN fall-through.
   - **Changes Required**: Add `test_escalate_to_red_does_not_dispatch_green_without_red_sha`. Keep `_MAX_RED_ATTEMPTS` / `_MAX_GREEN_ATTEMPTS` at 3. Keep `_coerce_judge_action` mapping. Mock `_run_pytest`.
   - **Integration Surface**: `_run_tdd_cycle` with patched `_run_red_phase` / `_run_green_phase` / `_run_judge_phase`.
 
-- **`tests/test_micro/test_green.py`**: TARGET — GREEN entry refused when SHA is empty.
+- **`tests/unit/test_micro/test_green.py`**: TARGET — GREEN entry refused when SHA is empty.
   - **Current State**: Direct `_run_green_phase` tests cover feedback injection and pass-through. They assume GREEN may start.
   - **Changes Required**: Add a pin that empty `session.red_commit_sha` raises or returns without `_invoke_agent`.
   - **Integration Surface**: `_run_green_phase`.
 
-- **`tests/test_micro/test_rollback_safety.py` / `tests/test_cli/test_micro.py`**: TARGET — missing-boundary `revert_to_red` is fatal; real SHA still trains.
+- **`tests/unit/test_micro/test_rollback_safety.py` / `tests/unit/test_cli/test_micro.py`**: TARGET — missing-boundary `revert_to_red` is fatal; real SHA still trains.
   - **Current State**: Rollback-safety pins `_execute_rollback` missing `boundary_sha`. CLI tests pin `revert_to_red` advancing SHA past feedback when a real RED SHA exists.
   - **Changes Required**: Add `test_revert_to_red_missing_red_commit_sha_is_fatal` (no `ROLLBACK_FAILED` proceed; SHA not rewritten to a feedback commit). Keep `test_judge_revert_to_red_advances_red_commit_sha` passing. Mock `_run_pytest` on CLI paths that would hit it.
   - **Integration Surface**: `_run_judge_phase`, `_commit_judge_feedback_and_advance`.
@@ -125,9 +125,9 @@
 
 ## Implementation Strategy
 - **Phase 1**: RED tests that pin illegal GREEN and fatal missing-boundary rollback
-  - **Files**: `tests/test_micro/test_orchestration.py`, `tests/test_micro/test_two_counter_retry.py`, `tests/test_micro/test_green.py`, `tests/test_micro/test_rollback_safety.py`, `tests/test_cli/test_micro.py`
+  - **Files**: `tests/unit/test_micro/test_orchestration.py`, `tests/unit/test_micro/test_two_counter_retry.py`, `tests/unit/test_micro/test_green.py`, `tests/unit/test_micro/test_rollback_safety.py`, `tests/unit/test_cli/test_micro.py`
   - **Approach**: Stub agents and mock `deviate.cli.micro._run_pytest` / `_run_test_cmd`. Drive always-`revert_before` on `no_failing_test`. Assert agent phases exclude GREEN. Assert empty SHA refuses GREEN. Assert `revert_to_red` with empty SHA raises `PhaseFailedError` carrying `ROLLBACK_BOUNDARY_MISSING`. Keep the existing real-SHA TRAIN pins green.
-  - **Verification**: `uv run pytest tests/test_micro/test_orchestration.py tests/test_micro/test_two_counter_retry.py tests/test_micro/test_rollback_safety.py tests/test_cli/test_micro.py tests/test_micro/test_green.py -q -k "no_failing_test or revert_to_red or red_commit_sha or escalate"` fails on the new pins.
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_orchestration.py tests/unit/test_micro/test_two_counter_retry.py tests/unit/test_micro/test_rollback_safety.py tests/unit/test_cli/test_micro.py tests/unit/test_micro/test_green.py -q -k "no_failing_test or revert_to_red or red_commit_sha or escalate"` fails on the new pins.
 
 - **Phase 2**: Close the escalate fall-through and the GREEN SHA gate
   - **Files**: `src/deviate/cli/micro.py`

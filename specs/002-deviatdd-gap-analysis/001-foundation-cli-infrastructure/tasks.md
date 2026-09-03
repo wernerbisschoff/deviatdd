@@ -9,13 +9,13 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_profile.py tests/test_state/test_config.py -v`
+  - **Verification**: `pytest tests/unit/test_core/test_profile.py tests/unit/test_state/test_config.py -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/core/profile.py`
     - `src/deviate/state/config.py`
-    - `tests/test_core/test_profile.py`
-    - `tests/test_state/test_config.py`
+    - `tests/unit/test_core/test_profile.py`
+    - `tests/unit/test_state/test_config.py`
   - **Rationale**: New `core/profile.py` module is the sole location for the `ExecutionProfile` enum and `resolve_profile()` dispatch logic defined by US-001 (FR-001). `state/config.py` must get `ProfileConfig` TOML section so profile defaults can be persisted in `.deviate/config.toml`. Tests validate all 4 ACs from US-001: fast profile, secure override, invalid profile, explicit flag precedence.
   - **Details**:
     - **Red**: Write `test_resolve_profile_fast()` asserting `resolve_profile("fast")` returns `(True, True)`. Write `test_resolve_profile_secure_override()` asserting `resolve_profile("secure", no_refactor=False)` returns `(False, False)`. Write `test_resolve_profile_invalid()` asserting invalid profile raises `ValueError` with available choices. Write `test_profile_config_toml_roundtrip()` asserting `ProfileConfig` serializes/deserializes via TOML. Write `test_profile_config_defaults()` asserting sensible defaults.
@@ -28,7 +28,7 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_common.py -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_common.py -v`
   - **Estimated Time**: 75 minutes
   - **Files**:
     - `src/deviate/cli/_common.py`
@@ -37,7 +37,7 @@
     - `src/deviate/cli/context.py`
     - `src/deviate/cli/adhoc.py`
     - `src/deviate/cli/constitution.py`
-    - `tests/test_cli/test_common.py`
+    - `tests/unit/test_cli/test_common.py`
   - **Rationale**: US-002 (FR-009) requires `--json` and `--quiet` flags on all `pre` subcommands. Creating a single `@with_json_quiet` decorator in `_common.py` ensures consistent behavior across all 6 command modules (macro, meso, context, adhoc, constitution). The decorator is the reusable cross-cutting concern — wiring it into each pre command is mechanical but must be verified per command.
   - **Details**:
     - **Red**: Write `test_with_json_quiet_json_flag()` asserting that when `--json` is passed, stdout contains only the JSON contract and all Rich output is suppressed. Write `test_with_json_quiet_quiet_flag()` asserting Rich suppressed but stderr errors preserved. Write `test_with_json_quiet_both()` asserting JSON on stdout + errors on stderr (orthogonal). Write `test_with_json_quiet_no_flags()` asserting normal Rich output. Write integration test per wired command asserting the decorator is present and functional.
@@ -55,12 +55,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_micro/test_run.py -v`
+  - **Verification**: `pytest tests/unit/test_micro/test_run.py -v`
   - **Estimated Time**: 60 minutes
   - **Dependency**: TSK-001-01
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_run.py`
+    - `tests/unit/test_micro/test_run.py`
   - **Rationale**: US-001 (FR-001) requires `run_command` to accept `--profile` (AC-001-03, AC-001-04). This task wires the profile dispatch built in TSK-001-01 into the CLI entry point, replacing the existing boolean-only `--no-judge`/`--no-refactor` flags while retaining them as composable overrides per the Hard Inclusions in the spec. The test file already has the `TestRunCommand` class — this task adds profile-related test cases.
   - **Details**:
     - **Red**: Write `test_run_with_profile_fast()` asserting `--profile fast` skips JUDGE and REFACTOR phases in the TDD cycle. Write `test_run_with_flag_overrides()` asserting `--profile fast --no-judge` works (redundant but no error). Write `test_run_with_profile_invalid()` asserting Typer validation error for `--profile invalid`.
@@ -78,11 +78,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_init.py::test_resolve_placeholder_complete tests/test_cli/test_init.py::test_resolve_placeholder_missing_pyproject -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py::test_resolve_placeholder_complete tests/unit/test_cli/test_init.py::test_resolve_placeholder_missing_pyproject -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/cli/__init__.py`
-    - `tests/test_cli/test_init.py`
+    - `tests/unit/test_cli/test_init.py`
   - **Rationale**: US-003 (FR-010) requires `_resolve_placeholder()` to handle 6 variables (up from 2): PROJECT_NAME, REPO_ROOT, TARGET_BACKEND_FRAMEWORK, TARGET_PACKAGE_MANAGER, TARGET_TEST_RUNNER, TARGET_COVERAGE_MINIMUM. The existing function in `cli/__init__.py` only resolves 2 — this task extends it with filesystem heuristics and best-effort resolution per the HITL decision.
   - **Details**:
     - **Red**: Write `test_resolve_placeholder_complete()` with a fixture `pyproject.toml` containing project name, dependencies (framework), and tool config (package manager, test runner) — assert all 6 variables resolved. Write `test_resolve_placeholder_missing_pyproject()` in a temp dir without config — assert unresolvable vars get `"UNKNOWN"` with per-variable stderr warnings and REPO_ROOT still resolved. Write `test_resolve_placeholder_partial()` with partial config — assert best-effort resolution.
@@ -95,13 +95,13 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_cli/test_micro.py -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_micro.py -v`
   - **Estimated Time**: 45 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
     - `src/deviate/state/config.py`
     - `pyproject.toml`
-    - `tests/test_cli/test_micro.py`
+    - `tests/unit/test_cli/test_micro.py`
   - **Rationale**: US-004 (FR-016) requires `_run_pytest()` to optionally use `--json-report` flag with JSON-based outcome classification, gated by `PytestReportConfig.json_report`. String parsing remains primary path. The `pytest-json-report` plugin is optional — missing plugin falls back gracefully with a warning.
   - **Details**:
     - **Red**: Write `test_run_pytest_json_report_enabled()` mocking `subprocess.run` and asserting `--json-report` appears in pytest args when `PytestReportConfig.json_report=True`. Write `test_run_pytest_json_report_fallback()` with `json_report=True` but missing plugin — assert warning logged and string parsing used. Write `test_run_pytest_json_report_disabled()` with `json_report=False` — assert no `--json-report` flag. Write `test_pytest_report_config_defaults()` asserting sensible defaults.
@@ -114,14 +114,14 @@
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_core/test_profile.py tests/test_state/test_config.py tests/test_cli/test_common.py tests/test_cli/test_init.py tests/test_cli/test_micro.py tests/test_micro/test_run.py -v`
+  - **Verification**: `pytest tests/unit/test_core/test_profile.py tests/unit/test_state/test_config.py tests/unit/test_cli/test_common.py tests/unit/test_cli/test_init.py tests/unit/test_cli/test_micro.py tests/unit/test_micro/test_run.py -v`
   - **Estimated Time**: 30 minutes
   - **Dependency**: TSK-001-01, TSK-001-02, TSK-001-03, TSK-001-04, TSK-001-05
   - **Files**:
     - (No file changes — verification-only task)
   - **Rationale**: All preceding tasks are individual units. This E2E task runs the full verification suite for ISS-002-001 to ensure no regression across all 4 user stories (US-001 through US-004) and their acceptance criteria, plus the full project-wide `mise run check` suite. No code changes — pure verification.
   - **Details**:
-    - **Implementation**: Run `pytest tests/test_core/test_profile.py tests/test_state/test_config.py tests/test_cli/test_common.py tests/test_cli/test_init.py tests/test_cli/test_micro.py tests/test_micro/test_run.py -v` and verify all tests pass. Run `mise run check` to ensure lint, format, and type checks pass across the full project.
+    - **Implementation**: Run `pytest tests/unit/test_core/test_profile.py tests/unit/test_state/test_config.py tests/unit/test_cli/test_common.py tests/unit/test_cli/test_init.py tests/unit/test_cli/test_micro.py tests/unit/test_micro/test_run.py -v` and verify all tests pass. Run `mise run check` to ensure lint, format, and type checks pass across the full project.
     - **Refactor**: If tests fail, identify the regressing task and report which task needs rework.
     - **Acceptance**: All targeted tests pass. `mise run check` green. No regression in pre-existing tests (full suite: `pytest tests/ -v`).
 

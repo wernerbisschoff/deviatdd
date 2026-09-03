@@ -18,8 +18,8 @@ flow_refs: []
   - `src/deviate/prompts/commands/deviate-plan.md:165-172` — MODIFY: the `## Security Profile` prose template instructs the planner to optionally record the applicable `CWE-ID` for each risk surface and the negative tests that exercise it.
   - `src/deviate/prompts/commands/deviate-review.md` — MODIFY: Gate 3 cross-task Security aggregation domain surfaces CWE-ID tokens per finding so composed-vulnerability review can aggregate by CWE.
   - `src/deviate/cli/review.py:18` — REFERENCE: `review_app` runs at HITL Gate 3; consumes the review prompt (no signature change required).
-  - `tests/test_state/test_security_profile.py` — TARGET: extend the existing `SecurityProfile` contract tests (5 tests) with a `cwe_id` round-trip test.
-  - `tests/test_micro/test_judge.py` — TARGET: extend the `TestJudgeSecurityChecksField` class (line 1557) with one test pinning the CWE vocabulary in the rendered Judge prompt.
+  - `tests/unit/test_state/test_security_profile.py` — TARGET: extend the existing `SecurityProfile` contract tests (5 tests) with a `cwe_id` round-trip test.
+  - `tests/unit/test_micro/test_judge.py` — TARGET: extend the `TestJudgeSecurityChecksField` class (line 1557) with one test pinning the CWE vocabulary in the rendered Judge prompt.
   - `specs/constitution.md` — REFERENCE: §5 Definition of Done "No governance violations (constitution rules upheld)". No tooling change; the CWE tag is a prompt/data-model change, not the adoption of a new declared SAST/type-check tool.
   - `specs/DeviaTDD-api.md` — MODIFY: document the `SecurityProfile.cwe_id` field and the CWE-tagged `security_checks` verdict vocabulary (spec-alignment mandate).
   - `specs/DeviaTDD-architecture.md` — MODIFY: document the CWE mapping in the JUDGE manifest contract (spec-alignment mandate).
@@ -30,7 +30,7 @@ flow_refs: []
   - `specs/explore/security-hardening-cwe.md:154` — `NEXT_ACTION`: run `/deviate-adhoc` with the same problem statement; `explore.md` on disk is auto-consumed.
 
 ## The Problem Contract
-The DeviaTDD security control is expressed as a prose flat security scan inside the JUDGE phase (`src/deviate/prompts/auto/judge.md:101`) and a prose-only `SecurityProfile.body` ledger field (`src/deviate/state/ledger.py:61-78`), with a mandatory `security_checks: pass | fail | warn` manifest field pinned by `tests/test_micro/test_judge.py:1557`. None of these findings carry a CWE identifier, so a security finding emitted by one Judge verdict cannot be aggregated, grepped, or compared with the same finding class emitted by another task, and the Gate 3 cross-task Security aggregation at `src/deviate/cli/review.py` must match on prose labels instead of a stable token taxonomy. This slice maps the existing flat scan probes and the `SecurityProfile` model to deterministic CWE identifiers (`CWE-798`, `CWE-79`, `CWE-502`, `CWE-22`, `CWE-532`), so findings are stable, greppable, and cross-task-aggregable.
+The DeviaTDD security control is expressed as a prose flat security scan inside the JUDGE phase (`src/deviate/prompts/auto/judge.md:101`) and a prose-only `SecurityProfile.body` ledger field (`src/deviate/state/ledger.py:61-78`), with a mandatory `security_checks: pass | fail | warn` manifest field pinned by `tests/unit/test_micro/test_judge.py:1557`. None of these findings carry a CWE identifier, so a security finding emitted by one Judge verdict cannot be aggregated, grepped, or compared with the same finding class emitted by another task, and the Gate 3 cross-task Security aggregation at `src/deviate/cli/review.py` must match on prose labels instead of a stable token taxonomy. This slice maps the existing flat scan probes and the `SecurityProfile` model to deterministic CWE identifiers (`CWE-798`, `CWE-79`, `CWE-502`, `CWE-22`, `CWE-532`), so findings are stable, greppable, and cross-task-aggregable.
 
 ## Scope Boundaries
 ### Hard Inclusions
@@ -40,9 +40,9 @@ The DeviaTDD security control is expressed as a prose flat security scan inside 
 - Extend the `## Security Profile` template at `src/deviate/prompts/commands/deviate-plan.md:165-172` to instruct the planner to optionally record the applicable `CWE-ID` for each risk surface and the negative tests that exercise it.
 - Extend the Gate 3 Security aggregation domain in `src/deviate/prompts/commands/deviate-review.md` to surface each finding's CWE-ID token for cross-task aggregation.
 - Add tests:
-  - `tests/test_state/test_security_profile.py::test_security_profile_cwe_id_round_trip` — parse `SecurityProfile(cwe_id="CWE-798")`, re-emit via `model_dump_json`, parse back, assert byte-equal and field preserved; assert `SecurityProfile(cwe_id="not-a-cwe")` is NOT rejected (lenient string field) but unknown extra fields still raise `ValidationError` (`extra=forbid`).
-  - `tests/test_state/test_security_profile.py::test_security_profile_default_cwe_id_none` — `SecurityProfile()` yields `cwe_id is None` (parallel to the existing `test_security_profile_default_construction`).
-  - `tests/test_micro/test_judge.py::TestJudgeSecurityChecksField::test_judge_prompt_declares_cwe_vocabulary` — load the judge prompt via `_build_auto_prompt("judge", task, tmp_path)` and assert each of `CWE-798`, `CWE-79`, `CWE-502`, `CWE-22`, `CWE-532` appears in the rendered prompt beside its probe.
+  - `tests/unit/test_state/test_security_profile.py::test_security_profile_cwe_id_round_trip` — parse `SecurityProfile(cwe_id="CWE-798")`, re-emit via `model_dump_json`, parse back, assert byte-equal and field preserved; assert `SecurityProfile(cwe_id="not-a-cwe")` is NOT rejected (lenient string field) but unknown extra fields still raise `ValidationError` (`extra=forbid`).
+  - `tests/unit/test_state/test_security_profile.py::test_security_profile_default_cwe_id_none` — `SecurityProfile()` yields `cwe_id is None` (parallel to the existing `test_security_profile_default_construction`).
+  - `tests/unit/test_micro/test_judge.py::TestJudgeSecurityChecksField::test_judge_prompt_declares_cwe_vocabulary` — load the judge prompt via `_build_auto_prompt("judge", task, tmp_path)` and assert each of `CWE-798`, `CWE-79`, `CWE-502`, `CWE-22`, `CWE-532` appears in the rendered prompt beside its probe.
 - Spec alignment (`specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`): document the new `SecurityProfile.cwe_id` field and the CWE-tagged `security_checks` verdict vocabulary in the same commit.
 - **CHANGELOG.md `[Unreleased] → Added` bullet in this same commit**: the CWE mapping changes user-visible verdict behavior (AGENTS.md §CHANGELOG Discipline). Bullet summarizes the `SecurityProfile.cwe_id` field, the CWE-tagged flat scan, and the Gate 3 CWE aggregation.
 
@@ -90,7 +90,7 @@ The DeviaTDD security control is expressed as a prose flat security scan inside 
   - **Error Category**: Template drift is caught by a prompt-content assertion if the repo pins it.
   - **Boundary Category**: CWE-ID is optional; a planner who does not supply it produces a valid `SecurityProfile` with `cwe_id=None`.
 - **AO-014-04** *(Ref: AC-ADHOC-014-04)*: The `security_checks: pass | fail | warn` vocabulary and its mandatory semantics are unchanged.
-  - **Happy Path**: `tests/test_micro/test_judge.py::TestJudgeSecurityChecksField` passes without modification.
+  - **Happy Path**: `tests/unit/test_micro/test_judge.py::TestJudgeSecurityChecksField` passes without modification.
   - **Error Category**: Any vocabulary rename or softening is a deliberate design decision and is rejected by the pinned test.
   - **Boundary Category**: CWE tokens augment, never replace, the three-value verdict.
 - **AO-014-05** *(Ref: AC-ADHOC-014-05, US-014-01)*: A new pinned test asserts the CWE vocabulary is present in the rendered Judge prompt.
@@ -110,17 +110,17 @@ The DeviaTDD security control is expressed as a prose flat security scan inside 
 <!-- Canonical format reference: src/deviate/prompts/skills/deviate-shard/SKILL.md -->
 - **L_max (SecurityProfile parse)**: ≤ 200ms per task export (adds one optional string field; a no-op cost below the AGENTS.md ≤ 200ms per-agent-export gate).
 - **L_max (init)**: ≤ 500ms — unchanged; no new import-time cost beyond the existing `SecurityProfile` model.
-- **Throughput**: No new ledger writes are introduced by this issue. `SecurityProfile.cwe_id` round-trip is O(1); full test suite stays < 30s (AGENTS.md mandate). New tests: 2 in `tests/test_state/test_security_profile.py` + 1 in `tests/test_micro/test_judge.py`, each ≤ 200ms (mocked loader, no subprocess).
+- **Throughput**: No new ledger writes are introduced by this issue. `SecurityProfile.cwe_id` round-trip is O(1); full test suite stays < 30s (AGENTS.md mandate). New tests: 2 in `tests/unit/test_state/test_security_profile.py` + 1 in `tests/unit/test_micro/test_judge.py`, each ≤ 200ms (mocked loader, no subprocess).
 - **Test performance**: The new judge CWE test MUST mock `deviate.cli.micro._run_pytest` (or avoid invoking it) so the suite stays under 30s, per AGENTS.md test-performance mandate.
 - **Lint budget**: `mise run lint` (ruff check) and `mise run format-check` report zero violations on the one new model field and the three new tests.
 
 ## Multi-Tiered Verification Targets
 - **Unit Sandbox Targets**:
-  - `tests/test_state/test_security_profile.py::test_security_profile_cwe_id_round_trip` — CWE-ID JSONL round-trip byte-equal; extra=forbid still enforced.
-  - `tests/test_state/test_security_profile.py::test_security_profile_default_cwe_id_none` — `SecurityProfile()` yields `cwe_id is None`.
-  - `tests/test_micro/test_judge.py::TestJudgeSecurityChecksField::test_judge_prompt_declares_cwe_vocabulary` — rendered judge prompt contains the five `CWE-XX` tokens.
+  - `tests/unit/test_state/test_security_profile.py::test_security_profile_cwe_id_round_trip` — CWE-ID JSONL round-trip byte-equal; extra=forbid still enforced.
+  - `tests/unit/test_state/test_security_profile.py::test_security_profile_default_cwe_id_none` — `SecurityProfile()` yields `cwe_id is None`.
+  - `tests/unit/test_micro/test_judge.py::TestJudgeSecurityChecksField::test_judge_prompt_declares_cwe_vocabulary` — rendered judge prompt contains the five `CWE-XX` tokens.
 - **Integration Sandbox Targets**:
-  - `tests/test_micro/test_judge.py::TestJudgeSecurityChecksField::test_judge_prompt_declares_security_checks_as_required_field` — must remain green unchanged (vocabulary lock).
+  - `tests/unit/test_micro/test_judge.py::TestJudgeSecurityChecksField::test_judge_prompt_declares_security_checks_as_required_field` — must remain green unchanged (vocabulary lock).
   - Manual smoke: `uv run python -c "from deviate.state.ledger import SecurityProfile; p=SecurityProfile(cwe_id='CWE-798', body='x'); print(p.model_dump_json())"` round-trips.
 
 ## Demonstration Path
@@ -154,8 +154,8 @@ print('judge CWE vocabulary OK')
 "
 
 # 3. Run the new + locked tests
-mise run test tests/test_state/test_security_profile.py -v
-mise run test tests/test_micro/test_judge.py::TestJudgeSecurityChecksField -v
+mise run test tests/unit/test_state/test_security_profile.py -v
+mise run test tests/unit/test_micro/test_judge.py::TestJudgeSecurityChecksField -v
 
 # 4. Lint and format
 mise run lint

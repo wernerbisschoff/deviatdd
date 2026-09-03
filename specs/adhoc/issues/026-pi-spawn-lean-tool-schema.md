@@ -18,8 +18,8 @@ flow_refs: []
   - `src/deviate/cli/micro.py::_invoke_agent` — TARGET: log `AGENT_ERROR` with the provider tokens. GREEN/RED/REFACTOR/TASKS callers must not collapse this into a generic `agent returned no manifest` after a long silent wait. The operator-visible `PhaseFailedError` (or equivalent) must include `tool_count_limit` or `unsupported_tool_schema`.
   - `src/deviate/cli/micro.py::_run_green_phase` / RED / REFACTOR / TASKS invoke sites — TARGET: when `_invoke_agent` returns a schema-limit failure, surface those tokens. Do not require a live `pi --mode rpc` pipe to reproduce.
   - `src/deviate/state/config.py::AgentConfig` — REFERENCE: do not revert operator-local `pi_rpc=false`, `transport=cli`, `backend=pi`, `timeout=1800`, or `models.default=grok-4.6`. Lean flags apply to whichever transport `invoke` actually builds.
-  - `tests/test_core/test_agent.py` / `tests/core/test_agent.py` — TARGET: pin print-mode and RPC argv. Keep AC-009-07 / AC-009-10 transport pins.
-  - `tests/test_cli/test_micro.py` — TARGET: `_invoke_agent` / `deviate micro run` (mocked Popen) surfaces schema-limit as `AGENT_ERROR`, not "no manifest". Mock `deviate.cli.micro._run_pytest` if the CLI path would spawn it.
+  - `tests/unit/test_core/test_agent.py` / `tests/unit/core/test_agent.py` — TARGET: pin print-mode and RPC argv. Keep AC-009-07 / AC-009-10 transport pins.
+  - `tests/unit/test_cli/test_micro.py` — TARGET: `_invoke_agent` / `deviate micro run` (mocked Popen) surfaces schema-limit as `AGENT_ERROR`, not "no manifest". Mock `deviate.cli.micro._run_pytest` if the CLI path would spawn it.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document the default lean Pi spawn policy and the fail-fast schema-rejection contract.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible spawn/error-behavior change.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices.
@@ -109,17 +109,17 @@ A spawned Pi child currently advertises the operator's full global tool stack (e
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_core/test_agent.py::test_agent_uses_pi_command_default` — keep `pi -p` as prefix; assert lean flags are appended.
-  - `tests/test_core/test_agent.py` AC-009-07 pin — `BACKEND_COMMANDS["pi"] == "pi -p"` remains true.
-  - `tests/core/test_agent.py::TestPiRpcMode::test_pi_rpc_mode_opt_in` — RPC argv still has `--mode rpc` and `--no-session`, plus lean flags.
-  - `tests/test_core/test_agent.py` / `tests/core/test_agent.py` — new pin: print-mode and RPC argv include `--no-extensions` (or `-ne`) and `--tools` listing `read`, `bash`, `edit`, `write`.
-  - `tests/test_core/test_agent.py` — new pin: stderr containing `tool_count_limit` / `unsupported_tool_schema` raises a harness-visible agent error immediately (patched short/no stall wait).
+  - `tests/unit/test_core/test_agent.py::test_agent_uses_pi_command_default` — keep `pi -p` as prefix; assert lean flags are appended.
+  - `tests/unit/test_core/test_agent.py` AC-009-07 pin — `BACKEND_COMMANDS["pi"] == "pi -p"` remains true.
+  - `tests/unit/core/test_agent.py::TestPiRpcMode::test_pi_rpc_mode_opt_in` — RPC argv still has `--mode rpc` and `--no-session`, plus lean flags.
+  - `tests/unit/test_core/test_agent.py` / `tests/unit/core/test_agent.py` — new pin: print-mode and RPC argv include `--no-extensions` (or `-ne`) and `--tools` listing `read`, `bash`, `edit`, `write`.
+  - `tests/unit/test_core/test_agent.py` — new pin: stderr containing `tool_count_limit` / `unsupported_tool_schema` raises a harness-visible agent error immediately (patched short/no stall wait).
 - **Integration Sandbox Targets**:
-  - `tests/test_cli/test_micro.py` — `_invoke_agent` or `deviate micro run` with a mocked Pi child that emits `unsupported_tool_schema` logs `AGENT_ERROR` and fails with those tokens, not only `agent returned no manifest`. Mock `deviate.cli.micro._run_pytest`. Not a live `pi --mode rpc` pipe.
+  - `tests/unit/test_cli/test_micro.py` — `_invoke_agent` or `deviate micro run` with a mocked Pi child that emits `unsupported_tool_schema` logs `AGENT_ERROR` and fails with those tokens, not only `agent returned no manifest`. Mock `deviate.cli.micro._run_pytest`. Not a live `pi --mode rpc` pipe.
 
 ## Demonstration Path
 
 ```bash
 # Mocked Pi spawn + schema-error pins (no live agent)
-uv run pytest tests/test_core/test_agent.py tests/core/test_agent.py tests/test_cli/test_micro.py -q -k "pi and (rpc or tool or lean or schema or invoke)"
+uv run pytest tests/unit/test_core/test_agent.py tests/unit/core/test_agent.py tests/unit/test_cli/test_micro.py -q -k "pi and (rpc or tool or lean or schema or invoke)"
 ```

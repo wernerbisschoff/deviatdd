@@ -9,15 +9,15 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test tests/test_state/test_ledger.py::TestFlowRecord -v`
+  - **Verification**: `mise run test tests/unit/test_state/test_ledger.py::TestFlowRecord -v`
   - **Estimated Time**: 60 minutes
   - **Flow References**: `[FLOW-01, FLOW-02, FLOW-03]`
   - **Files**:
     - `src/deviate/state/ledger.py`
-    - `tests/test_state/test_ledger.py`
+    - `tests/unit/test_state/test_ledger.py`
   - **Rationale**: US-013-02 demands a Pydantic-enforced substrate with `model_config = {"extra": "forbid"}` and the canonical `^FLOW-\d{2,}$` regex (canonical source: `src/deviate/cli/adhoc.py:19`). The validator is duplicated as a module-level constant in `state/ledger.py` with an explicit comment block to avoid the circular import between `state.ledger` and `cli.adhoc` (both already use the regex independently). The three models are the substrate that AC-01, AC-02, and AC-07 hang off; this task satisfies story US-013-02 directly and serves FLOW-01 (canonical flow inventory) by providing the typed identity row.
   - **Details**:
-    - **Red**: In `tests/test_state/test_ledger.py`, append `TestFlowRecord` class with `test_flow_record_validates_against_canonical_regex` (assert `FlowRecord(flow_id="FLOW-1")` and `FlowRecord(flow_id="flow-04")` both raise `ValidationError`; `FlowRecord(flow_id="FLOW-04")` succeeds and round-trips) and `test_flow_record_round_trip_byte_equal` (build `FlowRecord(flow_id="FLOW-04", name="Live-Stream Agent Progress via RPC", actor="Developer", domain="Agent Integration", source="specs/_product/flows/flows-streaming.md")`, parse `model_dump_json()` back, byte-equal). Append `TestFlowEvent` class with `test_flow_event_requires_reference_field_for_linked_events` (assert `FlowEvent(event_type="FLOW_REFERENCED_BY_ISSUE", event_issue_id=None, event_release_version=None, evidence_path=None)` raises `ValidationError`; same for `FLOW_INCLUDED_IN_RELEASE` and `FLOW_CONFIRMED_IMPLEMENTED` with all-None references; `FlowEvent(event_type="FLOW_DISCOVERED", timestamp=...)` with all-None references still succeeds).
+    - **Red**: In `tests/unit/test_state/test_ledger.py`, append `TestFlowRecord` class with `test_flow_record_validates_against_canonical_regex` (assert `FlowRecord(flow_id="FLOW-1")` and `FlowRecord(flow_id="flow-04")` both raise `ValidationError`; `FlowRecord(flow_id="FLOW-04")` succeeds and round-trips) and `test_flow_record_round_trip_byte_equal` (build `FlowRecord(flow_id="FLOW-04", name="Live-Stream Agent Progress via RPC", actor="Developer", domain="Agent Integration", source="specs/_product/flows/flows-streaming.md")`, parse `model_dump_json()` back, byte-equal). Append `TestFlowEvent` class with `test_flow_event_requires_reference_field_for_linked_events` (assert `FlowEvent(event_type="FLOW_REFERENCED_BY_ISSUE", event_issue_id=None, event_release_version=None, evidence_path=None)` raises `ValidationError`; same for `FLOW_INCLUDED_IN_RELEASE` and `FLOW_CONFIRMED_IMPLEMENTED` with all-None references; `FlowEvent(event_type="FLOW_DISCOVERED", timestamp=...)` with all-None references still succeeds).
     - **Green**: In `src/deviate/state/ledger.py`:
       1. Add module-level constant `_FLOW_REF_PATTERN = re.compile(r"^FLOW-\d{2,}$")` immediately after the `import re` line (line 4), with a comment block stating canonical source is `src/deviate/cli/adhoc.py:19` and that duplication avoids the circular import.
       2. After `AdhocRecord` (line 343), add `class FlowRecord(BaseModel)` with fields `flow_id: str`, `name: str`, `actor: str`, `domain: str`, `source: str`, `status: Literal["Active", "Deprecated"] = "Active"`, `first_discovered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))`, `model_config = {"extra": "forbid"}`. Apply `field_validator("flow_id")` reusing `_FLOW_REF_PATTERN`.
@@ -31,15 +31,15 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test tests/test_state/test_ledger.py::TestAppendFlowEvent tests/test_state/test_ledger.py::TestLoadFlowCoverage -v`
+  - **Verification**: `mise run test tests/unit/test_state/test_ledger.py::TestAppendFlowEvent tests/unit/test_state/test_ledger.py::TestLoadFlowCoverage -v`
   - **Estimated Time**: 60 minutes
   - **Flow References**: `[FLOW-01, FLOW-02, FLOW-03]`
   - **Files**:
     - `src/deviate/state/ledger.py`
-    - `tests/test_state/test_ledger.py`
+    - `tests/unit/test_state/test_ledger.py`
   - **Rationale**: US-013-02 and US-013-03 require idempotent append helpers that reuse the existing `_append_record` / `_append_with_compound_key` primitives, plus a `load_flow_coverage` derivation that replays events to compute the seven drift flags enumerated in `specs/explore/flow-ledger.md:128-132`. AC-04 demands compound-key idempotency on `(flow_id, event_type, event_issue_id, event_release_version, evidence_path)`; AC-02 demands the derivation flags `DOCUMENTED_BUT_NOT_IMPLEMENTED` correctly. This task serves FLOW-01 (flow inventory), FLOW-02 (architecture component drift signal), and FLOW-03 (release-goal enforceability) by emitting the canonical coverage view.
   - **Details**:
-    - **Red**: In `tests/test_state/test_ledger.py`, append `TestAppendFlowEvent::test_append_flow_event_idempotent` (seed ledger with one `FlowEvent(flow_id="FLOW-04", event_type="FLOW_REFERENCED_BY_ISSUE", event_issue_id="ISS-ADH-012", timestamp=T0)`; call `append_flow_event(ledger_path, event)` again with same compound key; assert file size unchanged and `False` return on duplicate). Append `TestLoadFlowCoverage::test_load_flow_coverage_detects_documented_but_not_implemented` (build a temp `flows/index.md` with 4 flows (6-column markdown table: `| Flow ID | Name | Actor | Domain | Status | Source |`); build empty `flows.jsonl`; call `append_flow_record` for `FLOW-04` + `append_flow_event` for `FLOW_DISCOVERED` and `FLOW_DOCUMENTED`; call `load_flow_coverage(ledger_path, flows_index, issues_ledger)`; assert returned row for `FLOW-04` carries `drift_flag == "DOCUMENTED_BUT_NOT_IMPLEMENTED"`, `doc_status == "DOCUMENTED"`, `impl_status == "UNCONFIRMED"`).
+    - **Red**: In `tests/unit/test_state/test_ledger.py`, append `TestAppendFlowEvent::test_append_flow_event_idempotent` (seed ledger with one `FlowEvent(flow_id="FLOW-04", event_type="FLOW_REFERENCED_BY_ISSUE", event_issue_id="ISS-ADH-012", timestamp=T0)`; call `append_flow_event(ledger_path, event)` again with same compound key; assert file size unchanged and `False` return on duplicate). Append `TestLoadFlowCoverage::test_load_flow_coverage_detects_documented_but_not_implemented` (build a temp `flows/index.md` with 4 flows (6-column markdown table: `| Flow ID | Name | Actor | Domain | Status | Source |`); build empty `flows.jsonl`; call `append_flow_record` for `FLOW-04` + `append_flow_event` for `FLOW_DISCOVERED` and `FLOW_DOCUMENTED`; call `load_flow_coverage(ledger_path, flows_index, issues_ledger)`; assert returned row for `FLOW-04` carries `drift_flag == "DOCUMENTED_BUT_NOT_IMPLEMENTED"`, `doc_status == "DOCUMENTED"`, `impl_status == "UNCONFIRMED"`).
     - **Green**: In `src/deviate/state/ledger.py`, after `_append_with_compound_key` (line 142):
       1. Add `def append_flow_record(record: FlowRecord, ledger_path: Path) -> bool:` that delegates to `_append_record` keyed on `flow_id` (mirrors `append_issue_record` at line 241).
       2. Add `def append_flow_event(event: FlowEvent, ledger_path: Path) -> bool:` that delegates to `_append_with_compound_key` keyed on `["flow_id", "event_type", "event_issue_id", "event_release_version", "evidence_path"]` (mirrors `append_issue_transition` at line 145).
@@ -64,15 +64,15 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test tests/test_macro/test_explore.py::TestExploreCommand::test_explore_post_renders_flow_coverage_table tests/test_macro/test_explore.py::TestExploreCommand::test_explore_post_skips_orphaned_flow_refs -v`
+  - **Verification**: `mise run test tests/unit/test_macro/test_explore.py::TestExploreCommand::test_explore_post_renders_flow_coverage_table tests/unit/test_macro/test_explore.py::TestExploreCommand::test_explore_post_skips_orphaned_flow_refs -v`
   - **Estimated Time**: 60 minutes
   - **Flow References**: `[FLOW-01, FLOW-02, FLOW-03]`
   - **Files**:
     - `src/deviate/cli/macro.py`
-    - `tests/test_macro/test_explore.py`
+    - `tests/unit/test_macro/test_explore.py`
   - **Rationale**: US-013-01 demands a Flow Coverage Report inserted into `deviate explore post` output with columns `flow_id | actor/job/trigger | documented? | implementation evidence? | last referenced by issue/release? | drift flag`; US-013-03 demands the report surface FLOW-04's `DOCUMENTED_BUT_NOT_IMPLEMENTED` drift (enforcing the v0.1.0 release-goal acceptance criterion at `specs/_product/release-next.md:58`). The four helpers in `macro.py` (a) parse the 6-column markdown at `flows/index.md`, (b) seed the JSONL via the helpers from TSK-013-02, (c) reverse-index from `specs/issues.jsonl::flow_refs`, and (d) render a Rich `Table` with yellow drift rows. The plan fixes the location in `macro.py` (not a separate `_product.py` module) to avoid module sprawl. This task serves FLOW-01 (canonical flow inventory surface) and FLOW-03 (release-goal drift signal) directly.
   - **Details**:
-    - **Red**: In `tests/test_macro/test_explore.py`, append inside `TestExploreCommand`:
+    - **Red**: In `tests/unit/test_macro/test_explore.py`, append inside `TestExploreCommand`:
       1. `test_explore_post_renders_flow_coverage_table` — seed `tmp_path` with `.deviate/session.json` at phase `EXPLORE`, `specs/constitution.md`, `specs/explore/test-slug.md` (valid explore artifact), `specs/_product/flows/index.md` (4 flows in 6-column markdown table), and an empty `specs/_product/flows.jsonl`; invoke `runner.invoke(cli, ["explore", "post", "--slug", "test-slug"])`; assert exit code 0; assert stdout contains `FLOW-04`; assert stdout contains `DOCUMENTED_BUT_NOT_IMPLEMENTED`; assert `specs/_product/flows.jsonl` now exists with at least 4 `FlowRecord` rows.
       2. `test_explore_post_skips_orphaned_flow_refs` — seed the same workdir plus a `specs/issues.jsonl` row carrying `flow_refs: ["FLOW-99"]`; invoke `explore post`; assert exit code 0; assert stdout contains `ORPHANED_FLOW_REF` warning string; assert no `FlowRecord` is written for `FLOW-99` (only the 4 canonical flows are seeded).
     - **Green**: In `src/deviate/cli/macro.py`:
@@ -103,19 +103,19 @@
 - TSK-013-04: Extend `DEVIATE_GITATTRIBUTES_SEED` with `specs/_product/flows.jsonl merge=union` + add the integration test
   - **Type**: Config
   - **Mode**: IMMEDIATE
-  - **Verification**: `mise run test tests/test_cli/test_init.py -v -k flows_jsonl`
+  - **Verification**: `mise run test tests/unit/test_cli/test_init.py -v -k flows_jsonl`
   - **Estimated Time**: 30 minutes
   - **Flow References**: `[]`
   - **Files**:
     - `src/deviate/cli/__init__.py`
     - `.gitattributes`
-    - `tests/test_cli/test_init.py`
+    - `tests/unit/test_cli/test_init.py`
   - **Rationale**: US-013-04 demands `specs/_product/flows.jsonl merge=union` (parallel to the v0.4.0 rule for `specs/issues.jsonl`). This is enabling/infrastructure — the new rule is purely a config provisioner, no new behavior — so `**Flow References**: []` per the slice-over-step rule. The `DEVIATE_GITATTRIBUTES_SEED` constant (line 711-717) is the single source of truth — adding one line to the seed string auto-provisions downstream repos via `_ensure_root_gitattributes` (line 720). Mirroring the same line in the repo-root `.gitattributes` keeps the in-repo union rule consistent with what the helper provisions downstream (the plan explicitly calls out the double-write). The integration test is mandated by AC-05.
   - **Details**:
     - **Implementation**: Three edits:
       1. In `src/deviate/cli/__init__.py`, edit `DEVIATE_GITATTRIBUTES_SEED` (line 711-717) to add a third non-comment line `"specs/_product/flows.jsonl merge=union\n"` after the two existing entries. Update the comment header (lines 712-714) to mention the new ledger (e.g. add `flows.jsonl` to the list).
       2. In repo-root `.gitattributes`, append `specs/_product/flows.jsonl merge=union` after the two existing entries.
-      3. In `tests/test_cli/test_init.py`, append a new test method `test_init_seeds_flows_jsonl_merge_union` inside the `TestSetup` class (the class housing the existing `test_init_writes_root_gitattributes_with_union_driver` at line 852). The test seeds an empty `tmp_path`, invokes `runner.invoke(cli, ["setup", "--agent", "opencode"])`, asserts exit code 0, reads the resulting `.gitattributes`, and asserts `specs/_product/flows.jsonl merge=union` is present.
+      3. In `tests/unit/test_cli/test_init.py`, append a new test method `test_init_seeds_flows_jsonl_merge_union` inside the `TestSetup` class (the class housing the existing `test_init_writes_root_gitattributes_with_union_driver` at line 852). The test seeds an empty `tmp_path`, invokes `runner.invoke(cli, ["setup", "--agent", "opencode"])`, asserts exit code 0, reads the resulting `.gitattributes`, and asserts `specs/_product/flows.jsonl merge=union` is present.
     - **Refactor**: None — the existing `_ensure_root_gitattributes` (line 720) is already idempotent and uses `DEVIATE_GITATTRIBUTES_SEED.splitlines()` filtered to non-comment, non-empty lines, then appends only missing entries. No code change required in the provisioner itself.
     - **Edge Cases**: User-authored `.gitattributes` content (e.g. `# user content\n*.log binary\n`) is preserved by the existing `_ensure_root_gitattributes` logic (line 738-754). Re-running `deviate setup` is idempotent — line 887-901 already verifies this for the existing rules; the new test covers the flows.jsonl rule.
     - **Acceptance**: New `test_init_seeds_flows_jsonl_merge_union` passes; existing `test_init_writes_root_gitattributes_with_union_driver` / `test_init_root_gitattributes_idempotent_across_runs` / `test_init_root_gitattributes_union_driver_recognised_by_git` / `test_init_pre_writes_root_gitattributes` tests still pass (the new line is appended, not replacing existing entries); `DEVIATE_GITATTRIBUTES_SEED.splitlines()` contains exactly three non-comment non-empty lines after the change; repo-root `.gitattributes` file contains all three `merge=union` rules.
@@ -170,9 +170,9 @@
 
 **Merge Conflict Boundaries**:
 - Files touched by multiple phases: none directly (Phase 1 + Phase 2 both touch `src/deviate/state/ledger.py` only if `cli/macro.py` re-imports — they don't; the dependency flows one-way). The single `DEVIATE_GITATTRIBUTES_SEED` constant in `src/deviate/cli/__init__.py` is touched only by Phase 3.
-- `tests/test_state/test_ledger.py` is touched only by Phase 1.
-- `tests/test_macro/test_explore.py` is touched only by Phase 2.
-- `tests/test_cli/test_init.py` is touched only by Phase 3.
+- `tests/unit/test_state/test_ledger.py` is touched only by Phase 1.
+- `tests/unit/test_macro/test_explore.py` is touched only by Phase 2.
+- `tests/unit/test_cli/test_init.py` is touched only by Phase 3.
 - `CHANGELOG.md` and `specs/constitution.md` are touched only by Phase 4 (constitution is verify-only — no edit).
 
 **Product-Layer Anchors** (mirrored from plan.md):

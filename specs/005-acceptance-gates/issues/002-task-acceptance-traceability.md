@@ -21,8 +21,8 @@ flow_refs: []
   - `specs/{NNN}-{slug}/tasks.md` — TARGET: per-task criterion references (input artifact).
   - `specs/{NNN}-{slug}/tasks.jsonl` — OUTPUT: rows carry `acceptance_criteria` links.
   - `deviate meso tasks pre` — GATE: emits the traced rows; blocks on invalid links.
-  - `tests/test_core/test_tasks_ledger.py` — TARGET: extend generation tests with link propagation.
-  - `tests/test_state/test_ledger.py` — TARGET: extend `TaskRecord` parse tests; legacy rows without the field still parse.
+  - `tests/unit/test_core/test_tasks_ledger.py` — TARGET: extend generation tests with link propagation.
+  - `tests/unit/test_state/test_ledger.py` — TARGET: extend `TaskRecord` parse tests; legacy rows without the field still parse.
 - **Upstream Evidence**:
   - `specs/005-acceptance-gates/prd.md:13` — Hard directive: optional `acceptance_criteria: list[CriterionLink] | None` on `TaskRecord`, propagated by `generate_jsonl_from_md`.
   - `specs/005-acceptance-gates/prd.md:28-49` — Data contract: `CriterionLink` and `TaskRecord` schemas with `model_config = {"extra": "forbid"}`.
@@ -90,15 +90,15 @@ The field is additive and optional. JSONL rows written by older CLI versions car
 
 ## Multi-Tiered Verification Targets
 
-- **Unit**: `tests/test_core/test_tasks_ledger.py` — link propagation, malformed id rejection, null `test_ref` rejection, absent-field default.
-- **Unit**: `tests/test_state/test_ledger.py` — `TaskRecord` round-trip with `acceptance_criteria`; legacy row parse without the field.
+- **Unit**: `tests/unit/test_core/test_tasks_ledger.py` — link propagation, malformed id rejection, null `test_ref` rejection, absent-field default.
+- **Unit**: `tests/unit/test_state/test_ledger.py` — `TaskRecord` round-trip with `acceptance_criteria`; legacy row parse without the field.
 - **Integration**: fixture `tasks.md` with criterion references runs through `deviate meso tasks pre`; inspect emitted `tasks.jsonl` rows for `acceptance_criteria`.
 
 ## Demonstration Path
 
 ```bash
 # 1. Unit verification — link propagation and rejection cases
-uv run pytest tests/test_core/test_tasks_ledger.py tests/test_state/test_ledger.py -v
+uv run pytest tests/unit/test_core/test_tasks_ledger.py tests/unit/test_state/test_ledger.py -v
 
 # 2. Integration: tasks rows carry acceptance_criteria links
 #    (run inside a fixture epic whose plan.md contract is valid and whose
@@ -115,7 +115,7 @@ deviate meso tasks pre
 # expected: exit non-zero; stderr names the invalid criterion_id / missing test_ref
 
 # 4. Legacy parse check — a row without the field still parses
-uv run pytest tests/test_state/test_ledger.py -v -k "legacy or extra_forbid or acceptance"
+uv run pytest tests/unit/test_state/test_ledger.py -v -k "legacy or extra_forbid or acceptance"
 
 # 5. Regression: full check bundle stays green
 mise run check

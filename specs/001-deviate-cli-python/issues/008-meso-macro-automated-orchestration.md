@@ -142,7 +142,7 @@ Same as ISS-001-004: `specs/constitution.md` and `CLAUDE.md` are read once at pi
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- **Unit Tests**: `tests/test_meso/test_meso_orchestration.py`, `tests/test_macro/test_macro_orchestration.py`
+- **Unit Tests**: `tests/unit/test_meso/test_meso_orchestration.py`, `tests/unit/test_macro/test_macro_orchestration.py`
 - **Integration Tests**: `tests/test_integration/test_meso_orchestration.py`, `tests/test_integration/test_macro_orchestration.py`, `tests/test_integration/test_full_meso_pipeline.py`, `tests/test_integration/test_full_macro_pipeline.py`
 
 ## [DEMONSTRATION_PATH]

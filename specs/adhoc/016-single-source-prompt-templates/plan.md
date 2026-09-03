@@ -35,7 +35,7 @@
 **Scenario AC-PLAN-003: Enforce the identical-middle invariant with a drift guard**
 - **Source Outline**: `AO-016`
 - **Upstream Traceability**: `US-016-03`, `FR-ADHOC-016`, `AC-ADHOC-016-03`
-- **Current-Code Evidence**: `tests/test_meso/test_auto_prompt_templates.py:58-61` (`test_composed_template_has_context_marker` currently pins composition markers for slim templates only); `src/deviate/prompts/auto/red.md` vs `src/deviate/prompts/commands/deviate-red.md` (representative drift pair 17-68% divergence)
+- **Current-Code Evidence**: `tests/unit/test_meso/test_auto_prompt_templates.py:58-61` (`test_composed_template_has_context_marker` currently pins composition markers for slim templates only); `src/deviate/prompts/auto/red.md` vs `src/deviate/prompts/commands/deviate-red.md` (representative drift pair 17-68% divergence)
 - **Given**: a drift-guard test invokes `install_command` against a `tmp_path` so the installed `deviate-{phase}.md` exists on disk
 - **When**: the test compares the installed manual middle body against the canonical `auto/{phase}.md` middle body
 - **Then**: the two middle bodies are byte-identical for every one of the 11 overlapping phases, and the test fails with a diff when an unrelated line is added to an auto middle body
@@ -63,7 +63,7 @@
 - `src/deviate/core/commands.py`: The rewrite target for the derivation mechanism. `compose_command_body` (lines 55-133) and `install_command` (lines 189-243) are reworked so the manual slash-command body derives from `auto/{phase}.md` + a per-phase manual overlay instead of a hand-maintained duplicate.
   - **Current State**: `compose_command_body` prepends core/layer/lifecycle-manual/style around a `raw` body read from `commands/deviate-{phase}.md`. `install_command` resolves the source in `commands/`, composes, strips frontmatter, and writes idempotently to the agent command dir.
   - **Changes Required**: Route the canonical middle from `auto/{phase}.md`; splice the per-phase manual overlay (frontmatter, manual pre/post-script lifecycle, rich handover manifest, `<context><user_input>`) around it; keep the constitution injection and graphite routing (for `deviate-pr`) intact; keep the idempotency contract.
-  - **Integration Surface**: Called by `deviate setup` (via `discover_commands` iteration) and by tests in `tests/test_core/test_commands.py`.
+  - **Integration Surface**: Called by `deviate setup` (via `discover_commands` iteration) and by tests in `tests/unit/test_core/test_commands.py`.
 - `src/deviate/prompts/commands/deviate-{phase}.md` (11 files: red, green, refactor, judge, execute, plan, tasks, explore, research, prd, shard): The stale manual duplicates. The duplicated middle bodies are deleted; only the frontmatter + manual overlay (pre/post-script steps, rich handover manifest, `<context><user_input>`, per-phase manual-only steps) remain as the overlay applied at derivation.
   - **Current State**: Hand-maintained copies that diverge from auto by 17-68% (contradictory RED handover status, GREEN role language, field-name drift `plan_target` vs `{plan_path}`, `T001` vs `TSK-{NNN}-{NN}`).
   - **Changes Required**: Delete the duplicated middle bodies. Retain only the frontmatter block and the manual-only overlay content that must not leak into the auto core.
@@ -72,15 +72,15 @@
   - **Current State**: Composes core + layer + lifecycle-auto + style + phase for the auto runner; `_LAYER_MAP` routes each phase to its shared preamble.
   - **Changes Required**: None functionally — the auto path stays the canonical emitter. Confirm no manual-overlay content leaks in.
   - **Integration Surface**: `load_template` and `assemble_prompt` are consumed by the micro runner and the CLI.
-- `tests/test_core/test_commands.py`: Reworked to assert the derived-manual output and the idempotency contract against the new derivation.
+- `tests/unit/test_core/test_commands.py`: Reworked to assert the derived-manual output and the idempotency contract against the new derivation.
   - **Current State**: Asserts `install_command`/`compose_command_body` against the hand-maintained `commands/` source, graphite routing for `deviate-pr`, platform frontmatter, constitution injection, product-layer lifecycle routing.
   - **Changes Required**: Update `install_command`/`compose_command_body` assertions to the derived-manual output (middle equals auto core + overlay). Add a drift-guard asserting the derived manual equals the committed manual behavior and the middle stays identical across modes.
   - **Integration Surface**: Directly imports `compose_command_body`, `install_command`, `discover_commands`, `resolve_command` from `deviate.core.commands`.
-- `tests/test_meso/test_auto_prompt_templates.py`: Extended with the drift-guard and auto-semantics pinning coverage.
+- `tests/unit/test_meso/test_auto_prompt_templates.py`: Extended with the drift-guard and auto-semantics pinning coverage.
   - **Current State**: Pins slim-template existence, composition markers, consumer-repository boundaries, product-flow boundaries.
   - **Changes Required**: Add `test_auto_and_manual_middle_identical` (drift guard over the 11 overlapping phases), `test_auto_red_uses_pass_failure_kind`, `test_manual_red_matches_auto_semantics`.
   - **Integration Surface**: Reads `deviate.prompts.auto` and `deviate.prompts.commands` resources via `importlib.resources`.
-- `tests/test_meso/test_prompt_assembly.py`: Verifies `load_template` still emits the auto core body only.
+- `tests/unit/test_meso/test_prompt_assembly.py`: Verifies `load_template` still emits the auto core body only.
   - **Current State**: Covers `load_template` success/missing, `inject_constitution` injection/missing.
   - **Changes Required**: Add a composition test asserting no manual-overlay leakage into the auto core body.
   - **Integration Surface**: Imports `load_template` and `inject_constitution` from `deviate.prompts.assembly`.
@@ -102,15 +102,15 @@
 - **Phase 1**: Isolate the derivation mechanism and manually reconcile the drifted middles.
   - **Files**: `src/deviate/core/commands.py`, `src/deviate/prompts/commands/deviate-{red,green,refactor,judge,execute,plan,tasks,explore,research,prd,shard}.md`
   - **Approach**: For each of the 11 overlapping phases, diff the auto core against the manual file, reconcile the manual middle to the auto semantics (RED `status: "PASS"` + `failure_kind`, GREEN "write ONLY production code"), and reduce the manual file to its frontmatter + manual-only overlay (pre/post-script steps, rich handover manifest, `<context><user_input>`, per-phase manual-only steps such as `reduce_phase`/`interactive_hitl_gate_1`/`html_artifact` for research). Add a deterministic `_manual_phase_mapping` that routes each phase to its auto core file. Splice the overlay deterministically — no LLM or `prompt` content generation.
-  - **Verification**: `mise run test tests/test_meso/test_prompt_assembly.py` and manual review of the reduced manual files.
+  - **Verification**: `mise run test tests/unit/test_meso/test_prompt_assembly.py` and manual review of the reduced manual files.
 - **Phase 2**: Rewire `install_command`/`compose_command_body` to derive from the canonical auto core + overlay.
   - **Files**: `src/deviate/core/commands.py`, `src/deviate/prompts/assembly.py`
   - **Approach**: Rework `compose_command_body` to take the auto core body and the manual overlay instead of a raw hand-maintained duplicate. Keep the constitution injection, the product-layer lifecycle branch, the platform frontmatter emission, and the graphite routing for `deviate-pr`. Preserve the idempotency contract (`False` on unchanged reinstall).
-  - **Verification**: `mise run test tests/test_core/test_commands.py`.
+  - **Verification**: `mise run test tests/unit/test_core/test_commands.py`.
 - **Phase 3**: Add the drift-guard and auto-semantics pinning tests.
-  - **Files**: `tests/test_core/test_commands.py`, `tests/test_meso/test_auto_prompt_templates.py`
+  - **Files**: `tests/unit/test_core/test_commands.py`, `tests/unit/test_meso/test_auto_prompt_templates.py`
   - **Approach**: Add `test_auto_and_manual_middle_identical` asserting the installed derived middle equals the auto core byte-for-byte across all 11 phases; `test_auto_red_uses_pass_failure_kind` and `test_manual_red_matches_auto_semantics` asserting the derived RED no longer emits `status: "FAIL"`/abort-on-passing-test. Mock nothing — tests read the two source files and invoke `install_command` against a `tmp_path` (no `deviate.cli.micro._run_pytest` subprocess).
-  - **Verification**: `mise run test tests/test_meso/test_auto_prompt_templates.py` with a deliberate auto-middle edit to confirm the guard fails.
+  - **Verification**: `mise run test tests/unit/test_meso/test_auto_prompt_templates.py` with a deliberate auto-middle edit to confirm the guard fails.
 - **Phase 4**: Update documentation, specs, and changelog; full suite.
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Append the `[Unreleased]` changelog bullet for the user-visible derivation change; reflect the single-source prompt architecture and derivation mechanism in both spec documents in the same commit.
@@ -130,7 +130,7 @@
 |------|--------|------------|------------|
 | Field-name and structural drift between auto and manual per phase (plan `{plan_path}` vs `plan_target`; tasks `TSK-{NNN}-{NN}` vs `T001`; research manual-only steps) | Medium | High | Reconcile each pair per-phase before deriving — resolve to the runner-enforced format (`TSK-\d{3}-\d{2}` per `src/deviate/cli/meso.py:938`, `src/deviate/core/validation.py:260`); do not uniform-inject structure across phases. |
 | Manual-overlay content leaks into the auto core and changes auto-runner behavior | High | Medium | `load_template` keeps emitting the auto core body only; add a `test_prompt_assembly.py` assertion that no overlay markers appear in the auto composition. |
-| `deviate setup` install idempotency contract regresses (returns `True` on unchanged reinstall) | Medium | Medium | Keep `target_path == composed` short-circuit returning `False`; re-run the graphite idempotency suite in `tests/test_core/test_commands.py`. |
+| `deviate setup` install idempotency contract regresses (returns `True` on unchanged reinstall) | Medium | Medium | Keep `target_path == composed` short-circuit returning `False`; re-run the graphite idempotency suite in `tests/unit/test_core/test_commands.py`. |
 | Greenfield `specs/constitution.md` absence breaks derivation | Medium | Low | Keep constitution injection best-effort and non-fatal (current `OSError`-tolerant path in `install_command`). |
 | Drift-guard test invokes `deviate.cli.micro._run_pytest` and slows the suite past 30s | Medium | Medium | The drift guard reads the two source files and calls `install_command` against a `tmp_path` only — no subprocess, per the AGENTS.md performance mandate. |
 | FLOW_CONTEXT_UNAVAILABLE — no existing flow mapping covers prompt templating | Medium | Low | Preserve empty flow references and plan the application's requested single-source derivation behavior without creating flow or DeviaTDD setup work. |

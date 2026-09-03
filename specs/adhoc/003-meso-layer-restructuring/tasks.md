@@ -60,19 +60,19 @@
     - **Implementation**: Remove or stub the `def specify()` typer command in `src/deviate/cli/meso.py` — replace with a function that prints `"Specify phase is removed — use deviatte shard+plan workflow instead"` and exits
     - **Implementation**: Keep `_specify_pre`, `_specify_post` helper functions in meso.py (they may still be referenced by the meso orchestration pipeline `_meso_run`); add deprecation comments
     - **Implementation**: Update `_meso_run` in meso.py to skip the specify phase and go directly to plan → tasks
-    - **Implementation**: Update tests in `tests/test_meso/test_specify.py` to expect the new stub behavior or removal
+    - **Implementation**: Update tests in `tests/unit/test_meso/test_specify.py` to expect the new stub behavior or removal
     - **Edge Cases**: Existing sessions in SPECIFY phase — the stub should print a clear migration message pointing to the new workflow
     - **Acceptance**: `ls src/deviate/prompts/skills/deviate-specify/SKILL.md` returns non-zero exit code; `deviate specify --help` shows deprecation notice; full test suite passes
 
 - TSK-003-07: Restore `_specify_pre` worktree creation + issue claiming functionality
   - **Type**: Bug
   - **Mode**: IMMEDIATE
-  - **Verification**: `uv run pytest tests/test_meso/test_specify.py -v && uv run pytest tests/test_cli/test_meso.py -v`
+  - **Verification**: `uv run pytest tests/unit/test_meso/test_specify.py -v && uv run pytest tests/unit/test_cli/test_meso.py -v`
   - **Estimated Time**: 45 minutes
   - **Dependency**: None
   - **Files**:
     - `src/deviate/cli/meso.py`
-    - `tests/test_meso/test_specify.py`
+    - `tests/unit/test_meso/test_specify.py`
   - **Rationale**: PR review thread C01 identified that `_specify_pre` was stubbed to a deprecation notice in TSK-003-03, removing the only caller of `_try_claim_issue`. This breaks the Meso-layer workflow: `_meso_run` no longer creates worktrees or claims issues, violating the Git Isolation Principle. The worktree+claim logic in `_try_claim_issue` (lines 318-441) is complete and functional — it just needs a surviving caller.
   - **Details**:
     - **Implementation**: Restore `_specify_pre` (line 445) to resolve the issue record from ledger and call `_try_claim_issue`, returning the worktree metadata dict (or failing gracefully). The flow: load record from `issue_id`, call `_try_claim_issue(record, repo_root=Path.cwd(), ledger_path=..., force=force, dry_run=dry_run)`, print worktree path on success, raise `typer.Exit(code=1)` on failure.
@@ -168,7 +168,7 @@
 - TSK-003-07 (Worktree+claim restore) — no dependency, can be done in parallel with other tasks
 
 **Risk Hotspots**:
-- Tests in `tests/test_meso/test_specify.py` will fail after TSK-003-03 removes the specify CLI entry — this is expected and handled within that task
+- Tests in `tests/unit/test_meso/test_specify.py` will fail after TSK-003-03 removes the specify CLI entry — this is expected and handled within that task
 - TSK-003-07 re-enables `_specify_pre` to call `_try_claim_issue`, reverting the stub from TSK-003-03. This is intentional — the SKILL.md is still removed; the CLI command now does setup (worktree+claim) instead of spec enrichment. The `_meso_run` integration tests must be updated to expect worktree creation as part of the pipeline.
 
 **Merge Conflict Boundaries**:

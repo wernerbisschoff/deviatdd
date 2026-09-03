@@ -18,9 +18,9 @@ flow_refs: []
   - `src/deviate/cli/micro.py::_find_all_pending_tasks` — REFERENCE: already skips `rec_issue != issue_id` and synthesizes PENDING from the issue's `tasks.md`. Reuse; do not fork a second scanner. Bare `deviate micro run` / `--all` stay on this path.
   - `src/deviate/cli/micro.py::_resolve_issue_id_from_branch` / `SessionState.active_issue_id` — REFERENCE: same stale-session / branch-authoritative rules already used by unscoped `_resolve_task_context`.
   - `src/deviate/cli/micro.py::_collect_latest_task_records` — REFERENCE: already keys `(issue_id, tid)`. Do not revert to id-only dedup.
-  - `tests/test_micro/test_e2e.py` — TARGET: extend `test_find_task_record_prefers_branch_issue` with the hole: sibling COMPLETED, active issue has zero ledger rows for that TSK, branch checkout of the pending issue.
-  - `tests/test_micro/test_run.py` — TARGET: CLI pin that `deviate micro run TSK-001-04` in the pending-issue worktree does not emit `TASK_ALREADY_DONE` / exit 0.
-  - `tests/test_cli/test_micro.py` — TARGET: unit pin that `_find_task_record` returns None (or a synthesized PENDING for the active issue), never the foreign COMPLETED row.
+  - `tests/unit/test_micro/test_e2e.py` — TARGET: extend `test_find_task_record_prefers_branch_issue` with the hole: sibling COMPLETED, active issue has zero ledger rows for that TSK, branch checkout of the pending issue.
+  - `tests/unit/test_micro/test_run.py` — TARGET: CLI pin that `deviate micro run TSK-001-04` in the pending-issue worktree does not emit `TASK_ALREADY_DONE` / exit 0.
+  - `tests/unit/test_cli/test_micro.py` — TARGET: unit pin that `_find_task_record` returns None (or a synthesized PENDING for the active issue), never the foreign COMPLETED row.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document that pinned `micro run <task-id>` is issue-scoped; same-number TSK ids are per-issue namespaces.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible runner fix.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices.
@@ -105,15 +105,15 @@ Pinned `deviate micro run <TASK_ID>` can resolve a sibling issue's COMPLETED row
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_micro/test_e2e.py` — extend `test_find_task_record_prefers_branch_issue`: sibling COMPLETED `TSK-001-04` + active issue has no ledger row → hit is this issue (synthesized PENDING or None), never the sibling COMPLETED row.
-  - `tests/test_cli/test_micro.py` — `_find_task_record` with two issues sharing `TSK-005-07` and a known branch issue returns only that issue's record.
-  - `tests/test_micro/test_run.py` — existing same-issue `TASK_ALREADY_DONE` pins stay green (IDLE + this issue COMPLETED still exits 0).
+  - `tests/unit/test_micro/test_e2e.py` — extend `test_find_task_record_prefers_branch_issue`: sibling COMPLETED `TSK-001-04` + active issue has no ledger row → hit is this issue (synthesized PENDING or None), never the sibling COMPLETED row.
+  - `tests/unit/test_cli/test_micro.py` — `_find_task_record` with two issues sharing `TSK-005-07` and a known branch issue returns only that issue's record.
+  - `tests/unit/test_micro/test_run.py` — existing same-issue `TASK_ALREADY_DONE` pins stay green (IDLE + this issue COMPLETED still exits 0).
 - **Integration Sandbox Targets**:
-  - `tests/test_micro/test_run.py` — CLI `deviate micro run TSK-001-04` in a `tmp_git_repo` feature-branch worktree whose issue `tasks.md` lists the TSK and whose JSONL is empty, while a sibling ledger is COMPLETED: output must not contain `TASK_ALREADY_DONE`; dispatch / resolve uses `issue_id` of the branch issue. Mock `_run_pytest` and the agent cycle so the suite stays under 30s.
+  - `tests/unit/test_micro/test_run.py` — CLI `deviate micro run TSK-001-04` in a `tmp_git_repo` feature-branch worktree whose issue `tasks.md` lists the TSK and whose JSONL is empty, while a sibling ledger is COMPLETED: output must not contain `TASK_ALREADY_DONE`; dispatch / resolve uses `issue_id` of the branch issue. Mock `_run_pytest` and the agent cycle so the suite stays under 30s.
 
 ## Demonstration Path
 
 ```bash
 # Mocked lookup + CLI pins (no live agent, no un-mocked pytest)
-uv run pytest tests/test_micro/test_e2e.py tests/test_micro/test_run.py tests/test_cli/test_micro.py -q -k "find_task_record or TASK_ALREADY_DONE or already_done or pinned"
+uv run pytest tests/unit/test_micro/test_e2e.py tests/unit/test_micro/test_run.py tests/unit/test_cli/test_micro.py -q -k "find_task_record or TASK_ALREADY_DONE or already_done or pinned"
 ```

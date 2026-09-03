@@ -9,18 +9,18 @@
   - **Type**: Bugfix
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `uv run pytest tests/test_core/test_agent.py tests/core/test_smart_stall.py -q -k "stall"`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_agent.py tests/unit/core/test_smart_stall.py -q -k "stall"`
   - **Estimated Time**: 60 minutes
   - **Flow References**: []
   - **Files**:
     - `src/deviate/core/agent.py`
-    - `tests/test_core/test_agent.py`
-  - **Rationale**: US-025-01 and `AC-PLAN-001` require `_invoke_streaming` to raise `AgentTimeoutError` matching `STALL_DETECTED` when stdout stays silent and stderr keeps arriving inside a patched sub-second `stall_timeout`. `AC-PLAN-002` requires those diagnostic lines on `AgentTimeoutError.partial_stderr` and any seen stdout on `partial_stdout`. `AC-PLAN-005` requires periodic stdout to complete without `STALL_DETECTED` and `STREAM_STALL_TIMEOUT_SECONDS == 900`. `src/deviate/core/agent.py` owns `read_stderr`, `read_stdout`, `stall_deadline`, and `record_bytes`. `tests/test_core/test_agent.py` owns the new stderr-only pin and keeps `test_streaming_agent_detects_stdout_stall` plus `test_streaming_agent_output_completes_without_stall`. Constitution §3 Testing Protocols: pytest under `tests/`, mocked `Popen` pipes, no live 900s sleep. Constitution §1 Micro-Layer Scope: GREEN writes `src/deviate/core/agent.py` only for this slice.
+    - `tests/unit/test_core/test_agent.py`
+  - **Rationale**: US-025-01 and `AC-PLAN-001` require `_invoke_streaming` to raise `AgentTimeoutError` matching `STALL_DETECTED` when stdout stays silent and stderr keeps arriving inside a patched sub-second `stall_timeout`. `AC-PLAN-002` requires those diagnostic lines on `AgentTimeoutError.partial_stderr` and any seen stdout on `partial_stdout`. `AC-PLAN-005` requires periodic stdout to complete without `STALL_DETECTED` and `STREAM_STALL_TIMEOUT_SECONDS == 900`. `src/deviate/core/agent.py` owns `read_stderr`, `read_stdout`, `stall_deadline`, and `record_bytes`. `tests/unit/test_core/test_agent.py` owns the new stderr-only pin and keeps `test_streaming_agent_detects_stdout_stall` plus `test_streaming_agent_output_completes_without_stall`. Constitution §3 Testing Protocols: pytest under `tests/`, mocked `Popen` pipes, no live 900s sleep. Constitution §1 Micro-Layer Scope: GREEN writes `src/deviate/core/agent.py` only for this slice.
   - **Details**:
-    - **Red**: In `tests/test_core/test_agent.py`, add `test_streaming_agent_stderr_only_noise_trips_stall`. Mock `Popen` with blocking or empty stdout and a kill-released stderr iterator that yields `[codebase-index] Background reindex failed` on an interval shorter than a patched sub-second `stall_timeout`. Assert `AgentTimeoutError` matches `STALL_DETECTED` at that budget (`AC-PLAN-001`). Assert `exc.partial_stderr` contains `[codebase-index] Background reindex failed` and `exc.partial_stdout` holds any stdout seen (`AC-PLAN-002`). Add `test_stream_stall_timeout_seconds_is_900` asserting `STREAM_STALL_TIMEOUT_SECONDS == 900` (`AC-PLAN-005`). Keep `test_streaming_agent_detects_stdout_stall` and `test_streaming_agent_output_completes_without_stall` green. Do not sleep 900s.
+    - **Red**: In `tests/unit/test_core/test_agent.py`, add `test_streaming_agent_stderr_only_noise_trips_stall`. Mock `Popen` with blocking or empty stdout and a kill-released stderr iterator that yields `[codebase-index] Background reindex failed` on an interval shorter than a patched sub-second `stall_timeout`. Assert `AgentTimeoutError` matches `STALL_DETECTED` at that budget (`AC-PLAN-001`). Assert `exc.partial_stderr` contains `[codebase-index] Background reindex failed` and `exc.partial_stdout` holds any stdout seen (`AC-PLAN-002`). Add `test_stream_stall_timeout_seconds_is_900` asserting `STREAM_STALL_TIMEOUT_SECONDS == 900` (`AC-PLAN-005`). Keep `test_streaming_agent_detects_stdout_stall` and `test_streaming_agent_output_completes_without_stall` green. Do not sleep 900s.
     - **Green**: In `_invoke_streaming` `read_stderr`, keep `stderr_lines.append`. Remove the `stall_deadline` reset. Remove the `record_bytes` call. Leave `read_stdout` as the only hard-deadline reset and `record_bytes` source. Leave `STREAM_STALL_TIMEOUT_SECONDS`, `STREAM_STALL_WINDOW_SECONDS`, and `STREAM_STALL_MIN_BYTES_PER_SECOND` unchanged. Do not retune `_invoke_rpc_blocking`.
     - **Refactor**: Keep stderr capture in one place so `partial_stderr` still joins `stderr_lines` on the stall raise.
-    - **Edge Cases**: Empty stderr with silent stdout still trips the existing silent-stream pin. Sparse stderr must not feed the smart-stall byte window. Leave `tests/core/test_smart_stall.py` unchanged when `read_stderr` stops calling `record_bytes`. Kill the child so the stderr iterator can exit.
+    - **Edge Cases**: Empty stderr with silent stdout still trips the existing silent-stream pin. Sparse stderr must not feed the smart-stall byte window. Leave `tests/unit/core/test_smart_stall.py` unchanged when `read_stderr` stops calling `record_bytes`. Kill the child so the stderr iterator can exit.
     - **Acceptance**: Stderr-only noise raises `STALL_DETECTED` at the patched budget. `partial_stderr` holds the diagnostic line. Periodic stdout still completes. Default GREEN budget stays 900s.
 
 ---
@@ -34,17 +34,17 @@
   - **Type**: Bugfix
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `uv run pytest tests/test_core/test_agent.py tests/test_cli/test_micro.py -q -k "stall or timeout or AGENT_TIMEOUT or EXECUTE_STALL"`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_agent.py tests/unit/test_cli/test_micro.py -q -k "stall or timeout or AGENT_TIMEOUT or EXECUTE_STALL"`
   - **Estimated Time**: 60 minutes
   - **Flow References**: []
   - **Files**:
     - `src/deviate/core/agent.py`
     - `src/deviate/cli/micro.py`
-    - `tests/test_core/test_agent.py`
-    - `tests/test_cli/test_micro.py`
+    - `tests/unit/test_core/test_agent.py`
+    - `tests/unit/test_cli/test_micro.py`
   - **Rationale**: US-025-02 and `AC-PLAN-003` require `AgentBackend.invoke` to re-raise a streaming `AgentTimeoutError` matching `STALL_DETECTED` without `time.sleep(30)` and without a second `_dispatch_invocation`. `_invoke_agent` must log `AGENT_TIMEOUT` with `error=`, `partial_stderr=`, and `partial_stdout=` inside the interactive budget plus poll slack. US-025-03 and `AC-PLAN-004` require `_run_execute_phase` to keep `stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS` (3600) and keep `test_streaming_agent_stall_timeout_override_is_honored` green. `src/deviate/core/agent.py` owns `invoke`. `src/deviate/cli/micro.py` owns `_invoke_agent` and `EXECUTE_STALL_TIMEOUT_SECONDS`. Constitution §3: mock `deviate.cli.micro._run_pytest` with `subprocess.CompletedProcess` on every CLI path. Constitution §1 Session Continuity: GREEN still omits a `stall_timeout` override.
   - **Details**:
-    - **Red**: In `tests/test_core/test_agent.py`, add `test_invoke_streaming_stall_does_not_retry`. Call `invoke` with an `output_callback` so dispatch uses `_invoke_streaming`. Make the first stream raise `AgentTimeoutError` matching `STALL_DETECTED`. Assert `time.sleep` is not called. Assert `_dispatch_invocation` runs once. Keep `test_agent_timeout_retry` and `test_agent_timeout_retry_twice_then_raises` asserting `sleep(30)` on blocking `TimeoutExpired`. In `tests/test_cli/test_micro.py`, add `test_invoke_agent_logs_agent_timeout_on_stall`: mock `AgentBackend.invoke` to raise `AgentTimeoutError` with `partial_stderr` and `partial_stdout`; assert `_invoke_agent` logs `AGENT_TIMEOUT` with `error=`, `partial_stderr=`, and `partial_stdout=` (`AC-PLAN-003`). Add `test_execute_stall_timeout_seconds_is_3600` asserting `EXECUTE_STALL_TIMEOUT_SECONDS == 3600` and that `_run_execute_phase` still passes `stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS` (`AC-PLAN-004`). Keep `test_streaming_agent_stall_timeout_override_is_honored` green. Mock `_run_pytest`. Do not sleep 900s.
+    - **Red**: In `tests/unit/test_core/test_agent.py`, add `test_invoke_streaming_stall_does_not_retry`. Call `invoke` with an `output_callback` so dispatch uses `_invoke_streaming`. Make the first stream raise `AgentTimeoutError` matching `STALL_DETECTED`. Assert `time.sleep` is not called. Assert `_dispatch_invocation` runs once. Keep `test_agent_timeout_retry` and `test_agent_timeout_retry_twice_then_raises` asserting `sleep(30)` on blocking `TimeoutExpired`. In `tests/unit/test_cli/test_micro.py`, add `test_invoke_agent_logs_agent_timeout_on_stall`: mock `AgentBackend.invoke` to raise `AgentTimeoutError` with `partial_stderr` and `partial_stdout`; assert `_invoke_agent` logs `AGENT_TIMEOUT` with `error=`, `partial_stderr=`, and `partial_stdout=` (`AC-PLAN-003`). Add `test_execute_stall_timeout_seconds_is_3600` asserting `EXECUTE_STALL_TIMEOUT_SECONDS == 3600` and that `_run_execute_phase` still passes `stall_timeout=EXECUTE_STALL_TIMEOUT_SECONDS` (`AC-PLAN-004`). Keep `test_streaming_agent_stall_timeout_override_is_honored` green. Mock `_run_pytest`. Do not sleep 900s.
     - **Green**: In `invoke`, when the caught `AgentTimeoutError` message contains `STALL_DETECTED` or `SMART_STALL_DETECTED`, re-raise with no `time.sleep` and no second `Popen`. Keep the 30s retry for blocking `TimeoutExpired`. Leave `_invoke_agent` `AGENT_TIMEOUT` logging in place. Do not swallow `AgentTimeoutError`. Do not pass a GREEN `stall_timeout` override. Do not change `EXECUTE_STALL_TIMEOUT_SECONDS` or fold EXECUTE to 900s.
     - **Refactor**: Limit the no-retry path to streaming stall tokens so the blocking timeout helper stays one retry.
     - **Edge Cases**: `SMART_STALL_DETECTED` also re-raises. A later documented retry is legal only if `AGENT_TIMEOUT` still lands inside the interactive budget plus poll slack. Do not retune `_invoke_rpc_blocking`. Do not mutate operator-local `.deviate/config.toml`.
@@ -58,11 +58,11 @@
 
 ### Tasks
 
-  - **Judge Feedback**: JUDGE evidence test_quote is not an exact substring of tests/test_core/test_agent.py
+  - **Judge Feedback**: JUDGE evidence test_quote is not an exact substring of tests/unit/test_core/test_agent.py
 - TSK-025-03: Document stdout-only stall liveness and the 900s / 3600s budgets
   - **Type**: Config
   - **Mode**: IMMEDIATE
-  - **Verification**: `uv run pytest tests/test_core/test_agent.py tests/test_cli/test_micro.py tests/core/test_smart_stall.py -q -k "stall or timeout or AGENT_TIMEOUT or EXECUTE_STALL"`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_agent.py tests/unit/test_cli/test_micro.py tests/unit/core/test_smart_stall.py -q -k "stall or timeout or AGENT_TIMEOUT or EXECUTE_STALL"`
   - **Estimated Time**: 30-90 minutes
   - **Flow References**: []
   - **Files**:
@@ -127,7 +127,7 @@
 - Un-mocked `_run_pytest` blows the 30s suite budget
 
 **Merge Conflict Boundaries**:
-- Files touched by multiple phases: `src/deviate/core/agent.py`, `tests/test_core/test_agent.py`. Phase 1 owns `read_stderr`. Phase 2 owns `invoke` retry. Phase 3 owns specs and CHANGELOG only.
+- Files touched by multiple phases: `src/deviate/core/agent.py`, `tests/unit/test_core/test_agent.py`. Phase 1 owns `read_stderr`. Phase 2 owns `invoke` retry. Phase 3 owns specs and CHANGELOG only.
 
 **Product-Layer Anchors** (mirrored from plan.md):
 - **Flow References**: `[]`

@@ -68,11 +68,11 @@ type: feature
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- `tests/test_cli/test_adhoc.py` — `test_adhoc_pre_low_complexity`, `test_adhoc_pre_high_complexity_rejected`, `test_adhoc_post_completes_record`
-- `tests/test_core/test_complexity.py` — `test_complexity_gate_classify_low`, `test_complexity_gate_classify_high`
-- `tests/test_state/test_ledger.py` — `test_adhoc_record_schema`, `test_adhoc_record_status_transitions`
-- `tests/test_cli/test_feature.py` — `test_feature_create_scaffold`, `test_feature_create_existing_branch`
-- `tests/test_cli/test_meso.py` — `test_specify_pre_invokes_feature_create`
+- `tests/unit/test_cli/test_adhoc.py` — `test_adhoc_pre_low_complexity`, `test_adhoc_pre_high_complexity_rejected`, `test_adhoc_post_completes_record`
+- `tests/unit/test_core/test_complexity.py` — `test_complexity_gate_classify_low`, `test_complexity_gate_classify_high`
+- `tests/unit/test_state/test_ledger.py` — `test_adhoc_record_schema`, `test_adhoc_record_status_transitions`
+- `tests/unit/test_cli/test_feature.py` — `test_feature_create_scaffold`, `test_feature_create_existing_branch`
+- `tests/unit/test_cli/test_meso.py` — `test_specify_pre_invokes_feature_create`
 
 ## [DEMONSTRATION_PATH]
 
@@ -96,5 +96,5 @@ print(f'High complexity OK: {result.level}')
 "
 
 # Run tests
-pytest tests/test_cli/test_adhoc.py tests/test_core/test_complexity.py tests/test_state/test_ledger.py -v --no-header -q
+pytest tests/unit/test_cli/test_adhoc.py tests/unit/test_core/test_complexity.py tests/unit/test_state/test_ledger.py -v --no-header -q
 ```

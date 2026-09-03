@@ -21,7 +21,7 @@ issue_id: ISS-ADH-009
 - `src/deviate/cli/__init__.py` — `setup` flow: when `agent.backend = "pi"`, treat as a regular project-local agent; skills are file-copied into `<workdir>/.pi/skills/<name>/SKILL.md` (same as `.claude/`, `.opencode/`, `.factory/`). No global `~/.pi/agent/` writes. No `settings.json` generation — that is the operator's responsibility.
 - `src/deviate/cli/micro.py:309-316` — `INVOKE_AGENT` / `AGENT_RESULT` logging: append `pi.session_stats` block (tokens.input/output/cacheRead/cacheWrite) to log entries when backend is Pi
 - `src/deviate/cli/micro.py` — `_invoke_agent()`: thread `backend_name` through to RPC-mode dispatcher (conditional)
-- `tests/core/test_agent.py` — add `test_pi_backend_subprocess_contract`, `test_pi_backend_yaml_extraction`, `test_pi_backend_model_flag_injection`, `test_pi_backend_missing_binary`
+- `tests/unit/core/test_agent.py` — add `test_pi_backend_subprocess_contract`, `test_pi_backend_yaml_extraction`, `test_pi_backend_model_flag_injection`, `test_pi_backend_missing_binary`
 - `tests/cli/test_init.py` — add `test_init_creates_pi_skill_files` (file copies under `<workdir>/.pi/skills/`), `test_init_idempotent_pi_setup`
   - `specs/DeviaTDD-api.md` — document `pi` backend in the backend selection matrix
   - `specs/DeviaTDD-architecture.md` — document Pi-specific customizations (skill symlinks, settings file, RPC mode opt-in)
@@ -45,9 +45,9 @@ DeviaTDD currently supports three backends (`opencode`, `claude`, `droid`). Pi (
 - Enrich `prompts.log` `AGENT_RESULT` events with a `pi.session_stats` block when `backend_name == "pi"` and the subprocess emits structured token data. Pi's `--print-tokens` flag (or, in RPC mode, `get_session_stats` response) yields `tokens.input`, `tokens.output`, `tokens.cacheRead`, `tokens.cacheWrite`. Source: explore §"Token-cost levers".
 - Add `StubPiBackend` test fixture (mirroring `StubAgentBackend`) emitting canned YAML handover manifest + canned session stats block.
 - Add unit tests:
-  - `tests/core/test_agent.py::test_pi_backend_subprocess_contract` — verify `pi -p` is the spawned command, prompt is piped via stdin, YAML manifest extracted from stdout
-  - `tests/core/test_agent.py::test_pi_backend_yaml_extraction` — verify a Pi-shaped output (fenced YAML block + `<handover_manifest>` tag) parses via existing `_YAML_BLOCK_RE` / `_YAML_HANDOVER_MARKER_RE` pipeline
-  - `tests/core/test_agent.py::test_pi_backend_missing_binary` — verify `AgentBinaryNotFoundError` raised when `pi` is not on `PATH`
+  - `tests/unit/core/test_agent.py::test_pi_backend_subprocess_contract` — verify `pi -p` is the spawned command, prompt is piped via stdin, YAML manifest extracted from stdout
+  - `tests/unit/core/test_agent.py::test_pi_backend_yaml_extraction` — verify a Pi-shaped output (fenced YAML block + `<handover_manifest>` tag) parses via existing `_YAML_BLOCK_RE` / `_YAML_HANDOVER_MARKER_RE` pipeline
+  - `tests/unit/core/test_agent.py::test_pi_backend_missing_binary` — verify `AgentBinaryNotFoundError` raised when `pi` is not on `PATH`
   - `tests/cli/test_init.py::test_init_creates_pi_skill_symlinks` — verify one symlink per skill (20 skills → 20 symlinks), targets point to `src/deviate/prompts/skills/<name>`
   - `tests/cli/test_init.py::test_init_generates_pi_settings_json` — verify settings.json content matches `provider`/`model` resolved from `[models]` config
   - `tests/cli/test_init.py::test_init_idempotent_pi_setup` — re-running `init` does not duplicate symlinks or settings.json
@@ -153,7 +153,7 @@ DeviaTDD currently supports three backends (`opencode`, `claude`, `droid`). Pi (
 - Token savings target (measured via `pi.session_stats.cacheRead / (cacheRead + input)`): ≥ 30% cache-hit ratio on repeated phase invocations within the same session — proxy for prompt prefix cache utilization
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets** — `tests/core/test_agent.py`:
+- **Unit Sandbox Targets** — `tests/unit/core/test_agent.py`:
   - `test_pi_backend_subprocess_contract` — verify `pi -p` is the spawned command, prompt via stdin, YAML manifest extraction from stdout
   - `test_pi_backend_yaml_extraction` — Pi-shaped stdout (fenced YAML + `<handover_manifest>` tag) parses correctly
   - `test_pi_backend_missing_binary` — `FileNotFoundError` → `AgentBinaryNotFoundError` with install instructions
@@ -163,7 +163,7 @@ DeviaTDD currently supports three backends (`opencode`, `claude`, `droid`). Pi (
   - `test_stub_pi_backend_yields_canonical_manifest` — `StubPiBackend` fixture emits Pi-shaped output for downstream tests
   - `test_agent_config_literal_accepts_pi` — `AgentConfig(backend="pi")` validates; round-trip via TOML preserves value
   - `test_agent_config_literal_rejects_unknown` — `AgentConfig(backend="unknown")` raises `ValidationError`
-- **Unit Sandbox Targets** — `tests/test_cli/test_init.py`:
+- **Unit Sandbox Targets** — `tests/unit/test_cli/test_init.py`:
   - `test_init_creates_pi_skill_files` — 20 skill files under `<workdir>/.pi/skills/<name>/SKILL.md`, same path convention as `.claude/`, `.opencode/`, `.factory/`
   - `test_init_does_not_write_to_user_home_pi_dir` — no entries created under `~/.pi/agent/` (mock `Path.home()` and assert empty)
   - `test_init_does_not_generate_settings_json` — no `settings.json` in `<workdir>/.pi/` or `~/.pi/agent/`
@@ -172,21 +172,21 @@ DeviaTDD currently supports three backends (`opencode`, `claude`, `droid`). Pi (
   - `test_agent_to_backend_maps_pi` — `AGENT_TO_BACKEND["pi"] == "pi"`
 - **Integration Sandbox Targets**:
   - `tests/test_integration/test_init_export_cycle.py` — verify full setup + Pi export cycle completes within performance constraints (≤ 500ms for setup, ≤ 200ms for skill file copy). No writes to `~/.pi/agent/`.
-  - `tests/test_core/test_agent.py` — verify Pi backend integrates with `_invoke_streaming` path (per-line output callback) when `output_callback` is provided
+  - `tests/unit/test_core/test_agent.py` — verify Pi backend integrates with `_invoke_streaming` path (per-line output callback) when `output_callback` is provided
 
 ## Demonstration Path
 ```bash
 # Unit tests for Pi backend contract
-mise run test tests/test_core/test_agent.py::test_pi_backend_subprocess_contract -v
-mise run test tests/test_core/test_agent.py::test_pi_backend_yaml_extraction -v
-mise run test tests/test_core/test_agent.py::test_pi_backend_missing_binary -v
-mise run test tests/test_core/test_agent.py::test_pi_rpc_mode_opt_in -v
+mise run test tests/unit/test_core/test_agent.py::test_pi_backend_subprocess_contract -v
+mise run test tests/unit/test_core/test_agent.py::test_pi_backend_yaml_extraction -v
+mise run test tests/unit/test_core/test_agent.py::test_pi_backend_missing_binary -v
+mise run test tests/unit/test_core/test_agent.py::test_pi_rpc_mode_opt_in -v
 
 # Unit tests for setup flow
-mise run test tests/test_cli/test_init.py::test_init_creates_pi_skill_files -v
-mise run test tests/test_cli/test_init.py::test_init_does_not_write_to_user_home_pi_dir -v
-mise run test tests/test_cli/test_init.py::test_init_does_not_generate_settings_json -v
-mise run test tests/test_cli/test_init.py::test_init_idempotent_pi_setup -v
+mise run test tests/unit/test_cli/test_init.py::test_init_creates_pi_skill_files -v
+mise run test tests/unit/test_cli/test_init.py::test_init_does_not_write_to_user_home_pi_dir -v
+mise run test tests/unit/test_cli/test_init.py::test_init_does_not_generate_settings_json -v
+mise run test tests/unit/test_cli/test_init.py::test_init_idempotent_pi_setup -v
 
 # Integration test: full setup + Pi export cycle
 mise run test tests/test_integration/test_init_export_cycle.py -v

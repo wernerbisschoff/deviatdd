@@ -20,7 +20,7 @@ issue_id: "ISS-001-004"
   - `src/deviate/state/ledger.py` — TaskRecord status transitions (RED, GREEN, REFACTOR, COMPLETED)
   - `specs/constitution.md` — Injected as static prefix content in every automated prompt
   - `CLAUDE.md` — Injected alongside constitution as static governance context
-  - `tests/test_micro/`
+  - `tests/unit/test_micro/`
   - `tests/test_integration/test_micro_orchestration.py`
 
 ## [THE_PROBLEM_CONTRACT]
@@ -228,20 +228,20 @@ The CLI parses this manifest to:
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- **Unit Tests**: `tests/test_micro/test_red.py`, `tests/test_micro/test_green.py`, `tests/test_micro/test_refactor.py`, `tests/test_micro/test_judge.py`, `tests/test_micro/test_yellow.py`, `tests/test_micro/test_execute.py`, `tests/test_micro/test_e2e.py`, `tests/test_micro/test_hotfix.py`, `tests/test_micro/test_orchestration.py`, `tests/test_core/test_agent.py`, `tests/test_core/test_tamper.py`
+- **Unit Tests**: `tests/unit/test_micro/test_red.py`, `tests/unit/test_micro/test_green.py`, `tests/unit/test_micro/test_refactor.py`, `tests/unit/test_micro/test_judge.py`, `tests/unit/test_micro/test_yellow.py`, `tests/unit/test_micro/test_execute.py`, `tests/unit/test_micro/test_e2e.py`, `tests/unit/test_micro/test_hotfix.py`, `tests/unit/test_micro/test_orchestration.py`, `tests/unit/test_core/test_agent.py`, `tests/unit/test_core/test_tamper.py`
 - **Integration Tests**: `tests/test_integration/test_micro_orchestration.py`, `tests/test_integration/test_tamper_guard.py`, `tests/test_integration/test_mise_check_gate.py`, `tests/test_integration/test_full_cycle.py`, `tests/test_integration/test_agent_backend.py`
 
 ## [DEMONSTRATION_PATH]
 
 ```bash
 # Verify manual pre/post commands
-pytest tests/test_micro/test_red.py tests/test_micro/test_green.py -v
+pytest tests/unit/test_micro/test_red.py tests/unit/test_micro/test_green.py -v
 
 # Verify automated orchestration
 pytest tests/test_integration/test_micro_orchestration.py -v
 
 # Verify agent backend
-pytest tests/test_core/test_agent.py -v
+pytest tests/unit/test_core/test_agent.py -v
 
 # Verify Tamper Guard
 pytest tests/test_integration/test_tamper_guard.py -v

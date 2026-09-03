@@ -48,7 +48,7 @@ As a developer, I need the Python CLI to fully replace 15 bash orchestrator scri
 - **FR-005-SESSION**: Dual-mode session state with filesystem divergence detection
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
-- **Unit Tests**: `tests/test_core/test_ledger.py`, `tests/test_core/test_repo.py`, `tests/test_core/test_contract.py`, `tests/test_core/test_commit.py`, `tests/test_core/test_constitution.py`, `tests/test_core/test_epic.py`, `tests/test_core/test_validation.py`, `tests/test_core/test_worktree.py`, `tests/test_core/test_issues.py`, `tests/test_core/test_prd.py`, `tests/test_core/test_skills.py`
+- **Unit Tests**: `tests/unit/test_core/test_ledger.py`, `tests/unit/test_core/test_repo.py`, `tests/unit/test_core/test_contract.py`, `tests/unit/test_core/test_commit.py`, `tests/unit/test_core/test_constitution.py`, `tests/unit/test_core/test_epic.py`, `tests/unit/test_core/test_validation.py`, `tests/unit/test_core/test_worktree.py`, `tests/unit/test_core/test_issues.py`, `tests/unit/test_core/test_prd.py`, `tests/unit/test_core/test_skills.py`
 - **Integration Tests**: `tests/test_integration/test_macro_layer.py`, `tests/test_integration/test_meso_layer.py`, `tests/test_integration/test_skill_installation.py`
 - **Data verification**: `python -c "import json; [json.loads(l) for l in open('specs/issues.jsonl')]"`
 
@@ -58,7 +58,7 @@ As a developer, I need the Python CLI to fully replace 15 bash orchestrator scri
 python -c "import json; [json.loads(l) for l in open('specs/issues.jsonl')]"
 
 # Verify core modules
-pytest tests/test_core/ -v
+pytest tests/unit/test_core/ -v
 
 # Verify macro and meso layer CLI
 pytest tests/test_integration/test_macro_layer.py -v

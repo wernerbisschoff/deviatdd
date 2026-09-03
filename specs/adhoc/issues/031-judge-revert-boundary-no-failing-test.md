@@ -62,8 +62,8 @@ On the RED `no_failing_test` already-exists path, `deviate micro run` hard-crash
 - Throughput: No change; the fix adds a branch, not a new subprocess on the recovery path.
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_micro/test_judge.py` — `test_already_exists_head_quotes_pass`, plus a new test that a `no_failing_test` `COMPLIANCE_PASS` with partial evidence completes instead of raising `ROLLBACK_BOUNDARY_MISSING`.
-- **Integration Sandbox Targets**: `tests/test_cli/test_micro.py` — the `_run_pytest`-mocked CLI path that reproduces the `TSK-029-02` crash.
+- **Unit Sandbox Targets**: `tests/unit/test_micro/test_judge.py` — `test_already_exists_head_quotes_pass`, plus a new test that a `no_failing_test` `COMPLIANCE_PASS` with partial evidence completes instead of raising `ROLLBACK_BOUNDARY_MISSING`.
+- **Integration Sandbox Targets**: `tests/unit/test_cli/test_micro.py` — the `_run_pytest`-mocked CLI path that reproduces the `TSK-029-02` crash.
 
 ## Demonstration Path
 ```bash

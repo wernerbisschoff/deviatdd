@@ -11,9 +11,9 @@
   - `src/deviate/ui/render.py` — Task table, agent output buffer, and status bar renderers
   - `src/deviate/cli/micro.py` — Integration wiring for agent subprocess stdout/stderr into monitor
   - `src/deviate/ui/__init__.py` — Package init for the ui subpackage
-  - `tests/test_ui/test_monitor.py` — Unit tests for monitor state machine and event handling
-  - `tests/test_ui/test_render.py` — Unit tests for render functions and TTY detection
-  - `tests/test_cli/test_micro.py::test_run_all_with_live_display` — Integration test for full loop
+  - `tests/unit/test_ui/test_monitor.py` — Unit tests for monitor state machine and event handling
+  - `tests/unit/test_ui/test_render.py` — Unit tests for render functions and TTY detection
+  - `tests/unit/test_cli/test_micro.py::test_run_all_with_live_display` — Integration test for full loop
 - **Downstream Dependency Graph**:
   ```
   FR-ADHOC-001 (Streaming Pipeline Monitor)
@@ -59,22 +59,22 @@ When users run `deviate run --all` in automated mode, they currently see only te
 - JSONL fallback output must not buffer — each event is flushed immediately to stdout.
 
 ## MULTI_TIERED_VERIFICATION_TARGETS
-- **Unit Tests (Monitor Model)**: `tests/test_ui/test_monitor.py` — validates `OrchestrationMonitor` state transitions, event ingestion, buffer management, and render triggers.
+- **Unit Tests (Monitor Model)**: `tests/unit/test_ui/test_monitor.py` — validates `OrchestrationMonitor` state transitions, event ingestion, buffer management, and render triggers.
   - `test_monitor_updates_task_marker` — verify task markers update when receiving status events
   - `test_monitor_agent_output_buffer` — verify rolling 5-line buffer eviction behavior
   - `test_monitor_status_bar_reflects_phase` — verify status bar phase string matches latest event
   - `test_monitor_task_started_creates_row` — verify task rows appear on `task_started` event
   - `test_monitor_pipeline_complete_clears` — verify display cleanup on completion
-- **Unit Tests (Render Functions)**: `tests/test_ui/test_render.py` — validates Rich table formatting, agent output rendering, and TTY detection.
+- **Unit Tests (Render Functions)**: `tests/unit/test_ui/test_render.py` — validates Rich table formatting, agent output rendering, and TTY detection.
   - `test_render_task_list` — verify Rich `Table` formatting from task records
   - `test_render_no_tty_fallback` — verify JSONL emission when not a TTY or `--json` flag active
   - `test_render_agent_buffer` — verify rolling buffer renders with newest-last ordering
   - `test_render_status_bar` — verify status bar text and styling
-- **Integration Tests**: `tests/test_cli/test_micro.py::test_run_all_with_live_display` — validates full `deviate run --all` loop with mocked agent producing stdout/stderr and verifies monitor output.
+- **Integration Tests**: `tests/unit/test_cli/test_micro.py::test_run_all_with_live_display` — validates full `deviate run --all` loop with mocked agent producing stdout/stderr and verifies monitor output.
 - **Demonstration Path**:
   ```bash
-  pytest tests/test_ui/ -v
-  pytest tests/test_cli/test_micro.py::test_run_all_with_live_display -v
+  pytest tests/unit/test_ui/ -v
+  pytest tests/unit/test_cli/test_micro.py::test_run_all_with_live_display -v
   ```
 
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER

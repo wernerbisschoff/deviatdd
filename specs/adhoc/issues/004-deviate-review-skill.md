@@ -42,19 +42,19 @@ The existing code review workflow (`~/.claude/skills/tools-review/`) relies on a
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 - **Unit Sandbox Targets**:
-  - `tests/test_cli/test_review.py::test_review_pre_emits_contract` — verify pre command emits valid JSON contract
-  - `tests/test_cli/test_review.py::test_review_pre_finds_constitution` — verify constitution_path in contract
-  - `tests/test_cli/test_review.py::test_review_pre_resolves_prd_epic_first` — verify epic PRD preferred over adhoc PRD
-  - `tests/test_cli/test_review.py::test_review_pre_falls_back_to_adhoc_prd` — verify adhoc PRD used when epic PRD absent
-  - `tests/test_cli/test_review.py::test_review_post_persists_report` — verify review-report.md written and staged
-  - `tests/test_cli/test_review.py::test_review_post_no_artifact` — verify graceful handling when no report provided
+  - `tests/unit/test_cli/test_review.py::test_review_pre_emits_contract` — verify pre command emits valid JSON contract
+  - `tests/unit/test_cli/test_review.py::test_review_pre_finds_constitution` — verify constitution_path in contract
+  - `tests/unit/test_cli/test_review.py::test_review_pre_resolves_prd_epic_first` — verify epic PRD preferred over adhoc PRD
+  - `tests/unit/test_cli/test_review.py::test_review_pre_falls_back_to_adhoc_prd` — verify adhoc PRD used when epic PRD absent
+  - `tests/unit/test_cli/test_review.py::test_review_post_persists_report` — verify review-report.md written and staged
+  - `tests/unit/test_cli/test_review.py::test_review_post_no_artifact` — verify graceful handling when no report provided
 - **Integration Sandbox Targets**:
   - `tests/test_integration/test_review_cycle.py::test_review_full_cycle` — full pre→(agent review)→post cycle with mock agent
 
 ## [DEMONSTRATION_PATH]
 ```bash
 # Unit tests
-pytest tests/test_cli/test_review.py -v
+pytest tests/unit/test_cli/test_review.py -v
 
 # Integration test
 pytest tests/test_integration/test_review_cycle.py -v -k "full_cycle"

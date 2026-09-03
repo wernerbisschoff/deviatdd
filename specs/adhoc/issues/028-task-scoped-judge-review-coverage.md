@@ -18,9 +18,9 @@ flow_refs: []
   - `src/deviate/prompts/auto/judge.md` / `src/deviate/prompts/commands/deviate-judge.md` — TARGET: emit `evidence` only for the resolved task tokens. Quotes must be copied from the injected `<diff>` or allowed HEAD files. Drop any instruction that every plan scenario must appear in this verdict. Paraphrases, comments, and "later work" sentences stay illegal.
   - `src/deviate/cli/review.py` (`pre` / `post`) — TARGET: runner-owned fail-close when any `AC-PLAN-NNN` in the issue `plan.md` is unclaimed by a COMPLETED task (`acceptance_criteria` or task-card tokens; honor persisted #84 evidence rows only if already present). Not an LLM quote game. Review may still judge adequacy; it cannot PASS on a coverage miss.
   - Optional helper next to review / judge evidence — TARGET: unit-testable plan-vs-COMPLETED coverage without spawning an agent.
-  - `tests/test_core/test_judge_evidence.py` — TARGET: invert `test_partial_coverage_fails_for_omitted_token` when the omitted token is not this task's; keep #65 fail-closed pins for this-task tokens / paraphrase quotes.
-  - `tests/test_micro/test_judge.py` — TARGET: mid-plan COMPLETE with task-scoped evidence; prompt no longer requires every plan AC in the verdict.
-  - `tests/test_cli/test_review.py` — TARGET: review fail-closes on an unclaimed plan AC; PASS only when every plan token is claimed by a COMPLETED task.
+  - `tests/unit/test_core/test_judge_evidence.py` — TARGET: invert `test_partial_coverage_fails_for_omitted_token` when the omitted token is not this task's; keep #65 fail-closed pins for this-task tokens / paraphrase quotes.
+  - `tests/unit/test_micro/test_judge.py` — TARGET: mid-plan COMPLETE with task-scoped evidence; prompt no longer requires every plan AC in the verdict.
+  - `tests/unit/test_cli/test_review.py` — TARGET: review fail-closes on an unclaimed plan AC; PASS only when every plan token is claimed by a COMPLETED task.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document task-scoped JUDGE tokens and Gate 3 plan-AC coverage in the same implementation commit.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible JUDGE/review contract change.
 - **Classification for plan/tasks**: production Python with observable fail-to-pass behavior. Prefer **TDD**. Meso may shard JUDGE vs review into 2+ tasks. Do not fatten GREEN.
@@ -123,13 +123,13 @@ A mid-epic TDD task implements a subset of `plan.md`. Today JUDGE demands mechan
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_core/test_judge_evidence.py` — task-scoped omit of AC-PLAN-002 passes; this-task paraphrase / missing token still fails; resolver precedence (criteria, then card, then none).
-  - `tests/test_cli/test_review.py` — uncovered plan AC fail-closes; full COMPLETED claims pass coverage.
+  - `tests/unit/test_core/test_judge_evidence.py` — task-scoped omit of AC-PLAN-002 passes; this-task paraphrase / missing token still fails; resolver precedence (criteria, then card, then none).
+  - `tests/unit/test_cli/test_review.py` — uncovered plan AC fail-closes; full COMPLETED claims pass coverage.
 - **Integration Sandbox Targets**:
-  - `tests/test_micro/test_judge.py` — `_run_judge_phase` COMPLETEs a GREEN-passing task whose evidence covers only the task tokens; prompt text no longer requires every plan AC.
+  - `tests/unit/test_micro/test_judge.py` — `_run_judge_phase` COMPLETEs a GREEN-passing task whose evidence covers only the task tokens; prompt text no longer requires every plan AC.
 
 ## Demonstration Path
 
 ```bash
-pytest tests/test_core/test_judge_evidence.py tests/test_cli/test_review.py tests/test_micro/test_judge.py -q
+pytest tests/unit/test_core/test_judge_evidence.py tests/unit/test_cli/test_review.py tests/unit/test_micro/test_judge.py -q
 ```

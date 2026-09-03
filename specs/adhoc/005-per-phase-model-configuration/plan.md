@@ -43,12 +43,12 @@
 - **Phase 1**: Config model — `ModelPhaseMap` Pydantic model + `models` field on `DeviateConfig` + model resolution helper
   - **Files**: `src/deviate/state/config.py`
   - **Approach**: Add `ModelPhaseMap(BaseModel)` with `models: dict[str, str] = Field(default_factory=dict)`. Add `model_config_resolve(phase: str) -> str | None` module-level function. Add `models` field to `DeviateConfig`.
-  - **Verification**: `pytest tests/test_state/test_config.py -v` — existing tests still pass; new test for model config defaults and phase lookup
+  - **Verification**: `pytest tests/unit/test_state/test_config.py -v` — existing tests still pass; new test for model config defaults and phase lookup
 
 - **Phase 2**: Agent command construction — extend `invoke()` with model parameter
   - **Files**: `src/deviate/core/agent.py`
   - **Approach**: Add `model: str | None = None` to `invoke()`. After building `cmd`, if `model` is non-None and backend supports it (opencode, droid), append `["--model", model]`. For claude backend, skip. Update `StubAgentBackend`.
-  - **Verification**: `pytest tests/core/test_agent.py -v` — new unit tests for command construction with/without model
+  - **Verification**: `pytest tests/unit/core/test_agent.py -v` — new unit tests for command construction with/without model
 
 - **Phase 3**: Micro-layer threading — model resolution in `_invoke_agent()` and phase runners
   - **Files**: `src/deviate/cli/micro.py`

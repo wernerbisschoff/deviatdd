@@ -27,12 +27,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_ui/test_monitor.py -v`
+  - **Verification**: `pytest tests/unit/test_ui/test_monitor.py -v`
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/ui/__init__.py`
     - `src/deviate/ui/monitor.py`
-    - `tests/test_ui/test_monitor.py`
+    - `tests/unit/test_ui/test_monitor.py`
   - **Rationale**: Creates the UI subpackage and the core `OrchestrationMonitor` class. `__init__.py` establishes the package boundary. `monitor.py` is the primary workstation for US-001-DISP (display lifecycle), US-002-TASK (task markers), and US-006-ERR (failure handling). `test_monitor.py` validates all three stories with Sociable_Unit tests against the state machine and event API.
   - **Details**:
     - **Red**: Write `test_monitor_display_starts_stopped()` asserting `not monitor.display_active` before `__enter__`.
@@ -60,11 +60,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_ui/test_render.py -v`
+  - **Verification**: `pytest tests/unit/test_ui/test_render.py -v`
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/ui/render.py`
-    - `tests/test_ui/test_render.py`
+    - `tests/unit/test_ui/test_render.py`
   - **Rationale**: `render.py` is the sole rendering workstation for three user stories: US-003-BUFF (rolling buffer rendering), US-004-PHAS (status bar), and US-005-TTY (TTY detection + JSONL fallback). `test_render.py` validates all three. Keeping buffer, status bar, and TTY logic in one file ensures cohesive layout context (the display layout is a single Rich `Renderable` composition).
   - **Details**:
     - **Red**: Write `test_render_task_list()` asserting `build_task_table()` returns a Rich `Table` with columns `Marker`, `ID`, `Description` and rows matching input task data.
@@ -115,12 +115,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_micro.py::test_run_all_with_live_display -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_micro.py::test_run_all_with_live_display -v`
   - **Estimated Time**: 60 minutes
   - **Dependency**: TSK-001-02
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_cli/test_micro.py`
+    - `tests/unit/test_cli/test_micro.py`
   - **Rationale**: `micro.py` is where `_run_all()` and `_invoke_agent()` live — the exact integration boundary where agent subprocess output is available and where the `run` Typer command accepts flags. `test_micro.py` already has orchestration tests; adding `test_run_all_with_live_display` validates the full vertical slice end-to-end with mocked agents. No changes to task execution logic (per spec defensive exclusion).
   - **Details**:
     - **Red**: Write `test_run_all_with_live_display()` using `runner.invoke(cli, ["run", "--all"])` with mocked `_run_pytest` and mocked agent subprocess that emits 5 stdout lines. Assert `Live` render is active during execution and exits cleanly. Mock `sys.stdout.isatty()` to return `True`.
@@ -148,11 +148,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_micro.py::test_run_all_with_live_display_agent_output -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_micro.py::test_run_all_with_live_display_agent_output -v`
   - **Estimated Time**: 30 minutes
   - **Dependency**: TSK-001-03
   - **Files**:
-    - `tests/test_cli/test_micro.py`
+    - `tests/unit/test_cli/test_micro.py`
     - `specs/adhoc/001-streaming-pipeline-monitor/spec.md`
   - **Rationale**: Final validation that all pieces work together. The E2E test exercises the full `_run_all` → `OrchestrationMonitor` → render → agent output → JSONL fallback chain with a simulated multi-task run. `spec.md` is read-only reference for assertions. No production code changes.
   - **Details**:
@@ -182,7 +182,7 @@
 
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/micro.py` (touched by TSK-001-03, may conflict with concurrent issues)
-- `tests/test_cli/test_micro.py` (extended by TSK-001-03 and TSK-001-04)
+- `tests/unit/test_cli/test_micro.py` (extended by TSK-001-03 and TSK-001-04)
 
 ---
 

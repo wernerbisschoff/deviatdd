@@ -9,13 +9,13 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_state/test_config.py::test_config_use_context_default tests/test_state/test_config.py::test_config_use_context_round_trip tests/test_cli/test_init.py::test_init_detects_context tests/test_cli/test_init.py::test_init_missing_context -v`
+  - **Verification**: `pytest tests/unit/test_state/test_config.py::test_config_use_context_default tests/unit/test_state/test_config.py::test_config_use_context_round_trip tests/unit/test_cli/test_init.py::test_init_detects_context tests/unit/test_cli/test_init.py::test_init_missing_context -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/state/config.py`
     - `src/deviate/cli/__init__.py`
-    - `tests/test_state/test_config.py`
-    - `tests/test_cli/test_init.py`
+    - `tests/unit/test_state/test_config.py`
+    - `tests/unit/test_cli/test_init.py`
   - **Rationale**: Config model field (`use_context: bool`) is the data foundation. CLI detection (`shutil.which("context")`) is the consumer that populates it. Tested together because the field has no consumer without detection, and detection has no effect without the field. Covers US-ADH-006-01, AC-ADH-006-01, AC-ADH-006-02.
   - **Details**:
     - **Red**: Write `test_config_use_context_default` asserting `DeviateConfig().use_context is False`. Write `test_config_use_context_round_trip` asserting `use_context=True` survives `model_dump()` → `model_validate()`. Write `test_init_detects_context` mocking `shutil.which("context")` to return a `Path`, then asserting `.deviate/config.toml` contains `use_context = true`. Write `test_init_missing_context` mocking `shutil.which("context")` to return `None`, then asserting `use_context = false`.
@@ -34,12 +34,12 @@
 - TSK-006-02: Append `## Offline Context Documentation System` section to claudemd_seed.md and agents_seed.md
   - **Type**: Config
   - **Mode**: IMMEDIATE
-  - **Verification**: `pytest tests/test_cli/test_init.py::test_init_context_governance_block -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py::test_init_context_governance_block -v`
   - **Estimated Time**: 30 minutes
   - **Files**:
     - `src/deviate/prompts/governance/claudemd_seed.md`
     - `src/deviate/prompts/governance/agents_seed.md`
-    - `tests/test_cli/test_init.py`
+    - `tests/unit/test_cli/test_init.py`
   - **Rationale**: Governance seeds are the authoritative source for CLAUDE.md/AGENTS.md content. Both seed files need the same context mandate section. The associated test validates that `deviate init` emits the section in both files. Covers US-ADH-006-02, AC-ADH-006-03.
   - **Details**:
     - **Implementation**: Append a new `## Offline Context Documentation System` section to both `claudemd_seed.md` and `agents_seed.md`. The section must contain:

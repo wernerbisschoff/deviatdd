@@ -16,8 +16,8 @@
   - `src/deviate/state/config.py` — Session state transitions for automated pipelines
   - `tests/test_integration/test_meso_orchestration.py`
   - `tests/test_integration/test_macro_orchestration.py`
-  - `tests/test_meso/test_meso_orchestration.py`
-  - `tests/test_macro/test_macro_orchestration.py`
+  - `tests/unit/test_meso/test_meso_orchestration.py`
+  - `tests/unit/test_macro/test_macro_orchestration.py`
   - `tests/test_integration/test_full_meso_pipeline.py`
   - `tests/test_integration/test_full_macro_pipeline.py`
 
@@ -79,8 +79,8 @@ The automated pipeline reuses the same internal pre/post functions already imple
 ## MULTI_TIERED_VERIFICATION_TARGETS
 
 - **Unit Tests**:
-  - `tests/test_meso/test_meso_orchestration.py` — Meso pipeline discovery, sequencing, error handling
-  - `tests/test_macro/test_macro_orchestration.py` — Macro pipeline sequencing, `--from` resume, `--dry-run`
+  - `tests/unit/test_meso/test_meso_orchestration.py` — Meso pipeline discovery, sequencing, error handling
+  - `tests/unit/test_macro/test_macro_orchestration.py` — Macro pipeline sequencing, `--from` resume, `--dry-run`
 - **Integration Tests**:
   - `tests/test_integration/test_meso_orchestration.py` — Full meso pipeline with mocked agent
   - `tests/test_integration/test_macro_orchestration.py` — Full macro pipeline with mocked agent
