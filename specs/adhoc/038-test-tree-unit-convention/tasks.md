@@ -66,6 +66,7 @@
 
 ---
 
+  - **Judge Feedback**: The next RED attempt must: author a failing test for AC-PLAN-003 that (1) greps specs/ Verification lines for stale tests/test_* paths and fails when any remain, and (2) checks runner scoping (_is_partial_verification or equivalent) resolves each Verification command to an existing path under tests/unit/. Then the next GREEN attempt must sed all stale specs/ paths to tests/unit/* so the test passes. Keep surrounding doc prose unchanged; touch paths only.
 ## Implementation Strategy
 
 **Execution Order**:
