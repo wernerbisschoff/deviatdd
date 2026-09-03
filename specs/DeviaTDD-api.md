@@ -1138,9 +1138,19 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     extract it for REFACTOR); structured Test Integrity and blocking violation
     categories still route as rejects. EXECUTE and
     IMMEDIATE judge paths stay ungated.
-  * **Resume from Mid-Phase:** If `session.current_phase` is `JUDGE` or
-    `REFACTOR` when invoked, the cycle resumes from that phase via the
-    `start_phase` parameter. IDLE / RED trigger a fresh cycle from RED.
+  * **Resume from Mid-Phase:** Latest `tasks.jsonl` status is authoritative
+    for where a pinned or bare `deviate micro run` re-enters
+    (`_start_phase_from_status`). `TASK_ALREADY_DONE` prints and exits 0
+    only when that status is `COMPLETED` — a true finished task, including
+    GH-148 / `skip_refactor` already-exists. Ledger `JUDGE`, `REFACTOR`, or
+    `YELLOW` is mid-flight even when `.deviate/session.json` has
+    `current_phase: "IDLE"` (crash, fail-close, or COMPLETED_EVIDENCE_MISSING
+    reset): re-enter at that phase (`JUDGE` re-runs judge; `REFACTOR`
+    continues refactor; `YELLOW` continues the post-RED cycle as GREEN).
+    Session `current_phase` `JUDGE` / `REFACTOR` still resumes via
+    `start_phase`. Ledger `RED` maps to `start_phase="GREEN"`; `GREEN`
+    maps to `JUDGE`. IDLE + PENDING starts from RED. Pinned by
+    `tests/test_micro/test_run.py::TestSessionResume`.
   * **GREEN-resume `start_phase=JUDGE` honors `revert_green` as TRAIN GREEN:** Ledger status GREEN maps to `start_phase="JUDGE"` (`_start_phase_from_status`). After that JUDGE, `pending_judge_action == revert_green` (or `judge_rejected` with that action) falls through into the GREEN train loop — discard GREEN, keep RED, re-run GREEN with the stored `train_feedback`. The runner must not call `_finish_tdd_cycle` / REFACTOR / COMPLETED on that path. When the session already holds `pending_judge_action == revert_green` plus `train_feedback` (JUDGE already applied the verdict), skip a second JUDGE and train GREEN immediately. `_finish_tdd_cycle` also refuses REFACTOR and COMPLETED while pending is `revert_green` or `revert_red` (defense in depth). The in-loop TRAIN GREEN path and `revert_red` escalate-to-RED are unchanged. Pinned by `tests/test_micro/test_revert_green_resume.py`.
   * **Cross-task forward-route resume (GH-148):** `.deviate/session.json` is gitignored and can keep a previous task's `pending_judge_action` (`skip_refactor` / `continue_refactor` / `proceed_to_refactor_no_diff`) plus `last_judge_verdict` / `validated_evidence`. Ledger status RED maps to `start_phase="GREEN"` (`_start_phase_from_status`). `_tdd_pre_green_decision` (and `_run_tdd_cycle` on dispatch) treats that forward route as complete only when `judge_task_id` and `judge_red_commit_sha` match the active task and standing RED SHA. A leftover from another task, a different RED SHA, or a pre-fix unbound route once a RED SHA exists is cleared (`pending_judge_action`, `last_judge_verdict`, `validated_evidence`, `train_feedback`) so GREEN and JUDGE run. Same-task `skip_refactor` from this task's JUDGE still completes; `--no-refactor` after a fresh this-task pass still completes. No `SESSION_STALE` HITL prompt; the session file is not deleted. GH-158 Pass+`REFACTOR NOTE` forwarding is unchanged. Pinned by `tests/test_micro/test_stale_session_forward_route.py`.
 * **Queue Drain (`deviate micro run --all`):** **Issue-scoped** task sweep.

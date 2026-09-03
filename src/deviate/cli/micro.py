@@ -864,7 +864,7 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
 
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REFACTOR"}
-_ALREADY_DONE_STATUSES = {"COMPLETED", "REFACTOR", "JUDGE", "YELLOW"}
+_ALREADY_DONE_STATUSES = {"COMPLETED"}
 
 
 def _collect_latest_task_records(root: Path) -> list[tuple[dict, Path]]:
@@ -1190,10 +1190,12 @@ def _exit_if_already_done(
     session: SessionState,
     c: Console,
 ) -> tuple[dict, Path, str]:
-    """Print TASK_ALREADY_DONE only for this issue's own terminal status.
+    """Print TASK_ALREADY_DONE only for this issue's own COMPLETED status.
 
-    A foreign COMPLETED, REFACTOR, JUDGE, or YELLOW row re-resolves this
-    issue's synthesized PENDING pin. A miss raises TASK_NOT_FOUND.
+    Ledger JUDGE / REFACTOR / YELLOW is mid-flight even when session.json
+    was reset to IDLE (crash or fail-close). A foreign COMPLETED row
+    re-resolves this issue's synthesized PENDING pin. A miss raises
+    TASK_NOT_FOUND.
     """
     status = task.get("status", "PENDING")
     if session.current_phase != "IDLE" or status not in _ALREADY_DONE_STATUSES:
@@ -1390,12 +1392,16 @@ def _start_phase_from_status(status: str) -> str | None:
     The tracked ``specs/**/tasks.jsonl`` is authoritative for
     RED/GREEN/REFACTOR progress; ``session.json`` is an untracked cache that
     a ``git reset`` does not roll back. ``None`` means start the full RED
-    cycle. Terminal statuses also fall through to ``None`` — their internal
-    ``_phase_already_done`` guards skip re-work."""
+    cycle. ``COMPLETED`` falls through to ``None`` — ``_exit_if_already_done``
+    and ``_phase_already_done`` skip re-work. Mid-flight ``JUDGE`` /
+    ``REFACTOR`` / ``YELLOW`` resume at that phase even when the session
+    cache is IDLE."""
     return {
         "RED": "GREEN",
         "GREEN": "JUDGE",
         "JUDGE": "JUDGE",
+        "REFACTOR": "REFACTOR",
+        "YELLOW": "YELLOW",
     }.get(status)
 
 
@@ -5534,6 +5540,22 @@ def _run_tdd_cycle_impl(
 
     task_desc = task.get("description", "")
 
+    if start_phase == "REFACTOR":
+        _maybe_push_event(
+            monitor,
+            "phase_change",
+            task_id=tid,
+            phase="REFACTOR",
+            description=task_desc,
+        )
+        session = _run_refactor_phase(
+            task, ledger_path, session, session_path, c, agent=agent, monitor=monitor
+        )
+        return
+    if start_phase == "YELLOW":
+        # Vestigial ledger status: continue the post-RED cycle, do not
+        # restart RED or claim TASK_ALREADY_DONE.
+        start_phase = "GREEN"
     if start_phase == "JUDGE":
         # Meso/micro re-entry after ledger GREEN maps here. A stored
         # ``revert_green`` + train_feedback means JUDGE already applied
