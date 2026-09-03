@@ -230,7 +230,7 @@ Operational tools (no gate): `/deviate-triage`, `/deviate-constitution`, `/devia
 
 `--help` and this table say which phases **commit**, **spawn an agent**, or **fail closed**. `pre` injects a JSON contract to the agent; `post` validates, writes, and often commits (you did not type `git commit`). Slash prompts tell the agent to run `pre`/`post`; auto prompts tell the agent not to — the orchestrator does. Codex spawn is `codex exec --sandbox workspace-write --ask-for-approval never` (`src/deviate/core/agent.py`). `meso run` and `micro run` nest that spawn.
 
-Default setup installs **macro + meso + micro** plus the shared `deviatdd` skill. Optional packs stay off until selected: `merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`, `e2e`.
+Default setup installs **macro + meso + micro** plus the shared `deviatdd` skill. Optional packs stay off until selected: `product` (greenfield scope tracking: `/deviate-flows`, `/deviate-architecture`, `/deviate-release`), `merge`, `pr`, `review`, `walkthrough`, `html`, `hotfix`, `triage`, `prune`, `e2e`.
 
 | Phase | Does | Commits | Debug a fail |
 |-------|------|---------|--------------|

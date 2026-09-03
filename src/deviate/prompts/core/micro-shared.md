@@ -49,7 +49,7 @@ ALL string values in the handover manifest YAML MUST be wrapped in double quotes
 
 <item>
 <title>User-Scenario Encoding</title>
-**red** MUST encode the parent issue's user scenarios (`## User Stories Ledger` plus ATDD / `## Acceptance Outline`, via the assigned `AC-PLAN-NNN` Given/When/Then) as failing tests before GREEN. GREEN still cannot edit tests. After COMPLETED, those tests *are* the flow — do not invent a catalog or `flow_refs` field. **judge** scores Spec Compliance against that same user-visible behavior. **green**, **refactor**, and **execute** implement or polish only the workstation files required by those scenarios.
+**red** MUST encode the parent issue's user scenarios (`## User Stories Ledger` plus ATDD / `## Acceptance Outline`, via the assigned `AC-PLAN-NNN` Given/When/Then) as failing tests before GREEN. GREEN still cannot edit tests. After COMPLETED, those tests *are* the flow. **judge** scores Spec Compliance against that same user-visible behavior. **green**, **refactor**, and **execute** implement or polish only the workstation files required by those scenarios.
 </item>
 
 </shared_disciplines>

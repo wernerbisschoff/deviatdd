@@ -31,7 +31,7 @@ Macro phases MUST NOT write, modify, or generate any implementation code (source
 
 <item>
 <title>User Scenarios Belong on the Issue</title>
-Macro phases author application behavior, not a product catalog. **shard** and **adhoc** MUST write `## User Stories Ledger` plus ATDD (`## Acceptance Outline` with `AO-NNN`) on every issued vertical. Those scenarios are the user-visible job. Do not invent `flow_refs`, a `_product/` folder, or FR-to-flow catalog mapping. DeviaTDD skills and agent command directories are never implementation workstations or generated issue/task targets.
+Macro phases author application behavior. **shard** and **adhoc** MUST write `## User Stories Ledger` plus ATDD (`## Acceptance Outline` with `AO-NNN`) on every issued vertical. Those scenarios are the user-visible job. Do not invent parallel tracking artifacts. DeviaTDD skills and agent command directories are never implementation workstations or generated issue/task targets.
 </item>
 
 </shared_disciplines>

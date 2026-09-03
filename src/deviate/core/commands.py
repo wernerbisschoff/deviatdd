@@ -59,6 +59,7 @@ OPTIONAL_PACKS: dict[str, tuple[str, ...]] = {
     "triage": ("deviate-triage",),
     "prune": ("deviate-prune",),
     "e2e": ("deviate-e2e",),
+    "product": ("deviate-flows", "deviate-architecture", "deviate-release"),
 }
 DEFAULT_PACK_NAMES: tuple[str, ...] = ("macro", "meso", "micro")
 OPTIONAL_PACK_NAMES: tuple[str, ...] = tuple(OPTIONAL_PACKS)

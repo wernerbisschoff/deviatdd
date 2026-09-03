@@ -36,7 +36,7 @@ Reconcile every AO-NNN against current code. Emit complete `AC-PLAN-NNN` scenari
 </step>
 
 <step id="write_plan">
-Write the plan to `{plan_path}` following the output format schema. Write exactly the plan content — no preamble, no postamble. Do not invent a Product-layer anchors section, `flow_refs`, or a catalog pointer.
+Write the plan to `{plan_path}` following the output format schema. Write exactly the plan content — no preamble, no postamble, no extra tracking sections.
 </step>
 
 <step id="post_orchestrated">

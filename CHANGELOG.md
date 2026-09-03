@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Optional `product` pack is back for greenfield scope tracking.** `deviate setup --packs product` installs `/deviate-flows`, `/deviate-architecture`, and `/deviate-release`, which author standalone planning artifacts under `specs/_product/` (flow catalog + index, cross-epic architecture + domain model, release plan). The pack never gates execution, writes no ledger, and defines no `flow_refs` contract — `FLOW-NN` IDs are prose anchors within product artifacts only, and no Macro/Meso/Micro phase reads `specs/_product/`. Constitution 0.11.0 records the optional layer. Pinned by `tests/test_product_pack.py`.
+
 ### Fixed
 
 - **Fresh `deviate micro run` (and each new TDD cycle) resets leftover TRAIN counters.** `_run_tdd_cycle_impl` calls `_reset_tdd_retry_budget` once at cycle entry, zeroing only `green_attempts` / `red_attempts`. Leftover TRAIN 3/3 in gitignored `.deviate/session.json` no longer blocks a retry the operator thinks is fresh after `git reset` or a new `micro run` / `--all` task. `train_feedback`, `red_commit_sha`, and `pending_judge_action` stay so JUDGE notes are still injected. Increment still happens at each GREEN start in the same invocation; three GREENs in one cycle still escalate. No new flag. Pinned by `tests/test_micro/test_two_counter_retry.py`.

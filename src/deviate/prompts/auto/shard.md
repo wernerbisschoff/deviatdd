@@ -11,7 +11,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **Incremental Bootstrapping Principle**: Shard N must deliver a complete, end-to-end vertical feature that establishes the minimal behavioral foundation that Shard N+1 extends. The "foundation" is a working feature, not a layer.
 3. **Issue ID Assignment**: Assign each shard a sequential `issue_id` starting from `next_issue_id`. Build a DAG with `blocked_by` and `coordinates_with` arrays.
 4. **Cumulative FR Coverage**: Coverage is a set property. Do not partition or bound issues by FR id. FRs are coverage attached after the slice exists. Every PRD FR must appear in at least one issue; it does not matter which issue satisfies a given FR. A behavior slice cites the FRs it actually covers and is not required to equal one FR. Zero-FR setup, tooling, governance, and refactoring shards are invalid.
-5. **User Scenarios on the Issue**: Every shard issue MUST encode the user-visible job as `## User Stories Ledger` (US-NNN-NN) plus ATDD on the issue (`## Acceptance Outline` with `AO-NNN` tokens). Those scenarios are the flow. Do not invent a catalog, `flow_refs`, or a Product-layer pointer. RED later encodes these same scenarios as failing tests.
+5. **User Scenarios on the Issue**: Every shard issue MUST encode the user-visible job as `## User Stories Ledger` (US-NNN-NN) plus ATDD on the issue (`## Acceptance Outline` with `AO-NNN` tokens). Those scenarios are the complete scope record. RED later encodes these same scenarios as failing tests.
 6. **Shard Ownership**: Shard owns issue count, grouping, boundaries, and the dependency DAG. There is no fixed minimum or maximum issue count. PRD FRs do not prescribe issue IDs or topology.
 </system_instructions>
 

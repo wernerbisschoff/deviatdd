@@ -1,13 +1,14 @@
 # Project Constitution
 
-Version: 0.10.0
+Version: 0.11.0
 
 ---
 
 ## 1. Architectural Principles
 
-- **Three-Layer Architecture**: Macro (feature scoping: Explore → Research → PRD → Shard), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Macro PRD/shard/adhoc artifacts carry User Stories plus ATDD acceptance outlines; Plan owns the finalized Gherkin Acceptance Contract. The three layers have strict phase gates — no layer may be skipped. (Gate 2 was removed: there is no human-approval step between Tasks and Micro — the system auto-advances.) There is no Product layer, flow catalog, or `flow_refs` pointer.
-- **User Scenarios Are the Flow**: RED must encode the issue's user scenarios (User Stories + ATDD on the shard issue) as failing tests before GREEN. GREEN still cannot edit tests. After COMPLETED, those tests *are* the flow. Do not add a catalog folder or `flow_refs` artifact for this.
+- **Three-Layer Architecture**: Macro (feature scoping: Explore → Research → PRD → Shard), Meso (issue engineering: Plan → Tasks), Micro (TDD sandbox: RED → GREEN → JUDGE → REFACTOR). Macro PRD/shard/adhoc artifacts carry User Stories plus ATDD acceptance outlines; Plan owns the finalized Gherkin Acceptance Contract. The three layers have strict phase gates — no layer may be skipped. (Gate 2 was removed: there is no human-approval step between Tasks and Micro — the system auto-advances.)
+- **Optional Product Layer**: An opt-in `product` pack (`/deviate-flows`, `/deviate-architecture`, `/deviate-release`) authors standalone planning artifacts under `specs/_product/` for greenfield scope tracking. It never gates execution, writes no ledger, and defines no `flow_refs` contract — FLOW-NN IDs are prose anchors within product artifacts only. No Macro/Meso/Micro phase reads `specs/_product/` or emits flow pointers.
+- **User Scenarios Are the Flow**: RED must encode the issue's user scenarios (User Stories + ATDD on the shard issue) as failing tests before GREEN. GREEN still cannot edit tests. After COMPLETED, those tests *are* the flow.
 - **Append-Only Ledger Protocol**: All state transitions in `issues.jsonl` and `tasks.jsonl` are append-only. No existing line is ever modified or overwritten. Canonical state is derived by sequential ledger parsing. Issue ids follow a per-epic format: new issues in a numbered epic bucket (`001-…`, `002-…`) emit `<epic-prefix>-<ordinal>` (e.g. `002-001`), where `<epic-prefix>` is the leading 3-digit segment of the epic bucket dir; the adhoc bucket and bootstrap contexts fall back to the legacy global-counter `ISS-NNN`. Legacy `ISS-NNN` rows in `specs/issues.jsonl` resolve unchanged — the resolve layer is format-agnostic, only uniqueness matters.
 - **Git Isolation Principle**: Every task loop executes on a clean git branch or worktree. Commits are automatic at each phase boundary.
 - **Micro-Layer Scope**: GREEN phase writes only to `src/` and permitted implementation paths. Any mutation outside this allow-list is flagged by the JUDGE phase as a scope violation.
@@ -93,6 +94,7 @@ Version: 0.10.0
 
 ## 6. Version History
 
+- 0.11.0 — Reintroduced the Product layer as an optional `product` pack (`/deviate-flows`, `/deviate-architecture`, `/deviate-release`) authoring standalone `specs/_product/` planning artifacts for greenfield scope tracking. No ledger, no `flows.jsonl`, no `flow_refs` contract, no downstream reads — FLOW-NN IDs are prose anchors only.
 - 0.10.0 — Removed the Product layer. Three layers remain: Macro, Meso, Micro. Dropped `flows.jsonl` from the append-only protocol and Database sections. User Stories + ATDD stay on the shard issue; RED encodes those user scenarios as failing tests. No replacement catalog, `_product/` folder, or `flow_refs` pointer.
 - 0.9.0 — Cut v2.15.0 release. Records the release of accumulated micro-layer hardening, doc/code drift fixes, and Product-layer discipline additions since v2.4.0 (2026-07-04).
 - 0.8.0 — Removed HITL Gate 2 (post-Tasks `deviate meso approve` approval) entirely. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Two HITL gates remain: Gate 1 (Design Approval after research) and Gate 3 (Final Merge Audit after micro). §1 Architectural Principles (Four-Layer Architecture, HITL principle) and §5 Definition of Done updated to reflect the removal.

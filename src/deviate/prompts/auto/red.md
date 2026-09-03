@@ -88,7 +88,7 @@ The `<authoritative_acceptance_contract source="plan.md">` block is authoritativ
 </spec_content>
 
 <traceability_mandates>
-1. **User-scenario encoding (the flow)**: Before GREEN, encode the parent issue's user scenarios — `## User Stories Ledger` plus ATDD on the shard issue (`## Acceptance Outline` / assigned `AC-PLAN-NNN` Given/When/Then) — as failing tests. After COMPLETED, those tests *are* the flow. Do not invent a catalog, `flow_refs`, or a Product-layer artifact. GREEN still cannot edit tests.
+1. **User-scenario encoding (the flow)**: Before GREEN, encode the parent issue's user scenarios — `## User Stories Ledger` plus ATDD on the shard issue (`## Acceptance Outline` / assigned `AC-PLAN-NNN` Given/When/Then) — as failing tests. After COMPLETED, those tests *are* the flow. GREEN still cannot edit tests.
 2. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in the injected `<task_content>` card and the plan acceptance contract. Do not open `tasks.md` for this-task fields.
 3. **Gherkin Execution**: Translate only the assigned `AC-PLAN-NNN` Given/When/Then scenarios into observable failing tests; preserve AO and upstream FR/AC lineage.
 4. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Inside a **unit** task, prefer-sociable / mock-only-externals: exercise real in-process collaborators; restrict mocks to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (e.g., system epoch timers, cryptographic entropy paths). Never mock the system under test. A sociable unit test must still run with the DB down under `mise unit` — sociable vs solitary is a RED style rule, not a verification bucket.
