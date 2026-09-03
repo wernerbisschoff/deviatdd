@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -277,3 +279,40 @@ def test_help_phase_dispatchers_not_user_panel_commands():
             f"command in the Run-by-you panel; got "
             f"{sorted(user_command_names)}"
         )
+
+
+def _micro_run_help() -> str:
+    """Return ``deviate micro run --help`` output, wrapping-normalized.
+
+    Rich wraps option help across table cells, so box-drawing borders
+    and backticks are stripped and whitespace is collapsed before
+    the substring assertions run.
+    """
+    result = runner.invoke(cli, ["micro", "run", "--help"])
+    assert result.exit_code == 0, result.output
+    text = _strip_ansi(result.output)
+    text = re.sub(r"[`│╭╰─]", "", text)
+    return re.sub(r"\s+", " ", text)
+
+
+@pytest.mark.behavioral
+def test_micro_run_help_pins_execution_profile():
+    """``--profile`` help keeps the pinned profile substring (AC-PLAN-002)."""
+    output = _micro_run_help()
+    assert "Execution profile: full, fast" in output
+
+
+@pytest.mark.behavioral
+def test_micro_run_help_fast_skips_judge_and_refactor():
+    """``fast`` help states it skips JUDGE and REFACTOR (AC-PLAN-002)."""
+    output = _micro_run_help()
+    assert "skips JUDGE" in output
+    assert "REFACTOR" in output
+
+
+@pytest.mark.behavioral
+def test_micro_run_help_review_is_pause_not_slash():
+    """``--review`` help states a TTY pause, not ``/deviate-review`` (AC-PLAN-002)."""
+    output = _micro_run_help()
+    assert "TTY pause" in output
+    assert "not /deviate-review" in output
