@@ -6,6 +6,7 @@ import subprocess
 from contextlib import chdir
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -925,3 +926,25 @@ class TestReviewPlanAcCoverage:
         contract = json.loads(result.stdout)
         assert contract["status"] == "READY"
         assert contract["uncovered"] == []
+
+
+class TestE2eNoPrReviewReference:
+    """AC-PLAN-003: e2e chain ends at an existing command; registry pins review/walkthrough."""
+
+    @pytest.mark.behavioral
+    def test_e2e_prompt_has_no_pr_review_token(self) -> None:
+        prompt = (
+            Path(__file__).resolve().parents[3]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-e2e.md"
+        ).read_text(encoding="utf-8")
+        assert "/deviate-pr-review" not in prompt
+
+    @pytest.mark.behavioral
+    def test_optional_packs_still_maps_review_and_walkthrough(self) -> None:
+        assert OPTIONAL_PACKS["review"] == ("deviate-review",)
+        assert OPTIONAL_PACKS["walkthrough"] == ("deviate-walkthrough",)
+        assert "pr-review" not in OPTIONAL_PACKS
