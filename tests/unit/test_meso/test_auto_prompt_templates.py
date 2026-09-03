@@ -918,3 +918,51 @@ class TestPonytailLadderFoldedIntoReview:
             "do not extract helpers" in drift.lower()
             or "do not promote" in text.lower()
         )
+
+
+class TestMergePushGateLanguageAgnostic:
+    """AC-PLAN-001/002/003: language-agnostic push gate via repo mise tasks."""
+
+    @staticmethod
+    def _read_hook() -> str:
+        return (
+            Path(__file__).resolve().parents[3] / ".githooks" / "pre-push"
+        ).read_text(encoding="utf-8")
+
+    @pytest.mark.behavioral
+    def test_hook_runs_mise_format_check(self) -> None:
+        assert "mise run format-check" in self._read_hook()
+
+    @pytest.mark.behavioral
+    def test_hook_runs_mise_lint(self) -> None:
+        assert "mise run lint" in self._read_hook()
+
+    @pytest.mark.behavioral
+    def test_hook_runs_test_affected_or_full_suite(self) -> None:
+        hook = self._read_hook()
+        assert "mise run test-affected" in hook
+        assert "mise run test" in hook
+
+    @pytest.mark.behavioral
+    def test_hook_has_no_python_file_filter(self) -> None:
+        hook = self._read_hook()
+        assert "*.py" not in hook
+        assert "-- '*.py'" not in hook
+
+    @pytest.mark.behavioral
+    def test_hook_has_no_empty_changed_early_exit(self) -> None:
+        hook = self._read_hook()
+        assert 'if [ "${#changed[@]}" -eq 0 ]' not in hook
+        assert "changed=()" not in hook
+
+    @pytest.mark.behavioral
+    def test_hook_keeps_head_fallback_and_empty_diff_exit(self) -> None:
+        hook = self._read_hook()
+        assert "HEAD~1" in hook
+        assert "git diff --name-only" in hook or "git diff --quiet" in hook
+
+    @pytest.mark.behavioral
+    def test_hook_missing_testmondata_falls_back_to_full_suite(self) -> None:
+        hook = self._read_hook()
+        assert "if [ -s .testmondata ]" in hook
+        assert "mise run test" in hook
