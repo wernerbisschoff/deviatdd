@@ -91,8 +91,10 @@ def evaluate_judge_evidence(
     callers that have not yet passed an explicit list.
     Declared regression paths are checked even when the token set is empty.
     ``use_head`` overrides the already-exists HEAD source: ``None`` keeps
-    ``next_action == skip_refactor`` as the only HEAD path (JUDGE gate);
-    ``True`` quotes HEAD at COMPLETED-write time (GH-84 durability).
+    ``next_action == skip_refactor`` as the only HEAD path (JUDGE gate).
+    COMPLETED no longer rematches quotes against HEAD after a clean pass
+    (GH-191); token coverage + ``test_path`` existence live in
+    ``_require_tdd_completed_evidence``.
     """
     hunks = _map_diff_hunks(injected_diff)
     head = dict(head_contents or {})

@@ -492,3 +492,213 @@ class TestRationaleForwardRefDoesNotBlockComplete:
         _assert_forward(session, ledger, action="skip_refactor", completed=True)
         rows = _completed_rows(ledger)
         assert len(rows) == 1, f"expected one COMPLETED row, got {rows!r}"
+
+
+def _rewrite_test_so_judge_quote_is_gone(repo: Path) -> None:
+    """Format-like rewrite: JUDGE's frozen test_quote is no longer a substring."""
+    path = repo / _GATE_TEST_PATH
+    rewritten = (
+        "def test_increment() -> None:\n    assert increment(2)==3  # formatted\n"
+    )
+    assert _GATE_TEST_QUOTE not in rewritten, rewritten
+    path.write_text(rewritten, encoding="utf-8")
+
+
+def _move_impl_off_judge_path(repo: Path) -> Path:
+    """191 comment: impl_path moved (root.html.heex → layouts/)."""
+    old = repo / _GATE_IMPL_PATH
+    dest = repo / "src" / "layouts" / "example.py"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(old.read_text(encoding="utf-8"), encoding="utf-8")
+    old.unlink()
+    return dest
+
+
+class TestCompletedAfterRefactorQuoteDrift:
+    """GH-191 leftover: COMPLETED must not rematch JUDGE quotes against HEAD.
+
+    MeepleInn TSK-002-01: clean COMPLIANCE_PASS, then REFACTOR/format so
+    HEAD no longer contains the frozen test_quote. Token coverage +
+    test_path on disk is enough. Quotes persist as historical.
+    """
+
+    def test_refactor_format_quote_drift_completes(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.micro import _run_refactor_phase
+
+        red_sha = _seed_red_green(tmp_git_repo)
+        session, output, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="continue_refactor",
+                evidence=[_gate_evidence()],
+                train_feedback=(
+                    "REFACTOR NOTE: indent the assertion; not blocking."
+                ),
+            ),
+            red_sha,
+        )
+        assert "COMPLETED_EVIDENCE_MISSING" not in output, output
+        _assert_forward(
+            session, ledger, action="continue_refactor", completed=False
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session.save(session_path)
+        passing = _passing_proc()
+
+        def _format_rewrites(root: Path) -> subprocess.CompletedProcess[str]:
+            _rewrite_test_so_judge_quote_is_gone(root)
+            _move_impl_off_judge_path(root)
+            return passing
+
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "Root layout chrome",
+            "status": "JUDGE",
+            "execution_mode": "TDD",
+            "acceptance_criteria": [
+                {"criterion_id": "AC-PLAN-001", "verification_mode": "manual"}
+            ],
+        }
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        with (
+            chdir(tmp_git_repo),
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                return_value=(
+                    HandoverManifest(
+                        phase="REFACTOR",
+                        status="SUCCESS",
+                        task_id=_GATE_TASK_ID,
+                    ),
+                    "",
+                ),
+            ),
+            patch("deviate.cli.micro._build_auto_prompt", return_value="test prompt"),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+            patch("deviate.cli.micro._run_format_cmd", side_effect=_format_rewrites),
+            patch("deviate.cli.micro._run_test_cmd", return_value=passing),
+            patch("deviate.cli.micro._run_pytest", return_value=passing),
+        ):
+            _run_refactor_phase(task, ledger, session, session_path, console)
+        refactor_out = buf.getvalue()
+        assert "COMPLETED_EVIDENCE_MISSING" not in refactor_out, refactor_out
+        rows = _completed_rows(ledger)
+        assert len(rows) == 1, f"expected one COMPLETED row, got {rows!r}"
+        evidence = rows[0].get("evidence")
+        assert evidence, f"COMPLETED row must persist historical quotes; {rows[0]!r}"
+        items = evidence["items"] if isinstance(evidence, dict) else evidence
+        assert items[0]["ac"] == "AC-PLAN-001"
+        assert items[0]["test_quote"] == _GATE_TEST_QUOTE
+        assert items[0]["impl_path"] == _GATE_IMPL_PATH
+        assert _GATE_TEST_QUOTE not in (
+            tmp_git_repo / _GATE_TEST_PATH
+        ).read_text(encoding="utf-8")
+
+    def test_append_completed_when_head_no_longer_has_judge_quote(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import _append_status_transition
+
+        _seed_red_green(tmp_git_repo)
+        _rewrite_test_so_judge_quote_is_gone(tmp_git_repo)
+        _move_impl_off_judge_path(tmp_git_repo)
+        ledger = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "Root layout chrome",
+            "status": "JUDGE",
+            "execution_mode": "TDD",
+            "acceptance_criteria": [
+                {"criterion_id": "AC-PLAN-001", "verification_mode": "manual"}
+            ],
+        }
+        session = SessionState(
+            current_phase="REFACTOR",
+            pending_judge_action="continue_refactor",
+            last_judge_verdict="COMPLIANCE_PASS",
+            validated_evidence=[_gate_evidence()],
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session.save(session_path)
+        with chdir(tmp_git_repo):
+            _append_status_transition(task, "COMPLETED", ledger)
+        rows = _completed_rows(ledger)
+        assert len(rows) == 1, f"expected one COMPLETED row, got {rows!r}"
+        items = rows[0]["evidence"]["items"]
+        assert items[0]["test_quote"] == _GATE_TEST_QUOTE
+        assert items[0]["impl_path"] == _GATE_IMPL_PATH
+
+    def test_required_token_without_evidence_row_still_fails(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import PhaseFailedError, _append_status_transition
+
+        _seed_red_green(
+            tmp_git_repo,
+            acs=("AC-PLAN-001", "AC-PLAN-003"),
+            card_acs=("AC-PLAN-001", "AC-PLAN-003"),
+        )
+        ledger = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "Partial this-task evidence",
+            "status": "JUDGE",
+            "execution_mode": "TDD",
+            "acceptance_criteria": [
+                {"criterion_id": "AC-PLAN-001", "verification_mode": "manual"},
+                {"criterion_id": "AC-PLAN-003", "verification_mode": "manual"},
+            ],
+        }
+        session = SessionState(
+            current_phase="JUDGE",
+            last_judge_verdict="COMPLIANCE_PASS",
+            pending_judge_action="skip_refactor",
+            validated_evidence=[_gate_evidence(ac="AC-PLAN-001")],
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session.save(session_path)
+        with chdir(tmp_git_repo), pytest.raises(PhaseFailedError) as exc:
+            _append_status_transition(task, "COMPLETED", ledger)
+        assert "COMPLETED_EVIDENCE_MISSING" in str(exc.value)
+        assert "AC-PLAN-003" in str(exc.value)
+        assert not _completed_rows(ledger)
+
+    def test_named_test_path_missing_on_disk_still_fails(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import PhaseFailedError, _append_status_transition
+
+        _seed_red_green(tmp_git_repo)
+        (tmp_git_repo / _GATE_TEST_PATH).unlink()
+        ledger = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.jsonl"
+        task = {
+            "id": _GATE_TASK_ID,
+            "issue_id": _GATE_ISSUE_ID,
+            "description": "Hallucinated test path",
+            "status": "JUDGE",
+            "execution_mode": "TDD",
+            "acceptance_criteria": [
+                {"criterion_id": "AC-PLAN-001", "verification_mode": "manual"}
+            ],
+        }
+        session = SessionState(
+            current_phase="JUDGE",
+            last_judge_verdict="COMPLIANCE_PASS",
+            pending_judge_action="skip_refactor",
+            validated_evidence=[_gate_evidence()],
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session.save(session_path)
+        with chdir(tmp_git_repo), pytest.raises(PhaseFailedError) as exc:
+            _append_status_transition(task, "COMPLETED", ledger)
+        assert "COMPLETED_EVIDENCE_MISSING" in str(exc.value)
+        assert _GATE_TEST_PATH in str(exc.value)
+        assert not _completed_rows(ledger)
