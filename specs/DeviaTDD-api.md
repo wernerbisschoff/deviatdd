@@ -618,7 +618,7 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 
 #### `deviate tasks post [--force] [--issue-id]`
 
-Validates tasks.md exists and is non-empty, commits it, and transitions session to IDLE. There is no human-approval step between Tasks and Micro — the system auto-advances. Tasks map work to `AC-PLAN-NNN` scenario IDs.
+Validates tasks.md exists, is non-empty, and that no TDD card names more than one of `unit` / `integration` / `e2e` (two Test Strategy stamps, two layer write dirs in **Files**, or two layer Verification commands). Mixed TDD cards fail as `MIXED_TEST_LAYER` (`src/deviate/core/tasks_ledger.py::validate_tdd_task_layers`) and are not committed — `--force` does not skip this check. Issue-end `[VERIFY]` / `[E2E]` `Verification_Batch` / `IMMEDIATE` cards may still list the full ladder. Details / Rationale are not scanned (unit cards say "forbid `tests/integration`"). Then commits the file and transitions session to IDLE. There is no human-approval step between Tasks and Micro — the system auto-advances. Tasks map work to `AC-PLAN-NNN` scenario IDs. Historical consumer `tasks.md` files are not rewritten; `generate_jsonl_from_md` still parses mixed cards so existing queues can drain until the operator regenerates.
 
 #### `deviate run [--issue] [--force]`
 

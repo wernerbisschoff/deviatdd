@@ -36,6 +36,7 @@ from deviate.core.convention import commit_scope, format_commit_message
 from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
+from deviate.core.tasks_ledger import MixedTestLayerError, validate_tdd_task_layers
 from deviate.core.validation import (
     repair_missing_verification_mode,
     validate_acceptance_contract,
@@ -1265,6 +1266,12 @@ def _tasks_post(
     if not content and not force:
         console.print("[red]TASKS_EMPTY[/] tasks.md is empty")
         raise typer.Exit(code=1)
+    if content:
+        try:
+            validate_tdd_task_layers(tasks_md)
+        except MixedTestLayerError as exc:
+            console.print(f"[red]{exc}")
+            raise typer.Exit(code=1)
 
     epic_num = _extract_epic_num(bucket)
     issue_num = _extract_issue_num(resolved_issue_id)

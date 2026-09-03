@@ -476,3 +476,203 @@ class TestValidateTasksJsonl:
 
         errors = validate_tasks_jsonl(records)
         assert any("unknown_field" in error for error in errors)
+
+
+def _write_tasks(tmp_path: Path, body: str) -> Path:
+    tasks_md = tmp_path / "tasks.md"
+    tasks_md.write_text("# Implementation Tasks\n\n### Tasks\n\n" + body)
+    return tasks_md
+
+
+class TestValidateTddTaskLayers:
+    def test_mixed_files_raise_mixed_test_layer(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import (
+            MixedTestLayerError,
+            validate_tdd_task_layers,
+        )
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-02: Crypto withdrawal\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Verification**: `mise unit`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n"
+            "    - `tests/unit/test_crypto_withdrawal.py`\n"
+            "    - `tests/integration/test_crypto_withdrawal.py`\n",
+        )
+
+        with pytest.raises(MixedTestLayerError) as excinfo:
+            validate_tdd_task_layers(tasks_md)
+        message = str(excinfo.value)
+        assert message.startswith("MIXED_TEST_LAYER:")
+        assert "TSK-001-02" in message
+        assert "unit" in message
+        assert "integration" in message
+        assert excinfo.value.task_id == "TSK-001-02"
+
+    def test_two_pytest_layer_paths_in_one_command_raise(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import (
+            MixedTestLayerError,
+            validate_tdd_task_layers,
+        )
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-02: Crypto withdrawal\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Verification**: `pytest tests/unit/test_crypto_withdrawal.py "
+            "tests/integration/test_crypto_withdrawal.py`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n",
+        )
+
+        with pytest.raises(MixedTestLayerError) as excinfo:
+            validate_tdd_task_layers(tasks_md)
+        assert "TSK-001-02" in str(excinfo.value)
+
+    def test_mixed_verification_commands_raise(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import (
+            MixedTestLayerError,
+            validate_tdd_task_layers,
+        )
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-02: Crypto withdrawal\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Verification**: `mise unit && mise integration`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n"
+            "    - `tests/unit/test_crypto_withdrawal.py`\n",
+        )
+
+        with pytest.raises(MixedTestLayerError) as excinfo:
+            validate_tdd_task_layers(tasks_md)
+        assert "TSK-001-02" in str(excinfo.value)
+
+    def test_two_strategy_stamps_raise(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import (
+            MixedTestLayerError,
+            validate_tdd_task_layers,
+        )
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-02: Crypto withdrawal\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit/integration\n"
+            "  - **Verification**: `mise unit`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n",
+        )
+
+        with pytest.raises(MixedTestLayerError):
+            validate_tdd_task_layers(tasks_md)
+
+    def test_unit_card_forbidding_integration_in_details_passes(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import validate_tdd_task_layers
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-01: Crypto withdrawal unit contract\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Verification**: `mise unit`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n"
+            "    - `tests/unit/test_crypto_withdrawal.py`\n"
+            "  - **Rationale**: Do not write tests/integration here.\n"
+            "  - **Details**:\n"
+            "    - **Red**: Write failing unit tests in `tests/unit/` only — "
+            "forbid `tests/integration` / e2e in this RED.\n",
+        )
+
+        validate_tdd_task_layers(tasks_md)
+
+    def test_immediate_verify_may_name_both_layers(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import validate_tdd_task_layers
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-03: [VERIFY] existing ladder\n"
+            "  - **Type**: Verification_Batch\n"
+            "  - **Mode**: IMMEDIATE\n"
+            "  - **Test Strategy**: integration\n"
+            "  - **Verification**: `mise unit && mise integration`\n"
+            "  - **Files**:\n"
+            "    - `tests/unit/test_crypto_withdrawal.py`\n"
+            "    - `tests/integration/test_crypto_withdrawal.py`\n",
+        )
+
+        validate_tdd_task_layers(tasks_md)
+
+    def test_two_single_layer_tdd_cards_pass(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import validate_tdd_task_layers
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-01: Withdrawal unit contract\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Verification**: `mise unit`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n"
+            "    - `tests/unit/test_crypto_withdrawal.py`\n"
+            "- TSK-001-02: Withdrawal live-DB proof\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: integration\n"
+            "  - **Verification**: `mise integration`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n"
+            "    - `tests/integration/test_crypto_withdrawal.py`\n",
+        )
+
+        validate_tdd_task_layers(tasks_md)
+
+    def test_flat_tests_path_is_not_a_layer(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import validate_tdd_task_layers
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-01: Flat helper\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Verification**: `mise test`\n"
+            "  - **Files**:\n"
+            "    - `src/wallet/withdraw.py`\n"
+            "    - `tests/test_crypto_withdrawal.py`\n",
+        )
+
+        validate_tdd_task_layers(tasks_md)
+
+    def test_generate_jsonl_still_parses_mixed_historical_cards(self, tmp_path: Path):
+        from deviate.core.tasks_ledger import generate_jsonl_from_md
+
+        tasks_md = _write_tasks(
+            tmp_path,
+            "- TSK-001-02: Crypto withdrawal\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Mode**: TDD\n"
+            "  - **Test Strategy**: unit\n"
+            "  - **Files**:\n"
+            "    - `tests/unit/test_crypto_withdrawal.py`\n"
+            "    - `tests/integration/test_crypto_withdrawal.py`\n",
+        )
+
+        records = generate_jsonl_from_md(tasks_md, issue_id="ISS-001-001")
+        assert len(records) == 1
+        assert records[0].id == "TSK-001-02"
+        assert records[0].execution_mode == "TDD"
+        assert records[0].test_strategy == "unit"

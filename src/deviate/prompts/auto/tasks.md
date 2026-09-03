@@ -63,13 +63,13 @@ Map all files touched by each user story from spec.md's system topology mapping.
 For each workstation cluster:
 1. **Group Items**: Cluster into Batched Logical Units (vertical slices).
 2. **Assign Execution_Mode**: Type `Verification_Batch` is always **IMMEDIATE** (hard type→mode lock — never TDD). For other types, use the decision tree — TDD for new business logic, state mutations, integration boundaries, or non-trivial ACs; IMMEDIATE for config, docs, constants, trivial boilerplate. Never emit `Mode: TDD` for `Verification_Batch`.
-3. **Assign Test Strategy**: Stamp every TDD task `unit` | `integration` | `e2e`. Default is **unit**. Migration / live-DB acceptance criteria → **integration**, not default unit. Need both a DB-free contract and a live-DB proof → two TDD tasks. Read `verification_suites` from the `deviate tasks pre` contract — do not invent integ/e2e. If `integration` is not in `verification_suites`, do not stamp `integration` (an integration-stamped task cannot resolve).
+3. **Assign Test Strategy**: Stamp every TDD task `unit` | `integration` | `e2e`. Default is **unit**. Migration / live-DB acceptance criteria → **integration**, not default unit. Need both a DB-free contract and a live-DB proof → two TDD tasks, generated as two cards — never one card listing both test files. Never emit two stamps, two layer write-dirs, or two layer Verification commands on one TDD card. Never list `tests/unit/` AND `tests/integration/` (or `tests/e2e/`) on the same TDD card. Never stamp two Verification commands (`mise unit && mise integration`). Halt and rewrite with `MIXED_TEST_LAYER` rather than write the mixed card; `deviate tasks post` rejects the file. Read `verification_suites` from the `deviate tasks pre` contract — do not invent integ/e2e. If `integration` is not in `verification_suites`, do not stamp `integration` (an integration-stamped task cannot resolve).
 4. **Assign Verification**: Stamp **Verification** as this layer's named mise task. Prefer `mise integration` (never a short alias) when that task exists:
    - `unit` → write only under the unit dir (`tests/unit/` or Elixir `test/` excluding `test/integration`); Verification ``mise unit``. Never integration/e2e. Never `pytest tests/` / the whole tree.
    - `integration` → write only under the integration dir (`tests/integration/` or `test/integration/`); Verification ``mise integration``. Never create files under the unit dir. The runner may still run unit for regression after. Integration cannot resolve if `integration` is not in `verification_suites` — fail loud, do not silently run `mise test`.
    - `e2e` → write only under the e2e dir (`tests/e2e/`); Verification ``mise e2e``.
    Missing cheaper rung = skip, not fail. Do not invent integration/e2e.
-5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name the layer folder/tag and forbid the other layer.
+5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name the layer folder/tag and forbid the other layer. One TDD card names exactly one layer (one stamp, one write-dir, one Verification command). A card that names both unit and integration (or e2e) files/commands/stamps is invalid — split it before writing `tasks.md`.
 6. **File Rationale**: Explain WHY each file is touched.
 7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
@@ -85,7 +85,7 @@ Write the task decomposition to `{tasks_target}` following the output format sch
 </step>
 
 <step id="post_orchestrated">
-The CLI orchestrator runs `deviate tasks post` after your response to validate required sections and task ID format, commit, and advance the session. Do NOT run it yourself.
+The CLI orchestrator runs `deviate tasks post` after your response to validate required sections, task ID format, and that no TDD card names more than one test layer (`MIXED_TEST_LAYER`), then commit and advance the session. Do NOT run it yourself. A rejected file is not committed — rewrite mixed cards into one-layer TDD tasks and let post run again.
 </step>
 
 </execution_sequence>
@@ -105,7 +105,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
 - **Mode**: `TDD | IMMEDIATE`. **Type→Mode lock**: `Verification_Batch` MUST be `IMMEDIATE` — never emit `Mode: TDD` for that type.
 - **Test Strategy**: `unit | integration | e2e` (required if Mode is TDD). Default `unit`. Migration / live-DB AC → `integration`.
-- **Verification**: A **Deterministic CLI Command** scoped to that layer plus cheaper existing rungs (e.g., `mise unit`). Never `pytest tests/` for a unit task.
+- **Verification**: A **Deterministic CLI Command** scoped to that layer plus cheaper existing rungs (e.g., `mise unit`). Never `pytest tests/` for a unit task. A TDD card has exactly one layer Verification command — never `mise unit && mise integration` or two pytest layer paths.
 - **Estimated Time**: `30-90 minutes` or `60 minutes`
 - **Files**: List of paths (multi-line, indented, minimum 2 files)
 - **Rationale**: Required — explain WHY each file is touched, tie to specific story identifiers and acceptance criteria.
@@ -195,4 +195,5 @@ next_phase: "IDLE"
 | Circular dependencies between tasks | Detect and reject; require human resolution. |
 | Post-script rejects output | Fix violations and re-run. |
 | No test command available | Infer from repo conventions (pytest, npm test). Document inference. |
+| A TDD card would name more than one of `unit` / `integration` / `e2e` (`MIXED_TEST_LAYER`) | Halt. Split into two TDD cards (one stamp, one write dir, one Verification command). Do not write `tests/unit/` and `tests/integration/` on the same TDD card. `deviate tasks post` rejects the file. Exempt: `[VERIFY]` / `[E2E]` `Verification_Batch` / `IMMEDIATE` cards. |
 </edge_case_handling>
