@@ -509,6 +509,8 @@ def _markers_before(lines: list[str], line_index: int) -> set[str]:
 def _thin_tests(root: Path, drop_items: list[TestItem]) -> None:
     by_path: dict[Path, list[TestItem]] = {}
     for item in drop_items:
+        if "tests" not in Path(item.path).parts:
+            continue
         by_path.setdefault(item.path, []).append(item)
     for rel, items in by_path.items():
         path = rel if rel.is_absolute() else root / rel
