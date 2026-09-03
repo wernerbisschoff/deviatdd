@@ -631,3 +631,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-040-01 / AO-040-01: Rollback target resolves at or after the `tasks.md` creation commit; `git ls-tree HEAD` still lists `tasks.md` after rollback plus feedback commit.
   2. AC-ADHOC-040-02 / AO-040-02: Rollback that cannot find a safe boundary refuses with a plain error and leaves the branch unchanged.
+
+## FR-ADHOC-041: RED compile-error failures route to GREEN, TRAIN_EXHAUSTED fails clean
+- **Description**: A RED test that fails at compile time counts as a failing test and proceeds to GREEN; TRAIN_EXHAUSTED ends the task with a clean failure row.
+- **Preconditions**: `src/deviate/cli/micro.py` `_run_red_phase` gates on exit code plus pytest exit-5 collection; `_adjudicate_red_no_failing_test` owns the no-failing-test route; `_raise_train_exhausted` raises `PhaseFailedError`.
+- **Inputs/Outputs**: Input — RED test output with compile errors (e.g. Elixir ExUnit compilation failure, missing module). Output — compile-error RED proceeds to GREEN; exhausted retries record a `FAILED` task row without an unhandled traceback; no COMPLETED row ships with empty evidence.
+- **User Stories**:
+  1. US-041-01: As a developer on a compiled-language repo, I want a RED test that fails to compile to count as a failing test so GREEN implements the missing module. *(Ref: FR-ADHOC-041)*
+  2. US-041-02: As an operator, I want TRAIN_EXHAUSTED to record a clean task failure so I get an actionable result instead of a traceback. *(Ref: FR-ADHOC-041)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-041-01 / AO-041-01: RED with compile errors (non-zero exit, compile-error markers, zero test failures) proceeds to GREEN, never to no-failing-test adjudication.
+  2. AC-ADHOC-041-02 / AO-041-02: Three RED escalates record a `FAILED` task row with the TRAIN_EXHAUSTED reason and exit cleanly; no COMPLETED row ships with empty evidence.
