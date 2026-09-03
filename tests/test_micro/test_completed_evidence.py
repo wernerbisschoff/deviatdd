@@ -450,3 +450,45 @@ class TestCompletedOnceSkipRefactor:
             f"got {_completed_rows(ledger)!r}"
         )
         assert result.current_phase == "IDLE"
+
+
+class TestRationaleForwardRefDoesNotBlockComplete:
+    """GH-191: Rationale naming a later-task AC is not a required token.
+
+    MeepleInn TSK-002-01: Acceptance Criteria own AC-PLAN-001 and
+    AC-PLAN-003; Rationale forward-references AC-PLAN-002. Evidence
+    covering this-task tokens must COMPLETE. COMPLETED still fail-closes
+    when this-task tokens are missing (GH-185 / #187 leftover).
+    """
+
+    def test_skip_refactor_completes_when_rationale_names_later_ac(
+        self, tmp_git_repo: Path
+    ) -> None:
+        red_sha = _seed_red_green(
+            tmp_git_repo,
+            acs=("AC-PLAN-001", "AC-PLAN-002", "AC-PLAN-003"),
+            card_acs=("AC-PLAN-001", "AC-PLAN-003"),
+        )
+        tasks_md = tmp_git_repo / "specs" / "adhoc" / _GATE_SLUG / "tasks.md"
+        tasks_md.write_text(
+            f"# Tasks\n\n- {_GATE_TASK_ID}: Root layout chrome\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001, AC-PLAN-003\n"
+            "  - **Rationale**: must exist before AC-PLAN-002 binds "
+            "the layout option\n",
+            encoding="utf-8",
+        )
+        session, output, ledger = _run_tdd_judge(
+            tmp_git_repo,
+            _gate_manifest(
+                next_action="skip_refactor",
+                evidence=[
+                    _gate_evidence(ac="AC-PLAN-001"),
+                    _gate_evidence(ac="AC-PLAN-003"),
+                ],
+            ),
+            red_sha,
+        )
+        assert "COMPLETED_EVIDENCE_MISSING" not in output, output
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
+        rows = _completed_rows(ledger)
+        assert len(rows) == 1, f"expected one COMPLETED row, got {rows!r}"

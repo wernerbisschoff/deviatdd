@@ -492,3 +492,41 @@ class TestResolveTaskAcTokens:
             "  - **Files**: tests/test_booking.py\n"
         )
         assert resolve_task_ac_tokens(task, card_text=card) == []
+
+    def test_rationale_forward_ref_is_not_a_required_token(self):
+        """GH-191: TSK-002-01 Rationale naming AC-PLAN-002 is not this-task scope."""
+        task = {"id": "TSK-002-01", "acceptance_criteria": []}
+        card = (
+            "- TSK-002-01: Root layout chrome\n"
+            "  - **Type**: Feature_Batch\n"
+            "  - **Acceptance Criteria**: AC-PLAN-001, AC-PLAN-003\n"
+            "  - **Rationale**: the shell must exist before AC-PLAN-002 "
+            "binds the layout option\n"
+            "  - **Details**: implement the chrome; AC-PLAN-002 is next.\n"
+            "  - **Files**: lib/meepleinn_web/layouts/root.html.heex\n"
+        )
+        assert resolve_task_ac_tokens(task, card_text=card) == [
+            "AC-PLAN-001",
+            "AC-PLAN-003",
+        ]
+
+    def test_rationale_only_card_yields_no_tokens(self):
+        """A card that only names later-task ACs in Rationale requires none."""
+        task = {"id": "TSK-002-01"}
+        card = (
+            "- TSK-002-01: Root layout chrome\n"
+            "  - **Rationale**: must exist before AC-PLAN-002 binds "
+            "the layout option\n"
+            "  - **Details**: AC-PLAN-002 is owned by the next task.\n"
+        )
+        assert resolve_task_ac_tokens(task, card_text=card) == []
+
+    def test_structured_card_without_criteria_skips_rationale(self):
+        """Empty criterion_ids + labeled card: scrape AC section, not Rationale."""
+        task = {"id": "TSK-028-01", "acceptance_criteria": []}
+        card = (
+            "- TSK-028-01: Scope JUDGE tokens\n"
+            "  - **Rationale**: names AC-PLAN-001 and AC-PLAN-002.\n"
+            "  - **Details**: also names AC-PLAN-005.\n"
+        )
+        assert resolve_task_ac_tokens(task, card_text=card) == []
