@@ -39,6 +39,7 @@
     - **Edge Cases**: Handle empty diff by exiting with the exact SKIP message; handle missing plan path without crashing the `pre` contract
     - **Acceptance**: `uv run pytest tests/unit/test_cli/test_walkthrough.py -v` passes and no added test asserts on prompt-body text
 
+  - **Judge Feedback**: The next RED attempt must: isolate the empty-diff case into a distinguishable state from the JSON contract case. Either commit the seeded brief files or seed no brief before invoking walkthrough pre, so SKIP on empty diff and JSON contract with plan_path null hold in different trees per AO-035-01 and AC-PLAN-001. Keep all assertions on CLI output and files, never on prompt-body substrings. The prior RED suite was unsatisfiable: test_pre_plan_path_null_when_absent and test_pre_empty_diff_exits_with_skip build byte-identical repos but demand mutually exclusive outputs, so no production code in src/deviate/cli/walkthrough.py can satisfy both.
 - TSK-035-03: Pin review comments-default, `--apply` CRITICAL-only, and `brief incomplete`
   - **Type**: Feature_Batch
   - **Mode**: TDD
