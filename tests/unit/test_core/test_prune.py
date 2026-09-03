@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from deviate.core.prune import (
     apply_prune,
     build_prune_plan,
@@ -244,3 +246,51 @@ def test_parse_other_language_tests_go_and_js(tmp_path: Path) -> None:
     assert by_name.get("TestBehavioral_ISS_099") == "keep"
     assert by_name.get("TestSpyInternal") == "drop"
     assert len(js_items) >= 1
+
+
+@pytest.mark.behavioral
+def test_classify_marks_keep_drop_ac_plan_001() -> None:
+    """AC-PLAN-001: spy/impl marks drop; behavioral/ac marks keep; keep-wins."""
+    assert classify_test("test_neutral", {"behavioral"}) == "keep"
+    assert classify_test("test_neutral", {"ac"}) == "keep"
+    assert classify_test("test_neutral", {"spy"}) == "drop"
+    assert classify_test("test_neutral", {"impl"}) == "drop"
+    assert classify_test("test_spy_probe", {"behavioral", "spy"}) == "keep"
+    assert classify_test("test_impl_helper", {"ac", "impl"}) == "keep"
+
+
+@pytest.mark.behavioral
+def test_classify_unknown_mark_falls_through_ac_plan_002() -> None:
+    """AC-PLAN-002: unknown marks never auto-keep; body heuristics decide."""
+    public = "def test_foo():\n    assert public_api(1) == 2\n"
+    bare = "def test_foo():\n    pass\n"
+    assert classify_test("test_foo", {"slow"}, body=public) == "keep"
+    assert classify_test("test_foo", {"slow"}, body=bare) == "drop"
+    assert classify_test("test_foo", {"slow"}, body="") == "drop"
+
+
+@pytest.mark.behavioral
+def test_classify_sibling_mocks_drop_ac_plan_002() -> None:
+    """AC-PLAN-002: untagged sibling mocks drop even with a public assert."""
+    magic = (
+        "def test_foo():\n"
+        "    helper = MagicMock()\n"
+        "    result = helper(1)\n"
+        "    assert result == 2\n"
+    )
+    assert classify_test("test_foo", body=magic) == "drop"
+    sibling_patch = (
+        "def test_foo():\n"
+        '    with patch("sibling.helper") as mocked:\n'
+        "        mocked.return_value = 1\n"
+        "        assert mocked(1) == 1\n"
+    )
+    assert classify_test("test_foo", body=sibling_patch) == "drop"
+
+
+@pytest.mark.behavioral
+def test_classify_empty_and_bare_bodies_drop_ac_plan_002() -> None:
+    """AC-PLAN-002: empty or bare bodies never auto-keep."""
+    assert classify_test("test_foo", body="") == "drop"
+    assert classify_test("test_foo", body="   \n") == "drop"
+    assert classify_test("test_foo", body="def test_foo():\n    x = 1\n") == "drop"
