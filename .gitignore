@@ -3,6 +3,7 @@ package.json
 package-lock.json
 bun.lock
 .worktrees/
+wt/
 
 graphify-out/
 __pycache__/

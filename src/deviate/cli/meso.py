@@ -46,6 +46,7 @@ from deviate.core.worktree import (
     find_worktree_for_branch,
     remove_worktree,
     resolve_start_point,
+    resolve_worktree_root,
 )
 from deviate.state.config import (
     AgentConfig,
@@ -685,7 +686,7 @@ def _try_claim_issue(
                     "spec_target_rel": spec_target_rel,
                     "worktree_path": str(existing_path),
                 }
-        wt_path = repo_root / ".worktrees" / branch
+        wt_path = resolve_worktree_root(repo_root) / branch
         try:
             created = create_worktree(
                 branch,

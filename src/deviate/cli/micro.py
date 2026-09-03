@@ -59,7 +59,10 @@ from deviate.core.run_logger import (
     set_task_logger,
     write_raw_sidecar,
 )
-from deviate.core.worktree import find_worktree_for_branch
+from deviate.core.worktree import (
+    expected_branch_from_worktree_path,
+    find_worktree_for_branch,
+)
 from deviate.prompts.assembly import assemble_prompt
 from deviate.state.config import (
     resolve_execution_profile,
@@ -2543,7 +2546,7 @@ def _execute_rollback(
     # don't pollute the next RED attempt (pytest collection, test writer
     # edits). Uses `-fd` (force + directories) WITHOUT `-x` to preserve
     # gitignored state such as `.deviate/`, `.mise/`, `__pycache__/`,
-    # and `.worktrees/`.
+    # `.worktrees/`, and `wt/`.
     subprocess.run(
         ["git", "clean", "-fd"],
         cwd=root,
@@ -7001,12 +7004,10 @@ def _verify_clean_worktree(root: Path, phase: str, tid: str) -> None:
 
 
 def _verify_worktree_branch(root: Path) -> None:
-    try:
-        idx = root.parts.index(".worktrees")
-    except ValueError:
+    expected = expected_branch_from_worktree_path(root)
+    if expected is None:
         return
 
-    expected = "/".join(root.parts[idx + 1 :])
     current = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=root,

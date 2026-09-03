@@ -339,8 +339,12 @@ class TestMesoOrchestration:
             loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
             assert loaded.current_phase == "IDLE"
 
-            wt_path = tmp_git_repo / ".worktrees"
-            assert not wt_path.exists(), "Dry run should not create worktrees"
+            assert not (tmp_git_repo / "wt").exists(), (
+                "Dry run should not create worktrees"
+            )
+            assert not (tmp_git_repo / ".worktrees").exists(), (
+                "Dry run should not create worktrees"
+            )
 
         mock_invoke.assert_not_called()
 

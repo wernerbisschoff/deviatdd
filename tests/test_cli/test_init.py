@@ -755,8 +755,8 @@ class TestInitAgentFlag:
             ).exists()
 
     def test_init_writes_root_gitignore_for_all_agent_dirs(self, tmp_path: Path):
-        """``deviate setup`` writes agent artifact patterns and ``.worktrees/``
-        to the project-root ``.gitignore``.
+        """``deviate setup`` writes agent artifact patterns plus both
+        ``wt/`` and ``.worktrees/`` to the project-root ``.gitignore``.
         """
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
@@ -764,6 +764,7 @@ class TestInitAgentFlag:
             root_gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
             assert "*/commands/deviate-*.md" in root_gi
             assert "*/prompts/deviate-*.md" in root_gi
+            assert "wt/" in root_gi
             assert ".worktrees/" in root_gi
 
     def test_init_agent_installs_commands_only_to_selected_agent(self, tmp_path: Path):
@@ -814,6 +815,7 @@ class TestInitAgentFlag:
             for entry in (
                 "*/commands/deviate-*.md",
                 "*/prompts/deviate-*.md",
+                "wt/",
                 ".worktrees/",
             ):
                 assert root_gi.count(entry) == 1, (
