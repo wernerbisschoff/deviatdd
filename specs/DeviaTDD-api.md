@@ -30,7 +30,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   so a fresh project reports `is_greenfield=true` until `/research` populates the
   constitution. `deviate init pre` continues to scaffold the constitution independently.
   It also writes or merges `<repo_root>/mise.toml` with the named tasks RED/GREEN
-  resolve: always `unit`, `integration` (`mise integration`), and `doctor`. The
+  resolve plus isolated-env recovery: always `unit`, `integration`
+  (`mise integration`), `doctor`, and `reset`. The
   runner also accepts `integ` as an alias when a repo already defines that name;
   init writes `integration`. `unit` has no `|| true` — RED must be able to fail.
   Empty `integration` may collect zero tests; pytest exit 5 (no tests collected)
@@ -38,12 +39,19 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   added only when `tests/e2e`, `e2e/`, or `test/e2e` already exists. `doctor` is
   a cheap toolchain check (may append `docker compose config` when
   `docker-compose.yml` / `compose.yaml` exists — never `docker compose up`).
+  `reset` recreates the isolated integration environment after a JUDGE git
+  rollback (not toolchain, not `mise setup`, not `|| true`). Language-aware
+  default: Python compose → `docker compose down -v` then `up -d --wait`, plus
+  `uv run alembic upgrade head` when `alembic.ini` exists; no compose and no
+  alembic → `true`. Elixir → `mix ecto.reset`. Node/rust/go/unknown → compose
+  recreate if a compose file exists, else `true`. GREEN/RED/JUDGE prompts do
+  not write `mise.toml`.
   Fresh scaffolds set `pre-commit` = format-check + lint and `pre-push` =
   `unit` only; `test` remains a back-compat alias of `unit`. Empty stub dirs
   are always created at `tests/unit` + `tests/integration` (Elixir: `test/`
   stays unit; add `test/integration`). Existing layer folders are not wiped.
   An existing `mise.toml` is not overwritten: only missing `unit` /
-  `integration` / `doctor` (and `e2e` when that layer exists) are inserted.
+  `integration` / `doctor` / `reset` (and `e2e` when that layer exists) are inserted.
   Init does not write `.deviate/config.toml`.
   Successful `deviate setup` prints a next-step hint to run `/deviate-init` as the
   first agent prompt (Codex: the `deviate-init` skill) and notes that init is a
@@ -775,7 +783,11 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   When `[tasks.doctor]` exists, the runner and pre run `mise doctor` only for rungs this task
   actually runs (integ / e2e / unstamped full suite — not a unit-stamped `mise unit` task).
   Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
-  `failure_kind: mechanical`. Absence of doctor skips preflight. The exact command string is
+  `failure_kind: mechanical`. Absence of doctor skips preflight. After a
+  successful TDD JUDGE `revert_green` / `revert_red` git rollback (and the
+  RED-escalate pre-RED reset), an `integration` or `e2e` stamp runs
+  `mise reset`; missing or failing reset is the same `ENV_NOT_READY`.
+  Unit tasks skip reset. The runner never auto-runs `mise setup`. The exact command string is
   logged (`TEST_COMMAND`) and injected into the phase prompt; agents must not invent a bare
   `pytest` / `mix test` when mise was resolved. Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
   SYNTAX_ERROR), runs the test command, and reports whether the test failed as expected.
@@ -1014,6 +1026,17 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     rewritten RED; no-op when the stored SHA was already discarded by a
     prior `revert_red` — do not raise `ROLLBACK_STALE_RED_SHA`), and
     EXECUTE JUDGE passes the pre-EXECUTE `pre_execute_sha`.
+    After a successful TDD `revert_green` / `revert_red` git rollback
+    (and the RED-escalate `_rollback_pre_red_if_resolvable` reset), if
+    this task's `test_strategy` is `integration` or `e2e`, the runner
+    runs `mise reset` (same named-task style as `mise unit` /
+    `mise integration`). Unit and unstamped tasks skip it. The runner
+    does not hardcode Alembic, `stamp`, or Postgres and does not parse
+    whether the diff contained `alembic/versions/`. Missing `mise reset`
+    or a non-zero exit is `ENV_NOT_READY` (include stderr on failure) —
+    do not proceed into the next RED/GREEN against a dirty catalog.
+    `deviate init pre` inserts a language-aware `reset` stub
+    (merge-if-missing). Do not run `mise setup`.
     `_execute_rollback` requires the boundary explicitly — it no longer
     falls back to `session.red_commit_sha` or `HEAD~1`, and raises
     `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")` BEFORE any

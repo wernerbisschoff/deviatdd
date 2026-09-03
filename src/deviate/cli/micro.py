@@ -2571,6 +2571,42 @@ def _execute_rollback(
     )
 
 
+def _maybe_reset_isolated_env(root: Path, task: dict | None) -> None:
+    """Recreate isolated env after a successful git rollback (GH-198).
+
+    Integration/e2e RED/GREEN may have applied project-owned catalog
+    mutations. Git reset removes the revision file but not the external
+    catalog. Recovery is a project hook: ``mise reset``. Unit and
+    unstamped tasks skip it. Missing or failing reset is
+    ``ENV_NOT_READY`` — do not enter the next RED/GREEN. Do not run
+    ``mise setup``. Do not infer Alembic / Postgres inside the runner.
+    """
+    strategy = _extract_test_strategy(root, task)
+    if strategy not in {"integration", "e2e"}:
+        return
+    if "reset" not in _mise_defined_tasks(root):
+        raise EnvNotReadyError(
+            "ENV_NOT_READY: mise reset is not defined. Add a `reset` mise "
+            "task that recreates the isolated environment (database / "
+            "equivalent) so the next RED/GREEN does not loop on a discarded "
+            "catalog revision. `deviate init pre` inserts a language-aware "
+            "stub (merge-if-missing)."
+        )
+    console.print("  [cyan]ENV_RESET[/] mise reset")
+    proc = _execute_test_command("mise reset", root)
+    _log_run(
+        "ENV_RESET",
+        command="mise reset",
+        ok=proc.returncode == 0,
+        returncode=proc.returncode,
+        stderr=(proc.stderr or "")[:2000],
+    )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        detail = f": {stderr}" if stderr else ""
+        raise EnvNotReadyError(f"ENV_NOT_READY: mise reset failed{detail}")
+
+
 def _preserve_agent_work(
     root: Path,
     *,
@@ -2941,6 +2977,8 @@ def _is_fatal_missing_revert_green_boundary(action: str, exc: BaseException) -> 
         return False
     text = str(exc)
     if "ROLLBACK_STALE_RED_SHA" in text or "ROLLBACK_STALE_BOUNDARY" in text:
+        return True
+    if "ENV_NOT_READY" in text:
         return True
     return action == "revert_green" and "ROLLBACK_BOUNDARY_MISSING" in text
 
@@ -4643,6 +4681,7 @@ def _apply_judge_verdict(
                         task_id=tid,
                         attempt=rollback_attempts,
                     )
+                    _maybe_reset_isolated_env(root, task)
                 elif session.red_commit_sha:
                     # No pre-RED anchor, but ``session.red_commit_sha`` is
                     # known — fall back to that explicit boundary so the
@@ -4656,6 +4695,7 @@ def _apply_judge_verdict(
                         task_id=tid,
                         attempt=rollback_attempts,
                     )
+                    _maybe_reset_isolated_env(root, task)
                 elif red_baseline is not None:
                     # RED-adjudication path: no RED commit exists to roll
                     # back. Discard only the files this RED attempt produced
@@ -4752,6 +4792,10 @@ def _apply_judge_verdict(
                 task_id=tid,
                 attempt=rollback_attempts,
             )
+            _maybe_reset_isolated_env(root, task)
+        except EnvNotReadyError:
+            _record_reject_verdict()
+            raise
         except Exception as e:
             if _is_fatal_missing_revert_green_boundary(action, e):
                 _record_reject_verdict()
@@ -5324,12 +5368,14 @@ def _rollback_pre_red_if_resolvable(
     task_id: str,
     attempt: int,
     reason: str,
+    task: dict | None = None,
 ) -> None:
     """Reset to the pre-RED SHA when git can resolve a full 40-char SHA.
 
     Skip when ``_apply_judge_verdict`` already reset and HEAD is the
     post-``revert_red`` feedback commit — a second reset to that
-    commit's parent would drop the persist (GH-170).
+    commit's parent would drop the persist (GH-170). After a successful
+    git reset, integration/e2e tasks run ``mise reset`` (GH-198).
     """
     if session.pending_judge_action == "revert_red":
         head_subject = _git_commit_subject(root, "HEAD")
@@ -5349,6 +5395,7 @@ def _rollback_pre_red_if_resolvable(
         task_id=task_id,
         attempt=attempt,
     )
+    _maybe_reset_isolated_env(root, task)
 
 
 def _short_escalate_note(*, reason: str, failure_kind: str = "") -> str:
@@ -5417,6 +5464,7 @@ def _escalate_to_new_red(
         task_id=tid,
         attempt=session.red_attempts,
         reason=reason,
+        task=task,
     )
     _maybe_push_event(
         monitor,
@@ -6082,10 +6130,13 @@ class JudgeRevertDeclinedError(Exception):
 
 
 class EnvNotReadyError(PhaseFailedError):
-    """``mise doctor`` failed — deps, ports, or DB are not ready.
+    """Isolated environment is not ready — doctor or post-rollback reset.
 
-    This is an environment outage, not a RED/GREEN test outcome and not
-    ``failure_kind: mechanical``. No phase ledger row is written.
+    ``mise doctor`` failed (deps, ports, or DB not ready), or ``mise
+    reset`` is missing / failed after a JUDGE git rollback. This is an
+    environment outage, not a RED/GREEN test outcome and not
+    ``failure_kind: mechanical``. No phase ledger row is written. Do
+    not proceed into the next RED/GREEN against a dirty catalog.
     """
 
 

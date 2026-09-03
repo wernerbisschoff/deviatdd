@@ -73,7 +73,9 @@ _TIMEOUT_GRACE_SECONDS: float = 5.0
 #: list is rejected before subprocess.run is called.
 #: Allowlisted ``mise <task>`` names that may run as verification or preflight.
 #: Unknown mise tasks (setup, seed, watch, fmt, …) are never auto-run.
-_MISE_NAMED_TASKS = frozenset({"test", "unit", "integ", "integration", "e2e", "doctor"})
+_MISE_NAMED_TASKS = frozenset(
+    {"test", "unit", "integ", "integration", "e2e", "doctor", "reset"}
+)
 
 SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     ("mise", "run", "test"): "mise run test",
@@ -83,6 +85,7 @@ SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     ("mise", "integration"): "mise integration",
     ("mise", "e2e"): "mise e2e",
     ("mise", "doctor"): "mise doctor",
+    ("mise", "reset"): "mise reset",
     ("mise", "exec"): "mise exec",
     ("pytest",): "pytest",
     ("python", "-m", "pytest"): "python -m pytest",

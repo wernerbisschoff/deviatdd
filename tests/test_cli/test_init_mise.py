@@ -107,13 +107,16 @@ def test_fresh_init_defines_unit_and_integration_not_e2e(
     assert "unit" in tasks
     assert "integration" in tasks
     assert "doctor" in tasks
+    assert "reset" in tasks
     assert "integ" not in tasks
     assert "e2e" not in tasks
 
     unit_run = _task_run(config, "unit")
     integration_run = _task_run(config, "integration")
+    reset_run = _task_run(config, "reset")
     assert "|| true" not in unit_run
     assert "|| true" not in integration_run
+    assert "|| true" not in reset_run
     assert _UNIT_CMD_TOKEN[project_type] in unit_run
     assert _INTEGRATION_CMD_TOKEN[project_type] in integration_run
     if project_type != "elixir_phoenix":
@@ -205,9 +208,11 @@ def test_existing_mise_without_named_tasks_adds_unit_and_integration(
     assert "unit" in config["tasks"]
     assert "integration" in config["tasks"]
     assert "doctor" in config["tasks"]
+    assert "reset" in config["tasks"]
     assert "integ" not in config["tasks"]
     assert "e2e" not in config["tasks"]
     assert "|| true" not in _task_run(config, "unit")
+    assert "|| true" not in _task_run(config, "reset")
 
 
 def test_existing_mise_with_unit_does_not_rewrite_command(tmp_git_repo: Path) -> None:
@@ -222,6 +227,7 @@ def test_existing_mise_with_unit_does_not_rewrite_command(tmp_git_repo: Path) ->
     assert _task_run(config, "unit") == "custom-unit"
     assert _task_run(config, "watch") == "echo watch"
     assert "integration" in config["tasks"]
+    assert "reset" in config["tasks"]
     assert "e2e" not in config["tasks"]
 
 
@@ -244,6 +250,10 @@ def test_doctor_includes_compose_config_when_compose_exists(
     doctor = _task_run(_load_mise(tmp_git_repo), "doctor")
     assert "docker compose config" in doctor
     assert "docker compose up" not in doctor
+    reset = _task_run(_load_mise(tmp_git_repo), "reset")
+    assert "docker compose down -v" in reset
+    assert "docker compose up -d --wait" in reset
+    assert "|| true" not in reset
 
 
 def test_generate_unknown_emits_unit_and_integration_not_e2e(tmp_path: Path) -> None:
@@ -253,6 +263,88 @@ def test_generate_unknown_emits_unit_and_integration_not_e2e(tmp_path: Path) -> 
     assert "|| true" not in _task_run(config, "unit")
     assert "integration" in config["tasks"]
     assert "doctor" in config["tasks"]
+    assert "reset" in config["tasks"]
+    assert _task_run(config, "reset") == "true"
     assert "integ" not in config["tasks"]
     assert "e2e" not in config["tasks"]
     assert "$? -eq 5" in _task_run(config, "integration")
+
+
+def test_existing_reset_is_not_overwritten(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "python")
+    (tmp_git_repo / "mise.toml").write_text(
+        '[tasks.reset]\nrun = "custom-db-recreate"\n',
+        encoding="utf-8",
+    )
+
+    _init_pre(tmp_git_repo)
+    config = _load_mise(tmp_git_repo)
+    assert _task_run(config, "reset") == "custom-db-recreate"
+    assert "unit" in config["tasks"]
+    assert "integration" in config["tasks"]
+    assert "doctor" in config["tasks"]
+
+
+def test_python_reset_is_true_without_compose_or_alembic(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "python")
+    _init_pre(tmp_git_repo)
+    assert _task_run(_load_mise(tmp_git_repo), "reset") == "true"
+
+
+def test_python_reset_recreates_compose_and_upgrades_alembic(
+    tmp_git_repo: Path,
+) -> None:
+    _seed_project(tmp_git_repo, "python")
+    (tmp_git_repo / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    (tmp_git_repo / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+
+    _init_pre(tmp_git_repo)
+    reset = _task_run(_load_mise(tmp_git_repo), "reset")
+    assert reset == (
+        "docker compose down -v && docker compose up -d --wait && "
+        "uv run alembic upgrade head"
+    )
+    doctor = _task_run(_load_mise(tmp_git_repo), "doctor")
+    assert "docker compose up" not in doctor
+
+
+def test_python_reset_alembic_only_without_compose(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "python")
+    (tmp_git_repo / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+
+    _init_pre(tmp_git_repo)
+    reset = _task_run(_load_mise(tmp_git_repo), "reset")
+    assert reset == "uv run alembic upgrade head"
+    assert "docker compose" not in reset
+
+
+def test_elixir_reset_is_mix_ecto_reset(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "elixir_phoenix")
+    _init_pre(tmp_git_repo)
+    assert _task_run(_load_mise(tmp_git_repo), "reset") == "mix ecto.reset"
+
+
+@pytest.mark.parametrize("project_type", ["node", "rust", "go", "unknown"])
+def test_non_python_reset_uses_compose_or_true(
+    tmp_git_repo: Path, project_type: str
+) -> None:
+    if project_type != "unknown":
+        _seed_project(tmp_git_repo, project_type)
+    _init_pre(tmp_git_repo)
+    assert _task_run(_load_mise(tmp_git_repo), "reset") == "true"
+
+    (tmp_git_repo / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    _init_pre(tmp_git_repo)
+    # Existing reset is merge-if-missing — first init wrote ``true``.
+    assert _task_run(_load_mise(tmp_git_repo), "reset") == "true"
+
+
+def test_non_python_fresh_reset_recreates_compose_when_present(
+    tmp_git_repo: Path,
+) -> None:
+    _seed_project(tmp_git_repo, "node")
+    (tmp_git_repo / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    _init_pre(tmp_git_repo)
+    reset = _task_run(_load_mise(tmp_git_repo), "reset")
+    assert reset == "docker compose down -v && docker compose up -d --wait"
+    assert "|| true" not in reset

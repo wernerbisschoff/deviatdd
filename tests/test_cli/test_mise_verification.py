@@ -1028,6 +1028,7 @@ class TestMiseCommandsAreAllowlisted:
             "mise integration",
             "mise e2e",
             "mise doctor",
+            "mise reset",
             "mise exec -- pytest tests/foo.py",
             "mise exec -- pytest tests/foo.py -k crypto_withdrawal",
         ],

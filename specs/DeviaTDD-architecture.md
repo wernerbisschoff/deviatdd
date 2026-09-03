@@ -98,10 +98,15 @@ Breaks a business goal down into standard development project containers.
   `deviate init pre` / `deviate init post` and scaffolds `specs/constitution.md`,
   `mise.toml`, and `specs/issues.jsonl`. Existing constitution / issues ledger files
   are left untouched. `mise.toml` is created when missing, or merged when present:
-  missing allowlisted tasks `unit`, `integration`, and `doctor` are inserted
+  missing allowlisted tasks `unit`, `integration`, `doctor`, and `reset` are inserted
   (`e2e` only when `tests/e2e`, `e2e/`, or `test/e2e` already exists); existing
   commands and tool pins are not rewritten. Init writes `integration` so
-  `mise integration` works (the runner also accepts `integ` as an alias). Init
+  `mise integration` works (the runner also accepts `integ` as an alias). `reset`
+  recreates the isolated integration environment after JUDGE git rollback (not
+  toolchain, not `mise setup`, not `|| true`): Python compose →
+  `docker compose down -v` then `up -d --wait`, plus `uv run alembic upgrade head`
+  when `alembic.ini` exists; Elixir → `mix ecto.reset`; node/rust/go/unknown →
+  compose recreate or `true`. `doctor` never runs `docker compose up`. Init
   always creates language-native stub dirs (`tests/unit` + `tests/integration`;
   Elixir: `test/` stays unit, plus `test/integration`) so RED knows where to
   write. Existing layer folders are not wiped. `pre-push` depends on `unit`
@@ -418,7 +423,7 @@ NOTES:
   boundary retained by a completed prior task before invoking the agent, and
   stores a replacement only after the RED commit succeeds. A pre-manifest
   agent failure cannot expose earlier completed commits to a later rollback.
-- TRAIN rollback uses `git reset --hard <boundary_sha>` followed by `git clean -fd` (caller-supplied boundary + untracked cleanup) — never `git revert`, because resetting to the verified-good boundary discards the suspect GREEN cleanly, and `git clean -fd` (without `-x`) removes untracked artifacts that the failed GREEN may have left behind while preserving gitignored state such as `.deviate/`. The boundary is threaded explicitly: TDD JUDGE `revert_green` passes the remapped `session.red_commit_sha` (`_refresh_session_commit_anchors` / subject-match after a commit-train rebase so the stored SHA is an ancestor of HEAD; GH-168); TDD JUDGE `revert_red` derives `red_commit_sha^` via `_resolve_revert_red_boundary` / `_resolve_pre_red_sha` (remap a rewritten RED; no-op when the stored SHA was already discarded; falling back to `session.red_commit_sha` when known, otherwise raising `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")`); EXECUTE JUDGE passes `pre_execute_sha`. A stored RED SHA that is not an ancestor of HEAD and cannot be remapped raises `ROLLBACK_STALE_RED_SHA` on `revert_green` only; `_execute_rollback` refuses a non-ancestor `boundary_sha` with `ROLLBACK_STALE_BOUNDARY` and does not reset — `revert_green` must keep the current RED and unrelated commits that precede GREEN. Each discard is also captured on a per-task, per-attempt recovery ref `tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>` so a parent SIGTERM between `git reset` and `git clean` doesn't strand the discarded work and a second rollback cannot clobber the first attempt's recovery handle.
+- TRAIN rollback uses `git reset --hard <boundary_sha>` followed by `git clean -fd` (caller-supplied boundary + untracked cleanup) — never `git revert`, because resetting to the verified-good boundary discards the suspect GREEN cleanly, and `git clean -fd` (without `-x`) removes untracked artifacts that the failed GREEN may have left behind while preserving gitignored state such as `.deviate/`. After a successful TDD `revert_green` / `revert_red` git rollback (and the RED-escalate `_rollback_pre_red_if_resolvable` reset), if this task's `test_strategy` is `integration` or `e2e`, the runner runs `mise reset`. Unit and unstamped tasks skip it. Missing or failing `mise reset` is `ENV_NOT_READY` (stderr on failure) — do not enter the next RED/GREEN. The runner does not hardcode Alembic / `stamp` / Postgres and does not inspect whether the diff contained `alembic/versions/`. Do not run `mise setup`. GREEN/RED/JUDGE prompts do not write `mise.toml`. The boundary is threaded explicitly: TDD JUDGE `revert_green` passes the remapped `session.red_commit_sha` (`_refresh_session_commit_anchors` / subject-match after a commit-train rebase so the stored SHA is an ancestor of HEAD; GH-168); TDD JUDGE `revert_red` derives `red_commit_sha^` via `_resolve_revert_red_boundary` / `_resolve_pre_red_sha` (remap a rewritten RED; no-op when the stored SHA was already discarded; falling back to `session.red_commit_sha` when known, otherwise raising `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")`); EXECUTE JUDGE passes `pre_execute_sha`. A stored RED SHA that is not an ancestor of HEAD and cannot be remapped raises `ROLLBACK_STALE_RED_SHA` on `revert_green` only; `_execute_rollback` refuses a non-ancestor `boundary_sha` with `ROLLBACK_STALE_BOUNDARY` and does not reset — `revert_green` must keep the current RED and unrelated commits that precede GREEN. Each discard is also captured on a per-task, per-attempt recovery ref `tmp/deviate-agent-work/<sanitized-task-id>/attempt-<N>` so a parent SIGTERM between `git reset` and `git clean` doesn't strand the discarded work and a second rollback cannot clobber the first attempt's recovery handle.
 - **EXECUTE commit-failure recovery (terminal contract):** The single
   EXECUTE-phase commit at `src/deviate/cli/micro.py:2857` is the
   only `_commit_phase` call site that intentionally lets the
@@ -656,7 +661,9 @@ integration (fail loud with `VERIFICATION_UNRESOLVED` if integration is undefine
 exists) then integration (if exists) then e2e. Missing cheaper rungs are skipped, not invented.
 `mise doctor` is preflight only when defined **and** this task actually runs integ/e2e (or
 an unstamped full suite) — a unit-stamped sociable test must still run with the DB down
-under `mise unit`. Without mise, map layers to conventional `tests/unit` /
+under `mise unit`. After JUDGE `revert_green` / `revert_red` (and the RED-escalate
+pre-RED reset), an `integration` or `e2e` stamp runs `mise reset`; missing or failing
+reset is `ENV_NOT_READY`. Unit skips reset. Do not run `mise setup`. Without mise, map layers to conventional `tests/unit` /
 `tests/integration` / `tests/e2e` when those directories exist, else the declared
 Verification if it is already scoped. Unstamped cards still fall through: task
 `verification`, constitution `test_command`, then the
