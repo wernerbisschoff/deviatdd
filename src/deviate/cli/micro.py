@@ -1279,7 +1279,15 @@ def _require_tdd_completed_evidence(
     session: SessionState | None,
     root: Path,
 ) -> None:
-    """Fail closed on TDD COMPLETE when AC tokens lack persisted evidence."""
+    """Fail closed on TDD COMPLETE when this-task AC tokens lack evidence.
+
+    After a clean JUDGE ``COMPLIANCE_PASS``, do not rematch frozen
+    ``test_quote`` / ``impl_quote`` against post-REFACTOR HEAD (GH-191).
+    REFACTOR and ``_run_format_cmd`` may edit cited files. Quotes persist
+    on the COMPLETED row as historical. Still fail-close when the bundle
+    is empty, a required this-task token has no evidence row, or a named
+    ``test_path`` is absent on disk.
+    """
     if not _is_test_bearing_tdd(task_data):
         return
     tokens = resolve_task_ac_tokens(
@@ -1287,45 +1295,45 @@ def _require_tdd_completed_evidence(
     )
     if session is not None and session.failure_kind == "no_failing_test":
         # Already-exists COMPLETE: partial AC evidence is legal; the
-        # declared regression-path presence check below still applies.
+        # named test_path presence check below still applies when
+        # tokens remain after this relaxation.
         tokens = []
     if not tokens:
         return
     items = list(bundle.items) if bundle is not None else []
-    pending = (session.pending_judge_action if session else "") or "skip_refactor"
     typed_items: list[EvidenceItem] = []
     for item in items:
         data = item.model_dump() if hasattr(item, "model_dump") else dict(item)
         typed_items.append(EvidenceItem.model_validate(data))
-    head_contents = _evidence_head_contents(root, typed_items)
-    for item in typed_items:
-        for rel in (item.test_path, item.impl_path):
-            if not rel or rel in head_contents:
-                continue
-            candidate = Path(rel)
-            if candidate.is_absolute() or ".." in candidate.parts:
-                continue
-            path = root / rel
-            if path.is_file():
-                try:
-                    head_contents[rel] = path.read_text(encoding="utf-8")
-                except OSError:
-                    continue
-    feedback = evaluate_judge_evidence(
-        plan_contract="",
-        injected_diff="",
-        evidence=typed_items,
-        next_action=pending,
-        head_contents=head_contents,
-        required_tokens=tokens,
-        use_head=True,
-    )
-    if not typed_items or feedback:
-        detail = feedback or (
-            "JUDGE evidence is missing, empty, or partial for injected "
-            f"acceptance tokens: {', '.join(tokens)}"
+    if not typed_items:
+        raise PhaseFailedError(
+            "COMPLETED_EVIDENCE_MISSING: JUDGE evidence is missing, empty, "
+            "or partial for injected acceptance tokens: "
+            f"{', '.join(tokens)}"
         )
-        raise PhaseFailedError(f"COMPLETED_EVIDENCE_MISSING: {detail}")
+    cited = {(item.ac or "").strip() for item in typed_items}
+    missing = [token for token in tokens if token not in cited]
+    if missing:
+        raise PhaseFailedError(
+            "COMPLETED_EVIDENCE_MISSING: JUDGE evidence is missing, empty, "
+            "or partial for injected acceptance tokens: "
+            f"{', '.join(missing)}"
+        )
+    for item in typed_items:
+        rel = (item.test_path or "").strip()
+        if not rel:
+            continue
+        candidate = Path(rel)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise PhaseFailedError(
+                "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                f"not in the injected diff or HEAD: {rel}"
+            )
+        if not (root / rel).is_file():
+            raise PhaseFailedError(
+                "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                f"not in the injected diff or HEAD: {rel}"
+            )
 
 
 def _append_status_transition(

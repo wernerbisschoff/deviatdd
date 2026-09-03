@@ -3132,9 +3132,10 @@ def _assert_completed_evidence_missing_keeps_green(
 ) -> None:
     """GH-185: a clean pass does not revert GREEN.
 
-    ``skip_refactor`` with unmatched citations fail-closes at the
-    COMPLETED write (``COMPLETED_EVIDENCE_MISSING``), not via
-    ``revert_green``.
+    ``skip_refactor`` with no this-task evidence row, or a named
+    ``test_path`` absent on disk, fail-closes at the COMPLETED write
+    (``COMPLETED_EVIDENCE_MISSING``), not via ``revert_green``. Quote
+    rematch against HEAD is not a COMPLETED gate (GH-191).
     """
     with pytest.raises(PhaseFailedError, match="COMPLETED_EVIDENCE_MISSING"):
         _run_tdd_judge(repo, manifest, red_sha)
@@ -3546,7 +3547,9 @@ class TestTddJudgeEvidenceGate:
     """TSK-020-03 / TSK-028-02 / GH-185: TDD gate is task-scoped.
 
     A clean COMPLIANCE_PASS keeps the agent's forward route (GH-185).
-    Unmatched skip_refactor citations fail-close at COMPLETED write.
+    skip_refactor with empty this-task evidence, or a named test_path
+    absent on disk, fail-closes at COMPLETED write. Frozen JUDGE quotes
+    are not rematched against HEAD (GH-191).
     Constitution §3 Testing Protocols. Flow References: [].
     """
 
@@ -3696,40 +3699,46 @@ class TestTddJudgeEvidenceGate:
             green_sha=green_sha,
         )
 
-    def test_empty_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
+    def test_empty_quote_still_completes_on_clean_pass(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-191: COMPLETED does not rematch quotes; token + test_path suffice."""
         red_sha = _seed_red_green(tmp_git_repo)
-        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
-        _assert_completed_evidence_missing_keeps_green(
+        session, _, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(evidence=[_gate_evidence(test_quote="")]),
             red_sha,
-            green_sha=green_sha,
         )
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
 
-    def test_short_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
+    def test_short_quote_still_completes_on_clean_pass(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-191: uniqueness-floor quotes are historical at COMPLETED."""
         red_sha = _seed_red_green(
             tmp_git_repo,
             test_body=_GATE_SHORT_TEST_BODY,
         )
-        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
-        _assert_completed_evidence_missing_keeps_green(
+        session, _, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(evidence=[_gate_evidence(test_quote="assert True")]),
             red_sha,
-            green_sha=green_sha,
         )
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
 
-    def test_wrong_file_quote_does_not_complete(self, tmp_git_repo: Path) -> None:
+    def test_wrong_file_quote_still_completes_on_clean_pass(
+        self, tmp_git_repo: Path
+    ) -> None:
+        """GH-191: a clean pass COMPLETEs even when the quote is not in HEAD."""
         red_sha = _seed_red_green(tmp_git_repo)
-        green_sha = _gate_git(tmp_git_repo, "rev-parse", "HEAD").stdout.strip()
-        _assert_completed_evidence_missing_keeps_green(
+        session, _, ledger = _run_tdd_judge(
             tmp_git_repo,
             _gate_manifest(
                 evidence=[_gate_evidence(test_quote=_GATE_IMPL_QUOTE)],
             ),
             red_sha,
-            green_sha=green_sha,
         )
+        _assert_forward(session, ledger, action="skip_refactor", completed=True)
 
     def test_matching_quotes_keep_forward_route(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)
