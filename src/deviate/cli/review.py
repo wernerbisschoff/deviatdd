@@ -53,7 +53,11 @@ def sort_review_comments(comments: list[dict]) -> list[dict]:
     """Sort review comments by token, path, then line (stable)."""
     return sorted(
         comments,
-        key=lambda c: (c.get("token", ""), c.get("path", ""), c.get("line", 0)),
+        key=lambda comment: (
+            comment.get("token", ""),
+            comment.get("path", ""),
+            comment.get("line", 0),
+        ),
     )
 
 
