@@ -1343,7 +1343,7 @@ def _tasks_post(
         try:
             validate_tdd_task_layers(tasks_md)
         except MixedTestLayerError as exc:
-            console.print(f"[red]{exc}")
+            console.print(f"[red]{exc}", highlight=False)
             raise typer.Exit(code=1)
 
     epic_num = _extract_epic_num(bucket)
