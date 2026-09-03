@@ -41,6 +41,10 @@ EXTERNAL_BOUNDARY_MOCK_RE = re.compile(
 )
 
 PATCH_PRIVATE_RE = re.compile(r"patch(?:\.object)?\([^)]*['\"]_[A-Za-z]")
+SIBLING_MOCK_RE = re.compile(
+    r"\b(?:MagicMock\b|Mock\s*\(|patch\s*\(|patch\.object|mocker\."
+    r"|monkeypatch\b|create_autospec|mock_open)"
+)
 
 PUBLIC_IO_RE = re.compile(
     r"\b(?:assert|raises|t\.Fail|t\.Errorf|t\.Fatal|t\.Fatalf|"
@@ -356,7 +360,11 @@ def _classify_body(body: str) -> TestKind:
         return "drop"
     if PRIVATE_ATTR_RE.search(body):
         return "drop"
-    if AC_TOKEN_RE.search(body) or PUBLIC_IO_RE.search(body):
+    if AC_TOKEN_RE.search(body):
+        return "keep"
+    if SIBLING_MOCK_RE.search(body) and not is_external_boundary_mock:
+        return "drop"
+    if PUBLIC_IO_RE.search(body):
         return "keep"
     return "drop"
 
