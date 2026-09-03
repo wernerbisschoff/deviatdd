@@ -611,3 +611,13 @@
 - **Acceptance Outline** (implementation-independent; no Gherkin in the issue file):
   1. AC-ADHOC-038-01 / AO-038-01: Real suites run from `tests/unit/`; intra-suite imports resolve after the move; no exit-5 empty collection on `mise unit`.
   2. AC-ADHOC-038-02 / AO-038-02: Hardcoded `tests/test_*` paths in `specs/` Verification lines and docs resolve to the new layout; runner scoping still parses them. `mise integration` and `mise e2e` point at real suites.
+
+## FR-ADHOC-039: Language-agnostic merge push gate
+- **Description**: The merge push gate checks the repo with its own tasks on every push, not only Python files.
+- **Preconditions**: `.githooks/pre-push` filters on `*.py` and runs ruff plus testmon; `deviate-merge.md` inlines that body verbatim; byte-equivalence is pinned by `TestMergePromptPushGate`.
+- **Inputs/Outputs**: Input — push with changed files in any language. Output — gate runs the repo `mise` checks (format-check, lint, test or equivalent) and fails the push on violation; never passes vacuously on non-Python repos.
+- **User Stories**:
+  1. US-039-01: As a developer on a non-Python repo, I want the merge push gate to run my repo checks so a merge never reports a vacuous pass. *(Ref: FR-ADHOC-039)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-039-01 / AO-039-01: Push on a repo with zero Python changes still runs repo checks and blocks on failure.
+  2. AC-ADHOC-039-02 / AO-039-02: Python repos keep equivalent protection (lint, format check, affected or full tests).
