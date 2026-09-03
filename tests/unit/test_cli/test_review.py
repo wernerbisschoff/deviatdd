@@ -948,3 +948,105 @@ class TestE2eNoPrReviewReference:
         assert OPTIONAL_PACKS["review"] == ("deviate-review",)
         assert OPTIONAL_PACKS["walkthrough"] == ("deviate-walkthrough",)
         assert "pr-review" not in OPTIONAL_PACKS
+
+
+class TestReviewCommentsDefault035:
+    """AC-PLAN-002: default comments-only, stable sort, CRITICAL-only apply."""
+
+    @pytest.mark.behavioral
+    def test_comments_sort_stably_by_token_path_line(self) -> None:
+        from deviate.cli.review import sort_review_comments
+
+        comments = [
+            {"token": "AC-PLAN-002", "path": "b.py", "line": 3},
+            {"token": "AC-PLAN-001", "path": "b.py", "line": 10},
+            {"token": "AC-PLAN-001", "path": "a.py", "line": 5},
+            {"token": "AC-PLAN-001", "path": "a.py", "line": 2},
+        ]
+
+        ordered = sort_review_comments(comments)
+
+        assert [(c["token"], c["path"], c["line"]) for c in ordered] == [
+            ("AC-PLAN-001", "a.py", 2),
+            ("AC-PLAN-001", "a.py", 5),
+            ("AC-PLAN-001", "b.py", 10),
+            ("AC-PLAN-002", "b.py", 3),
+        ]
+
+    @pytest.mark.behavioral
+    def test_comments_sort_is_deterministic(self) -> None:
+        from deviate.cli.review import sort_review_comments
+
+        comments = [
+            {"token": "AC-PLAN-002", "path": "b.py", "line": 3},
+            {"token": "AC-PLAN-001", "path": "a.py", "line": 2},
+        ]
+
+        assert sort_review_comments(comments) == sort_review_comments(comments)
+
+    @pytest.mark.behavioral
+    def test_default_post_never_request_changes_no_commit(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_named_brief(tmp_git_repo)
+        before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "post", "## findings"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "REQUEST_CHANGES" not in result.stdout
+        after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert after == before
+
+    @pytest.mark.behavioral
+    def test_incomplete_brief_stops_before_any_edit(self, tmp_git_repo: Path) -> None:
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code != 0
+        assert result.stdout.strip() == "brief incomplete"
+        assert not (tmp_git_repo / ".deviate" / "review" / "reports").exists()
+
+    @pytest.mark.behavioral
+    def test_apply_without_critical_lands_commits_nothing(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.core.review_coverage import should_commit_review_fixes
+
+        assert should_commit_review_fixes(apply=True, applied_critical=0) is False
+        _seed_named_brief(tmp_git_repo)
+        before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre", "--apply"])
+
+        assert result.exit_code == 0, result.stdout
+        after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert after == before
