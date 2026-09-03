@@ -96,6 +96,7 @@
     - **Acceptance**: Scoped verification passes. Prompt pins for manual-only, no-spec-delete, RED stamping, and no-auto-hook all pass. `git diff` shows prose plus changelog only. No production code changes in this task.
   - **Dependency**: TSK-033-03
 
+  - **Judge Feedback**: The next RED attempt must: author failing prompt-pin tests for AC-PLAN-007 (auto/red.md and deviate-red.md require exactly one behavioral|spy|impl mark per new test, most behavioral) and AC-PLAN-008 (prune stays manual-only, never hooked into COMPLETED, --all, or skill success loop) in tests/unit/test_cli/test_prune.py matching the task Verification filter, then let GREEN apply prose plus CHANGELOG only with zero src/ production-code changes.
 ## Phase 4: Closing application verification
 
 **Goal**: Prove the operator-facing prune flow end to end on the consumer CLI surface.
