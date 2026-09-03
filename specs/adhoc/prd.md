@@ -621,3 +621,13 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-039-01 / AO-039-01: Push on a repo with zero Python changes still runs repo checks and blocks on failure.
   2. AC-ADHOC-039-02 / AO-039-02: Python repos keep equivalent protection (lint, format check, affected or full tests).
+
+## FR-ADHOC-040: JUDGE rollback preserves tasks.md
+- **Description**: JUDGE rollback never moves the feature branch behind the commit that created `tasks.md`.
+- **Preconditions**: Micro JUDGE rollback resets the branch to a phase baseline via `_execute_rollback`; the baseline can predate the Tasks commit; the judge feedback commit then parents onto that truncated tree.
+- **Inputs/Outputs**: Input — JUDGE rollback on a task whose branch contains a committed `tasks.md`. Output — rollback resets GREEN work only; `tasks.md` at its latest committed state stays on the active branch; feedback commit parents onto a tree that contains it.
+- **User Stories**:
+  1. US-040-01: As an operator retrying a task after JUDGE feedback, I want `tasks.md` intact on the branch so the human-authored task queue is never lost. *(Ref: FR-ADHOC-040)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-040-01 / AO-040-01: Rollback target resolves at or after the `tasks.md` creation commit; `git ls-tree HEAD` still lists `tasks.md` after rollback plus feedback commit.
+  2. AC-ADHOC-040-02 / AO-040-02: Rollback that cannot find a safe boundary refuses with a plain error and leaves the branch unchanged.
