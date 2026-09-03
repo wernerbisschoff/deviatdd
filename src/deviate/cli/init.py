@@ -252,6 +252,34 @@ def _doctor_run(
     return command
 
 
+_COMPOSE_RECREATE = "docker compose down -v && docker compose up -d --wait"
+
+
+def _has_alembic_ini(repo_root: Path) -> bool:
+    return (repo_root / "alembic.ini").is_file()
+
+
+def _reset_run(project_type: str, repo_root: Path) -> str:
+    """Recreate the isolated integration env after a git rollback.
+
+    Not toolchain install (``mise setup``). Not ``|| true``. Doctor stays
+    check-only and never ``docker compose up``.
+    """
+    has_compose = _has_compose_file(repo_root)
+    if project_type == "elixir_phoenix":
+        return "mix ecto.reset"
+    if project_type == "python":
+        parts: list[str] = []
+        if has_compose:
+            parts.append(_COMPOSE_RECREATE)
+        if _has_alembic_ini(repo_root):
+            parts.append("uv run alembic upgrade head")
+        return " && ".join(parts) if parts else "true"
+    if has_compose:
+        return _COMPOSE_RECREATE
+    return "true"
+
+
 def _test_one_run(project_type: str, repo_root: Path) -> str | None:
     args = "${usage_args?}"
     if project_type == "elixir_phoenix":
@@ -277,6 +305,11 @@ def _named_mise_tasks(project_type: str, repo_root: Path) -> dict[str, str]:
         f"{_doctor_run(project_type, repo_root)} "
         f"&& test -d {unit.as_posix()} && test -d {integration.as_posix()}"
     )
+    # Write ``integration`` so ``mise integration`` works. The runner
+    # (_resolve_verification_command) also accepts ``integ`` as an alias
+    # when a repo already defines that name; init does not emit ``integ``.
+    # ``reset`` is the isolated-env recovery hook after JUDGE git rollback
+    # (GH-198). Merge-if-missing — never overwrite a consumer reset.
     tasks = {
         "unit": _unit_run(project_type, repo_root),
         "integration": _integ_run(project_type, repo_root),
@@ -285,6 +318,7 @@ def _named_mise_tasks(project_type: str, repo_root: Path) -> dict[str, str]:
         "test:integration": "mise run unit && mise run integration",
         "doctor:unit": unit_check,
         "doctor:integration": integration_check,
+        "reset": _reset_run(project_type, repo_root),
     }
     test_one = _test_one_run(project_type, repo_root)
     if test_one is not None:
@@ -381,6 +415,7 @@ def _generate_mise_toml_base(project_type: str, repo_root: Path) -> str:
     unit = _toml_string(named["unit"])
     integration = _toml_string(named["integration"])
     doctor = _toml_string(named["doctor"])
+    reset = _toml_string(named["reset"])
     e2e_line = ""
     if "e2e" in named:
         e2e_line = f"e2e = {_toml_string(named['e2e'])}\n"
@@ -405,6 +440,7 @@ check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
 pre-push = {{ depends = ["unit"] }}
 doctor = {doctor}
+reset = {reset}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "mix phx.server"
 clean = "mix clean && rm -rf _build deps .fetch"
@@ -434,6 +470,7 @@ check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
 pre-push = {{ depends = ["unit"] }}
 doctor = {doctor}
+reset = {reset}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "{dev_cmd}"
 clean = "rm -rf .venv dist build __pycache__"
@@ -460,6 +497,7 @@ check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
 pre-push = {{ depends = ["unit"] }}
 doctor = {doctor}
+reset = {reset}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "{pkg_manager} run dev 2>/dev/null || {pkg_manager} run start"
 clean = "rm -rf node_modules dist build"
@@ -484,6 +522,7 @@ check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
 pre-push = {{ depends = ["unit"] }}
 doctor = {doctor}
+reset = {reset}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "cargo run"
 clean = "cargo clean"
@@ -508,6 +547,7 @@ check = {{ depends = ["format-check", "lint", "unit"] }}
 pre-commit = {{ depends = ["format-check", "lint"] }}
 pre-push = {{ depends = ["unit"] }}
 doctor = {doctor}
+reset = {reset}
 hooks = "mise generate git-pre-commit --write && mise generate git-pre-commit --hook pre-push --write"
 dev = "go run ."
 clean = "go clean"
@@ -538,6 +578,10 @@ description = "Back-compat alias of unit"
 [tasks.doctor]
 run = {doctor}
 description = "Cheap toolchain check"
+
+[tasks.reset]
+run = {reset}
+description = "Recreate the isolated integration environment after a git rollback"
 
 [tasks.lint]
 run = "ruff check && ruff format --check"

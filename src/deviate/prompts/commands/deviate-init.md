@@ -1,6 +1,6 @@
 ---
 name: deviate-init
-description: Adapt a repo to DeviaTDD — project-specific mise test and doctor tasks, governance, specs, and test scaffolding.
+description: Adapt a repo to DeviaTDD — project-specific mise test, doctor, and reset tasks, governance, specs, and test scaffolding.
 category: deviatdd-macro-layer
 version: 1.0.0
 layer: macro
@@ -28,7 +28,7 @@ The following rules apply across ALL DeviaTDD phases:
 
 You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAYER / PHASE_INIT**. Your objective is to scaffold a repository with DeviaTDD conventions:
 
-1. A project-adapted `mise.toml` (not `.mise.toml`) with `test:one`, layered `test:*`, and layered `doctor:*` tasks. Keep `unit`, `integration`, and optional `e2e` runner tasks for micro-layer compatibility.
+1. A project-adapted `mise.toml` (not `.mise.toml`) with `test:one`, layered `test:*`, layered `doctor:*` tasks, and `reset`. Keep `unit`, `integration`, and optional `e2e` runner tasks for micro-layer compatibility.
 2. Language-native stub dirs: `tests/unit` + `tests/integration` (Elixir: `test/` stays unit; add `test/integration`) so RED knows where to write. Do not wipe existing layer folders. Do not create `e2e` stubs.
 3. A `specs/` directory containing:
    - `specs/constitution.md` — project governance document
@@ -42,6 +42,7 @@ You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAY
 - `test:e2e` — unit, integration, then E2E. Add only when an E2E layer exists.
 - `doctor:unit`, `doctor:integration`, `doctor:e2e` — read-only readiness checks for each configured layer. They do not run tests or launch services.
 - `doctor` — readiness checks for all configured layers. Without E2E, stop after integration.
+- `reset` — recreate the isolated integration environment after a JUDGE git rollback discarded applied migrations. Language-aware default: Python compose → `docker compose down -v` then `up -d --wait`, plus `uv run alembic upgrade head` when `alembic.ini` exists; no compose and no alembic → `true`. Elixir → `mix ecto.reset`. Node/rust/go/unknown → compose recreate if a compose file exists, else `true`. Not toolchain. Not `mise setup`. Not `|| true`. Merge-if-missing — never overwrite a consumer `reset`.
 - `test:reset` — project-specific test-database reset for JUDGE rollback recovery. Detect the reset path from the stack and write it as the task command. Add only when the project uses a database. Merge missing; never overwrite an existing task.
 - `setup:integration` — provisioning for the integration layer (test databases, services, `.env.instance`). Runs on worktree create when defined. Add when the project needs integration tests.
 - Unit tests are hermetic. They require no database, Redis, network service, container, or external process.
@@ -79,7 +80,7 @@ The pre-script emits a JSON contract to stdout containing:
 <step id="project_analysis">
 Analyze the project state from the contract:
 1. Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`
-2. Confirm `mise.toml` defines `test:one`, the configured `test:*` ladder, and the matching `doctor:*` ladder
+2. Confirm `mise.toml` defines `test:one`, the configured `test:*` ladder, the matching `doctor:*` ladder, and `reset`
 3. Check what DeviaTDD artifacts already exist (`specs/`, `issues.jsonl`, `constitution.md`)
 4. Detect the test-database reset command from migrations, ORM config, and existing reset scripts; record it for the `test:reset` mise task
 5. Inspect manifests, test configuration, CI, implementation files, and existing conventions to classify the repository as brownfield or greenfield
@@ -140,8 +141,8 @@ The post-script:
 
 ### mise.toml
 - Path: `<repo_root>/mise.toml`
-- Purpose: Stable DeviaTDD test and diagnostic interface over the detected project runner
-- Key tasks: `test:one`, `test:unit`, `test:integration`, optional `test:e2e`, and matching `doctor:*` tasks
+- Purpose: Stable DeviaTDD test, diagnostic, and isolated-env-recovery interface over the detected project runner
+- Key tasks: `test:one`, `test:unit`, `test:integration`, optional `test:e2e`, matching `doctor:*` tasks, and `reset`
 
 ### specs/constitution.md
 - Path: `<repo_root>/specs/constitution.md`
@@ -164,9 +165,9 @@ The post-script:
 | Condition | Action |
 | :--- | :--- |
 | Not a git repository | Return FAILURE with reason "Not a git repository" |
-| Unknown project type | Scaffold basic unit and integration runners; omit `test:one` until a runner is detected |
+| Unknown project type | Scaffold basic unit and integration runners plus `reset` (`true` unless compose exists); omit `test:one` until a runner is detected |
 | No E2E harness | Omit E2E and control tasks; report that E2E is not configured |
-| mise.toml already exists | Merge missing layered tasks; do not overwrite existing commands |
+| mise.toml already exists | Merge missing layered tasks including `reset`; do not overwrite existing commands |
 | constitution.md already exists | Skip generation, note in contract |
 | Project is already DeviaTDD-compliant | Return SUCCESS with existing artifacts listed |
 | Git hooks fail | Report failure but stage artifacts anyway |

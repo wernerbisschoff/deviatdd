@@ -88,6 +88,7 @@ _MISE_NAMED_TASKS = frozenset(
         "doctor:unit",
         "doctor:integration",
         "doctor:e2e",
+        "reset",
     }
 )
 

@@ -75,6 +75,7 @@ class TestParseSafeCommandAcceptsAllowedForm:
             "mise run test:one -- tests/test_x.py -v",
             "mise run test:integration",
             "mise run doctor:e2e",
+            "mise reset",
         ],
     )
     def test_safe_command_accepted(self, command: str) -> None:

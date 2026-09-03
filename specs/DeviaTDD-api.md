@@ -36,6 +36,14 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `doctor:integration`, and optional `doctor:e2e` tasks perform read-only readiness checks;
   they do not run tests or launch services. `doctor` checks all configured layers. Unknown
   projects omit `test:one` until a runner exists.
+  `reset` recreates the isolated integration environment after a JUDGE git
+  rollback (not toolchain, not `mise setup`, not `|| true`). Language-aware
+  default: Python compose → `docker compose down -v` then `up -d --wait`, plus
+  `uv run alembic upgrade head` when `alembic.ini` exists; no compose and no
+  alembic → `true`. Elixir → `mix ecto.reset`. Node/rust/go/unknown → compose
+  recreate if a compose file exists, else `true`. GREEN/RED/JUDGE prompts do
+  not write `mise.toml`. An existing `mise.toml` is not overwritten: only
+  missing layered tasks including `reset` are inserted.
   Generated guidance requires targeted `test:one` checks during RED/GREEN/REFACTOR and the
   matching complete layer before completion. Unit tests must not require a database, Redis,
   network service, container, or external process. Existing mise tasks and tool pins are never
@@ -806,7 +814,11 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   When `[tasks.doctor]` exists, the runner and pre run `mise doctor` only for rungs this task
   actually runs (integ / e2e / unstamped full suite — not a unit-stamped `mise unit` task).
   Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
-  `failure_kind: mechanical`. Absence of doctor skips preflight. The exact command string is
+  `failure_kind: mechanical`. Absence of doctor skips preflight. After a
+  successful TDD JUDGE `revert_green` / `revert_red` git rollback (and the
+  RED-escalate pre-RED reset), an `integration` or `e2e` stamp runs
+  `mise reset`; missing or failing reset is the same `ENV_NOT_READY`.
+  Unit tasks skip reset. The runner never auto-runs `mise setup`. The exact command string is
   logged (`TEST_COMMAND`) and injected into the phase prompt; agents must not invent a bare
   `pytest` / `mix test` when mise was resolved. On a genuinely failing test (ASSERTION_FAILURE,
   not SYNTAX_ERROR), reports the failure as expected and commits the RED transition.
@@ -1085,6 +1097,17 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     rewritten RED; no-op when the stored SHA was already discarded by a
     prior `revert_red` — do not raise `ROLLBACK_STALE_RED_SHA`), and
     EXECUTE JUDGE passes the pre-EXECUTE `pre_execute_sha`.
+    After a successful TDD `revert_green` / `revert_red` git rollback
+    (and the RED-escalate `_rollback_pre_red_if_resolvable` reset), if
+    this task's `test_strategy` is `integration` or `e2e`, the runner
+    runs `mise reset` (same named-task style as `mise unit` /
+    `mise integration`). Unit and unstamped tasks skip it. The runner
+    does not hardcode Alembic, `stamp`, or Postgres and does not parse
+    whether the diff contained `alembic/versions/`. Missing `mise reset`
+    or a non-zero exit is `ENV_NOT_READY` (include stderr on failure) —
+    do not proceed into the next RED/GREEN against a dirty catalog.
+    `deviate init pre` inserts a language-aware `reset` stub
+    (merge-if-missing). Do not run `mise setup`.
     `_execute_rollback` requires the boundary explicitly — it no longer
     falls back to `session.red_commit_sha` or `HEAD~1`, and raises
     `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")` BEFORE any
