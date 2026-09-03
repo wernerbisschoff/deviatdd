@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import chdir
+import re
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,35 @@ class TestPrTitle:
 
     def test_uses_adhoc_issue_commit_scope(self) -> None:
         assert _pr_title("ISS-ADH-001", "Fix", "bug") == "fix(ADH-001): Fix"
+
+    @pytest.mark.behavioral
+    def test_compound_prefix_strips_to_conventional_form(self) -> None:
+        title = _pr_title("ISS-ADH-029", "[FR-029][UI] Fold pruning")
+        assert title == "feat(ADH-029): Fold pruning"
+        assert re.match(r"^(feat|fix|chore|refactor|docs|test)\([^)]+\): .+", title)
+
+    @pytest.mark.behavioral
+    def test_gh_body_file_passes_through_unchanged(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _run_gh_pr_create
+
+        body = tmp_path / "body.md"
+        body.write_text("summary\nchanges\n", encoding="utf-8")
+        with patch("deviate.cli.meso.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "https://github.com/o/r/pull/1\n"
+            mock_run.return_value.stderr = ""
+            _run_gh_pr_create("feat(ADH-029): Fold pruning", body, cwd=tmp_path)
+            argv = mock_run.call_args[0][0]
+            assert argv[:5] == [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                "feat(ADH-029): Fold pruning",
+            ]
+            assert argv[5:7] == ["--body-file", str(body)]
 
 
 class TestSpecifyPre:

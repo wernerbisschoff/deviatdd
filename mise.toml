@@ -103,7 +103,7 @@ run = "mise tasks"
 description = "List tasks"
 
 [tasks.unit]
-run = "uv run pytest tests/unit"
+run = "uv run pytest tests --ignore=tests/integration --ignore=tests/test_integration --ignore=tests/e2e"
 
 [tasks.integration]
 run = "uv run pytest tests/integration || { [ $? -eq 5 ]; }"

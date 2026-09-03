@@ -116,6 +116,9 @@ Creates formal contracts for an issue via CLI slash commands. The workflow was r
 (ADHOC-003) to merge `/deviate-specify` into `/deviate-shard` and introduce a dedicated
 `/deviate-plan` phase for per-issue localized research. Gate 3 PR review is
 handled by the `/deviate-review` skill (`/deviate-review` **is** the PR review;
+it folds ponytail minimal-code pruning into its Pragmatism domain via the pre-write
+ladder — YAGNI, stdlib, platform feature, already-installed dependency, one line,
+minimum that works — with no separate command or heading;
 there is no `pr-review` pack). Default behavior is comments only. `deviate
 review pre` requires this issue's brief to contain named-check tokens; otherwise
 it emits exactly `brief incomplete` and stops (no Explore hunt). When the brief
@@ -170,7 +173,10 @@ optional packs (`review`, `walkthrough`); default setup does not install them.
   request (`git push -o merge_request.create`). The `pre` subcommand validates PR metadata; the
   `run` subcommand executes the ledger update + push, opening a PR/MR unless `--no-pr` is set.
   Platform is auto-detected from the `origin` remote and overridable via `--platform`.
-  PR titles use conventional-commit format for squash-merge compatibility. There is no Graphite path.
+  PR titles use the `_pr_title` conventional form `<type>(<scope>): <desc>` with compound
+  bracket-prefix stripping for squash-merge compatibility, and the body (`{SUMMARY}` /
+  `{CHANGES}` / `{CLOSES}`) doubles as the squash-merge commit body on both platform paths.
+  There is no Graphite path.
 * **Merge (`deviate merge` / `deviate merge pre` + `/deviate-merge` skill):** Final meso-layer gate that performs
   the squash-merge into the configured `base_branch` (from `resolve_base_branch`: hand-set `.deviate/config.toml` key, else `origin/HEAD`, else `main`) and writes a full Pydantic-validated `IssueRecord` (not a
   bare transition). `deviate merge pre` emits a JSON contract with `base_branch` so the skill

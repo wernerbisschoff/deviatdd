@@ -402,7 +402,7 @@ def _pr_title(issue_id: str, record_title: str, record_type: str = "feature") ->
     conventional commit subject.
     """
     commit_type = TYPE_MAP.get(record_type, "feat")
-    desc = re.sub(r"^\[[A-Z]+-\d+\]\s*", "", record_title).strip()
+    desc = re.sub(r"^(?:\[[^\]]+\]\s*)+", "", record_title).strip()
     return f"{commit_type}({commit_scope(issue_id)}): {desc}"
 
 

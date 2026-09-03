@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from deviate.cli.meso import _gitlab_push_options, _resolve_pr_platform
+import pytest
+
+from deviate.cli.meso import _gitlab_push_options, _pr_title, _resolve_pr_platform
 
 
 class TestResolvePrPlatform:
@@ -50,3 +52,20 @@ class TestGitlabPushOptions:
         opts = _gitlab_push_options("title", "body\nline2", "dev")
         s = " ".join(opts)
         assert "merge_request.description=body\nline2" in s
+
+
+class TestCompoundPrefixTitleStrip:
+    @pytest.mark.behavioral
+    def test_compound_prefix_strips_to_conventional_form(self) -> None:
+        title = _pr_title("ISS-ADH-029", "[FR-029][UI] Fold pruning")
+        assert title == "feat(ADH-029): Fold pruning"
+
+    @pytest.mark.behavioral
+    def test_spaced_compound_prefix_strips_to_conventional_form(self) -> None:
+        title = _pr_title("ISS-ADH-029", "[FR-029] [UI] Fold pruning")
+        assert title == "feat(ADH-029): Fold pruning"
+
+    @pytest.mark.behavioral
+    def test_empty_body_omits_description_option(self) -> None:
+        opts = _gitlab_push_options("feat(ADH-029): Fold pruning", "   ", "main")
+        assert " ".join(opts).find("merge_request.description") == -1
