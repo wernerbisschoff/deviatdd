@@ -88,13 +88,13 @@ _MISE_NAMED_TASKS = frozenset(
         "doctor:unit",
         "doctor:integration",
         "doctor:e2e",
-        "reset",
     }
 )
 
 SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     **{("mise", name): f"mise {name}" for name in _MISE_NAMED_TASKS},
     **{("mise", "run", name): f"mise run {name}" for name in _MISE_NAMED_TASKS},
+    ("mise", "run", "reset"): "mise run reset",
     ("mise", "exec"): "mise exec",
     ("pytest",): "pytest",
     ("python", "-m", "pytest"): "python -m pytest",
@@ -178,6 +178,8 @@ def _match_mise_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str]
         return (("mise", argv[1]), f"mise {argv[1]}")
     if len(argv) >= 3 and argv[1] == "run" and argv[2] in _MISE_NAMED_TASKS:
         return (("mise", "run", argv[2]), f"mise run {argv[2]}")
+    if argv[:3] == ("mise", "run", "reset"):
+        return (("mise", "run", "reset"), "mise run reset")
     if len(argv) >= 4 and argv[1] == "exec" and argv[2] == "--":
         inner = _match_executable(argv[3:])
         if inner is not None:

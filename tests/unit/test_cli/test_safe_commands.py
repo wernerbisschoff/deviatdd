@@ -75,7 +75,7 @@ class TestParseSafeCommandAcceptsAllowedForm:
             "mise run test:one -- tests/test_x.py -v",
             "mise run test:integration",
             "mise run doctor:e2e",
-            "mise reset",
+            "mise run reset",
         ],
     )
     def test_safe_command_accepted(self, command: str) -> None:
@@ -97,6 +97,11 @@ class TestParseSafeCommandAcceptsAllowedForm:
         assert result.argv[:3] == ("mise", "run", "test")
         # Everything after the canonical prefix flows into argv
         assert result.argv[3:] == ("--", "tests/test_x.py", "-v")
+
+    def test_bare_mise_reset_rejected(self) -> None:
+        result = parse_safe_command("mise reset")
+        assert not result.accepted, result.reason
+        assert result.argv == ()
 
 
 class TestParseSafeCommandRejectsShellInjection:
