@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Optional `product` pack is back for greenfield scope tracking.** `deviate setup --packs product` installs `/deviate-flows`, `/deviate-architecture`, and `/deviate-release`, which author standalone planning artifacts under `specs/_product/` (flow catalog + index, cross-epic architecture + domain model, release plan). The pack never gates execution, writes no ledger, and defines no `flow_refs` contract — `FLOW-NN` IDs are prose anchors within product artifacts only, and no Macro/Meso/Micro phase reads `specs/_product/`. Constitution 0.11.0 records the optional layer. Pinned by `tests/test_product_pack.py`.
+- **Setup on a TTY picks optional packs with a checkbox multi-select.** `deviate setup` with omitted `--packs` shows one optional pack per row where Space toggles and Enter confirms instead of a comma-separated prompt (AC-PLAN-002).
 
 ### Fixed
 

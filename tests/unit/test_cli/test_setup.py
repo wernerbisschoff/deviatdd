@@ -909,3 +909,94 @@ class TestSetupExportModeAndBaseBranch:
         ).read_text(encoding="utf-8")
         assert "Project Constitution" not in red_body
         assert "Version: 1.0.0" not in red_body
+
+
+class TestSetup037TtyEmptyConfirmAndProductPr:
+    """TSK-037-01 RED: pin `AC-PLAN-001` plus `AC-PLAN-002` with mocked TUI."""
+
+    @pytest.mark.behavioral
+    def test_tty_empty_confirm_installs_default_only(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-red.md").is_file()
+        assert (commands / "deviate-explore.md").is_file()
+        assert (commands / "deviate-plan.md").is_file()
+        for optional in (
+            "deviate-flows",
+            "deviate-architecture",
+            "deviate-release",
+            "deviate-pr",
+            "deviate-merge",
+        ):
+            assert not (commands / f"{optional}.md").exists(), optional
+
+    @pytest.mark.behavioral
+    def test_tty_product_plus_pr_installs_those_two_only(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr(
+            "deviate.cli._ask_optional_pack_picks", lambda: ["product", "pr"]
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        commands = tmp_path / ".opencode" / "commands"
+        for expected in (
+            "deviate-flows",
+            "deviate-architecture",
+            "deviate-release",
+            "deviate-pr",
+        ):
+            assert (commands / f"{expected}.md").is_file(), expected
+        for omitted in ("deviate-merge", "deviate-review", "deviate-e2e"):
+            assert not (commands / f"{omitted}.md").exists(), omitted
+        parsed = tomllib.loads(
+            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert "packs" not in parsed
+        assert "optional_packs" not in parsed
+
+    @pytest.mark.behavioral
+    def test_non_tty_omitted_packs_installs_default_only_without_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: False)
+        called = {"n": 0}
+
+        def _fail() -> list[str]:
+            called["n"] += 1
+            raise AssertionError("TTY picker must not run off-TTY")
+
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", _fail)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert called["n"] == 0
+        commands = tmp_path / ".opencode" / "commands"
+        assert (commands / "deviate-red.md").is_file()
+        assert not (commands / "deviate-pr.md").exists()
+
+    @pytest.mark.spy
+    def test_pack_path_never_uses_slash_prompt_ask(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("deviate.cli.is_interactive", lambda: True)
+        monkeypatch.setattr("deviate.cli._ask_optional_pack_picks", lambda: [])
+        seen: list[str] = []
+
+        def fake_ask(message: str, **kwargs: object) -> object:
+            seen.append(str(message))
+            return kwargs.get("default")
+
+        monkeypatch.setattr("deviate.cli.Prompt.ask", fake_ask)
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert "Optional command packs" not in seen
