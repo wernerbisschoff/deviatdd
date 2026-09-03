@@ -2470,6 +2470,11 @@ def _execute_rollback(
     wipes work without an explicit anchor. A ``boundary_sha`` that is
     not an ancestor of HEAD raises ``ROLLBACK_STALE_BOUNDARY`` and
     leaves the active branch unchanged (GH-168: rebase-rewritten RED).
+    After ``git reset --hard`` + ``git clean -fd``, every ``tasks.md``
+    that existed at the pre-reset HEAD and is missing at the new HEAD
+    is restored via ``git checkout <pre_reset_sha> -- <path>`` (GH-201).
+    Restore runs after clean so ``-fd`` cannot delete it. Do not raise
+    solely because pre-RED was computed too early — restore and continue.
 
     ``task_id`` and ``attempt`` thread the recovery ref identity: the
     caller chooses what counts as a distinct attempt (typically one
@@ -2564,6 +2569,10 @@ def _execute_rollback(
         capture_output=True,
         env=_git_env(),
     )
+    # After clean so ``-fd`` cannot delete the restore. A too-early
+    # pre-RED (plan.md) must not leave the human-authored queue absent
+    # — do not wait for the later feedback commit to recreate it.
+    _restore_missing_tasks_md(root, commit_sha)
     return _RollbackTrace(
         head_sha=commit_sha,
         reset_to=boundary_sha,
@@ -2644,6 +2653,10 @@ _PRE_RED_SHA_PARENT_RE = re.compile(r"^(?:.+ )?test\([^)]+\): RED phase(?:\s|$)"
 _JUDGE_FEEDBACK_SUBJECT_RE = re.compile(
     r"^(?:.+ )?docs\([^)]+\): add judge feedback for retry$"
 )
+# Meso docs artifacts (``create plan.md`` / ``create tasks.md`` / other
+# ``docs(`` subjects) plus judge-feedback. Walked the same way as
+# feedback until a RED-phase subject or a non-docs commit (GH-201).
+_WALKABLE_DOCS_SUBJECT_RE = re.compile(r"^(?:.+ )?docs\([^)]+\): ")
 
 
 def _git_capture(root: Path, *git_args: str) -> str:
@@ -2877,13 +2890,48 @@ def _maybe_advance_red_sha_past_feedback(
         session.red_commit_sha = fb_head
 
 
+def _is_walkable_docs_subject(subject: str) -> bool:
+    """Return True for judge-feedback and meso ``docs(`` artifact subjects."""
+    return bool(_WALKABLE_DOCS_SUBJECT_RE.match(subject))
+
+
+def _tasks_md_paths_at(root: Path, treeish: str) -> frozenset[str]:
+    """Return ``tasks.md`` paths in ``treeish`` (``git ls-tree -r``)."""
+    raw = _git_capture(root, "ls-tree", "-r", "--name-only", treeish)
+    return frozenset(path for path in raw.splitlines() if Path(path).name == "tasks.md")
+
+
+def _restore_missing_tasks_md(root: Path, pre_reset_sha: str) -> None:
+    """Checkout every ``tasks.md`` present at pre-reset HEAD and missing now.
+
+    Hard invariant (GH-201): rollback must never leave a ``tasks.md``
+    that existed at the pre-reset HEAD absent after ``reset --hard`` +
+    ``git clean -fd``. Do not ``PhaseFailedError`` solely because
+    pre-RED was computed too early — restore and continue.
+    """
+    sha = (pre_reset_sha or "").strip()
+    if not sha:
+        return
+    missing = _tasks_md_paths_at(root, sha) - _tasks_md_paths_at(root, "HEAD")
+    for path in sorted(missing):
+        subprocess.run(
+            ["git", "checkout", sha, "--", path],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+
+
 def _resolve_judge_diff_base(root: Path, red_commit_sha: str) -> str:
-    """Walk docs-feedback SHAs back to the RED-phase failing-test commit.
+    """Walk docs SHAs back to the RED-phase failing-test commit.
 
     ``session.red_commit_sha`` may point at a
     ``docs(...): add judge feedback for retry`` commit so rollback and
-    GREEN entry keep a valid TRAIN boundary. The injected JUDGE diff
-    must still start at the real RED-phase commit (GH-88 / GH-90).
+    GREEN entry keep a valid TRAIN boundary, or at a meso docs artifact
+    (``docs(...): create tasks.md`` / ``create plan.md``). Walk those
+    subjects the same way as feedback until a real RED-phase subject or
+    a non-docs commit (GH-88 / GH-90 / GH-201). The injected JUDGE diff
+    must still start at the real RED-phase commit.
     """
     current = red_commit_sha.strip()
     seen: set[str] = set()
@@ -2894,7 +2942,7 @@ def _resolve_judge_diff_base(root: Path, red_commit_sha: str) -> str:
             return red_commit_sha.strip()
         if _PRE_RED_SHA_PARENT_RE.match(subject):
             return current
-        if not _JUDGE_FEEDBACK_SUBJECT_RE.match(subject):
+        if not _is_walkable_docs_subject(subject):
             return current
         parent = _git_parent_sha(root, current)
         if not parent:
@@ -2960,10 +3008,13 @@ def _resolve_pre_red_sha(root: Path, red_sha: str) -> str:
 
     ``session.red_commit_sha`` may point at a stacked
     ``docs(...): add judge feedback for retry`` commit (GH-88 TRAIN
-    boundary). Walk those subjects via ``_resolve_judge_diff_base`` to
-    the RED-phase failing-test SHA, then return that RED commit's
-    parent — the true pre-RED. ``PRE_RED_AMBIGUOUS`` only when that
-    parent cannot be resolved.
+    boundary) or a meso docs artifact (``create tasks.md`` /
+    ``create plan.md``). Walk those subjects via
+    ``_resolve_judge_diff_base`` to the RED-phase failing-test SHA
+    (or the first non-docs commit), then return that commit's parent
+    — the true pre-RED. A stored SHA equal to the tasks.md commit
+    must not resolve to plan.md (GH-201). ``PRE_RED_AMBIGUOUS`` only
+    when that parent cannot be resolved.
     """
     if not red_sha or not red_sha.strip():
         return ""
