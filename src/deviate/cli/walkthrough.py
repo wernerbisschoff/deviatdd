@@ -166,7 +166,8 @@ def pre(
     changed_files = _get_changed_files(repo, resolved_base, target)
     test_files, production_files = classify_changed_files(changed_files)
 
-    if not diff.strip() and not changed_files and brief_path is None:
+    empty_diff = not diff.strip() and not changed_files
+    if empty_diff and brief_path is None:
         typer.echo(f"SKIP: no changes since {resolved_base}")
         return
 
