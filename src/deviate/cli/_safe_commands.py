@@ -83,6 +83,7 @@ SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     ("mise", "integration"): "mise integration",
     ("mise", "e2e"): "mise e2e",
     ("mise", "doctor"): "mise doctor",
+    ("mise", "run", "reset"): "mise run reset",
     ("mise", "exec"): "mise exec",
     ("pytest",): "pytest",
     ("python", "-m", "pytest"): "python -m pytest",
@@ -166,6 +167,8 @@ def _match_mise_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str]
         return (("mise", argv[1]), f"mise {argv[1]}")
     if argv[:3] == ("mise", "run", "test"):
         return (("mise", "run", "test"), "mise run test")
+    if argv[:3] == ("mise", "run", "reset"):
+        return (("mise", "run", "reset"), "mise run reset")
     if len(argv) >= 4 and argv[1] == "exec" and argv[2] == "--":
         inner = _match_executable(argv[3:])
         if inner is not None:
