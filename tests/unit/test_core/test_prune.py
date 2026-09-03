@@ -294,3 +294,27 @@ def test_classify_empty_and_bare_bodies_drop_ac_plan_002() -> None:
     assert classify_test("test_foo", body="") == "drop"
     assert classify_test("test_foo", body="   \n") == "drop"
     assert classify_test("test_foo", body="def test_foo():\n    x = 1\n") == "drop"
+
+
+@pytest.mark.behavioral
+def test_in_flight_thin_never_unlinks_spec_files(tmp_path: Path) -> None:
+    """AC-PLAN-003: empty-file unlink applies only to test files; specs stay."""
+    from deviate.core.prune import TestItem, _thin_tests
+
+    issue_dir = _seed_completed_issue(tmp_path)
+    ledger = tmp_path / "specs" / "issues.jsonl"
+    ledger.write_text(
+        ledger.read_text(encoding="utf-8").replace('"COMPLETED"', '"SPECIFIED"'),
+        encoding="utf-8",
+    )
+    plan = build_prune_plan(tmp_path, "ISS-ADH-099")
+    assert plan.status == "IN_FLIGHT"
+    assert plan.spec_deletes == []
+    assert plan.test_drop and plan.test_keep
+    spec_rel = (issue_dir / "plan.md").relative_to(tmp_path)
+    _thin_tests(
+        tmp_path,
+        [TestItem(path=spec_rel, name="test_phantom", kind="drop", source="x")],
+    )
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()

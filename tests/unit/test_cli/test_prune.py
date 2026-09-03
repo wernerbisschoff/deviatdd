@@ -8,6 +8,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import pytest
+
 from deviate.cli import cli
 from deviate.core.prune import snapshot_ledgers
 
@@ -173,3 +175,24 @@ def test_micro_and_all_do_not_auto_invoke_prune() -> None:
     assert "apply_prune" not in micro
     assert "prune_app" not in micro
     assert "deviate prune" not in micro
+
+
+@pytest.mark.behavioral
+def test_prune_pre_in_flight_spec_lists_and_unmatched_surfaced(tmp_path: Path) -> None:
+    """AC-PLAN-003: in-flight pre surfaces thinning lists and unmatched ACs."""
+    _seed_completed_issue(tmp_path)
+    ledger = tmp_path / "specs" / "issues.jsonl"
+    ledger.write_text(
+        ledger.read_text(encoding="utf-8").replace('"COMPLETED"', '"BACKLOG"'),
+        encoding="utf-8",
+    )
+    with chdir(tmp_path):
+        result = runner.invoke(cli, ["prune", "pre", "--issue", "ISS-ADH-099"])
+    assert result.exit_code == 0, result.output
+    contract = json.loads(result.stdout)
+    assert contract["status"] == "IN_FLIGHT"
+    assert contract["spec_deletes"] == []
+    assert contract["test_drop"] and contract["test_keep"]
+    assert "unmatched_acs" in contract
+    assert any("plan.md" in p for p in contract["spec_keeps"])
+    assert any("tasks.md" in p for p in contract["spec_keeps"])
