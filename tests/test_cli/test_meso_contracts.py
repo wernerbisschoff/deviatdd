@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from contextlib import chdir
 from pathlib import Path
@@ -11,6 +12,11 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 
 runner = CliRunner()
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _git_env() -> dict[str, str]:
@@ -275,8 +281,9 @@ class TestMesoContracts:
             result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-001-006"])
 
             assert result.exit_code != 0
-            assert "MIXED_TEST_LAYER" in result.output
-            assert "TSK-001-02" in result.output
+            output = _plain(result.output)
+            assert "MIXED_TEST_LAYER" in output
+            assert "TSK-001-02" in output
             after = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 cwd=tmp_path,
@@ -321,7 +328,7 @@ class TestMesoContracts:
             )
 
             assert result.exit_code != 0
-            assert "MIXED_TEST_LAYER" in result.output
+            assert "MIXED_TEST_LAYER" in _plain(result.output)
 
     def test_tasks_post_commits_single_layer_tdd_card(self, tmp_path: Path) -> None:
         with chdir(tmp_path):
