@@ -33,7 +33,7 @@
 **Scenario AC-PLAN-003: Leave EXECUTE IMMEDIATE and DIRECT ungated by the files rule**
 - **Source Outline**: `AO-022-01`
 - **Upstream Traceability**: `US-022-01`, `FR-ADHOC-022`, `AC-ADHOC-022-01`
-- **Current-Code Evidence**: `src/deviate/cli/micro.py:_run_execute_phase`; `tests/test_micro/test_judge.py:test_execute_judge_stays_ungated`
+- **Current-Code Evidence**: `src/deviate/cli/micro.py:_run_execute_phase`; `tests/unit/test_micro/test_judge.py:test_execute_judge_stays_ungated`
 - **Given**: A task uses `execution_mode` EXECUTE, IMMEDIATE, or DIRECT.
 - **When**: The phase completes without a non-empty `files` or `test_file` set.
 - **Then**: This files gate does not raise and does not rewrite the route.
@@ -69,7 +69,7 @@
 **Scenario AC-PLAN-007: Keep ISS-ADH-020 and ISS-ADH-021 pins and stay thin on GREEN**
 - **Source Outline**: `AO-022-03`
 - **Upstream Traceability**: `US-022-01`, `US-022-02`, `FR-ADHOC-022`, `AC-ADHOC-022-03`
-- **Current-Code Evidence**: `tests/test_micro/test_judge.py:test_already_exists_missing_test_file_fails`; `tests/test_micro/test_judge.py:test_already_exists_head_quotes_pass`; `src/deviate/cli/micro.py:_run_green_phase`
+- **Current-Code Evidence**: `tests/unit/test_micro/test_judge.py:test_already_exists_missing_test_file_fails`; `tests/unit/test_micro/test_judge.py:test_already_exists_head_quotes_pass`; `src/deviate/cli/micro.py:_run_green_phase`
 - **Given**: Existing ISS-ADH-020 quote fixtures and ISS-ADH-021 GREEN-entry SHA fixtures run on this branch.
 - **When**: The new files-membership gate lands in the same implementation commit as the API, architecture, and CHANGELOG edits.
 - **Then**: Those fixtures stay green, GREEN is not invoked to invent missing tests, and `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, and `CHANGELOG.md` `[Unreleased]` document that already-exists COMPLETE requires named present regression tests.
@@ -96,17 +96,17 @@
   - **Changes Required**: State that `already_satisfied` must name `files` and/or `test_file`. A passing suite with no named test files is not a COMPLETE.
   - **Integration Surface**: `_build_auto_prompt("red", ...)`.
 
-- **tests/test_micro/test_orchestration.py**: Pin the RED empty-files defect.
+- **tests/unit/test_micro/test_orchestration.py**: Pin the RED empty-files defect.
   - **Current State**: `test_micro_red_no_failing_test_routes_to_judge_skip_refactor` COMPLETEs on `skip_refactor` with no RED `files` / `test_file` and with a seeded passing test that restore may discard.
   - **Changes Required**: Add `test_already_satisfied_null_files_does_not_complete` (name may vary): RED `failure_kind: already_satisfied`, `files=None`, `test_file=None`, pytest exit 0, mocked `_run_pytest` / `_run_test_cmd`, no COMPLETED row. Keep the existing skip_refactor happy path only when files are named and present. Use `tmp_git_repo` + `_git_env()` / `cwd=<tmp_git_repo>`.
   - **Integration Surface**: `_run_red_phase`; `_adjudicate_red_no_failing_test`; `_invoke_agent` mock.
 
-- **tests/test_micro/test_judge.py**: Pin declared-files membership on already-exists.
+- **tests/unit/test_micro/test_judge.py**: Pin declared-files membership on already-exists.
   - **Current State**: `test_already_exists_missing_test_file_fails` covers a missing HEAD test on evidence `test_path`. `test_already_exists_head_quotes_pass` COMPLETEs when HEAD quotes match. There is no pin that RED-declared `files` must appear in the injected-diff / HEAD path set.
   - **Changes Required**: Add `test_already_satisfied_declared_files_missing_from_diff_fails`: JUDGE `skip_refactor` plus declared `files` absent from injected diff and HEAD does not COMPLETE. Keep `test_already_exists_missing_test_file_fails` and `test_already_exists_head_quotes_pass` green. Keep `test_execute_judge_stays_ungated` green.
   - **Integration Surface**: `_run_judge_phase`; `_rewrite_unmatched_tdd_pass`; `evaluate_judge_evidence`.
 
-- **tests/test_micro/test_green.py** / **tests/test_micro/test_two_counter_retry.py**: Composition only.
+- **tests/unit/test_micro/test_green.py** / **tests/unit/test_micro/test_two_counter_retry.py**: Composition only.
   - **Current State**: ISS-ADH-021 SHA / GREEN-entry pins live here.
   - **Changes Required**: Do not invoke GREEN to invent missing tests. Leave the SHA pins green. Add no extra GREEN production-file writes.
   - **Integration Surface**: `_run_green_phase`; `_run_tdd_cycle`.
@@ -128,19 +128,19 @@
 
 ## Implementation Strategy
 - **Phase 1**: RED declared-files gate
-  - **Files**: `src/deviate/cli/micro.py`, `src/deviate/prompts/auto/red.md`, `tests/test_micro/test_orchestration.py`
+  - **Files**: `src/deviate/cli/micro.py`, `src/deviate/prompts/auto/red.md`, `tests/unit/test_micro/test_orchestration.py`
   - **Approach**: After `_invoke_agent` in `_run_red_phase` / at the start of `_adjudicate_red_no_failing_test`, detect a test-bearing TDD task (`execution_mode` TDD, not EXECUTE / IMMEDIATE / DIRECT). If `failure_kind` is `already_satisfied` or the route is about to COMPLETE with no failing test, require `files` non-empty or `test_file` non-empty. Otherwise raise `PhaseFailedError` or force `test_defect` / `revert_before`. Update `red.md` so the agent names those fields. Mock `_run_pytest` and `_run_test_cmd`.
-  - **Verification**: `uv run pytest tests/test_micro/test_orchestration.py -q -k "already_satisfied or no_failing_test" --tb=short`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_orchestration.py -q -k "already_satisfied or no_failing_test" --tb=short`
 
 - **Phase 2**: Snapshot membership and restore-safe COMPLETE
-  - **Files**: `src/deviate/core/judge_evidence.py`, `src/deviate/cli/micro.py`, `tests/test_micro/test_judge.py`, `tests/test_core/test_judge_evidence.py`
+  - **Files**: `src/deviate/core/judge_evidence.py`, `src/deviate/cli/micro.py`, `tests/unit/test_micro/test_judge.py`, `tests/unit/test_core/test_judge_evidence.py`
   - **Approach**: Collect declared paths from RED `files` / `test_file` and from JUDGE evidence `test_path`. Cross-check membership against `_map_diff_hunks(_assemble_judge_injected_diff(...))` and `_evidence_head_contents` (include declared paths, not only evidence paths). Missing path rewrites PASS to `revert_before` / `revert_to_red` with runner-authored feedback. When the path exists only in the dirty snapshot, do not let `_restore_worktree_to_baseline` delete it and then COMPLETE; commit those tests or skip the wipe of those paths. Do not reopen quote uniqueness or AC coverage. Do not call GREEN.
-  - **Verification**: `uv run pytest tests/test_micro/test_judge.py tests/test_core/test_judge_evidence.py -q -k "already_satisfied or already_exists" --tb=short`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_judge.py tests/unit/test_core/test_judge_evidence.py -q -k "already_satisfied or already_exists" --tb=short`
 
 - **Phase 3**: Composition pins, specs, changelog
-  - **Files**: `tests/test_micro/test_green.py`, `tests/test_micro/test_two_counter_retry.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
+  - **Files**: `tests/unit/test_micro/test_green.py`, `tests/unit/test_micro/test_two_counter_retry.py`, `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`
   - **Approach**: Re-run the ISS-ADH-020 already-exists fixtures and the ISS-ADH-021 GREEN-entry / `ROLLBACK_BOUNDARY_MISSING` pins. Edit API and architecture in the same implementation commit. Append the `[Unreleased]` bullet. Do not add GREEN production files.
-  - **Verification**: `uv run pytest tests/test_micro/test_orchestration.py tests/test_micro/test_judge.py tests/test_micro/test_green.py tests/test_micro/test_two_counter_retry.py -q -k "already_satisfied or already_exists or no_failing_test"`
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_orchestration.py tests/unit/test_micro/test_judge.py tests/unit/test_micro/test_green.py tests/unit/test_micro/test_two_counter_retry.py -q -k "already_satisfied or already_exists or no_failing_test"`
 
 ## Data Flow Analysis
 - **Inputs**: RED `HandoverManifest.failure_kind`, `files`, `test_file`; task `execution_mode`; test-command exit code; JUDGE `next_action` / `verdict` / `evidence`; injected `<diff>` from `_assemble_judge_injected_diff`; HEAD bytes from `_git_show_head`.

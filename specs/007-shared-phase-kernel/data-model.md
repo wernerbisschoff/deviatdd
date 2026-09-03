@@ -113,5 +113,5 @@ Kernel rules: one `append_task_transition` row per transition (append-only, no o
 | SRC-002 | Constitution | `specs/constitution.md` | §1 append-only ledger + session state shapes; §2 Pydantic/Typer stack |
 | SRC-003 | Codebase_File | `src/deviate/cli/micro.py` | Kernel host; `_apply_judge_verdict:3410` template; `_run_pytest:5315`; `refactor_post:7114` |
 | SRC-004 | Codebase_File | `src/deviate/state/` ledgers | `TaskRecord`, `append_task_transition`, `SessionState` (unchanged shapes) |
-| SRC-005 | Codebase_File | `tests/test_micro/test_red.py` | GH-154 AC-6 manual RED contract |
-| SRC-006 | Codebase_File | `tests/test_micro/test_judge.py` | Manual JUDGE verdict side-effect contract |
+| SRC-005 | Codebase_File | `tests/unit/test_micro/test_red.py` | GH-154 AC-6 manual RED contract |
+| SRC-006 | Codebase_File | `tests/unit/test_micro/test_judge.py` | Manual JUDGE verdict side-effect contract |

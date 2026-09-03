@@ -84,11 +84,11 @@
   - **Current State**: `_apply_judge_verdict` calls `_rewrite_unmatched_tdd_pass` unconditionally, which rewrites a `no_failing_test` `COMPLIANCE_PASS` to `revert_to_red` on partial evidence, then `_require_revert_to_red_boundary` raises `ROLLBACK_BOUNDARY_MISSING` because `session.red_commit_sha` is empty on the already-exists path.
   - **Changes Required**: Skip `_rewrite_unmatched_tdd_pass` when `session.failure_kind == "no_failing_test"` and the verdict is a forward-route PASS. Ensure the COMPLETED-write AC-token evidence check (`_require_tdd_completed_evidence` via `_append_status_transition`) does not raise `COMPLETED_EVIDENCE_MISSING` on partial evidence for the same route, while still enforcing declared-regression-path presence. Keep `revert_before` and genuine `revert_to_red` routes unchanged.
   - **Integration Surface**: `_coerce_judge_action`, `_rewrite_unmatched_tdd_pass`, `_NO_FAILING_TEST_FORWARD_ROUTES`, `_require_revert_to_red_boundary`, `_require_tdd_declared_regression_files`, `_append_status_transition`, and `SessionState.failure_kind` / `pending_judge_action` / `red_commit_sha`.
-- **tests/test_micro/test_judge.py**: Unit sandbox for the fix.
+- **tests/unit/test_micro/test_judge.py**: Unit sandbox for the fix.
   - **Current State**: `test_already_exists_head_quotes_pass` (line 3315) drives `_run_tdd_judge` with `next_action=skip_refactor` on a RED-boundary task.
   - **Changes Required**: Add a test that a `no_failing_test` `COMPLIANCE_PASS` with `red_commit_sha == ""` and partial evidence completes via `skip_refactor` instead of raising `ROLLBACK_BOUNDARY_MISSING`. Keep the genuine-test `revert_to_red` and `revert_before` assertions intact.
   - **Integration Surface**: `_run_judge_phase`, `_apply_judge_verdict`, `_adjudicate_red_no_failing_test`, `HandoverManifest`, `SessionState`.
-- **tests/test_cli/test_micro.py**: Integration sandbox reproducing the `TSK-029-02` crash.
+- **tests/unit/test_cli/test_micro.py**: Integration sandbox reproducing the `TSK-029-02` crash.
   - **Current State**: The `_run_pytest`-mocked CLI path covers judge routing and `ROLLBACK_BOUNDARY_MISSING` (lines 1760-1816).
   - **Changes Required**: Add a `_run_pytest`-mocked CLI test that drives a `no_failing_test` already-exists task end to end and asserts it COMPLETES with no `ROLLBACK_BOUNDARY_MISSING` traceback.
   - **Integration Surface**: `deviate micro run`, `_run_tdd_cycle`, `_run_red_phase`, `_run_judge_phase`.
@@ -100,9 +100,9 @@
 - **Phase 1**: Guard the evidence gate in `src/deviate/cli/micro.py` — deliverable: `no_failing_test` already-exists `COMPLIANCE_PASS` no longer rewrites to `revert_to_red`.
   - **Files**: `src/deviate/cli/micro.py`
   - **Approach**: In `_apply_judge_verdict`, run `_rewrite_unmatched_tdd_pass` only when `session.failure_kind != "no_failing_test"`. In the COMPLETED-write evidence check, skip the AC-token citation requirement for `failure_kind == "no_failing_test"` while retaining the declared-regression-path presence gate.
-  - **Verification**: `pytest tests/test_micro/test_judge.py -v` passes; the new partial-evidence no_failing_test test completes with no `ROLLBACK_BOUNDARY_MISSING`.
+  - **Verification**: `pytest tests/unit/test_micro/test_judge.py -v` passes; the new partial-evidence no_failing_test test completes with no `ROLLBACK_BOUNDARY_MISSING`.
 - **Phase 2**: Add regression tests — deliverable: failing-then-passing RED coverage for the fix.
-  - **Files**: `tests/test_micro/test_judge.py`, `tests/test_cli/test_micro.py`
+  - **Files**: `tests/unit/test_micro/test_judge.py`, `tests/unit/test_cli/test_micro.py`
   - **Approach**: Add a unit test driving `_adjudicate_red_no_failing_test` / `_run_judge_phase` with `red_commit_sha == ""` and partial evidence, and a `_run_pytest`-mocked CLI test for the `TSK-029-02` shape. Assert COMPLETED + `skip_refactor`, regression-pin tests on disk, no crash.
   - **Verification**: `pytest tests/ -v` (full suite under 30s with mocked `_run_pytest`); `ruff check .` clean.
 - **Phase 3**: Align specs and changelog — deliverable: documentation reflects the final behavior.

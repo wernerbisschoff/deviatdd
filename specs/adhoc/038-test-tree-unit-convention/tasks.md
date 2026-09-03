@@ -15,11 +15,11 @@
     - `mise.toml`
     - `tests/unit/test_cli/`
     - `tests/unit/test_micro/`
-    - `tests/test_micro/test_judge_feedback_persist.py`
+    - `tests/unit/test_micro/test_judge_feedback_persist.py`
     - `tests/helpers/cycle_driver.py`
   - **Rationale**: `US-038-01` with `AC-PLAN-001` needs suites collected from `tests/unit/`; `AC-PLAN-002` needs stale absolute imports to fail visibly. `mise.toml` repoints `[tasks.unit]`; suite dirs move; import files rewrite `tests.test_*` paths.
   - **Details**:
-    - **Implementation**: Git-move `tests/test_cli`, `test_core`, `test_macro`, `test_meso`, `test_micro`, `test_state`, `test_ui`, `test_release`, `tests/core` under `tests/unit/`; keep `tests/conftest.py` in place
+    - **Implementation**: Git-move `tests/unit/test_cli`, `tests/unit/test_core`, `tests/unit/test_macro`, `tests/unit/test_meso`, `tests/unit/test_micro`, `tests/unit/test_state`, `tests/unit/test_ui`, `tests/unit/test_release`, `tests/unit/core` under `tests/unit/`; keep `tests/conftest.py` in place
     - **Implementation**: Rewrite absolute imports (`tests.test_micro.*`, `tests.conftest`, `tests.helpers.*`) to `tests.unit.*` paths in moved files
     - **Implementation**: Repoint `[tasks.unit]` to `uv run pytest tests/unit`
     - **Refactor**: Remove moved empty source dirs; keep import style consistent with repo

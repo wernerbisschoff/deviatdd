@@ -120,7 +120,7 @@ sequenceDiagram
 
 ### FR-017-TDDMockBoundary: TDD Integration Mock Boundary
 - **Description**: Push the agent invocation mock boundary from internal function (`_invoke_agent`) to the system edge (`subprocess.Popen`). Add `StubAgentBackend` class in `src/deviate/core/agent.py` that returns a deterministic `HandoverManifest` without subprocess overhead. Register `"stub"` entry in `BACKEND_COMMANDS`. Replace the autouse `conftest.py` fixture (currently patches `_invoke_agent`) with a `subprocess.Popen` mock. Remove `_run_pytest` function-level mocks from RED/GREEN/REFACTOR tests, replacing them with system-edge subprocess assertions. Update `deviate-tasks` SKILL.md decision tree to include integration/wiring guidance (step 7): tasks involving subprocess, API, or agent prompt wiring must be typed as TDD with system-edge mock boundaries.
-- **Preconditions**: `tests/test_micro/conftest.py:16-17` patches `_invoke_agent` site-wide. All RED/GREEN/REFACTOR tests mock `_run_pytest` at function level. No `StubAgentBackend` exists. The `deviate-tasks` decision tree has no integration/wiring guidance.
+- **Preconditions**: `tests/unit/test_micro/conftest.py:16-17` patches `_invoke_agent` site-wide. All RED/GREEN/REFACTOR tests mock `_run_pytest` at function level. No `StubAgentBackend` exists. The `deviate-tasks` decision tree has no integration/wiring guidance.
 - **Inputs/Outputs**:
   - `StubAgentBackend.invoke(prompt)` → `HandoverManifest` (canned response, no subprocess)
   - `conftest.py` autouse fixture patches `subprocess.Popen` (not `_invoke_agent`)
@@ -134,7 +134,7 @@ sequenceDiagram
      - **When**: `.invoke("test prompt")` is called
      - **Then**: It returns a valid `HandoverManifest` with `phase="RED"`, `status="success"` without spawning any subprocess
   2. `AC-017-02`:
-     - **Given**: `tests/test_micro/conftest.py`
+     - **Given**: `tests/unit/test_micro/conftest.py`
      - **When**: The autouse fixture executes
      - **Then**: It patches `subprocess.Popen` (not `deviate.cli.micro._invoke_agent`)
   3. `AC-017-03`:
@@ -566,6 +566,6 @@ ID | Type | Source / Path (Strictly Relative to Repo Root) | Relevance Note
 `SRC-010` | Codebase_File | `src/deviate/state/config.py` | DeviateConfig, SessionState, ProfileConfig, PytestReportConfig
 `SRC-011` | Codebase_File | `src/deviate/state/ledger.py` | IssueRecord, TaskRecord, AdhocRecord, RollbackSnapshot, LedgerFilter
 `SRC-012` | Plan_MD | `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` | TDD mock boundary analysis, StubAgentBackend design, system-edge test patterns
-`SRC-013` | Codebase_File | `tests/test_micro/conftest.py` | Autouse `_invoke_agent` mock — the broken boundary pattern targeted by FR-017
+`SRC-013` | Codebase_File | `tests/unit/test_micro/conftest.py` | Autouse `_invoke_agent` mock — the broken boundary pattern targeted by FR-017
 `SRC-014` | Codebase_File | `src/deviate/cli/micro.py` | `_SKILL_NAMES` dict at L39-44 — YELLOW absent, JUDGE = None — targeted by FR-018/FR-019
 `SRC-015` | Constitution | `specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]` | Model tiering: V4 Pro for compliance (JUDGE, YELLOW) — mandate for FR-018/FR-019

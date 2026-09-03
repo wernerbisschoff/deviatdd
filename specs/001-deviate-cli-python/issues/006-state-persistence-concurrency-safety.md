@@ -37,14 +37,14 @@ As a developer running multiple CLI instances or background processes, I need al
 - **AC-006-STATE-02**: Invalid `timeout_seconds` (e.g., `-1`) in `.deviate/config.toml` triggers Pydantic validation failure with structured error.
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
-- **Unit Tests**: `tests/test_state/test_concurrency.py`, `tests/test_state/test_config.py`
+- **Unit Tests**: `tests/unit/test_state/test_concurrency.py`, `tests/unit/test_state/test_config.py`
 - **Integration Tests**: `tests/test_integration/test_file_locking.py`
 
 ## [DEMONSTRATION_PATH]
 ```bash
 # Verify state persistence and concurrency safety
-pytest tests/test_state/test_concurrency.py -v
-pytest tests/test_state/test_config.py -v
+pytest tests/unit/test_state/test_concurrency.py -v
+pytest tests/unit/test_state/test_config.py -v
 pytest tests/test_integration/test_file_locking.py -v
 python -c "import json; [json.loads(l) for l in open('specs/issues.jsonl')]"
 ```

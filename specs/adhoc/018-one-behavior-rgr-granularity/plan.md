@@ -118,7 +118,7 @@
 5. **Today**: Wall-clock split produces layered fake tasks (test skeleton vs implement vs add the route) and extra RED/GREEN/JUDGE cycles.
 6. **After Phase 2**: Each TDD task is one fail-to-pass contract. Fake splits merge. Oversized GREEN packets (10-file / >400 LOC) still split. JUDGE still sees one behavior (≲2 files / ≲3 hunks / ≲30 production LOC; review ceiling <200 typical / 400 max).
 7. **Storage**: No ledger schema change. `specs/issues.jsonl` and `tasks.jsonl` stay append-only. Prompt text is the control surface.
-8. **Verification**: Operators run the `rg` pins in the issue `## Demonstration Path`. Optional file-read pins may land in `tests/test_meso/test_auto_prompt_templates.py`. Those pins must not call un-mocked `deviate.cli.micro._run_pytest`.
+8. **Verification**: Operators run the `rg` pins in the issue `## Demonstration Path`. Optional file-read pins may land in `tests/unit/test_meso/test_auto_prompt_templates.py`. Those pins must not call un-mocked `deviate.cli.micro._run_pytest`.
 
 ## Risk Assessment
 | Risk | Impact | Likelihood | Mitigation |

@@ -77,17 +77,17 @@
   - **Changes Required**: After RED `_invoke_agent`, treat timeout as timeout even when `partial_stdout` is empty. Log path stays `AGENT_TIMEOUT`. Call `_restore_worktree_to_baseline(root, red_baseline)` before raise. Raise `PhaseFailedError` that names timeout. Leave `red_commit_sha` empty. Write no RED-success or COMPLETED ledger row. Keep `_restore_worktree_to_baseline` as the only restore helper. Keep EXECUTE `stall_timeout=3600`. Do not reopen `_find_task_record` unless a known active issue still receives a sibling COMPLETED `preferred` hit on this hang path.
   - **Integration Surface**: `_run_red_phase`; `_invoke_agent`; `_restore_worktree_to_baseline`; `_worktree_status_paths`; `EXECUTE_STALL_TIMEOUT_SECONDS`; `_find_task_record`.
 
-- **tests/test_cli/test_micro.py**: Pin RED timeout surface, restore, and compose.
+- **tests/unit/test_cli/test_micro.py**: Pin RED timeout surface, restore, and compose.
   - **Current State**: `TestGreenStallHarnessSurface` pins `_invoke_agent` `AGENT_TIMEOUT` and EXECUTE `stall_timeout==3600`. `TestRedPhaseFailureBoundaryIsolation` expects `agent returned no manifest` when invoke returns `(None, "403 RegionError")`. No pin restores `red_baseline` after a RED timeout.
   - **Changes Required**: Add a `_run_red_phase` pin that mocks timeout (`AgentTimeoutError` or `(None, timeout_tail)`), expects `AGENT_TIMEOUT`, a timeout-named `PhaseFailedError`, restore to `red_baseline`, and no RED/COMPLETED ledger row. Keep the 403 no-manifest pin on a non-timeout `None`. Keep ISS-ADH-025 and EXECUTE 3600 pins. Mock `deviate.cli.micro._run_pytest` if a CLI path would spawn it. Patch budgets. Do not sleep 900s or 1800s.
   - **Integration Surface**: `_run_red_phase`; `_invoke_agent`; `_restore_worktree_to_baseline`.
 
-- **tests/test_core/test_agent.py**: Pin post-write wall-clock timeout.
+- **tests/unit/test_core/test_agent.py**: Pin post-write wall-clock timeout.
   - **Current State**: Silent-stdout stall, stderr-not-liveness, stall-override, and `STREAM_STALL_TIMEOUT_SECONDS == 900` pins already exist. The poll loop has no pin that occasional stdout still dies at `timeout_secs`.
   - **Changes Required**: Keep those pins. Add a mocked-`Popen` pin: emit some stdout, then trickle more stdout inside the stall window, with a sub-second `timeout_secs`, and expect `AgentTimeoutError` at that wall clock with no `time.sleep(30)` retry. Do not sleep 900s.
   - **Integration Surface**: `_invoke_streaming`; `invoke`; `AgentTimeoutError`.
 
-- **tests/test_micro/test_run.py** / **tests/test_micro/test_e2e.py**: Keep ISS-ADH-023 issue-scope pins.
+- **tests/unit/test_micro/test_run.py** / **tests/unit/test_micro/test_e2e.py**: Keep ISS-ADH-023 issue-scope pins.
   - **Current State**: Pinned `TSK-NNN-NN` already ignores sibling COMPLETED when this issue is known. `_find_task_record` returns `preferred` only when no active issue resolves.
   - **Changes Required**: Keep those pins green. Add a leftover-hole pin only if a known active issue still receives a sibling COMPLETED after a hung RED (IDLE session, no this-issue ledger row).
   - **Integration Surface**: `_find_task_record`; `_exit_if_already_done`.
@@ -109,9 +109,9 @@
 
 ## Implementation Strategy
 - **Phase 1**: RED timeout, restore, and wall-clock pins
-  - **Files**: `tests/test_cli/test_micro.py`, `tests/test_core/test_agent.py`
+  - **Files**: `tests/unit/test_cli/test_micro.py`, `tests/unit/test_core/test_agent.py`
   - **Approach**: Add a `_run_red_phase` pin that dirties a tracked or untracked path after `red_baseline`, mocks a timeout invoke, and expects `AGENT_TIMEOUT`, restore, and no RED/COMPLETED row. Add a streaming pin that trickles stdout under a sub-second `timeout_secs` and expects `AgentTimeoutError` with no 30s retry. Keep ISS-ADH-025, ISS-ADH-023, and EXECUTE 3600 pins. Mock `_run_pytest` and `Popen`. Do not sleep 900s.
-  - **Verification**: `uv run pytest tests/test_cli/test_micro.py tests/test_core/test_agent.py tests/test_micro/test_e2e.py -q -k "timeout or stall or find_task_record or already_done or red"` fails on the new pins.
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_micro.py tests/unit/test_core/test_agent.py tests/unit/test_micro/test_e2e.py -q -k "timeout or stall or find_task_record or already_done or red"` fails on the new pins.
 
 - **Phase 2**: Streaming wall-clock deadline
   - **Files**: `src/deviate/core/agent.py`
@@ -168,7 +168,7 @@ Constraints: no new dependencies; no hardcoded secrets; no un-mocked `_run_pytes
 
 ## Constitutional Alignment
 - **Architecture**: The change stays in Micro-layer C1 dispatch and RED phase control. It does not skip a layer. It adds no ledger row types. Session Continuity is unchanged. Constitution §1 Git Isolation holds: hung RED restores the worktree and does not invent a RED SHA.
-- **Testing**: pytest pins under `tests/test_cli/test_micro.py` and `tests/test_core/test_agent.py`. RED writes failing pins first. GREEN writes `src/` plus the listed spec and changelog files. Coverage target remains >= 80% (constitution §3).
+- **Testing**: pytest pins under `tests/unit/test_cli/test_micro.py` and `tests/unit/test_core/test_agent.py`. RED writes failing pins first. GREEN writes `src/` plus the listed spec and changelog files. Coverage target remains >= 80% (constitution §3).
 - **Git Isolation**: Work stays on the pre-configured issue worktree. Micro agents do not run branch-mutating git. The slice never deletes a branch. Restore uses `git restore` and `git clean -fd` only on post-baseline paths.
 - **Product Layer**: `flow_refs` stays `[]`. FLOW-04 remains RPC TUI live-stream, not RED hang/rollback policy. This slice does not author or index Product-layer flows.
 - **Definition of Done**: The hang and rollback fix is user-visible, so `CHANGELOG.md` `[Unreleased]` updates in the same implementation commit (constitution §5).

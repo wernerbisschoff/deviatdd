@@ -86,12 +86,12 @@
   - **Changes Required**: The five `AC-PLAN-NNN` scenarios above each carry exactly one mode line.
   - **Integration Surface**: Validated by `deviate plan post` and `deviate meso tasks pre`; consumed by `deviate meso tasks` for task generation.
 
-- **`tests/test_core/test_validation.py`**: TARGET — extend the acceptance-contract tests with Verification Mode acceptance, rejection, and boundary cases.
+- **`tests/unit/test_core/test_validation.py`**: TARGET — extend the acceptance-contract tests with Verification Mode acceptance, rejection, and boundary cases.
   - **Current State**: `TestAcceptanceOwnershipValidation` (line 125) covers the mandatory clause set: missing `When` (line 147), missing Source Outline (line 162), missing Upstream/Evidence (line 177).
   - **Changes Required**: Add a `TestVerificationModeValidation` class covering: accept each literal, accept case variants and surrounding whitespace, accept an all-`deferred` contract, reject a missing mode, reject an illegal value, reject an empty value, reject duplicate mode lines, reject a dropped clause despite a valid mode, validate mixed modes independently, and keep the zero-scenario missing-contract error unchanged.
   - **Integration Surface**: The function under test is the same `validate_acceptance_contract` the meso gates consume.
 
-- **`tests/test_cli/test_meso_contracts.py`** and **`tests/test_meso/test_meso_resume.py`**: TARGET — extend gate-level integration coverage with a fixture `plan.md` that carries an invalid mode.
+- **`tests/unit/test_cli/test_meso_contracts.py`** and **`tests/unit/test_meso/test_meso_resume.py`**: TARGET — extend gate-level integration coverage with a fixture `plan.md` that carries an invalid mode.
   - **Current State**: `test_tasks_pre_contract_has_required_fields` (line 105) pins the `tasks_pre` contract shape; `test_invalid_existing_plan_stops_without_overwrite` (line 80) asserts `MESO_PLAN_INVALID` for a contract-less plan.
   - **Changes Required**: Add one test that writes a fixture `plan.md` whose scenario omits the mode line (or uses an illegal literal) and asserts `_tasks_pre` reports `PLAN_ACCEPTANCE_CONTRACT_INVALID` with the named error; extend the resume test to assert `MESO_PLAN_INVALID` for a mode-less contract.
   - **Integration Surface**: `_tasks_pre` and `_resolve_meso_resume_state` — the same gate functions operators invoke.
@@ -101,17 +101,17 @@
 - **Phase 1**: Mode-validation logic in `validate_acceptance_contract`
   - **Files**: `src/deviate/core/validation.py`
   - **Approach**: Add `_VERIFICATION_MODE_LITERALS = ("automated", "manual", "deferred")` and `_MODE_PATTERN = re.compile(r"\*\*Verification Mode\*\*:\s*([A-Za-z]+)")` at module level. In the existing per-scenario loop, call `_MODE_PATTERN.findall(scenario_body)`; enforce exactly one capture; compare the lowercased literal against the tuple. Run the check in the same single pass so the function stays linear over the scenario list.
-  - **Verification**: `uv run pytest tests/test_core/test_validation.py -v` — existing clause tests still pass; new mode tests pass.
+  - **Verification**: `uv run pytest tests/unit/test_core/test_validation.py -v` — existing clause tests still pass; new mode tests pass.
 
 - **Phase 2**: Unit tests for accept, reject, and boundary behavior
-  - **Files**: `tests/test_core/test_validation.py`
+  - **Files**: `tests/unit/test_core/test_validation.py`
   - **Approach**: Add `TestVerificationModeValidation` with the cases listed in the Workstation Mapping entry: per-literal acceptance, case-insensitive and whitespace-tolerant matching, all-`deferred` contract passes, missing/illegal/empty value rejection, duplicate-line rejection, mandatory-clause enforcement with a valid mode, mixed-mode independence, and unchanged zero-scenario behavior. Pin the named error strings in the reject assertions so the error contract is explicit.
-  - **Verification**: `uv run pytest tests/test_core/test_validation.py -v`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_validation.py -v`
 
 - **Phase 3**: Gate integration regression and full check bundle
-  - **Files**: `tests/test_cli/test_meso_contracts.py`, `tests/test_meso/test_meso_resume.py`
+  - **Files**: `tests/unit/test_cli/test_meso_contracts.py`, `tests/unit/test_meso/test_meso_resume.py`
   - **Approach**: Extend `_tasks_pre` and meso-run resume tests with fixture contracts that omit the mode line or use an illegal literal; assert the named status (`PLAN_ACCEPTANCE_CONTRACT_INVALID` / `MESO_PLAN_INVALID`) and error text. Confirm no `src/deviate/cli/meso.py` change is required — the existing gates already block on any non-empty error list. Mock `deviate.cli.micro._run_pytest` where any test path reaches it to keep the suite under 30 seconds.
-  - **Verification**: `uv run pytest tests/test_cli/test_meso_contracts.py tests/test_meso/test_meso_resume.py -v`, then `mise run check` (lint, format-check, types, full suite).
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_meso_contracts.py tests/unit/test_meso/test_meso_resume.py -v`, then `mise run check` (lint, format-check, types, full suite).
 
 ## Data Flow Analysis
 
@@ -147,11 +147,11 @@ Constraints: no new dependencies (stdlib `re` only); no hardcoded secrets; no le
 - **`contract_pattern`** (`src/deviate/core/validation.py:116`): the scenario-boundary machinery; the mode check operates on the same per-scenario span as the existing clause checks.
 - **`_validate_scenarios` / `validate_gherkin_syntax`** (`src/deviate/core/validation.py:79,93`): unchanged Gherkin gate; the mode check is additive.
 - **`specs/005-acceptance-gates/data-model.md:68`**: documents the `verification_mode` attribute invariant (one per scenario) that this issue makes enforceable.
-- **`tests/test_core/test_validation.py`**: the unit-level contract that pins accept, reject, and boundary behavior; the same fixtures later feed issue 005-002's `CriterionLink` propagation.
+- **`tests/unit/test_core/test_validation.py`**: the unit-level contract that pins accept, reject, and boundary behavior; the same fixtures later feed issue 005-002's `CriterionLink` propagation.
 
 ## Constitutional Alignment
 
 - **Architecture**: Aligns with the three-layer model — the change lives entirely in the meso validation layer that owns the `plan.md` acceptance contract. Macro artifacts (PRD, data-model) declared the mode field; this issue makes the contract gate enforce it. No layer is skipped, and no Product-layer work is introduced.
-- **Testing**: pytest unit tests in `tests/test_core/test_validation.py` plus gate integration tests in `tests/test_cli/test_meso_contracts.py` and `tests/test_meso/test_meso_resume.py`. Coverage target stays ≥ 80%; the full suite stays under 30 seconds; any test path reaching `deviate.cli.micro._run_pytest` mocks it per the execution contract.
+- **Testing**: pytest unit tests in `tests/unit/test_core/test_validation.py` plus gate integration tests in `tests/unit/test_cli/test_meso_contracts.py` and `tests/unit/test_meso/test_meso_resume.py`. Coverage target stays ≥ 80%; the full suite stays under 30 seconds; any test path reaching `deviate.cli.micro._run_pytest` mocks it per the execution contract.
 - **Git Isolation**: `validate_acceptance_contract` is pure and read-only — no ledger writes, no `.deviate/` session mutation, no branch or worktree mutation. Changes commit through the standard phase-commit cycle with the `TSK-005-01`-scoped conventional message format.
 - **Product Layer**: `flow_refs` is empty, so no user-visible flow is referenced or altered. The mode metadata strengthens the `plan.md` contract that downstream meso and micro phases consume, preserving the existing workflow behavior named in the release context (FLOW-04 RPC streaming) untouched. This section is traceability context only.

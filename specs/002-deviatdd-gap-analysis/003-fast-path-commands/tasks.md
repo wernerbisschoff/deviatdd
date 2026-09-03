@@ -9,13 +9,13 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_complexity.py tests/test_state/test_ledger.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_core/test_complexity.py tests/unit/test_state/test_ledger.py -v --no-header -q`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/core/complexity.py` (NEW)
     - `src/deviate/state/ledger.py` (MODIFY)
-    - `tests/test_core/test_complexity.py` (NEW)
-    - `tests/test_state/test_ledger.py` (MODIFY)
+    - `tests/unit/test_core/test_complexity.py` (NEW)
+    - `tests/unit/test_state/test_ledger.py` (MODIFY)
   - **Rationale**: `ComplexityGate.classify()` is the core classification engine for US-001 through US-004. `AdhocRecord` is the data schema for persisting adhoc task records used by US-005 and US-006. Both are foundational — the CLI layer in Phase 2 depends on them.
   - **Details**:
     - **Red**: Write `test_complexity_gate_classify_low` — assert `ComplexityGate.classify("Fix typo", _stub="LOW")` returns `ClassificationResult(level="LOW", execution_mode="DIRECT")`. Write `test_complexity_gate_classify_medium` — assert `execution_mode="DIRECT"`, `level="MEDIUM"`. Write `test_complexity_gate_classify_high` — assert `execution_mode="TDD"`, `level="HIGH"`. Write `test_adhoc_record_schema` — assert `AdhocRecord(issue_id="adhoc-001", description="Fix typo").execution_mode == "DIRECT"` with proper defaults. Write `test_adhoc_record_status_transitions` — assert valid status values and Pydantic `ValidationError` for invalid.
@@ -33,13 +33,13 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_adhoc.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_cli/test_adhoc.py -v --no-header -q`
   - **Estimated Time**: 90 minutes
   - **Dependency**: TSK-003-01
   - **Files**:
     - `src/deviate/cli/adhoc.py` (NEW)
     - `src/deviate/cli/__init__.py` (MODIFY)
-    - `tests/test_cli/test_adhoc.py` (NEW)
+    - `tests/unit/test_cli/test_adhoc.py` (NEW)
   - **Rationale**: CLI commands are the user-facing interface for US-001 through US-006. `adhoc pre` implements US-001 (LOW→DIRECT), US-002 (MEDIUM→DIRECT), US-003 (HIGH rejection), US-004 (HIGH with `--skip-gates`). `adhoc post` implements US-005 (PENDING→COMPLETED) and US-006 (`MANIFEST_NOT_FOUND` error). Registration in `cli/__init__.py` makes `deviate adhoc` discoverable.
   - **Details**:
     - **Red**: Write `test_adhoc_pre_low_complexity` — `@patch("deviate.cli.adhoc.ComplexityGate.classify")` returns LOW, invoke `runner.invoke(cli, ["adhoc", "pre", "Fix typo"])`, assert stdout contains `DIRECT` and exit 0. Write `test_adhoc_pre_medium_complexity` — similar with MEDIUM. Write `test_adhoc_pre_high_complexity_rejected` — mock HIGH, no `--skip-gates`, assert non-zero exit + `COMPLEXITY_GATE_REJECTION`. Write `test_adhoc_pre_high_complexity_skip_gates` — mock HIGH, with `--skip-gates`, assert exit 0. Write `test_adhoc_post_completes_record` — pre-seed `specs/adhoc.jsonl` with PENDING record, invoke post with that ID, assert COMPLETED. Write `test_adhoc_post_missing_manifest` — invoke post with unknown ID, assert `MANIFEST_NOT_FOUND` + non-zero exit.
@@ -67,12 +67,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_feature.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_cli/test_feature.py -v --no-header -q`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/cli/feature.py` (NEW)
     - `src/deviate/cli/__init__.py` (MODIFY)
-    - `tests/test_cli/test_feature.py` (NEW)
+    - `tests/unit/test_cli/test_feature.py` (NEW)
   - **Rationale**: Feature workspace scaffold implements US-007 (new feature scaffold), US-008 (existing branch idempotency), and US-009 (explicit `--slug` override). Directory creation (`specs/{SLUG}/`), git branch (`feat/{SLUG}`), and session update are the three unit operations. Registration in `cli/__init__.py` makes `deviate feature create` discoverable.
   - **Details**:
     - **Red**: Write `test_feature_create_scaffold` — in `tmp_git_repo`, invoke `runner.invoke(cli, ["feature", "create", "auth overhaul"])`, assert `specs/auth-overhaul/` directory exists, branch `feat/auth-overhaul` exists (via `git branch --list` in `tmp_git_repo`), and session file contains updated state. Write `test_feature_create_existing_branch` — pre-create branch, invoke command again, assert idempotent (no error, exit 0). Write `test_feature_create_explicit_slug` — invoke `["feature", "create", "auth overhaul", "--slug", "user-auth"]`, assert `specs/user-auth/` exists, branch is `feat/user-auth`.
@@ -90,12 +90,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_meso.py -v --no-header -q -k test_specify_pre_invokes_feature_create`
+  - **Verification**: `pytest tests/unit/test_cli/test_meso.py -v --no-header -q -k test_specify_pre_invokes_feature_create`
   - **Estimated Time**: 30 minutes
   - **Dependency**: TSK-003-03
   - **Files**:
     - `src/deviate/cli/meso.py` (MODIFY)
-    - `tests/test_cli/test_meso.py` (MODIFY)
+    - `tests/unit/test_cli/test_meso.py` (MODIFY)
   - **Rationale**: US-010 requires `specify pre` to auto-scaffold a feature workspace when no session exists. This modifies the `_specify_pre` function in `meso.py` to add a conditional branch. Test validates the integration — `specify pre` without session should result in a feature workspace.
   - **Details**:
     - **Red**: Write `test_specify_pre_invokes_feature_create` — in `tmp_git_repo` with no session and pre-seeded issue ledger, invoke `runner.invoke(cli, ["specify", "pre", "--issue", issue_id])`, mock `_run_pytest` (to avoid subprocess), assert that a `specs/{SLUG}/` directory was created as a side effect of feature creation, and session file exists with updated phase.

@@ -32,7 +32,7 @@
 
 - `pyproject.toml:50-53`: `[tool.pytest.ini_options]` testpaths = `["tests"]`.
 - `.mise.toml` (referenced): `mise run test` → `pytest tests/ -v`; `mise run lint` → `ruff check .`; `mise run check-types` (no mypy step declared; ruff handles basic typing).
-- `tests/core/test_agent.py`, `tests/test_core/test_agent.py`: Backed-end test fixtures exist for `opencode`, `claude`, `droid` backends with `StubAgentBackend` mock.
+- `tests/unit/core/test_agent.py`, `tests/unit/test_core/test_agent.py`: Backed-end test fixtures exist for `opencode`, `claude`, `droid` backends with `StubAgentBackend` mock.
 
 ### Manifest-Constitution Divergence
 
@@ -114,7 +114,7 @@ None observed. Constitution §2 "Tech Stack Standards" mandates Python 3.13 CLI 
 | Metric | Value |
 | :--- | :--- |
 | Estimated Complexity | Low–Medium |
-| Files Likely Modified | `src/deviate/core/agent.py` (extend `BACKEND_COMMANDS` + `AgentConfig` Literal), `src/deviate/cli/__init__.py` (extend `AGENT_CHOICES` + `AGENT_TO_BACKEND` + `--agent <name>` validation), `tests/core/test_agent.py` and/or `tests/test_core/test_agent.py` (new backend test fixtures), `src/deviate/prompts/skills/*/SKILL.md` (add YAML frontmatter if Pi-native skill discovery is desired), `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` (document the new backend option). |
+| Files Likely Modified | `src/deviate/core/agent.py` (extend `BACKEND_COMMANDS` + `AgentConfig` Literal), `src/deviate/cli/__init__.py` (extend `AGENT_CHOICES` + `AGENT_TO_BACKEND` + `--agent <name>` validation), `tests/unit/core/test_agent.py` and/or `tests/unit/test_core/test_agent.py` (new backend test fixtures), `src/deviate/prompts/skills/*/SKILL.md` (add YAML frontmatter if Pi-native skill discovery is desired), `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` (document the new backend option). |
 | New Modules Required | No (extend existing `AgentBackend` class — Pi supports the same `subprocess.Popen` + stdin-prompt + stdout-YAML contract used by all current backends; no new transport module is required unless RPC mode is adopted). |
 | New Persistence / Data Models | No (no new Pydantic models required; the `HandoverManifest` schema is backend-agnostic). |
 | New External Integrations | Yes — one new external binary (`pi`, npm package `@earendil-works/pi-coding-agent` v0.80.2). Distribution: npm install — no Python wrapper package needed. |

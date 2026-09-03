@@ -18,8 +18,8 @@ flow_refs: []
   - `src/deviate/core/judge_evidence.py::evaluate_judge_evidence` — TARGET: extend only as needed to fail closed when declared regression paths are missing from diff/HEAD; do not reopen quote uniqueness, AC token coverage, or EXECUTE ungating.
   - `src/deviate/core/agent.py::HandoverManifest` — REFERENCE: `files`, `test_file`, and `failure_kind: already_satisfied` already exist. Do not invent a second discriminator.
   - `src/deviate/prompts/auto/red.md` — TARGET: require `files` / `test_file` on `already_satisfied`; a passing suite without named test files is not a COMPLETE.
-  - `tests/test_micro/test_orchestration.py` — TARGET: pin that `already_satisfied` + null/empty `files` does not COMPLETE (extends `test_micro_red_no_failing_test_routes_to_judge_skip_refactor`).
-  - `tests/test_micro/test_judge.py` — TARGET: pin that JUDGE PASS on already-exists still requires the declared test path in the injected diff or HEAD (`test_already_exists_missing_test_file_fails` already covers missing HEAD test; add the RED-declared-`files` vs snapshot pin).
+  - `tests/unit/test_micro/test_orchestration.py` — TARGET: pin that `already_satisfied` + null/empty `files` does not COMPLETE (extends `test_micro_red_no_failing_test_routes_to_judge_skip_refactor`).
+  - `tests/unit/test_micro/test_judge.py` — TARGET: pin that JUDGE PASS on already-exists still requires the declared test path in the injected diff or HEAD (`test_already_exists_missing_test_file_fails` already covers missing HEAD test; add the RED-declared-`files` vs snapshot pin).
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document that already-exists COMPLETE requires named, present regression tests; the current “discard uncommitted passing test and COMPLETE” wording is the hole.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible COMPLETE contract change.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices.
@@ -108,10 +108,10 @@ flow_refs: []
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_micro/test_orchestration.py` — `test_already_satisfied_null_files_does_not_complete` (name may vary): RED manifest `failure_kind: already_satisfied` with `files=None` / `test_file=None` and pytest exit 0 does not write COMPLETED.
-  - `tests/test_micro/test_judge.py` — `test_already_satisfied_declared_files_missing_from_diff_fails`: JUDGE `skip_refactor` + declared `files` absent from injected diff and HEAD does not COMPLETE.
-  - `tests/test_micro/test_judge.py` — existing `test_already_exists_missing_test_file_fails` and `test_already_exists_head_quotes_pass` stay green (compose, do not regress #65).
-  - `tests/test_micro/test_green.py` / `tests/test_micro/test_two_counter_retry.py` — GREEN is not invoked to paper over the hole; #74 SHA pins stay green.
+  - `tests/unit/test_micro/test_orchestration.py` — `test_already_satisfied_null_files_does_not_complete` (name may vary): RED manifest `failure_kind: already_satisfied` with `files=None` / `test_file=None` and pytest exit 0 does not write COMPLETED.
+  - `tests/unit/test_micro/test_judge.py` — `test_already_satisfied_declared_files_missing_from_diff_fails`: JUDGE `skip_refactor` + declared `files` absent from injected diff and HEAD does not COMPLETE.
+  - `tests/unit/test_micro/test_judge.py` — existing `test_already_exists_missing_test_file_fails` and `test_already_exists_head_quotes_pass` stay green (compose, do not regress #65).
+  - `tests/unit/test_micro/test_green.py` / `tests/unit/test_micro/test_two_counter_retry.py` — GREEN is not invoked to paper over the hole; #74 SHA pins stay green.
 - **Integration Sandbox Targets**:
   - Stub-agent `_run_tdd_cycle` with mocked `_run_pytest` / `_run_test_cmd`: RED `already_satisfied` + empty files + JUDGE willing PASS → assert no COMPLETED and no GREEN invoke; RED `already_satisfied` + real test path in dirty/HEAD snapshot + matching #65 evidence → COMPLETE without GREEN.
 
@@ -119,5 +119,5 @@ flow_refs: []
 
 ```bash
 # Mocked TDD-loop pins (no live agent, no un-mocked pytest)
-uv run pytest tests/test_micro/test_orchestration.py tests/test_micro/test_judge.py tests/test_micro/test_green.py tests/test_micro/test_two_counter_retry.py -q -k "already_satisfied or already_exists or no_failing_test"
+uv run pytest tests/unit/test_micro/test_orchestration.py tests/unit/test_micro/test_judge.py tests/unit/test_micro/test_green.py tests/unit/test_micro/test_two_counter_retry.py -q -k "already_satisfied or already_exists or no_failing_test"
 ```

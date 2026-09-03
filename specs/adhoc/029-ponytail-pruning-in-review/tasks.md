@@ -9,14 +9,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: unit
-  - **Verification**: `uv run pytest tests/test_meso/test_auto_prompt_templates.py -q`
+  - **Verification**: `uv run pytest tests/unit/test_meso/test_auto_prompt_templates.py -q`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/prompts/commands/deviate-review.md`
-    - `tests/test_meso/test_auto_prompt_templates.py`
+    - `tests/unit/test_meso/test_auto_prompt_templates.py`
   - **Rationale**: `US-029-01` pruning lives in the review prompt fold target; `AC-PLAN-001` needs ladder text present and headings absent, `AC-PLAN-002` needs the keep-tests-green no-helper disposition pinned in the same template test
   - **Details**:
-    - **Red**: Write failing unit tests in `tests/test_meso/test_auto_prompt_templates.py` only — forbid `tests/integration` / e2e in this RED. Assert ladder text present on the drift line, no `deviate-ponytail` file reference, no Minimality heading, and no shared-helper promotion
+    - **Red**: Write failing unit tests in `tests/unit/test_meso/test_auto_prompt_templates.py` only — forbid `tests/integration` / e2e in this RED. Assert ladder text present on the drift line, no `deviate-ponytail` file reference, no Minimality heading, and no shared-helper promotion
     - **Green**: Extend the drift line at `src/deviate/prompts/commands/deviate-review.md:82` with the explicit pre-write ladder; keep heading set unchanged
     - **Refactor**: Align ladder wording with existing prompt idioms per constitution §1
     - **Edge Cases**: Handle ladder text drifting into a new heading by pinning heading absence; reject malformed titles via negative pins
@@ -24,10 +24,10 @@
 
 ---
 
-The next GREEN attempt must: extend the Cross-task over-engineering drift line in src/deviate/prompts/commands/deviate-review.md with the ponytail pre-write ladder (YAGNI, stdlib, platform feature, already-installed dep, one line, minimum that works); add no new heading and no deviate-ponytail file reference; then run uv run pytest tests/test_meso/test_auto_prompt_templates.py -q until the ladder test passes.
+The next GREEN attempt must: extend the Cross-task over-engineering drift line in src/deviate/prompts/commands/deviate-review.md with the ponytail pre-write ladder (YAGNI, stdlib, platform feature, already-installed dep, one line, minimum that works); add no new heading and no deviate-ponytail file reference; then run uv run pytest tests/unit/test_meso/test_auto_prompt_templates.py -q until the ladder test passes.
   - **Judge Feedback**: COMPLIANCE_VIOLATION: GREEN is empty while the RED test genuinely fails, so the required behavior is missing.
-  - **Judge Feedback**: The next GREEN attempt must: extend the existing drift line at src/deviate/prompts/commands/deviate-review.md line 82 so it cites every ladder rung (yagni, stdlib, platform feature, already-installed, one line, minimum that works) on that same line. Keep the heading set unchanged, keep Cross-task over-engineering text, add no Minimality/Constraints heading and no deviate-ponytail reference. Then run uv run pytest tests/test_meso/test_auto_prompt_templates.py -q -k Ponytail with behavioral markers enabled; the no-collect in RED was marker filtering, not a passing suite.
-  - **Judge Feedback**: The next GREEN attempt must: extend the Cross-task over-engineering drift line in src/deviate/prompts/commands/deviate-review.md with the ponytail pre-write ladder (YAGNI, stdlib, platform feature, already-installed dep, one line, minimum that works); add no new heading and no deviate-ponytail file reference; then run uv run pytest tests/test_meso/test_auto_prompt_templates.py -q until the ladder test passes.
+  - **Judge Feedback**: The next GREEN attempt must: extend the existing drift line at src/deviate/prompts/commands/deviate-review.md line 82 so it cites every ladder rung (yagni, stdlib, platform feature, already-installed, one line, minimum that works) on that same line. Keep the heading set unchanged, keep Cross-task over-engineering text, add no Minimality/Constraints heading and no deviate-ponytail reference. Then run uv run pytest tests/unit/test_meso/test_auto_prompt_templates.py -q -k Ponytail with behavioral markers enabled; the no-collect in RED was marker filtering, not a passing suite.
+  - **Judge Feedback**: The next GREEN attempt must: extend the Cross-task over-engineering drift line in src/deviate/prompts/commands/deviate-review.md with the ponytail pre-write ladder (YAGNI, stdlib, platform feature, already-installed dep, one line, minimum that works); add no new heading and no deviate-ponytail file reference; then run uv run pytest tests/unit/test_meso/test_auto_prompt_templates.py -q until the ladder test passes.
 ## Phase 2: PR title and body squash-merge compliance
 **Goal**: Compound-prefix titles squash-merge as valid conventional commits on both platforms
 
@@ -37,15 +37,15 @@ The next GREEN attempt must: extend the Cross-task over-engineering drift line i
   - **Type**: Bugfix
   - **Mode**: TDD
   - **Test Strategy**: unit
-  - **Verification**: `uv run pytest tests/test_cli/test_meso.py tests/test_meso/test_pr_platform.py -q`
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_meso.py tests/unit/test_meso/test_pr_platform.py -q`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/cli/meso.py`
-    - `tests/test_meso/test_pr_platform.py`
-    - `tests/test_cli/test_meso.py`
+    - `tests/unit/test_meso/test_pr_platform.py`
+    - `tests/unit/test_cli/test_meso.py`
   - **Rationale**: `US-029-02` squash-merge lives in `_pr_title` and the platform push paths; `AC-PLAN-003` needs compound-prefix title form plus body-as-commit-body on GitHub and GitLab paths
   - **Details**:
-    - **Red**: Write failing unit tests in `tests/test_meso/test_pr_platform.py` and `tests/test_cli/test_meso.py` only — forbid `tests/integration` / e2e in this RED. Assert compound-prefix titles strip to conventional form, body file passes through `gh` unchanged, and empty body omits the GitLab description option; mock `deviate.cli.micro._run_pytest` on CLI paths that spawn it
+    - **Red**: Write failing unit tests in `tests/unit/test_meso/test_pr_platform.py` and `tests/unit/test_cli/test_meso.py` only — forbid `tests/integration` / e2e in this RED. Assert compound-prefix titles strip to conventional form, body file passes through `gh` unchanged, and empty body omits the GitLab description option; mock `deviate.cli.micro._run_pytest` on CLI paths that spawn it
     - **Green**: Widen `_pr_title` prefix-strip in `src/deviate/cli/meso.py` to cover compound prefixes; keep `_gitlab_push_options` and `_run_gh_pr_create` transport paths unchanged
     - **Refactor**: Reuse `commit_scope` helper verbatim; no new dependencies
     - **Edge Cases**: Handle empty body by omitting description option; keep existing adhoc and numbered scope pins green

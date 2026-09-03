@@ -235,8 +235,8 @@ The `gt create --all --message "..."` command directly replaces the micro-layer 
 | `mise.toml` | Manifest | Task runner definitions | `[tasks]\ntest = "uv run pytest tests/ -v"\ntest-e2e = "bats tests/e2e/"\nlint = "uv run ruff check ."\nlint-fix = "uv run ruff check --fix ."\ncheck = { depends = ["lint", "format-check", "test"] }` |
 | `src/deviate/core/_shared.py` | Codebase_File | Git isolation — `_git_env()` strips GIT_* env vars | `def _git_env() -> dict[str, str]:\n    env = os.environ.copy()\n    for key in list(env):\n        if key.startswith("GIT_") or key.startswith("GH_"):\n            del env[key]\n    return env` |
 | `src/deviate/cli/micro.py` | Codebase_File | Micro-layer TDD commands — RED/GREEN/REFACTOR phase wrappers | (Micro layer invokes aider/agents with git branch management) |
-| `tests/test_cli/test_init.py` | Test | Init command tests — dotfile scaffolding, constitution, governance | `class TestInitCommand:\n    def test_init_creates_dotfile_structure(self, tmp_path):` |
-| `tests/test_state/test_config.py` | Test | Config model tests — schema validation, serialization, model resolution | `class TestDeviateConfig:\n    def test_defaults(self):\n        c = DeviateConfig()\n        assert c.profile == "default"` |
+| `tests/unit/test_cli/test_init.py` | Test | Init command tests — dotfile scaffolding, constitution, governance | `class TestInitCommand:\n    def test_init_creates_dotfile_structure(self, tmp_path):` |
+| `tests/unit/test_state/test_config.py` | Test | Config model tests — schema validation, serialization, model resolution | `class TestDeviateConfig:\n    def test_defaults(self):\n        c = DeviateConfig()\n        assert c.profile == "default"` |
 
 ## Scope Sizing
 

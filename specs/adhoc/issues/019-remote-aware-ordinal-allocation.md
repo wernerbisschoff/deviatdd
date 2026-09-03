@@ -17,9 +17,9 @@ flow_refs: []
   - Shared helper (prefer `src/deviate/core/epic.py` or a small sibling module, not a second counter) — TARGET: collect remote-tracking ordinals via `git for-each-ref` on already-fetched `origin` (optional `git fetch --prune`); every git subprocess uses `deviate.core._shared.git_env`.
   - `src/deviate/cli/meso.py::_try_claim_issue` — TARGET: when `git push` of `feat/.../NNN-*` is rejected because the name exists, increment the ordinal and retry. Do not fall back to `--local` to win the collision. Keep `claim_remote = false` / explicit `--local` as the optional skip from ISS-ADH-017 (optional-push-as-lock / GH #64).
   - `src/deviate/prompts/commands/deviate-adhoc.md` — TARGET: tell the adhoc compiler to use the same remote-aware counter (not `max(local ledger)+1`) so agent-written `specs/adhoc/issues/{NNN}-{slug}.md` cannot mint a duplicate `017`.
-  - `tests/test_cli/test_macro_contracts.py` — TARGET: pin adhoc next-id when origin has `feat/adhoc/017-*` and the local ledger does not.
-  - `tests/test_core/test_epic.py` — TARGET: pin `allocate_feature_bucket` against remote epic prefixes.
-  - Meso claim tests (`tests/test_cli/test_meso.py` / `tests/test_meso/test_specify.py`) — TARGET: push name-collision increments and retries; no `--local` fallback.
+  - `tests/unit/test_cli/test_macro_contracts.py` — TARGET: pin adhoc next-id when origin has `feat/adhoc/017-*` and the local ledger does not.
+  - `tests/unit/test_core/test_epic.py` — TARGET: pin `allocate_feature_bucket` against remote epic prefixes.
+  - Meso claim tests (`tests/unit/test_cli/test_meso.py` / `tests/unit/test_meso/test_specify.py`) — TARGET: push name-collision increments and retries; no `--local` fallback.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document remote-aware ordinal allocation and push-as-claim retry in the same implementation commit.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible allocation change.
 - **Classification for plan/tasks**: allocator + claim-retry is production Python with observable fail-to-pass behavior. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices; this slice does not change that classifier.
@@ -117,8 +117,8 @@ Parallel `adhoc` / `specify` / shard on two checkouts (or two worktrees from sta
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_cli/test_macro_contracts.py` — next adhoc id is `ISS-018` / `ISS-ADH-018` (same ordinal) when origin has `feat/adhoc/017-*` and the local ledger does not.
-  - `tests/test_core/test_epic.py` — `allocate_feature_bucket` skips a remote-claimed epic prefix.
+  - `tests/unit/test_cli/test_macro_contracts.py` — next adhoc id is `ISS-018` / `ISS-ADH-018` (same ordinal) when origin has `feat/adhoc/017-*` and the local ledger does not.
+  - `tests/unit/test_core/test_epic.py` — `allocate_feature_bucket` skips a remote-claimed epic prefix.
   - Meso claim tests — push rejection on existing `feat/.../NNN-*` increments; `--local` is not used as the collision winner.
   - Pin that a local-only unpushed `feat/adhoc/019-*` does not reserve `019`.
 - **Integration Sandbox Targets**: none required beyond tmp-git remote-tracking refs. Skip E2E; no new FLOW.
@@ -128,7 +128,7 @@ Parallel `adhoc` / `specify` / shard on two checkouts (or two worktrees from sta
 ```bash
 # Seed: origin has feat/adhoc/017-*, local ledger has no 017
 # Expect next adhoc ordinal 018 (or max(remote)+1), not 017
-uv run pytest tests/test_cli/test_macro_contracts.py tests/test_core/test_epic.py -q
+uv run pytest tests/unit/test_cli/test_macro_contracts.py tests/unit/test_core/test_epic.py -q
 
 # Remote-tracking refs, not local-only branches, drive the max
 git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat

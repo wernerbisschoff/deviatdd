@@ -64,10 +64,10 @@
 
 | Tier | Target | Command |
 |------|--------|---------|
-| Unit | `tests/test_cli/test_constitution.py` | `pytest tests/test_cli/test_constitution.py -v` |
-| Unit | `tests/test_cli/test_inspect.py` | `pytest tests/test_cli/test_inspect.py -v` |
-| Unit | `tests/test_core/test_constitution.py` | `pytest tests/test_core/test_constitution.py -v` |
-| Unit | `tests/test_state/test_ledger.py` | `pytest tests/test_state/test_ledger.py -v` |
+| Unit | `tests/unit/test_cli/test_constitution.py` | `pytest tests/unit/test_cli/test_constitution.py -v` |
+| Unit | `tests/unit/test_cli/test_inspect.py` | `pytest tests/unit/test_cli/test_inspect.py -v` |
+| Unit | `tests/unit/test_core/test_constitution.py` | `pytest tests/unit/test_core/test_constitution.py -v` |
+| Unit | `tests/unit/test_state/test_ledger.py` | `pytest tests/unit/test_state/test_ledger.py -v` |
 
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER
 

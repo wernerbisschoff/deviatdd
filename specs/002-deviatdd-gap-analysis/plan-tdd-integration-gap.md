@@ -196,7 +196,7 @@ Then it **must** be typed as `TDD`, and its mock boundaries metadata field **mus
   - **Mode**: TDD
   - **Mock Boundary**: subprocess.Popen (NOT _invoke_agent)
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_core/test_agent.py -v`
+  - **Verification**: `pytest tests/unit/test_core/test_agent.py -v`
   - **Details**:
     - **Red**: Write test that patches `subprocess.Popen` and asserts correct CLI args
     - **Green**: Implement `AgentBackend.invoke()` using `subprocess.Popen`
@@ -240,9 +240,9 @@ BACKEND_COMMANDS: dict[str, str] = {
 ### Action 3: Refactor Existing Tests
 
 **Files:** 
-- `tests/test_micro/test_red.py`
-- `tests/test_micro/test_green.py`
-- `tests/test_micro/test_orchestration.py`
+- `tests/unit/test_micro/test_red.py`
+- `tests/unit/test_micro/test_green.py`
+- `tests/unit/test_micro/test_orchestration.py`
 
 **Change:** Remove function-level mocks of core orchestrator loops (`_invoke_agent`). Force tests to inspect system interaction hooks.
 

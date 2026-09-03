@@ -12,7 +12,7 @@ Constitutional Tensions (identified by adversarial audit) are addressed via conc
 - Gap #18 (YELLOW skill): Create `deviate-yellow` skill; wire into `_SKILL_NAMES` and yellow CLI commands.
 - Gap #19 (JUDGE skill): Create `deviate-judge` skill; wire into `_SKILL_NAMES` and `_run_judge_phase()`.
 
-**Three new micro-layer gaps identified from `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` and constitutional skill audit**: (1) Tests mock `_invoke_agent` at the function boundary instead of the system edge (`subprocess.Popen`), leaving all agent subprocess wiring code untested — this is the architectural trap documented in `plan-tdd-integration-gap.md` and confirmed in `tests/test_micro/conftest.py:16-17`; (2) The YELLOW phase has CLI commands (`yellow_pre`, `yellow_post`) and is in the constitutional state machine but has no `deviate-yellow` skill in `_SKILL_NAMES` — agents cannot be guided through the amendment review workflow (`micro.py:42`); (3) The JUDGE phase has `_SKILL_NAMES['JUDGE']` explicitly set to `None` and `_run_judge_phase()` is inlined business logic — the constitutional model tiering mandate ("V4 Pro for compliance (JUDGE, YELLOW)") requires a skill for agent guidance (`micro.py:42`, `specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]`).
+**Three new micro-layer gaps identified from `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` and constitutional skill audit**: (1) Tests mock `_invoke_agent` at the function boundary instead of the system edge (`subprocess.Popen`), leaving all agent subprocess wiring code untested — this is the architectural trap documented in `plan-tdd-integration-gap.md` and confirmed in `tests/unit/test_micro/conftest.py:16-17`; (2) The YELLOW phase has CLI commands (`yellow_pre`, `yellow_post`) and is in the constitutional state machine but has no `deviate-yellow` skill in `_SKILL_NAMES` — agents cannot be guided through the amendment review workflow (`micro.py:42`); (3) The JUDGE phase has `_SKILL_NAMES['JUDGE']` explicitly set to `None` and `_run_judge_phase()` is inlined business logic — the constitutional model tiering mandate ("V4 Pro for compliance (JUDGE, YELLOW)") requires a skill for agent guidance (`micro.py:42`, `specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]`).
 
 **[Module_Surface]:**
 
@@ -39,8 +39,8 @@ Constitutional Tensions (identified by adversarial audit) are addressed via conc
 | **MODIFY** `constitution_seed.md` | Add missing `${VARIABLE}` placeholders | #14 |
 | **MODIFY** `pyproject.toml` | Add `pytest-json-report` dependency | #16 |
 | **NEW** `core/agent.py` | `StubAgentBackend` class + `"stub"` entry in `BACKEND_COMMANDS` | #17 |
-| **MODIFY** `tests/test_micro/conftest.py` | Replace `_invoke_agent` mock with `subprocess.Popen` system-edge mock | #17 |
-| **MODIFY** `tests/test_micro/test_red.py`, `test_green.py`, `test_refactor.py` | Remove `_run_pytest` function-level mocks; use system-edge subprocess mocks | #17 |
+| **MODIFY** `tests/unit/test_micro/conftest.py` | Replace `_invoke_agent` mock with `subprocess.Popen` system-edge mock | #17 |
+| **MODIFY** `tests/unit/test_micro/test_red.py`, `test_green.py`, `test_refactor.py` | Remove `_run_pytest` function-level mocks; use system-edge subprocess mocks | #17 |
 | **MODIFY** `prompts/skills/deviate-tasks/SKILL.md` | Add integration/wiring guidance to decision tree (step 7) | #17 |
 | **NEW** `prompts/skills/deviate-yellow/SKILL.md` | YELLOW phase skill with review/amend workflow | #18 |
 | **MODIFY** `cli/micro.py` | Add `"YELLOW": "deviate-yellow"` to `_SKILL_NAMES`; wire skill into `yellow_pre`/`yellow_post` | #18 |
@@ -196,7 +196,7 @@ Constitutional Tensions (identified by adversarial audit) are addressed via conc
 | SRC-011 | Industry_Baseline | Python Pydantic v2 Field patterns | `Field(default_factory=...)`, `Literal` types for enum simulation |
 | SRC-012 | Industry_Baseline | JSONL append-only ledger pattern | All state transitions immutable, canonical state from sequential parse |
 | SRC-013 | Explore_MD | `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` | TDD integration gap: mock boundary at system edge, stub backend, test refactoring plan |
-| SRC-014 | Codebase_File | `tests/test_micro/conftest.py` | Autouse fixture mocks `_invoke_agent` — the broken mock boundary pattern |
+| SRC-014 | Codebase_File | `tests/unit/test_micro/conftest.py` | Autouse fixture mocks `_invoke_agent` — the broken mock boundary pattern |
 | SRC-015 | Codebase_File | `src/deviate/cli/micro.py` | `_SKILL_NAMES['JUDGE'] = None` at L42; YELLOW absent from `_SKILL_NAMES`; `_run_judge_phase` inlined compliance |
 | SRC-016 | Constitution | `specs/constitution.md §[1_ARCHITECTURAL_PRINCIPLES]` | Model tiering: "V4 Pro for compliance (JUDGE, YELLOW)" — mandate for both phase skills |
 

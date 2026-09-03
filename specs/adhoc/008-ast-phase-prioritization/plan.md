@@ -59,27 +59,27 @@
 - **Phase 1**: Core tree-sitter module — parser factory, extension map, query file loading
   - **Files**: `src/deviate/core/treesitter.py`, `src/deviate/core/treesitter/queries/*.scm` (21 files)
   - **Approach**: Create `EXTENSION_MAP` with all 38 extension entries, implement `get_parser()` with per-grammar caching via dictionary, implement `get_language_id()` for public lookup. Implement `_load_query(language, query_name)` that reads `.scm` files and compiles `tree_sitter.Query`. Write all 21 query files with documented capture names. Implement all 6 analysis functions: `extract_changed_symbols()` (parse git diff hunks, dispatch per filename), `extract_file_structure()` (full parse + query run), `incremental_parse()` (wrap `parser.parse(src, old_tree)`), `extract_dead_code()` (collect `@call` captures, flag `@function/@class` not called), `detect_duplicate_blocks()` (AST subtree hash comparison, O(n²) pair check with min-lines filter), `estimate_cyclomatic_complexity()` (count decision nodes in subtree). Graceful degradation: `try: import tree_sitter_languages` — if missing, all functions return empty structures.
-  - **Verification**: `pytest tests/core/test_treesitter.py -v` — all language dispatch tests, query file compilation, extraction accuracy and edge cases.
+  - **Verification**: `pytest tests/unit/core/test_treesitter.py -v` — all language dispatch tests, query file compilation, extraction accuracy and edge cases.
 
 - **Phase 2**: JUDGE integration — structured diff injection
   - **Files**: `src/deviate/cli/micro.py` (lines 1108-1137), `src/deviate/prompts/auto/judge.md`
   - **Approach**: In `_run_judge_phase()`, after `diff = subprocess.run(["git", "diff", ...])`, call `extract_changed_symbols(diff, <filepath>)` for each changed file detected. Build `## Structured Diff Summary` table. Prepend to prompt before raw `<diff>` section. Update `judge.md` to instruct agent to consume the table for language-aware classification before raw diff analysis. Add `diff_summary.structured_changes` optional field to YAML schema.
-  - **Verification**: `pytest tests/test_micro/test_judge.py -v` — verify structured diff section appears in judge prompt with language annotations.
+  - **Verification**: `pytest tests/unit/test_micro/test_judge.py -v` — verify structured diff section appears in judge prompt with language annotations.
 
 - **Phase 3**: PLAN integration — file structure appendix injection
   - **Files**: `src/deviate/cli/meso.py` (`_plan_pre()`), `src/deviate/prompts/auto/plan.md`
   - **Approach**: In `_plan_pre()`, after resolving `spec_path`, parse the issue file's `## System Topology Mapping` → `## Primary Architectural Workstations` list. Extract file paths. For each existing file, call `extract_file_structure()`. Add `file_structure: {filepath: {language, symbols[...]}}` to contract JSON. Update `plan.md` to add `## Target File Structure` consumption step. On file-not-found: log warning, skip.
-  - **Verification**: `pytest tests/test_meso/test_plan.py -v` — verify file structure appendix in plan prompt.
+  - **Verification**: `pytest tests/unit/test_meso/test_plan.py -v` — verify file structure appendix in plan prompt.
 
 - **Phase 4**: REFACTOR integration — multi-language checks
   - **Files**: `src/deviate/cli/micro.py` (lines 2507-2538)
   - **Approach**: Replace `ast.parse()` with `get_parser(filepath)` + `incremental_parse()`. Keep existing return-type mismatch logic for Python (mapping tree-sitter node types to the known builtins). Add calls to `extract_dead_code()`, `detect_duplicate_blocks(min_lines=5)`, `estimate_cyclomatic_complexity()` with threshold=10. Aggregate all issues into return list. Unknown extensions → empty results (no crash).
-  - **Verification**: `pytest tests/test_micro/test_refactor.py -v` — dead code in Python + JS + Rust detected.
+  - **Verification**: `pytest tests/unit/test_micro/test_refactor.py -v` — dead code in Python + JS + Rust detected.
 
 - **Phase 5**: REVIEW integration — merge-base structured diff + multi-domain alignment
   - **Files**: `src/deviate/cli/review.py` (`pre` command), `src/deviate/prompts/skills/deviate-review/SKILL.md`
   - **Approach**: In `review pre`, after computing raw diff via `git diff merge_base...HEAD`, extract changed file paths from diff. For each file, run `git show merge_base:<path>` and `git show HEAD:<path>` to get both versions, call `extract_file_structure()` on each, compare symbol sets to derive change type (`added`, `removed`, `modified`, `renamed`). Build `structured_diff: {filepath: [{language, kind, name, change}]}` in contract. Update `deviate-review` SKILL.md: add Step 1.5 to parse structured diff, expand Step 2 scan to six domains, change Step 3 output to multi-domain format. Handle merge-base-not-found: omit structured diff key.
-  - **Verification**: `pytest tests/test_cli/test_review.py -v` — structured merge-base diff appendix in review contract with per-file symbol changes.
+  - **Verification**: `pytest tests/unit/test_cli/test_review.py -v` — structured merge-base diff appendix in review contract with per-file symbol changes.
 
 - **Phase 6**: Dependencies + package config + full verification
   - **Files**: `pyproject.toml`, `src/deviate/core/__init__.py`
@@ -112,5 +112,5 @@
 
 ## Constitutional Alignment
 - **Architecture**: Aligns with three-layer architecture: core module (`treesitter.py`) is a stateless utility layer under `src/deviate/core/`. Integration points touch micro layer (JUDGE, REFACTOR in `micro.py`), meso layer (PLAN in `meso.py`), and review gate (REVIEW in `review.py`). No modifications to macro layer. Defensive exclusions (RED, GREEN, YELLOW, TASKS, MACRO, TamperGuard) preserve architectural boundaries.
-- **Testing**: Unit tests under `tests/core/test_treesitter.py` for all 6 analysis functions + language dispatch + edge cases. Integration tests under `tests/test_micro/test_judge.py`, `tests/test_micro/test_refactor.py`, `tests/test_meso/test_plan.py`, `tests/test_cli/test_review.py`. All use pytest with appropriate mocking. Coverage target >= 80%.
+- **Testing**: Unit tests under `tests/unit/core/test_treesitter.py` for all 6 analysis functions + language dispatch + edge cases. Integration tests under `tests/unit/test_micro/test_judge.py`, `tests/unit/test_micro/test_refactor.py`, `tests/unit/test_meso/test_plan.py`, `tests/unit/test_cli/test_review.py`. All use pytest with appropriate mocking. Coverage target >= 80%.
 - **Git Isolation**: All changes within worktree `008-ast-phase-prioritization`. Each phase commit is atomic. No branch switching within the worktree. Production code uses `_git_env()` for subprocess calls (already established pattern). Test fixtures use `tmp_git_repo` with isolated git state.

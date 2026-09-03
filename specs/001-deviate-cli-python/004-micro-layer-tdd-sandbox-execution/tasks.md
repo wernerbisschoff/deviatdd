@@ -9,12 +9,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_agent.py -v`
+  - **Verification**: `pytest tests/unit/test_core/test_agent.py -v`
   - **Estimated Time**: 75 minutes
   - **Files**:
     - `src/deviate/core/agent.py`
     - `src/deviate/state/config.py`
-    - `tests/test_core/test_agent.py`
+    - `tests/unit/test_core/test_agent.py`
   - **Rationale**: US-004-1 requires an `AgentBackend` class with heredoc-pipe subprocess invocation, YAML manifest parsing, configurable timeout with retry-once-30s-backoff, and structured error handling (AgentTimeoutError, AgentSubprocessError, MalformedHandoverManifestError). US-004-10 requires the `AgentConfig` Pydantic model (backend, timeout fields) within `DeviateConfig` and a `--agent` CLI override flag. Both stories tie to FR-004-AGENT.
   - **Details**:
     - **Red**: Write `test_agent_successful_invocation` — mock subprocess to return stdout with valid YAML handover manifest, assert `AgentBackend.invoke()` returns parsed `HandoverManifest` with `phase`, `status`, `test_file`, `verification_command` fields. Write `test_agent_timeout_retry` — mock subprocess to sleep past timeout, assert first call raises `AgentTimeoutError`, 30s backoff occurs, retry fires; second timeout raises final `AgentTimeoutError`. Write `test_agent_malformed_yaml` — mock subprocess to return non-YAML output, assert `MalformedHandoverManifestError` with diagnostic. Write `test_agent_nonzero_exit` — mock exit code 1 with stderr, assert `AgentSubprocessError` captures message. Write `test_agent_backend_parses_yellow_handover` — mock YAML containing `yellow_trigger: true`, assert the manifest flags yellow condition.
@@ -27,11 +27,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_core/test_tamper.py -v`
+  - **Verification**: `pytest tests/unit/test_core/test_tamper.py -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/core/tamper.py`
-    - `tests/test_core/test_tamper.py`
+    - `tests/unit/test_core/test_tamper.py`
   - **Rationale**: US-004-4 (FR-004-TAMPER) requires Tamper Guard to evaluate `git diff --name-only` after each agent invocation and reject unauthorized modifications to `tests/`, `specs/`, or config files. US-004-4 Scenario 4.2 requires detection and rollback; Scenario 4.4 requires pass-through for authorized changes. This is a foundational safety component that all GREEN/JUDGE phases depend on.
   - **Details**:
     - **Red**: Write `test_tamper_detects_test_modification` — create a tmp git repo, commit a test file, write unauthorized content to it via Python, call `TamperGuard.evaluate()`, assert `TAMPER_DETECTED` is returned and the original file content is restored. Write `test_tamper_passes_src_only_changes` — commit a test and src file, modify only the src file, call `TamperGuard.evaluate()`, assert `TAMPER_PASS` and file content is NOT restored. Write `test_tamper_detects_spec_modification` — modify a `specs/` file, assert detection. Write `test_tamper_detects_config_modification` — modify `.deviate/config.toml`, assert detection. Write `test_tamper_ignores_expected_red_test_creation` — assert test file creation (not modification) in RED context passes. Write `test_tamper_accepts_yellow_approved_changes` — pass an approval manifest, assert modification passes.
@@ -68,13 +68,13 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_micro/test_red.py tests/test_micro/test_green.py -v`
+  - **Verification**: `pytest tests/unit/test_micro/test_red.py tests/unit/test_micro/test_green.py -v`
   - **Dependency**: T001, T003
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_red.py`
-    - `tests/test_micro/test_green.py`
+    - `tests/unit/test_micro/test_red.py`
+    - `tests/unit/test_micro/test_green.py`
   - **Rationale**: US-004-3 (FR-004-RED) requires `deviate red pre` (emit JSON contract with task context, test command) and `deviate red post` (validate test fails with AssertionError/NotImplementedError, reject syntax errors, commit). US-004-4 (FR-004-GREEN) requires `deviate green pre` (load RED task, emit contract) and `deviate green post` (validate tests pass, run Tamper Guard, check for YELLOW trigger, commit). Both depend on T001 (AgentBackend for agent subprocess calls) and T003 (slim prompt templates for agent instructions).
   - **Details**:
     - **Red**: Write `test_red_pre_emits_contract` — run `deviate red pre` in temp env with PENDING task, assert JSON contract on stdout contains `task_id`, `test_command`, `lint_command`, `spec_dir`. Write `test_red_post_validates_test_fails` — create a temp git repo with a test that fails with `AssertionError`, run `deviate red post`, assert exit 0 and commit exists. Write `test_red_post_rejects_passing_test` — create passing test, run post, assert exit non-zero with `RedMustPassError`. Write `test_red_post_rejects_syntax_error` — create test with syntax error, run post, assert `SyntaxCrashRejected`. Write `test_green_pre_loads_red_task` — set up a task in RED state with failing test, run `deviate green pre`, assert contract contains `test_file` and `implementation_targets`. Write `test_green_post_validates_tests_pass` — implement code to pass RED test, run `deviate green post`, assert exit 0 and commit. Write `test_green_post_tamper_detection` — modify test file during GREEN, run post, assert Tamper Guard triggers rollback. Write `test_green_post_yellow_handover` — mock agent output with YELLOW trigger, assert post detects trigger and prints `YELLOW_TRIGGERED`.
@@ -87,14 +87,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_micro/test_yellow.py tests/test_micro/test_judge.py tests/test_micro/test_refactor.py -v`
+  - **Verification**: `pytest tests/unit/test_micro/test_yellow.py tests/unit/test_micro/test_judge.py tests/unit/test_micro/test_refactor.py -v`
   - **Dependency**: T004
   - **Estimated Time**: 75 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_yellow.py`
-    - `tests/test_micro/test_judge.py`
-    - `tests/test_micro/test_refactor.py`
+    - `tests/unit/test_micro/test_yellow.py`
+    - `tests/unit/test_micro/test_judge.py`
+    - `tests/unit/test_micro/test_refactor.py`
   - **Rationale**: US-004-5 (FR-004-YELLOW) requires YELLOW pre/post commands to handle conditional test amendment protocol — emit contract describing proposed test changes, validate/commit amendments, or revert on rejection. US-004-6 (FR-004-JUDGE) requires JUDGE pre (evaluate `git diff` against `spec.md`, emit compliance report) — no post needed as it's advisory. US-004-7 (FR-004-REFACTOR) requires REFACTOR pre/post to polish implementation and validate test invariance. All three depend on T004 (RED/GREEN commands) because they run after GREEN completes.
   - **Details**:
     - **Red**: **Git isolation mandatory (see Universal Test Constraints). All tests that invoke git operations (add, commit, diff, restore, log) MUST use the `tmp_git_repo` fixture from `tests/conftest.py` and operate via `with chdir(tmp_git_repo):`.** Write `test_yellow_pre_emits_contract` — use `tmp_path`, set up task with YELLOW trigger manifest, run `deviate yellow pre`, assert contract contains `proposed_changes`, `rationale`, `test_files`. Write `test_yellow_post_accept_amendments` — use `tmp_git_repo`, commit a failing test file and implementation, mock approved YELLOW justification, run post, assert test changes committed and session returns to GREEN. Write `test_yellow_post_reject_amendments` — use `tmp_git_repo`, commit a test file, introduce changes, mock rejected justification, run post, assert `git restore` reverts test changes. Write `test_judge_pre_clean_diff` — use `tmp_git_repo`, commit baseline files with only expected changes, run `deviate judge pre`, assert `COMPLIANCE_PASS` verdict in contract. Write `test_judge_pre_violation` — use `tmp_git_repo`, commit baseline, then introduce spec-violating changes (e.g., modified protected module), run pre, assert `COMPLIANCE_VIOLATION` with details. Write `test_refactor_pre_emits_contract` — use `tmp_path`, set up GREEN task, run pre, assert contract has `files_to_refactor`. Write `test_refactor_post_test_invariance` — use `tmp_git_repo`, commit working implementation and passing tests, refactor code without changing behavior, run post, assert tests pass and commit exists. Write `test_refactor_post_regression_rollback` — use `tmp_git_repo`, commit passing implementation, make change that breaks test, run post, assert rollback with `RefactorRegressionError`. All git-interacting functions must receive `repo_path=tmp_git_repo` — never rely on `Path.cwd()` or the real repo root.
@@ -107,14 +107,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_micro/test_execute.py tests/test_micro/test_e2e.py tests/test_micro/test_hotfix.py -v`
+  - **Verification**: `pytest tests/unit/test_micro/test_execute.py tests/unit/test_micro/test_e2e.py tests/unit/test_micro/test_hotfix.py -v`
   - **Dependency**: T005
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_execute.py`
-    - `tests/test_micro/test_e2e.py`
-    - `tests/test_micro/test_hotfix.py`
+    - `tests/unit/test_micro/test_execute.py`
+    - `tests/unit/test_micro/test_e2e.py`
+    - `tests/unit/test_micro/test_hotfix.py`
   - **Rationale**: US-004-9 requires auxiliary phase commands for non-TDD workflows. FR-004-EXECUTE: `deviate execute pre/post` for DIRECT-mode tasks that bypass RED/GREEN/REFACTOR. FR-004-E2E: `deviate e2e pre/post` for end-to-end verification after all tasks complete. FR-004-HOTFIX: `deviate hotfix pre/post` for bug fixes that skip RED. These are independent phase commands added to the micro.py CLI surface. Dependencies: all three expect core agent (T001) and Tamper Guard (T002) infrastructure.
   - **Details**:
     - **Red**: **Git isolation mandatory (see Universal Test Constraints). All tests that invoke git operations MUST use `tmp_git_repo` fixture + `with chdir(tmp_git_repo):`.** Write `test_execute_pre_discovers_direct_task` — use `tmp_path`, set up task with `execution_mode=DIRECT`, run `deviate execute pre`, assert contract contains `workflow_context` and `completion_criteria`. Write `test_execute_post_commits_result` — use `tmp_git_repo`, run `deviate execute post <manifest>`, assert commit created and task marked COMPLETED. Write `test_e2e_pre_verifies_all_tasks_complete` — use `tmp_git_repo`, set up all tasks COMPLETED, run pre, assert contract with E2E test paths. Write `test_e2e_pre_rejects_incomplete_tasks` — use `tmp_git_repo`, leave one task PENDING, run pre, assert `INCOMPLETE_TASKS` error. Write `test_e2e_post_commits_results` — use `tmp_git_repo`, run post after E2E execution, assert commit. Write `test_hotfix_pre_discovers_bug_context` — use `tmp_path`, set up bug report issue, run `deviate hotfix pre`, assert contract with bug context, bypasses RED. Write `test_hotfix_post_commits_without_red` — use `tmp_git_repo`, run post, assert commit without RED phase.
@@ -134,12 +134,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_micro/test_orchestration.py tests/test_integration/test_micro_orchestration.py -v`
+  - **Verification**: `pytest tests/unit/test_micro/test_orchestration.py tests/test_integration/test_micro_orchestration.py -v`
   - **Dependency**: T006
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_orchestration.py`
+    - `tests/unit/test_micro/test_orchestration.py`
     - `tests/test_integration/test_micro_orchestration.py`
   - **Rationale**: US-004-8 (FR-004-MICRO-ORCHESTRATION) requires `deviate micro <TASK_ID>` to run a single task through the full RED→GREEN→JUDGE→REFACTOR cycle, and `deviate micro --all` to process all PENDING tasks sequentially with retry-once-then-abort semantics. The CLI handles all admin (state transitions, git commits, validation, agent invocation); the agent receives the full auto prompt (from T003) with `<constitution>...</constitution>` and task context appended. Session state must track active TaskRecord and current micro phase. Ledger updates must append TaskRecord status transitions after each phase commit. Dependencies: all phase commands (T004-T006), agent backend (T001), Tamper Guard (T002), and prompt templates (T003).
     - **Details**:

@@ -10,7 +10,7 @@ flow_refs: []
 ## System Topology Mapping
 - **Epic Target Domain**: `specs/adhoc/`
 - **Local Issue File**: `issues/036-cli-help-readme-transparency.md`
-- **Primary Architectural Workstation**: `README.md`, `src/deviate/cli/__init__.py`, `src/deviate/cli/meso.py`, `src/deviate/cli/micro.py`, `tests/test_cli/test_help.py`
+- **Primary Architectural Workstation**: `README.md`, `src/deviate/cli/__init__.py`, `src/deviate/cli/meso.py`, `src/deviate/cli/micro.py`, `tests/unit/test_cli/test_help.py`
 
 ## The Problem Contract
 
@@ -72,7 +72,7 @@ The harness is opinionated. Prompts call a lot of `pre`/`post`. Coworkers cannot
 - Throughput: no new subprocesses, ledgers, or agent invocations in production code.
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_cli/test_help.py` — `--review` pause-vs-slash; `fast` mentions skipping JUDGE; existing panel pins. `tests/test_core/test_profile.py::test_help_lists_only_full_and_fast` — pinned `Execution profile: full, fast`. `tests/test_cli/test_setup.py::TestReadmeNewUserPath` — Quickstart still names setup then `/deviate-init`.
+- **Unit Sandbox Targets**: `tests/unit/test_cli/test_help.py` — `--review` pause-vs-slash; `fast` mentions skipping JUDGE; existing panel pins. `tests/unit/test_core/test_profile.py::test_help_lists_only_full_and_fast` — pinned `Execution profile: full, fast`. `tests/unit/test_cli/test_setup.py::TestReadmeNewUserPath` — Quickstart still names setup then `/deviate-init`.
 - **Integration Sandbox Targets**: none (docs + help only).
 
 ## Demonstration Path
@@ -82,5 +82,5 @@ deviate meso run --help
 deviate micro run --help
 # --profile help names full, fast and that fast skips JUDGE
 # --review help says TTY pause, not /deviate-review
-pytest tests/test_cli/test_help.py tests/test_core/test_profile.py tests/test_cli/test_setup.py::TestReadmeNewUserPath -v
+pytest tests/unit/test_cli/test_help.py tests/unit/test_core/test_profile.py tests/unit/test_cli/test_setup.py::TestReadmeNewUserPath -v
 ```

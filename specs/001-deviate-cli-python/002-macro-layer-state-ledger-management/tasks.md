@@ -9,11 +9,11 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_state/test_ledger.py -v`
+  - **Verification**: `pytest tests/unit/test_state/test_ledger.py -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/state/ledger.py`
-    - `tests/test_state/test_ledger.py`
+    - `tests/unit/test_state/test_ledger.py`
   - **Rationale**: Implements US-004 ledger domain. IssueRecord is the core data entity consumed by the shard command and downstream meso-layer. JSONL operations (append, idempotency check, read) are the write-side of the append-only ledger protocol. These files are new — no prior IssueRecord model exists.
   - **Details**:
     - **Red**: Write `test_issue_record_creation()` asserting valid IssueRecord with UUID4 id, title, status SHARDED, epic_slug, issue_slug, and timestamp; `test_issue_record_invalid_status()` asserting ValidationError for non-SHARDED status; `test_issue_record_missing_id()` asserting ValidationError; `test_issue_record_serialization()` asserting JSON round-trip preserves all fields.
@@ -28,11 +28,11 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_state/test_session.py -v`
+  - **Verification**: `pytest tests/unit/test_state/test_session.py -v`
   - **Estimated Time**: 45 minutes
   - **Files**:
     - `src/deviate/state/config.py`
-    - `tests/test_state/test_session.py`
+    - `tests/unit/test_state/test_session.py`
   - **Rationale**: Implements US-002 session state transitions. The `SessionState` Pydantic model already exists in `config.py` with `current_phase` validation but lacks transition enforcement logic. This task adds a `transition_to()` method that enforces the strict `IDLE → EXPLORE → RESEARCH → PRD → SHARD` sequence and handles the `SHARD → IDLE` auto-reset.
   - **Details**:
     - **Red**: Write `test_valid_explore_from_idle()` asserting transition from IDLE to EXPLORE succeeds; `test_valid_research_from_explore()` asserting EXPLORE→RESEARCH; `test_valid_prd_from_research()` asserting RESEARCH→PRD; `test_valid_shard_from_prd()` asserting PRD→SHARD; `test_shard_resets_to_idle()` asserting SHARD auto-resets to IDLE; `test_transition_violation_skip_phase()` asserting IDLE→PRD raises TransitionViolationError; `test_transition_violation_duplicate()` asserting EXPLORE→EXPLORE raises error; `test_transition_violation_backwards()` asserting PRD→RESEARCH raises error.
@@ -54,17 +54,17 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_macro/test_explore.py tests/test_macro/test_research.py tests/test_macro/test_prd.py tests/test_macro/test_shard.py -v`
+  - **Verification**: `pytest tests/unit/test_macro/test_explore.py tests/unit/test_macro/test_research.py tests/unit/test_macro/test_prd.py tests/unit/test_macro/test_shard.py -v`
   - **Estimated Time**: 90 minutes
   - **Dependency**: T001 T002
   - **Files**:
     - `src/deviate/cli/macro.py`
     - `src/deviate/cli/__init__.py`
-    - `tests/test_macro/test_explore.py`
-    - `tests/test_macro/test_research.py`
-    - `tests/test_macro/test_prd.py`
-    - `tests/test_macro/test_shard.py`
-    - `tests/test_macro/__init__.py`
+    - `tests/unit/test_macro/test_explore.py`
+    - `tests/unit/test_macro/test_research.py`
+    - `tests/unit/test_macro/test_prd.py`
+    - `tests/unit/test_macro/test_shard.py`
+    - `tests/unit/test_macro/__init__.py`
   - **Rationale**: Implements US-001 (subcommand registration) and US-003 (artifact validation) by creating the `src/deviate/cli/macro.py` module with all four Typer commands. Integrates with session state from T002 and artifact path checking. `cli/__init__.py` is modified to register macro commands onto the existing Typer app. This is the primary user-facing interface for the macro layer.
   - **Details**:
     - **Red**: Write `test_explore_help()` asserting `deviate cli explore --help` returns exit 0 with help text; `test_explore_transitions_to_explore()` asserting session state advances from IDLE to EXPLORE after invoke; `test_explore_rejects_if_not_idle()` asserting error when current_phase is not IDLE. Mirror for research, prd, shard commands with similar structure.

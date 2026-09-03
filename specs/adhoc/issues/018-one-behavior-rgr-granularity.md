@@ -120,7 +120,7 @@ Shard Pass 1.5 advertises a 4–8 vertical target that agents treat as a floor: 
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - Optional pin in `tests/test_meso/test_auto_prompt_templates.py` (or a focused new test) asserting `auto/shard.md` and `commands/deviate-shard.md` contain no "Target range: 4" floor, still contain "10" / `SLICE_CAP_EXCEEDED`, and state that 1 is legal.
+  - Optional pin in `tests/unit/test_meso/test_auto_prompt_templates.py` (or a focused new test) asserting `auto/shard.md` and `commands/deviate-shard.md` contain no "Target range: 4" floor, still contain "10" / `SLICE_CAP_EXCEEDED`, and state that 1 is legal.
   - Optional pin asserting `auto/tasks.md` and `commands/deviate-tasks.md` no longer contain "If a task takes < 30 min, merge it" and do contain "fail-to-pass" / "one observable behavior" language.
 - **Integration Sandbox Targets**: none required (no CLI runner change). Skip E2E; this slice has no user-facing FLOW and no new command.
 

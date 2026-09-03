@@ -35,7 +35,7 @@
   - **Changes Required**: In `invoke()`, after resolving `backend_name == "pi"` and `self.config.pi_rpc == True`, construct `cmd = ["pi", "--mode", "rpc", "--no-session"]` instead of `["pi", "-p"]`. For RPC mode, replace `_invoke_blocking` / `_invoke_streaming` with a JSONL-over-stdin/stdout RPC client that sends `{"type": "prompt", "content": "..."}`, parses streaming `agent_start` / `message_update` / `agent_end` events, and extracts the handover manifest from the `agent_end` payload. RPC mode also enables `get_session_stats` capture for `pi.session_stats`.
   - **Integration Surface**: `AgentConfig.pi_rpc`, `BACKEND_COMMANDS["pi"]`, existing `subprocess.Popen` pattern.
 
-- **`tests/core/test_agent.py`**: Unit tests for Pi backend contract
+- **`tests/unit/core/test_agent.py`**: Unit tests for Pi backend contract
   - **Current State**: `TestAgentCommandModel` class (line 10-114) tests command construction with `patch("deviate.core.agent.subprocess.Popen")`. Tests `opencode`/`claude`/`droid` backends. No Pi tests.
   - **Changes Required**: Add tests: `test_pi_backend_subprocess_contract` (verify `pi -p` spawns), `test_pi_backend_yaml_extraction` (Pi-shaped YAML parses correctly), `test_pi_backend_missing_binary` (`FileNotFoundError` → `AgentBinaryNotFoundError`), `test_pi_backend_model_flag_suppressed` (no `--model` injected for Pi), `test_pi_rpc_mode_opt_in` (`pi_rpc = true` → `pi --mode rpc --no-session`), `test_agent_config_literal_accepts_pi` (Pydantic validation), `test_agent_config_literal_rejects_unknown` (`ValidationError`).
 
@@ -51,7 +51,7 @@
 - **Phase 1**: Core backend registration — `BACKEND_COMMANDS`, `AgentConfig`, `MODEL_FLAGS`
   - **Files**: `src/deviate/core/agent.py`, `src/deviate/state/config.py`
   - **Approach**: Add `"pi": "pi -p"` to dict. Widen Literal. Add `pi_rpc` field. Add `MODEL_FLAGS` map. Thread `MODEL_FLAGS` check into `invoke()` model-flag injection. Add `StubPiBackend` fixture.
-  - **Verification**: `mise run test tests/core/test_agent.py::test_pi_backend_missing_binary -v`, `mise run test tests/core/test_agent.py::test_pi_backend_model_flag_suppressed -v`, `mise run test tests/core/test_agent.py::test_agent_config_literal_accepts_pi -v`
+  - **Verification**: `mise run test tests/unit/core/test_agent.py::test_pi_backend_missing_binary -v`, `mise run test tests/unit/core/test_agent.py::test_pi_backend_model_flag_suppressed -v`, `mise run test tests/unit/core/test_agent.py::test_agent_config_literal_accepts_pi -v`
 
 - **Phase 2**: User-facing agent selection — `AGENT_CHOICES`, `AGENT_TO_BACKEND`, init flow integration
   - **Files**: `src/deviate/cli/__init__.py`
@@ -61,7 +61,7 @@
 - **Phase 3**: RPC mode opt-in and token stats capture
   - **Files**: `src/deviate/core/agent.py`, `src/deviate/cli/micro.py`
   - **Approach**: Branch `invoke()` on `pi_rpc = true` to spawn `["pi", "--mode", "rpc", "--no-session"]`. Implement JSONL RPC client for streaming events. Extract `pi.session_stats` from `agent_end` event. In print mode, parse `--print-tokens` footer if available. Append stats to `AGENT_RESULT` log.
-  - **Verification**: `mise run test tests/core/test_agent.py::test_pi_rpc_mode_opt_in -v`, `mise run test tests/core/test_agent.py::test_pi_session_stats_logged -v`, `mise run test tests/core/test_agent.py::test_pi_backend_subprocess_contract -v`
+  - **Verification**: `mise run test tests/unit/core/test_agent.py::test_pi_rpc_mode_opt_in -v`, `mise run test tests/unit/core/test_agent.py::test_pi_session_stats_logged -v`, `mise run test tests/unit/core/test_agent.py::test_pi_backend_subprocess_contract -v`
 
 - **Phase 4**: Spec documentation
   - **Files**: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`
@@ -96,7 +96,7 @@
 
 ## Constitutional Alignment
 - **Architecture**: Pi integrates at the meso/micro layer via the existing `AgentBackend` subprocess contract. Extends the three-layer architecture without introducing new layers or phase gates. Macro layer is explicitly excluded per `## Defensive Exclusions`.
-- **Testing**: All new tests follow existing patterns in `tests/core/test_agent.py` (backend contract tests with `patch("subprocess.Popen")`) and `tests/cli/test_init.py` (init flow tests with `runner.invoke`). Pytest is the runner. RED phase tests must fail with `AssertionError`.
+- **Testing**: All new tests follow existing patterns in `tests/unit/core/test_agent.py` (backend contract tests with `patch("subprocess.Popen")`) and `tests/cli/test_init.py` (init flow tests with `runner.invoke`). Pytest is the runner. RED phase tests must fail with `AssertionError`.
 - **Git Isolation**: Pi subprocess runs within the worktree. All Git operations obey existing `_git_env()` isolation. Tamper Guard applies identically — writes outside `src/**/*.py` detected and reverted.
 
 ## Target File Structure
@@ -118,6 +118,6 @@ The following target workstation files have been pre-scanned with structural ana
 - **Symbols**: `_invoke_agent`, `_log_run`, `_run_pytest`, `_run_red_phase`, `_run_green_phase`, `_run_judge_phase`, `_run_refactor_phase`, `_run_execute_phase`, `_run_yellow_phase`, `_commit_phase`, `_execute_rollback`, `PhaseFailedError`, `RedPhaseError`
 - **Imports**: `json`, `re`, `subprocess`, `sys`, `os`, `yaml`, `AgentBackend`, `AgentBinaryNotFoundError`, `AgentSubprocessError`, `AgentTimeoutError`, `EmptyOutputError`, `HandoverManifest`, `MalformedHandoverManifestError`, `AgentConfig`, `PytestReportConfig`, `SessionState`, `resolve_graphite_config`, `resolve_model_for_phase`, `RunLogger`, `OrchestrationMonitor`, `TamperContext`, `TamperGuard`, `find_worktree_for_branch`, `Console`, `Callable`, `typer`, `Path`
 
-### `tests/core/test_agent.py` (Language: python)
+### `tests/unit/core/test_agent.py` (Language: python)
 - **Symbols**: `TestAgentCommandModel` (class), `test_command_with_model`, `test_command_without_model`, `test_command_claude_backend`, `test_command_droid_backend`
 - **Imports**: `MagicMock`, `patch`, `pytest`, `AgentBackend`, `AgentConfig`, `AgentSubprocessError`

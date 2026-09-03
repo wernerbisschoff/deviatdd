@@ -21,8 +21,8 @@ type: feature
   - `src/deviate/cli/meso.py` — MODIFY: `tasks post` generates `.jsonl.proposal`, requires `--confirm`
   - `src/deviate/prompts/skills/deviate-*/SKILL.md` — MODIFY: 18 files, replace `--no-judge`/`--no-refactor` with `--profile`, remove `.sh` refs, use `deviate <cmd> pre/post`
   - `src/deviate/core/agent.py` — MODIFY: add `StubAgentBackend` class + `"stub"` entry in `BACKEND_COMMANDS` (FR-017)
-  - `tests/test_micro/conftest.py` — MODIFY: replace autouse `_invoke_agent` mock with `subprocess.Popen` system-edge mock (FR-017)
-  - `tests/test_micro/test_red.py`, `test_green.py`, `test_refactor.py`, `test_orchestration.py` — MODIFY: remove `_run_pytest` function-level mocks, use system-edge subprocess assertions (FR-017)
+  - `tests/unit/test_micro/conftest.py` — MODIFY: replace autouse `_invoke_agent` mock with `subprocess.Popen` system-edge mock (FR-017)
+  - `tests/unit/test_micro/test_red.py`, `test_green.py`, `test_refactor.py`, `test_orchestration.py` — MODIFY: remove `_run_pytest` function-level mocks, use system-edge subprocess assertions (FR-017)
   - `src/deviate/prompts/skills/deviate-tasks/SKILL.md` — MODIFY: add integration/wiring guidance to decision tree step 7 (FR-017)
   - `src/deviate/prompts/skills/deviate-yellow/SKILL.md` — NEW: YELLOW phase skill with review/amend workflow (FR-018)
   - `src/deviate/cli/micro.py` — MODIFY: wire `_load_skill_content("YELLOW")` into `yellow_pre`/`yellow_post` CLI handlers (FR-018)
@@ -343,37 +343,37 @@ The ledger is append-only — completed task records are never removed. `_find_a
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
 **Cache Discipline**
-- `tests/test_core/test_cache_discipline.py` — `test_cache_discipline_model_switch`, `test_cache_discipline_tool_change`, `test_cache_discipline_phase_boundary`
+- `tests/unit/test_core/test_cache_discipline.py` — `test_cache_discipline_model_switch`, `test_cache_discipline_tool_change`, `test_cache_discipline_phase_boundary`
 
 **YELLOW Handoff Contract (GREEN → YELLOW → JUDGE)**
-- `tests/test_cli/test_green.py` — `test_green_post_tamper_detected_transitions_to_yellow`, `test_green_post_tamper_pass_stays_green`, `test_green_post_yellow_triggered_by_tamper_not_commit`
-- `tests/test_cli/test_yellow.py` — `test_yellow_post_approved_transitions_to_judge`, `test_yellow_post_rejected_transitions_to_green`, `test_yellow_appends_status_transition`
-- `tests/test_micro/test_orchestration.py` — `test_tdd_cycle_inlines_yellow_gate`, `test_tdd_cycle_yellow_approved_continues_to_judge`, `test_tdd_cycle_yellow_rejected_re_runs_green`, `test_yellow_not_in_phase_map`
-- `tests/test_micro/test_run.py` — `test_run_resumes_from_session_phase`, `test_run_resumes_from_yellow`, `test_run_resumes_from_judge`
+- `tests/unit/test_cli/test_green.py` — `test_green_post_tamper_detected_transitions_to_yellow`, `test_green_post_tamper_pass_stays_green`, `test_green_post_yellow_triggered_by_tamper_not_commit`
+- `tests/unit/test_cli/test_yellow.py` — `test_yellow_post_approved_transitions_to_judge`, `test_yellow_post_rejected_transitions_to_green`, `test_yellow_appends_status_transition`
+- `tests/unit/test_micro/test_orchestration.py` — `test_tdd_cycle_inlines_yellow_gate`, `test_tdd_cycle_yellow_approved_continues_to_judge`, `test_tdd_cycle_yellow_rejected_re_runs_green`, `test_yellow_not_in_phase_map`
+- `tests/unit/test_micro/test_run.py` — `test_run_resumes_from_session_phase`, `test_run_resumes_from_yellow`, `test_run_resumes_from_judge`
 
 **Train Rollback**
-- `tests/test_cli/test_micro.py` — `test_judge_train_rollback`, `test_judge_rollback_preserves_red`, `test_judge_no_violation_proceeds`
+- `tests/unit/test_cli/test_micro.py` — `test_judge_train_rollback`, `test_judge_rollback_preserves_red`, `test_judge_no_violation_proceeds`
 
 **Ledger and Status Model**
-- `tests/test_state/test_ledger.py` — `test_rollback_snapshot_model`, `test_rollback_snapshot_sha_validation`
-- `tests/test_state/test_ledger.py` — `test_task_record_status_includes_yellow`, `test_task_record_status_includes_judge`
-- `tests/test_cli/test_micro.py` — `test_judge_appends_status_transition`, `test_green_post_appends_yellow_on_tamper`
+- `tests/unit/test_state/test_ledger.py` — `test_rollback_snapshot_model`, `test_rollback_snapshot_sha_validation`
+- `tests/unit/test_state/test_ledger.py` — `test_task_record_status_includes_yellow`, `test_task_record_status_includes_judge`
+- `tests/unit/test_cli/test_micro.py` — `test_judge_appends_status_transition`, `test_green_post_appends_yellow_on_tamper`
 
 **Tasks Ledger**
-- `tests/test_core/test_tasks_ledger.py` — `test_generate_jsonl_from_md`, `test_validate_tasks_jsonl`
-- `tests/test_cli/test_meso.py` — `test_tasks_post_proposal`, `test_tasks_post_confirm`
+- `tests/unit/test_core/test_tasks_ledger.py` — `test_generate_jsonl_from_md`, `test_validate_tasks_jsonl`
+- `tests/unit/test_cli/test_meso.py` — `test_tasks_post_proposal`, `test_tasks_post_confirm`
 
 **Skills Audit**
 - `tests/test_skills/` — grep-based audit for `.sh`/`--no-judge`/`--no-refactor` in skill files
 
 **Agent & Mock Boundary**
-- `tests/test_core/test_agent.py` — `test_stub_backend_returns_valid_manifest`, `test_stub_backend_no_subprocess`
-- `tests/test_micro/conftest.py` — audit autouse mock targets `subprocess.Popen` not `_invoke_agent`
+- `tests/unit/test_core/test_agent.py` — `test_stub_backend_returns_valid_manifest`, `test_stub_backend_no_subprocess`
+- `tests/unit/test_micro/conftest.py` — audit autouse mock targets `subprocess.Popen` not `_invoke_agent`
 
 **Test Refactoring (system-edge mocks)**
-- `tests/test_micro/test_red.py` — refactored: uses system-edge mock (`subprocess.Popen`), no `_run_pytest` mock
-- `tests/test_micro/test_green.py` — refactored: uses system-edge mock, no `_run_pytest` mock
-- `tests/test_micro/test_refactor.py` — refactored: uses system-edge mock, no `_run_pytest` mock
+- `tests/unit/test_micro/test_red.py` — refactored: uses system-edge mock (`subprocess.Popen`), no `_run_pytest` mock
+- `tests/unit/test_micro/test_green.py` — refactored: uses system-edge mock, no `_run_pytest` mock
+- `tests/unit/test_micro/test_refactor.py` — refactored: uses system-edge mock, no `_run_pytest` mock
 
 ## [DEMONSTRATION_PATH]
 
@@ -485,7 +485,7 @@ ls src/deviate/prompts/skills/deviate-judge/SKILL.md 2>/dev/null && echo 'JUDGE 
 grep -q '\"JUDGE\": \"deviate-judge\"' src/deviate/cli/micro.py && echo 'JUDGE _SKILL_NAMES OK' || echo 'WARNING: JUDGE still None in _SKILL_NAMES'
 
 # Verify conftest mocks subprocess.Popen not _invoke_agent
-grep -q 'subprocess.Popen' tests/test_micro/conftest.py && echo 'System-edge mock OK' || echo 'WARNING: conftest still mocks _invoke_agent'
+grep -q 'subprocess.Popen' tests/unit/test_micro/conftest.py && echo 'System-edge mock OK' || echo 'WARNING: conftest still mocks _invoke_agent'
 
 # Verify no stale shell references in skills
 ! grep -r '\.sh' src/deviate/prompts/skills/ --include='SKILL.md' && echo 'No .sh references OK' || echo 'WARNING: .sh references found'
@@ -509,5 +509,5 @@ except Exception as e:
 "
 
 # Run verification tests
-pytest tests/test_cli/test_yellow.py tests/test_micro/test_orchestration.py tests/test_micro/test_run.py tests/test_core/test_cache_discipline.py tests/test_core/test_agent.py tests/test_state/test_ledger.py -v --no-header -q
+pytest tests/unit/test_cli/test_yellow.py tests/unit/test_micro/test_orchestration.py tests/unit/test_micro/test_run.py tests/unit/test_core/test_cache_discipline.py tests/unit/test_core/test_agent.py tests/unit/test_state/test_ledger.py -v --no-header -q
 ```

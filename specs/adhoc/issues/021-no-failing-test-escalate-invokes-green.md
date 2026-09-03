@@ -19,9 +19,9 @@ flow_refs: []
   - `src/deviate/cli/micro.py::_run_green_phase` — TARGET: refuse to invoke the GREEN agent when there is no committed failing test / no RED boundary SHA. Vacuous GREEN is how production code (`classify_http_outcome` / backoff in the payments log) landed without a RED contract.
   - `src/deviate/cli/micro.py::_run_judge_phase` — TARGET: `revert_to_red` already raises `ROLLBACK_BOUNDARY_MISSING` when `session.red_commit_sha` is empty, but the surrounding `except Exception` prints `ROLLBACK_FAILED` and still calls `_commit_judge_feedback_and_advance` + `force_transition_to("GREEN")`. That must fail the task (or re-dispatch RED), not train GREEN.
   - `src/deviate/cli/micro.py::_commit_judge_feedback_and_advance` — TARGET: must not stamp `session.red_commit_sha` onto a `docs(<task>): add judge feedback for retry` commit when no RED-phase failing-test commit exists (observed SHA `b11770f` in the payments log).
-  - `tests/test_micro/test_orchestration.py` — TARGET: extend `test_micro_red_no_failing_test_routes_to_judge_skip_refactor`; add always-`revert_before` / `no_failing_test` stubs that assert the next `INVOKE_AGENT` is RED (or `TRAIN_EXHAUSTED` / `PhaseFailedError`), never GREEN.
-  - `tests/test_micro/test_two_counter_retry.py` — TARGET: pin that `escalate_to_red` / `no_failing_test_adjudicated` does not fall through to GREEN when RED did not commit a SHA.
-  - `tests/test_cli/test_micro.py` / `tests/test_micro/test_rollback_safety.py` — TARGET: `revert_to_red` with empty `red_commit_sha` must not log `ROLLBACK_FAILED` and proceed; it must not advance the boundary onto a feedback commit.
+  - `tests/unit/test_micro/test_orchestration.py` — TARGET: extend `test_micro_red_no_failing_test_routes_to_judge_skip_refactor`; add always-`revert_before` / `no_failing_test` stubs that assert the next `INVOKE_AGENT` is RED (or `TRAIN_EXHAUSTED` / `PhaseFailedError`), never GREEN.
+  - `tests/unit/test_micro/test_two_counter_retry.py` — TARGET: pin that `escalate_to_red` / `no_failing_test_adjudicated` does not fall through to GREEN when RED did not commit a SHA.
+  - `tests/unit/test_cli/test_micro.py` / `tests/unit/test_micro/test_rollback_safety.py` — TARGET: `revert_to_red` with empty `red_commit_sha` must not log `ROLLBACK_FAILED` and proceed; it must not advance the boundary onto a feedback commit.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document the GREEN-entry invariant (committed failing test + RED SHA) and that missing-boundary `revert_to_red` is fatal, not swallowed.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible runner fix.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices; this slice does not change that classifier.
@@ -112,10 +112,10 @@ flow_refs: []
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_micro/test_orchestration.py` — `test_no_failing_test_revert_before_invokes_red_not_green` (name may vary): after two `no_failing_test` / `revert_before` adjudications, agent phases contain RED and JUDGE only, never GREEN, until a failing test is committed or the task fails.
-  - `tests/test_micro/test_two_counter_retry.py` — `test_escalate_to_red_does_not_dispatch_green_without_red_sha`.
-  - `tests/test_cli/test_micro.py` / `tests/test_micro/test_rollback_safety.py` — `test_revert_to_red_missing_red_commit_sha_is_fatal` (no `ROLLBACK_FAILED` proceed; `red_commit_sha` unchanged / not a feedback commit).
-  - `tests/test_micro/test_green.py` — GREEN entry refused when `session.red_commit_sha` is empty.
+  - `tests/unit/test_micro/test_orchestration.py` — `test_no_failing_test_revert_before_invokes_red_not_green` (name may vary): after two `no_failing_test` / `revert_before` adjudications, agent phases contain RED and JUDGE only, never GREEN, until a failing test is committed or the task fails.
+  - `tests/unit/test_micro/test_two_counter_retry.py` — `test_escalate_to_red_does_not_dispatch_green_without_red_sha`.
+  - `tests/unit/test_cli/test_micro.py` / `tests/unit/test_micro/test_rollback_safety.py` — `test_revert_to_red_missing_red_commit_sha_is_fatal` (no `ROLLBACK_FAILED` proceed; `red_commit_sha` unchanged / not a feedback commit).
+  - `tests/unit/test_micro/test_green.py` — GREEN entry refused when `session.red_commit_sha` is empty.
 - **Integration Sandbox Targets**:
   - Stub-agent `_run_tdd_cycle` with patched `_run_red_phase` / `_run_green_phase` / `_run_judge_phase` and mocked `_run_pytest` / `_run_test_cmd`: RED exit 0 → JUDGE `revert_before` → escalate → assert next invoke is RED or `PhaseFailedError`, then `revert_to_red` with empty SHA raises rather than trains.
 
@@ -123,5 +123,5 @@ flow_refs: []
 
 ```bash
 # Mocked TDD-loop pins (no live agent, no un-mocked pytest)
-uv run pytest tests/test_micro/test_orchestration.py tests/test_micro/test_two_counter_retry.py tests/test_micro/test_rollback_safety.py tests/test_cli/test_micro.py tests/test_micro/test_green.py -q -k "no_failing_test or revert_to_red or red_commit_sha or escalate"
+uv run pytest tests/unit/test_micro/test_orchestration.py tests/unit/test_micro/test_two_counter_retry.py tests/unit/test_micro/test_rollback_safety.py tests/unit/test_cli/test_micro.py tests/unit/test_micro/test_green.py -q -k "no_failing_test or revert_to_red or red_commit_sha or escalate"
 ```

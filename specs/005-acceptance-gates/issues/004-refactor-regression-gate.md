@@ -20,7 +20,7 @@ flow_refs: []
   - `src/deviate/cli/micro.py:2347` — REFERENCE: the `skip_refactor` path (phase = IDLE, mark COMPLETED) stays a separate decision; this gate applies only when REFACTOR actually runs.
   - `src/deviate/cli/micro.py:692` — REFERENCE: `_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REFACTOR"}` unchanged.
   - `src/deviate/state/ledger.py:81-98` — REFERENCE: `TaskRecord` parse for the transition append; unchanged by this issue.
-  - `tests/test_micro/test_refactor.py` — TARGET: extend with regression-gate behavior; mock `deviate.cli.micro._run_pytest`.
+  - `tests/unit/test_micro/test_refactor.py` — TARGET: extend with regression-gate behavior; mock `deviate.cli.micro._run_pytest`.
 - **Upstream Evidence**:
   - `specs/005-acceptance-gates/prd.md:16` — Hard directive: `_run_refactor_phase` inspects `_run_test_cmd` returncode and raises `PhaseFailedError` on non-zero.
   - `specs/005-acceptance-gates/prd.md:151-162` — FR-005-05 acceptance outline: regression failure is terminal for the phase; zero proceeds to format, COMPLETED row, commit, session IDLE.
@@ -39,7 +39,7 @@ The REFACTOR phase polishes GREEN-verified code. Today the post-polish test run 
 - A non-zero returncode raises `PhaseFailedError`; the phase fails.
 - A zero returncode runs `_run_format_cmd`, appends the `COMPLETED` transition, commits, and transitions the session to `IDLE`.
 - A `skip_refactor` decision bypasses the gate and keeps its existing completion path.
-- Tests in `tests/test_micro/test_refactor.py` pin the pass and fail branches; CLI-reaching tests mock `deviate.cli.micro._run_pytest`.
+- Tests in `tests/unit/test_micro/test_refactor.py` pin the pass and fail branches; CLI-reaching tests mock `deviate.cli.micro._run_pytest`.
 
 ### Defensive Exclusions
 
@@ -84,7 +84,7 @@ The REFACTOR phase polishes GREEN-verified code. Today the post-polish test run 
 
 ## Multi-Tiered Verification Targets
 
-- **Unit**: `tests/test_micro/test_refactor.py` — non-zero returncode raises `PhaseFailedError`; zero returncode appends `COMPLETED`; `skip_refactor` bypasses the gate; already-completed task skips.
+- **Unit**: `tests/unit/test_micro/test_refactor.py` — non-zero returncode raises `PhaseFailedError`; zero returncode appends `COMPLETED`; `skip_refactor` bypasses the gate; already-completed task skips.
 - **Integration**: `deviate micro run <task_id>` in a temporary worktree with a mocked test command; assert the `COMPLETED` row on pass and the `FAILED` path on regression.
 
 ## Demonstration Path
@@ -92,7 +92,7 @@ The REFACTOR phase polishes GREEN-verified code. Today the post-polish test run 
 ```bash
 # 1. Unit verification — REFACTOR regression gate behavior
 #    (all CLI-reaching tests mock deviate.cli.micro._run_pytest)
-uv run pytest tests/test_micro/test_refactor.py -v
+uv run pytest tests/unit/test_micro/test_refactor.py -v
 
 # 2. Integration: regression fails the phase
 #    (temporary worktree; task past GREEN/JUDGE; _run_pytest mocked to return

@@ -72,7 +72,7 @@ Operators running `deviate setup` without choice flags need an interactive backe
 - **AO-034-05** *(Ref: AC-ADHOC-034-05, US-034-05)*: Codex setup still seeds `[models].default = gpt-5.6-luna` and `[agent].reasoning_effort = high` when those keys are missing or empty, and does not clobber user-set values.
   - **Happy Path**: Existing `models.default = gpt-5.4-custom` and `reasoning_effort = low` survive `setup --agent codex`.
   - **Error Category**: Non-Codex setup does not write Luna or `reasoning_effort`.
-  - **Boundary Category**: Existing Codex no-clobber tests in `tests/test_cli/test_setup.py` keep passing.
+  - **Boundary Category**: Existing Codex no-clobber tests in `tests/unit/test_cli/test_setup.py` keep passing.
 <!-- `**Given**` / `**When**` / `**Then**` are forbidden here. -->
 
 ## Edge Cases and Boundaries
@@ -88,7 +88,7 @@ Operators running `deviate setup` without choice flags need an interactive backe
 - Throughput: Codex if-empty model seeding and profile coerce stay O(1) TOML edits.
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_cli/test_setup.py` — interactive/pack install, libref-absent, agent-block keys by backend, default-vs-optional packs; `tests/test_state/test_config.py` — `profile` is `full`/`fast`/`secure` and not `"default"`; `tests/test_core/test_profile.py` — coerce legacy `"default"` to `full` if the coerce helper lives there; `tests/test_core/test_commands.py` — every discovered stem is classified.
+- **Unit Sandbox Targets**: `tests/unit/test_cli/test_setup.py` — interactive/pack install, libref-absent, agent-block keys by backend, default-vs-optional packs; `tests/unit/test_state/test_config.py` — `profile` is `full`/`fast`/`secure` and not `"default"`; `tests/unit/test_core/test_profile.py` — coerce legacy `"default"` to `full` if the coerce helper lives there; `tests/unit/test_core/test_commands.py` — every discovered stem is classified.
 - **Integration Sandbox Targets**: `tests/test_integration/test_skill_installation.py` — `setup --agent opencode` still exits 0 and prints INSTALL for the default pack; Codex tests assert the default set rather than all 26 commands.
 
 ## Demonstration Path
@@ -102,5 +102,5 @@ grep -n 'profile = "full"' .deviate/config.toml
 grep -n pi_rpc .deviate/config.toml && exit 1 || true
 deviate setup --agent codex --packs pr
 test -d .agents/skills/deviate-pr
-pytest tests/test_cli/test_setup.py tests/test_state/test_config.py tests/test_core/test_profile.py -v && ruff check .
+pytest tests/unit/test_cli/test_setup.py tests/unit/test_state/test_config.py tests/unit/test_core/test_profile.py -v && ruff check .
 ```

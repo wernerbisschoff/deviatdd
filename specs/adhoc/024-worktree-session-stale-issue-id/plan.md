@@ -91,17 +91,17 @@
   - **Changes Required**: Do not add fields. Reuse `save` from the re-key and meso write sites.
   - **Integration Surface**: `SessionState.load`; `SessionState.save`.
 
-- **tests/test_cli/test_micro.py**: Pin the stronger mismatch plus persist.
+- **tests/unit/test_cli/test_micro.py**: Pin the stronger mismatch plus persist.
   - **Current State**: `TestResolveTaskContextUsesBranch.test_stale_session_issue_rekeys_to_branch_issue` covers GH-54 (leftover issue has no board).
   - **Changes Required**: Keep that pin. Add a case where leftover issue A has a `tasks.md`, branch maps to B with unchecked tasks, `_resolve_task_context(None, root)` returns B's pending task, and `session.json` equals B. Add a CLI pin for bare `deviate micro run` that does not print `NO_PENDING_TASKS`. Use `tmp_git_repo` + `_git_env()` / `cwd=<tmp_git_repo>`. Mock `deviate.cli.micro._run_pytest` and the agent cycle.
   - **Integration Surface**: `_resolve_task_context`; `_rekey_session_issue_to_branch`; `_resolve_known_active_issue_id`.
 
-- **tests/test_meso/test_meso_resume.py**: Pin already-complete session rewrite.
+- **tests/unit/test_meso/test_meso_resume.py**: Pin already-complete session rewrite.
   - **Current State**: `test_valid_plan_and_tasks_skip_both_phases` asserts `MESO_ALREADY_COMPLETE` and skips agents. It does not check `active_issue_id`.
   - **Changes Required**: Seed a leftover `active_issue_id`. After `_meso_run` returns `MESO_ALREADY_COMPLETE`, assert worktree `session.json` equals the claimed issue.
   - **Integration Surface**: `_meso_run`; `SessionState.load`.
 
-- **tests/test_meso/test_meso_orchestration.py**: Pin worktree claim/copy session key.
+- **tests/unit/test_meso/test_meso_orchestration.py**: Pin worktree claim/copy session key.
   - **Current State**: `test_meso_specific_issue` asserts main-repo session `active_issue_id` after a full run. It does not assert the copied worktree session after claim.
   - **Changes Required**: Assert the worktree `.deviate/session.json` equals the claimed issue after claim/copy, not the previous main-repo id. Mock `deviate.cli.micro._run_pytest`.
   - **Integration Surface**: `_meso_run`; `_claim_and_setup`.
@@ -123,9 +123,9 @@
 
 ## Implementation Strategy
 - **Phase 1**: RED pins for re-key, persist, and meso session write
-  - **Files**: `tests/test_cli/test_micro.py`, `tests/test_meso/test_meso_resume.py`, `tests/test_meso/test_meso_orchestration.py`
+  - **Files**: `tests/unit/test_cli/test_micro.py`, `tests/unit/test_meso/test_meso_resume.py`, `tests/unit/test_meso/test_meso_orchestration.py`
   - **Approach**: Keep `test_stale_session_issue_rekeys_to_branch_issue`. Add the leftover-with-board persist pin. Add `MESO_ALREADY_COMPLETE` leftover-id rewrite. Add worktree claim/copy keyed to the claimed issue. Mock `_run_pytest` and the agent cycle.
-  - **Verification**: `uv run pytest tests/test_cli/test_micro.py tests/test_meso/test_meso_resume.py tests/test_meso/test_meso_orchestration.py -q -k "stale_session or rekey or ALREADY_COMPLETE or worktree"` fails on the new pins.
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_micro.py tests/unit/test_meso/test_meso_resume.py tests/unit/test_meso/test_meso_orchestration.py -q -k "stale_session or rekey or ALREADY_COMPLETE or worktree"` fails on the new pins.
 
 - **Phase 2**: GREEN branch-authoritative re-key and persist
   - **Files**: `src/deviate/cli/micro.py`, `src/deviate/state/config.py`

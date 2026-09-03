@@ -65,31 +65,31 @@
   - **Changes Required**: Add a bullet point under shared disciplines encouraging agents to use `context query` for API lookups during implementation phases.
   - **Integration Surface**: Loaded by all micro phase prompts.
 
-- **`tests/test_state/test_config.py`**: Add tests for `use_context` field.
+- **`tests/unit/test_state/test_config.py`**: Add tests for `use_context` field.
   - **Current State**: Tests exist for config defaults, round-trip serialization, extra field rejection.
   - **Changes Required**: Add `test_config_use_context_default` (defaults to `False`), `test_config_use_context_round_trip` (`use_context=True` survives serialize→deserialize).
   - **Integration Surface**: Verified via pytest.
 
-- **`tests/test_cli/test_init.py`**: Add tests for context binary detection during init.
+- **`tests/unit/test_cli/test_init.py`**: Add tests for context binary detection during init.
   - **Current State**: Tests exist for dotfile scaffolding, governance blocks, constitution provisioning.
   - **Changes Required**: Add `test_init_detects_context` (mock `shutil.which("context")` to return a path, verify config contains `use_context = true`), `test_init_missing_context` (mock `which` to return `None`, verify `use_context = false`), `test_init_context_governance_block` (verify CLAUDE.md/AGENTS.md contain `## Offline Context Documentation System` section).
   - **Integration Surface**: Verified via pytest with mocked `$PATH`.
 
 ## Implementation Strategy
 - **Phase 1**: Config model — add `use_context` field to `DeviateConfig`
-  - **Files**: `src/deviate/state/config.py`, `tests/test_state/test_config.py`
+  - **Files**: `src/deviate/state/config.py`, `tests/unit/test_state/test_config.py`
   - **Approach**: Add `use_context: bool = Field(default=False)` to `DeviateConfig`. Add two unit tests: default value and round-trip.
-  - **Verification**: `pytest tests/test_state/test_config.py::test_config_use_context_default tests/test_state/test_config.py::test_config_use_context_round_trip -v`
+  - **Verification**: `pytest tests/unit/test_state/test_config.py::test_config_use_context_default tests/unit/test_state/test_config.py::test_config_use_context_round_trip -v`
 
 - **Phase 2**: CLI detection — wire `which context` into `deviate init`
-  - **Files**: `src/deviate/cli/__init__.py`, `tests/test_cli/test_init.py`
+  - **Files**: `src/deviate/cli/__init__.py`, `tests/unit/test_cli/test_init.py`
   - **Approach**: In `init()`, call `shutil.which("context")` after `_scaffold_dotfiles()`. If found, reload config, set `use_context=True`, write updated TOML. Add tests mocking `shutil.which` for found/not-found scenarios.
-  - **Verification**: `pytest tests/test_cli/test_init.py::test_init_detects_context tests/test_cli/test_init.py::test_init_missing_context -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py::test_init_detects_context tests/unit/test_cli/test_init.py::test_init_missing_context -v`
 
 - **Phase 3**: Governance seeds — add context mandate section to claudemd_seed.md and agents_seed.md
-  - **Files**: `src/deviate/prompts/governance/claudemd_seed.md`, `src/deviate/prompts/governance/agents_seed.md`, `tests/test_cli/test_init.py`
+  - **Files**: `src/deviate/prompts/governance/claudemd_seed.md`, `src/deviate/prompts/governance/agents_seed.md`, `tests/unit/test_cli/test_init.py`
   - **Approach**: Append `## Offline Context Documentation System` section to both seed files with `context list`, `context query`, `context add` mandates. Add integration test verifying governance blocks contain the new section.
-  - **Verification**: `pytest tests/test_cli/test_init.py::test_init_context_governance_block -v`
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py::test_init_context_governance_block -v`
 
 - **Phase 4**: Universal documentation mandate in core.md
   - **Files**: `src/deviate/prompts/core/core.md`
@@ -132,7 +132,7 @@
 
 ## Constitutional Alignment
 - **Architecture**: This issue adds a cross-cutting documentation infrastructure layer that spans all three DeviaTDD layers (macro, meso, micro). The `use_context` config boolean in `.deviate/config.toml` follows the same config-driven pattern established by `[models]` in ISS-ADH-005. Context mandate in governance seeds aligns with the constitutional principle that agents should prefer deterministic, local operations over network-dependent fallbacks.
-- **Testing**: Unit tests for `use_context` default and round-trip (`tests/test_state/test_config.py`). Integration tests for init-time detection with mocked `$PATH` (`tests/test_cli/test_init.py`). All skill files are verified by reading the output — no automated test for prompt content (prompts are human-readable MD, not code).
+- **Testing**: Unit tests for `use_context` default and round-trip (`tests/unit/test_state/test_config.py`). Integration tests for init-time detection with mocked `$PATH` (`tests/unit/test_cli/test_init.py`). All skill files are verified by reading the output — no automated test for prompt content (prompts are human-readable MD, not code).
 - **Git Isolation**: No git state mutation. Config reads are read-only (TOML parsing). All changes are in source files or new test files, committed via standard TDD cycle.
 ||||||| parent of 55772e7 (docs(adhoc-006): create plan.md)
 =======
@@ -205,17 +205,17 @@
 - **Phase 1**: Config model — add `use_context` field to `DeviateConfig`
   - **Files**: `src/deviate/state/config.py`
   - **Approach**: Add `use_context: bool = Field(default=False)` to `DeviateConfig` at line 105 (before `model_config`). No validators needed.
-  - **Verification**: `pytest tests/test_state/test_config.py::test_config_use_context_default -v` (new test), `pytest tests/test_state/test_config.py::test_config_use_context_round_trip -v` (new test), `pytest tests/test_state/test_config.py -v` (existing tests still pass)
+  - **Verification**: `pytest tests/unit/test_state/test_config.py::test_config_use_context_default -v` (new test), `pytest tests/unit/test_state/test_config.py::test_config_use_context_round_trip -v` (new test), `pytest tests/unit/test_state/test_config.py -v` (existing tests still pass)
 
 - **Phase 2**: CLI init — detect `context` binary during `deviate init`
   - **Files**: `src/deviate/cli/__init__.py`
   - **Approach**: In `_scaffold_dotfiles`, before constructing `DeviateConfig`, call `shutil.which("context")`. If found, set `use_context = True`. Pass to `DeviateConfig(agent_export_mode=agent_export_mode, use_context=...)`. The `_dict_to_toml` function already handles bool serialization (line 57-58). `_write_if_missing` prevents overwrite on re-init.
-  - **Verification**: `pytest tests/test_cli/test_init.py::test_init_detects_context -v` (new test with `context` on PATH), `pytest tests/test_cli/test_init.py::test_init_missing_context -v` (new test without `context`)
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py::test_init_detects_context -v` (new test with `context` on PATH), `pytest tests/unit/test_cli/test_init.py::test_init_missing_context -v` (new test without `context`)
 
 - **Phase 3**: Governance seeds — add `## Offline Context Documentation System` section
   - **Files**: `src/deviate/prompts/governance/claudemd_seed.md`, `src/deviate/prompts/governance/agents_seed.md`
   - **Approach**: Append identical `## Offline Context Documentation System` section to both files, after the Quick-Start Workflow section. Content: mandate to prefer `context query` over web fetching, `context list` to discover packages, `context add` for missing libraries, example queries, best-effort availability note.
-  - **Verification**: `pytest tests/test_cli/test_init.py::test_init_context_governance_block -v` (new test verifying CLAUDE.md/AGENTS.md contain the section)
+  - **Verification**: `pytest tests/unit/test_cli/test_init.py::test_init_context_governance_block -v` (new test verifying CLAUDE.md/AGENTS.md contain the section)
 
 - **Phase 4**: Core prompt — add context documentation mandate to `core.md`
   - **Files**: `src/deviate/prompts/core/core.md`

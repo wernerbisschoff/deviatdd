@@ -82,7 +82,7 @@ The coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
 - Throughput: named-check extraction and test/production file classification stay O(changed files + brief size).
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_cli/test_review.py` — default `apply` false / no commit, `--apply` CRITICAL only, `brief incomplete`, issue brief path, coverage not fail-close; `tests/test_cli/test_walkthrough.py` — four-look pre contract (brief/plan paths, test vs production files, no default constitution/prd). No prompt-body substring tests.
+- **Unit Sandbox Targets**: `tests/unit/test_cli/test_review.py` — default `apply` false / no commit, `--apply` CRITICAL only, `brief incomplete`, issue brief path, coverage not fail-close; `tests/unit/test_cli/test_walkthrough.py` — four-look pre contract (brief/plan paths, test vs production files, no default constitution/prd). No prompt-body substring tests.
 - **Integration Sandbox Targets**: Existing optional-pack tests still classify `review` and `walkthrough` as optional. E2E coverage bats keep the uncovered list as comment input; default `apply` is false; `--apply` sets `apply_scope` CRITICAL.
 
 ## Demonstration Path
@@ -94,5 +94,5 @@ test ! -f .opencode/commands/deviate-review.md
 test ! -f .opencode/commands/deviate-walkthrough.md
 
 # comments default + opt-in --apply + four-look map (in this repo, with packs installed)
-pytest tests/test_cli/test_review.py tests/test_cli/test_walkthrough.py tests/test_meso/test_auto_prompt_templates.py -v && ruff check src/deviate/cli/review.py src/deviate/cli/walkthrough.py
+pytest tests/unit/test_cli/test_review.py tests/unit/test_cli/test_walkthrough.py tests/unit/test_meso/test_auto_prompt_templates.py -v && ruff check src/deviate/cli/review.py src/deviate/cli/walkthrough.py
 ```

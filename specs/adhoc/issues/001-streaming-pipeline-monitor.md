@@ -36,21 +36,21 @@ When users run `deviate run --all` in automated mode, they currently see only te
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 - **Unit Sandbox Targets**:
-  - `tests/test_ui/test_monitor.py::test_monitor_updates_task_marker` — verify task markers update when receiving status events
-  - `tests/test_ui/test_monitor.py::test_monitor_agent_output_buffer` — verify rolling 5-line buffer behavior
-  - `tests/test_ui/test_monitor.py::test_monitor_status_bar_reflects_phase` — verify status bar phase string
-  - `tests/test_ui/test_render.py::test_render_task_list` — verify Rich Table formatting
-  - `tests/test_ui/test_render.py::test_render_no_tty_fallback` — verify plain output when not TTY
+  - `tests/unit/test_ui/test_monitor.py::test_monitor_updates_task_marker` — verify task markers update when receiving status events
+  - `tests/unit/test_ui/test_monitor.py::test_monitor_agent_output_buffer` — verify rolling 5-line buffer behavior
+  - `tests/unit/test_ui/test_monitor.py::test_monitor_status_bar_reflects_phase` — verify status bar phase string
+  - `tests/unit/test_ui/test_render.py::test_render_task_list` — verify Rich Table formatting
+  - `tests/unit/test_ui/test_render.py::test_render_no_tty_fallback` — verify plain output when not TTY
 - **Integration Sandbox Targets**:
-  - `tests/test_cli/test_micro.py::test_run_all_with_live_display` — integration test for full loop with monitor
+  - `tests/unit/test_cli/test_micro.py::test_run_all_with_live_display` — integration test for full loop with monitor
 
 ## [DEMONSTRATION_PATH]
 ```bash
 # Unit tests
-pytest tests/test_ui/ -v
+pytest tests/unit/test_ui/ -v
 
 # Integration test (requires mock agent)
-pytest tests/test_cli/test_micro.py::test_run_all_with_live_display -v
+pytest tests/unit/test_cli/test_micro.py::test_run_all_with_live_display -v
 
 # Manual: observe Live display during a real run
 deviate run --all

@@ -19,7 +19,7 @@ flow_refs: []
   - `src/deviate/core/agent.py::AgentConfig.timeout` / `_invoke_agent` `AgentConfig(backend=backend_name)` — REFERENCE: `_invoke_agent` currently constructs a fresh config with default `timeout=600` and does not thread `DeviateConfig.timeout` / `timeout_seconds` (operator-local 1800). Do not raise the wall-clock so it races the outer bash timeout. Do not revert operator-local `.deviate/config.toml`.
   - `src/deviate/cli/micro.py::EXECUTE_STALL_TIMEOUT_SECONDS` / `_run_execute_phase` — REFERENCE: GH-53 / ISS-ADH-025 compose. EXECUTE stall stays 3600s.
   - `src/deviate/cli/micro.py::_find_task_record` / `_exit_if_already_done` — COMPOSE ONLY: GitHub #62 / ISS-ADH-023 already scopes pinned lookup when the active issue is known and refuses foreign `TASK_ALREADY_DONE`. `_find_task_record` still has a `preferred` first-same-id fallback when no issue resolves; `_LEDGER_GLOB` scans all `specs/**/tasks.jsonl` but keys `(issue_id, tid)`. Close a leftover hole only if the RED hang path (IDLE session, no this-issue ledger row, dirty tree) still prints `TASK_ALREADY_DONE` from a sibling COMPLETED, or if a known active issue still receives that `preferred` hit. Do not reopen #62.
-  - `tests/test_cli/test_micro.py` / `tests/test_micro/test_run.py` / `tests/test_core/test_agent.py` — TARGET: pin RED timeout + restore; keep ISS-ADH-025 stall pins and ISS-ADH-023 issue-scope pins.
+  - `tests/unit/test_cli/test_micro.py` / `tests/unit/test_micro/test_run.py` / `tests/unit/test_core/test_agent.py` — TARGET: pin RED timeout + restore; keep ISS-ADH-025 stall pins and ISS-ADH-023 issue-scope pins.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document RED `AGENT_TIMEOUT` + dirty-tree rollback when the child never returns a manifest.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible hang/rollback fix.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices.
@@ -109,10 +109,10 @@ A RED `pi` child can write tests (or other tracked files) and then never return 
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_cli/test_micro.py` — new pin: `_run_red_phase` when `_invoke_agent` raises/returns timeout (`AgentTimeoutError` / `None` + timeout partial) logs `AGENT_TIMEOUT` and calls restore; worktree matches `red_baseline`; no RED ledger success row.
-  - `tests/test_cli/test_micro.py` — keep ISS-ADH-025 first-stall `AGENT_TIMEOUT` pin and EXECUTE `stall_timeout==3600` pin.
-  - `tests/test_cli/test_micro.py` / `tests/test_micro/test_e2e.py` — keep ISS-ADH-023 issue-scoped lookup pins; add a leftover-hole pin only if a known active issue can still see a sibling COMPLETED after a hung RED.
-  - `tests/test_core/test_agent.py` — keep stdout-stall / stderr-not-liveness / stall-override pins; add a post-write hang pin only if invoke still waits for bash when stdout already flowed and no manifest arrives.
+  - `tests/unit/test_cli/test_micro.py` — new pin: `_run_red_phase` when `_invoke_agent` raises/returns timeout (`AgentTimeoutError` / `None` + timeout partial) logs `AGENT_TIMEOUT` and calls restore; worktree matches `red_baseline`; no RED ledger success row.
+  - `tests/unit/test_cli/test_micro.py` — keep ISS-ADH-025 first-stall `AGENT_TIMEOUT` pin and EXECUTE `stall_timeout==3600` pin.
+  - `tests/unit/test_cli/test_micro.py` / `tests/unit/test_micro/test_e2e.py` — keep ISS-ADH-023 issue-scoped lookup pins; add a leftover-hole pin only if a known active issue can still see a sibling COMPLETED after a hung RED.
+  - `tests/unit/test_core/test_agent.py` — keep stdout-stall / stderr-not-liveness / stall-override pins; add a post-write hang pin only if invoke still waits for bash when stdout already flowed and no manifest arrives.
 - **Integration Sandbox Targets**:
   - Not a live `pi -p` hang. Mocked backend / `Popen` is sufficient. If a `deviate micro run` CLI test is added, mock the agent and `deviate.cli.micro._run_pytest`.
 
@@ -120,5 +120,5 @@ A RED `pi` child can write tests (or other tracked files) and then never return 
 
 ```bash
 # Mocked RED timeout + restore + composed stall/scope pins (no live agent)
-uv run pytest tests/test_cli/test_micro.py tests/test_core/test_agent.py tests/test_micro/test_e2e.py -q -k "timeout or stall or find_task_record or already_done or red"
+uv run pytest tests/unit/test_cli/test_micro.py tests/unit/test_core/test_agent.py tests/unit/test_micro/test_e2e.py -q -k "timeout or stall or find_task_record or already_done or red"
 ```

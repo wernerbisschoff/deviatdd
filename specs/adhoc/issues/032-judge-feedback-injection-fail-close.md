@@ -61,8 +61,8 @@ flow_refs: []
 - Throughput: No change; stripping is in-process string work, no new subprocess.
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_core/test_judge_evidence.py` — extend `TestResolveTaskAcTokens` to assert the stripped card; `tests/test_micro/test_judge.py` — a new test that the JUDGE prompt injection uses the Judge-Feedback-stripped card.
-- **Integration Sandbox Targets**: `tests/test_cli/test_micro.py` — a `_run_pytest`-mocked path that reproduces a `TSK-029-01`-style fail-close loop and asserts the retry's judge sees no stale feedback.
+- **Unit Sandbox Targets**: `tests/unit/test_core/test_judge_evidence.py` — extend `TestResolveTaskAcTokens` to assert the stripped card; `tests/unit/test_micro/test_judge.py` — a new test that the JUDGE prompt injection uses the Judge-Feedback-stripped card.
+- **Integration Sandbox Targets**: `tests/unit/test_cli/test_micro.py` — a `_run_pytest`-mocked path that reproduces a `TSK-029-01`-style fail-close loop and asserts the retry's judge sees no stale feedback.
 
 ## Demonstration Path
 ```bash

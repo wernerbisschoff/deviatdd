@@ -20,7 +20,7 @@ The design keeps all state in the existing append-only JSONL ledger protocol and
 - **Modify** `src/deviate/prompts/auto/green.md` and `src/deviate/prompts/auto/refactor.md` — describe blocking validation.
 - **Modify** `specs/DeviaTDD-api.md` and `specs/DeviaTDD-architecture.md` — reflect gate semantics.
 - **Modify** `CHANGELOG.md` — user-visible behavior change entry.
-- **Add** tests under `tests/test_micro/` and `tests/test_core/`.
+- **Add** tests under `tests/unit/test_micro/` and `tests/unit/test_core/`.
 
 **Rationale:** The constitution's Definition of Done already requires satisfaction of `AC-PLAN-NNN` scenarios, and GREEN/REFACTOR already run the test suite. The design converts existing implicit gates into explicit, verifiable ones while preserving the TDD intent that RED must author a failing test. It aligns with the constitution's "Four-Layer Architecture" and "Append-Only Ledger Protocol" clauses and with the already-enforced `validate_acceptance_contract` path in `src/deviate/core/validation.py:112`.
 

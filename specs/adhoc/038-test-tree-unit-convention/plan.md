@@ -17,7 +17,7 @@
 **Scenario AC-PLAN-002: Broken intra-suite import fails visibly after the move**
 - **Source Outline**: `AO-038-01`
 - **Upstream Traceability**: `US-038-01`, `FR-ADHOC-038`, `AC-ADHOC-038-01`
-- **Current-Code Evidence**: `tests/test_micro/test_judge_feedback_persist.py`
+- **Current-Code Evidence**: `tests/unit/test_micro/test_judge_feedback_persist.py`
 - **Given**: A migrated suite file holds a stale absolute import
 - **When**: Developer runs `mise unit`
 - **Then**: The suite reports a collection or import error, not exit 5
@@ -48,9 +48,9 @@
   - **Integration Surface**: Micro runner suite ladder (`src/deviate/cli/micro.py`), `_CONVENTIONAL_SUITE_DIRS`
 - **tests/unit/**: Role in this issue — canonical home for migrated real suites
   - **Current State**: Empty stub directory
-  - **Changes Required**: Move `tests/test_cli`, `test_core`, `test_macro`, `test_meso`, `test_micro`, `test_state`, `test_ui`, `test_release`, `tests/core` under it
+  - **Changes Required**: Move `tests/unit/test_cli`, `tests/unit/test_core`, `tests/unit/test_macro`, `tests/unit/test_meso`, `tests/unit/test_micro`, `tests/unit/test_state`, `tests/unit/test_ui`, `tests/unit/test_release`, `tests/unit/core` under it
   - **Integration Surface**: Pytest collection, `tests/conftest.py`, `tests/helpers/`
-- **tests/test_micro/test_*.py, tests/helpers/**: Role in this issue — intra-suite absolute imports that break on move
+- **tests/unit/test_micro/test_*.py, tests/helpers/**: Role in this issue — intra-suite absolute imports that break on move
   - **Current State**: Absolute imports like `tests.test_micro.*` and `tests.conftest` resolve at old paths
   - **Changes Required**: Rewrite imports to the new `tests.unit.*` paths
   - **Integration Surface**: Pytest import system, conftest fixtures

@@ -9,12 +9,12 @@
   - **Type**: Bugfix
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test -- tests/test_core/test_ledger.py tests/test_state/test_ledger.py -v`
+  - **Verification**: `mise run test -- tests/unit/test_core/test_ledger.py tests/unit/test_state/test_ledger.py -v`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/state/ledger.py`
-    - `tests/test_core/test_ledger.py`
-    - `tests/test_state/test_ledger.py`
+    - `tests/unit/test_core/test_ledger.py`
+    - `tests/unit/test_state/test_ledger.py`
   - **Rationale**: `ledger.py` contains the broken `IssueRecord` Pydantic model with wrong field names (`id` instead of `issue_id`, missing `type`, `source_file`, `blocked_by`, `coordinates_with`, `timestamp`) and a key-lookup bug in `resolve_issue_record`. US-001-DATA Scenarios 1-3 require: malformed-line skip-warn recovery, schema realignment, and key fix.
   - **Details**:
     - **Red**: Write test `test_issue_record_schema_realignment()` asserting `IssueRecord` accepts fields `issue_id`, `type`, `status`, `source_file`, `blocked_by`, `coordinates_with`, `timestamp` and rejects unknown fields via `extra="forbid"`. Write `test_malformed_jsonl_skip_with_warning()` asserting `_read_ledger` returns valid records while emitting `UserWarning` for unparseable lines. Write `test_resolve_issue_record_by_issue_id()` asserting lookup on `issue_id` (not `id`).
@@ -27,7 +27,7 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test -- tests/test_core/test_repo.py tests/test_core/test_contract.py tests/test_core/test_commit.py tests/test_core/test_constitution.py tests/test_core/test_validation.py tests/test_core/test_worktree.py -v`
+  - **Verification**: `mise run test -- tests/unit/test_core/test_repo.py tests/unit/test_core/test_contract.py tests/unit/test_core/test_commit.py tests/unit/test_core/test_constitution.py tests/unit/test_core/test_validation.py tests/unit/test_core/test_worktree.py -v`
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `tests/conftest.py` (shared `tmp_git_repo` fixture — create first)
@@ -37,12 +37,12 @@
     - `src/deviate/core/constitution.py`
     - `src/deviate/core/validation.py`
     - `src/deviate/core/worktree.py`
-    - `tests/test_core/test_repo.py`
-    - `tests/test_core/test_contract.py`
-    - `tests/test_core/test_commit.py`
-    - `tests/test_core/test_constitution.py`
-    - `tests/test_core/test_validation.py`
-    - `tests/test_core/test_worktree.py`
+    - `tests/unit/test_core/test_repo.py`
+    - `tests/unit/test_core/test_contract.py`
+    - `tests/unit/test_core/test_commit.py`
+    - `tests/unit/test_core/test_constitution.py`
+    - `tests/unit/test_core/test_validation.py`
+    - `tests/unit/test_core/test_worktree.py`
   - **Rationale**: US-002-CORE Scenarios 1, 3, 4 require repo root detection, git state gathering, JSON contract round-trip, stage-and-commit workflows, constitution command extraction, spec validation, and worktree management. These 6 modules form the infrastructure foundation all downstream layers depend on.
   - **Git Isolation**: Per `Universal API Design Constraint`, all git-interacting functions accept `repo_path` parameter. Tests use `tmp_git_repo` conftest fixture. No test references the real repo's `.git`.
   - **Details**:
@@ -56,17 +56,17 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test -- tests/test_core/test_issues.py tests/test_core/test_epic.py tests/test_core/test_prd.py tests/test_core/test_skills.py -v`
+  - **Verification**: `mise run test -- tests/unit/test_core/test_issues.py tests/unit/test_core/test_epic.py tests/unit/test_core/test_prd.py tests/unit/test_core/test_skills.py -v`
   - **Estimated Time**: 90 minutes
   - **Files**:
     - `src/deviate/core/issues.py`
     - `src/deviate/core/epic.py`
     - `src/deviate/core/prd.py`
     - `src/deviate/core/skills.py`
-    - `tests/test_core/test_issues.py`
-    - `tests/test_core/test_epic.py`
-    - `tests/test_core/test_prd.py`
-    - `tests/test_core/test_skills.py`
+    - `tests/unit/test_core/test_issues.py`
+    - `tests/unit/test_core/test_epic.py`
+    - `tests/unit/test_core/test_prd.py`
+    - `tests/unit/test_core/test_skills.py`
     - `src/deviate/cli/macro.py`
   - **Rationale**: US-002-CORE Scenarios 2, 5 cover issue resolution/claim/body-reading/completion-check, epic discovery/bucket allocation, PRD requirement extraction/traceability validation, and skill discovery/resolution. US-001-DATA Scenario 4 requires fixing `macro.py:prd` artifact check from `research.md` to `design.md` + `data-model.md`.
   - **Details**:
@@ -153,14 +153,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `mise run test -- tests/test_integration/test_skill_installation.py tests/test_cli/test_init.py -v`
+  - **Verification**: `mise run test -- tests/test_integration/test_skill_installation.py tests/unit/test_cli/test_init.py -v`
   - **Estimated Time**: 75 minutes
   - **Dependency**: T006
   - **Files**:
     - `src/deviate/cli/__init__.py`
     - `src/deviate/core/skills.py`
     - `tests/test_integration/test_skill_installation.py`
-    - `tests/test_cli/test_init.py`
+    - `tests/unit/test_cli/test_init.py`
   - **Rationale**: US-005-SKILLS Scenarios 2-4 require init-triggered skill installation with content-hash idempotency. US-006-INIT Scenarios 1-4 require: auto-detect agents from cwd (`.claude/`, `.opencode/`, `.factory/`), `--agent` flag override, interactive fallback, and `.deviate/session.json` as default contract handoff with `.gitignore` entry.
   - **Details**:
     - **Red**: Write `test_init_installs_skills_to_agent_dirs()` asserting SKILL.md copied to detected agent paths; `test_skill_idempotency_skip_identical()` asserting skip when content hash matches; `test_skill_idempotency_overwrite_stale()` asserting overwrite when content differs; `test_auto_detect_agents_from_cwd()` asserting detection of `.claude/`, `.opencode/`, `.factory/`; `test_agent_flag_overrides_detection()` asserting `--agent opencode` ignores auto-detected agents; `test_contract_handoff_defaults_to_session_json()` asserting contract written to `.deviate/session.json` with `.gitignore` entry.
@@ -173,12 +173,12 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `mise run test -- tests/test_state/test_session.py -v`
+  - **Verification**: `mise run test -- tests/unit/test_state/test_session.py -v`
   - **Estimated Time**: 60 minutes
   - **Dependency**: T003
   - **Files**:
     - `src/deviate/state/config.py`
-    - `tests/test_state/test_session.py`
+    - `tests/unit/test_state/test_session.py`
   - **Git Isolation**: Per `Universal API Design Constraint`, worktree detection functions accept `repo_path`. Use `tmp_git_repo` fixture for `test_session_reconstruction_from_worktree()`. No reference to the real repo's `.git`.
   - **Rationale**: US-007-SESSION Scenarios 1-4 require: dual-mode session state enforcing strict phase ordering across Macro and Meso layers, filesystem state validation detecting missing artifacts, worktree-based session reconstruction on `.deviate/session.json` loss, and task ID format normalization (accepting both `T{NNN}` and `T{NNN}:`).
   - **Details**:
@@ -277,7 +277,7 @@ def find_repo_root() -> Path:  # BAD — untestable
   - `src/deviate/cli/meso.py` — T005 (full rewrite)
   - `src/deviate/state/ledger.py` — T001 (schema fix)
   - `src/deviate/state/config.py` — T008 (session extension)
-  - `tests/test_state/test_session.py` — T008 (new divergence tests)
-  - `tests/test_state/test_ledger.py` — T001 (schema tests)
+  - `tests/unit/test_state/test_session.py` — T008 (new divergence tests)
+  - `tests/unit/test_state/test_ledger.py` — T001 (schema tests)
   - `tests/test_integration/test_macro_layer.py` — T004 (new) + T009 (verification)
   - `tests/test_integration/test_meso_layer.py` — T005 (new) + T009 (verification)

@@ -9,11 +9,11 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_state/test_ledger.py::TestTaskRecord -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_state/test_ledger.py::TestTaskRecord -v --no-header -q`
   - **Estimated Time**: 30 minutes
   - **Files**:
     - `src/deviate/state/ledger.py`
-    - `tests/test_state/test_ledger.py`
+    - `tests/unit/test_state/test_ledger.py`
   - **Rationale**: US-008-JUDSKILL Scenario 5 (TaskRecord.status accepts YELLOW/JUDGE) and US-009-STALE (ledger integrity) require `YELLOW_APPROVED` and `YELLOW_REJECTED` as valid status values. `ledger.py` line 64 defines the `status` Literal — must expand to include these values. Test file must validate the new values pass schema validation.
   - **Details**:
     - **Red**: Write failing tests: `test_task_record_status_includes_yellow_approved()` and `test_task_record_status_includes_yellow_rejected()` asserting `TaskRecord(status="YELLOW_APPROVED")` and `TaskRecord(status="YELLOW_REJECTED")` pass validation without error
@@ -33,13 +33,13 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_cache_discipline.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_core/test_cache_discipline.py -v --no-header -q`
   - **Estimated Time**: 60 minutes
   - **Dependency**: (none)
   - **Files**:
     - `src/deviate/core/cache_discipline.py`
     - `src/deviate/cli/micro.py`
-    - `tests/test_core/test_cache_discipline.py`
+    - `tests/unit/test_core/test_cache_discipline.py`
   - **Rationale**: US-001-CACHE (FR-007) defines 4 cache discipline rules plus hook at every phase boundary. `cache_discipline.py` is the NEW file for the `CacheDiscipline` class. `micro.py` is where `_run_tdd_cycle()` phase boundaries are wired. Test file covers all 4 scenarios with performance constraint L_max <= 5ms.
   - **Details**:
     - **Red**: Write `test_cache_discipline_model_switch()` asserting `CacheDisciplineViolation` raised when model changes between RED and GREEN; `test_cache_discipline_tool_change()` for tool def changes; `test_cache_discipline_no_change_passes()` for no-change case; `test_cache_discipline_phase_boundary()` asserting validate() is called after each phase in `_run_tdd_cycle`
@@ -59,12 +59,12 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_core/test_agent.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_core/test_agent.py -v --no-header -q`
   - **Estimated Time**: 45 minutes
   - **Dependency**: (none)
   - **Files**:
     - `src/deviate/core/agent.py`
-    - `tests/test_core/test_agent.py`
+    - `tests/unit/test_core/test_agent.py`
   - **Rationale**: US-006-MOCK Scenario 1 and Scenario 3 (FR-017) require a `StubAgentBackend` that returns valid `HandoverManifest` without subprocess. `agent.py` is the sole host — add class and register in `BACKEND_COMMANDS`. Test coverage validates contract compliance and no-subprocess guarantee.
   - **Details**:
     - **Red**: Write `test_stub_backend_returns_valid_manifest()` asserting `StubAgentBackend().invoke("test")` returns `HandoverManifest(phase="RED", status="success")` without side-effects; `test_stub_backend_no_subprocess()` asserting no `subprocess.Popen` call is made during invocation
@@ -84,14 +84,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_green.py tests/test_cli/test_yellow.py tests/test_micro/test_orchestration.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_cli/test_green.py tests/unit/test_cli/test_yellow.py tests/unit/test_micro/test_orchestration.py -v --no-header -q`
   - **Estimated Time**: 90 minutes
   - **Dependency**: TSK-005-01 (needs YELLOW_APPROVED/YELLOW_REJECTED status values)
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_cli/test_green.py`
-    - `tests/test_cli/test_yellow.py`
-    - `tests/test_micro/test_orchestration.py`
+    - `tests/unit/test_cli/test_green.py`
+    - `tests/unit/test_cli/test_yellow.py`
+    - `tests/unit/test_micro/test_orchestration.py`
   - **Rationale**: US-002-YELMAN (FR-018, FR-008) covers 5 scenarios for manual green_post/YELLOW handoff — all currently broken in micro.py. `green_post` at line 1767 detects tamper but does NOT append YELLOW to ledger or transition session. `yellow_post --approved` at line 1884 transitions to GREEN (should be JUDGE). US-003-YELAUTO (FR-018) covers 7 scenarios for auto cycle — YELLOW must be removed from `_PHASE_MAP` (currently at line 998) and TamperGuard gate added to `_run_tdd_cycle` loop body.
   - **Details**:
     - **Red**: Write `test_green_post_tamper_detected_transitions_to_yellow()` asserting session transitions to YELLOW and ledger appends GREEN+YELLOW on TAMPER_DETECTED; `test_green_post_tamper_pass_stays_green()` asserting no YELLOW transition; `test_green_post_yellow_triggered_by_tamper_not_commit()` asserting YELLOW_TRIGGERED driven by TamperGuard verdict, not `_commit_phase` return value; `test_yellow_post_approved_transitions_to_judge()` asserting session=JUDGE and ledger=YELLOW_APPROVED; `test_yellow_post_rejected_transitions_to_green()` asserting session=GREEN and ledger=YELLOW_REJECTED; `test_yellow_not_in_phase_map()` asserting `"YELLOW" not in _PHASE_MAP`; `test_tdd_cycle_inlines_yellow_gate()` asserting TamperGuard gate between GREEN and JUDGE calls in cycle loop; `test_tdd_cycle_yellow_approved_continues_to_judge()`; `test_tdd_cycle_yellow_rejected_re_runs_green()`; `test_run_yellow_phase_helper_returns_decision()` asserting (session, decision) tuple return
@@ -111,14 +111,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_cli/test_micro.py::test_judge_train_rollback_all_commits_since_red tests/test_cli/test_micro.py::test_judge_rollback_preserves_red tests/test_cli/test_micro.py::test_judge_no_violation_proceeds tests/test_state/test_ledger.py::test_rollback_snapshot_model tests/test_state/test_ledger.py::test_rollback_snapshot_sha_validation tests/test_state/test_ledger.py::test_rollback_snapshot_tracks_red_boundary -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_cli/test_micro.py::test_judge_train_rollback_all_commits_since_red tests/unit/test_cli/test_micro.py::test_judge_rollback_preserves_red tests/unit/test_cli/test_micro.py::test_judge_no_violation_proceeds tests/unit/test_state/test_ledger.py::test_rollback_snapshot_model tests/unit/test_state/test_ledger.py::test_rollback_snapshot_sha_validation tests/unit/test_state/test_ledger.py::test_rollback_snapshot_tracks_red_boundary -v --no-header -q`
   - **Estimated Time**: 60 minutes
   - **Dependency**: (none)
   - **Files**:
     - `src/deviate/cli/micro.py`
     - `src/deviate/state/ledger.py`
-    - `tests/test_cli/test_micro.py`
-    - `tests/test_state/test_ledger.py`
+    - `tests/unit/test_cli/test_micro.py`
+    - `tests/unit/test_state/test_ledger.py`
   - **Rationale**: US-004-ROLLBACK (FR-008) Scenario 1 and US-010-HITL (FR-008, FR-019) require train rollback to use `git revert --no-edit <red_sha>..HEAD` instead of `git reset --hard HEAD~1`. `micro.py` line 864 currently uses `git reset --hard HEAD~1`. `ledger.py` already has `RollbackSnapshot` (line 252) but needs `red_sha` field and the snapshot isn't persisted in `_run_judge_phase`. Also `_run_judge_phase` line 864 (execute) path also needs the same fix.
   - **Details**:
     - **Red**: Write `test_judge_train_rollback_all_commits_since_red()` asserting `git revert --no-edit <red_sha>..HEAD` is called on COMPLIANCE_VIOLATION; `test_judge_rollback_preserves_red()` asserting RED commit(s) remain in history after revert; `test_judge_no_violation_proceeds()` asserting no revert and no snapshot on clean pass; `test_rollback_snapshot_tracks_red_boundary()` asserting `RollbackSnapshot(red_sha=...)` stores and validates RED SHA; existing `test_rollback_snapshot_model()` and `test_rollback_snapshot_sha_validation()` must still pass
@@ -138,14 +138,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_core/test_tasks_ledger.py tests/test_cli/test_meso.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_core/test_tasks_ledger.py tests/unit/test_cli/test_meso.py -v --no-header -q`
   - **Estimated Time**: 60 minutes
   - **Dependency**: (none)
   - **Files**:
     - `src/deviate/core/tasks_ledger.py`
     - `src/deviate/cli/meso.py`
-    - `tests/test_core/test_tasks_ledger.py`
-    - `tests/test_cli/test_meso.py`
+    - `tests/unit/test_core/test_tasks_ledger.py`
+    - `tests/unit/test_cli/test_meso.py`
   - **Rationale**: US-005-SKILLS Scenario 3 and 4 (FR-013) require `tasks post` to create `.jsonl.proposal` without `--confirm` and only append to `tasks.jsonl` when `--confirm` is passed. `tasks_ledger.py` is NEW — holds `generate_jsonl_from_md()` (parses tasks.md into JSONL) and `validate_tasks_jsonl()` (schema validation). `meso.py` is where `tasks post` CLI handler lives and needs the proposal/write pattern.
   - **Details**:
     - **Red**: Write `test_generate_jsonl_from_md()` asserting task lines from tasks.md parse into valid JSONL objects with `id`, `issue_id`, `description`, `status: "PENDING"`, `execution_mode`; `test_validate_tasks_jsonl()` asserting schema validation against TaskRecord model; `test_tasks_post_proposal()` asserting non-confirm run creates `.jsonl.proposal` but does NOT touch `tasks.jsonl`; `test_tasks_post_confirm()` asserting confirm run appends proposal content to `tasks.jsonl` and removes proposal file
@@ -165,13 +165,13 @@
   - **Type**: Domain_Batch
   - **Mode**: TDD
   - **Test Strategy**: Integration
-  - **Verification**: `pytest tests/test_micro/test_run.py tests/test_cli/test_micro.py -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_micro/test_run.py tests/unit/test_cli/test_micro.py -v --no-header -q`
   - **Estimated Time**: 45 minutes
   - **Dependency**: TSK-005-04 (needs YELLOW handoff contract for phase routing)
   - **Files**:
     - `src/deviate/cli/micro.py`
-    - `tests/test_micro/test_run.py`
-    - `tests/test_cli/test_micro.py`
+    - `tests/unit/test_micro/test_run.py`
+    - `tests/unit/test_cli/test_micro.py`
   - **Rationale**: US-003-YELAUTO (FR-018) Scenarios 5-6 require `_run_tdd_cycle` to accept `start_phase` parameter and `_run_single` to resume from `session.current_phase`. US-009-STALE (FR-019 ledger integrity) requires `_find_task_record` to return the latest (last) matching record — `_collect_latest_task_records` (line 452) already returns latest per task, but `_run_single` line 1332 only checks `COMPLETED`/`REFACTOR` terminal statuses and doesn't consult `session.current_phase`. Add `YELLOW`/`JUDGE` as resume-eligible phases.
   - **Details**:
     - **Red**: Write `test_run_resumes_from_session_phase()` asserting that when `session.current_phase="JUDGE"`, `_run_single` dispatches to JUDGE without re-running RED/GREEN; `test_run_resumes_from_yellow()` same for YELLOW; `test_run_resumes_from_judge()` same for JUDGE; `test_find_task_record_returns_latest_status()` asserting that with records `[PENDING, RED, GREEN, JUDGE]`, `_find_task_record` returns the JUDGE record; `test_find_task_record_multiple_entries_returns_last()` asserting ordering correctness; `test_task_already_done_triggers_for_re_run_tasks()` asserting existing guard extends to YELLOW/JUDGE terminal records
@@ -190,19 +190,19 @@
 - TSK-005-08: System-edge mocks in conftest.py, test refactoring, and skills cleanup
   - **Type**: Infra_Batch
   - **Mode**: IMMEDIATE
-  - **Verification**: `pytest tests/test_micro/conftest.py tests/test_micro/test_red.py tests/test_micro/test_green.py tests/test_micro/test_refactor.py tests/test_micro/test_orchestration.py tests/test_skills/ -v --no-header -q`
+  - **Verification**: `pytest tests/unit/test_micro/conftest.py tests/unit/test_micro/test_red.py tests/unit/test_micro/test_green.py tests/unit/test_micro/test_refactor.py tests/unit/test_micro/test_orchestration.py tests/test_skills/ -v --no-header -q`
   - **Estimated Time**: 60 minutes
   - **Dependency**: TSK-005-03 (needs StubAgentBackend for system-edge contract)
   - **Files**:
-    - `tests/test_micro/conftest.py`
-    - `tests/test_micro/test_red.py`
-    - `tests/test_micro/test_green.py`
-    - `tests/test_micro/test_refactor.py`
-    - `tests/test_micro/test_orchestration.py`
+    - `tests/unit/test_micro/conftest.py`
+    - `tests/unit/test_micro/test_red.py`
+    - `tests/unit/test_micro/test_green.py`
+    - `tests/unit/test_micro/test_refactor.py`
+    - `tests/unit/test_micro/test_orchestration.py`
     - `src/deviate/prompts/skills/deviate-tasks/SKILL.md`
   - **Rationale**: US-006-MOCK (FR-017) Scenario 2 requires `conftest.py` to mock `subprocess.Popen` instead of `_invoke_agent` — line 20 of conftest currently patches `_invoke_agent`. US-005-SKILLS (FR-012) requires step 7 in deviate-tasks decision tree for integration/wiring code. AGENTS.md mandates no `_run_pytest` mocks for performance. Both are mechanical changes with existing test coverage (IMMEDIATE mode).
   - **Details**:
-    - **Implementation**: In `tests/test_micro/conftest.py`: replace `patch("deviate.cli.micro._invoke_agent")` with `patch("subprocess.Popen")`. In test files (`test_red.py`, `test_green.py`, `test_refactor.py`, `test_orchestration.py`): remove all `@patch("deviate.cli.micro._run_pytest")` decorators and function-level mocks — these are no longer needed because the `subprocess.Popen` system-edge mock covers the subprocess boundary. Add assertion blocks that verify `Popen` call args (CLI, env vars, stdin) were passed correctly. In `deviate-tasks/SKILL.md`: add step 7 to the decision tree: "Does this task connect/wire already-tested components via subprocess, API, or message passing? → TDD with system-edge mock boundary (mock subprocess.Popen, assert CLI args/env/stdin)."
+    - **Implementation**: In `tests/unit/test_micro/conftest.py`: replace `patch("deviate.cli.micro._invoke_agent")` with `patch("subprocess.Popen")`. In test files (`test_red.py`, `test_green.py`, `test_refactor.py`, `test_orchestration.py`): remove all `@patch("deviate.cli.micro._run_pytest")` decorators and function-level mocks — these are no longer needed because the `subprocess.Popen` system-edge mock covers the subprocess boundary. Add assertion blocks that verify `Popen` call args (CLI, env vars, stdin) were passed correctly. In `deviate-tasks/SKILL.md`: add step 7 to the decision tree: "Does this task connect/wire already-tested components via subprocess, API, or message passing? → TDD with system-edge mock boundary (mock subprocess.Popen, assert CLI args/env/stdin)."
     - **Refactor**: Audit test files for any remaining stale `_run_pytest` references using `grep`; ensure `conftest.py` `Popen` mock returns appropriate `subprocess.CompletedProcess` for each test case. Audit all 18 SKILL.md files under `prompts/skills/` for `--no-judge`/`--no-refactor` flags (these should have been replaced with `--profile` in prior work — if found, replace them).
     - **Acceptance**: All 5 test files pass with `subprocess.Popen` mock instead of `_invoke_agent`; zero `_run_pytest` mocks remain in test files; `deviate-tasks` SKILL.md contains step 7 in its decision tree; skills audit confirms zero `--no-judge`/`--no-refactor` refs across all 18 skill files
 
@@ -216,7 +216,7 @@
 - TSK-005-09: Wire YELLOW and JUDGE skill loading into CLI handlers and _run_judge_phase
   - **Type**: Config
   - **Mode**: IMMEDIATE
-  - **Verification**: `grep -q "_load_skill_content" src/deviate/cli/micro.py && echo "SKILL LOADING WIRED"` and `pytest tests/test_cli/test_micro.py -v --no-header -q`
+  - **Verification**: `grep -q "_load_skill_content" src/deviate/cli/micro.py && echo "SKILL LOADING WIRED"` and `pytest tests/unit/test_cli/test_micro.py -v --no-header -q`
   - **Estimated Time**: 30 minutes
   - **Dependency**: (none)
   - **Files**:
@@ -256,7 +256,7 @@
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/micro.py` — touched by Phases 2, 4, 5, 7, 9
 - `src/deviate/state/ledger.py` — touched by Phases 1, 5
-- `tests/test_micro/conftest.py` — touched by Phase 8
+- `tests/unit/test_micro/conftest.py` — touched by Phase 8
 - Batch Phases 2, 4, 5, 7 into a single sequential commit train to minimize merge overhead
 
 ## Universal Test Constraints (ALL TASKS)

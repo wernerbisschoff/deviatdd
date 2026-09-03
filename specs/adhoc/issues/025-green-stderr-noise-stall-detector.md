@@ -18,8 +18,8 @@ flow_refs: []
   - `src/deviate/cli/micro.py::_invoke_agent` — TARGET: keep logging `AGENT_TIMEOUT` with `error=`, `partial_stderr=`, `partial_stdout=` on `AgentTimeoutError`. GREEN call sites must not swallow that event.
   - `src/deviate/cli/micro.py::EXECUTE_STALL_TIMEOUT_SECONDS` / `_run_execute_phase` `stall_timeout=3600` — REFERENCE: GH-53 one-hour EXECUTE allowance stays. Do not collapse EXECUTE back to 900s.
   - `src/deviate/cli/micro.py::_invoke_agent` GREEN path — REFERENCE: GREEN still uses the default 900s stall (no `stall_timeout` override today). Keep that unless a documented policy says otherwise.
-  - `tests/test_core/test_agent.py` — TARGET: keep `test_streaming_agent_detects_stdout_stall` and `test_streaming_agent_stall_timeout_override_is_honored` (GH-53). Add a pin that periodic stderr-only lines do not prevent `STALL_DETECTED` at the configured budget, and that periodic stdout still completes without stall.
-  - `tests/core/test_smart_stall.py` — TARGET only if smart-stall sampling still counts stderr bytes; stderr must not be enough to keep a silent-stdout stream below the trip path forever.
+  - `tests/unit/test_core/test_agent.py` — TARGET: keep `test_streaming_agent_detects_stdout_stall` and `test_streaming_agent_stall_timeout_override_is_honored` (GH-53). Add a pin that periodic stderr-only lines do not prevent `STALL_DETECTED` at the configured budget, and that periodic stdout still completes without stall.
+  - `tests/unit/core/test_smart_stall.py` — TARGET only if smart-stall sampling still counts stderr bytes; stderr must not be enough to keep a silent-stdout stream below the trip path forever.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document that streaming liveness is stdout (not stderr), default stall is 900s, EXECUTE override is 3600s, and `AGENT_TIMEOUT` is the harness verdict for a hung GREEN. Replace the stale `STREAM_STALL_TIMEOUT_SECONDS = 60` wording if it is still present.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible hang fix.
 - **Classification for plan/tasks**: production Python with an observable fail-to-pass contract. Prefer **TDD**. Do not fatten GREEN. Adhoc/plan still picks TDD vs IMMEDIATE for other slices.
@@ -108,11 +108,11 @@ A hung GREEN `pi -p` child can emit occasional stderr diagnostics while producin
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_core/test_agent.py::test_streaming_agent_detects_stdout_stall` — keep the silent-stream pin.
-  - `tests/test_core/test_agent.py::test_streaming_agent_stall_timeout_override_is_honored` — keep the GH-53 override pin (message cites the per-invoke budget, not the module constant).
-  - `tests/test_core/test_agent.py` — new pin: stderr-only periodic lines + silent stdout → `AgentTimeoutError` / `STALL_DETECTED` at the patched budget (deadline must not refresh on stderr).
-  - `tests/test_core/test_agent.py::test_streaming_agent_output_completes_without_stall` — keep: stdout progress still completes.
-  - Optional: `tests/test_cli/test_micro.py` or `tests/test_core/test_agent.py` — stdout-silent stall through `invoke` / `_invoke_agent` records `AGENT_TIMEOUT` without a second full stall budget.
+  - `tests/unit/test_core/test_agent.py::test_streaming_agent_detects_stdout_stall` — keep the silent-stream pin.
+  - `tests/unit/test_core/test_agent.py::test_streaming_agent_stall_timeout_override_is_honored` — keep the GH-53 override pin (message cites the per-invoke budget, not the module constant).
+  - `tests/unit/test_core/test_agent.py` — new pin: stderr-only periodic lines + silent stdout → `AgentTimeoutError` / `STALL_DETECTED` at the patched budget (deadline must not refresh on stderr).
+  - `tests/unit/test_core/test_agent.py::test_streaming_agent_output_completes_without_stall` — keep: stdout progress still completes.
+  - Optional: `tests/unit/test_cli/test_micro.py` or `tests/unit/test_core/test_agent.py` — stdout-silent stall through `invoke` / `_invoke_agent` records `AGENT_TIMEOUT` without a second full stall budget.
 - **Integration Sandbox Targets**:
   - Not a live `pi -p` hang. Mocked `Popen` pipes are sufficient. If a micro CLI test is added, mock the agent backend and `deviate.cli.micro._run_pytest` so the suite stays under 30s.
 
@@ -120,5 +120,5 @@ A hung GREEN `pi -p` child can emit occasional stderr diagnostics while producin
 
 ```bash
 # Mocked streaming stall pins (no live agent, no 900s sleep)
-uv run pytest tests/test_core/test_agent.py tests/core/test_smart_stall.py -q -k "stall"
+uv run pytest tests/unit/test_core/test_agent.py tests/unit/core/test_smart_stall.py -q -k "stall"
 ```

@@ -74,10 +74,10 @@ type: feature
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
 
-- `tests/test_cli/test_constitution.py` — `test_constitution_pre_emits_commands`, `test_constitution_pre_missing_file`
-- `tests/test_cli/test_inspect.py` — `test_issues_list_json`, `test_tasks_list_status_filter`, `test_issues_list_empty_ledger`, `test_issues_list_orphan_claim_detected`, `test_issues_list_orphan_claim_branch_exists`, `test_issues_list_orphan_claim_remote_unreachable`
-- `tests/test_core/test_constitution.py` — `test_validate_placeholders_all_present`, `test_validate_placeholders_missing_var`
-- `tests/test_state/test_ledger.py` — `test_ledger_filter_query`, `test_ledger_filter_empty`
+- `tests/unit/test_cli/test_constitution.py` — `test_constitution_pre_emits_commands`, `test_constitution_pre_missing_file`
+- `tests/unit/test_cli/test_inspect.py` — `test_issues_list_json`, `test_tasks_list_status_filter`, `test_issues_list_empty_ledger`, `test_issues_list_orphan_claim_detected`, `test_issues_list_orphan_claim_branch_exists`, `test_issues_list_orphan_claim_remote_unreachable`
+- `tests/unit/test_core/test_constitution.py` — `test_validate_placeholders_all_present`, `test_validate_placeholders_missing_var`
+- `tests/unit/test_state/test_ledger.py` — `test_ledger_filter_query`, `test_ledger_filter_empty`
 
 ## [DEMONSTRATION_PATH]
 
@@ -107,5 +107,5 @@ print(f'Placeholders OK: {len(result.variables)} variables present')
 "
 
 # Run tests
-pytest tests/test_cli/test_constitution.py tests/test_cli/test_inspect.py tests/test_core/test_constitution.py -v --no-header -q
+pytest tests/unit/test_cli/test_constitution.py tests/unit/test_cli/test_inspect.py tests/unit/test_core/test_constitution.py -v --no-header -q
 ```

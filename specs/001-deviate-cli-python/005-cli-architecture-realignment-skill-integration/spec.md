@@ -13,7 +13,7 @@
   - `prompts/` — Legacy `.sh` orchestrator scripts (removal target)
   - `AGENTS.md` — Agent governance documentation (update target)
   - `.mise.toml` — Task runner configuration (cleanup target)
-  - `tests/test_core/` — Unit tests for core modules
+  - `tests/unit/test_core/` — Unit tests for core modules
   - `tests/test_integration/test_macro_layer.py` — Macro layer integration tests
   - `tests/test_integration/test_meso_layer.py` — Meso layer integration tests
   - `tests/test_integration/test_skill_installation.py` — Skill installation integration tests
@@ -126,17 +126,17 @@ Without this fix, running tests via the pre-commit hook (or any git hook) will c
 
 | Tier | Target | Description |
 |------|--------|-------------|
-| Unit | `tests/test_core/test_ledger.py` | JSONL read/append, malformed line recovery, IssueRecord schema alignment |
-| Unit | `tests/test_core/test_repo.py` | Repository root detection, git state gathering |
-| Unit | `tests/test_core/test_contract.py` | JSON contract emit/persist/load round-trip |
-| Unit | `tests/test_core/test_commit.py` | Stage-and-commit workflow, artifact commit |
-| Unit | `tests/test_core/test_constitution.py` | Constitution resolution, validation, command extraction |
-| Unit | `tests/test_core/test_epic.py` | Epic discovery, feature bucket allocation |
-| Unit | `tests/test_core/test_validation.py` | Spec section extraction, Gherkin syntax validation |
-| Unit | `tests/test_core/test_worktree.py` | Worktree creation, detection, validation |
-| Unit | `tests/test_core/test_issues.py` | Issue resolution, claim, body reading, completion check |
-| Unit | `tests/test_core/test_prd.py` | PRD requirement extraction, traceability validation |
-| Unit | `tests/test_core/test_skills.py` | Skill installation, discovery, resolution |
+| Unit | `tests/unit/test_core/test_ledger.py` | JSONL read/append, malformed line recovery, IssueRecord schema alignment |
+| Unit | `tests/unit/test_core/test_repo.py` | Repository root detection, git state gathering |
+| Unit | `tests/unit/test_core/test_contract.py` | JSON contract emit/persist/load round-trip |
+| Unit | `tests/unit/test_core/test_commit.py` | Stage-and-commit workflow, artifact commit |
+| Unit | `tests/unit/test_core/test_constitution.py` | Constitution resolution, validation, command extraction |
+| Unit | `tests/unit/test_core/test_epic.py` | Epic discovery, feature bucket allocation |
+| Unit | `tests/unit/test_core/test_validation.py` | Spec section extraction, Gherkin syntax validation |
+| Unit | `tests/unit/test_core/test_worktree.py` | Worktree creation, detection, validation |
+| Unit | `tests/unit/test_core/test_issues.py` | Issue resolution, claim, body reading, completion check |
+| Unit | `tests/unit/test_core/test_prd.py` | PRD requirement extraction, traceability validation |
+| Unit | `tests/unit/test_core/test_skills.py` | Skill installation, discovery, resolution |
 | Integration | `tests/test_integration/test_macro_layer.py` | Full macro cycle (explore → research → prd → shard) via Python CLI |
 | Integration | `tests/test_integration/test_meso_layer.py` | Full meso cycle (specify → tasks) via Python CLI |
 | Integration | `tests/test_integration/test_skill_installation.py` | SKILL.md installation idempotency, content-diff detection |

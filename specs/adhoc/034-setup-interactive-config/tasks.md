@@ -9,14 +9,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `uv run pytest tests/test_core/test_commands.py tests/test_cli/test_setup.py -q --tb=short -k "pack or Pack or default_layer or optional"`
+  - **Verification**: `uv run pytest tests/unit/test_core/test_commands.py tests/unit/test_cli/test_setup.py -q --tb=short -k "pack or Pack or default_layer or optional"`
   - **Estimated Time**: 75 minutes
   - **Flow References**: []
   - **Files**:
     - `src/deviate/core/commands.py`
     - `src/deviate/cli/__init__.py`
-    - `tests/test_core/test_commands.py`
-    - `tests/test_cli/test_setup.py`
+    - `tests/unit/test_core/test_commands.py`
+    - `tests/unit/test_cli/test_setup.py`
   - **Rationale**: US-034-01 / `AC-PLAN-001` require `--packs` and a TTY optional-pack prompt. US-034-02 / `AC-PLAN-002` / `AC-PLAN-003` require default four-layer install plus selected optional packs. `discover_commands` currently returns every stem. Constitution §3: pytest under `tests/`.
   - **Details**:
     - **Red**: Add pack-map tests that every discovered stem is classified default or optional. Add setup tests: default install has `deviate-red` and `deviatdd` and lacks `deviate-pr`; `--packs pr,review` adds only those two; unknown `--packs` fails closed; `--packs none` is default-only.
@@ -36,15 +36,15 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `uv run pytest tests/test_state/test_config.py tests/test_cli/test_setup.py tests/test_core/test_profile.py -q --tb=short`
+  - **Verification**: `uv run pytest tests/unit/test_state/test_config.py tests/unit/test_cli/test_setup.py tests/unit/test_core/test_profile.py -q --tb=short`
   - **Estimated Time**: 75 minutes
   - **Flow References**: []
   - **Files**:
     - `src/deviate/state/config.py`
     - `src/deviate/cli/__init__.py`
     - `src/deviate/cli/micro.py`
-    - `tests/test_state/test_config.py`
-    - `tests/test_cli/test_setup.py`
+    - `tests/unit/test_state/test_config.py`
+    - `tests/unit/test_cli/test_setup.py`
   - **Rationale**: US-034-03 / `AC-PLAN-004` require `profile = "full"` (never `"default"`) plus `base_branch` and `claim_remote`, and `micro run` without `--profile` reads that value. US-034-03 / `AC-PLAN-005` require non-pi/omp `[agent]` to omit `pi_rpc` and `transport`. US-034-05 / `AC-PLAN-008` keep Codex Luna/high if-empty.
   - **Details**:
     - **Red**: Assert `DeviateConfig().profile == "full"` and reject `"default"` as a write value. Assert Claude setup omits `pi_rpc`/`transport`; pi may write `transport` and not `pi_rpc`. Assert switching pi→codex strips leftover Pi keys. Assert implicit micro profile coerce of `"default"` to `full`.
@@ -65,14 +65,14 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `uv run pytest tests/test_cli/test_setup.py tests/test_cli/test_init.py -q --tb=short`
+  - **Verification**: `uv run pytest tests/unit/test_cli/test_setup.py tests/unit/test_cli/test_init.py -q --tb=short`
   - **Estimated Time**: 60 minutes
   - **Flow References**: []
   - **Files**:
     - `src/deviate/cli/__init__.py`
     - `src/deviate/prompts/core/core.md`
-    - `tests/test_cli/test_setup.py`
-    - `tests/test_cli/test_init.py`
+    - `tests/unit/test_cli/test_setup.py`
+    - `tests/unit/test_cli/test_init.py`
     - `CHANGELOG.md`
   - **Rationale**: US-034-04 / `AC-PLAN-006` / `AC-PLAN-007` require `--libref` as the only opt-in. PATH detection must not write the key or seed. Composed `core.md` must not leak libref into default installs. Constitution §5 requires `CHANGELOG.md` `[Unreleased]`.
   - **Details**:

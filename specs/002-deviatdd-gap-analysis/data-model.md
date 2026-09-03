@@ -323,7 +323,7 @@ BACKEND_COMMANDS: dict[str, str] = {
 {
   "proposed_changes": ["src/deviate/core/profile.py", "tests/test_profile.py"],
   "rationale": "YELLOW phase — review proposed test amendments",
-  "test_files": ["tests/test_core/test_profile.py", "tests/test_cli/test_init.py"]
+  "test_files": ["tests/unit/test_core/test_profile.py", "tests/unit/test_cli/test_init.py"]
 }
 ```
 
@@ -500,5 +500,5 @@ class ContextContract(BaseModel):
 | DM-SRC-008 | Codebase_File | `specs/001-deviate-cli-python/data-model.md` | Existing data-model for reference patterns |
 | DM-SRC-009 | Plan_MD | `specs/002-deviatdd-gap-analysis/plan-tdd-integration-gap.md` | StubAgentBackend design, mock boundary strategy, test patterns |
 | DM-SRC-010 | Codebase_File | `src/deviate/cli/micro.py` | `_SKILL_NAMES`, `_run_judge_phase`, yellow/judge CLI commands |
-| DM-SRC-011 | Codebase_File | `tests/test_micro/conftest.py` | Autouse `_invoke_agent` mock pattern — the broken boundary |
+| DM-SRC-011 | Codebase_File | `tests/unit/test_micro/conftest.py` | Autouse `_invoke_agent` mock pattern — the broken boundary |
 | DM-SRC-012 | Codebase_File | `src/deviate/core/agent.py` | AgentBackend base class, BACKEND_COMMANDS registry |

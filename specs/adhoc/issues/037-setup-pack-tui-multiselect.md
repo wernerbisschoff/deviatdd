@@ -10,7 +10,7 @@ flow_refs: []
 ## System Topology Mapping
 - **Epic Target Domain**: `specs/adhoc/`
 - **Local Issue File**: `issues/037-setup-pack-tui-multiselect.md`
-- **Primary Architectural Workstation**: `src/deviate/cli/__init__.py`, `src/deviate/ui/checkbox.py`, `tests/test_cli/test_setup.py`
+- **Primary Architectural Workstation**: `src/deviate/cli/__init__.py`, `src/deviate/ui/checkbox.py`, `tests/unit/test_cli/test_setup.py`
 
 ## The Problem Contract
 
@@ -66,7 +66,7 @@ flow_refs: []
 - Throughput: no new subprocesses or config persistence for pack picks.
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_cli/test_setup.py` — TTY helper invoked when `--packs` omitted; mocked `product`+`pr` picks install those two packs only and do not write packs into `config.toml`. `tests/test_ui/test_checkbox.py` — Space on product then pr yields those two names.
+- **Unit Sandbox Targets**: `tests/unit/test_cli/test_setup.py` — TTY helper invoked when `--packs` omitted; mocked `product`+`pr` picks install those two packs only and do not write packs into `config.toml`. `tests/unit/test_ui/test_checkbox.py` — Space on product then pr yields those two names.
 - **Integration Sandbox Targets**: existing `--packs` tests in `TestSetupPacks` stay green.
 
 ## Demonstration Path
@@ -77,5 +77,5 @@ deviate setup --agent opencode --packs none
 test ! -f .opencode/commands/deviate-pr.md
 
 # TTY helper + product+pr install (mocked TUI)
-pytest tests/test_cli/test_setup.py::TestSetupPacks tests/test_ui/test_checkbox.py -v
+pytest tests/unit/test_cli/test_setup.py::TestSetupPacks tests/unit/test_ui/test_checkbox.py -v
 ```

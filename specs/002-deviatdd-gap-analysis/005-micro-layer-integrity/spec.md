@@ -14,8 +14,8 @@
   - `src/deviate/cli/meso.py` — MODIFY: `tasks post` generates `.jsonl.proposal`, requires `--confirm`
   - `src/deviate/prompts/skills/deviate-*/SKILL.md` — MODIFY: 18 files, replace `--no-judge`/`--no-refactor` with `--profile`, remove `.sh` refs, use `deviate <cmd> pre/post`
   - `src/deviate/core/agent.py` — MODIFY: add `StubAgentBackend` class + `"stub"` entry in `BACKEND_COMMANDS`
-  - `tests/test_micro/conftest.py` — MODIFY: replace autouse `_invoke_agent` mock with `subprocess.Popen` system-edge mock
-  - `tests/test_micro/test_red.py`, `test_green.py`, `test_refactor.py`, `test_orchestration.py` — MODIFY: remove `_run_pytest` function-level mocks, use system-edge subprocess assertions
+  - `tests/unit/test_micro/conftest.py` — MODIFY: replace autouse `_invoke_agent` mock with `subprocess.Popen` system-edge mock
+  - `tests/unit/test_micro/test_red.py`, `test_green.py`, `test_refactor.py`, `test_orchestration.py` — MODIFY: remove `_run_pytest` function-level mocks, use system-edge subprocess assertions
   - `src/deviate/prompts/skills/deviate-tasks/SKILL.md` — MODIFY: add integration/wiring guidance to decision tree step 7
   - `src/deviate/prompts/skills/deviate-yellow/SKILL.md` — NEW: YELLOW phase skill
   - `src/deviate/prompts/skills/deviate-judge/SKILL.md` — NEW: JUDGE phase skill
@@ -135,41 +135,41 @@ There are three distinct invocation pathways, each currently broken or missing:
 ## MULTI_TIERED_VERIFICATION_TARGETS
 
 **Cache Discipline**
-- `tests/test_core/test_cache_discipline.py` — `test_cache_discipline_model_switch`, `test_cache_discipline_tool_change`, `test_cache_discipline_phase_boundary`
+- `tests/unit/test_core/test_cache_discipline.py` — `test_cache_discipline_model_switch`, `test_cache_discipline_tool_change`, `test_cache_discipline_phase_boundary`
 
 **YELLOW Handoff Contract (GREEN → YELLOW → JUDGE)**
-- `tests/test_cli/test_green.py` — `test_green_post_tamper_detected_transitions_to_yellow`, `test_green_post_tamper_pass_stays_green`, `test_green_post_yellow_triggered_by_tamper_not_commit`
-- `tests/test_cli/test_yellow.py` — `test_yellow_post_approved_transitions_to_judge`, `test_yellow_post_rejected_transitions_to_green`, `test_yellow_appends_status_transition`
-- `tests/test_micro/test_orchestration.py` — `test_tdd_cycle_inlines_yellow_gate`, `test_tdd_cycle_yellow_approved_continues_to_judge`, `test_tdd_cycle_yellow_rejected_re_runs_green`, `test_yellow_not_in_phase_map`, `test_run_yellow_phase_helper_returns_decision`
-- `tests/test_micro/test_run.py` — `test_run_resumes_from_session_phase`, `test_run_resumes_from_yellow`, `test_run_resumes_from_judge`
+- `tests/unit/test_cli/test_green.py` — `test_green_post_tamper_detected_transitions_to_yellow`, `test_green_post_tamper_pass_stays_green`, `test_green_post_yellow_triggered_by_tamper_not_commit`
+- `tests/unit/test_cli/test_yellow.py` — `test_yellow_post_approved_transitions_to_judge`, `test_yellow_post_rejected_transitions_to_green`, `test_yellow_appends_status_transition`
+- `tests/unit/test_micro/test_orchestration.py` — `test_tdd_cycle_inlines_yellow_gate`, `test_tdd_cycle_yellow_approved_continues_to_judge`, `test_tdd_cycle_yellow_rejected_re_runs_green`, `test_yellow_not_in_phase_map`, `test_run_yellow_phase_helper_returns_decision`
+- `tests/unit/test_micro/test_run.py` — `test_run_resumes_from_session_phase`, `test_run_resumes_from_yellow`, `test_run_resumes_from_judge`
 
 **Train Rollback — All Commits Since RED**
-- `tests/test_cli/test_micro.py` — `test_judge_train_rollback_all_commits_since_red`, `test_judge_rollback_preserves_red`, `test_judge_no_violation_proceeds`
-- `tests/test_state/test_ledger.py` — `test_rollback_snapshot_model`, `test_rollback_snapshot_sha_validation`, `test_rollback_snapshot_tracks_red_boundary`
+- `tests/unit/test_cli/test_micro.py` — `test_judge_train_rollback_all_commits_since_red`, `test_judge_rollback_preserves_red`, `test_judge_no_violation_proceeds`
+- `tests/unit/test_state/test_ledger.py` — `test_rollback_snapshot_model`, `test_rollback_snapshot_sha_validation`, `test_rollback_snapshot_tracks_red_boundary`
 
 **Stale PENDING Record Resolution**
-- `tests/test_cli/test_micro.py` — `test_find_task_record_returns_latest_status`, `test_find_task_record_multiple_entries_returns_last`
-- `tests/test_micro/test_run.py` — `test_task_already_done_triggers_for_re_run_tasks`
+- `tests/unit/test_cli/test_micro.py` — `test_find_task_record_returns_latest_status`, `test_find_task_record_multiple_entries_returns_last`
+- `tests/unit/test_micro/test_run.py` — `test_task_already_done_triggers_for_re_run_tasks`
 
 **Ledger and Status Model**
-- `tests/test_state/test_ledger.py` — `test_task_record_status_includes_yellow`, `test_task_record_status_includes_judge`, `test_task_record_status_includes_yellow_approved`, `test_task_record_status_includes_yellow_rejected`
-- `tests/test_cli/test_micro.py` — `test_judge_appends_status_transition`, `test_green_post_appends_yellow_on_tamper`
+- `tests/unit/test_state/test_ledger.py` — `test_task_record_status_includes_yellow`, `test_task_record_status_includes_judge`, `test_task_record_status_includes_yellow_approved`, `test_task_record_status_includes_yellow_rejected`
+- `tests/unit/test_cli/test_micro.py` — `test_judge_appends_status_transition`, `test_green_post_appends_yellow_on_tamper`
 
 **Tasks Ledger**
-- `tests/test_core/test_tasks_ledger.py` — `test_generate_jsonl_from_md`, `test_validate_tasks_jsonl`
-- `tests/test_cli/test_meso.py` — `test_tasks_post_proposal`, `test_tasks_post_confirm`
+- `tests/unit/test_core/test_tasks_ledger.py` — `test_generate_jsonl_from_md`, `test_validate_tasks_jsonl`
+- `tests/unit/test_cli/test_meso.py` — `test_tasks_post_proposal`, `test_tasks_post_confirm`
 
 **Skills Audit**
 - `tests/test_skills/` — grep-based audit for `.sh`/`--no-judge`/`--no-refactor` in skill files
 
 **Agent & Mock Boundary**
-- `tests/test_core/test_agent.py` — `test_stub_backend_returns_valid_manifest`, `test_stub_backend_no_subprocess`
-- `tests/test_micro/conftest.py` — audit autouse mock targets `subprocess.Popen` not `_invoke_agent`
+- `tests/unit/test_core/test_agent.py` — `test_stub_backend_returns_valid_manifest`, `test_stub_backend_no_subprocess`
+- `tests/unit/test_micro/conftest.py` — audit autouse mock targets `subprocess.Popen` not `_invoke_agent`
 
 **Test Refactoring (system-edge mocks)**
-- `tests/test_micro/test_red.py` — refactored: uses `subprocess.Popen` mock, no `_run_pytest` mock
-- `tests/test_micro/test_green.py` — refactored: uses `subprocess.Popen` mock, no `_run_pytest` mock
-- `tests/test_micro/test_refactor.py` — refactored: uses `subprocess.Popen` mock, no `_run_pytest` mock
+- `tests/unit/test_micro/test_red.py` — refactored: uses `subprocess.Popen` mock, no `_run_pytest` mock
+- `tests/unit/test_micro/test_green.py` — refactored: uses `subprocess.Popen` mock, no `_run_pytest` mock
+- `tests/unit/test_micro/test_refactor.py` — refactored: uses `subprocess.Popen` mock, no `_run_pytest` mock
 
 ## ATDD_ACCEPTANCE_CRITERIA_LEDGER
 
@@ -340,7 +340,7 @@ There are three distinct invocation pathways, each currently broken or missing:
 **And** no subprocess is spawned
 
 **Scenario 2: conftest.py patches subprocess.Popen, not _invoke_agent**
-**Given** `tests/test_micro/conftest.py`
+**Given** `tests/unit/test_micro/conftest.py`
 **When** inspected for autouse fixture mock targets
 **Then** the mock patches `subprocess.Popen`
 **And** does NOT patch `deviate.cli.micro._invoke_agent`

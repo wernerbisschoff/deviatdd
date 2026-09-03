@@ -11,8 +11,8 @@
   - `src/deviate/main.py` — Runtime bootstrap entry point exposing the Typer app
   - `src/deviate/state/config.py` — `DeviateConfig` and `SessionState` Pydantic models
   - `src/deviate/prompts/constitution_seed.md` — Tokenized boilerplate constitution template
-  - `tests/test_cli/test_init.py` — Unit tests for `init` subcommand
-  - `tests/test_state/test_config.py` — Unit tests for Pydantic state models
+  - `tests/unit/test_cli/test_init.py` — Unit tests for `init` subcommand
+  - `tests/unit/test_state/test_config.py` — Unit tests for Pydantic state models
   - `tests/test_integration/test_init_export_cycle.py` — Integration tests for full init cycle
 - **Downstream Dependency Graph**:
   ```
@@ -50,13 +50,13 @@ As a developer setting up the DeviaTDD environment, I need the `deviate init` co
 - Pydantic validation must be eager on write (fail-fast on invalid state) but may be lazy on read to meet performance targets.
 
 ## MULTI_TIERED_VERIFICATION_TARGETS
-- **Unit Tests (Pydantic Models)**: `tests/test_state/test_config.py` — validates `DeviateConfig` and `SessionState` schemas, field constraints, `extra="forbid"` enforcement, and IO round-trip cycles.
-- **Unit Tests (Init Command)**: `tests/test_cli/test_init.py` — validates directory scaffolding, file creation, idempotency behavior, governance block placement, partial recovery, and error paths.
+- **Unit Tests (Pydantic Models)**: `tests/unit/test_state/test_config.py` — validates `DeviateConfig` and `SessionState` schemas, field constraints, `extra="forbid"` enforcement, and IO round-trip cycles.
+- **Unit Tests (Init Command)**: `tests/unit/test_cli/test_init.py` — validates directory scaffolding, file creation, idempotency behavior, governance block placement, partial recovery, and error paths.
 - **Integration Tests**: `tests/test_integration/test_init_export_cycle.py` — validates full end-to-end `deviate init` cycle completes within `L_max <= 500ms` and all output files are structurally valid.
 - **Demonstration Path**:
   ```bash
-  pytest tests/test_cli/test_init.py -v
-  pytest tests/test_state/test_config.py -v
+  pytest tests/unit/test_cli/test_init.py -v
+  pytest tests/unit/test_state/test_config.py -v
   pytest tests/test_integration/test_init_export_cycle.py -v
   ```
 

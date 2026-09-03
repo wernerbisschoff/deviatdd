@@ -24,7 +24,7 @@
 **Scenario AC-PLAN-002: Keep the four coding tools on the Pi allowlist**
 - **Source Outline**: `AO-026-02`
 - **Upstream Traceability**: `US-026-02`, `FR-ADHOC-026`, `AC-ADHOC-026-02`
-- **Current-Code Evidence**: `src/deviate/core/agent.py:AgentBackend.invoke`; `tests/test_core/test_agent.py:test_agent_uses_pi_command_default`
+- **Current-Code Evidence**: `src/deviate/core/agent.py:AgentBackend.invoke`; `tests/unit/test_core/test_agent.py:test_agent_uses_pi_command_default`
 - **Given**: The same mocked `invoke` path builds Pi argv for print mode and RPC, including a case where `.pi/skills/deviatdd/SKILL.md` is absent.
 - **When**: The test inspects the argv passed to `Popen`.
 - **Then**: Argv includes Pi `--tools` (or equivalent) listing `read`, `bash`, `edit`, and `write`, omits `--no-tools` and `--no-builtin-tools`, and still lists those four tools when the skill file is missing. Non-Pi backends stay on their current argv unless they share the Pi helper.
@@ -69,17 +69,17 @@
   - **Changes Required**: Do not revert operator-local `pi_rpc`, `transport`, `backend`, `timeout`, or `[models]`. Lean flags apply to whichever transport `invoke` builds.
   - **Integration Surface**: `AgentConfig.pi_rpc`; `AgentBackend.invoke`.
 
-- **tests/test_core/test_agent.py**: Pin print-mode argv, AC-009-07, and fail-fast.
+- **tests/unit/test_core/test_agent.py**: Pin print-mode argv, AC-009-07, and fail-fast.
   - **Current State**: `test_agent_uses_pi_command_default` asserts `pi -p` in the joined command. A nearby pin asserts `BACKEND_COMMANDS["pi"] == "pi -p"`. Streaming tests mock pipes and use a short stall budget.
   - **Changes Required**: Keep the `pi -p` prefix and AC-009-07 pin. Assert lean flags and the four coding tools. Add a patched-budget pin that a schema-rejection line raises immediately with the tokens and calls `kill`. Do not sleep 900s.
   - **Integration Surface**: `AgentBackend.invoke`; `_invoke_streaming`.
 
-- **tests/core/test_agent.py**: Pin RPC argv composition.
+- **tests/unit/core/test_agent.py**: Pin RPC argv composition.
   - **Current State**: `TestPiRpcMode.test_pi_rpc_mode_opt_in` asserts `--mode rpc` and `--no-session` and forbids `-p`.
   - **Changes Required**: Keep those pins. Assert the same lean flags and coding-tool allowlist on the RPC argv.
   - **Integration Surface**: `PI_RPC_COMMAND`; `AgentConfig(pi_rpc=True)`.
 
-- **tests/test_cli/test_micro.py**: Pin harness-visible tokens.
+- **tests/unit/test_cli/test_micro.py**: Pin harness-visible tokens.
   - **Current State**: Most tests mock `_invoke_agent`. No pin covers schema-limit `AGENT_ERROR` versus `agent returned no manifest`.
   - **Changes Required**: Add a `_invoke_agent` or `deviate micro run` pin with mocked `Popen` that emits `unsupported_tool_schema`. Assert `AGENT_ERROR` and the operator-visible error include the tokens. Mock `deviate.cli.micro._run_pytest`.
   - **Integration Surface**: `_invoke_agent`; `_run_green_phase`.
@@ -101,9 +101,9 @@
 
 ## Implementation Strategy
 - **Phase 1**: RED argv and fail-fast pins
-  - **Files**: `tests/test_core/test_agent.py`, `tests/core/test_agent.py`, `tests/test_cli/test_micro.py`
+  - **Files**: `tests/unit/test_core/test_agent.py`, `tests/unit/core/test_agent.py`, `tests/unit/test_cli/test_micro.py`
   - **Approach**: Keep `pi -p` and RPC `--no-session` pins. Add print-mode and RPC pins for `--no-extensions`, `--no-skills`, `--tools` listing `read`, `bash`, `edit`, and `write`, and `--skill` when the skill file exists. Add a missing-skill pin that still lists the four tools. Add a mocked-pipe pin that a schema-rejection line raises immediately. Add a micro pin that `_invoke_agent` / `deviate micro run` logs `AGENT_ERROR` and fails with those tokens. Mock `Popen` and `deviate.cli.micro._run_pytest`. Do not sleep the stall budget.
-  - **Verification**: `uv run pytest tests/test_core/test_agent.py tests/core/test_agent.py tests/test_cli/test_micro.py -q -k "pi and (rpc or tool or lean or schema or invoke)"` fails on the new pins.
+  - **Verification**: `uv run pytest tests/unit/test_core/test_agent.py tests/unit/core/test_agent.py tests/unit/test_cli/test_micro.py -q -k "pi and (rpc or tool or lean or schema or invoke)"` fails on the new pins.
 
 - **Phase 2**: GREEN lean argv helper
   - **Files**: `src/deviate/core/agent.py`

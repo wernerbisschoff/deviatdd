@@ -90,8 +90,8 @@ All paths are strictly relative to `repo_root`. Every row carries a verbatim quo
 | `specs/constitution.md` | Manifest | Project constitution v0.9.0. | `GREEN phase must pass all tests; JUDGE verifies GREEN only modified allowed files` / `REFACTOR phase runs regression gate: tests must re-pass after polish` |
 | `mise.toml` | Config | Task-runner manifest. | `[tasks.test] run = "uv run pytest --testmon-noselect tests/ -v"` |
 | `pyproject.toml` | Manifest | Python package manifest for the `deviate` CLI. | (declares dependencies and Hatch build config; `[project]` metadata present) |
-| `tests/test_micro/test_red.py` | Test | Unit tests for RED-phase runner. | (tests mocking `deviate.cli.micro._run_pytest` per AGENTS.md performance contract) |
-| `tests/test_micro/test_green.py` | Test | Unit tests for GREEN-phase runner. | (tests the blocking test gate and ledger transition paths) |
+| `tests/unit/test_micro/test_red.py` | Test | Unit tests for RED-phase runner. | (tests mocking `deviate.cli.micro._run_pytest` per AGENTS.md performance contract) |
+| `tests/unit/test_micro/test_green.py` | Test | Unit tests for GREEN-phase runner. | (tests the blocking test gate and ledger transition paths) |
 | `tests/conftest.py` | Test | Shared fixtures and `_git_env`/`tmp_git_repo` isolation helpers. | (canonical git-isolation helper referenced by AGENTS.md; every test git call uses `cwd=<tmp_git_repo>` + `env=_git_env()`) |
 | `specs/adhoc/008-ast-phase-prioritization/tasks.md` | Config | Representative slice `tasks.md` artifact showing task→AC traceability today. | `  - **Rationale**: ... AC-ADHOC-008-04, AC-ADHOC-008-05, AC-ADHOC-008-07, AC-ADHOC-008-08. The EXTENSION_MAP is the single source of truth...` |
 
@@ -99,7 +99,7 @@ All paths are strictly relative to `repo_root`. Every row carries a verbatim quo
 | Metric | Value |
 | :--- | :--- |
 | Estimated Complexity | Medium |
-| Files Likely Modified | 5-7 key files: `src/deviate/cli/micro.py` (RED checkpoint, GREEN/REFACTOR gate enforcement), `src/deviate/state/ledger.py` (`TaskRecord.acceptance_criteria` + persistent Red-checkpoint record), `src/deviate/core/validation.py` (verification-mode metadata on `AC-PLAN-NNN`), `src/deviate/core/tasks_ledger.py`, `src/deviate/prompts/commands/deviate-red.md` + `auto/red.md` (non-blocking checkpoint), `src/deviate/prompts/auto/green.md`/`refactor.md` plus `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`, and tests under `tests/test_micro/` and `tests/test_core/` |
+| Files Likely Modified | 5-7 key files: `src/deviate/cli/micro.py` (RED checkpoint, GREEN/REFACTOR gate enforcement), `src/deviate/state/ledger.py` (`TaskRecord.acceptance_criteria` + persistent Red-checkpoint record), `src/deviate/core/validation.py` (verification-mode metadata on `AC-PLAN-NNN`), `src/deviate/core/tasks_ledger.py`, `src/deviate/prompts/commands/deviate-red.md` + `auto/red.md` (non-blocking checkpoint), `src/deviate/prompts/auto/green.md`/`refactor.md` plus `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`, `CHANGELOG.md`, and tests under `tests/unit/test_micro/` and `tests/unit/test_core/` |
 | New Modules Required | No (reuses the existing `plan.md` `AC-PLAN-NNN` contract; the Red-checkpoint record and `acceptance_criteria` task field extend existing structures) |
 | New Persistence / Data Models | Yes (persistent non-blocking Red checkpoint records in `.deviate/` or the task ledger + `acceptance_criteria` field on task records; no new slice artifact file) |
 | New External Integrations | No |

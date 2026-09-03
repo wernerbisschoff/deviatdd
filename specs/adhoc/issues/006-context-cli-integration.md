@@ -112,11 +112,11 @@ The DeviaTDD framework depends on AI agents having accurate, up-to-date document
 
 ## Multi-Tiered Verification Targets
 - **Unit Sandbox Targets**:
-  - `tests/test_state/test_config.py::test_config_use_context_default` — `use_context` defaults to `False`
-  - `tests/test_state/test_config.py::test_config_use_context_round_trip` — `use_context=true` survives serialize→deserialize
-  - `tests/test_cli/test_init.py::test_init_detects_context` — init with `context` on PATH sets `use_context=true`
-  - `tests/test_cli/test_init.py::test_init_missing_context` — init without `context` on PATH sets `use_context=false`
-  - `tests/test_cli/test_init.py::test_init_context_governance_block` — CLAUDE.md/AGENTS.md contain `## Offline Context Documentation System` section
+  - `tests/unit/test_state/test_config.py::test_config_use_context_default` — `use_context` defaults to `False`
+  - `tests/unit/test_state/test_config.py::test_config_use_context_round_trip` — `use_context=true` survives serialize→deserialize
+  - `tests/unit/test_cli/test_init.py::test_init_detects_context` — init with `context` on PATH sets `use_context=true`
+  - `tests/unit/test_cli/test_init.py::test_init_missing_context` — init without `context` on PATH sets `use_context=false`
+  - `tests/unit/test_cli/test_init.py::test_init_context_governance_block` — CLAUDE.md/AGENTS.md contain `## Offline Context Documentation System` section
 - **Integration Sandbox Targets**:
   - `tests/test_integration/test_init_export_cycle.py` — full init → export cycle with context detection
 
@@ -136,7 +136,7 @@ grep -q "Offline Context Documentation System" CLAUDE.md && echo "CLAUDE.md OK"
 grep -q "Offline Context Documentation System" AGENTS.md && echo "AGENTS.md OK"
 
 # 5. Run unit tests
-pytest tests/test_state/test_config.py::test_config_use_context -v
-pytest tests/test_cli/test_init.py::test_init_detects_context -v
-pytest tests/test_cli/test_init.py::test_init_missing_context -v
+pytest tests/unit/test_state/test_config.py::test_config_use_context -v
+pytest tests/unit/test_cli/test_init.py::test_init_detects_context -v
+pytest tests/unit/test_cli/test_init.py::test_init_missing_context -v
 ```

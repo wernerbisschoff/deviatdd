@@ -21,7 +21,7 @@
 | Ledger | `src/deviate/state/ledger.py` | `TaskRecord` status transitions — PENDING, RED, GREEN, REFACTOR, COMPLETED |
 | Constitution governance | `specs/constitution.md` | Injected as static prefix in every automated prompt |
 | Agent governance | `CLAUDE.md` | Injected alongside constitution as static governance context |
-| Test suite | `tests/test_micro/` | Unit tests per micro phase |
+| Test suite | `tests/unit/test_micro/` | Unit tests per micro phase |
 | Integration tests | `tests/test_integration/` | Full-cycle, Tamper Guard, Mise Check Gate, agent backend |
 
 ### Execution Topology (Automated Path)
@@ -126,17 +126,17 @@ As a developer writing code, I need the deviate CLI to execute the full micro-la
 
 | Test Module | Target | Verification |
 |------------|--------|--------------|
-| `tests/test_micro/test_red.py` | RED pre/post commands | Contract emission, test failure validation, commit |
-| `tests/test_micro/test_green.py` | GREEN pre/post commands | Test pass validation, Tamper Guard integration, YELLOW handover detection |
-| `tests/test_micro/test_refactor.py` | REFACTOR pre/post commands | Test invariance, commit |
-| `tests/test_micro/test_judge.py` | JUDGE pre/post commands | Compliance report, violation detection |
-| `tests/test_micro/test_yellow.py` | YELLOW pre/post commands | Amendment proposal, approval/rejection |
-| `tests/test_micro/test_execute.py` | EXECUTE pre/post | Direct execution workflow, manifest handling |
-| `tests/test_micro/test_e2e.py` | E2E pre/post | Completion verification, test execution |
-| `tests/test_micro/test_hotfix.py` | HOTFIX pre/post | Bug context discovery, bypass RED |
-| `tests/test_micro/test_orchestration.py` | Full micro cycle orchestration | Phase sequencing, state transitions |
-| `tests/test_core/test_agent.py` | Agent backend abstraction | Heredoc subprocess, YAML parsing, timeout, retry |
-| `tests/test_core/test_tamper.py` | Tamper Guard | `git diff` evaluation, `git restore` rollback |
+| `tests/unit/test_micro/test_red.py` | RED pre/post commands | Contract emission, test failure validation, commit |
+| `tests/unit/test_micro/test_green.py` | GREEN pre/post commands | Test pass validation, Tamper Guard integration, YELLOW handover detection |
+| `tests/unit/test_micro/test_refactor.py` | REFACTOR pre/post commands | Test invariance, commit |
+| `tests/unit/test_micro/test_judge.py` | JUDGE pre/post commands | Compliance report, violation detection |
+| `tests/unit/test_micro/test_yellow.py` | YELLOW pre/post commands | Amendment proposal, approval/rejection |
+| `tests/unit/test_micro/test_execute.py` | EXECUTE pre/post | Direct execution workflow, manifest handling |
+| `tests/unit/test_micro/test_e2e.py` | E2E pre/post | Completion verification, test execution |
+| `tests/unit/test_micro/test_hotfix.py` | HOTFIX pre/post | Bug context discovery, bypass RED |
+| `tests/unit/test_micro/test_orchestration.py` | Full micro cycle orchestration | Phase sequencing, state transitions |
+| `tests/unit/test_core/test_agent.py` | Agent backend abstraction | Heredoc subprocess, YAML parsing, timeout, retry |
+| `tests/unit/test_core/test_tamper.py` | Tamper Guard | `git diff` evaluation, `git restore` rollback |
 
 ### Integration Tests
 
@@ -152,9 +152,9 @@ As a developer writing code, I need the deviate CLI to execute the full micro-la
 
 ```bash
 # Unit tests
-pytest tests/test_micro/ -v
-pytest tests/test_core/test_agent.py -v
-pytest tests/test_core/test_tamper.py -v
+pytest tests/unit/test_micro/ -v
+pytest tests/unit/test_core/test_agent.py -v
+pytest tests/unit/test_core/test_tamper.py -v
 
 # Integration tests
 pytest tests/test_integration/test_micro_orchestration.py -v

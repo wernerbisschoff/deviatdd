@@ -19,9 +19,9 @@ flow_refs: []
   - `src/deviate/prompts/commands/deviate-{red,green,refactor,judge,execute,plan,tasks,explore,research,prd,shard}.md` — STALE DUPLICATES: hand-maintained manual copies that drift from auto (17-68% identical-line rate). Their manual-only content (pre/post-script steps, rich handover manifest, `<context><user_input>`) becomes a derivation overlay; the duplicated middle body is removed from these files.
   - `src/deviate/prompts/core/lifecycle-auto.md` — REFERENCE: the auto lifecycle block ("orchestrator handles all lifecycle").
   - `src/deviate/prompts/core/lifecycle-manual.md` — REFERENCE: the manual lifecycle block ("run `deviate <phase> pre/post`").
-  - `tests/test_meso/test_auto_prompt_templates.py` — TARGET: pin canonical auto semantics; add drift-guard coverage.
-  - `tests/test_meso/test_prompt_assembly.py` — TARGET: verify auto composition still emits core only.
-  - `tests/test_core/test_commands.py` — TARGET: rework `install_command`/`compose_command_body` assertions to the derived-manual output; add a drift-guard asserting the derived manual equals the committed behavior and the middle stays identical across modes.
+  - `tests/unit/test_meso/test_auto_prompt_templates.py` — TARGET: pin canonical auto semantics; add drift-guard coverage.
+  - `tests/unit/test_meso/test_prompt_assembly.py` — TARGET: verify auto composition still emits core only.
+  - `tests/unit/test_core/test_commands.py` — TARGET: rework `install_command`/`compose_command_body` assertions to the derived-manual output; add a drift-guard asserting the derived manual equals the committed behavior and the middle stays identical across modes.
   - `CHANGELOG.md` — TARGET: append a bullet under `[Unreleased]` for the user-visible template-derivation change.
   - `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md` — TARGET: reflect the single-source prompt architecture and the derivation mechanism (spec-alignment mandate).
 - **Upstream Evidence**:
@@ -103,9 +103,9 @@ DeviaTDD maintains two parallel prompt copies per phase (`auto/<phase>.md` for t
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_core/test_commands.py` — rework `install_command`/`compose_command_body` tests to assert the *derived* manual output (middle equals auto core + overlay), and that the on-disk idempotency contract (`False` on unchanged reinstall) still holds.
-  - `tests/test_meso/test_auto_prompt_templates.py` — extend with: `test_auto_and_manual_middle_identical` (drift guard) asserting the shared middle body is byte-identical between the auto core and the derived manual; `test_auto_red_uses_pass_failure_kind` asserting auto red's `failure_kind` semantics; `test_manual_red_matches_auto_semantics` asserting the derived red no longer emits `status:"FAIL"`/abort-on-passing-test.
-  - `tests/test_meso/test_prompt_assembly.py` — verify `load_template` still emits the auto core body only (core + layer + lifecycle-auto + style + phase), no manual overlay leakage.
+  - `tests/unit/test_core/test_commands.py` — rework `install_command`/`compose_command_body` tests to assert the *derived* manual output (middle equals auto core + overlay), and that the on-disk idempotency contract (`False` on unchanged reinstall) still holds.
+  - `tests/unit/test_meso/test_auto_prompt_templates.py` — extend with: `test_auto_and_manual_middle_identical` (drift guard) asserting the shared middle body is byte-identical between the auto core and the derived manual; `test_auto_red_uses_pass_failure_kind` asserting auto red's `failure_kind` semantics; `test_manual_red_matches_auto_semantics` asserting the derived red no longer emits `status:"FAIL"`/abort-on-passing-test.
+  - `tests/unit/test_meso/test_prompt_assembly.py` — verify `load_template` still emits the auto core body only (core + layer + lifecycle-auto + style + phase), no manual overlay leakage.
 - **Integration Sandbox Targets**:
   - `tests/cli/test_setup.py` (if present) — verify `deviate setup` installs a derived `deviate-red.md` matching the expected composed body.
   - `tests/e2e/` (bats) — optional smoke test: run install, assert derived manual middle equals auto core.
@@ -126,9 +126,9 @@ print((pathlib.Path(d)/'deviate-red.md').exists())
 "
 
 # 3. Run the drift-guard and loader tests
-mise run test tests/test_core/test_commands.py -v
-mise run test tests/test_meso/test_auto_prompt_templates.py -v
-mise run test tests/test_meso/test_prompt_assembly.py -v
+mise run test tests/unit/test_core/test_commands.py -v
+mise run test tests/unit/test_meso/test_auto_prompt_templates.py -v
+mise run test tests/unit/test_meso/test_prompt_assembly.py -v
 
 # 4. Lint and format
 mise run lint

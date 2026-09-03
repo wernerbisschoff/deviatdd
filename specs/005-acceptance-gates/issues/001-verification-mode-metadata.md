@@ -19,7 +19,7 @@ flow_refs: []
   - `src/deviate/core/validation.py:93-97` — REFERENCE: `validate_gherkin_syntax` stays mandatory; the mode check adds to it, never replaces it.
   - `specs/{NNN}-{slug}/plan.md` — TARGET: each `## Acceptance Contract` scenario body in a slice's `plan.md` carries the Verification Mode line.
   - `src/deviate/cli/meso.py:939` — GATE: `_tasks_pre` blocks on any validation error emitted by `validate_acceptance_contract` (via `deviate meso tasks pre`).
-  - `tests/test_core/test_validation.py` — TARGET: extend the acceptance-contract tests with Verification Mode acceptance, rejection, and boundary cases.
+  - `tests/unit/test_core/test_validation.py` — TARGET: extend the acceptance-contract tests with Verification Mode acceptance, rejection, and boundary cases.
 - **Upstream Evidence**:
   - `specs/005-acceptance-gates/prd.md:12` — Hard directive: add `**Verification Mode**: <automated|manual|deferred>` metadata validated by `validate_acceptance_contract`.
   - `specs/005-acceptance-gates/prd.md:96-108` — FR-005-01 acceptance outline: mode present and legal passes; mode missing or illegal blocks `deviate meso tasks pre`.
@@ -43,7 +43,7 @@ This issue ships only the contract validation. The propagation of the mode into 
 - A scenario with a missing mode line or an illegal value produces a named validation error.
 - The existing mandatory clauses stay enforced: Source Outline, Upstream Traceability, Current-Code Evidence, and Given/When/Then.
 - `deviate meso tasks pre` blocks on any validation error.
-- Tests in `tests/test_core/test_validation.py` pin the accept/reject/boundary behavior.
+- Tests in `tests/unit/test_core/test_validation.py` pin the accept/reject/boundary behavior.
 
 ### Defensive Exclusions
 
@@ -88,14 +88,14 @@ This issue ships only the contract validation. The propagation of the mode into 
 
 ## Multi-Tiered Verification Targets
 
-- **Unit**: `tests/test_core/test_validation.py` — extend with: mode accepted per literal; missing mode rejected; illegal mode rejected; mandatory clauses still enforced; boundary cases above.
+- **Unit**: `tests/unit/test_core/test_validation.py` — extend with: mode accepted per literal; missing mode rejected; illegal mode rejected; mandatory clauses still enforced; boundary cases above.
 - **Integration**: fixture `plan.md` with a valid contract runs through `deviate plan post` and `deviate meso tasks pre` without error; a contract with a missing mode blocks `deviate meso tasks pre` with a named error.
 
 ## Demonstration Path
 
 ```bash
 # 1. Unit verification — mode validation behavior
-uv run pytest tests/test_core/test_validation.py -v
+uv run pytest tests/unit/test_core/test_validation.py -v
 
 # 2. Integration: valid contract passes the meso gates
 #    (run inside a fixture epic with a plan.md whose scenarios carry

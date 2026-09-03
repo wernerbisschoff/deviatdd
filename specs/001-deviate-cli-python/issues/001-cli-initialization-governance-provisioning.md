@@ -15,7 +15,7 @@ issue_id: "ISS-001-001"
   - `src/deviate/main.py`
   - `src/deviate/state/config.py` (DeviateConfig, SessionState models)
   - `src/deviate/prompts/constitution_seed.md`
-  - `tests/test_cli/test_init.py`
+  - `tests/unit/test_cli/test_init.py`
 
 ## [THE_PROBLEM_CONTRACT]
 As a developer setting up the DeviaTDD environment, I need the `deviate init` command to scaffold the `.deviate/` directory structure, provision default configuration and session state using strict Pydantic validation, and idempotently update project-level agent governance files, so that the workspace is ready for Macro-layer operations without manual setup.
@@ -39,13 +39,13 @@ As a developer setting up the DeviaTDD environment, I need the `deviate init` co
 - **AC-001-INIT-03**: If `CLAUDE.md` already contains `## DeviaTDD Orchestration Rules`, the file is not modified, and the CLI outputs an idempotency skip message.
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
-- **Unit Tests**: `tests/test_cli/test_init.py`, `tests/test_state/test_config.py`
+- **Unit Tests**: `tests/unit/test_cli/test_init.py`, `tests/unit/test_state/test_config.py`
 - **Integration Tests**: `tests/test_integration/test_init_export_cycle.py`
 
 ## [DEMONSTRATION_PATH]
 ```bash
 # Verify CLI initialization, Pydantic validation, and idempotency
-pytest tests/test_cli/test_init.py -v
-pytest tests/test_state/test_config.py -v
+pytest tests/unit/test_cli/test_init.py -v
+pytest tests/unit/test_state/test_config.py -v
 pytest tests/test_integration/test_init_export_cycle.py -v
 ```

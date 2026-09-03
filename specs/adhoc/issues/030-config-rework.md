@@ -72,7 +72,7 @@ The `deviate setup` command does not git-ignore `.deviate/` by default, installs
 - Throughput: Consolidating the two timeout fields does not regress model-routing resolution or per-agent export setup time.
 
 ## Multi-Tiered Verification Targets
-- **Unit Sandbox Targets**: `tests/test_state/test_config.py` — `test_consolidated_timeout_field` and `test_parse_stale_graphite_key_rejected` (new); `tests/test_cli/test_setup.py` — `test_setup_gitignores_dotdeviate`, `test_setup_single_agent_only`, `test_setup_auto_detect_installed_agents` (new).
+- **Unit Sandbox Targets**: `tests/unit/test_state/test_config.py` — `test_consolidated_timeout_field` and `test_parse_stale_graphite_key_rejected` (new); `tests/unit/test_cli/test_setup.py` — `test_setup_gitignores_dotdeviate`, `test_setup_single_agent_only`, `test_setup_auto_detect_installed_agents` (new).
 - **Integration Sandbox Targets**: `tests/test_integration/test_skill_installation.py::TestSkillInstallation` — assert `INSTALL` and exit code 0 for the single-agent and auto-detect paths using the mocked `_get_agent_command_dir`.
 
 ## Demonstration Path

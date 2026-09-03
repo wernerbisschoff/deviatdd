@@ -13,7 +13,7 @@ issue_id: "007-001"
 - **Local File Path**: `specs/007-shared-phase-kernel/issues/001-shared-phase-kernel.md`
 - **Workstation Paths**:
   - `src/deviate/cli/micro.py` (kernel types, five kernels, eight thin wrappers, three auto delegations)
-  - `tests/test_micro/` (kernel coverage, token and contract regression tests)
+  - `tests/unit/test_micro/` (kernel coverage, token and contract regression tests)
   - `CHANGELOG.md` (`[Unreleased]` bullet for the manual RED adjudication change)
 - **Application Layers Touched**: contract assembly (data types plus JSON emission), CLI surface (Typer commands), orchestration (auto runner delegation), persistence (ledger plus session plus git commits). Four layers, so the slice is vertical.
 
@@ -29,7 +29,7 @@ As a DeviaTDD operator, I run micro phases through the auto runner or through th
   - Eight manual commands converted to thin wrappers with surface-level task resolution.
   - Auto delegation in `_run_red_phase`, `_run_green_phase`, `_run_refactor_phase` with kernels never invoking agents.
   - Fixed status tokens, verbatim commit literals and flags, additive-only contract JSON.
-  - Kernel tests in `tests/test_micro/` plus the `CHANGELOG.md` `[Unreleased]` bullet.
+  - Kernel tests in `tests/unit/test_micro/` plus the `CHANGELOG.md` `[Unreleased]` bullet.
 - **Defensive Exclusions**:
   - `_cycle_phase` in `src/deviate/cli/macro.py` (dispatches only macro phases).
   - New kernel package, unified agent-invoking orchestrator, subprocess delegation of the manual surface to the auto runner.
@@ -52,16 +52,16 @@ As a DeviaTDD operator, I run micro phases through the auto runner or through th
 
 ## Multi-Tiered Verification Targets
 
-- **Unit Tests**: `tests/test_micro/` kernel coverage (contract keys, outcome tokens, `KernelError` mapping, per-phase side effects, wrapper dispatch, auto delegation, regression guards).
+- **Unit Tests**: `tests/unit/test_micro/` kernel coverage (contract keys, outcome tokens, `KernelError` mapping, per-phase side effects, wrapper dispatch, auto delegation, regression guards).
 - **Integration Tests**: full `pytest tests/ -v` exit 0, `ruff check .` clean, coverage at or above 80 percent.
-- **Verification Command**: `pytest tests/test_micro/ -v` and `mise run check`
+- **Verification Command**: `pytest tests/unit/test_micro/ -v` and `mise run check`
 
 ## Demonstration Path
 
 ```bash
 # RED contract parity across surfaces
 deviate red pre --task-id 007-001-TASK
-pytest tests/test_micro/ -v
+pytest tests/unit/test_micro/ -v
 # GREEN and REFACTOR parity plus full gate
 deviate green post --task-id 007-001-TASK
 deviate refactor post --task-id 007-001-TASK

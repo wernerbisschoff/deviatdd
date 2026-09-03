@@ -9,11 +9,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Sociable_Unit
-  - **Verification**: `pytest tests/test_state/test_config.py -v -k "model"`
+  - **Verification**: `pytest tests/unit/test_state/test_config.py -v -k "model"`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/state/config.py`
-    - `tests/test_state/test_config.py`
+    - `tests/unit/test_state/test_config.py`
   - **Rationale**: **`config.py`** — add `ModelPhaseMap(BaseModel)` with `models: dict[str, str] = Field(default_factory=dict)`, mount `models: ModelPhaseMap = Field(default_factory=ModelPhaseMap)` on `DeviateConfig`, add module-level `model_config_resolve(phase: str) -> str | None` that checks `phase` key → `"default"` key → `None`, with phase name uppercasing for canonical matching. **`test_config.py`** — add `TestModelPhaseMap` class with tests for: empty dict default (AC-005-07), round-trip serialization, phase lookup returns known model (AC-005-02), unknown phase returns `None`, `default` key fallback (AC-005-01), empty string treated as no override (EDGE-005-empty), `default` excluded from phase key matching (EDGE-005-default-key).
   - **Details**:
     - **Red**: Write `test_model_config_defaults()` asserting empty `model_config.models == {}` on fresh `DeviateConfig()`. Write `test_model_config_round_trip()` — serialize to TOML (via `model_dump()`) and assert `models` key round-trips. Write `test_model_config_resolve_known_phase()` asserting `model_config_resolve("RED") == "fast-model"` when `{"RED": "fast-model"}` configured. Write `test_model_config_resolve_fallback_default()` asserting `model_config_resolve("GREEN") == "fast-model"` when `{"default": "fast-model"}` configured. Write `test_model_config_resolve_no_match()` asserting `None` when dict is empty. Write `test_model_config_resolve_empty_string()` asserting `None` when phase key has empty string value. Write `test_model_config_resolve_default_not_phase()` asserting `model_config_resolve("default")` returns `None` when only `{"default": "x"}` set and no `"DEFAULT"` key exists.
@@ -34,11 +34,11 @@
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: Solitary_Unit
-  - **Verification**: `pytest tests/test_core/test_agent.py -v -k "model_flag"`
+  - **Verification**: `pytest tests/unit/test_core/test_agent.py -v -k "model_flag"`
   - **Estimated Time**: 60 minutes
   - **Files**:
     - `src/deviate/core/agent.py`
-    - `tests/test_core/test_agent.py`
+    - `tests/unit/test_core/test_agent.py`
   - **Rationale**: **`agent.py`** — add `model: str | None = None` parameter to `AgentBackend.invoke()` signature. After `cmd = backend_cmd.split()`, if `model` is non-None and `backend_name` is in `{"opencode", "droid"}`, append `["--model", model]` to `cmd`. For `claude` backend and any unknown backend, skip model injection. Update `StubAgentBackend.invoke()` to accept the same `model` parameter (currently no-op, update signature). **`test_agent.py`** — add `TestModelFlagInjection` class with tests for: model flag appears for opencode backend (AC-005-01, AC-005-02), model flag appears for droid backend (AC-005-04), no model flag for claude backend (AC-005-05), no model flag when model is `None`, no model flag when model is empty string, model is a single shell argument (no splitting on spaces), phase override takes precedence over default (AC-005-02).
   - **Details**:
     - **Red**: Write `test_model_flag_opencode()` — mock `subprocess.Popen`, call `backend.invoke(prompt, model="deepseek-v4-flash")`, assert `--model deepseek-v4-flash` in `cmd`. Write `test_model_flag_droid()` — same with `backend="droid"`. Write `test_no_model_flag_claude()` — invoke with `model="x"` and `backend="claude"`, assert `--model` NOT in `cmd`. Write `test_no_model_flag_when_none()` — invoke with `model=None`, assert no `--model`. Write `test_no_model_flag_when_empty()` — invoke with `model=""`, assert no `--model`. Write `test_model_flag_single_argument()` — invoke with `model="deepseek-v4-flash"`, assert `["--model", "deepseek-v4-flash"]` not `["--model=deepseek-v4-flash"]`.
@@ -164,8 +164,8 @@
 - `src/deviate/core/agent.py` touched by TSK-005-02
 - `src/deviate/cli/micro.py` touched by TSK-005-03
 - `src/deviate/cli/meso.py`, `src/deviate/cli/macro.py` touched by TSK-005-04
-- `tests/test_state/test_config.py` touched by TSK-005-01
-- `tests/test_core/test_agent.py` touched by TSK-005-02
+- `tests/unit/test_state/test_config.py` touched by TSK-005-01
+- `tests/unit/test_core/test_agent.py` touched by TSK-005-02
 
 ---
 

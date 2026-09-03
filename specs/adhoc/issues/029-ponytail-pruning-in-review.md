@@ -17,14 +17,14 @@ flow_refs: []
   - `src/deviate/cli/meso.py` — TARGET: verify `_pr_title`, `_pr_body`/`_derive_pr_metadata` and the platform push path adhere to the commit convention on both GitHub (`_run_gh_pr_create`) and GitLab (`_gitlab_push_options`); fix any title/body gap so the squash-merge commit message is valid.
   - `src/deviate/core/convention.py` — TARGET: reference `commit_scope` and emoji detection as the canonical title helpers.
   - `src/deviate/cli/review.py` — TARGET: unchanged unless the review contract must expose the pruning dimension; keep HITL Gate 3 fail-close behavior intact.
-  - `tests/test_meso/test_auto_prompt_templates.py` — TARGET: pin the folded ponytail ladder text and the absent Minimality/Constraints heading; keep `test_review_keeps_overengineering_and_does_not_promote_helpers`.
-  - `tests/test_meso/test_pr_platform.py` / `tests/test_cli/test_meso.py` — TARGET: extend title/body pins for the squash-merge commit-convention outcome.
+  - `tests/unit/test_meso/test_auto_prompt_templates.py` — TARGET: pin the folded ponytail ladder text and the absent Minimality/Constraints heading; keep `test_review_keeps_overengineering_and_does_not_promote_helpers`.
+  - `tests/unit/test_meso/test_pr_platform.py` / `tests/unit/test_cli/test_meso.py` — TARGET: extend title/body pins for the squash-merge commit-convention outcome.
   - `specs/DeviaTDD-api.md` / `specs/DeviaTDD-architecture.md` — TARGET: document the folded review pruning and the verified `/deviate-pr` squash-convention behavior in the same implementation commit.
   - `CHANGELOG.md` — TARGET: `[Unreleased]` bullet for the user-visible review pruning and any PR title/body fix.
 - **Classification for plan/tasks**: prompt-markdown + small production-verification with observable behavior. Prefer TDD for any `meso.py`/title-body fix; prompt-text pins are test-only.
 - **Upstream Evidence**:
   - `specs/explore/ponytail-pruning.md` — Discovery consumed (pre-research staging). Scope sizing labels the ponytail concern Medium (2-5 files) and notes `/deviate-pr` is already implemented (verification or small fix).
-  - `tests/test_meso/test_auto_prompt_templates.py` — `TestSmallestChangeFoldedIntoExistingPrompts`: "GH-92 (rescoped): Ponytail smallest-change lives in existing GREEN / REFACTOR / review lines — no new Constraints or Minimality heading." `test_review_keeps_overengineering_and_does_not_promote_helpers`: asserts "Cross-task over-engineering", no "into a shared helper", no "## Constraints".
+  - `tests/unit/test_meso/test_auto_prompt_templates.py` — `TestSmallestChangeFoldedIntoExistingPrompts`: "GH-92 (rescoped): Ponytail smallest-change lives in existing GREEN / REFACTOR / review lines — no new Constraints or Minimality heading." `test_review_keeps_overengineering_and_does_not_promote_helpers`: asserts "Cross-task over-engineering", no "into a shared helper", no "## Constraints".
   - `src/deviate/prompts/commands/deviate-review.md` v3.1.0 — domain 3 "Pragmatism & Architectural Coherence" already lists "Cross-task over-engineering".
   - `src/deviate/prompts/commands/deviate-pr.md` v2.0.0 — the PR body MUST serve dual purpose: good PR description AND good squash-merge commit body (`{SUMMARY}` / `{CHANGES}` / `{CLOSES}`).
   - `src/deviate/cli/meso.py` — `_pr_title` builds `{commit_type}({commit_scope}): {desc}`; `_run_gh_pr_create` calls `gh pr create --title ... --body-file`; `_gitlab_push_options` uses `merge_request.title` / `merge_request.description` push options.
@@ -65,12 +65,12 @@ The operator wants the "ponytail" coding discipline to prune excessive code and 
 - **Acceptance Criteria Tokens**: `AC-ADHOC-029-01`, `AC-ADHOC-029-02`, `AC-ADHOC-029-03`
 - **Data Model Entities**: `FlowRecord`/`FlowEvent` (unrelated; unchanged), issue `IssueRecord`, PR/MR title and body strings. No new ledger row types.
 - **Spec Source Anchors**:
-  - `specs/explore/ponytail-pruning.md` (File Registry: `deviate-review.md`, `deviate-pr.md`, `deviate-prune.md`, `src/deviate/cli/meso.py`, `src/deviate/core/convention.py`, `tests/test_meso/test_auto_prompt_templates.py`, `tests/test_meso/test_pr_platform.py`, `tests/test_cli/test_meso.py`)
+  - `specs/explore/ponytail-pruning.md` (File Registry: `deviate-review.md`, `deviate-pr.md`, `deviate-prune.md`, `src/deviate/cli/meso.py`, `src/deviate/core/convention.py`, `tests/unit/test_meso/test_auto_prompt_templates.py`, `tests/unit/test_meso/test_pr_platform.py`, `tests/unit/test_cli/test_meso.py`)
   - `src/deviate/prompts/commands/deviate-review.md` v3.1.0
   - `src/deviate/prompts/commands/deviate-pr.md` v2.0.0
   - `src/deviate/cli/meso.py` (`_pr_title`, `_derive_pr_metadata`, `_run_gh_pr_create`, `_gitlab_push_options`)
   - `src/deviate/core/convention.py` (`commit_scope`, `detect_uses_emojis`)
-  - `tests/test_meso/test_auto_prompt_templates.py`
+  - `tests/unit/test_meso/test_auto_prompt_templates.py`
   - `specs/constitution.md` §4 Commit Convention; §5 Definition of Done
   - `CONTRIBUTING.md` Commit convention + "Squash or rebase before merge" + HITL Gate 3
 
@@ -113,14 +113,14 @@ The operator wants the "ponytail" coding discipline to prune excessive code and 
 ## Multi-Tiered Verification Targets
 
 - **Unit Sandbox Targets**:
-  - `tests/test_meso/test_auto_prompt_templates.py` — `TestSmallestChangeFoldedIntoExistingPrompts` (ladder folded, no new Minimality/Constraints heading); `test_review_keeps_overengineering_and_does_not_promote_helpers` (still green).
-  - `tests/test_cli/test_meso.py` — extended `_pr_title` / body pins assert the squash-merge conventional-commit outcome.
-  - `tests/test_meso/test_pr_platform.py` — GitHub / GitLab title and body push-path pins stay green.
+  - `tests/unit/test_meso/test_auto_prompt_templates.py` — `TestSmallestChangeFoldedIntoExistingPrompts` (ladder folded, no new Minimality/Constraints heading); `test_review_keeps_overengineering_and_does_not_promote_helpers` (still green).
+  - `tests/unit/test_cli/test_meso.py` — extended `_pr_title` / body pins assert the squash-merge conventional-commit outcome.
+  - `tests/unit/test_meso/test_pr_platform.py` — GitHub / GitLab title and body push-path pins stay green.
 - **Integration Sandbox Targets**:
   - `tests/test_integration/test_meso_layer.py::TestPrRun` — `deviate pr` end-to-end PR/MR metadata still yields a conventional title and dual-purpose body; no squash-merge regression.
 
 ## Demonstration Path
 
 ```bash
-mise run check && pytest tests/test_meso/test_auto_prompt_templates.py tests/test_cli/test_meso.py tests/test_meso/test_pr_platform.py -q
+mise run check && pytest tests/unit/test_meso/test_auto_prompt_templates.py tests/unit/test_cli/test_meso.py tests/unit/test_meso/test_pr_platform.py -q
 ```

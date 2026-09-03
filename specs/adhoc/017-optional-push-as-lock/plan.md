@@ -79,23 +79,23 @@
   - **Current State**: `_CONFIG_TOML_COMMENTS` documents `graphite`. `_merge_flag_keys` upserts only `graphite` and `use_libref`. `setup` has `--graphite` / `--libref`. `run_command` calls `_meso_run(issue_id=..., force=...)` with no local flag.
   - **Changes Required**: Add `claim_remote` to comments, `DeviateConfig(...)` construction, and `_merge_flag_keys`. Add `--no-claim-remote` on `setup`. Optional TTY prompt when the flag is omitted and the session is interactive (`is_interactive()` / `_prompt_agent_selection` pattern). Non-interactive sessions without the flag keep `true`. Add `--local` on `run_command` and forward it to `_meso_run`. Do not add `--no-local`.
   - **Integration Surface**: `DeviateConfig`, `_scaffold_dotfiles`, `_meso_run`.
-- **tests/test_state/test_config.py**: Pin default, round-trip, and resolver semantics.
+- **tests/unit/test_state/test_config.py**: Pin default, round-trip, and resolver semantics.
   - **Current State**: Graphite tests cover default `False`, round-trip, true / false / key-absent / no-file.
   - **Changes Required**: Mirror those cases for `claim_remote` with inverted defaults (absent key / absent file = `True`).
   - **Integration Surface**: `DeviateConfig`, `resolve_claim_remote`.
-- **tests/test_cli/test_meso.py**: Extend `TestSpecifyLocalFlag` for config-false.
+- **tests/unit/test_cli/test_meso.py**: Extend `TestSpecifyLocalFlag` for config-false.
   - **Current State**: Four tests pin `local=True` skips remote check and push, plus `ALREADY_CLAIMED_LOCAL`.
   - **Changes Required**: Add a config-false path that never calls `branch_exists_on_remote` or `git push` while still creating the worktree and claiming.
   - **Integration Surface**: `_try_claim_issue` via `_specify_pre`.
-- **tests/test_meso/test_specify.py**: Pin omitted-flag resolution and `--local` override.
+- **tests/unit/test_meso/test_specify.py**: Pin omitted-flag resolution and `--local` override.
   - **Current State**: `--local` forwards `local=True` into `_specify_pre`. Bare specify uses `_discover_claimable_issue` and still skips origin branches.
   - **Changes Required**: Assert omitted `--local` with `claim_remote = false` forwards `local=True`. Assert `--local` with `claim_remote = true` still forwards `True`. Assert auto-discovery in local mode does not skip origin branches.
   - **Integration Surface**: `specify`, `_specify_pre`, `_discover_claimable_issue`.
-- **tests/test_meso/test_meso_orchestration.py**: Pin discovery, meso run `--local`, config-false, and `--no-setup`.
+- **tests/unit/test_meso/test_meso_orchestration.py**: Pin discovery, meso run `--local`, config-false, and `--no-setup`.
   - **Current State**: `TestDiscoverClaimableIssue` skips origin branches. `TestMesoRunNoSetup` proves `--no-setup` does not call `_specify_pre`.
   - **Changes Required**: Local mode (flag or config-false) returns the first BACKLOG even when `branch_exists_on_remote` is True. Default mode still skips origin branches. `meso run --local` and omitted-flag + `claim_remote = false` call `_specify_pre(..., local=True)`. Combined `--no-setup --local` still skips `_specify_pre`.
   - **Integration Surface**: `_discover_claimable_issue`, `_meso_run`.
-- **tests/test_cli/test_init.py** / **tests/test_cli/test_top_level_run.py**: Pin setup persist and `deviate run --local`.
+- **tests/unit/test_cli/test_init.py** / **tests/unit/test_cli/test_top_level_run.py**: Pin setup persist and `deviate run --local`.
   - **Current State**: Init tests pin `--graphite` merge without clobbering `[models]`. Top-level run tests pin chaining into micro with no `--local`.
   - **Changes Required**: `deviate setup --no-claim-remote` writes `claim_remote = false` without dropping other keys. Fresh setup without the flag writes `true`. `deviate run --local` forwards to `_meso_run`. Mock `deviate.cli.micro._run_pytest` on any test that reaches it.
   - **Integration Surface**: `setup`, `run_command`.
@@ -114,19 +114,19 @@
 
 ## Implementation Strategy
 - **Phase 1**: Config field and resolver
-  - **Files**: `src/deviate/state/config.py`, `tests/test_state/test_config.py`
+  - **Files**: `src/deviate/state/config.py`, `tests/unit/test_state/test_config.py`
   - **Approach**: Add `claim_remote: bool = True` on `DeviateConfig`. Implement `resolve_claim_remote` beside `resolve_graphite_config` with inverted default (`True` on missing file, missing key, or non-bool). Keep `extra = forbid`.
-  - **Verification**: `mise run test tests/test_state/test_config.py` — default, round-trip, true, false, key-absent, no-file.
+  - **Verification**: `mise run test tests/unit/test_state/test_config.py` — default, round-trip, true, false, key-absent, no-file.
 - **Phase 2**: Effective-local resolution on the claim and discovery path
-  - **Files**: `src/deviate/cli/meso.py`, `tests/test_cli/test_meso.py`, `tests/test_meso/test_specify.py`, `tests/test_meso/test_meso_orchestration.py`
+  - **Files**: `src/deviate/cli/meso.py`, `tests/unit/test_cli/test_meso.py`, `tests/unit/test_meso/test_specify.py`, `tests/unit/test_meso/test_meso_orchestration.py`
   - **Approach**: Resolve `local = local or not resolve_claim_remote(cwd)` inside `_specify_pre` so `_claim_and_setup` and `plan pre` inherit it. Pass the same effective-local value into `_discover_claimable_issue`. Do not change `_try_claim_issue` skip-push semantics.
   - **Verification**: Config-false never calls `branch_exists_on_remote` or `git push`. `--local` still forwards `True` when config is true. Local discovery returns a BACKLOG whose origin branch exists. Default discovery still skips origin branches.
 - **Phase 3**: `--local` on `meso run` and `deviate run`
-  - **Files**: `src/deviate/cli/meso.py`, `src/deviate/cli/__init__.py`, `tests/test_meso/test_meso_orchestration.py`, `tests/test_cli/test_top_level_run.py`
+  - **Files**: `src/deviate/cli/meso.py`, `src/deviate/cli/__init__.py`, `tests/unit/test_meso/test_meso_orchestration.py`, `tests/unit/test_cli/test_top_level_run.py`
   - **Approach**: Add `--local` to `meso_run_command` and `run_command`. Forward it to `_meso_run`. Keep `--no-setup` as the worktree/claim skip. Linked-worktree auto-detect still sets `no_setup=True` and must not force a second claim.
   - **Verification**: `meso run --local` and `run --local` call `_specify_pre(..., local=True)`. `--no-setup` (alone or with `--local`) does not call `_specify_pre`. Mock `_run_pytest` on tests that reach it.
 - **Phase 4**: Setup persistence
-  - **Files**: `src/deviate/cli/__init__.py`, `tests/test_cli/test_init.py`
+  - **Files**: `src/deviate/cli/__init__.py`, `tests/unit/test_cli/test_init.py`
   - **Approach**: Extend `_merge_flag_keys` with `claim_remote`. Wire `--no-claim-remote` through `_scaffold_dotfiles`. Fresh config writes `claim_remote = true`. Re-run upserts the key like `--graphite`. Optional TTY prompt only when the flag is omitted and `is_interactive()` is true.
   - **Verification**: `--no-claim-remote` writes `false` and keeps `[models]` / `timeout_seconds` / `[agent]`. Fresh setup without the flag writes `true`.
 - **Phase 5**: Spec and changelog alignment

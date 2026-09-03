@@ -82,9 +82,9 @@
 | `src/deviate/prompts/skills/plan/SKILL.md` | Codebase_File | Plan skill template | Agent instruction for plan phase |
 | `src/deviate/prompts/skills/tasks/SKILL.md` | Codebase_File | Tasks skill template | Agent instruction for task decomposition |
 | `src/deviate/prompts/constitution_seed.md` | Codebase_File | Constitution seed template | Template with `${VARIABLE}` placeholders for project-specific values |
-| `tests/test_cli/test_init.py` | Test | Init command tests | `class TestInitCommand:\n    def test_init_creates_dotfile_structure(self, tmp_path: Path):\n        with chdir(tmp_path):\n            result = runner.invoke(cli, ["init"])\n            assert result.exit_code == 0` |
-| `tests/test_cli/test_config.py` | Test | Config model tests | Tests for DeviateConfig schema, serialization, and validation |
-| `tests/test_state/test_config.py` | Test | Config state tests | Tests for config model validation and IO cycles |
+| `tests/unit/test_cli/test_init.py` | Test | Init command tests | `class TestInitCommand:\n    def test_init_creates_dotfile_structure(self, tmp_path: Path):\n        with chdir(tmp_path):\n            result = runner.invoke(cli, ["init"])\n            assert result.exit_code == 0` |
+| `tests/unit/test_cli/test_config.py` | Test | Config model tests | Tests for DeviateConfig schema, serialization, and validation |
+| `tests/unit/test_state/test_config.py` | Test | Config state tests | Tests for config model validation and IO cycles |
 | `.opencode/skills/deviate-pr/SKILL.md` | Skill | PR skill template (agent-facing) | Skill definition for `/deviate-pr` with gh pr create workflow instructions |
 
 ## Scope Sizing

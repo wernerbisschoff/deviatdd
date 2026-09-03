@@ -14,7 +14,7 @@ issue_id: "ISS-001-002"
   - `src/deviate/cli/macro.py` (or integrated in `src/deviate/cli/__init__.py`)
   - `src/deviate/state/ledger.py` (IssueRecord model, append logic)
   - `specs/issues.jsonl`
-  - `tests/test_macro/`
+  - `tests/unit/test_macro/`
 
 ## [THE_PROBLEM_CONTRACT]
 As a feature architect, I need the CLI to orchestrate the `/explore`, `/research`, `/prd`, and `/shard` commands, managing session state transitions and appending to the global issue ledger, so that feature scoping is systematically tracked and downstream agents receive deterministic context packets.
@@ -37,12 +37,12 @@ As a feature architect, I need the CLI to orchestrate the `/explore`, `/research
 - **AC-002-MACRO-02**: Missing `specs/001-deviate-cli-python/explore.md` during `deviate prd` exits with non-zero code and outputs `EXPLORE_MISSING`.
 
 ## [MULTI_TIERED_VERIFICATION_TARGETS]
-- **Unit Tests**: `tests/test_macro/test_explore.py`, `tests/test_macro/test_prd.py`, `tests/test_macro/test_shard.py`
+- **Unit Tests**: `tests/unit/test_macro/test_explore.py`, `tests/unit/test_macro/test_prd.py`, `tests/unit/test_macro/test_shard.py`
 - **Integration Tests**: `tests/test_integration/test_macro_ledger_append.py`
 
 ## [DEMONSTRATION_PATH]
 ```bash
 # Verify macro-layer commands and ledger management
-pytest tests/test_macro/ -v
+pytest tests/unit/test_macro/ -v
 pytest tests/test_integration/test_macro_ledger_append.py -v
 ```
