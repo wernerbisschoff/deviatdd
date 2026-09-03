@@ -5,6 +5,7 @@ import subprocess
 from contextlib import chdir
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -115,9 +116,15 @@ class TestWalkthroughPre:
         contract = json.loads(result.stdout)
         assert contract["constitution_path"] == str(const.resolve())
 
+    @pytest.mark.behavioral
     def test_pre_plan_path_null_when_absent(self, tmp_git_repo: Path) -> None:
         brief, plan = _seed_issue(tmp_git_repo, with_plan=False)
         assert plan is None
+        # Committed change forces a non-empty diff so the JSON contract holds here,
+        # unlike the empty-diff SKIP tree below (AO-035-01 vs AC-PLAN-001).
+        (tmp_git_repo / "src_changed.py").write_text("x = 1\n", encoding="utf-8")
+        _git(tmp_git_repo, "add", "-A")
+        _git(tmp_git_repo, "commit", "-m", "change")
 
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["walkthrough", "pre"])
@@ -127,3 +134,13 @@ class TestWalkthroughPre:
         assert contract["issue_brief_path"] == str(brief.resolve())
         assert contract["plan_path"] is None
         assert "constitution_path" not in contract
+
+    @pytest.mark.behavioral
+    def test_pre_empty_diff_exits_with_skip(self, tmp_git_repo: Path) -> None:
+        # No commits beyond main and no seeded brief: empty diff tree (AO-035-01
+        # Error Category), distinct from the JSON plan-null tree above.
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["walkthrough", "pre"])
+
+        assert result.exit_code == 0, result.stdout
+        assert result.stdout.strip() == "SKIP: no changes since main"

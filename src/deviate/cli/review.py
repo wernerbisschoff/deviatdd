@@ -49,6 +49,18 @@ def _apply_enabled(ctx: typer.Context, apply: bool) -> bool:
     return apply or bool((ctx.obj or {}).get("apply"))
 
 
+def sort_review_comments(comments: list[dict]) -> list[dict]:
+    """Sort review comments by token, path, then line (stable)."""
+    return sorted(
+        comments,
+        key=lambda comment: (
+            comment.get("token", ""),
+            comment.get("path", ""),
+            comment.get("line", 0),
+        ),
+    )
+
+
 @review_app.command()
 def pre(
     ctx: typer.Context,
