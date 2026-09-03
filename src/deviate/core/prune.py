@@ -41,6 +41,10 @@ EXTERNAL_BOUNDARY_MOCK_RE = re.compile(
 )
 
 PATCH_PRIVATE_RE = re.compile(r"patch(?:\.object)?\([^)]*['\"]_[A-Za-z]")
+SIBLING_MOCK_RE = re.compile(
+    r"\b(?:MagicMock\b|Mock\s*\(|patch\s*\(|patch\.object|mocker\."
+    r"|monkeypatch\b|create_autospec|mock_open)"
+)
 
 PUBLIC_IO_RE = re.compile(
     r"\b(?:assert|raises|t\.Fail|t\.Errorf|t\.Fatal|t\.Fatalf|"
@@ -251,7 +255,12 @@ def discover_issue_tests(root: Path, issue_id: str, source_file: str) -> list[Te
 
 def apply_prune(root: Path, plan: PrunePlan) -> None:
     """Apply honeycomb test thinning. Never unlinks spec files or ledgers."""
-    if plan.status in {"LEDGER_REWRITE_REJECTED", "NO_ISSUE", "ONE_ISSUE_ONLY"}:
+    if plan.status in {
+        "LEDGER_REWRITE_REJECTED",
+        "NO_ISSUE",
+        "ONE_ISSUE_ONLY",
+        "FAILURE",
+    }:
         return
     _thin_tests(root, plan.test_drop)
 
@@ -278,6 +287,9 @@ def ledger_paths(root: Path) -> list[Path]:
     if issues.is_file():
         found.append(issues)
     found.extend(sorted(root.glob("specs/**/tasks.jsonl")))
+    flows = root / "specs" / "_product" / "flows.jsonl"
+    if flows.is_file():
+        found.append(flows)
     return found
 
 
@@ -356,7 +368,11 @@ def _classify_body(body: str) -> TestKind:
         return "drop"
     if PRIVATE_ATTR_RE.search(body):
         return "drop"
-    if AC_TOKEN_RE.search(body) or PUBLIC_IO_RE.search(body):
+    if AC_TOKEN_RE.search(body):
+        return "keep"
+    if SIBLING_MOCK_RE.search(body) and not is_external_boundary_mock:
+        return "drop"
+    if PUBLIC_IO_RE.search(body):
         return "keep"
     return "drop"
 
@@ -501,6 +517,8 @@ def _markers_before(lines: list[str], line_index: int) -> set[str]:
 def _thin_tests(root: Path, drop_items: list[TestItem]) -> None:
     by_path: dict[Path, list[TestItem]] = {}
     for item in drop_items:
+        if "tests" not in Path(item.path).parts:
+            continue
         by_path.setdefault(item.path, []).append(item)
     for rel, items in by_path.items():
         path = rel if rel.is_absolute() else root / rel

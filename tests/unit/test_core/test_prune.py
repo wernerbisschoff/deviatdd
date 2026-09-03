@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from deviate.core.prune import (
     apply_prune,
     build_prune_plan,
@@ -244,3 +246,150 @@ def test_parse_other_language_tests_go_and_js(tmp_path: Path) -> None:
     assert by_name.get("TestBehavioral_ISS_099") == "keep"
     assert by_name.get("TestSpyInternal") == "drop"
     assert len(js_items) >= 1
+
+
+@pytest.mark.behavioral
+def test_classify_marks_keep_drop_ac_plan_001() -> None:
+    """AC-PLAN-001: spy/impl marks drop; behavioral/ac marks keep; keep-wins."""
+    assert classify_test("test_neutral", {"behavioral"}) == "keep"
+    assert classify_test("test_neutral", {"ac"}) == "keep"
+    assert classify_test("test_neutral", {"spy"}) == "drop"
+    assert classify_test("test_neutral", {"impl"}) == "drop"
+    assert classify_test("test_spy_probe", {"behavioral", "spy"}) == "keep"
+    assert classify_test("test_impl_helper", {"ac", "impl"}) == "keep"
+
+
+@pytest.mark.behavioral
+def test_classify_unknown_mark_falls_through_ac_plan_002() -> None:
+    """AC-PLAN-002: unknown marks never auto-keep; body heuristics decide."""
+    public = "def test_foo():\n    assert public_api(1) == 2\n"
+    bare = "def test_foo():\n    pass\n"
+    assert classify_test("test_foo", {"slow"}, body=public) == "keep"
+    assert classify_test("test_foo", {"slow"}, body=bare) == "drop"
+    assert classify_test("test_foo", {"slow"}, body="") == "drop"
+
+
+@pytest.mark.behavioral
+def test_classify_sibling_mocks_drop_ac_plan_002() -> None:
+    """AC-PLAN-002: untagged sibling mocks drop even with a public assert."""
+    magic = (
+        "def test_foo():\n"
+        "    helper = MagicMock()\n"
+        "    result = helper(1)\n"
+        "    assert result == 2\n"
+    )
+    assert classify_test("test_foo", body=magic) == "drop"
+    sibling_patch = (
+        "def test_foo():\n"
+        '    with patch("sibling.helper") as mocked:\n'
+        "        mocked.return_value = 1\n"
+        "        assert mocked(1) == 1\n"
+    )
+    assert classify_test("test_foo", body=sibling_patch) == "drop"
+
+
+@pytest.mark.behavioral
+def test_classify_empty_and_bare_bodies_drop_ac_plan_002() -> None:
+    """AC-PLAN-002: empty or bare bodies never auto-keep."""
+    assert classify_test("test_foo", body="") == "drop"
+    assert classify_test("test_foo", body="   \n") == "drop"
+    assert classify_test("test_foo", body="def test_foo():\n    x = 1\n") == "drop"
+
+
+@pytest.mark.behavioral
+def test_in_flight_thin_never_unlinks_spec_files(tmp_path: Path) -> None:
+    """AC-PLAN-003: empty-file unlink applies only to test files; specs stay."""
+    from deviate.core.prune import TestItem, _thin_tests
+
+    issue_dir = _seed_completed_issue(tmp_path)
+    ledger = tmp_path / "specs" / "issues.jsonl"
+    ledger.write_text(
+        ledger.read_text(encoding="utf-8").replace('"COMPLETED"', '"SPECIFIED"'),
+        encoding="utf-8",
+    )
+    plan = build_prune_plan(tmp_path, "ISS-ADH-099")
+    assert plan.status == "IN_FLIGHT"
+    assert plan.spec_deletes == []
+    assert plan.test_drop and plan.test_keep
+    spec_rel = (issue_dir / "plan.md").relative_to(tmp_path)
+    _thin_tests(
+        tmp_path,
+        [TestItem(path=spec_rel, name="test_phantom", kind="drop", source="x")],
+    )
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
+
+
+@pytest.mark.behavioral
+def test_ledger_paths_returns_only_existing_ledgers_including_flows(
+    tmp_path: Path,
+) -> None:
+    """AC-PLAN-006: ledger_paths lists existing flows ledger; missing one stays absent."""
+    from deviate.core.prune import ledger_paths
+
+    _seed_completed_issue(tmp_path)
+    flows = tmp_path / "specs" / "_product" / "flows.jsonl"
+    assert flows not in ledger_paths(tmp_path)
+    flows.parent.mkdir(parents=True)
+    flows.write_text('{"flow":"f1"}\n', encoding="utf-8")
+    found = ledger_paths(tmp_path)
+    assert flows in found
+    assert tmp_path / "specs" / "issues.jsonl" in found
+    assert any(p.name == "tasks.jsonl" for p in found)
+
+
+@pytest.mark.behavioral
+def test_ledger_snapshot_flows_byte_identical_after_apply(tmp_path: Path) -> None:
+    """AC-PLAN-004/006: apply keeps issues/tasks/flows bytes identical; missing flows uncreated."""
+    issue_dir = _seed_completed_issue(tmp_path)
+    flows = tmp_path / "specs" / "_product" / "flows.jsonl"
+    flows.parent.mkdir(parents=True)
+    flows.write_text('{"flow":"f1"}\n', encoding="utf-8")
+    before = snapshot_ledgers(tmp_path)
+    assert str(flows) in before
+    plan = build_prune_plan(tmp_path, "ISS-ADH-099")
+    apply_prune(tmp_path, plan)
+    assert snapshot_ledgers(tmp_path) == before
+    assert (issue_dir / "plan.md").is_file()
+    assert (issue_dir / "tasks.md").is_file()
+
+
+@pytest.mark.behavioral
+def test_ledger_rewrite_mixed_case_rejected_with_zero_writes(tmp_path: Path) -> None:
+    """AC-PLAN-005: mixed-case compact/squash/rewrite intent stops prune with zero writes."""
+    issue_dir = _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    keep = tmp_path / "tests" / "test_099_keep.py"
+    keep_before = keep.read_bytes()
+    for intent in ("CoMpAcT the ledger", "SQUASH audit trail", "ReWrItE flows.jsonl"):
+        plan = build_prune_plan(tmp_path, "ISS-ADH-099", intent=intent)
+        assert plan.status == "LEDGER_REWRITE_REJECTED"
+        apply_prune(tmp_path, plan)
+    assert keep.read_bytes() == keep_before
+    assert (issue_dir / "plan.md").is_file()
+    assert snapshot_ledgers(tmp_path) == before
+
+
+@pytest.mark.behavioral
+def test_ledger_failure_plan_applies_zero_writes(tmp_path: Path) -> None:
+    """AC-PLAN-005: FAILURE contract applies zero writes even with drops listed."""
+    from deviate.core.prune import PrunePlan, TestItem
+
+    issue_dir = _seed_completed_issue(tmp_path)
+    before = snapshot_ledgers(tmp_path)
+    keep = tmp_path / "tests" / "test_099_keep.py"
+    keep_before = keep.read_bytes()
+    plan = PrunePlan(status="FAILURE", issue_id="ISS-ADH-099", reason="ISSUE_NOT_FOUND")
+    plan.test_drop.append(
+        TestItem(
+            path=keep.relative_to(tmp_path),
+            name="test_public_ac_adhoc_099_01",
+            kind="drop",
+            source="x",
+        )
+    )
+    apply_prune(tmp_path, plan)
+    assert keep.is_file()
+    assert keep.read_bytes() == keep_before
+    assert snapshot_ledgers(tmp_path) == before
+    assert (issue_dir / "plan.md").is_file()

@@ -56,7 +56,12 @@ def post(
     root = Path.cwd()
     plan = build_prune_plan(root, issue, intent=_intent_text(intent))
     print(dumps_contract(plan_to_contract(root, plan)))
-    if plan.status in {"LEDGER_REWRITE_REJECTED", "NO_ISSUE", "ONE_ISSUE_ONLY"}:
+    if plan.status in {
+        "LEDGER_REWRITE_REJECTED",
+        "NO_ISSUE",
+        "ONE_ISSUE_ONLY",
+        "FAILURE",
+    }:
         if plan.reason:
             typer.echo(plan.reason, err=True)
         raise typer.Exit(code=1)
