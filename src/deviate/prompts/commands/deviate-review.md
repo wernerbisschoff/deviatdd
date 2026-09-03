@@ -79,7 +79,7 @@ Stable sort: **token**, then **path**, then **line**. No style nits. No "conside
 
 When a comment is a security finding, cite an OWASP `A#` / `LLM##` category or a NIST SSDF practice on the `detail` line.
 
-Cross-task over-engineering on this issue is in-scope as drift (comment only). Prune excess via the pre-write ladder: YAGNI, stdlib, platform feature, already-installed dep, one line, minimum that works. Do not extract helpers. Do not apply unless `--apply` and the finding is CRITICAL with a concrete FIX.
+Cross-task over-engineering on this issue is in-scope as drift (comment only). Prune excess via the pre-write ladder: YAGNI, stdlib, platform feature, already-installed dependency, one line, minimum that works. Do not extract helpers. Do not apply unless `--apply` and the finding is CRITICAL with a concrete FIX.
 
 ## Execution Sequence
 
