@@ -968,33 +968,165 @@ class TestSessionResume:
             )
 
     @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._run_pytest")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_task_already_done_triggers_for_judge_latest(
-        self, mock_agent, mock_verify, tmp_git_repo: Path, approve_gate2
+    def test_idle_session_ledger_judge_resumes_judge(
+        self, mock_agent, mock_pytest, mock_verify, tmp_git_repo: Path, approve_gate2
     ):
-        mock_agent.return_value = (self._RESUME_MANIFEST, "")
+        """GH-193: IDLE + ledger JUDGE (no COMPLETED) is mid-flight, not done.
+
+        After COMPLETED_EVIDENCE_MISSING or a mid-JUDGE interrupt, session.json
+        resets to IDLE while tasks.jsonl stays at JUDGE. ``TASK_ALREADY_DONE``
+        is only for COMPLETED — re-enter JUDGE instead of exiting 0.
+        """
+        recorded_phases: list[str] = []
+
+        def _recording_agent(*args, **kwargs):
+            phase = kwargs.get("phase", "RED")
+            recorded_phases.append(phase)
+            return HandoverManifest(
+                phase=phase,
+                status="SUCCESS",
+                task_id=kwargs.get("task_id", "TSK-005-07"),
+            ), ""
+
+        mock_agent.side_effect = _recording_agent
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
         with chdir(tmp_git_repo):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
             session = SessionState(current_phase="IDLE")
             session.save(dot_dir / "session.json")
 
-            task = _make_task_record(
+            pending = _make_task_record(
                 task_id="TSK-005-07",
                 issue_id="ISS-002-005",
-                description="Already done with JUDGE",
+                description="Interrupted at JUDGE",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            red = _make_task_record(
+                task_id="TSK-005-07",
+                issue_id="ISS-002-005",
+                description="Interrupted at JUDGE",
+                status="RED",
+                execution_mode="TDD",
+            )
+            green = _make_task_record(
+                task_id="TSK-005-07",
+                issue_id="ISS-002-005",
+                description="Interrupted at JUDGE",
+                status="GREEN",
+                execution_mode="TDD",
+            )
+            judge = _make_task_record(
+                task_id="TSK-005-07",
+                issue_id="ISS-002-005",
+                description="Interrupted at JUDGE",
                 status="JUDGE",
                 execution_mode="TDD",
             )
             ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
-            _write_ledger(ledger_path, task)
-            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+            _write_ledger(ledger_path, pending, red, green, judge)
+            approve_gate2(tmp_git_repo, issue_id=judge.issue_id)
 
             result = runner.invoke(cli, ["micro", "run", "TSK-005-07"])
-            assert result.exit_code == 0, result.output
-            assert "TASK_ALREADY_DONE" in result.output, (
-                f"Expected TASK_ALREADY_DONE for JUDGE-latest task: {result.output}"
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
             )
+            assert "TASK_ALREADY_DONE" not in result.output, (
+                "IDLE + ledger JUDGE without COMPLETED must not claim "
+                f"already completed: {result.output}"
+            )
+            assert "JUDGE" in recorded_phases, (
+                "IDLE + ledger JUDGE must resume JUDGE; "
+                f"got agent phases: {recorded_phases}"
+            )
+            assert recorded_phases[0] == "JUDGE", (
+                f"must re-enter at JUDGE, not restart RED: {recorded_phases}"
+            )
+            assert "RED" not in recorded_phases, (
+                f"JUDGE resume must skip RED: {recorded_phases}"
+            )
+
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._run_pytest")
+    @patch("deviate.cli.micro._invoke_agent")
+    @patch("deviate.cli.micro._dispatch_task")
+    def test_idle_session_ledger_refactor_and_yellow_resume(
+        self,
+        mock_dispatch,
+        mock_agent,
+        mock_pytest,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
+        """IDLE + REFACTOR / YELLOW is mid-flight: resume, do not already-done."""
+        mock_pytest.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        mock_agent.return_value = (self._RESUME_MANIFEST, "")
+
+        def _invoke_idle(status: str, task_id: str) -> object:
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True, exist_ok=True)
+            SessionState(current_phase="IDLE").save(dot_dir / "session.json")
+            if status == "YELLOW":
+                ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
+                ledger_path.parent.mkdir(parents=True, exist_ok=True)
+                ledger_path.write_text(
+                    json.dumps(
+                        {
+                            "id": task_id,
+                            "issue_id": "ISS-002-005",
+                            "description": f"Interrupted at {status}",
+                            "status": status,
+                            "execution_mode": "TDD",
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                approve_gate2(tmp_git_repo, issue_id="ISS-002-005")
+            else:
+                task = _make_task_record(
+                    task_id=task_id,
+                    issue_id="ISS-002-005",
+                    description=f"Interrupted at {status}",
+                    status=status,
+                    execution_mode="TDD",
+                )
+                ledger_path = Path("specs") / "005-micro-layer" / "tasks.jsonl"
+                _write_ledger(ledger_path, task)
+                approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+            return runner.invoke(cli, ["micro", "run", task_id])
+
+        with chdir(tmp_git_repo):
+            refactor = _invoke_idle("REFACTOR", "TSK-005-07")
+            yellow = _invoke_idle("YELLOW", "TSK-005-08")
+
+        assert "TASK_ALREADY_DONE" not in refactor.output, (
+            f"IDLE + ledger REFACTOR must resume: {refactor.output}"
+        )
+        assert "TASK_ALREADY_DONE" not in yellow.output, (
+            f"IDLE + ledger YELLOW must resume: {yellow.output}"
+        )
+        assert mock_dispatch.call_count == 2, (
+            f"expected REFACTOR and YELLOW to dispatch, got {mock_dispatch.call_count}"
+        )
+        start_phases = [
+            call.kwargs.get("start_phase") for call in mock_dispatch.call_args_list
+        ]
+        assert start_phases[0] == "REFACTOR", (
+            f"REFACTOR ledger must resume REFACTOR, got {start_phases[0]!r}"
+        )
+        assert start_phases[1] == "YELLOW", (
+            f"YELLOW ledger must resume YELLOW, got {start_phases[1]!r}"
+        )
 
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
     @patch("deviate.cli.micro._run_test_cmd")
