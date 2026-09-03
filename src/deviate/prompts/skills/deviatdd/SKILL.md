@@ -52,8 +52,9 @@ This skill drives the micro runner; it does **not** own code changes in the proj
 
 - Fixes to the deviatdd harness itself (`src/deviate/**`) when a reproducible harness bug is blocking a task.
 - Skill / prompt template edits under `src/deviate/prompts/**` when the prompt misroutes a task.
+- Small unblocking fixes in the active worktree when the task log shows the runner cannot proceed without them (lint/format, missing import, typo, hook-blocked commit). Keep the fix to the minimum that unblocks the retry, never implement the task itself, and report the edit before re-invoking `deviate micro run`.
 
-Do NOT edit the project's `src/`, `tests/`, `specs/`, or any other code the active issue is touching. If a task needs a code change, the runner's RED/GREEN/JUDGE loop produces it — the skill does not pre-empt that loop. If the loop is broken, the failure is a harness bug and the **Filing deviatdd issues** path applies.
+By default do not edit the project's `src/`, `tests/`, `specs/`, or any other code the active issue is touching. If a task needs a code change, the runner's RED/GREEN/JUDGE loop produces it — the skill does not pre-empt that loop. If the loop is broken, the failure is a harness bug and the **Filing deviatdd issues** path applies.
 
 ## Per-task stepping loop
 
