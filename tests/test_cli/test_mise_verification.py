@@ -1028,7 +1028,7 @@ class TestMiseCommandsAreAllowlisted:
             "mise integration",
             "mise e2e",
             "mise doctor",
-            "mise reset",
+            "mise run reset",
             "mise exec -- pytest tests/foo.py",
             "mise exec -- pytest tests/foo.py -k crypto_withdrawal",
         ],
@@ -1040,7 +1040,14 @@ class TestMiseCommandsAreAllowlisted:
 
     @pytest.mark.parametrize(
         "command",
-        ["mise setup", "mise seed", "mise watch", "mise fmt", "mise run setup"],
+        [
+            "mise setup",
+            "mise seed",
+            "mise watch",
+            "mise fmt",
+            "mise run setup",
+            "mise reset",
+        ],
     )
     def test_unknown_mise_tasks_rejected(self, command: str) -> None:
         parsed = parse_safe_command(command)

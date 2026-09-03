@@ -2571,32 +2571,36 @@ def _execute_rollback(
     )
 
 
+_MISE_RUN_RESET = "mise run reset"
+
+
 def _maybe_reset_isolated_env(root: Path, task: dict | None) -> None:
     """Recreate isolated env after a successful git rollback (GH-198).
 
     Integration/e2e RED/GREEN may have applied project-owned catalog
     mutations. Git reset removes the revision file but not the external
-    catalog. Recovery is a project hook: ``mise reset``. Unit and
-    unstamped tasks skip it. Missing or failing reset is
-    ``ENV_NOT_READY`` — do not enter the next RED/GREEN. Do not run
-    ``mise setup``. Do not infer Alembic / Postgres inside the runner.
+    catalog. Recovery is a project hook: ``mise run reset`` against the
+    init-scaffolded ``[tasks.reset]`` entry. Unit and unstamped tasks
+    skip it. Missing or failing reset is ``ENV_NOT_READY`` — do not
+    enter the next RED/GREEN. Do not run ``mise setup`` or bare
+    ``mise reset``. Do not infer Alembic / Postgres inside the runner.
     """
     strategy = _extract_test_strategy(root, task)
     if strategy not in {"integration", "e2e"}:
         return
     if "reset" not in _mise_defined_tasks(root):
         raise EnvNotReadyError(
-            "ENV_NOT_READY: mise reset is not defined. Add a `reset` mise "
-            "task that recreates the isolated environment (database / "
-            "equivalent) so the next RED/GREEN does not loop on a discarded "
-            "catalog revision. `deviate init pre` inserts a language-aware "
-            "stub (merge-if-missing)."
+            "ENV_NOT_READY: mise run reset is not defined. Add a `reset` "
+            "mise task that recreates the isolated environment "
+            "(database / equivalent) so the next RED/GREEN does not "
+            "loop on a discarded catalog revision. `deviate init pre` "
+            "inserts a language-aware stub (merge-if-missing)."
         )
-    console.print("  [cyan]ENV_RESET[/] mise reset")
-    proc = _execute_test_command("mise reset", root)
+    console.print(f"  [cyan]ENV_RESET[/] {_MISE_RUN_RESET}")
+    proc = _execute_test_command(_MISE_RUN_RESET, root)
     _log_run(
         "ENV_RESET",
-        command="mise reset",
+        command=_MISE_RUN_RESET,
         ok=proc.returncode == 0,
         returncode=proc.returncode,
         stderr=(proc.stderr or "")[:2000],
@@ -2604,7 +2608,7 @@ def _maybe_reset_isolated_env(root: Path, task: dict | None) -> None:
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
         detail = f": {stderr}" if stderr else ""
-        raise EnvNotReadyError(f"ENV_NOT_READY: mise reset failed{detail}")
+        raise EnvNotReadyError(f"ENV_NOT_READY: mise run reset failed{detail}")
 
 
 def _preserve_agent_work(
@@ -5369,25 +5373,29 @@ def _rollback_pre_red_if_resolvable(
     attempt: int,
     reason: str,
     task: dict | None = None,
-) -> None:
+) -> _RollbackTrace | None:
     """Reset to the pre-RED SHA when git can resolve a full 40-char SHA.
 
     Skip when ``_apply_judge_verdict`` already reset and HEAD is the
     post-``revert_red`` feedback commit — a second reset to that
-    commit's parent would drop the persist (GH-170). After a successful
-    git reset, integration/e2e tasks run ``mise reset`` (GH-198).
+    commit's parent would drop the persist (GH-170). ``revert_green``
+    does not skip: escalate must still discard RED, then the caller
+    re-commits JUDGE feedback on the new HEAD. Env recovery
+    (``mise run reset``) is the caller's job after that re-persist.
+
+    Returns the rollback trace when a reset ran, else ``None``.
     """
     if session.pending_judge_action == "revert_red":
         head_subject = _git_commit_subject(root, "HEAD")
         if head_subject and _JUDGE_FEEDBACK_SUBJECT_RE.match(head_subject):
-            return
+            return None
     red_sha = session.red_commit_sha
     if not red_sha or not re.fullmatch(r"[a-f0-9]{40}", red_sha):
-        return
+        return None
     pre_red = _resolve_pre_red_sha(root, red_sha)
     if not pre_red or not re.fullmatch(r"[a-f0-9]{40}", pre_red):
-        return
-    _execute_rollback(
+        return None
+    return _execute_rollback(
         root,
         boundary_sha=pre_red,
         reason=reason,
@@ -5395,7 +5403,6 @@ def _rollback_pre_red_if_resolvable(
         task_id=task_id,
         attempt=attempt,
     )
-    _maybe_reset_isolated_env(root, task)
 
 
 def _short_escalate_note(*, reason: str, failure_kind: str = "") -> str:
@@ -5452,13 +5459,18 @@ def _escalate_to_new_red(
     replaced with a short note so retry RED does not ingest it. A JUDGE
     payload already on the session (normalized ``violations`` /
     ``train_feedback``) is kept. When HEAD is already the post-reset
-    ``revert_red`` feedback commit, escalate does not reset again.
+    ``revert_red`` feedback commit, escalate does not reset again
+    (GH-170). After ``revert_green`` exhausts GREEN trains, escalate
+    still resets to pre-RED (discards GREEN and the failed RED), then
+    re-persists the same JUDGE payload on the new HEAD so retry RED
+    sees ``<persisted_judge_feedback>``. Then ``mise run reset`` for
+    integration/e2e.
     """
     tid = task.get("id", "?")
     task_desc = task.get("description", "")
     _account_red_escalate(session, session_path, c, task_id=tid)
     _inject_escalate_note(session, session_path, reason=reason)
-    _rollback_pre_red_if_resolvable(
+    rollback = _rollback_pre_red_if_resolvable(
         root,
         session,
         task_id=tid,
@@ -5466,6 +5478,27 @@ def _escalate_to_new_red(
         reason=reason,
         task=task,
     )
+    if rollback is not None:
+        feedback = session.train_feedback.strip()
+        if feedback:
+            session.red_commit_sha = ""
+            session.save(session_path)
+            session = _commit_judge_feedback_and_advance(
+                root,
+                task,
+                feedback,
+                "train_feedback",
+                c,
+                session,
+                session_path,
+                ledger_path=ledger_path,
+                judge_action="revert_red",
+                rollback=rollback,
+            )
+            session.pending_judge_action = "revert_red"
+            session.train_feedback = feedback
+            session.save(session_path)
+        _maybe_reset_isolated_env(root, task)
     _maybe_push_event(
         monitor,
         "phase_change",
@@ -6132,9 +6165,9 @@ class JudgeRevertDeclinedError(Exception):
 class EnvNotReadyError(PhaseFailedError):
     """Isolated environment is not ready — doctor or post-rollback reset.
 
-    ``mise doctor`` failed (deps, ports, or DB not ready), or ``mise
-    reset`` is missing / failed after a JUDGE git rollback. This is an
-    environment outage, not a RED/GREEN test outcome and not
+    ``mise doctor`` failed (deps, ports, or DB not ready), or
+    ``mise run reset`` is missing / failed after a JUDGE git rollback.
+    This is an environment outage, not a RED/GREEN test outcome and not
     ``failure_kind: mechanical``. No phase ledger row is written. Do
     not proceed into the next RED/GREEN against a dirty catalog.
     """

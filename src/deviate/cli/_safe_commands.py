@@ -73,9 +73,7 @@ _TIMEOUT_GRACE_SECONDS: float = 5.0
 #: list is rejected before subprocess.run is called.
 #: Allowlisted ``mise <task>`` names that may run as verification or preflight.
 #: Unknown mise tasks (setup, seed, watch, fmt, …) are never auto-run.
-_MISE_NAMED_TASKS = frozenset(
-    {"test", "unit", "integ", "integration", "e2e", "doctor", "reset"}
-)
+_MISE_NAMED_TASKS = frozenset({"test", "unit", "integ", "integration", "e2e", "doctor"})
 
 SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     ("mise", "run", "test"): "mise run test",
@@ -85,7 +83,7 @@ SAFE_EXECUTABLES: dict[tuple[str, ...], str] = {
     ("mise", "integration"): "mise integration",
     ("mise", "e2e"): "mise e2e",
     ("mise", "doctor"): "mise doctor",
-    ("mise", "reset"): "mise reset",
+    ("mise", "run", "reset"): "mise run reset",
     ("mise", "exec"): "mise exec",
     ("pytest",): "pytest",
     ("python", "-m", "pytest"): "python -m pytest",
@@ -169,6 +167,8 @@ def _match_mise_executable(argv: tuple[str, ...]) -> tuple[tuple[str, ...], str]
         return (("mise", argv[1]), f"mise {argv[1]}")
     if argv[:3] == ("mise", "run", "test"):
         return (("mise", "run", "test"), "mise run test")
+    if argv[:3] == ("mise", "run", "reset"):
+        return (("mise", "run", "reset"), "mise run reset")
     if len(argv) >= 4 and argv[1] == "exec" and argv[2] == "--":
         inner = _match_executable(argv[3:])
         if inner is not None:

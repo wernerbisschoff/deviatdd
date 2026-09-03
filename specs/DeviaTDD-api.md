@@ -785,9 +785,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
   `failure_kind: mechanical`. Absence of doctor skips preflight. After a
   successful TDD JUDGE `revert_green` / `revert_red` git rollback (and the
-  RED-escalate pre-RED reset), an `integration` or `e2e` stamp runs
-  `mise reset`; missing or failing reset is the same `ENV_NOT_READY`.
-  Unit tasks skip reset. The runner never auto-runs `mise setup`. The exact command string is
+  RED-escalate persist-then-reset path), an `integration` or `e2e` stamp runs
+  `mise run reset`; missing or failing reset is the same `ENV_NOT_READY`.
+  Unit tasks skip reset. The runner never auto-runs `mise setup` or bare
+  `mise reset`. The exact command string is
   logged (`TEST_COMMAND`) and injected into the phase prompt; agents must not invent a bare
   `pytest` / `mix test` when mise was resolved. Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
   SYNTAX_ERROR), runs the test command, and reports whether the test failed as expected.
@@ -1027,16 +1028,22 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     prior `revert_red` — do not raise `ROLLBACK_STALE_RED_SHA`), and
     EXECUTE JUDGE passes the pre-EXECUTE `pre_execute_sha`.
     After a successful TDD `revert_green` / `revert_red` git rollback
-    (and the RED-escalate `_rollback_pre_red_if_resolvable` reset), if
-    this task's `test_strategy` is `integration` or `e2e`, the runner
-    runs `mise reset` (same named-task style as `mise unit` /
-    `mise integration`). Unit and unstamped tasks skip it. The runner
-    does not hardcode Alembic, `stamp`, or Postgres and does not parse
-    whether the diff contained `alembic/versions/`. Missing `mise reset`
-    or a non-zero exit is `ENV_NOT_READY` (include stderr on failure) —
-    do not proceed into the next RED/GREEN against a dirty catalog.
-    `deviate init pre` inserts a language-aware `reset` stub
-    (merge-if-missing). Do not run `mise setup`.
+    (and the RED-escalate path after JUDGE feedback is re-persisted on
+    the new HEAD), if this task's `test_strategy` is `integration` or
+    `e2e`, the runner runs `mise run reset` (the init-scaffolded
+    `[tasks.reset]` entry — not bare `mise reset`). Unit and unstamped
+    tasks skip it. The runner does not hardcode Alembic, `stamp`, or
+    Postgres and does not parse whether the diff contained
+    `alembic/versions/`. Missing `[tasks.reset]` or a non-zero exit is
+    `ENV_NOT_READY` (include stderr on failure) — do not proceed into
+    the next RED/GREEN against a dirty catalog. `deviate init pre`
+    inserts a language-aware `reset` stub (merge-if-missing). Do not
+    run `mise setup`. After `revert_green` exhausts GREEN trains,
+    `_escalate_to_new_red` still resets to pre-RED, then re-commits the
+    same JUDGE payload via `_commit_judge_feedback_and_advance` so
+    retry RED sees the original rationale. GH-170 still skips a second
+    reset when `pending_judge_action == revert_red` and HEAD is already
+    the feedback commit.
     `_execute_rollback` requires the boundary explicitly — it no longer
     falls back to `session.red_commit_sha` or `HEAD~1`, and raises
     `PhaseFailedError("ROLLBACK_BOUNDARY_MISSING ...")` BEFORE any
