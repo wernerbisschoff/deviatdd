@@ -223,55 +223,49 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    drift between the inline copy and the hook file would surface as a
    mysterious second failure — keep them identical.)
 
-   ```bash
-   # Pre-push: lint + format-check + selective pytest on the Python files
-   # changed since the upstream branch (or HEAD~1 if no upstream yet).
-   # `mise run test` stays the canonical full-suite command for CI / pre-release.
-   #
-   # Portable to bash 3.2 (macOS /bin/bash): no `mapfile`, no `declare -A`, etc.
-   set -e
-   set -o pipefail
+  ```bash
+  # Pre-push: run repo mise checks on every non-empty push.
+  # `mise run test` stays the canonical full-suite command for CI / pre-release.
+  #
+  # Portable to bash 3.2 (macOS /bin/bash): no `mapfile`, no `declare -A`, etc.
+  set -e
+  set -o pipefail
 
-   # Unset git env inherited from the hook context. Tests in this repo invoke
-   # git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
-   GIT_DIR_SAVED="${GIT_DIR-}"
-   unset GIT_DIR
+  # Unset git env inherited from the hook context. Tests in this repo invoke
+  # git subprocesses with cwd for isolation; GIT_DIR overrides cwd.
+  GIT_DIR_SAVED="${GIT_DIR-}"
+  unset GIT_DIR
 
-   trap '[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED" || unset GIT_DIR' EXIT
+  trap '[ -n "$GIT_DIR_SAVED" ] && export GIT_DIR="$GIT_DIR_SAVED" || unset GIT_DIR' EXIT
 
-   # Pick a base: upstream if we have one, else the previous commit.
-   if upstream=$(git rev-parse --verify --quiet '@{u}' 2>/dev/null); then
-     base=$(git merge-base "$upstream" HEAD)
-   elif base=$(git rev-parse --verify --quiet 'HEAD~1' 2>/dev/null); then
-     :
-   else
-     # No upstream, no parent — nothing to compare against.
-     exit 0
-   fi
+  # Pick a base: upstream if we have one, else the previous commit.
+  if upstream=$(git rev-parse --verify --quiet '@{u}' 2>/dev/null); then
+    base=$(git merge-base "$upstream" HEAD)
+  elif base=$(git rev-parse --verify --quiet 'HEAD~1' 2>/dev/null); then
+    :
+  else
+    # No upstream, no parent — nothing to compare against.
+    exit 0
+  fi
 
-   changed=()
-   while IFS= read -r f; do
-     [ -n "$f" ] && changed+=("$f")
-   done < <(git diff --name-only --diff-filter=ACMR "$base...HEAD" -- '*.py' | sort -u)
+  if [ -z "$(git diff --name-only --diff-filter=ACMR "$base...HEAD")" ]; then
+    exit 0
+  fi
 
-   if [ "${#changed[@]}" -eq 0 ]; then
-     exit 0
-   fi
+  mise run format-check
+  mise run lint
 
-   uv run ruff check "${changed[@]}"
-   uv run ruff format --check "${changed[@]}"
-
-   # testmon forceselect requires a warm .testmondata from a prior full-suite
-   # run. Without it, testmon selects zero tests and passes silently — defeating
-   # the purpose of the pre-push gate. Fall back to the full suite when the
-   # data file is missing or empty.
-   if [ -s .testmondata ]; then
-     mise run test-affected
-   else
-     echo "pre-push: .testmondata missing or empty — running full suite"
-     mise run test
-   fi
-   ```
+  # testmon forceselect requires a warm .testmondata from a prior full-suite
+  # run. Without it, testmon selects zero tests and passes silently — defeating
+  # the purpose of the pre-push gate. Fall back to the full suite when the
+  # data file is missing or empty.
+  if [ -s .testmondata ]; then
+    mise run test-affected
+  else
+    echo "pre-push: .testmondata missing or empty — running full suite"
+    mise run test
+  fi
+  ```
 
    Notes specific to running this body **outside** the hook context:
 
@@ -286,8 +280,8 @@ If the user chooses **Edit commit message**, collect the revised message and re-
      merge-base view. Both copies answer the same question under that
      condition.
 
-   On non-zero exit from any of the three commands (`ruff check`,
-   `ruff format --check`, `mise run test[-affected]`) halt with
+  On non-zero exit from any of the three commands (`mise run format-check`,
+  `mise run lint`, `mise run test[-affected]`) halt with
    `Failure_State: Push_Gate_Failed` and the tool's stderr verbatim — the
    squash-merge commit has already landed on `{base_branch}`, so the user will need to
    either fix the gate failure (`git reset --soft HEAD~1` to recover the

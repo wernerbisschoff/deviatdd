@@ -1,1 +1,2 @@
 {"id":"TSK-039-01","issue_id":"ISS-ADH-039","description":"Rewrite pre-push hook to run mise checks on every non-empty push","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-03T16:31:50.471993Z","security_profile":null,"acceptance_criteria":null}
+{"id":"TSK-039-01","issue_id":"ISS-ADH-039","description":"Rewrite pre-push hook to run mise checks on every non-empty push","status":"GREEN","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-03T16:38:21.860471Z","security_profile":null,"acceptance_criteria":null}
