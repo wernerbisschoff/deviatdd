@@ -646,6 +646,9 @@ Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain
   `-o merge_request.create` push options). `--merge` / `--auto-merge` apply to GitHub only.
   `--no-pr` marks COMPLETED and pushes without opening a PR/MR.
   `--platform` forces `github` or `gitlab`.
+  Titles use the `_pr_title` conventional form `<type>(<scope>): <desc>` with compound
+  bracket-prefix stripping, and the body (`{SUMMARY}` / `{CHANGES}` / `{CLOSES}`) doubles as
+  the squash-merge commit body on both platform paths.
   No Graphite path exists.
 ---
 
@@ -1504,7 +1507,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   no agent call. The `uncovered` list is **comment input**, not an apply gate
   and not a merge gate: `coverage_complete` may be false while `status` stays
   `READY`. PENDING, FAILED, and sibling-issue rows do not claim tokens. Missing
-  `plan.md` or missing plan tokens are vacuously complete. The skill comments
+  `plan.md` or missing plan tokens are vacuously complete. Folded ponytail pruning applies
+  inside the Pragmatism domain: the scan prunes excess via the pre-write ladder (YAGNI,
+  stdlib, platform feature, already-installed dependency, one line, minimum that works)
+  with no separate command or heading. The skill comments
   (stdout and/or GitHub PR review event `COMMENT` if a PR exists). It must not
   emit `REQUEST_CHANGES` or merge. It must not assume JUDGE already ran.
   `--apply` is **opt-in**: the contract then sets `apply: true` and
