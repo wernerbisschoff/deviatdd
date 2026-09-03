@@ -255,7 +255,12 @@ def discover_issue_tests(root: Path, issue_id: str, source_file: str) -> list[Te
 
 def apply_prune(root: Path, plan: PrunePlan) -> None:
     """Apply honeycomb test thinning. Never unlinks spec files or ledgers."""
-    if plan.status in {"LEDGER_REWRITE_REJECTED", "NO_ISSUE", "ONE_ISSUE_ONLY"}:
+    if plan.status in {
+        "LEDGER_REWRITE_REJECTED",
+        "NO_ISSUE",
+        "ONE_ISSUE_ONLY",
+        "FAILURE",
+    }:
         return
     _thin_tests(root, plan.test_drop)
 
@@ -282,6 +287,9 @@ def ledger_paths(root: Path) -> list[Path]:
     if issues.is_file():
         found.append(issues)
     found.extend(sorted(root.glob("specs/**/tasks.jsonl")))
+    flows = root / "specs" / "_product" / "flows.jsonl"
+    if flows.is_file():
+        found.append(flows)
     return found
 
 
