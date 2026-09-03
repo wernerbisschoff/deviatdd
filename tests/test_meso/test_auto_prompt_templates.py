@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import re
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -863,3 +865,56 @@ class TestRedTransportAndIdentityPrompts:
             assert "postgres" not in condition.lower(), (
                 "Unavailable PostgreSQL must not be mapped as mechanical"
             )
+
+
+class TestPonytailLadderFoldedIntoReview:
+    """AC-PLAN-001/002: ponytail pre-write ladder lives on the drift line."""
+
+    @staticmethod
+    def _read_review() -> str:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-review.md"
+        ).read_text(encoding="utf-8")
+
+    @staticmethod
+    def _drift_line(text: str) -> str:
+        for line in text.splitlines():
+            if "Cross-task over-engineering" in line:
+                return line
+        raise AssertionError("drift line missing: Cross-task over-engineering")
+
+    @pytest.mark.behavioral
+    def test_ponytail_ladder_present_on_drift_line(self) -> None:
+        drift = self._drift_line(self._read_review()).lower()
+        for rung in (
+            "yagni",
+            "stdlib",
+            "platform feature",
+            "already-installed",
+            "one line",
+            "minimum that works",
+        ):
+            assert rung in drift, f"drift line missing ladder rung {rung!r}"
+
+    @pytest.mark.behavioral
+    def test_ponytail_fold_adds_no_heading_or_command(self) -> None:
+        text = self._read_review()
+        assert "deviate-ponytail" not in text
+        assert "## Minimality" not in text
+        assert "## Constraints" not in text
+
+    @pytest.mark.behavioral
+    def test_ponytail_fold_keeps_tests_green_no_helper_disposition(self) -> None:
+        text = self._read_review()
+        drift = self._drift_line(text)
+        assert "Cross-task over-engineering" in drift
+        assert "into a shared helper" not in text
+        assert (
+            "do not extract helpers" in drift.lower()
+            or "do not promote" in text.lower()
+        )
