@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`resolve_task_ac_tokens` no longer treats Rationale forward-references as this-task AC tokens (GH-191).** Card fallback still prefers non-empty `acceptance_criteria` `criterion_id`s, then `**Acceptance Criteria**` lines on the `tasks.md` card. `**Rationale**`, `**Details**`, `**Type**`, `**Files**`, and other non-AC sections are not scraped for `AC-PLAN-NNN` — TSK-002-01 naming `AC-PLAN-002` in rationale does not require that token. Unstructured cards with no labeled sections still yield their body tokens. COMPLETED still fail-closes when HEAD evidence does not cover the resolved this-task set (GH-185 / #187 leftover). Pinned by `tests/test_core/test_judge_evidence.py::TestResolveTaskAcTokens` and `tests/test_micro/test_completed_evidence.py::TestRationaleForwardRefDoesNotBlockComplete`. ([#191](https://github.com/wernerbisschoff/deviatdd/issues/191))
+
 - **`deviate specify` honors `--issue` when the positional issue ID is omitted.** Bare `specify` ignored `--issue` and ran BACKLOG discovery, whose local-worktree guard always skips the already-claimed issues `--second-worktree` targets — `specify --second-worktree --issue <id>` could never claim and exited `NO_CLAIMABLE_ISSUES`. `--issue` now resolves the issue directly; discovery still runs when both are omitted. Also fixes the `NO_CLAIMABLE_ISSUES` message losing its second argument, which rendered as `no unblocked BACKLOG issue  available`. Pinned by `tests/test_meso/test_second_worktree.py::TestSecondWorktreeCliFlag::test_specify_second_worktree_honors_issue_option`.
 
 ### Changed

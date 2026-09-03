@@ -7,9 +7,26 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Literal
 
 _AC_TOKEN = re.compile(r"AC-PLAN-\d{3}")
-_JUDGE_FEEDBACK_LINE = re.compile(r"^\s*-\s+\*\*Judge Feedback\*\*:")
+_LABELED_SECTION = re.compile(r"^\s*-\s+\*\*([^*]+)\*\*:")
 _CARD_STRUCTURE_LINE = re.compile(
     r"^(?:- (?:\[(?:x| )\]\s+)?TSK-\d{3}-\d{2}:|  - |#{1,6}\s)"
+)
+_AC_SECTION_NAMES = frozenset({"acceptance criteria"})
+_NON_AC_SECTION_NAMES = frozenset(
+    {
+        "rationale",
+        "type",
+        "mode",
+        "files",
+        "details",
+        "test strategy",
+        "verification",
+        "estimated time",
+        "dependency",
+        "judge feedback",
+        "goal",
+        "flow references",
+    }
 )
 _CONTRACT_BLOCK = re.compile(
     r'<authoritative_acceptance_contract\s+source="plan.md">(.*?)'
@@ -44,13 +61,15 @@ def resolve_task_ac_tokens(task: Any, *, card_text: str = "") -> list[str]:
     """Return this task's required ``AC-PLAN-NNN`` tokens (first hit wins).
 
     Order: non-empty ``acceptance_criteria`` ``criterion_id``s, else tokens
-    named in ``card_text`` after dropping ``**Judge Feedback**`` bullets and
-    their continuation lines, else no AC tokens. Never reads ``plan.md``.
+    named in this task's ``tasks.md`` card, else no AC tokens. Card fallback
+    prefers ``**Acceptance Criteria**`` lines; otherwise it scans remaining
+    text after dropping ``**Rationale**``, ``**Judge Feedback**``, and
+    similar non-AC sections. Never reads ``plan.md``.
     """
     ids = _criterion_ids(_attr(task, "acceptance_criteria") or [])
     if ids:
         return ids
-    return _unique_ac_tokens(_strip_judge_feedback(card_text or ""))
+    return _unique_ac_tokens(_card_ac_scope(card_text or ""))
 
 
 def evaluate_judge_evidence(
@@ -163,10 +182,64 @@ def _unique_ac_tokens(text: str) -> list[str]:
 
 def _strip_judge_feedback(text: str) -> str:
     """Drop ``**Judge Feedback**`` bullets and their continuation lines."""
+    return _strip_labeled_sections(text, {"judge feedback"})
+
+
+def _card_ac_scope(text: str) -> str:
+    """Return the card slice that may name this-task ``AC-PLAN-NNN`` tokens.
+
+    Prefer ``**Acceptance Criteria**`` blocks when present. Otherwise drop
+    Rationale and similar non-AC labeled sections (GH-191) and scan what
+    remains — unstructured cards with no section headings still contribute
+    tokens. ``**Judge Feedback**`` is never a token source (GH-89).
+    """
+    ac_blocks = _extract_labeled_sections(text, _AC_SECTION_NAMES)
+    if ac_blocks:
+        return "\n".join(ac_blocks)
+    return _strip_labeled_sections(text, _NON_AC_SECTION_NAMES)
+
+
+def _section_name(line: str) -> str | None:
+    match = _LABELED_SECTION.match(line)
+    if match is None:
+        return None
+    return match.group(1).strip().lower()
+
+
+def _extract_labeled_sections(text: str, names: frozenset[str] | set[str]) -> list[str]:
+    """Return labeled section blocks whose heading is in *names*."""
+    blocks: list[str] = []
+    current: list[str] = []
+    capturing = False
+    for line in text.splitlines():
+        heading = _section_name(line)
+        if heading is not None:
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+            capturing = heading in names
+            if capturing:
+                current.append(line)
+            continue
+        if capturing and not _CARD_STRUCTURE_LINE.match(line):
+            current.append(line)
+            continue
+        if current:
+            blocks.append("\n".join(current))
+            current = []
+        capturing = False
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def _strip_labeled_sections(text: str, names: frozenset[str] | set[str]) -> str:
+    """Drop labeled sections in *names* and their continuation lines."""
     kept: list[str] = []
     skipping = False
     for line in text.splitlines():
-        if _JUDGE_FEEDBACK_LINE.match(line):
+        heading = _section_name(line)
+        if heading is not None and heading in names:
             skipping = True
             continue
         if skipping and not _CARD_STRUCTURE_LINE.match(line):
