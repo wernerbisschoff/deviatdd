@@ -106,10 +106,12 @@ description = "List tasks"
 run = "uv run pytest tests/unit"
 
 [tasks.integration]
-run = "uv run pytest tests/integration || { [ $? -eq 5 ]; }"
+description = "Run integration tests via pytest"
+run = "uv run pytest tests/test_integration"
 
 [tasks.doctor]
 run = "python3 --version && uv --version"
 
 [tasks.e2e]
-run = "uv run pytest tests/e2e || { [ $? -eq 5 ]; }"
+description = "Run E2E tests via bats"
+run = "mise run test-e2e"

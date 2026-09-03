@@ -1,0 +1,1 @@
+{"id":"TSK-038-01","issue_id":"ISS-ADH-038","description":"Move real suites under tests/unit and fix intra-suite imports","status":"COMPLETED","execution_mode":"IMMEDIATE","test_strategy":null,"created_at":"2026-09-03T14:30:53.611923Z","security_profile":null,"acceptance_criteria":null}
