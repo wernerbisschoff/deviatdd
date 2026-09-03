@@ -23,7 +23,7 @@ from deviate.cli.micro import _finish_tdd_cycle, _run_tdd_cycle
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
-from tests.test_micro.test_judge import (
+from tests.unit.test_micro.test_judge import (
     _GATE_IMPL_PATH,
     _GATE_IMPL_QUOTE,
     _GATE_ISSUE_ID,

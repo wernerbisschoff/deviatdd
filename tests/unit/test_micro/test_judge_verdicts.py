@@ -36,7 +36,7 @@ from tests.helpers.cycle_driver import (
     two_revert_green_then_pass_steps,
     verdicts_path,
 )
-from tests.test_micro.test_judge_refactor_note_routing import (
+from tests.unit.test_micro.test_judge_refactor_note_routing import (
     _ISSUE_ID,
     _NOTE,
     _TASK_ID,

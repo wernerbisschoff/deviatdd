@@ -18,7 +18,7 @@ from unittest.mock import patch
 from deviate.cli.micro import _rewrite_unmatched_tdd_pass
 from deviate.core.agent import HandoverManifest
 from tests.helpers.cycle_driver import load_verdicts
-from tests.test_micro.test_judge import (
+from tests.unit.test_micro.test_judge import (
     _GATE_IMPL_PATH,
     _GATE_IMPL_QUOTE,
     _GATE_ISSUE_ID,

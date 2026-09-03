@@ -138,7 +138,7 @@ class TestReviewCommentsOnly:
     def test_no_pr_review_pack_or_command(self) -> None:
         assert "pr-review" not in OPTIONAL_PACKS
         command = (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "src"
             / "deviate"
             / "prompts"

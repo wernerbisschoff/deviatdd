@@ -15,7 +15,7 @@ import yaml
 from deviate.core.commands import install_command
 from deviate.prompts.assembly import load_template
 
-_REPO = Path(__file__).resolve().parents[2]
+_REPO = Path(__file__).resolve().parents[3]
 _FIXTURES = _REPO / "tests" / "fixtures" / "scope_gates"
 _AUTO = _REPO / "src" / "deviate" / "prompts" / "auto"
 

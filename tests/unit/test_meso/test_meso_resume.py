@@ -10,7 +10,7 @@ import typer
 from deviate.cli.meso import _meso_run, _resolve_meso_resume_state
 from deviate.state.config import SessionState
 
-from tests.test_meso.test_meso_orchestration import _setup_minimal_workspace
+from tests.unit.test_meso.test_meso_orchestration import _setup_minimal_workspace
 
 
 VALID_PLAN = """# Plan

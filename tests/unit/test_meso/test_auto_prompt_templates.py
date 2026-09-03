@@ -211,7 +211,7 @@ class TestMergePromptPushGate:
     @staticmethod
     def _read_prompt() -> str:
         return (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "src"
             / "deviate"
             / "prompts"
@@ -222,7 +222,7 @@ class TestMergePromptPushGate:
     @staticmethod
     def _read_hook() -> str:
         return (
-            Path(__file__).resolve().parents[2] / ".githooks" / "pre-push"
+            Path(__file__).resolve().parents[3] / ".githooks" / "pre-push"
         ).read_text(encoding="utf-8")
 
     def test_inline_push_step_replaces_direct_git_push(self):
@@ -315,7 +315,7 @@ class TestMergePromptBaseBranch:
     @staticmethod
     def _read_prompt() -> str:
         return (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "src"
             / "deviate"
             / "prompts"
@@ -347,7 +347,7 @@ class TestReviewPromptSecurityTaxonomy:
     @staticmethod
     def _read_prompt() -> str:
         return (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "src"
             / "deviate"
             / "prompts"
@@ -385,7 +385,7 @@ class TestSmallestChangeFoldedIntoExistingPrompts:
     @staticmethod
     def _read_review() -> str:
         return (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "src"
             / "deviate"
             / "prompts"
@@ -521,7 +521,7 @@ class TestVerificationBatchImmediateRouting:
     """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
 
     def test_auto_tasks_locks_verification_batch_to_immediate(self):
-        repo = Path(__file__).resolve().parents[2]
+        repo = Path(__file__).resolve().parents[3]
         # Single-source invariant: the manual deviate-tasks.md derives its body
         # from auto/tasks.md at install time, so the lock strings live only in
         # the canonical auto core.
@@ -545,7 +545,7 @@ class TestManualDerivationDriftGuard:
     """
 
     _AUTO_ROOT = (
-        Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "auto"
+        Path(__file__).resolve().parents[3] / "src" / "deviate" / "prompts" / "auto"
     )
     _OVERLAPPING_PHASES = sorted(
         [
@@ -650,7 +650,7 @@ class TestPrdShardOwnership:
     @staticmethod
     def _acceptance_gates_prd() -> str:
         return (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "specs"
             / "005-acceptance-gates"
             / "prd.md"
@@ -873,7 +873,7 @@ class TestPonytailLadderFoldedIntoReview:
     @staticmethod
     def _read_review() -> str:
         return (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / "src"
             / "deviate"
             / "prompts"

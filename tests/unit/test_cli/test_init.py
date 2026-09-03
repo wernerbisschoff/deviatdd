@@ -1469,7 +1469,7 @@ class TestInstallDeviatddSkill:
 
         # Derive repo root from this test file's location:
         # tests/test_cli/test_init.py -> ../../  is the repo root.
-        repo_root = _Path(__file__).resolve().parents[2]
+        repo_root = _Path(__file__).resolve().parents[3]
         micro_path = repo_root / "src" / "deviate" / "cli" / "micro.py"
         micro_src = micro_path.read_text(encoding="utf-8")
         emitted_events = set(re.findall(r'_log_run\(\s*"([A-Z_]+)"', micro_src))

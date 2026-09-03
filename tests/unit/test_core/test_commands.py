@@ -20,7 +20,7 @@ from deviate.core.commands import (
 
 
 _SOURCE_COMMANDS_ROOT = (
-    Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "commands"
+    Path(__file__).resolve().parents[3] / "src" / "deviate" / "prompts" / "commands"
 )
 
 
@@ -304,7 +304,7 @@ class TestComposeCommandBodyConstitutionInjection:
     @staticmethod
     def _core_dir() -> Path:
         return (
-            Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "core"
+            Path(__file__).resolve().parents[3] / "src" / "deviate" / "prompts" / "core"
         )
 
     @staticmethod
@@ -389,7 +389,7 @@ class TestComposeCommandBodyManualLifecycle:
     @staticmethod
     def _core_dir() -> Path:
         return (
-            Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "core"
+            Path(__file__).resolve().parents[3] / "src" / "deviate" / "prompts" / "core"
         )
 
     def test_micro_layer_still_uses_manual_lifecycle(self):
@@ -419,7 +419,7 @@ class TestManualDerivationFromAutoCore:
     """
 
     _AUTO_ROOT = (
-        Path(__file__).resolve().parents[2] / "src" / "deviate" / "prompts" / "auto"
+        Path(__file__).resolve().parents[3] / "src" / "deviate" / "prompts" / "auto"
     )
     _OVERLAPPING_PHASES = sorted(
         [
