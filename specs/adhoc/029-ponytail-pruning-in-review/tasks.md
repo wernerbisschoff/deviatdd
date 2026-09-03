@@ -24,6 +24,7 @@
 
 ---
 
+  - **Judge Feedback**: The next GREEN attempt must: extend the drift line at src/deviate/prompts/commands/deviate-review.md with the explicit pre-write ladder (YAGNI, stdlib, platform feature, already-installed dep, one line, minimum that works). Keep the RED tests in tests/test_meso/test_auto_prompt_templates.py unchanged. Keep the heading set unchanged with no new Minimality or Constraints heading and no deviate-ponytail file. Verify with uv run pytest tests/test_meso/test_auto_prompt_templates.py -q.
 ## Phase 2: PR title and body squash-merge compliance
 **Goal**: Compound-prefix titles squash-merge as valid conventional commits on both platforms
 
