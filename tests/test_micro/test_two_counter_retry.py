@@ -101,6 +101,7 @@ def _install_always_revert_green_stubs(
     green_attempts_at_green: list[int] = []
     feedback_at_green: list[str] = []
     sha_at_green: list[str] = []
+    pending_at_green: list[str] = []
     counters_at_red: list[tuple[int, int]] = []
 
     def _guard() -> None:
@@ -133,6 +134,7 @@ def _install_always_revert_green_stubs(
         green_attempts_at_green.append(current.green_attempts)
         feedback_at_green.append(current.train_feedback)
         sha_at_green.append(current.red_commit_sha)
+        pending_at_green.append(current.pending_judge_action)
         current.current_phase = "GREEN"
         current.save(session_path_arg)
         return current
@@ -171,6 +173,7 @@ def _install_always_revert_green_stubs(
         "green_attempts_at_green": green_attempts_at_green,
         "feedback_at_green": feedback_at_green,
         "sha_at_green": sha_at_green,
+        "pending_at_green": pending_at_green,
         "counters_at_red": counters_at_red,
     }
 
@@ -250,17 +253,19 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
             f"trains 1-3; got {feedback_at_green!r}"
         )
 
-    def test_counters_persist_across_session_reload(
+    def test_fresh_cycle_resets_leftover_budget_first_green_is_one(
         self,
         tmp_git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Re-entry seeds from saved ``green_attempts``, not local zero.
+        """A new cycle zeros leftover TRAIN counters, not JUDGE notes.
 
-        A crash mid-GREEN-train reloads ``.deviate/session.json``. The
-        runner must not assign ``train_attempts = 0`` and give the task
-        three fresh trains. Seeded ``green_attempts == 2`` plus one
-        GREEN start reaches 3 and escalates after that GREEN fails.
+        ``.deviate/session.json`` is gitignored, so ``git reset`` and a
+        fresh ``micro run`` used to reload ``green_attempts=3`` and
+        block the first GREEN as exhausted. Cycle entry resets only
+        ``green_attempts`` / ``red_attempts``. ``train_feedback`` stays
+        and is injected. In-cycle increment is unchanged (see
+        ``test_always_revert_green_trains_green_three_times_then_escalates``).
         """
         root = tmp_git_repo
         monkeypatch.chdir(root)
@@ -269,17 +274,21 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
         SessionState(
             active_issue_id="ISS-ADH-017",
             current_phase="GREEN",
-            green_attempts=2,
-            red_attempts=0,
+            green_attempts=3,
+            red_attempts=2,
             red_commit_sha=STANDING_RED_SHA,
+            pending_judge_action="revert_green",
             train_feedback=STANDING_FEEDBACK,
         ).save(session_path)
 
         reloaded = SessionState.load(session_path)
-        assert reloaded.green_attempts == 2
-        assert reloaded.red_attempts == 0
+        assert reloaded.green_attempts == 3
+        assert reloaded.red_attempts == 2
+        assert reloaded.train_feedback == STANDING_FEEDBACK
+        assert reloaded.pending_judge_action == "revert_green"
+        assert reloaded.red_commit_sha == STANDING_RED_SHA
 
-        traces = _install_always_revert_green_stubs(monkeypatch, pass_after_red_count=1)
+        traces = _install_always_revert_green_stubs(monkeypatch, pass_after_red_count=0)
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, width=200)
 
@@ -287,10 +296,9 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
             _run_tdd_cycle(task, ledger_path, console, start_phase="GREEN")
         except PhaseFailedError as exc:
             raise AssertionError(
-                "AC-PLAN-001: re-entry must resume session.green_attempts=2 "
-                "and escalate after one more revert_green, not TRAIN_EXHAUSTED "
-                f"from a zeroed local train_attempts; got {exc!r}\n"
-                f"{buf.getvalue()}"
+                "fresh cycle entry must reset leftover TRAIN 3/3 so the "
+                "first GREEN is TRAIN 1/3, not TRAIN_EXHAUSTED; "
+                f"got {exc!r}\n{buf.getvalue()}"
             ) from exc
 
         output = buf.getvalue()
@@ -298,28 +306,107 @@ class TestAlwaysRevertGreenTrainsThenEscalates:
         assert isinstance(call_log, list)
         green_attempts_at_green = traces["green_attempts_at_green"]
         assert isinstance(green_attempts_at_green, list)
+        feedback_at_green = traces["feedback_at_green"]
+        assert isinstance(feedback_at_green, list)
+        sha_at_green = traces["sha_at_green"]
+        assert isinstance(sha_at_green, list)
 
-        assert green_attempts_at_green[0] == 3, (
-            "AC-PLAN-001: re-entry seeds green_attempts=2 and counts the "
-            f"next GREEN start as 3; got {green_attempts_at_green!r}"
-        )
         assert "TRAIN_EXHAUSTED" not in output, (
-            "AC-PLAN-001: loaded green_attempts=2 must not be wiped by a "
-            f"local train_attempts = 0; got {output!r} log={call_log!r}"
+            "leftover green_attempts=3 / red_attempts=2 must not exhaust "
+            f"on a new cycle; got {output!r} log={call_log!r}"
         )
-        assert call_log.count("RED") >= 1, (
-            "AC-PLAN-001: one more revert_green on a loaded budget of 2 "
-            f"must escalate to a new RED; got {call_log!r}"
+        assert call_log[0] == "GREEN", (
+            "start_phase=GREEN with leftover TRAIN 3/3 must run GREEN, "
+            f"not escalate; got {call_log!r}"
         )
-        greens_before_escalate = 0
-        for name in call_log:
-            if name == "RED":
-                break
-            if name == "GREEN":
-                greens_before_escalate += 1
-        assert greens_before_escalate == 1, (
-            "AC-PLAN-001: loaded green_attempts=2 allows exactly one more "
-            f"GREEN train before escalate; got {call_log!r}"
+        assert green_attempts_at_green[0] == 1, (
+            "cycle-entry _reset_tdd_retry_budget must make the first "
+            f"GREEN TRAIN 1/3; got {green_attempts_at_green!r}"
+        )
+        assert feedback_at_green[0] == STANDING_FEEDBACK, (
+            "reset must keep leftover train_feedback for the first GREEN; "
+            f"got {feedback_at_green!r}"
+        )
+        assert sha_at_green[0] == STANDING_RED_SHA, (
+            "reset must keep red_commit_sha; got {sha_at_green!r}"
+        )
+        pending_at_green = traces["pending_at_green"]
+        assert isinstance(pending_at_green, list)
+        assert pending_at_green[0] == "revert_green", (
+            "reset must keep pending_judge_action; got {pending_at_green!r}"
+        )
+        assert call_log.count("RED") == 0, (
+            "leftover 3/3 must not escalate on a fresh cycle that then "
+            f"passes; got {call_log!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "start_phase,pending,pass_after_red_count,expect_first",
+        [
+            (None, "", 1, "RED"),
+            ("JUDGE", "revert_green", 0, "GREEN"),
+        ],
+        ids=["fresh_micro_run", "idle_judge_resume"],
+    )
+    def test_cycle_entry_reset_covers_fresh_run_and_judge_resume(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        start_phase: str | None,
+        pending: str,
+        pass_after_red_count: int,
+        expect_first: str,
+    ) -> None:
+        """Pinned ``micro run``, bare start, and IDLE+JUDGE resume reset."""
+        root = tmp_git_repo
+        monkeypatch.chdir(root)
+        _mock_pytest(monkeypatch)
+        task, ledger_path, session_path = _seed_workspace(root)
+        SessionState(
+            active_issue_id="ISS-ADH-017",
+            current_phase="IDLE",
+            green_attempts=3,
+            red_attempts=2,
+            red_commit_sha=STANDING_RED_SHA,
+            pending_judge_action=pending,
+            train_feedback=STANDING_FEEDBACK,
+        ).save(session_path)
+
+        traces = _install_always_revert_green_stubs(
+            monkeypatch, pass_after_red_count=pass_after_red_count
+        )
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+
+        try:
+            _run_tdd_cycle(task, ledger_path, console, start_phase=start_phase)
+        except PhaseFailedError as exc:
+            raise AssertionError(
+                "cycle-entry reset must cover fresh micro run and JUDGE "
+                f"resume; got {exc!r}\n{buf.getvalue()}"
+            ) from exc
+
+        call_log = traces["call_log"]
+        assert isinstance(call_log, list)
+        green_attempts_at_green = traces["green_attempts_at_green"]
+        assert isinstance(green_attempts_at_green, list)
+        feedback_at_green = traces["feedback_at_green"]
+        assert isinstance(feedback_at_green, list)
+
+        assert call_log[0] == expect_first, (
+            f"start_phase={start_phase!r} must begin at {expect_first}; "
+            f"got {call_log!r}"
+        )
+        assert "TRAIN_EXHAUSTED" not in buf.getvalue(), (
+            "leftover red_attempts=2 plus green_attempts=3 must not "
+            f"TRAIN_EXHAUSTED on a new cycle; log={call_log!r}"
+        )
+        assert green_attempts_at_green[0] == 1, (
+            "first GREEN after cycle-entry reset is TRAIN 1/3; "
+            f"got {green_attempts_at_green!r}"
+        )
+        assert feedback_at_green[0] == STANDING_FEEDBACK, (
+            f"train_feedback must still be injected; got {feedback_at_green!r}"
         )
 
 
@@ -537,9 +624,10 @@ class TestAlwaysRevertRedStopsAfterThreeEscalates:
         assert "REFACTOR" not in call_log, (
             f"AC-PLAN-002: TRAIN_EXHAUSTED returns to the operator; got {call_log!r}"
         )
-        assert counters_at_red[0] == (2, 0), (
-            "AC-PLAN-002: the first RED is not an escalate; seeded "
-            f"green_attempts=2 must still be present; got {counters_at_red!r}"
+        assert counters_at_red[0] == (0, 0), (
+            "AC-PLAN-002: the first RED is not an escalate; leftover "
+            "green_attempts=2 is zeroed at cycle entry; "
+            f"got {counters_at_red!r}"
         )
         assert counters_at_red[1:] == [(0, 1), (0, 2)], (
             "AC-PLAN-002: each revert_red resets green_attempts to 0 and "
@@ -1219,6 +1307,10 @@ class TestAcPlan005SpecAlignment:
             "AC-PLAN-005: specs/DeviaTDD-api.md must document "
             "SessionState.red_attempts (max 3)."
         )
+        assert "_reset_tdd_retry_budget" in api, (
+            "Cycle-entry reset: specs/DeviaTDD-api.md must name "
+            "_reset_tdd_retry_budget at TDD cycle entry."
+        )
         assert "TRAIN_EXHAUSTED" in api and "escalat" in api.lower(), (
             "AC-PLAN-005: specs/DeviaTDD-api.md must say TRAIN_EXHAUSTED "
             "only after three RED escalates."
@@ -1247,6 +1339,10 @@ class TestAcPlan005SpecAlignment:
         assert "red_attempts" in arch, (
             "AC-PLAN-005: specs/DeviaTDD-architecture.md must document "
             "RED escalate via red_attempts."
+        )
+        assert "_reset_tdd_retry_budget" in arch, (
+            "Cycle-entry reset: specs/DeviaTDD-architecture.md must name "
+            "_reset_tdd_retry_budget at TDD cycle entry."
         )
         assert "TRAIN_EXHAUSTED" in arch, (
             "AC-PLAN-005: specs/DeviaTDD-architecture.md must name "
@@ -1277,4 +1373,13 @@ class TestAcPlan005SpecAlignment:
             "bullet that GREEN trains three times then escalates and that "
             "three RED escalates print TRAIN_EXHAUSTED and stop the infinite "
             "revert_red loop."
+        )
+        reset_bullets = [
+            b
+            for b in bullets
+            if "_reset_tdd_retry_budget" in b and "green_attempts" in b
+        ]
+        assert reset_bullets, (
+            "CHANGELOG.md [Unreleased] must record cycle-entry "
+            "_reset_tdd_retry_budget of leftover green_attempts."
         )

@@ -5154,7 +5154,11 @@ def _finish_tdd_cycle(
 
 
 def _reset_tdd_retry_budget(session: SessionState) -> None:
-    """Clear GREEN-train and RED-escalate counters for the next task."""
+    """Zero GREEN-train and RED-escalate counters only.
+
+    Does not clear ``train_feedback``, ``red_commit_sha``,
+    ``pending_judge_action``, or other session fields.
+    """
     session.green_attempts = 0
     session.red_attempts = 0
 
@@ -5503,7 +5507,11 @@ def _run_tdd_cycle(
     monitor: OrchestrationMonitor | None = None,
     start_phase: str | None = None,
 ) -> None:
-    """RED → GREEN → JUDGE → REFACTOR. Always emits ``CYCLE_END`` on leave."""
+    """RED → GREEN → JUDGE → REFACTOR. Always emits ``CYCLE_END`` on leave.
+
+    Zeros ``green_attempts`` / ``red_attempts`` once at cycle entry via
+    ``_reset_tdd_retry_budget``. JUDGE notes stay.
+    """
     trace = _CycleTrace()
     token = _current_cycle_trace.set(trace)
     try:
@@ -5545,6 +5553,10 @@ def _run_tdd_cycle_impl(
     session = SessionState.load(session_path)
     if _invalidate_stale_forward_route(session, tid):
         session.save(session_path)
+    # Fresh TDD cycle: leftover TRAIN 3/3 in gitignored session.json
+    # must not block a new `micro run`. JUDGE notes stay.
+    _reset_tdd_retry_budget(session)
+    session.save(session_path)
 
     task_desc = task.get("description", "")
 
@@ -6210,6 +6222,9 @@ def _run_single(
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
+    # TRAIN counters live in this untracked file; `_run_tdd_cycle_impl`
+    # zeros them at cycle entry. Do not reset here — that would miss
+    # `--all` and other `_run_tdd_cycle` callers.
     task, ledger_file, status = _exit_if_already_done(
         task, ledger_file, task_id, root, session, c
     )

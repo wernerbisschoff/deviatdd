@@ -987,7 +987,19 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   * **Green → Judge → Green loop (TDD only):** `_run_tdd_cycle` wraps the
     GREEN → JUDGE pair in a `while not judge_passed` loop with two
     persisted `SessionState` counters: `green_attempts` (max 3) and
-    `red_attempts` (max 3). `green_attempts` counts each GREEN phase run
+    `red_attempts` (max 3). `_run_tdd_cycle_impl` calls
+    `_reset_tdd_retry_budget(session)` once at cycle entry (after loading
+    `.deviate/session.json`): that zeros only `green_attempts` and
+    `red_attempts`. It does not clear `train_feedback`, `red_commit_sha`,
+    `pending_judge_action`, or other session fields. A leftover TRAIN 3/3
+    in the gitignored session (survives `git reset` and a new
+    `deviate micro run`) therefore starts as TRAIN 1/3 with JUDGE notes
+    still injected. Covers pinned `micro run TSK-…`, bare `micro run`,
+    resume from IDLE+JUDGE/GREEN, and `--all` per task. No CLI flag.
+    Increment still happens at each GREEN start in the same invocation
+    (`session.green_attempts += 1`); do not reset again inside the GREEN
+    while-loop. After COMPLETE/REFACTOR or `TRAIN_EXHAUSTED` the existing
+    reset stays (idempotent). `green_attempts` counts each GREEN phase run
     at start (including the first) so it equals GREENs already started.
     TRAIN 3/3 is a real GREEN. After three GREEN runs, the next train
     escalates (`green_budget_exhausted`) instead of burning the last
@@ -1193,6 +1205,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   Same two-counter contract as **Green → Judge → Green loop (TDD only)**
   above. `_run_tdd_cycle` persists ``green_attempts`` (GREEN train,
   max 3, then escalate) and ``red_attempts`` (RED escalate, max 3).
+  Each new TDD cycle zeros those counters via `_reset_tdd_retry_budget`
+  at `_run_tdd_cycle_impl` entry; leftover TRAIN 3/3 in
+  ``.deviate/session.json`` does not block a fresh ``micro run``.
   ``TRAIN_EXHAUSTED`` prints only after three RED escalates.
   The loop never invokes the agent twice in a row for the same
   phase; on the final failure it surfaces the captured manifest's
@@ -1791,8 +1806,8 @@ All state transitions are append-only. No existing line is ever modified or over
 | `active_issue_id` | `str` (optional) | Issue the session is bound to (`--issue` selection survives across `--all` runs) |
 | `last_command` | `str` (default `""`) | Last CLI command the user invoked (for resume/messaging) |
 | `train_feedback` | `str` (default `""`) | Last failure feedback injected as `<train_feedback>` into the next GREEN / retry RED prompt. Escalate keeps a JUDGE payload already on the session (normalized `violations` / `train_feedback` from `_judge_feedback_from_manifest`). A GREEN pytest dump is replaced with a short `previous cycle failed because …` note; that note is the fallback only when the payload is empty. |
-| `green_attempts` | `int` (default `0`) | GREEN-train count against the standing RED contract; max 3; persist via `save()` to `.deviate/session.json`; copied through `transition_to` / `force_transition_to` |
-| `red_attempts` | `int` (default `0`) | RED-escalate count for the current task; max 3; `TRAIN_EXHAUSTED` after three escalates; persist via `save()`; copied through transitions |
+| `green_attempts` | `int` (default `0`) | GREEN-train count against the standing RED contract; max 3; persist via `save()` to `.deviate/session.json`; copied through `transition_to` / `force_transition_to`. `_reset_tdd_retry_budget` zeros this at each `_run_tdd_cycle_impl` entry (and after COMPLETE/REFACTOR / `TRAIN_EXHAUSTED`). Increment at GREEN start. |
+| `red_attempts` | `int` (default `0`) | RED-escalate count for the current task; max 3; `TRAIN_EXHAUSTED` after three escalates; persist via `save()`; copied through transitions. Reset with `green_attempts` at cycle entry via `_reset_tdd_retry_budget`. |
 | `failure_kind` | `Literal["", "mechanical", "test_defect", "no_failing_test"]` (default `""`) | Discriminator set by GREEN on failure-class routing, or by RED no-failing-test adjudication; cleared on each GREEN exit (`""` = clean run, `mechanical` = scope-boundary failure, `test_defect` = RED test itself wrong, `no_failing_test` = RED test command exited 0 / collected no tests / resolved to no command) |
 | `judge_rejected` | `bool` (default `False`) | `True` while the JUDGE verdict on the current cycle is a rejection |
 | `pending_judge_action` | `str` (default `""`) | The JUDGE-supplied routing directive (`revert_red`, `revert_green`, `continue_refactor`, `skip_refactor`, `proceed_to_refactor_no_diff`); consumed by `_finish_tdd_cycle` after the JUDGE phase hands off. A forward route is valid only for the task + RED SHA recorded in `judge_task_id` / `judge_red_commit_sha` (GH-148). |
