@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from contextlib import chdir
 from pathlib import Path
@@ -11,6 +12,11 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 
 runner = CliRunner()
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _git_env() -> dict[str, str]:
@@ -223,6 +229,141 @@ class TestMesoContracts:
             result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-001-006"])
 
             assert result.exit_code == 0, result.output
+
+    def _write_issue_tasks(
+        self, tmp_path: Path, issue_id: str, tasks_body: str
+    ) -> Path:
+        self._setup_git_repo(tmp_path)
+        self._setup_minimal_env(
+            tmp_path, session_phase="TASKS", active_issue_id=issue_id
+        )
+        specs_dir = tmp_path / "specs"
+        issue_record = {
+            "issue_id": issue_id,
+            "type": "feature",
+            "title": "Layer stamp issue",
+            "status": "BACKLOG",
+            "source_file": f"specs/test-epic/issues/{issue_id}.md",
+            "timestamp": "2026-01-01T00:00:00Z",
+        }
+        (specs_dir / "issues.jsonl").write_text(json.dumps(issue_record) + "\n")
+        (specs_dir / "test-epic" / issue_id).mkdir(parents=True, exist_ok=True)
+        tasks_md = specs_dir / "test-epic" / issue_id / "tasks.md"
+        tasks_md.write_text(tasks_body)
+        return tasks_md
+
+    def test_tasks_post_rejects_mixed_layer_tdd_card(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            tasks_md = self._write_issue_tasks(
+                tmp_path,
+                "ISS-001-006",
+                "# Tasks\n\n"
+                "- TSK-001-02: Crypto withdrawal\n"
+                "  - **Type**: Feature_Batch\n"
+                "  - **Mode**: TDD\n"
+                "  - **Test Strategy**: unit\n"
+                "  - **Verification**: `pytest tests/unit/test_crypto_withdrawal.py "
+                "tests/integration/test_crypto_withdrawal.py`\n"
+                "  - **Files**:\n"
+                "    - `src/wallet/withdraw.py`\n"
+                "    - `tests/unit/test_crypto_withdrawal.py`\n"
+                "    - `tests/integration/test_crypto_withdrawal.py`\n",
+            )
+            before = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=tmp_path,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-001-006"])
+
+            assert result.exit_code != 0
+            output = _plain(result.output)
+            assert "MIXED_TEST_LAYER" in output
+            assert "TSK-001-02" in output
+            after = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=tmp_path,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            assert after == before
+            log = subprocess.run(
+                ["git", "log", "--oneline"],
+                cwd=tmp_path,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "create tasks.md" not in log
+            session = json.loads((tmp_path / ".deviate" / "session.json").read_text())
+            assert session["current_phase"] == "TASKS"
+            assert tasks_md.exists()
+
+    def test_tasks_post_force_still_rejects_mixed_layer_card(
+        self, tmp_path: Path
+    ) -> None:
+        with chdir(tmp_path):
+            self._write_issue_tasks(
+                tmp_path,
+                "ISS-001-006",
+                "# Tasks\n\n"
+                "- TSK-001-02: Mixed stamps\n"
+                "  - **Type**: Feature_Batch\n"
+                "  - **Mode**: TDD\n"
+                "  - **Test Strategy**: unit/integration\n"
+                "  - **Verification**: `mise unit`\n"
+                "  - **Files**:\n"
+                "    - `src/wallet/withdraw.py`\n",
+            )
+
+            result = runner.invoke(
+                cli, ["tasks", "post", "--force", "--issue-id", "ISS-001-006"]
+            )
+
+            assert result.exit_code != 0
+            assert "MIXED_TEST_LAYER" in _plain(result.output)
+
+    def test_tasks_post_commits_single_layer_tdd_card(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            self._write_issue_tasks(
+                tmp_path,
+                "ISS-001-006",
+                "# Tasks\n\n"
+                "- TSK-001-01: Withdrawal unit contract\n"
+                "  - **Type**: Feature_Batch\n"
+                "  - **Mode**: TDD\n"
+                "  - **Test Strategy**: unit\n"
+                "  - **Verification**: `mise unit`\n"
+                "  - **Files**:\n"
+                "    - `src/wallet/withdraw.py`\n"
+                "    - `tests/unit/test_crypto_withdrawal.py`\n"
+                "  - **Details**:\n"
+                "    - **Red**: Write failing unit tests in `tests/unit/` — "
+                "forbid `tests/integration` / e2e in this RED.\n",
+            )
+
+            result = runner.invoke(cli, ["tasks", "post", "--issue-id", "ISS-001-006"])
+
+            assert result.exit_code == 0, result.output
+            assert "MIXED_TEST_LAYER" not in result.output
+            log = subprocess.run(
+                ["git", "log", "-1", "--oneline"],
+                cwd=tmp_path,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "create tasks.md" in log
+            session = json.loads((tmp_path / ".deviate" / "session.json").read_text())
+            assert session["current_phase"] == "IDLE"
 
     def test_tasks_pre_resolves_issue_from_branch(self, tmp_path: Path) -> None:
         """`tasks pre` derives the issue from the feature branch when the

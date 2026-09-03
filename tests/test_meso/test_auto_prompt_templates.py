@@ -480,6 +480,10 @@ class TestLayerStampedPrompts:
             assert "Sociable_Unit" not in text
             assert "Solitary_Unit" not in text
             assert "Sociable/Integration" not in text
+            assert "MIXED_TEST_LAYER" in text
+            assert "two TDD tasks" in text
+            assert "deviate tasks post" in text
+            assert "the runner fails closed" not in text
 
     def test_tasks_template_defaults_to_scoped_unit(self):
         auto = _read_template("tasks.md")
