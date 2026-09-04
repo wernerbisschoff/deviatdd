@@ -95,8 +95,11 @@ Breaks a business goal down into standard development project containers.
   verification guidance. This preserves the greenfield signal.
   `/deviate-init` is the first project-adaptation prompt. It runs `deviate init pre` / `post`,
   detects the project type, and scaffolds `specs/constitution.md`, `specs/issues.jsonl`,
-  language-native unit and integration directories, and `mise.toml`. Existing files and mise
-  tasks remain unchanged. Init keeps native `unit`, `integration`, and optional `e2e` tasks
+  language-native unit and integration directories, and `mise.toml`. For brownfield repositories,
+  the prompt populates only an init-created `TBD` constitution. It derives rules from manifests,
+  test configuration, CI, implementation layout, and existing conventions. Greenfield placeholders
+  remain for research. Existing populated constitutions and existing mise tasks remain unchanged.
+  Init keeps native `unit`, `integration`, and optional `e2e` tasks
   for Micro. It adds a stable `test:one` interface when a runner is detected, unit-only
   `test` / `test:unit`, cumulative `test:integration`, and optional cumulative `test:e2e`.
   Matching `doctor:*` tasks provide read-only readiness checks and never run tests or launch services. E2E tasks appear only
@@ -1113,10 +1116,10 @@ field schemas live in `micro.py` itself, not duplicated here.
 single-level wildcard covers every selected-agent skill install
 (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
 with one pattern. `*/skills/deviate-*/` covers Codex per-command
-skill dirs. The single-level prefix (`*/`, not `**/`) is critical: it
-scopes the pattern to the project root, never matching the
-deviatdd project's own source at
-`src/deviate/prompts/skills/deviatdd/` (three directories deep).
+skill dirs. `.worktrees/`, `.deviate/`, and `.zvec-grep/` exclude local
+workspace, runtime, and search-index state. The single-level prefix
+(`*/`, not `**/`) scopes agent patterns to the project root. It never matches
+the deviatdd project's source at `src/deviate/prompts/skills/deviatdd/`.
 
 **Tests:** `TestInstallDeviatddSkill` in `tests/unit/test_cli/test_init.py`
 and `TestSetupSelectedAgentIsolation` / `TestSetupCodex` /

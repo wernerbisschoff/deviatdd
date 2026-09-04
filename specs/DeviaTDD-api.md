@@ -25,7 +25,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `/deviate-init` invokes `deviate init pre` and `post` after setup. Init detects the project
   type and package manager. It creates or merges `mise.toml`, language-native unit and
   integration directories, `specs/constitution.md`, `specs/issues.jsonl`, and project-specific
-  verification guidance in the canonical governance file.
+  verification guidance in the canonical governance file. For a brownfield repository, the prompt
+  populates an init-created `TBD` constitution from manifests, test configuration, CI, implementation
+  layout, and existing conventions before `post`. It keeps greenfield placeholders for research.
+  It never overwrites an existing populated constitution.
   Init keeps the native `unit`, `integration`, and optional `e2e` tasks used by Micro. It adds
   `test` and `test:unit` for unit-only verification, a required-argument `test:one` task when
   it detects a runner, and `test:integration` for unit then integration. It adds `test:e2e`
@@ -108,8 +111,8 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   `.omp/prompts/` (OMP is an extensible wrapper around the Pi executor; it
   discovers slash commands from `.omp/prompts/`). All five command
   directories are excluded from version control via the project-root
-  `.gitignore` (see `_ensure_root_gitignore` at `src/deviate/cli/__init__.py:905`),
-  which also ignores `.deviate/` and `.worktrees/` by default.
+  `.gitignore` (see `_ensure_root_gitignore` in `src/deviate/cli/__init__.py`),
+  which also ignores `.deviate/`, `.worktrees/`, and `.zvec-grep/` by default.
   Additionally, both `deviate setup` and `deviate init pre` provision a project-root
   `.gitattributes` declaring `merge=union` for `specs/issues.jsonl` and
   `specs/**/tasks.jsonl` (see `_ensure_root_gitattributes` at
@@ -197,13 +200,13 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `.deviate/session.json` — Current session state snapshot
   * `.deviate/.gitignore` — Excludes session.json and runtime state
     directories from version control
-  * `<workdir>/.gitignore` — Updated with five concise DeviaTDD
+  * `<workdir>/.gitignore` — Updated with seven concise DeviaTDD
     exclusions: `*/commands/deviate-*.md`,
     `*/prompts/deviate-*.md` (covers every supported agent directory
     — ``.claude/commands/``, ``.opencode/commands/``,
     ``.factory/commands/``, ``.pi/prompts/`` — and any future agent
     that follows the same flat-file convention), `*/skills/deviatdd/`,
-    `.worktrees/`, and `.deviate/`. The single-level
+    `*/skills/deviate-*/`, `.worktrees/`, `.deviate/`, and `.zvec-grep/`. The single-level
     ``*/`` prefix is deliberate: a broader ``**/deviate-*.md`` would
     silently ignore the deviatdd project's own command sources at
     ``src/deviate/prompts/commands/deviate-*.md`` (three directories

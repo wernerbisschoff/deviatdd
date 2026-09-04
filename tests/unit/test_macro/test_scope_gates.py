@@ -52,6 +52,12 @@ def _read_auto(name: str) -> str:
     return (_AUTO / name).read_text(encoding="utf-8")
 
 
+def _read_command(name: str) -> str:
+    return (_REPO / "src" / "deviate" / "prompts" / "commands" / name).read_text(
+        encoding="utf-8"
+    )
+
+
 def _load_bracket() -> dict:
     return yaml.safe_load((_FIXTURES / "floor_bracket_items.yaml").read_text())
 
@@ -82,6 +88,19 @@ class TestExploreSiblingFlowInventory:
         research = _read_auto("research.md")
         assert "Ecosystem Research" in research
         assert "catalog only" in research.lower()
+
+
+class TestInitConstitutionPopulation:
+    def test_brownfield_init_populates_only_placeholder_constitution(self) -> None:
+        init = _read_command("deviate-init.md").lower()
+        assert "brownfield" in init
+        assert "tbd" in init
+        assert "populate" in init
+        assert "never overwrite" in init
+        assert "manifests" in init
+        assert "test configuration" in init
+        assert "ci" in init
+        assert "existing conventions" in init
 
 
 class TestResearchFloorAndSingleAgent:

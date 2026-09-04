@@ -38,7 +38,9 @@ This phase operates inside the **MACRO LAYER** — initial project scaffolding f
 
 3. **Project Type Detection**: Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`.
 
-4. **No Implementation Code**: Init phase MUST NOT write, modify, or generate any implementation code. Only scaffolding artifacts are created.
+4. **Brownfield Constitution Population**: A brownfield repository has existing implementation, tests, CI, or established project conventions. If init created a constitution with `TBD` markers, populate it from repository evidence before post. A manifest alone does not prove brownfield status. Keep the placeholder for a greenfield scaffold. Never overwrite an existing populated constitution.
+
+5. **No Implementation Code**: Init phase MUST NOT write, modify, or generate any implementation code. Only scaffolding artifacts are created.
 
 <system_instructions>
 
@@ -63,6 +65,14 @@ You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAY
 - Unit tests are hermetic. They require no database, Redis, network service, container, or external process.
 - Hooks: `pre-commit` = format-check + lint; `pre-push` = `unit` only. Never run integration or E2E on hooks.
 - Merge missing tasks into an existing `mise.toml`. Never overwrite existing commands, tests, or tool pins.
+
+**Constitution population contract**
+- Inspect dependency manifests, test configuration, CI, implementation layout, and existing conventions.
+- Classify the repository as brownfield only when those sources show an established codebase.
+- For brownfield, populate every `TBD` section in the init-created placeholder with source-grounded project rules.
+- Use the generated `mise.toml` commands for testing and tooling rules when they match the detected runner.
+- Keep the placeholder unchanged for greenfield repositories. `/deviate-research` owns greenfield population.
+- Never overwrite a populated `specs/constitution.md`. Report it as existing governance.
 
 </system_instructions>
 
@@ -89,13 +99,25 @@ Analyze the project state from the contract:
 1. Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`
 2. Confirm `mise.toml` defines `test:one`, the configured `test:*` ladder, and the matching `doctor:*` ladder
 3. Check what DeviaTDD artifacts already exist (`specs/`, `issues.jsonl`, `constitution.md`)
+4. Inspect manifests, test configuration, CI, implementation files, and existing conventions to classify the repository as brownfield or greenfield
+</step>
+
+<step id="constitution_population">
+If the repository is brownfield and `specs/constitution.md` contains the init `TBD` placeholder:
+1. Populate Architectural Principles from established module and dependency patterns.
+2. Populate Tech Stack Standards from manifests and runtime configuration.
+3. Populate Testing Protocols from `mise.toml`, test configuration, and CI.
+4. Populate Development Workflow and Definition of Done from repository hooks, CI, and existing conventions.
+5. Keep every claim source-grounded. Do not invent missing policy.
+
+Keep a greenfield placeholder unchanged. Never overwrite a constitution that was already populated before init.
 </step>
 
 <step id="artifact_verification">
 Verify the pre-script created the expected artifacts:
 - `mise.toml` with DeviaTDD-aware tasks
 - `specs/` directory
-- `specs/constitution.md` (or note if it already existed)
+- `specs/constitution.md` is populated for brownfield, remains a placeholder for greenfield, or is unchanged when pre-existing
 - `specs/issues.jsonl` (or note if it already existed)
 - `AGENTS.md` symlink to `CLAUDE.md` (or vice-versa)
 </step>

@@ -1497,13 +1497,14 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
 def _ensure_root_gitignore(workdir: Path) -> None:
     """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
     artifacts and workspace state on all agent platforms.
-    Six entry groups must not be committed:
+    Seven entry groups must not be committed:
     - ``deviate-*`` commands under ``<agent>/commands/`` and
       ``<agent>/prompts/`` — the core DeviaTDD command library.
     - The ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
     - Codex per-command skills under ``.agents/skills/deviate-*/``.
     - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
     - ``.deviate/`` — per-project runtime state and local config.
+    - ``.zvec-grep/`` — local zvec-grep search index state.
     """
     entries = (
         "*/commands/deviate-*.md",
@@ -1512,6 +1513,7 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         "*/skills/deviate-*/",
         ".worktrees/",
         ".deviate/",
+        ".zvec-grep/",
     )
     gitignore_path = workdir / ".gitignore"
     if gitignore_path.exists():
