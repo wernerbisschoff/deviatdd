@@ -2583,7 +2583,7 @@ def _merge_run(
                                 f"[yellow]PUSH_WARN[/] remote branch delete "
                                 f"failed: {stderr}"
                             )
-            except Exception:
+            except OSError:
                 # ``git remote get-url`` itself failed — skip remote ops.
                 pass
             try:

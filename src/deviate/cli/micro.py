@@ -15,6 +15,7 @@ import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Literal, NoReturn
 from pathlib import Path, PurePosixPath
 
@@ -5497,6 +5498,20 @@ def _train_green_or_escalate(
     return session, True
 
 
+class JudgeCycleTransition(str, Enum):
+    TRAIN_GREEN = "train_green"
+    FINISH = "finish"
+
+
+def _judge_cycle_transition(
+    *, suite_red: bool, pending_action: str
+) -> JudgeCycleTransition:
+    """Choose the post-JUDGE cycle route without changing session state."""
+    if suite_red or pending_action in {"revert_green", "revert_red"}:
+        return JudgeCycleTransition.TRAIN_GREEN
+    return JudgeCycleTransition.FINISH
+
+
 def _run_tdd_cycle(
     task: dict,
     ledger_path: Path,
@@ -5606,25 +5621,18 @@ def _run_tdd_cycle_impl(
                 no_refactor=no_refactor,
             )
             pending = session.pending_judge_action
-            if suite_red:
-                # TEST_FAILURE remapped to TRAIN (or revert_green /
-                # revert_red). Fall through into the GREEN train loop;
-                # do not complete.
-                if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
-                    session.pending_judge_action = ""
-                if not session.train_feedback and pending != "revert_green":
-                    session.train_feedback = suite_dump
-                start_phase = "GREEN"
-            elif pending == "revert_green" or (
-                session.judge_rejected and pending == "revert_green"
+            if (
+                _judge_cycle_transition(suite_red=suite_red, pending_action=pending)
+                is JudgeCycleTransition.TRAIN_GREEN
             ):
-                # Passing GREEN + JUDGE revert_green (or judge_rejected
-                # with that action): discard GREEN, keep RED, train
-                # GREEN. Never _finish_tdd_cycle.
-                start_phase = "GREEN"
-            elif pending == "revert_red":
-                # Preserve escalate-to-RED. Fall through so the loop's
-                # existing revert_red branch re-authors RED.
+                if suite_red:
+                    # TEST_FAILURE remapped to TRAIN (or revert_green /
+                    # revert_red). Fall through into the GREEN train loop;
+                    # do not complete.
+                    if pending in _NO_FAILING_TEST_FORWARD_ROUTES:
+                        session.pending_judge_action = ""
+                    if not session.train_feedback and pending != "revert_green":
+                        session.train_feedback = suite_dump
                 start_phase = "GREEN"
             else:
                 session = _finish_tdd_cycle(
