@@ -6310,7 +6310,7 @@ class TestNoFailingTestAlreadyExistsCliCompletes:
     Drives the real RED → JUDGE routing through ``_run_tdd_cycle`` with
     ``_run_pytest`` mocked to exit 0 and ``_invoke_agent`` returning an
     ``already_satisfied`` RED manifest followed by a ``COMPLIANCE_PASS``
-    judge verdict. Flow References: [].
+    judge verdict.
     """
 
     _ISSUE_ID = "ISS-ADH-031"

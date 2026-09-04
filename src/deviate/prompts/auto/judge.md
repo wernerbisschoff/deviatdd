@@ -78,7 +78,6 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 | Functional Invariance | Critical | Implementation produces the spec's expected outputs and side effects. Inputs flow through real logic; results are not hardcoded; errors surface per spec. |
 | Test Integrity | Critical | Tests honestly validate AC-PLAN-NNN. No weakened assertions. Tests not modified by GREEN. |
 | Security & Governance | Critical | No hardcoded secrets, no injection, no audit bypass, no gate skip. |
-| Flow Alignment | High | Diff preserves or extends the user-visible flow(s) named in the task's `**Flow References**`. |
 | No Shortcuts | High | No placeholder / stub / deferred logic in production code paths exercised by the AC-PLAN-NNN. |
 | Constitution Compliance | Critical | Implementation runs on the mandated substrate. Every tech-stack, transport, architectural-boundary, and runtime requirement declared in the constitution (prepended to this prompt) is present, wired, and exercised by the diff. A missing component without an ADR + `constitution.md` amendment is a blocking violation — deferring it via a code comment or a moduledoc disclaimer does not satisfy the contract. |
 | Security Checks | Critical | The `security_checks` field on the manifest is **mandatory** — emitted as `pass | fail | warn` based on the existing flat security scan (secrets, injection, deserialization, path traversal, log leakage) plus any `security_profile.body` content from the task. Absence of the field is a Judge rejection, not a soft warning. |
@@ -93,7 +92,6 @@ JUDGE MUST emit `COMPLIANCE_VIOLATION` only when one of the following categories
 1. Parse `<spec_content>`'s authoritative plan contract for `AC-PLAN-NNN`, AO lineage, upstream FR/AC tokens, and current-code evidence.
 2. Ignore legacy Gherkin in `<macro_issue_intent>` when it conflicts with the plan contract.
 3. Load the git diff and changed tests.
-4. Read `<task_content>` for the active task's `**Flow References**` field (may be empty for enabling/infrastructure tasks).
 
 ### STEP_2: ANALYZE_DIFF_FOR_CORRECTNESS
 
@@ -216,7 +214,6 @@ evaluation:
   functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
   security_governance: "PASS" | "FAIL"
-  flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
   constitution_compliance: "PASS" | "FAIL"
   security_checks: pass | fail | warn
@@ -270,7 +267,6 @@ evaluation:
   functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
   security_governance: "PASS" | "FAIL"
-  flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
   constitution_compliance: "PASS" | "FAIL"
   security_checks: pass | fail | warn
@@ -298,7 +294,6 @@ diff_summary:
 | `<test_feedback>` present with failures | Evaluate whether GREEN implementation caused the failures; if so, COMPLIANCE_VIOLATION with category "Spec Non-Compliance" or "Test Integrity Violation" and test-failure detail |
 | `<failure_kind>test_defect</failure_kind>` present | GREEN judged the RED test itself wrong (it asserts behavior the spec does not require, exercises the wrong abstraction, or encodes an assumption that contradicts `<spec_content>` / `<data_model_content>`). Do NOT attempt to satisfy the test yourself. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (re-run RED with GREEN's rationale as feedback). Populate `train_feedback` with the GREEN rationale so the next RED attempt has the full conflict description. |
 | `<failure_kind>no_failing_test</failure_kind>` present | RED produced NO failing test: the test command exited 0 (all tests passed) or collected no tests. The authored test is uncommitted in the working tree, may be a stub, and no implementation exists. If the required behavior ALREADY EXISTS and the task needs no implementation — `verdict: COMPLIANCE_PASS` + `next_action: skip_refactor` with `evidence` quotes copied from HEAD file contents for both the test and the impl (mark the task COMPLETED; nothing to refactor). A named test file absent on disk is not a pass. If the test is wrong, tautological, or cannot target the required behavior — `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (discard the test, re-author a genuinely failing test in RED). Always populate `train_feedback` or `rationale` so the next RED attempt (or the COMPLETED record) carries the reason. |
-| Empty `**Flow References**` in task | Treat task as enabling / infrastructure; set `flow_alignment: SKIP`; do not penalize |
 | Refactoring opportunity observed | COMPLIANCE_PASS **only** (never COMPLIANCE_VIOLATION). Populate `train_feedback` with `REFACTOR NOTE:` prefix. A REFACTOR NOTE is optional advice for REFACTOR; it is not a reason to revert. `next_action` on a pass is `continue_refactor` or `skip_refactor`. On COMPLIANCE_VIOLATION, put refactoring observations in `summary`, not `train_feedback`. |
 | Unused import / compiler warning / style nit | `REFACTOR NOTE:` + `COMPLIANCE_PASS` + `continue_refactor`. Never `COMPLIANCE_VIOLATION`. These are REFACTOR's domain. |
 | "Should split into N modules" / "code smell" / "naming preference" / "could be cleaner" | COMPLIANCE_PASS — these are REFACTOR concerns, never blocking |

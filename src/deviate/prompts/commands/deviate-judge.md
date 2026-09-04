@@ -72,7 +72,6 @@ evaluation:
   functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
   security_governance: "PASS" | "FAIL"
-  flow_alignment: "PASS" | "FAIL" | "SKIP"
   no_shortcuts: "PASS" | "FAIL"
   constitution_compliance: "PASS" | "FAIL"
   security_checks: pass | fail | warn

@@ -1460,7 +1460,7 @@ def _build_scope(issue_id: str, task_id: str) -> str:
 def _this_task_prompt_card(root: Path, task: dict, *, phase: str) -> str:
     """Return this task's ``tasks.md`` card for auto ``{task_content}``.
 
-    RED/GREEN/REFACTOR get the raw card (description, Flow References,
+    RED/GREEN/REFACTOR get the raw card (description,
     AC-PLAN, Judge Feedback history). JUDGE gets the GH-118
     Judge-Feedback-stripped card so prior-round prose cannot bias
     AC-token matching. Sibling cards are never included.
