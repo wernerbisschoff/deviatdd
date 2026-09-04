@@ -2540,6 +2540,14 @@ class TestJudgeOwaspNistSection:
         assert "path traversal" in prompt.lower()
         assert "log leakage" in prompt.lower()
 
+    def test_judge_prompt_allows_dependency_lockfiles_for_dependency_tasks(
+        self, tmp_path: Path
+    ) -> None:
+        prompt = self._build_prompt(tmp_path)
+        assert "uv.lock" in prompt
+        assert "explicitly" in prompt.lower() and "dependency" in prompt.lower()
+        assert "lockfile remains consistent" in prompt.lower()
+
     def test_judge_prompt_names_owasp_llm_top_ten(self, tmp_path: Path) -> None:
         """The prompt must add the OWASP Top 10 for LLM Applications (LLM01-LLM10).
 
