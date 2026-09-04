@@ -1,4 +1,7 @@
-"""RED: compile-error output counts as a failing RED (ISS-ADH-041, TSK-041-01).
+"""RED: compile-error output counts as a failing RED (ISS-ADH-041).
+TSK-041-01 covers AC-PLAN-001..003; TSK-041-02 covers AC-PLAN-004:
+three RED escalates record a FAILED row with the TRAIN_EXHAUSTED reason
+and exit without an unhandled traceback or a retry-loop rerun.
 
 AC-PLAN-001: non-zero result with compile-error markers commits RED / GREEN.
 AC-PLAN-002: exit 0 / exit 5 / exit 127 still route to adjudication.
@@ -7,6 +10,8 @@ AC-PLAN-003: mixed compile-error plus passing output counts as failing.
 
 from __future__ import annotations
 
+import io
+import json
 import subprocess
 from contextlib import chdir
 from pathlib import Path
@@ -16,9 +21,17 @@ import pytest
 from rich.console import Console
 
 import deviate.cli.micro as micro
-from deviate.cli.micro import _run_red_phase
+from deviate.cli.micro import (
+    PhaseFailedError,
+    _execute_task_with_retry,
+    _run_red_phase,
+    _run_tdd_cycle,
+)
+
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
+from deviate.state.ledger import TaskRecord, append_task_transition
+from deviate.ui.monitor import OrchestrationMonitor
 
 
 def _proc(
@@ -122,3 +135,193 @@ def test_red_phase_routes_mixed_output_to_green(tmp_git_repo: Path):
     out = "1 passed\nERROR tests/test_y.py - ModuleNotFoundError: No module named 'bar'"
     adjudicate = _drive_red(tmp_git_repo, _proc(2, stdout=out))
     adjudicate.assert_not_called()
+
+
+def _seed_exhaustion_workspace(root: Path) -> tuple[dict, Path, Path]:
+    ledger_dir = root / "specs" / "adhoc" / "041-red-compile-error-no-failing-test"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    ledger_path = ledger_dir / "tasks.jsonl"
+    task = {
+        "id": "TSK-041-02",
+        "issue_id": "ISS-ADH-041",
+        "description": "Record FAILED row at TRAIN exhaustion",
+        "execution_mode": "TDD",
+    }
+    append_task_transition(TaskRecord(**task), ledger_path)
+    session_path = root / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    SessionState(active_issue_id="ISS-ADH-041").save(session_path)
+    return task, ledger_path, session_path
+
+
+def _install_always_revert_red(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    call_log: list[str] = []
+
+    def _guard() -> None:
+        if len(call_log) > 24:
+            raise AssertionError(f"TDD loop did not stop: {call_log!r}")
+
+    def _red(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("RED")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        if not current.red_commit_sha:
+            current.red_commit_sha = "standing-red-sha"
+        current.current_phase = "RED"
+        current.save(session_path_arg)
+        return current
+
+    def _green(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("GREEN")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        current.current_phase = "GREEN"
+        current.failure_kind = "test_defect"
+        current.train_feedback = "standing feedback"
+        current.save(session_path_arg)
+        return current
+
+    def _judge(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("JUDGE")
+        _guard()
+        session_path_arg = args[3]
+        assert isinstance(session_path_arg, Path)
+        current = SessionState.load(session_path_arg)
+        current.judge_rejected = True
+        current.pending_judge_action = "revert_red"
+        current.failure_kind = "test_defect"
+        current.train_feedback = "standing feedback"
+        current.save(session_path_arg)
+        return current
+
+    def _finish(*args: object, **kwargs: object) -> SessionState:
+        call_log.append("REFACTOR")
+        session_arg = args[2]
+        assert isinstance(session_arg, SessionState)
+        return session_arg
+
+    monkeypatch.setattr("deviate.cli.micro._run_red_phase", _red)
+    monkeypatch.setattr("deviate.cli.micro._run_green_phase", _green)
+    monkeypatch.setattr("deviate.cli.micro._run_judge_phase", _judge)
+    monkeypatch.setattr("deviate.cli.micro._finish_tdd_cycle", _finish)
+    return call_log
+
+
+@pytest.mark.behavioral
+def test_train_exhaustion_records_failed_row(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = tmp_git_repo
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        "deviate.cli.micro._run_pytest",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=["pytest"], returncode=1, stdout="1 failed", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+    )
+    task, ledger_path, _session_path = _seed_exhaustion_workspace(root)
+    call_log = _install_always_revert_red(monkeypatch)
+    buf = io.StringIO()
+    c = Console(file=buf, force_terminal=False, width=200)
+    with pytest.raises(PhaseFailedError) as excinfo:
+        _run_tdd_cycle(task, ledger_path, c)
+    assert "TRAIN_EXHAUSTED" in str(excinfo.value)
+    assert call_log.count("RED") == 3
+    rows = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    failed = [
+        r for r in rows if r.get("id") == "TSK-041-02" and r.get("status") == "FAILED"
+    ]
+    assert len(failed) == 1, f"AC-PLAN-004: exactly one FAILED row; got {rows!r}"
+    assert "TRAIN_EXHAUSTED" in json.dumps(failed[0]), (
+        f"AC-PLAN-004: FAILED row carries TRAIN_EXHAUSTED reason; got {failed[0]!r}"
+    )
+
+
+@pytest.mark.behavioral
+def test_train_exhaustion_marks_clean_error(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = tmp_git_repo
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        "deviate.cli.micro._run_pytest",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=["pytest"], returncode=1, stdout="1 failed", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+    )
+    task, ledger_path, _session_path = _seed_exhaustion_workspace(root)
+    _install_always_revert_red(monkeypatch)
+    buf = io.StringIO()
+    c = Console(file=buf, force_terminal=False, width=200)
+    with pytest.raises(PhaseFailedError) as excinfo:
+        _run_tdd_cycle(task, ledger_path, c)
+    assert "TRAIN_EXHAUSTED" in buf.getvalue()
+    assert getattr(excinfo.value, "train_exhausted", False) is True, (
+        "AC-PLAN-004: exhaustion error carries the clean-failure mark so the retry wrapper honors it"
+    )
+
+
+@pytest.mark.behavioral
+def test_retry_wrapper_does_not_rerun_exhausted_task(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = tmp_git_repo
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        "deviate.cli.micro._run_pytest",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=["pytest"], returncode=1, stdout="1 failed", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
+    )
+    task, ledger_path, _session_path = _seed_exhaustion_workspace(root)
+    call_log = _install_always_revert_red(monkeypatch)
+    monitor = OrchestrationMonitor(
+        Console(file=io.StringIO(), force_terminal=False, width=200)
+    )
+    with monitor:
+        dispatched = {"count": 0}
+        real_dispatch = micro._dispatch_task
+
+        def _counting_dispatch(*args: object, **kwargs: object) -> None:
+            dispatched["count"] += 1
+            return real_dispatch(*args, **kwargs)
+
+        monkeypatch.setattr("deviate.cli.micro._dispatch_task", _counting_dispatch)
+        ok = _execute_task_with_retry(
+            task,
+            ledger_path,
+            Console(file=io.StringIO(), force_terminal=False, width=200),
+            monitor,
+            root,
+        )
+    assert ok is False
+    assert dispatched["count"] == 1, (
+        f"AC-PLAN-004: retry wrapper must not rerun; got {dispatched['count']}"
+    )
+    assert call_log.count("RED") == 3
+    rows = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    failed = [
+        r for r in rows if r.get("id") == "TSK-041-02" and r.get("status") == "FAILED"
+    ]
+    assert len(failed) == 1, f"AC-PLAN-004: no duplicate FAILED rows; got {rows!r}"
