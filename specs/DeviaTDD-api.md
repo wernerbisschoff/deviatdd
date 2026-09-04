@@ -613,6 +613,14 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 * **Contract:** detects worktree/branch, resolves constitution commands, and emits `spec_path`, `plan_path`, `tasks_target`, worktree metadata, status, and flags. The issue is resolved from `session.active_issue_id`, falling back to a branch-derived lookup via the `feat/{epic}/{issue}` regex against `specs/issues.jsonl`.
 * **Plan digest:** TASKS receives a bounded 16 KiB UTF-8 `plan_digest` plus `plan_path`; truncation inserts `PLAN_DIGEST_TRUNCATED`, requiring a full read.
 * **Validation:** reports PLAN_NOT_FOUND, PLAN_ACCEPTANCE_CONTRACT_MISSING, or PLAN_ACCEPTANCE_CONTRACT_INVALID; no Gherkin fallback. A contract that fails only for a missing `**Verification Mode**:` line is auto-repaired in place (default `automated`) before the status is computed.
+* **Behavior preservation:** the canonical TASKS prompt splits independently invoked
+  runtime hubs into separate logical units. Each TDD unit names one focused verification
+  file with exact new-behavior and preservation assertions. Existing routes, middleware,
+  jobs, exports, and handlers keep explicit coverage. Import safety does not substitute
+  for factory behavior. Construction moves must preserve complete runtime configuration.
+  A task whose GREEN scope combines unrelated application, provider, and scheduler
+  surfaces is rejected and split. The installed manual `/deviate-tasks` command inherits
+  these generic rules from the canonical auto prompt.
 * **Common Flags:** `--json`, `--quiet`.
 
 #### `deviate tasks post [--force] [--issue-id]`

@@ -42,6 +42,20 @@ Assume the consumer repository already has the DeviaTDD CLI and agent skills. Ev
 5. **User-Scenario Rationale**: The `Rationale` field MUST cite the user story and `AC-PLAN-NNN` the task serves. Application acceptance mapping is required; empty or missing stories are not enabling/infrastructure exemptions.
 </traceability_mandates>
 
+<behavior_preservation_tasks>
+
+### Mandatory Behavior-Preservation Tasks
+
+1. **Split at Runtime Boundaries**: Split by runtime boundary when one proposed task touches multiple hubs. A hub is an independently invoked application entrypoint, provider adapter, scheduler job, export boundary, or handler chain. One vertical task can cross layers for one runtime path. Reject the task and split it when it bundles distinct paths.
+2. **Protect Existing Wiring**: Require preservation tests for existing routes, middleware, jobs, exports, and handlers that the task touches. Test the public behavior or registration that must remain.
+3. **Require Exact Assertions**: Assert the complete path, middleware sequence, registration, configuration, callable, or result. Reject prefix-only checks and synthetic substitutes that do not exercise the real boundary.
+4. **Separate Import and Factory Contracts**: Keep import-safety checks separate from factory-behavior checks. An import check proves that a module loads. A factory check invokes the public factory and verifies its configured result. Neither check substitutes for the other.
+5. **Preserve Construction Semantics**: Moving construction into a factory must preserve the complete runtime configuration. Include registrations, routes, middleware, handlers, jobs, provider settings, exports, and startup hooks that apply.
+6. **Reject Cross-Hub GREEN Scope**: Reject the task when its GREEN scope spans unrelated application, provider, and scheduler surfaces. Create one logical unit for each independently verifiable runtime behavior.
+7. **Focus Verification**: Require one focused verification file per logical unit. Keep its new-behavior and preservation assertions together. Reuse existing fixtures instead of creating scattered synthetic harnesses.
+
+</behavior_preservation_tasks>
+
 <execution_sequence>
 
 <step id="contract_loaded">
@@ -69,7 +83,7 @@ For each workstation cluster:
    - `integration` → write only under the integration dir (`tests/integration/` or `test/integration/`); Verification ``mise integration``. Never create files under the unit dir. The runner may still run unit for regression after. Integration cannot resolve if `integration` is not in `verification_suites` — fail loud, do not silently run `mise test`.
    - `e2e` → write only under the e2e dir (`tests/e2e/`); Verification ``mise e2e``.
    Missing cheaper rung = skip, not fail. Do not invent integration/e2e.
-5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name the layer folder/tag and forbid the other layer.
+5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name one focused verification file, its exact observable assertions, the layer folder/tag, and the other forbidden layer. Apply every rule in `<behavior_preservation_tasks>`.
 6. **File Rationale**: Explain WHY each file is touched.
 7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
@@ -107,10 +121,10 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - **Test Strategy**: `unit | integration | e2e` (required if Mode is TDD). Default `unit`. Migration / live-DB AC → `integration`.
 - **Verification**: A **Deterministic CLI Command** scoped to that layer plus cheaper existing rungs (e.g., `mise unit`). Never `pytest tests/` for a unit task.
 - **Estimated Time**: `30-90 minutes` or `60 minutes`
-- **Files**: List of paths (multi-line, indented, minimum 2 files)
+- **Files**: List of paths (multi-line, indented, minimum 2 files). A TDD logical unit names exactly one focused verification file.
 - **Rationale**: Required — explain WHY each file is touched, tie to specific story identifiers and acceptance criteria.
 - **Details**: 4-8 detailed bullet points:
-  - **Red**: Specific test file, test cases, and assertions (TDD only). Name the layer folder/tag and forbid the other layer. The test MUST encode the issue's User Stories + ATDD as a failing observable, not an internal function signature.
+  - **Red**: One focused test file, test cases, and exact assertions (TDD only). Name the layer folder/tag and forbid the other layer. Include preservation assertions for existing runtime wiring that the task touches. The test MUST encode the issue's User Stories + ATDD as a failing observable, not an internal function signature.
   - **Green**: Exact functions/methods to implement, signatures, and logic (TDD only). Restrict scope to workstation files required by those scenarios. GREEN cannot edit tests.
   - **Implementation**: Exact implementation steps (IMMEDIATE only)
   - **Refactor**: Code quality improvements, pattern alignment

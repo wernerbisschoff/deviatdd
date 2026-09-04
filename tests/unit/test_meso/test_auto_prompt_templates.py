@@ -541,6 +541,43 @@ class TestLayerStampedPrompts:
             assert phrase not in installed.lower()
 
 
+class TestBehaviorPreservationTasksPrompt:
+    @pytest.mark.behavioral
+    def test_auto_and_manual_reject_oversized_multi_hub_task(
+        self, tmp_path: Path
+    ) -> None:
+        from deviate.core.commands import install_command
+
+        auto = _read_template("tasks.md")
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-tasks", target)
+        manual = (target / "deviate-tasks.md").read_text(encoding="utf-8")
+
+        for prompt in (auto, manual):
+            start = prompt.index("<behavior_preservation_tasks>")
+            end = prompt.index("</behavior_preservation_tasks>", start)
+            rules = prompt[start:end].lower()
+            for requirement in (
+                "runtime boundary",
+                "multiple hubs",
+                "routes, middleware, jobs, exports, and handlers",
+                "exact assertions",
+                "prefix-only",
+                "synthetic substitutes",
+                "import-safety",
+                "factory-behavior",
+                "complete runtime configuration",
+                "application, provider, and scheduler surfaces",
+                "one focused verification file",
+            ):
+                assert requirement in rules, (
+                    f"behavior-preservation rules missing {requirement!r}"
+                )
+            assert "reject the task" in rules
+            assert "tsk-002-01" not in rules
+            assert "wallet" not in rules
+
+
 class TestVerificationBatchImmediateRouting:
     """GH-57: planner prompts must lock Verification_Batch → IMMEDIATE."""
 
