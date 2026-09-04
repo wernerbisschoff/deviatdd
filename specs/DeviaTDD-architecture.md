@@ -236,6 +236,10 @@ see `DeviaTDD-api.md` §5 for the orchestration contract.:
 - **TDD tasks** (`execution_mode: "TDD"`): Full RED -> GREEN -> JUDGE -> REFACTOR cycle via `_run_tdd_cycle()`. C1 (`deviate` CLI) owns GREEN entry: `_run_green_phase` invokes the GREEN agent only when `session.red_commit_sha` is a standing RED-phase failing-test commit. After `no_failing_test` / `revert_red` / `no_failing_test_adjudicated`, the next `INVOKE_AGENT` is RED, or the loop raises `TRAIN_EXHAUSTED` / `PhaseFailedError`. TDD `revert_green` with an empty SHA is fatal (`ROLLBACK_BOUNDARY_MISSING`) and does not train GREEN.
 - **Non-TDD tasks** (`execution_mode: "DIRECT" | "E2E"`): Immediate completion via
   `_run_execute_phase()`, which marks the task COMPLETED without test generation.
+- **Operator output:** RED, GREEN, JUDGE, and REFACTOR use one shared `PhaseCallout`
+  heading format. GREEN retries use one `TRAIN (<attempt>/3) — <reason>` line.
+  MESO prints one heading for PLAN and one for TASKS. MESO backend and model
+  diagnostics are available with `--verbose` and are hidden by default.
 
 Cycle regressions (wild JUDGE/GREEN/RED handovers such as GH-158 pass+`REFACTOR NOTE` and GH-148 stale `skip_refactor`) go in scripted fixtures (`tests/helpers/cycle_driver.py`), not new `_coerce_judge_action` branches only. The same handover YAML is replayed on **both** invocation styles: auto `_run_tdd_cycle` (patch `_invoke_agent` only; `_run_*_phase` and `_apply_judge_verdict` stay real) and manual `deviate <phase> pre` → scripted files on disk → `deviate <phase> post`. Auto does not shell out to pre/post. A payload that only exists on one path is a missed bug.
 

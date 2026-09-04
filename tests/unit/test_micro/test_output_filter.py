@@ -73,6 +73,17 @@ class TestAgentStatusFilter:
         assert status in _handler_output(verbose=True, lines=[status])
 
 
+def test_green_train_is_one_plain_status_line() -> None:
+    from deviate.cli.micro import _emit_green_train
+
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=False, width=200)
+
+    _emit_green_train(console, attempt=2, reason="judge requested another GREEN")
+
+    assert buf.getvalue().strip() == "TRAIN (2/3) — judge requested another GREEN"
+
+
 class TestMiseRegexPatterns:
     """Direct coverage of the noise regexes."""
 

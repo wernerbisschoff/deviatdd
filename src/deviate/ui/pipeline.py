@@ -10,7 +10,6 @@ Components
 * :class:`PipelineBanner` — opening banner for the meso pipeline.
 * :class:`PhaseCallout`   — per-phase single-task output (RED/GREEN/JUDGE/REFACTOR/EXECUTE).
 * :class:`RunBoard`       — live-updating multi-row task table for `run --all`.
-* :class:`TrainIndicator` — visual train-retry counter (1/3 -> 2/3 -> 3/3).
 * :class:`PipelineSummary` — closing summary panel.
 
 Token-preservation contract: every literal token the existing test suite
@@ -364,44 +363,6 @@ class RunBoard:
             footer.append(f"{failed} failed", style="bold red")
 
         return Group(table, Padding(footer, (0, 0, 0, 2)))
-
-
-# ---------------------------------------------------------------------------
-# TrainIndicator
-# ---------------------------------------------------------------------------
-
-
-class TrainIndicator:
-    """Visual train-retry counter for the Green -> Judge -> Green loop.
-
-    Renders a sequential progression bar with the current attempt
-    highlighted. Always emits the literal token ``TRAIN`` so the existing
-    test suite (``assert "TRAIN" in result.output``) keeps passing.
-    """
-
-    @staticmethod
-    def render(attempt: int, maximum: int, phase: str = "GREEN") -> RenderableType:
-        # Existing tests expect "1/3", "2/3", "3/3" to be present.
-        cells: list[Text] = []
-        for n in range(1, maximum + 1):
-            cell = Text()
-            if n < attempt:
-                cell.append(f" {G_COMPLETED} {n}/{maximum} ", style="bold green")
-            elif n == attempt:
-                cell.append(f" {G_IN_PROGRESS} {n}/{maximum} ", style="bold yellow")
-            else:
-                cell.append(f" {G_PENDING} {n}/{maximum} ", style="dim")
-            cells.append(cell)
-            if n < maximum:
-                cells.append(Text("  " + G_DASH + G_ARROW + G_DASH + "  ", style="dim"))
-
-        header = Text()
-        header.append("TRAIN", style="bold yellow")
-        header.append(f"  {G_DASH}  re-running ", style="dim")
-        header.append(phase, style="bold green")
-        header.append(" with feedback", style="dim")
-
-        return Group(header, Text(""), *cells)
 
 
 # ---------------------------------------------------------------------------

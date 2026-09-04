@@ -9,7 +9,6 @@ The tests pin the visual contract:
 * PipelineBanner      - framed opening for the meso run
 * PhaseCallout        - per-phase single-task output (RED/GREEN/JUDGE/REFACTOR/EXECUTE)
 * RunBoard            - live-updating task table for `run --all`
-* TrainIndicator      - visual train-retry counter
 * PipelineSummary     - closing summary panel
 
 Token-preservation contract: every literal token the existing test suite
@@ -28,7 +27,6 @@ from deviate.ui.pipeline import (
     PHASE_STYLES,
     G_ARROW,
     G_COMPLETED,
-    G_DASH,
     G_FAILED,
     G_IN_PROGRESS,
     G_PENDING,
@@ -38,7 +36,6 @@ from deviate.ui.pipeline import (
     PipelineBanner,
     PipelineSummary,
     RunBoard,
-    TrainIndicator,
     format_duration,
 )
 
@@ -304,37 +301,6 @@ class TestRunBoard:
         board.mark_failed("TSK-007-02", reason="x")
         assert board.completed_count == 1
         assert board.failed_count == 1
-
-
-class TestTrainIndicator:
-    def test_train_indicator_renders_attempt_count(self, captured_console):
-        console, buf = captured_console
-        console.print(TrainIndicator.render(attempt=2, maximum=3, phase="GREEN"))
-        text = buf.getvalue()
-        assert "2" in text
-        assert "3" in text
-        assert "TRAIN" in text
-
-    def test_train_indicator_renders_first_attempt(self, captured_console):
-        console, buf = captured_console
-        console.print(TrainIndicator.render(attempt=1, maximum=3, phase="GREEN"))
-        assert "1/3" in buf.getvalue()
-
-    def test_train_indicator_uses_box_drawing(self, captured_console):
-        console, buf = captured_console
-        console.print(TrainIndicator.render(attempt=1, maximum=3, phase="GREEN"))
-        text = buf.getvalue()
-        assert G_DASH in text
-        assert G_ARROW in text
-
-    def test_train_indicator_marks_past_attempts_completed(self, captured_console):
-        console, buf = captured_console
-        console.print(TrainIndicator.render(attempt=3, maximum=3, phase="GREEN"))
-        text = buf.getvalue()
-        # Attempt 1 and 2 should be visually completed
-        assert text.count(G_COMPLETED) >= 2
-        # Attempt 3 (current) should be in_progress
-        assert G_IN_PROGRESS in text
 
 
 class TestPipelineSummary:

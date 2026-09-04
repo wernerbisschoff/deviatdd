@@ -1621,6 +1621,8 @@ def _invoke_agent_phase(
     phase: str,
     contract: dict[str, str],
     cwd: str | None = None,
+    *,
+    verbose: bool = False,
 ) -> None:
     """Build a slim prompt, invoke the agent, and abort on failure."""
     prompt = _build_slim_prompt(phase, contract)
@@ -1647,11 +1649,12 @@ def _invoke_agent_phase(
             reasoning_effort=reasoning_effort,
         )
         backend = AgentBackend(config=agent_cfg)
-        model_str = f" --model {model}" if model else ""
-        console.print(
-            f"[green]INVOKE_AGENT[/] running '{backend_name}{model_str}'"
-            f" for [{phase}] phase"
-        )
+        if verbose:
+            model_str = f" --model {model}" if model else ""
+            console.print(
+                f"[green]INVOKE_AGENT[/] running '{backend_name}{model_str}'"
+                f" for [{phase}] phase"
+            )
         manifest = backend.invoke(
             prompt,
             cwd=cwd,
@@ -1801,10 +1804,7 @@ def _phase_callout(
     task_id: str,
     task_description: str = "",
 ) -> Generator[None, None, None]:
-    """Context manager that renders PhaseCallout IN_PROGRESS on enter,
-    and COMPLETED or FAILED on exit depending on whether an exception
-    (including SystemExit) was raised."""
-    start = time.monotonic()
+    """Render one phase heading before the phase runs."""
     console.print(
         PhaseCallout(
             phase=phase,
@@ -1812,30 +1812,7 @@ def _phase_callout(
             task_description=task_description,
         ).render(status=PhaseMarker.IN_PROGRESS)
     )
-    try:
-        yield
-    except BaseException:
-        console.print(
-            PhaseCallout(
-                phase=phase,
-                task_id=task_id,
-                task_description=task_description,
-            ).render(
-                status=PhaseMarker.FAILED,
-                duration_seconds=time.monotonic() - start,
-            )
-        )
-        raise
-    console.print(
-        PhaseCallout(
-            phase=phase,
-            task_id=task_id,
-            task_description=task_description,
-        ).render(
-            status=PhaseMarker.COMPLETED,
-            duration_seconds=time.monotonic() - start,
-        )
-    )
+    yield
 
 
 def _key_worktree_session_to_issue(worktree_path: Path, issue_id: str) -> None:
@@ -1880,6 +1857,7 @@ def _meso_run(
     force: bool = False,
     no_setup: bool = False,
     local: bool = False,
+    verbose: bool = False,
 ) -> str | None:
     dot_dir = _resolve_dot_deviate()
     if not dot_dir.exists():
@@ -2062,7 +2040,9 @@ def _meso_run(
                 _silence_stdout(
                     _plan_pre, force=force, dry_run=False, skip_auto_claim=no_setup
                 )
-                _invoke_agent_phase("plan", contract, cwd=str(worktree_path))
+                _invoke_agent_phase(
+                    "plan", contract, cwd=str(worktree_path), verbose=verbose
+                )
                 _enforce_phase_artifact("plan", plan_path)
                 _plan_post(force=force, issue_id=issue_id)
 
@@ -2070,7 +2050,9 @@ def _meso_run(
 
         with _phase_callout("TASKS", issue_id, issue_title):
             _silence_stdout(_tasks_pre, force=force, dry_run=False)
-            _invoke_agent_phase("tasks", contract, cwd=str(worktree_path))
+            _invoke_agent_phase(
+                "tasks", contract, cwd=str(worktree_path), verbose=verbose
+            )
             _enforce_phase_artifact("tasks", tasks_path)
             _tasks_post(force=force, issue_id=issue_id)
 
@@ -2111,8 +2093,13 @@ def meso_run_command(
     force: bool = typer.Option(False, "--force", help="Bypass pre-flight guards"),
     quiet: bool = typer.Option(
         False,
-        "--quiet/--verbose",
-        help="Suppress non-essential output (default: verbose)",
+        "--quiet",
+        help="Suppress output",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Print agent diagnostics",
     ),
     no_setup: bool = typer.Option(
         False,
@@ -2142,6 +2129,7 @@ def meso_run_command(
         dry_run=dry_run,
         force=force,
         quiet=quiet,
+        verbose=verbose,
         no_setup=no_setup,
         local=local,
     )

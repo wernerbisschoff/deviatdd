@@ -1303,6 +1303,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 * **Dashboard / Output:** Constructs an `OrchestrationMonitor` (in
   `src/deviate/ui/monitor.py`) wired to a `RunBoard`
   (`src/deviate/ui/pipeline.py`) with `total_tasks` set to the pending count.
+  RED, GREEN, JUDGE, and REFACTOR each print the same `PhaseCallout` heading.
+  A GREEN retry prints one `TRAIN (<attempt>/3) — <reason>` line. The runner does
+  not print a separate three-cell retry tracker. `--verbose` restores filtered
+  agent and command diagnostics.
 * **Input Parameters:**
   * `[task-id]` (Positional: `TSK-NNN-NN` format; omit to auto-select the first
     PENDING task for the active issue; mutually exclusive with `--all`)
@@ -1378,7 +1382,8 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   * `--dry-run` (Emit only the `tasks` slim prompt; no claim, no worktree, no agent call,
     no commits, no session transitions)
   * `--force` (Bypass `blocked_by` dependency check)
-  * `--quiet/--verbose` (Default: `--quiet`)
+  * `--quiet` (Suppress output)
+  * `--verbose` (Print agent backend and model diagnostics; default: off)
   * `--no-setup` *(optional, advanced)* — Skip the SPECIFY step entirely (no worktree
     created, no ledger claim written). The pipeline runs in the current directory,
     so `_plan_post` and `_tasks_post` will commit `plan.md` / `tasks.md` to whatever
@@ -1422,10 +1427,12 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   emitted by the current implementation.
 * **Output:** The pipeline prints a `PipelineBanner` (`src/deviate/ui/pipeline.py`)
   framed opening panel showing `MESO <issue_id> <issue_title>`, the epic / issue
-  slugs, and a horizontal step indicator (`SPECIFY ▶ PLAN ▶ TASKS`). On
+  slugs, and a horizontal step indicator (`SPECIFY ▶ PLAN ▶ TASKS`). PLAN and
+  TASKS each print one shared `PhaseCallout` heading. Agent backend and model
+  details print only with `--verbose`. On
   completion it prints a `PipelineSummary` (totals + duration + `Status` row)
   followed by a footer line `MESO pipeline complete - session at IDLE`. The
-  literal tokens `MESO`, `IDLE`, `DISCOVERED`, `INVOKE_AGENT`, `DRY_RUN`,
+  literal tokens `MESO`, `IDLE`, `DISCOVERED`, `DRY_RUN`,
   `NO_CLAIMABLE_ISSUES`, `ISSUE_COMPLETED`, `INVALID_ISSUE_ID`, `BLOCKED`,
   `PROGRESS_RESET`, and `<PHASE>_FAILED` are all preserved in the output
   for backwards-compat with existing tooling and the test suite.

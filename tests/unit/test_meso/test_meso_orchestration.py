@@ -753,6 +753,22 @@ class TestMesoRunStdoutSuppression:
         )
 
 
+def test_phase_callout_prints_one_heading() -> None:
+    import io
+
+    from rich.console import Console
+
+    from deviate.cli.meso import _phase_callout
+
+    buf = io.StringIO()
+    test_console = Console(file=buf, force_terminal=False, width=120)
+    with patch("deviate.cli.meso.console", test_console):
+        with _phase_callout("PLAN", "ISS-001-001", "Plan the issue"):
+            pass
+
+    assert buf.getvalue().count("PLAN") == 1
+
+
 class TestMesoRunNoSetup:
     """``_meso_run`` must honor ``--no-setup`` (skip SPECIFY worktree +
     ledger claim) while preserving PLAN + TASKS execution and the default

@@ -8,7 +8,6 @@ from deviate.ui.pipeline import (
     PipelineBanner,
     PipelineSummary,
     RunBoard,
-    TrainIndicator,
     format_duration,
 )
 
@@ -22,6 +21,5 @@ __all__ = [
     "PipelineBanner",
     "PipelineSummary",
     "RunBoard",
-    "TrainIndicator",
     "format_duration",
 ]

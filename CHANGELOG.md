@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`deviate micro run` and `deviate meso run` output is concise and consistent.** RED, GREEN, JUDGE, and REFACTOR now use the same phase heading. GREEN retries print one `TRAIN (<attempt>/3) — <reason>` line instead of the `● 1/3 ─▶─ ◐ 2/3 ─▶─ ○ 3/3` tracker. MESO prints PLAN and TASKS headings once. Its `--quiet` and `--verbose` flags are separate, and backend/model diagnostics require `--verbose`. Pinned by focused UI, micro output, JUDGE, and MESO tests.
 - **`deviate setup` now ignores `.zvec-grep/`.** The project-root `.gitignore` excludes local zvec-grep search-index state. Repeated setup stays idempotent and preserves user entries. Pinned by `tests/unit/test_cli/test_init.py::TestInitAgentFlag`.
 
 - **`/deviate-init` now populates brownfield constitutions.** When init created a `TBD` placeholder for an established codebase, the prompt derives governance from manifests, test configuration, CI, implementation layout, and existing conventions. Greenfield placeholders remain for research. Existing populated constitutions remain unchanged. Pinned by `tests/unit/test_macro/test_scope_gates.py::TestInitConstitutionPopulation`.

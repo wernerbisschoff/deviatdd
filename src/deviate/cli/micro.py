@@ -95,7 +95,6 @@ from deviate.ui.pipeline import (
     PhaseMarker,
     PipelineSummary,
     RunBoard,
-    TrainIndicator,
 )
 from deviate.ui.render import stdout_lock
 
@@ -3812,6 +3811,8 @@ def _run_judge_phase(
     no_refactor: bool = False,
 ) -> SessionState:
     tid = task.get("id", "?")
+    _log_run("PHASE_START", task_id=tid, phase="JUDGE")
+    _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
     backend = agent or "pi"
     root = Path.cwd()
     if _refresh_session_commit_anchors(root, session):
@@ -5033,14 +5034,7 @@ def _escalate_to_new_red(
 
 
 def _emit_green_train(c: Console, *, attempt: int, reason: str) -> None:
-    c.print(
-        TrainIndicator.render(
-            attempt=attempt,
-            maximum=_MAX_GREEN_ATTEMPTS,
-            phase="GREEN",
-        )
-    )
-    c.print(f"  [yellow]TRAIN ({attempt}/{_MAX_GREEN_ATTEMPTS}) \u2014 {reason}[/]")
+    c.print(f"[yellow]TRAIN ({attempt}/{_MAX_GREEN_ATTEMPTS}) \u2014 {reason}[/]")
 
 
 def _train_green_or_escalate(
@@ -5514,7 +5508,6 @@ def _run_execute_phase(
             break
         _log_run("PHASE_START", task_id=tid, phase="JUDGE")
         _emit_phase_callout(c, "JUDGE", task, PhaseMarker.IN_PROGRESS)
-
         if _verbose:
             c.print(f"  [bold magenta]JUDGE →[/] {_task_label(task)} (spec compliance)")
         judge_prompt = _build_auto_prompt("judge", task, root)

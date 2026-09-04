@@ -4642,6 +4642,21 @@ class TestJudgeManifestInvalidKeepsGreen:
             completed=False,
         )
 
+    def test_auto_judge_uses_the_shared_phase_heading(self, tmp_git_repo: Path) -> None:
+        red_sha = _seed_red_green(tmp_git_repo)
+        valid = _gate_manifest(
+            next_action="continue_refactor",
+            evidence=[_gate_evidence()],
+        )
+
+        _, output, _, _ = _run_tdd_judge_invokes(
+            tmp_git_repo,
+            [valid],
+            red_sha,
+        )
+
+        assert "◐  JUDGE" in output
+
     def test_judge_post_string_evidence_refuses_without_reset(
         self, tmp_git_repo: Path
     ) -> None:
