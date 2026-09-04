@@ -462,7 +462,9 @@ def explore_post(
     _save_session(session, session_path, "EXPLORE")
     console.print(f"[green]EXPLORE_ARTIFACT[/] {explore_path}")
     console.print("[bold]NEXT STEPS[/]")
-    console.print(f"  Continue the macro flow: deviate research pre --slug {explore_path.stem}")
+    console.print(
+        f"  Continue the macro flow: deviate research pre --slug {explore_path.stem}"
+    )
     console.print('  Or run a standalone task: deviate adhoc pre "<description>"')
 
 
