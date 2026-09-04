@@ -2449,6 +2449,26 @@ def _planned_revert_anchor(
     )
 
 
+def _resolve_tasks_md_boundary(root: Path) -> str:
+    """Newest commit that created a ``tasks.md`` on the active branch.
+
+    Single ``git log`` query; empty string when no ``tasks.md`` was ever
+    committed, so the uncommitted-or-absent path keeps existing rollback
+    behavior.
+    """
+    out = _git_capture(
+        root,
+        "log",
+        "--diff-filter=A",
+        "--format=%H",
+        "-1",
+        "--",
+        "tasks.md",
+        "**/tasks.md",
+    )
+    return out.splitlines()[0].strip() if out else ""
+
+
 def _print_judge_revert_anchor(c: Console, rollback: _RollbackTrace) -> None:
     """Print the three required revert-index fields."""
     c.print(f"  head_sha={rollback.head_sha}")
@@ -2509,6 +2529,36 @@ def _execute_rollback(
             f"is unchanged."
         )
     recovery_branch = _recovery_branch_for(task_id, attempt)
+
+    # ISS-ADH-040: a JUDGE boundary predating the ``tasks.md``-creating
+    # commit must not drop the human-authored task queue. Reset still
+    # lands on the intended boundary (GREEN is discarded), then the
+    # latest committed ``tasks.md`` state is restored on top. Other
+    # phases (e.g. GREEN pre-RED escalate) keep existing behavior.
+    tasks_safe_sha = _resolve_tasks_md_boundary(root) if phase == "JUDGE" else ""
+    _head_tasks: list[str] = []
+    if phase == "JUDGE":
+        _head_ls = _git_capture(root, "ls-tree", "-r", "HEAD", "--name-only")
+        _head_tasks = [p for p in _head_ls.splitlines() if Path(p).name == "tasks.md"]
+    safe_ok = bool(tasks_safe_sha and _is_ancestor(root, tasks_safe_sha, "HEAD"))
+    if phase == "JUDGE" and _head_tasks and not safe_ok:
+        raise PhaseFailedError(
+            f"ROLLBACK_UNSAFE_BOUNDARY: refusing to roll back to {boundary_sha} "
+            f"when no safe tasks.md boundary resolves (phase={phase}, "
+            f"task_id={task_id!r}, attempt={attempt}). The active branch "
+            f"is unchanged."
+        )
+
+    restore_tasks_md = bool(
+        tasks_safe_sha
+        and tasks_safe_sha != boundary_sha
+        and _is_ancestor(root, boundary_sha, tasks_safe_sha)
+        and safe_ok
+    )
+    restore_paths: list[str] = []
+    if restore_tasks_md:
+        restore_paths = list(_head_tasks)
+        restore_tasks_md = bool(restore_paths)
 
     branch = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -2580,6 +2630,24 @@ def _execute_rollback(
         capture_output=True,
         env=_git_env(),
     )
+    if restore_tasks_md:
+        subprocess.run(
+            ["git", "checkout", commit_sha, "--", *restore_paths],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "-m",
+                f"chore({task_id}): restore tasks.md after JUDGE rollback",
+            ],
+            cwd=root,
+            capture_output=True,
+            env=_git_env(),
+        )
     return _RollbackTrace(
         head_sha=commit_sha,
         reset_to=boundary_sha,

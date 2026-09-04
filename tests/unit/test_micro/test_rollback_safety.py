@@ -623,3 +623,232 @@ class TestRecoveryBranchFor:
         assert (
             _recovery_branch_for("   ", 2) == "tmp/deviate-agent-work/unknown/attempt-2"
         )
+
+
+class TestRollbackPreservesTasksMd:
+    """JUDGE rollback never removes committed ``tasks.md`` (ISS-ADH-040).
+
+    AC-PLAN-001 (AO-040-01, US-040-01): a boundary predating the
+    ``tasks.md``-creating commit must land at or after that commit so
+    ``git ls-tree -r HEAD --name-only`` still lists ``tasks.md`` at its
+    latest committed state. AC-PLAN-003: meso reuses existing Tasks.
+    """
+
+    def _commit_file(self, repo: Path, name: str, content: str, msg: str) -> str:
+        (repo / name).write_text(content, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", name],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", msg],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        return _current_head(repo)
+
+    def _ls_tree(self, repo: Path) -> list[str]:
+        return subprocess.run(
+            ["git", "ls-tree", "-r", "HEAD", "--name-only"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+
+    @pytest.mark.behavioral
+    def test_stale_boundary_keeps_tasks_md_listed(self, tmp_git_repo: Path) -> None:
+        """Stale boundary keeps ``tasks.md`` in ``git ls-tree`` (AC-PLAN-001)."""
+        from deviate.cli.micro import _execute_rollback
+
+        baseline = _current_head(tmp_git_repo)
+        tasks_content = "# Tasks\n\n- TSK-040-01: clamp rollback\n"
+        self._commit_file(tmp_git_repo, "tasks.md", tasks_content, "docs: add tasks.md")
+        self._commit_file(tmp_git_repo, "red.py", "x = 1\n", "test: RED commit")
+        self._commit_file(tmp_git_repo, "green.py", "x = 2\n", "feat: GREEN commit")
+
+        _execute_rollback(
+            tmp_git_repo,
+            boundary_sha=baseline,
+            reason="JUDGE revert",
+            phase="JUDGE",
+            task_id="TSK-040-01",
+            attempt=0,
+        )
+
+        assert "tasks.md" in self._ls_tree(tmp_git_repo)
+
+    @pytest.mark.behavioral
+    def test_stale_boundary_keeps_tasks_md_content(self, tmp_git_repo: Path) -> None:
+        """``tasks.md`` stays at latest committed state after stale rollback."""
+        from deviate.cli.micro import _execute_rollback
+
+        baseline = _current_head(tmp_git_repo)
+        tasks_content = "# Tasks\n\n- TSK-040-01: clamp rollback\n"
+        self._commit_file(tmp_git_repo, "tasks.md", tasks_content, "docs: add tasks.md")
+        self._commit_file(tmp_git_repo, "red.py", "x = 1\n", "test: RED commit")
+        self._commit_file(tmp_git_repo, "green.py", "x = 2\n", "feat: GREEN commit")
+
+        _execute_rollback(
+            tmp_git_repo,
+            boundary_sha=baseline,
+            reason="JUDGE revert",
+            phase="JUDGE",
+            task_id="TSK-040-01",
+            attempt=0,
+        )
+
+        assert (tmp_git_repo / "tasks.md").read_text(encoding="utf-8") == tasks_content
+
+
+class TestRefuseUnsafeRollback:
+    """Unsafe rollback refuses before any reset (ISS-ADH-040).
+
+    AC-PLAN-002 (AO-040-02, US-040-01): when no safe boundary resolves —
+    the ``tasks.md``-creating commit is unresolvable or not an ancestor
+    of HEAD (e.g. amended or rebased history) — the runner raises a
+    plain ``PhaseFailedError`` before any reset and leaves branch,
+    index, and untracked files unchanged. AC-PLAN-004: prior recovery
+    refs stay resolvable and no ref is overwritten on refusal.
+    """
+
+    def _commit_file(self, repo: Path, name: str, content: str, msg: str) -> str:
+        (repo / name).write_text(content, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", name],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", msg],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        return _current_head(repo)
+
+    def _staged_names(self, repo: Path) -> list[str]:
+        return sorted(
+            subprocess.run(
+                ["git", "diff", "--cached", "--name-only"],
+                cwd=repo,
+                env=_git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.split()
+        )
+
+    def _branch(self, repo: Path) -> str:
+        return subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    @pytest.mark.behavioral
+    def test_refuses_when_safe_commit_unresolvable(self, tmp_git_repo: Path) -> None:
+        """Empty safe commit refuses before reset; worktree untouched."""
+        from deviate.cli.micro import PhaseFailedError, _execute_rollback
+
+        baseline = _current_head(tmp_git_repo)
+        self._commit_file(tmp_git_repo, "tasks.md", "# Tasks\n", "docs: add tasks.md")
+        self._commit_file(tmp_git_repo, "red.py", "x = 1\n", "test: RED commit")
+        self._commit_file(tmp_git_repo, "green.py", "x = 2\n", "feat: GREEN commit")
+
+        (tmp_git_repo / "red.py").write_text("x = 99\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "red.py"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+        (tmp_git_repo / "notes.txt").write_text("scratch\n", encoding="utf-8")
+
+        head_before = _current_head(tmp_git_repo)
+        branch_before = self._branch(tmp_git_repo)
+        staged_before = self._staged_names(tmp_git_repo)
+
+        with (
+            patch("deviate.cli.micro._resolve_tasks_md_boundary", return_value=""),
+            pytest.raises(PhaseFailedError),
+        ):
+            _execute_rollback(
+                tmp_git_repo,
+                boundary_sha=baseline,
+                reason="JUDGE revert",
+                phase="JUDGE",
+                task_id="TSK-040-02",
+                attempt=1,
+            )
+
+        assert _current_head(tmp_git_repo) == head_before
+        assert self._branch(tmp_git_repo) == branch_before
+        assert self._staged_names(tmp_git_repo) == staged_before
+        assert (tmp_git_repo / "notes.txt").read_text(encoding="utf-8") == "scratch\n"
+        assert (tmp_git_repo / "red.py").read_text(encoding="utf-8") == "x = 99\n"
+
+    @pytest.mark.behavioral
+    def test_refuses_when_safe_commit_not_ancestor(self, tmp_git_repo: Path) -> None:
+        """Non-ancestor safe commit refuses; prior recovery refs intact."""
+        from deviate.cli.micro import PhaseFailedError, _execute_rollback
+
+        baseline = _current_head(tmp_git_repo)
+        tasks_sha = self._commit_file(
+            tmp_git_repo, "tasks.md", "# Tasks\n", "docs: add tasks.md"
+        )
+        self._commit_file(tmp_git_repo, "red.py", "x = 1\n", "test: RED commit")
+        self._commit_file(tmp_git_repo, "green.py", "x = 2\n", "feat: GREEN commit")
+
+        _execute_rollback(
+            tmp_git_repo,
+            boundary_sha=tasks_sha,
+            reason="first JUDGE revert",
+            phase="JUDGE",
+            task_id="TSK-040-02",
+            attempt=0,
+        )
+        prior_ref = "tmp/deviate-agent-work/TSK-040-02/attempt-0"
+        assert _ref_exists(tmp_git_repo, prior_ref)
+        prior_sha = _ref_sha(tmp_git_repo, prior_ref)
+
+        self._commit_file(tmp_git_repo, "retry.py", "y = 1\n", "feat: retry commit")
+        (tmp_git_repo / "scratch.txt").write_text("wip\n", encoding="utf-8")
+        head_before = _current_head(tmp_git_repo)
+        branch_before = self._branch(tmp_git_repo)
+        next_ref = "tmp/deviate-agent-work/TSK-040-02/attempt-1"
+
+        with (
+            patch(
+                "deviate.cli.micro._resolve_tasks_md_boundary",
+                return_value="f" * 40,
+            ),
+            pytest.raises(PhaseFailedError),
+        ):
+            _execute_rollback(
+                tmp_git_repo,
+                boundary_sha=baseline,
+                reason="second JUDGE revert",
+                phase="JUDGE",
+                task_id="TSK-040-02",
+                attempt=1,
+            )
+
+        assert _current_head(tmp_git_repo) == head_before
+        assert self._branch(tmp_git_repo) == branch_before
+        assert _ref_sha(tmp_git_repo, prior_ref) == prior_sha
+        assert not _ref_exists(tmp_git_repo, next_ref)
+        assert (tmp_git_repo / "scratch.txt").read_text(encoding="utf-8") == "wip\n"
