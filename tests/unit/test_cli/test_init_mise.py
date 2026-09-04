@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import tomllib
 from contextlib import chdir
 from pathlib import Path
@@ -125,6 +126,21 @@ def test_fresh_init_defines_unit_and_integration_not_e2e(
     assert not (tmp_git_repo / "e2e").exists()
     assert not (tmp_git_repo / "test" / "e2e").exists()
 
+    expected = {
+        "test",
+        "test:unit",
+        "test:integration",
+        "doctor",
+        "doctor:unit",
+        "doctor:integration",
+    }
+    assert expected <= tasks.keys()
+    if project_type == "unknown":
+        assert "test:one" not in tasks
+    else:
+        assert "test:one" in tasks
+        assert 'arg "<args>" var=#true' in tasks["test:one"]["usage"]
+
 
 @pytest.mark.parametrize(
     "project_type", ["python", "elixir_phoenix", "node", "rust", "go"]
@@ -165,6 +181,10 @@ def test_e2e_task_added_only_when_layer_exists(tmp_git_repo: Path) -> None:
     assert "e2e" in config["tasks"]
     assert "tests/e2e" in _task_run(config, "e2e")
     assert "|| true" not in _task_run(config, "e2e")
+    assert {"test:e2e", "doctor:e2e"} <= config["tasks"].keys()
+    assert "mise run unit" in _task_run(config, "test:e2e")
+    assert "mise run integration" in _task_run(config, "test:e2e")
+    assert "mise run e2e" in _task_run(config, "test:e2e")
 
 
 def test_existing_layer_dir_is_not_wiped(tmp_git_repo: Path) -> None:
@@ -208,6 +228,13 @@ def test_existing_mise_without_named_tasks_adds_unit_and_integration(
     assert "integ" not in config["tasks"]
     assert "e2e" not in config["tasks"]
     assert "|| true" not in _task_run(config, "unit")
+    assert {
+        "test:one",
+        "test:unit",
+        "test:integration",
+        "doctor:unit",
+        "doctor:integration",
+    } <= config["tasks"].keys()
 
 
 def test_existing_mise_with_unit_does_not_rewrite_command(tmp_git_repo: Path) -> None:
@@ -244,6 +271,65 @@ def test_doctor_includes_compose_config_when_compose_exists(
     doctor = _task_run(_load_mise(tmp_git_repo), "doctor")
     assert "docker compose config" in doctor
     assert "docker compose up" not in doctor
+    assert "mise run test:" not in doctor
+    unit_doctor = _task_run(_load_mise(tmp_git_repo), "doctor:unit")
+    assert "docker compose config" not in unit_doctor
+
+
+def test_setup_stays_basic_until_project_init(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "python")
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+    assert result.exit_code == 0, result.output
+    claude = tmp_git_repo / "CLAUDE.md"
+    assert "DeviaTDD Verification and Mise Tasks" not in claude.read_text(
+        encoding="utf-8"
+    )
+    assert not (tmp_git_repo / "mise.toml").exists()
+
+    _init_pre(tmp_git_repo)
+    assert "DeviaTDD Verification and Mise Tasks" in claude.read_text(encoding="utf-8")
+    assert (tmp_git_repo / "mise.toml").exists()
+
+
+def test_init_writes_project_verification_governance(tmp_git_repo: Path) -> None:
+    _seed_project(tmp_git_repo, "python")
+    _init_pre(tmp_git_repo)
+
+    claude = tmp_git_repo / "CLAUDE.md"
+    assert "## ⚡ DeviaTDD Verification and Mise Tasks" in claude.read_text(
+        encoding="utf-8"
+    )
+    assert "mise run test:one --" in claude.read_text(encoding="utf-8")
+    assert (tmp_git_repo / "AGENTS.md").is_symlink()
+    assert (tmp_git_repo / "AGENTS.md").resolve() == claude.resolve()
+
+    _init_pre(tmp_git_repo)
+    assert (
+        claude.read_text(encoding="utf-8").count(
+            "## ⚡ DeviaTDD Verification and Mise Tasks"
+        )
+        == 1
+    )
+
+    with chdir(tmp_git_repo):
+        result = runner.invoke(cli, ["init", "post"])
+    assert result.exit_code == 0, result.output
+    staged = subprocess.check_output(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tmp_git_repo,
+        text=True,
+    ).splitlines()
+    assert {"CLAUDE.md", "AGENTS.md"} <= set(staged)
+
+
+def test_unknown_project_reports_targeted_test_unconfigured(
+    tmp_git_repo: Path,
+) -> None:
+    _init_pre(tmp_git_repo)
+    content = (tmp_git_repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "Targeted testing is not configured" in content
+    assert "mise run test:one --" not in content
 
 
 def test_generate_unknown_emits_unit_and_integration_not_e2e(tmp_path: Path) -> None:

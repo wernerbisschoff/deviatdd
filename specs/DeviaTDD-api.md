@@ -16,35 +16,27 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
 
 #### `deviate init` and `deviate setup`
 
-* **Sources:** `src/deviate/cli/init.py` (Typer sub-group) and `src/deviate/cli/__init__.py`
-  (flat `deviate setup` command, defined at `cli/__init__.py:555-627`). Both entry points
-  are equivalent in behavior — `deviate setup` is the legacy flat alias and `deviate init`
-  is the Typer sub-group registered via `cli.add_typer(init_app, name="init")` at
-  `cli/__init__.py:669`.
-* **Description:** Initializes a standard project-level DeviaTDD compliance framework. Builds
-  the `.deviate/` directory (containing `config.toml`, `session.json`, `.gitignore`, and an
-  empty `artifacts/` workspace); ensures a symlink relationship between `CLAUDE.md` and
-  `AGENTS.md` (via `_linkify_governance_files`); applies governance blocks to the canonical
-  file; and installs the DeviaTDD prompt commands. `deviate setup` does **not** scaffold
-  `specs/constitution.md` — that bootstrap is owned by `deviate research pre` (see below),
-  so a fresh project reports `is_greenfield=true` until `/research` populates the
-  constitution. `deviate init pre` continues to scaffold the constitution independently.
-  It also writes or merges `<repo_root>/mise.toml` with the named tasks RED/GREEN
-  resolve: always `unit`, `integration` (`mise integration`), and `doctor`. The
-  runner also accepts `integ` as an alias when a repo already defines that name;
-  init writes `integration`. `unit` has no `|| true` — RED must be able to fail.
-  Empty `integration` may collect zero tests; pytest exit 5 (no tests collected)
-  is treated as success on that task — assertion failures still fail. `e2e` is
-  added only when `tests/e2e`, `e2e/`, or `test/e2e` already exists. `doctor` is
-  a cheap toolchain check (may append `docker compose config` when
-  `docker-compose.yml` / `compose.yaml` exists — never `docker compose up`).
-  Fresh scaffolds set `pre-commit` = format-check + lint and `pre-push` =
-  `unit` only; `test` remains a back-compat alias of `unit`. Empty stub dirs
-  are always created at `tests/unit` + `tests/integration` (Elixir: `test/`
-  stays unit; add `test/integration`). Existing layer folders are not wiped.
-  An existing `mise.toml` is not overwritten: only missing `unit` /
-  `integration` / `doctor` (and `e2e` when that layer exists) are inserted.
-  Init does not write `.deviate/config.toml`.
+* **Sources:** `src/deviate/cli/init.py` (project initialization) and
+  `src/deviate/cli/__init__.py` (framework setup). These commands have separate roles.
+* **Description:** `deviate setup` performs idempotent, project-independent installation. It
+  writes `.deviate/`, installs the selected agent commands and skill, creates the governance
+  file pair, and applies only setup-selected governance such as libref. It does not create
+  test directories, `mise.toml`, `specs/constitution.md`, or project verification guidance.
+  `/deviate-init` invokes `deviate init pre` and `post` after setup. Init detects the project
+  type and package manager. It creates or merges `mise.toml`, language-native unit and
+  integration directories, `specs/constitution.md`, `specs/issues.jsonl`, and project-specific
+  verification guidance in the canonical governance file.
+  Init keeps the native `unit`, `integration`, and optional `e2e` tasks used by Micro. It adds
+  `test` and `test:unit` for unit-only verification, a required-argument `test:one` task when
+  it detects a runner, and `test:integration` for unit then integration. It adds `test:e2e`
+  only when `tests/e2e`, `e2e/`, or `test/e2e` exists. The matching `doctor:unit`,
+  `doctor:integration`, and optional `doctor:e2e` tasks perform read-only readiness checks;
+  they do not run tests or launch services. `doctor` checks all configured layers. Unknown
+  projects omit `test:one` until a runner exists.
+  Generated guidance requires targeted `test:one` checks during RED/GREEN/REFACTOR and the
+  matching complete layer before completion. Unit tests must not require a database, Redis,
+  network service, container, or external process. Existing mise tasks and tool pins are never
+  overwritten. Init does not write `.deviate/config.toml`.
   Successful `deviate setup` prints a next-step hint to run `/deviate-init` as the
   first agent prompt (Codex: the `deviate-init` skill) and notes that init is a
   no-op if the repo is already scaffolded.

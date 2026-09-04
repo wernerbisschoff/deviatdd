@@ -88,26 +88,22 @@ Breaks a business goal down into standard development project containers.
   `is_greenfield=true` in its JSON contract; `research pre` then bootstraps the
   placeholder scaffold from `src/deviate/prompts/constitution_seed.md` before
   validation, so a brand-new repo is greenfield exactly once (through explore) and
-  becomes governed at the first research invocation. `deviate setup` deliberately does
-  NOT scaffold the constitution — keeping setup constitution-agnostic preserves the
-  greenfield signal for the orchestrator and downstream phases. The new-user path is
-  two steps: `deviate setup` (writes `.deviate/`, persists the agent, installs the
-  default execution-layer packs — `macro` + `meso` + `micro`, including `deviate-init` —
-  and the shared `deviatdd` skill) then `/deviate-init`
-  as the first agent prompt (Codex: the `deviate-init` skill). `/deviate-init` runs
-  `deviate init pre` / `deviate init post` and scaffolds `specs/constitution.md`,
-  `mise.toml`, and `specs/issues.jsonl`. Existing constitution / issues ledger files
-  are left untouched. `mise.toml` is created when missing, or merged when present:
-  missing allowlisted tasks `unit`, `integration`, and `doctor` are inserted
-  (`e2e` only when `tests/e2e`, `e2e/`, or `test/e2e` already exists); existing
-  commands and tool pins are not rewritten. Init writes `integration` so
-  `mise integration` works (the runner also accepts `integ` as an alias). Init
-  always creates language-native stub dirs (`tests/unit` + `tests/integration`;
-  Elixir: `test/` stays unit, plus `test/integration`) so RED knows where to
-  write. Existing layer folders are not wiped. `pre-push` depends on `unit`
-  only. `unit` has no `|| true` — RED must be able to fail. Empty
-  `integration` treats pytest exit 5 (no tests collected) as success;
-  assertion failures still fail.
+  becomes governed at the first research invocation. Bootstrap has two explicit stages.
+  `deviate setup` is idempotent and project-independent: it writes `.deviate/`, persists the
+  selected agent, installs commands and skills, and creates the governance file pair. It does
+  not infer a test runner, create test directories, write `mise.toml`, or add project-specific
+  verification guidance. This preserves the greenfield signal.
+  `/deviate-init` is the first project-adaptation prompt. It runs `deviate init pre` / `post`,
+  detects the project type, and scaffolds `specs/constitution.md`, `specs/issues.jsonl`,
+  language-native unit and integration directories, and `mise.toml`. Existing files and mise
+  tasks remain unchanged. Init keeps native `unit`, `integration`, and optional `e2e` tasks
+  for Micro. It adds a stable `test:one` interface when a runner is detected, unit-only
+  `test` / `test:unit`, cumulative `test:integration`, and optional cumulative `test:e2e`.
+  Matching `doctor:*` tasks provide read-only readiness checks and never run tests or launch services. E2E tasks appear only
+  when an E2E directory exists; init never invents service wiring, browser tooling, control
+  scripts, or E2E directories. The init governance block records targeted-test syntax, requires
+  the complete matching layer before completion, and classifies database, Redis, network,
+  container, and other service-dependent tests as integration rather than unit tests.
 
 * **Active Domain Discipline (HITL gates):** `/deviate-research` Gate 1 and `/deviate-prd` Ambiguity Interrogation actively challenge terms and edge cases. Plan + Tasks produce the current acceptance contract and decomposition; the system auto-advances from Tasks into Micro with no human-approval step.
 
@@ -655,14 +651,15 @@ and `test_command` (this layer only: `mise unit` / `mise integration` / `mise e2
 `tasks.md`. Classify from the
 task card **Test Strategy** (`unit` | `integration` | `e2e`) and `execution_mode: E2E`
 first. A partial declared verification (file / `-k` / node id) becomes `mise exec --
-<command>` when `mise.toml` / `.mise.toml` is present. The runner still walks cheaper
-existing rungs after an integration/e2e RED: `unit` →
-unit only (never integ/e2e, never `mise test`); `integration` → unit (if it exists) then
-integration (fail loud with `VERIFICATION_UNRESOLVED` if integration is undefined); `e2e` → unit (if
-exists) then integration (if exists) then e2e. Missing cheaper rungs are skipped, not invented.
-`mise doctor` is preflight only when defined **and** this task actually runs integ/e2e (or
-an unstamped full suite) — a unit-stamped sociable test must still run with the DB down
-under `mise unit`. Without mise, map layers to conventional `tests/unit` /
+<command>` when `mise.toml` / `.mise.toml` is present. Init also exposes this operation as
+`mise run test:one -- <target> [arguments]` for agents and humans. RED, GREEN, and REFACTOR
+use the targeted command while iterating, then run the matching complete layer before completion.
+The runner still walks cheaper existing rungs after an integration/e2e RED: `unit` →
+unit only (never integ/e2e, never `mise test`); `integration` → unit then integration; `e2e` →
+unit then integration then e2e. Missing cheaper rungs are skipped, not invented. `mise doctor`
+remains the configured readiness preflight for integration, E2E, or an unstamped full suite.
+A unit-stamped sociable test must still run with the DB down under `mise unit`. Without mise,
+map layers to conventional `tests/unit` /
 `tests/integration` / `tests/e2e` when those directories exist, else the declared
 Verification if it is already scoped. Unstamped cards still fall through: task
 `verification`, constitution `test_command`, then the

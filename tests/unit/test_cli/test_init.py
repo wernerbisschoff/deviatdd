@@ -38,6 +38,7 @@ class TestInitCommand:
             # help consuming projects). Libref is opt-in via --libref.
             assert "## 🛠 DeviaTDD Phase Architecture" not in content
             assert "libref" not in content.lower()
+            assert "DeviaTDD Verification and Mise Tasks" not in content
 
     def test_init_replaces_governance_block_in_place(self, tmp_path: Path):
         """Existing governance block is replaced without duplication; unrelated sections are preserved."""

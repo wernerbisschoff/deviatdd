@@ -228,7 +228,9 @@ def _e2e_run(project_type: str, repo_root: Path) -> str:
     return _allow_empty_pytest(f"pytest {e2e_s}")
 
 
-def _doctor_run(project_type: str, repo_root: Path) -> str:
+def _doctor_run(
+    project_type: str, repo_root: Path, *, include_services: bool = True
+) -> str:
     if project_type == "elixir_phoenix":
         command = "elixir --version && mix --version"
     elif project_type == "python":
@@ -242,22 +244,60 @@ def _doctor_run(project_type: str, repo_root: Path) -> str:
         command = "go version"
     else:
         command = "python3 --version"
-    if _has_compose_file(repo_root):
+    if include_services and _has_compose_file(repo_root):
         command += " && docker compose config"
     return command
 
 
+def _test_one_run(project_type: str, repo_root: Path) -> str | None:
+    args = "${usage_args?}"
+    if project_type == "elixir_phoenix":
+        return f"mix test {args}"
+    if project_type == "python":
+        return f"uv run pytest {args}"
+    if project_type == "node":
+        return f"{_node_pkg_manager(repo_root)} test -- {args}"
+    if project_type == "rust":
+        return f"cargo test {args}"
+    if project_type == "go":
+        return f"go test {args}"
+    return None
+
+
 def _named_mise_tasks(project_type: str, repo_root: Path) -> dict[str, str]:
-    # Write ``integration`` so ``mise integration`` works. The runner
-    # (_resolve_verification_command) also accepts ``integ`` as an alias
-    # when a repo already defines that name; init does not emit ``integ``.
+    unit, integration = _layer_paths(project_type, repo_root)
+    unit_check = (
+        f"{_doctor_run(project_type, repo_root, include_services=False)} "
+        f"&& test -d {unit.as_posix()}"
+    )
+    integration_check = (
+        f"{_doctor_run(project_type, repo_root)} "
+        f"&& test -d {unit.as_posix()} && test -d {integration.as_posix()}"
+    )
     tasks = {
         "unit": _unit_run(project_type, repo_root),
         "integration": _integ_run(project_type, repo_root),
-        "doctor": _doctor_run(project_type, repo_root),
+        "test": "mise run test:unit",
+        "test:unit": "mise run unit",
+        "test:integration": "mise run unit && mise run integration",
+        "doctor:unit": unit_check,
+        "doctor:integration": integration_check,
     }
-    if _existing_e2e_dir(repo_root) is not None:
-        tasks["e2e"] = _e2e_run(project_type, repo_root)
+    test_one = _test_one_run(project_type, repo_root)
+    if test_one is not None:
+        tasks["test:one"] = test_one
+    e2e = _existing_e2e_dir(repo_root)
+    if e2e is not None:
+        tasks.update(
+            {
+                "e2e": _e2e_run(project_type, repo_root),
+                "test:e2e": ("mise run unit && mise run integration && mise run e2e"),
+                "doctor:e2e": (f"{integration_check} && test -d {e2e.as_posix()}"),
+            }
+        )
+        tasks["doctor"] = tasks["doctor:e2e"]
+    else:
+        tasks["doctor"] = tasks["doctor:integration"]
     return tasks
 
 
@@ -290,7 +330,13 @@ def _mise_task_names(content: str) -> set[str]:
 
 
 def _render_named_task(name: str, run: str) -> str:
-    return f"[tasks.{name}]\nrun = {_toml_string(run)}\n"
+    key = _toml_string(name) if ":" in name else name
+    usage = (
+        'usage = \'arg "<args>" var=#true help="Test target and optional runner arguments"\'\n'
+        if name == "test:one"
+        else ""
+    )
+    return f"[tasks.{key}]\n{usage}run = {_toml_string(run)}\n"
 
 
 def _merge_mise_toml(content: str, named: dict[str, str]) -> str:
@@ -327,7 +373,7 @@ def _apply_mise_toml(project_type: str, repo_root: Path) -> bool:
     return True
 
 
-def _generate_mise_toml(project_type: str, repo_root: Path) -> str:
+def _generate_mise_toml_base(project_type: str, repo_root: Path) -> str:
     named = _named_mise_tasks(project_type, repo_root)
     unit = _toml_string(named["unit"])
     integration = _toml_string(named["integration"])
@@ -513,6 +559,20 @@ description = "Push hook: unit tests only"
     _fail_with(f"Unknown project type: {project_type}")
 
 
+def _generate_mise_toml(project_type: str, repo_root: Path) -> str:
+    content = _generate_mise_toml_base(project_type, repo_root)
+    named = _named_mise_tasks(project_type, repo_root)
+    existing = _mise_task_names(content)
+    additions = [
+        _render_named_task(name, run)
+        for name, run in named.items()
+        if name not in existing
+    ]
+    if not additions:
+        return content
+    return content.rstrip() + "\n\n" + "\n".join(additions)
+
+
 def _scaffold_constitution(project_type: str, repo_root: Path) -> None:
     test_cmd = _get_test_command(project_type)
     lint_cmd = _get_lint_command(project_type)
@@ -584,6 +644,44 @@ def _check_tool(name: str) -> bool:
         return False
 
 
+def _apply_init_governance(repo_root: Path, project_type: str) -> None:
+    from deviate.cli import (
+        _linkify_governance_files,
+        _read_seed,
+        _upsert_governance_block,
+    )
+
+    _linkify_governance_files(repo_root)
+    content = _read_seed("deviate.prompts.governance", "init_seed.md")
+    if content is None:
+        return
+    examples = {
+        "python": "tests/unit/test_example.py::test_behavior",
+        "elixir_phoenix": "test/example_test.exs",
+        "node": "tests/unit/example.test.js",
+        "rust": "--test example",
+        "go": "./... -run TestExample",
+    }
+    example = examples.get(project_type)
+    if example is None:
+        row = ""
+        guidance = (
+            "Targeted testing is not configured because no test runner was detected. "
+            "Add a runner and rerun `/deviate-init`."
+        )
+    else:
+        row = "| `mise run test:one -- <target> [arguments]` | One targeted test |"
+        guidance = (
+            f"Targeted example for this project: `mise run test:one -- {example}`.\n"
+            "Use `test:one` during RED, GREEN, and REFACTOR iterations."
+        )
+    content = content.replace("{{targeted_test_row}}", row)
+    content = content.replace("{{targeted_test_guidance}}", guidance)
+    for path in (repo_root / "CLAUDE.md", repo_root / "AGENTS.md"):
+        if not path.is_symlink():
+            _upsert_governance_block(path, content)
+
+
 @init_app.command()
 def pre() -> None:
     """Detect project type, scaffold DeviaTDD structure, emit JSON contract."""
@@ -651,9 +749,9 @@ def pre() -> None:
         has_constitution = True
         artifacts_created.append("specs/constitution.md")
 
-    from deviate.cli import _linkify_governance_files
-
-    _linkify_governance_files(repo_root)
+    _apply_init_governance(repo_root, project_type)
+    if (repo_root / "CLAUDE.md").exists():
+        artifacts_created.append("CLAUDE.md")
     if (repo_root / "AGENTS.md").is_symlink():
         artifacts_created.append("AGENTS.md")
 
@@ -733,6 +831,8 @@ def post() -> None:
         artifacts.append("specs/constitution.md")
     if (repo_root / "specs" / "issues.jsonl").exists():
         artifacts.append("specs/issues.jsonl")
+    if (repo_root / "CLAUDE.md").exists():
+        artifacts.append("CLAUDE.md")
     if (repo_root / "AGENTS.md").is_symlink():
         artifacts.append("AGENTS.md")
     if (repo_root / ".gitattributes").exists():
