@@ -1,11 +1,13 @@
 """RED: compile-error output counts as a failing RED (ISS-ADH-041).
-TSK-041-01 covers AC-PLAN-001..003; TSK-041-02 covers AC-PLAN-004:
-three RED escalates record a FAILED row with the TRAIN_EXHAUSTED reason
-and exit without an unhandled traceback or a retry-loop rerun.
+TSK-041-01 covers AC-PLAN-001..003; TSK-041-02 covers AC-PLAN-004.
+TSK-041-03 (AC-PLAN-005) pins the no-failing-test COMPLETE evidence
+guards: empty evidence quotes, docs-only diffs, and COMPLETE routes
+whose declared regression paths miss the diff are rejected.
 
 AC-PLAN-001: non-zero result with compile-error markers commits RED / GREEN.
 AC-PLAN-002: exit 0 / exit 5 / exit 127 still route to adjudication.
 AC-PLAN-003: mixed compile-error plus passing output counts as failing.
+AC-PLAN-005: no-failing-test COMPLETE keeps evidence guardrails.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ from rich.console import Console
 import deviate.cli.micro as micro
 from deviate.cli.micro import (
     PhaseFailedError,
+    _adjudicate_red_no_failing_test,
+    _append_status_transition,
     _execute_task_with_retry,
     _run_red_phase,
     _run_tdd_cycle,
@@ -325,3 +329,131 @@ def test_retry_wrapper_does_not_rerun_exhausted_task(
         r for r in rows if r.get("id") == "TSK-041-02" and r.get("status") == "FAILED"
     ]
     assert len(failed) == 1, f"AC-PLAN-004: no duplicate FAILED rows; got {rows!r}"
+
+
+# ---------------------------------------------------------------------------
+# TSK-041-03 / AC-PLAN-005: pin the no-failing-test COMPLETE evidence guards.
+# A COMPLETE with empty evidence quotes is rejected; a COMPLETE whose only
+# evidence path is a docs file is rejected; a COMPLETE whose declared
+# regression paths miss the diff is rejected.
+# ---------------------------------------------------------------------------
+
+
+def _041_task() -> dict:
+    return {
+        "id": "TSK-041-03",
+        "issue_id": "ISS-ADH-041",
+        "description": "Pin no-failing-test COMPLETE evidence guards",
+        "status": "JUDGE",
+        "execution_mode": "TDD",
+        "acceptance_criteria": [
+            {"criterion_id": "AC-PLAN-005", "verification_mode": "automated"}
+        ],
+    }
+
+
+def _041_session(**overrides: object) -> SessionState:
+    kwargs: dict = {"current_phase": "JUDGE"}
+    kwargs.update(overrides)
+    session = SessionState(**kwargs)
+    return session
+
+
+def _041_save(session: SessionState, repo: Path) -> Path:
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session.save(session_path)
+    return session_path
+
+
+@pytest.mark.behavioral
+def test_complete_with_empty_evidence_quotes_is_rejected(tmp_git_repo: Path):
+    """AC-PLAN-005: COMPLETE with empty evidence quotes is rejected."""
+    session = _041_session(
+        last_judge_verdict="COMPLIANCE_PASS",
+        pending_judge_action="skip_refactor",
+        validated_evidence=[
+            {
+                "ac": "AC-PLAN-005",
+                "test_path": "",
+                "test_quote": "",
+                "impl_path": "",
+                "impl_quote": "",
+            }
+        ],
+    )
+    _041_save(session, tmp_git_repo)
+    ledger_path = tmp_git_repo / "specs" / "adhoc" / "tasks.jsonl"
+    with chdir(tmp_git_repo), pytest.raises(PhaseFailedError) as exc:
+        _append_status_transition(_041_task(), "COMPLETED", ledger_path)
+    assert "COMPLETED_EVIDENCE_MISSING" in str(exc.value)
+
+
+@pytest.mark.behavioral
+def test_complete_with_docs_only_diff_is_rejected(tmp_git_repo: Path):
+    """AC-PLAN-005: COMPLETE naming only a docs evidence path is rejected."""
+    docs = tmp_git_repo / "docs" / "plan.md"
+    docs.parent.mkdir(parents=True, exist_ok=True)
+    docs.write_text("AC-PLAN-005 guardrail\n", encoding="utf-8")
+    session = _041_session(
+        last_judge_verdict="COMPLIANCE_PASS",
+        pending_judge_action="skip_refactor",
+        validated_evidence=[
+            {
+                "ac": "AC-PLAN-005",
+                "test_path": "docs/plan.md",
+                "test_quote": "AC-PLAN-005 guardrail",
+                "impl_path": "",
+                "impl_quote": "",
+            }
+        ],
+    )
+    _041_save(session, tmp_git_repo)
+    ledger_path = tmp_git_repo / "specs" / "adhoc" / "tasks.jsonl"
+    with chdir(tmp_git_repo), pytest.raises(PhaseFailedError) as exc:
+        _append_status_transition(_041_task(), "COMPLETED", ledger_path)
+    assert "COMPLETED_EVIDENCE_MISSING" in str(exc.value)
+
+
+@pytest.mark.behavioral
+def test_complete_missing_declared_regression_path_in_diff_is_rejected(
+    tmp_git_repo: Path,
+):
+    """AC-PLAN-005: COMPLETE whose declared paths miss the diff is rejected."""
+    manifest = HandoverManifest(
+        phase="RED",
+        status="SUCCESS",
+        task_id="TSK-041-03",
+        files=["tests/unit/test_micro/test_missing_pin.py"],
+        test_file="tests/unit/test_micro/test_missing_pin.py",
+    )
+    session = SessionState(
+        current_phase="RED",
+        failure_kind="no_failing_test",
+        train_feedback="standing feedback",
+        pending_judge_action="skip_refactor",
+    )
+    session_path = _041_save(session, tmp_git_repo)
+    ledger_path = tmp_git_repo / "specs" / "adhoc" / "tasks.jsonl"
+    with (
+        chdir(tmp_git_repo),
+        patch.object(micro, "_phase_already_done", return_value=False),
+        patch.object(micro, "_log_run"),
+        patch.object(micro, "_make_agent_output_callback", return_value=None),
+        patch.object(micro, "resolve_model_for_phase", return_value=None),
+        patch.object(micro, "_run_format_cmd", return_value=_proc(0)),
+        patch.object(micro, "_commit_phase", return_value=True),
+        patch.object(micro, "_verify_clean_worktree"),
+        patch.object(micro, "_run_judge_phase", return_value=session),
+    ):
+        with pytest.raises(PhaseFailedError):
+            _adjudicate_red_no_failing_test(
+                _041_task(),
+                ledger_path,
+                session,
+                session_path,
+                Console(quiet=True),
+                manifest=manifest,
+                test_result=_proc(0, stdout="1 passed"),
+                red_baseline=[],
+            )
