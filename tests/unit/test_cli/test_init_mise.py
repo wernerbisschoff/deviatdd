@@ -315,12 +315,16 @@ def test_init_writes_project_verification_governance(tmp_git_repo: Path) -> None
     with chdir(tmp_git_repo):
         result = runner.invoke(cli, ["init", "post"])
     assert result.exit_code == 0, result.output
-    staged = subprocess.check_output(
+    assert "chore(init): scaffold DeviaTDD workspace" in subprocess.check_output(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=tmp_git_repo,
+        text=True,
+    )
+    assert not subprocess.check_output(
         ["git", "diff", "--cached", "--name-only"],
         cwd=tmp_git_repo,
         text=True,
-    ).splitlines()
-    assert {"CLAUDE.md", "AGENTS.md"} <= set(staged)
+    ).strip()
 
 
 def test_unknown_project_reports_targeted_test_unconfigured(
