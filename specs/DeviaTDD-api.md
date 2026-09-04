@@ -263,6 +263,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   only Plan is ready. Invalid existing artifacts stop without overwrite.
   After Meso succeeds, the skill runs bare `deviate micro run` one task at a
   time and keeps the existing failure-triage and clean-slate safety flow.
+  Failure handling uses a bounded unblock ladder: retry transient failures once,
+  permit one minimal operational fix, and do not edit task behavior inline.
+  Escalate immediately for dirty ledgers, destructive recovery, unclear ownership,
+  repeated failures, or git, ledger, rollback, and internal harness errors.
 * **`## Troubleshooting failed runs` (skill v1.1.0):** before guessing
   at a fix, the skill directs the agent to the two complementary
   `.deviate/logs/` sinks wired through

@@ -59,7 +59,7 @@ from unittest.mock import MagicMock
 from deviate.core.agent import AgentBackend, AgentTimeoutError
 
 release = threading.Event()
-diagnostic = "[codebase-index] Background reindex failed"
+diagnostic = "[zvec-grep] Background search failed"
 
 
 class BlockingStdout:
@@ -134,5 +134,5 @@ print(exc.partial_stderr)
 '
     [ "$status" -eq 0 ]
     [[ "$output" == *"STALL_DETECTED"* ]]
-    [[ "$output" == *"[codebase-index] Background reindex failed"* ]]
+    [[ "$output" == *"[zvec-grep] Background search failed"* ]]
 }

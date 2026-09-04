@@ -42,7 +42,7 @@ Per the Product-layer flow-trace mandate, the active release goal at `specs/_pro
 
 - `pyproject.toml` — Package metadata (`name = "deviate"`, `version = "0.4.4"`), `requires-python = ">=3.13"`, `typer>=0.12`, `rich>=13.0`, `pydantic>=2.0`, `pyyaml>=6.0.3` declared.
 - `mise.toml` — Task runner config: 13 tasks (`test`, `test-e2e`, `lint`, `lint-fix`, `format`, `format-check`, `check-types`, `check`, `fix`, `setup`, `clean`, `dev`, `install-tool`, `help`).
-- `package.json` — Declares `opencode-codebase-index: ^0.10.0` (Node-side tooling).
+- zvec-grep is available through the `zvec_grep_search` MCP tool and `zg query` CLI.
 - `uv.lock` — Lockfile for `uv` package manager.
 - `.gitattributes` — Declares `merge=union` for `specs/issues.jsonl` and `specs/**/tasks.jsonl` (provisioned by `deviate setup`/`deviate init` per constitution v0.4.0). A new `flows.jsonl` would need the same `merge=union` rule.
 - `.deviate/config.toml` — Runtime config; declares `[agent]`, `[models]`, `graphite`, `use_libref`.

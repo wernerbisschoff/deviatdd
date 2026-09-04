@@ -23,7 +23,7 @@ Read `{spec_path}` for user stories, AO/ATDD outlines, scope, edge cases, perfor
 </step>
 
 <step id="codebase_scan">
-Use the codebase-index tools (`codebase_peek`, `implementation_lookup`, `codebase_search`, `call_graph`) to scan the workstation files declared in the system topology mapping — verify symbol presence, surface call relationships, and locate prior `plan.md` references. Verify the index is current via `index_status` before depending on it. Augment with `git log --oneline -20` for prior-commit context, read `specs/issues.jsonl` for related issues, and check prior `plan.md` in related issue directories.
+Use zvec-grep through the `zvec_grep_search` MCP tool or `zg query` via the CLI to scan workstation files declared in the system topology mapping. Verify symbol presence, surface call relationships, and locate prior `plan.md` references. Augment with `git log --oneline -20` for prior-commit context, read `specs/issues.jsonl` for related issues, and check prior `plan.md` in related issue directories.
 </step>
 
 <step id="prior_analysis">

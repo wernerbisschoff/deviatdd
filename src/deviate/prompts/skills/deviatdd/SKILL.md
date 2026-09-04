@@ -58,7 +58,7 @@ By default do not edit the project's `src/`, `tests/`, `specs/`, or any other co
 
 ## Per-task stepping loop
 
-Instead of `--all`, run tasks one at a time. **Default invoke** (no argument) **loops until the queue is empty**. **Review invoke** (`review` in `$ARGUMENTS`, `/deviatdd review`, or "deviatdd with review") stops after each successful task for a human look, then continues on the human's go-ahead. The canonical command is the **bare** `deviate micro run` (no task ID) — the runner resolves the next unchecked task from `tasks.md` and runs it. Re-invoke the same command; it picks the next task each time. The loop terminates when the runner exits with `NO_PENDING_TASKS` (exit 1). An exit-0 from `deviate micro run` only means ONE task completed — it does NOT mean the queue is drained. On the default path the agent MUST re-invoke; on the review path the agent STOPS after exit 0. Failure-path triage is unchanged. The agent also stops inspecting when a task fails, behaves unexpectedly, or the runner emits `NO_PENDING_TASKS`.
+Instead of `--all`, run tasks one at a time. **Default invoke** (no argument) **loops until the queue is empty**. **Review invoke** (`review` in `$ARGUMENTS`, `/deviatdd review`, or "deviatdd with review") stops after each successful task for a human look, then continues on the human's go-ahead. The canonical command is the **bare** `deviate micro run` (no task ID) — the runner resolves the next unchecked task from `tasks.md` and runs it. Re-invoke the same command; it picks the next task each time. The loop terminates when the runner emits `NO_PENDING_TASKS` (exit 0). Any other exit 0 means ONE task completed — it does NOT mean the queue is drained. On the default path the agent MUST re-invoke; on the review path the agent STOPS after a completed task. Failure-path triage is unchanged. The agent also stops inspecting when a task fails, behaves unexpectedly, or the runner emits `NO_PENDING_TASKS`.
 
 ### Source of truth: `tasks.md` (NOT the ledger)
 
@@ -89,10 +89,10 @@ Set a **decent timeout** on the bash invocation of `deviate micro run`. The CLI 
 If the timeout fires, the task is still in the ledger; the next repeat invocation picks it up from the same phase state. Do NOT bypass with `kill -9` unless the runner left session state corrupted (then run the **Clean-slate retry** gate).
 ### Step 2: Check the result
 
-If the command exits successfully (exit code 0), this task COMPLETED.
+Exit code 0 has two valid outcomes. Read the output before you decide:
 
-- **Default invoke (no `review` argument):** **Do NOT stop the loop here** — re-invoke `deviate micro run` to consume the next unchecked task. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1).
-- **Review invoke (`review` in `$ARGUMENTS` / `/deviatdd review` / "deviatdd with review"):** STOP. Report the completed task id and the commits just made (`git log` / `git show` for the SHAs this task produced). Wait for the human to continue. Do not re-invoke until they say so. Then run the next `deviate micro run` (still bare — never `--review` / `--all`).
+- `NO_PENDING_TASKS`: the queue is empty. Stop.
+- A task completed: **Default invoke:** **Do NOT stop here** — re-invoke `deviate micro run`. **Review invoke:** show the task ID and commits, then wait for the human. Never pass `--review` or `--all`.
 
 If the command exits non-zero, inspect the per-task transcript before
 deciding how to proceed:
@@ -112,32 +112,37 @@ Key signals:
 | `AGENT_RESULT` `status=error` | Agent subprocess error (timeout, crash, etc.). |
 | `POST_CMD_FAILURE` | Post-phase commit/lint hook failed. |
 
-### Step 3: Decide what to do next
+### Step 3: Unblock or escalate
 
-| After-task state | Next action |
-|---|---|
-| Exited 0 (COMPLETED), default invoke | **Step 4** — re-invoke `deviate micro run` to consume the next unchecked task. Do NOT stop here. |
-| Exited 0 (COMPLETED), review invoke | STOP. Show the task id and the commits just made. Wait for the human to continue, then run the next `deviate micro run`. Do not pass `--review` or `--all`. |
-| Task FAILED (test/code issue) | Inspect the log. Retry the same task once, or skip and fix manually via `/deviate-red`/`/deviate-green`. |
-| Task FAILED (harness/git/ledger issue) | This is a deviatdd bug. See **Filing deviatdd issues** below before retrying. |
-| Agent timeout / model rate-limit | Retry once with the same task ID. |
-| Worktree / session corruption | Run the **Clean-slate retry** gate below. |
-| Task produced a bad commit that needs rolling back | `git revert <SHA>` to create a new commit that undoes the bad changes, then re-run the task. `git revert` is the safe retry path — it preserves history and is non-destructive. Do NOT use `git reset` for this (that is the destructive path covered by the clean-slate gate). |
+Use this bounded ladder. Stop at the first matching row. Do not use repeated retries as diagnosis.
+
+| Condition | Action | Retry limit |
+|---|---|---|
+| Transient agent timeout or model rate-limit; worktree and ledgers are clean | Re-run the same task ID. | Once. Escalate if the same signal returns. |
+| Hook, lint, format, missing import, or typo blocks a commit | Apply only the minimum operational fix. Do not implement task behavior. Report the edit, then re-run the same task ID. | Once after the fix. |
+| Deterministic RED, GREEN, or JUDGE task failure | Do not edit task implementation inline. Dispatch to `/deviate-red`, `/deviate-green`, or `/deviate-judge` with the failing signal. | No automatic retry. |
+| Worktree or session corruption | Use the **Clean-slate retry** gate. It requires explicit approval before destructive commands. | One approved recovery. |
+| Git, ledger, rollback, or internal `src/deviate/...` failure | Treat it as a harness bug. Preserve logs, check for an open issue, then escalate. | No retry unless a documented workaround exists. |
+| Failure ownership is unclear, evidence conflicts, or recovery can lose data | Stop and ask the operator. Include the task ID, command, last error, dirty-file list, and recommended slash command. | No retry. |
+
+Escalate immediately when a destructive command needs approval, ledger writes are dirty, a failure repeats after its allowed retry, or the same harness signature affects two tasks. Do not skip a task by editing `tasks.jsonl`; it is append-only.
+
+If a bad task commit needs rollback, use `git revert <SHA>`, then re-run the task. Do not use `git reset` outside the clean-slate gate.
 
 
 
 ### Step 4: Loop until the queue is empty
 
-**Default invoke only.** After every successful task (or after Step 3 decides to retry), re-invoke `deviate micro run`. The loop terminates only when the runner exits with `NO_PENDING_TASKS` (exit 1):
+**Default invoke only.** After every successful task (or after Step 3 decides to retry), re-invoke `deviate micro run`. The loop terminates only when the runner emits `NO_PENDING_TASKS` (exit 0):
 
 ```bash
 # Termination check — the runner emits NO_PENDING_TASKS when tasks.md has no unchecked `[ ]` tasks.
 deviate micro run
-# Exit code 1, output: [red]NO_PENDING_TASKS[/]
+# Exit code 0, output: [yellow]NO_PENDING_TASKS[/]
 ```
 
-- If the runner exits with `NO_PENDING_TASKS` (exit 1), the queue is drained — emit the skill's output contract and stop.
-- If the runner exits 0, the task completed — re-invoke `deviate micro run` to consume the next unchecked task. Repeat indefinitely.
+- If the runner emits `NO_PENDING_TASKS` (exit 0), the queue is drained — emit the skill's output contract and stop.
+- If the runner exits 0 after completing a task, re-invoke `deviate micro run` to consume the next unchecked task. Repeat indefinitely.
 
 **Why this matters:** a single `deviate micro run` invocation runs ONE task's full cycle and exits 0 on success. That exit means only this task is done, not the queue. The agent MUST re-invoke the command, otherwise it will stop after one task while `tasks.md` still has unchecked work. The runner's `NO_PENDING_TASKS` exit is the only authoritative "no more work" signal — do NOT use `deviate inspect tasks list --status PENDING` to gate the loop (that reads the ledger, not `tasks.md`, and will give false negatives).
 

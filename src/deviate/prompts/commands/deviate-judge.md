@@ -60,10 +60,10 @@ violations:
     severity: "CRITICAL" | "HIGH" | "MEDIUM"
     recommendation: "How to resolve the violation"
 train_feedback: |
-  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next agent.
-  revert_green → "The next GREEN attempt must:" (discard GREEN, keep RED).
-  revert_red → "The next RED attempt must:" (discard RED+GREEN).
-  NEVER "REFACTOR NOTE:" or operator observations here — those go in summary.
+  COMPLIANCE_VIOLATION: Instructions for the next-running agent.
+  revert_green → "The next GREEN attempt must:" (keep RED and implement the required behavior).
+  revert_red → "The next RED attempt must:" (author the required behavioral test).
+  Use "REFACTOR NOTE:" only for optional COMPLIANCE_PASS advice for REFACTOR.
 
   COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
   observations for the REFACTOR phase.

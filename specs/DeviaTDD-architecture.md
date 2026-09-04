@@ -1030,7 +1030,11 @@ Plan is ready, auto-repairs a plan whose acceptance scenarios lack the
 `**Verification Mode**:` line (default `automated`, `PLAN_MODE_REPAIR`), and
 stops on genuinely invalid artifacts without overwrite. After Meso
 succeeds, the skill invokes bare `deviate micro run` one task at a time.
-The existing failure triage and clean-slate safety flow remains. **v1.1.0 added a
+The existing failure triage and clean-slate safety flow remains.
+The skill applies a bounded unblock ladder. It retries transient failures once
+and permits one minimal operational fix that does not implement task behavior.
+It escalates dirty ledgers, destructive recovery, unclear ownership, repeated
+failures, and git, ledger, rollback, or internal harness errors. **v1.1.0 added a
 `## Troubleshooting failed runs` section** documenting the two
 `.deviate/logs/` sinks wired through
 `src/deviate/core/run_logger.py::_LogRegistry.dispatch`:

@@ -9,6 +9,9 @@ from typing import NoReturn
 import typer
 from rich.console import Console
 
+from deviate.core.commit import stage_and_commit
+from deviate.core.convention import format_commit_message
+
 init_app = typer.Typer(no_args_is_help=True)
 console = Console()
 
@@ -812,6 +815,8 @@ def post() -> None:
         _fail_with("Not a git repository")
 
     artifacts = []
+    if (repo_root / ".gitignore").exists():
+        artifacts.append(".gitignore")
     if (repo_root / "mise.toml").exists():
         artifacts.append("mise.toml")
     for rel in (
@@ -837,12 +842,13 @@ def post() -> None:
         artifacts.append("AGENTS.md")
     if (repo_root / ".gitattributes").exists():
         artifacts.append(".gitattributes")
-
     if artifacts:
-        subprocess.run(
-            ["git", "add"] + artifacts,
-            cwd=repo_root,
-            check=False,
+        stage_and_commit(
+            message=format_commit_message(
+                "chore(init): scaffold DeviaTDD workspace", repo_root
+            ),
+            files=[repo_root / path for path in artifacts],
+            repo=repo_root,
         )
 
     print(

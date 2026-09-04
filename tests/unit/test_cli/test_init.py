@@ -1449,6 +1449,20 @@ class TestInstallDeviatddSkill:
                     f"spawned runner gained --all: {stripped}"
                 )
 
+    def test_deviatdd_skill_has_bounded_unblock_and_escalation_rules(self) -> None:
+        body = _resolve_skill_source()
+        assert body is not None, "deviatdd SKILL.md source not loadable"
+
+        for instruction in (
+            "### Step 3: Unblock or escalate",
+            "Retry limit",
+            "No automatic retry",
+            "same harness signature affects two tasks",
+            "Do not skip a task by editing `tasks.jsonl`",
+            "Failure ownership is unclear",
+        ):
+            assert instruction in body
+
     def test_deviatdd_skill_troubleshooting_section_matches_logger(
         self,
     ) -> None:

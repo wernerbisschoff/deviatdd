@@ -101,7 +101,7 @@ Verify the pre-script created the expected artifacts:
 </step>
 
 <step id="post_script">
-Run the post-script to validate artifacts and stage for commit:
+Run the post-script to validate artifacts and commit them:
 ```bash
 deviate init post
 ```
@@ -109,7 +109,7 @@ deviate init post
 The post-script:
 1. Validates `mise.toml` exists and has valid tasks
 2. Validates `specs/` directory exists
-3. Stages all init artifacts for commit
+3. Commits all init artifacts, including `.gitignore`
 4. Emits status JSON to stdout
 
 **IMPORTANT**: Allocate at least 180s timeout for the post-script (git hooks may run).

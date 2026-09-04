@@ -30,7 +30,7 @@ Dependencies declared in `pyproject.toml` (lines 6-32):
 
 Dev dependencies (lines 38-41, 56-61): `pytest>=8.0`, `pytest>=9.0.3`, `ruff>=0.4`, `ruff>=0.15.16`, `typer>=0.26.7`. Both `[project.optional-dependencies] dev` and `[dependency-groups] dev` blocks exist (duplication noted).
 
-`package.json` declares `opencode-codebase-index: ^0.10.0` (tooling outside the Python runtime).
+zvec-grep is available through the `zvec_grep_search` MCP tool and `zg query` CLI.
 
 ### Ghost Dependencies
 
@@ -46,7 +46,7 @@ Dev dependencies (lines 38-41, 56-61): `pytest>=8.0`, `pytest>=9.0.3`, `ruff>=0.
 
 - `pyproject.toml` — Package metadata (`name = "deviate"`, `version = "0.4.4"`), build system (`hatchling`), entry point (`deviate = "deviate.main:app"`).
 - `mise.toml` — Task runner config: 13 defined tasks (`test`, `test-e2e`, `lint`, `lint-fix`, `format`, `format-check`, `check-types`, `check`, `fix`, `setup`, `clean`, `dev`, `install-tool`, `help`).
-- `package.json` — Declares `opencode-codebase-index: ^0.10.0` (Node-side tooling).
+- zvec-grep is available through the `zvec_grep_search` MCP tool and `zg query` CLI.
 - `uv.lock` — Lockfile for `uv` package manager.
 - `package-lock.json` — Lockfile for npm-side tooling.
 

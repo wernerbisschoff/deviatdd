@@ -174,14 +174,14 @@ Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's
 
 Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their documented three-way (or single-outcome) choice. Do not collapse those rows into this GREEN PASS mapping.
 
-**Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST:
-1. **State what went wrong** — specific behavior or omission. "The diff contains no changes to `src/` files" not "Observational note for the operator: the diff signature..."
-2. **Tell the next agent what to do instead** — concrete, actionable steps. On `revert_green` start with "The next GREEN attempt must:". On `revert_red` start with "The next RED attempt must:".
-3. **Be instruction, not observation** — the next agent must be able to act on it. "Implement the feature in `src/gatekeeper.ts` per AC-PLAN-001" not "Once GREEN lands the recursion, the parser will have three independent walkers..."
-4. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
-5. **On `next_action: revert_red` or `revert_green`**: do NOT cite `path:line` locations from the commit that rollback will discard. Write a durable rewrite contract (behavior + forbidden assertion + required proof). Those line numbers will not exist for the next agent. The runner also strips leftover `file:line` tokens on these routes.
-
-Do NOT write operator-directed observations in `train_feedback` (e.g. "Observational note for the operator: ..."). Those belong in `summary`.
+**Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST guide the next-running agent:
+1. **Lead with the required action** — start with `The next GREEN attempt must:` or `The next RED attempt must:` according to `next_action`.
+2. **Give concrete implementation steps** — name the behavior, files, interfaces, and proof the next agent must produce. Example: `Implement the feature in src/gatekeeper.ts per AC-PLAN-001, then add an assertion that exercises the required path.`
+3. **Write the instruction as an imperative** — lead with the actions the next agent must take, using parallel verbs when useful. Example: `Isolate the import boundary, block hosted imports during collection, and run the subprocess guard before loading application modules.` Place brief diagnostic context after the action when it helps.
+4. **Prefer action phrases over failure statements** — write `isolate the import boundary and block hosted imports during collection` instead of `the RED test does not isolate the import boundary`. State a prohibition only when it prevents repeating a concrete defect.
+5. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
+6. **On `next_action: revert_red` or `revert_green`**: do NOT cite `path:line` locations from the commit that rollback will discard. Write a durable rewrite contract (behavior + required proof). The runner also strips leftover `file:line` tokens on these routes.
+7. **Keep operator-directed observations in `summary`** — `train_feedback` is reserved for instructions the next-running agent can execute.
 
 ```yaml
 phase: JUDGE
@@ -229,7 +229,7 @@ diff_summary:
 
 **On COMPLIANCE_PASS with an observed refactoring opportunity**: populate `train_feedback` with a short note prefixed `REFACTOR NOTE:` (e.g., `REFACTOR NOTE: consider splitting src/x.py into helper + entry; not blocking`). A REFACTOR NOTE is optional advice for REFACTOR; it is not a reason to revert. Emit `next_action: continue_refactor` or `skip_refactor`. The orchestrator logs it as `JUDGE_REFACTOR_NOTE` and injects it into the REFACTOR prompt.
 
-**On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below. If you also populate `train_feedback`, it MUST be specific actionable instructions for the next agent on that route (`revert_green` → next GREEN; `revert_red` → next RED) — NEVER `REFACTOR NOTE:` content (that tells GREEN to defer, defeating training). Refactoring concerns alongside a correctness gap belong in `summary`, not `train_feedback`.
+**On COMPLIANCE_VIOLATION**: populate `summary` and `violations` per the failure contract below. Write `train_feedback` as executable instructions for the next-running agent on that route (`revert_green` → next GREEN; `revert_red` → next RED). Place refactoring concerns alongside a correctness gap in `summary`.
 
 </execution_sequence>
 
@@ -258,10 +258,10 @@ violations:
     severity: "..."
     recommendation: "..."
 train_feedback: |
-  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next agent.
-  revert_green → "The next GREEN attempt must:" (discard GREEN, keep RED).
-  revert_red → "The next RED attempt must:" (discard RED+GREEN).
-  NEVER "REFACTOR NOTE:" or operator observations here — those go in summary.
+  COMPLIANCE_VIOLATION: Instructions for the next-running agent.
+  revert_green → "The next GREEN attempt must:" (keep RED and implement the required behavior).
+  revert_red → "The next RED attempt must:" (author the required behavioral test).
+  Use "REFACTOR NOTE:" only for optional COMPLIANCE_PASS advice for REFACTOR.
 
   COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
   observations for the REFACTOR phase.
