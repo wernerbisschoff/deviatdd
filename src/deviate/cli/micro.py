@@ -1338,9 +1338,17 @@ def _require_tdd_completed_evidence(
     for item in typed_items:
         rel = (item.test_path or "").strip()
         if not rel:
-            continue
+            raise PhaseFailedError(
+                "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                "missing or empty for cited acceptance tokens"
+            )
         candidate = Path(rel)
         if candidate.is_absolute() or ".." in candidate.parts:
+            raise PhaseFailedError(
+                "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                f"not in the injected diff or HEAD: {rel}"
+            )
+        if not _is_test_path(rel):
             raise PhaseFailedError(
                 "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
                 f"not in the injected diff or HEAD: {rel}"
@@ -2018,6 +2026,12 @@ def _adjudicate_red_no_failing_test(
             tid=tid,
             context="is about to COMPLETE with no failing test",
         )
+        for rel in declared:
+            if not (root / rel).is_file():
+                raise PhaseFailedError(
+                    "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                    f"not in the injected diff or HEAD: {rel}"
+                )
         _restore_worktree_to_baseline(root, red_baseline, keep_paths=declared)
         if action != "skip_refactor":
             session.pending_judge_action = "skip_refactor"
