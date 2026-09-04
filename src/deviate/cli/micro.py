@@ -1735,6 +1735,28 @@ def _fail_red_on_agent_timeout(root: Path, baseline: list[str], tid: str) -> NoR
     raise PhaseFailedError(f"RED phase agent timeout for {tid}")
 
 
+_COMPILE_ERROR_MARKERS = frozenset(
+    {
+        "modulenotfounderror",
+        "traceback (most recent call last)",
+        "syntaxerror",
+        "compileerror",
+        "compilation failed",
+        "undefined function",
+        "is not available",
+        "cannot find module",
+    }
+)
+
+
+def _is_compile_error(proc: subprocess.CompletedProcess) -> bool:
+    """Return whether test output shows a compile/collection failure."""
+    if proc.returncode == 0:
+        return False
+    output = f"{proc.stdout or ''} {proc.stderr or ''}".lower()
+    return any(marker in output for marker in _COMPILE_ERROR_MARKERS)
+
+
 def _is_no_tests_collected(proc: subprocess.CompletedProcess) -> bool:
     """Return whether a pytest-style exit 5 means 'no test ran'."""
     if proc.returncode != 5:
@@ -1828,7 +1850,7 @@ def _run_red_phase(
     scope = _build_scope(issue_id, tid)
 
     test_result = _run_test_cmd(root, task)
-    if (
+    if not _is_compile_error(test_result) and (
         test_result.returncode == 0
         or _is_no_tests_collected(test_result)
         or _is_no_test_command(test_result)
