@@ -14,17 +14,19 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
+This command runs as a manual slash command. This manual overlay overrides
+the auto lifecycle instructions above: the CLI orchestrator does not run
+lifecycle hooks; you run the scripts yourself. The middle body above is
 derived from the canonical `auto/shard.md` core — the single source of truth
 for the SHARD instructions.
 
 1. Run `deviate shard pre` to allocate the numbered epic bucket and emit the
    JSON contract on stdout.
 2. Execute the sharding work described in the core body.
-3. Run `deviate shard post` after the issue files are written. The command
-   validates the frontmatter, updates `specs/issues.jsonl`, and commits.
-   Keep generated issue paths local to the consumer repository.
+3. Run `deviate shard post <plan_target>` after the issue files are written.
+   Replace `<plan_target>` with the absolute manifest path from the contract.
+   The command validates the frontmatter, updates `specs/issues.jsonl`, and
+   commits. Keep generated issue paths local to the consumer repository.
 
 ### Issue ID Assignment
 
