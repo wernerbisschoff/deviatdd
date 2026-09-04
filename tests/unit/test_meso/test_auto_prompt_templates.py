@@ -415,6 +415,30 @@ class TestSmallestChangeFoldedIntoExistingPrompts:
         assert "## Constraints" not in text
         assert "## Minimality" not in text
 
+    @pytest.mark.behavioral
+    def test_auto_and_manual_refactor_apply_ponytail_ladder(self, tmp_path: Path):
+        from deviate.core.commands import install_command
+
+        auto = _read_template("refactor.md")
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-refactor", target)
+        manual = (target / "deviate-refactor.md").read_text(encoding="utf-8")
+
+        for prompt in (auto, manual):
+            lowered = prompt.lower()
+            for rung in (
+                "yagni",
+                "existing code",
+                "stdlib",
+                "platform feature",
+                "already-installed",
+                "one line",
+                "minimum that works",
+            ):
+                assert rung in lowered, f"refactor prompt missing ladder rung {rung!r}"
+            assert "smallest behavior-preserving diff" in lowered
+            assert "already clear" in lowered
+
     def test_review_keeps_overengineering_and_does_not_promote_helpers(self):
         text = self._read_review()
         assert "Cross-task over-engineering" in text

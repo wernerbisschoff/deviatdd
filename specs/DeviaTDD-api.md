@@ -858,7 +858,13 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `test_write_dir`, `test_command`,
   `lint_command`, `spec_dir`, `verification`, `repo_root`, `git_branch`,
   `timestamp`. Auto `_build_auto_prompt("refactor")` injects the same scoped
-  list; it does not glob `src/**/*.py`.
+  list; it does not glob `src/**/*.py`. The canonical auto prompt applies the
+  Ponytail pre-write ladder before any edit: YAGNI, existing-code reuse,
+  standard library, native platform feature, already-installed dependency,
+  one line, then the minimum that works. It requires the smallest
+  behavior-preserving diff and permits no-op completion when GREEN is already
+  clear. The installed manual `/deviate-refactor` command embeds this canonical
+  prompt body verbatim.
 
 #### `deviate refactor post`
 

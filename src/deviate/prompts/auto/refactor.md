@@ -60,6 +60,17 @@ The REFACTOR production scope (same set `deviate refactor pre` emits as `files_t
 ```
 Do not expand scope beyond these production files. Tests are out of bounds.
 
+Before editing, apply the Ponytail pre-write ladder. Stop at the first rung that holds:
+1. Does this refactor need to exist? If the implementation is already clear, leave it unchanged (YAGNI).
+2. Does existing code already solve it? Reuse it or delete the duplication.
+3. Does the standard library (stdlib) solve it? Use it.
+4. Does a native platform feature solve it? Use it.
+5. Does an already-installed dependency solve it? Use it without adding a dependency.
+6. Can the change fit clearly in one line? Keep it in one line.
+7. Otherwise, write the minimum that works.
+
+Make the smallest behavior-preserving diff. Reduce code, branches, indirection, and concepts. Do not optimize for the number of patterns applied.
+
 Then review the implementation produced across those commits against the refactoring strategy:
 1. Identify code smells in the implementation (duplication, complexity, contract violations, naming, coupling)
 2. Cross-reference with any technical_debt indicators from the task
@@ -68,7 +79,7 @@ Then review the implementation produced across those commits against the refacto
 #### Code Smell Identification
 Analyze the minimal implementation for:
 - **Duplication**: Repeated logic or data structures.
-- **Complexity**: Deep nesting, large functions (>30 lines), or high cyclomatic complexity.
+- **Complexity**: Nesting, branches, or mixed responsibilities that obscure the flow.
 - **Contract Violations**: Deviations from the `data-model.md` or invariants.
 - **Naming**: Obscure or inconsistent naming.
 - **Coupling**: Unnecessary dependencies or tight coupling to internals.
@@ -76,11 +87,12 @@ Analyze the minimal implementation for:
 ### STEP_3: APPLY_REFACTORING_PATTERNS
 
 Apply targeted transformations:
-- **Clarify In Place**: Rename and delete dead code.
-- **Rename Variable/Function**: Improve semantic clarity.
-- **Move Function/Logic**: Align with the functional core/imperative shell or Repo pattern.
-- **Replace Conditional with Polymorphism**: (If appropriate for the language/paradigm).
-- **Consolidate Duplicate Fragments**: Centralize shared logic.
+- Delete dead code, needless wrappers, and real duplication.
+- Clarify names and control flow in place.
+- Flatten avoidable branches and collapse needless indirection.
+- Reuse existing code, the stdlib, platform features, or installed dependencies when that removes code and concepts.
+- Extract or move logic only when the result is simpler than an in-place change.
+- Add no abstraction, design pattern, dependency, or future-facing flexibility for appearance alone.
 
 ### STEP_4: VERIFY_INVARIANCE
 
