@@ -60,21 +60,23 @@ The REFACTOR production scope (same set `deviate refactor pre` emits as `files_t
 ```
 Do not expand scope beyond these production files. Tests are out of bounds.
 
-Before editing, apply the Ponytail pre-write ladder. Stop at the first rung that holds:
-1. Does this refactor need to exist? If the implementation is already clear, leave it unchanged (YAGNI).
-2. Does existing code already solve it? Reuse it or delete the duplication.
+Then review the implementation produced across those commits against the refactoring strategy:
+1. Identify code smells in the implementation (duplication, complexity, contract violations, naming, coupling)
+2. Cross-reference with any technical_debt indicators from the task
+3. Prioritize refactoring based on architectural impact
+
+Run a complete cleanup scan across the scoped production changes. Apply the Ponytail reduction ladder separately to every candidate smell. For each candidate, stop at the first rung that gives a safe net improvement:
+1. Can you delete the candidate? Delete it.
+2. Does existing code already solve it? Reuse it and remove the duplication.
 3. Does the standard library (stdlib) solve it? Use it.
 4. Does a native platform feature solve it? Use it.
 5. Does an already-installed dependency solve it? Use it without adding a dependency.
 6. Can the change fit clearly in one line? Keep it in one line.
 7. Otherwise, write the minimum that works.
 
-Make the smallest behavior-preserving diff. Reduce code, branches, indirection, and concepts. Do not optimize for the number of patterns applied.
+Skip a candidate when every option adds code, indirection, or concepts. Continue to the next candidate. Do not stop the phase after selecting or fixing one candidate. Complete the cleanup scan before concluding.
 
-Then review the implementation produced across those commits against the refactoring strategy:
-1. Identify code smells in the implementation (duplication, complexity, contract violations, naming, coupling)
-2. Cross-reference with any technical_debt indicators from the task
-3. Prioritize refactoring based on architectural impact
+Make the smallest behavior-preserving diff for all safe improvements. If the complete scan finds no safe net improvement, leave GREEN unchanged and report a no-op. Do not force a diff.
 
 #### Code Smell Identification
 Analyze the minimal implementation for:

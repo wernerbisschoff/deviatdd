@@ -416,13 +416,15 @@ class TestSmallestChangeFoldedIntoExistingPrompts:
         assert "## Minimality" not in text
 
     @pytest.mark.behavioral
-    def test_auto_and_manual_refactor_apply_ponytail_ladder(self, tmp_path: Path):
+    def test_auto_and_manual_green_apply_ponytail_construction_ladder(
+        self, tmp_path: Path
+    ) -> None:
         from deviate.core.commands import install_command
 
-        auto = _read_template("refactor.md")
+        auto = _read_template("green.md")
         target = tmp_path / "agent" / "commands"
-        install_command("deviate-refactor", target)
-        manual = (target / "deviate-refactor.md").read_text(encoding="utf-8")
+        install_command("deviate-green", target)
+        manual = (target / "deviate-green.md").read_text(encoding="utf-8")
 
         for prompt in (auto, manual):
             lowered = prompt.lower()
@@ -435,9 +437,30 @@ class TestSmallestChangeFoldedIntoExistingPrompts:
                 "one line",
                 "minimum that works",
             ):
-                assert rung in lowered, f"refactor prompt missing ladder rung {rung!r}"
+                assert rung in lowered, f"green prompt missing ladder rung {rung!r}"
+            assert "ponytail construction ladder" in lowered
+            assert "before adding production code" in lowered
+
+    @pytest.mark.behavioral
+    def test_auto_and_manual_refactor_apply_ponytail_per_candidate(
+        self, tmp_path: Path
+    ) -> None:
+        from deviate.core.commands import install_command
+
+        auto = _read_template("refactor.md")
+        target = tmp_path / "agent" / "commands"
+        install_command("deviate-refactor", target)
+        manual = (target / "deviate-refactor.md").read_text(encoding="utf-8")
+
+        for prompt in (auto, manual):
+            lowered = prompt.lower()
+            assert "ponytail reduction ladder" in lowered
+            assert "separately to every candidate smell" in lowered
+            assert "do not stop the phase" in lowered
+            assert "complete the cleanup scan" in lowered
+            assert "no safe net improvement" in lowered
+            assert "do not force a diff" in lowered
             assert "smallest behavior-preserving diff" in lowered
-            assert "already clear" in lowered
 
     def test_review_keeps_overengineering_and_does_not_promote_helpers(self):
         text = self._read_review()

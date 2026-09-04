@@ -64,7 +64,15 @@ task will fail permanently.**
 
 <traceability_and_compliance_mandates>
 1. **Contract Validation & Upstream Ingestion**: Extract the target `{TASK_ID}`, functional requirements (`FR-[ID]`), and acceptance criteria (`AC-[ID]`) from the preceding RED phase handover manifest context block. Validate these structural goals directly against `<spec_content>` and `<data_model_content>` above.
-2. **Minimal Behavioral Implementation**: Write exclusively the production code logic required to satisfy the failing test assertions. Prefer reuse of existing code, the stdlib, or an already-installed dependency. Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
+2. **Minimal Behavioral Implementation**: Before adding production code, apply the Ponytail construction ladder. Stop at the first rung that satisfies the failing observable:
+   1. Does the required behavior already exist? Add no code (YAGNI) and verify it.
+   2. Does existing code already solve it? Reuse it.
+   3. Does the standard library (stdlib) solve it? Use it.
+   4. Does a native platform feature solve it? Use it.
+   5. Does an already-installed dependency solve it? Use it without adding a dependency.
+   6. Can the implementation fit clearly in one line? Keep it in one line.
+   7. Otherwise, write the minimum that works.
+   Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
 3. **Scope Boundary (mechanical)**: GREEN implements ONLY production code under `src/`, `lib/`, or `app/` to make the RED test pass via the library/API surface declared in scope. Two failure classes are routable through JUDGE:
    - **Mechanical**: the RED test cannot be satisfied within that mechanical scope — it exercises a CLI surface that is out of scope, requires a tool that the slice does not own, or depends on a fixture not in the workspace. Unavailable required services (PostgreSQL, etc.) are not mechanical. Emit `status: FAILURE` with `rationale:` naming the exact test path and why, plus `failure_kind: mechanical`.
    - **Test defect**: the RED test itself is wrong — it asserts behavior the spec does not require, exercises the wrong abstraction, or encodes an assumption that contradicts `<spec_content>` / `<data_model_content>`. Emit `status: FAILURE` with `rationale:` naming the specific assertion and citing the FR/AC it contradicts, plus `failure_kind: test_defect`. This routes to RED via `revert_red`, not back to GREEN.

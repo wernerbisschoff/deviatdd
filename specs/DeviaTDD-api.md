@@ -832,7 +832,11 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 * **Description:** Resolves task context, emits JSON contract with `test_file`,
   `implementation_targets` (all `src/**/*.py` files), and the same layer contract as
   `red pre` (`test_strategy`, `test_write_dir`, `test_command` — this layer's named
-  mise task only). GREEN must not write tests.
+  mise task only). GREEN must not write tests. Its canonical prompt applies the
+  Ponytail construction ladder before adding code: existing behavior (YAGNI),
+  existing-code reuse, standard library, native platform feature, already-installed
+  dependency, one line, then the minimum that works. The installed manual
+  `/deviate-green` command embeds the same canonical prompt body.
 
 #### `deviate green post`
 
@@ -866,13 +870,12 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   `test_write_dir`, `test_command`,
   `lint_command`, `spec_dir`, `verification`, `repo_root`, `git_branch`,
   `timestamp`. Auto `_build_auto_prompt("refactor")` injects the same scoped
-  list; it does not glob `src/**/*.py`. The canonical auto prompt applies the
-  Ponytail pre-write ladder before any edit: YAGNI, existing-code reuse,
-  standard library, native platform feature, already-installed dependency,
-  one line, then the minimum that works. It requires the smallest
-  behavior-preserving diff and permits no-op completion when GREEN is already
-  clear. The installed manual `/deviate-refactor` command embeds this canonical
-  prompt body verbatim.
+  list; it does not glob `src/**/*.py`. The canonical auto prompt completes the
+  cleanup scan and applies the Ponytail reduction ladder separately to each
+  candidate smell. Selecting or fixing one candidate does not end the phase.
+  Each safe improvement uses the smallest behavior-preserving diff. A no-op is
+  valid only after the complete scan finds no safe net improvement. The installed
+  manual `/deviate-refactor` command embeds this canonical prompt body verbatim.
 
 #### `deviate refactor post`
 

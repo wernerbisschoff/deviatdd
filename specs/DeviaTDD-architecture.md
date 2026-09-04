@@ -529,13 +529,15 @@ commands-only prompts (adhoc, architecture, constitution, e2e, flows, hotfix, ht
 init, merge, pr, prune, release, review, triage, walkthrough) have no auto counterpart
 and stay hand-maintained.
 
-**REFACTOR Ponytail discipline.** The canonical `auto/refactor.md` prompt applies a
-pre-write ladder before each edit: YAGNI, existing-code reuse, standard library,
-native platform feature, already-installed dependency, one line, then the minimum
-that works. It favors deletion, in-place clarity, flat control flow, and the smallest
-behavior-preserving diff. It adds no abstraction, pattern, dependency, or future-facing
-flexibility for appearance alone. An already-clear GREEN implementation remains unchanged.
-Manual `/deviate-refactor` inherits the same rules through single-source derivation.
+**GREEN and REFACTOR Ponytail discipline.** The canonical `auto/green.md` prompt uses
+the construction ladder before adding code: existing behavior (YAGNI), existing-code
+reuse, standard library, native platform feature, already-installed dependency, one
+line, then the minimum that works. The canonical `auto/refactor.md` prompt uses the
+same priorities as a reduction ladder for each candidate smell. REFACTOR completes
+the full cleanup scan and does not stop after one candidate. It makes the smallest
+behavior-preserving improvements and reports a no-op only when the complete scan finds
+no safe net improvement. Manual `/deviate-green` and `/deviate-refactor` inherit these
+rules through single-source derivation.
 
 ### Model Routing & Cache Discipline (Guidance)
 
