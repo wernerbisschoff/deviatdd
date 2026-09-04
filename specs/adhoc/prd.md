@@ -642,3 +642,13 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-041-01 / AO-041-01: RED with compile errors (non-zero exit, compile-error markers, zero test failures) proceeds to GREEN, never to no-failing-test adjudication.
   2. AC-ADHOC-041-02 / AO-041-02: Three RED escalates record a `FAILED` task row with the TRAIN_EXHAUSTED reason and exit cleanly; no COMPLETED row ships with empty evidence.
+
+## FR-ADHOC-042: revert_green recovers from a stale RED boundary instead of stopping
+- **Description**: A revert_green rollback whose stored RED boundary is no longer on the branch recovers to a safe on-branch boundary instead of raising ROLLBACK_STALE_RED_SHA.
+- **Preconditions**: `src/deviate/cli/micro.py` `_require_revert_green_boundary` classifies the stored `session.red_commit_sha` via `_red_anchor_kind`; rebases remap via `_refresh_session_commit_anchors`; gh issue 207 reports a rejection streak of 6 ending in `ROLLBACK_STALE_RED_SHA` on deviate 2.27.3.
+- **Inputs/Outputs**: Input — JUDGE `revert_green` with a stored RED SHA that is not an ancestor of HEAD and has no rewritten-RED match. Output — rollback resets GREEN work only onto a safe on-branch boundary (rewritten RED, current-train pre-GREEN, or tasks.md-safe fallback) and logs the remap; the task continues instead of stopping with `PhaseFailedError`.
+- **User Stories**:
+  1. US-042-01: As an operator retrying a task after repeated JUDGE reroutes, I want revert_green to survive a moved RED boundary so the task keeps training instead of dying with ROLLBACK_STALE_RED_SHA. *(Ref: FR-ADHOC-042)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-042-01 / AO-042-01: Stale stored RED SHA on revert_green resets to a safe on-branch boundary and the task continues.
+  2. AC-ADHOC-042-02 / AO-042-02: Rollback that cannot find any safe boundary refuses with a plain error and leaves the branch unchanged.
