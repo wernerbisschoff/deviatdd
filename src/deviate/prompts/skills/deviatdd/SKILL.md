@@ -47,14 +47,17 @@ Do not waste turns on pre-run code exploration. Meso owns preparation.
 Micro owns RED, GREEN, JUDGE, and REFACTOR.
 
 ## Code change policy
-
-This skill drives the micro runner; it does **not** own code changes in the project being worked on. The only code changes permitted are:
-
-- Fixes to the deviatdd harness itself (`src/deviate/**`) when a reproducible harness bug is blocking a task.
-- Skill / prompt template edits under `src/deviate/prompts/**` when the prompt misroutes a task.
-- Small unblocking fixes in the active worktree when the task log shows the runner cannot proceed without them (lint/format, missing import, typo, hook-blocked commit). Keep the fix to the minimum that unblocks the retry, never implement the task itself, and report the edit before re-invoking `deviate micro run`.
-
-By default do not edit the project's `src/`, `tests/`, `specs/`, or any other code the active issue is touching. If a task needs a code change, the runner's RED/GREEN/JUDGE loop produces it — the skill does not pre-empt that loop. If the loop is broken, the failure is a harness bug and the **Filing deviatdd issues** path applies.
+ 
+This skill drives the micro runner. It does not normally own project code or specification changes.
+ 
+The only permitted changes are:
+ 
+- Fixes to the deviatdd harness itself (`src/deviate/**`) when a reproducible harness bug blocks a task.
+- Skill or prompt template edits under `src/deviate/prompts/**` when a prompt misroutes a task.
+- Small unblocking fixes in the active worktree when the task log shows the runner cannot proceed without them. Keep each fix operational. Do not implement the task.
+- **Explicit operator-requested scope corrections:** when the operator identifies a contradiction in `tasks.md`, `plan.md`, or issue specifications, edit the affected specification artifacts, commit the correction, and retry Meso or Micro as requested. Do not modify implementation code or tests during this correction.
+ 
+By default, do not edit the project's `src/`, `tests/`, `specs/`, or other files touched by the active task. The explicit scope-correction exception overrides that default only for the named specification artifacts.
 
 ## Per-task stepping loop
 
