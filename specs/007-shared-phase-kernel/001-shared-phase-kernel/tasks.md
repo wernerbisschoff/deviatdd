@@ -61,6 +61,7 @@
 ---
 
   - **Judge Feedback**: The next RED attempt must: author honest two-surface tests in tests/unit/test_micro/test_red_post.py that drive manual red post and auto _run_red_phase for AC-PLAN-005 and assert matching ledger rows plus session transitions plus commits plus RED_POST_OK, drive shared adjudication on both surfaces for zero failing tests for AC-PLAN-006 plus CHANGELOG bullet, and forbid tests/integration and tests/e2e in this RED. Keep guard-rejection test asserting zero partial ledger write.
+  - **Judge Feedback**: The next RED attempt must: author honest two-surface tests in tests/unit/test_micro/test_red_post.py that drive manual red post and auto _run_red_phase for AC-PLAN-005 and assert matching ledger rows plus session transitions plus commits plus RED_POST_OK, drive shared adjudication on both surfaces for zero failing tests for AC-PLAN-006 asserting identical fail-close per FR-007-03/AC-007-03-02 plus CHANGELOG bullet, update tests/unit/test_micro/test_red.py TestRedPost passing-test case to the manual adjudication path, and forbid tests/integration and tests/e2e in this RED. Keep guard-rejection test asserting zero partial ledger write.
 ## Phase 2: GREEN and REFACTOR kernels
 **Goal**: Unify GREEN post and REFACTOR pre/post side effects behind kernels
 
