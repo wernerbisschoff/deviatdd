@@ -7089,6 +7089,10 @@ def _classify_suite_kind(root: Path, task: dict | None, declared: str) -> str | 
         task_text = (
             f"{task.get('description', '')} {_task_card_text(root, task)} {declared}"
         )
+    concrete = _concrete_suite_layers(root, task, declared)
+    if len(concrete) == 1:
+        only = next(iter(concrete))
+        return "integ" if only == "integration" else only
     corpus = f"{declared} {task_text}"
     has_unit = bool(_UNIT_KIND_RE.search(corpus))
     has_integ = bool(_INTEG_KIND_RE.search(corpus))
@@ -7440,6 +7444,18 @@ def _suite_layer_hits(text: str) -> set[str]:
     return layers
 
 
+def _concrete_suite_layers(root: Path, task: dict | None, declared: str) -> set[str]:
+    """Layers with concrete targets (suite-dir paths, layer-scoped commands)."""
+    layers: set[str] = set()
+    if task and str(task.get("execution_mode") or "").strip().upper() == "E2E":
+        layers.add("e2e")
+    layers |= _suite_layer_hits(declared)
+    if task:
+        text = f"{task.get('description', '')} {_task_card_text(root, task)}"
+        layers |= _suite_layer_hits(text)
+    return layers
+
+
 def _classify_suite_layers(root: Path, task: dict | None) -> set[str]:
     """Layers with concrete targets (suite-dir paths, layer-scoped commands)."""
     layers: set[str] = set()
@@ -7451,9 +7467,9 @@ def _classify_suite_layers(root: Path, task: dict | None) -> set[str]:
     elif strategy == "e2e":
         layers.add("e2e")
     if task:
-        layers |= _suite_layer_hits(_task_verification_command(root, task))
-        text = f"{task.get('description', '')} {_task_card_text(root, task)}"
-        layers |= _suite_layer_hits(text)
+        layers |= _concrete_suite_layers(
+            root, task, _task_verification_command(root, task)
+        )
     return layers
 
 
