@@ -1,1 +1,2 @@
 {"id":"TSK-045-01","issue_id":"ISS-ADH-045","description":"Reject manifest with mismatched task id, pass valid manifest unchanged","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-05T10:36:25.905019Z","security_profile":null,"acceptance_criteria":null}
+{"id":"TSK-045-01","issue_id":"ISS-ADH-045","description":"Reject manifest with mismatched task id, pass valid manifest unchanged","status":"GREEN","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-05T10:41:28.971793Z","security_profile":null,"acceptance_criteria":null}
