@@ -124,3 +124,56 @@ def test_prose_only_mentions_keep_fallback(tmp_path: Path):
         row = _setup_root(tmp_path, task, card)
         contract = _pre_layer_contract(tmp_path, row)
         assert isinstance(contract, dict)
+
+
+@pytest.mark.behavioral
+def test_e2e_mixed_with_unit_fires_split_error(tmp_path: Path):
+    """AC-PLAN-004: e2e file plus unit file stops with the split-task error."""
+    task = _mixed_task()
+    card = _card("  - Files: tests/unit/test_a.py tests/e2e/test_x.py\n")
+    with chdir(tmp_path):
+        row = _setup_root(tmp_path, task, card)
+        with pytest.raises(typer.Exit) as exc:
+            _pre_layer_contract(tmp_path, row)
+        assert exc.value.exit_code != 0
+
+
+@pytest.mark.behavioral
+def test_execution_mode_e2e_plus_unit_path_fires(tmp_path: Path, capsys):
+    """AC-PLAN-004: execution_mode E2E stamp plus a unit path fires split error."""
+    task = _mixed_task(execution_mode="E2E")
+    card = _card("  - Files: tests/unit/test_a.py\n")
+    with chdir(tmp_path):
+        row = _setup_root(tmp_path, task, card)
+        with pytest.raises(typer.Exit) as exc:
+            _pre_layer_contract(tmp_path, row)
+        assert exc.value.exit_code != 0
+        out = capsys.readouterr().out.lower()
+        assert "split" in out and "e2e" in out and "unit" in out
+
+
+@pytest.mark.behavioral
+def test_keyword_only_card_keeps_fallback(tmp_path: Path):
+    """AC-PLAN-004: ambiguous keywords with no concrete paths keep fallback."""
+    from deviate.cli.micro import _layer_contract_fields
+
+    task = _mixed_task()
+    card = _card("  - Notes: unit and integration keywords without paths\n")
+    with chdir(tmp_path):
+        row = _setup_root(tmp_path, task, card)
+        contract = _pre_layer_contract(tmp_path, row)
+        assert contract == _layer_contract_fields(tmp_path, row)
+
+
+@pytest.mark.behavioral
+def test_single_concrete_path_plus_keyword_noise_passes(tmp_path: Path):
+    """AC-PLAN-003 edge: one concrete path plus keyword noise stays single-layer."""
+    task = _mixed_task()
+    card = _card(
+        "  - Files: tests/unit/test_a.py\n"
+        "  - Notes: integration e2e keyword noise in prose\n"
+    )
+    with chdir(tmp_path):
+        row = _setup_root(tmp_path, task, card)
+        contract = _pre_layer_contract(tmp_path, row)
+        assert contract["test_strategy"] == "unit"
