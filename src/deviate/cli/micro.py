@@ -7457,7 +7457,7 @@ def _concrete_suite_layers(root: Path, task: dict | None, declared: str) -> set[
 
 
 def _classify_suite_layers(root: Path, task: dict | None) -> set[str]:
-    """Layers with concrete targets (suite-dir paths, layer-scoped commands)."""
+    """Strategy stamp plus concrete targets (suite-dir paths, layer commands)."""
     layers: set[str] = set()
     strategy = _extract_test_strategy(root, task)
     if strategy == "unit":
