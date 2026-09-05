@@ -24,6 +24,7 @@
 
 ---
 
+  - **Judge Feedback**: The next GREEN attempt must: preserve the non-zero raise with output tail before format and ledger writes, add a no-test-command guard using _is_no_test_command that skips the gate like the RED phase does, keep zero-result format plus COMPLETED plus IDLE path unchanged, and prove no regression by running tests/unit/test_micro/test_run.py plus tests/unit/test_micro/test_refactor.py with _run_pytest mocked.
 ## Implementation Strategy
 **Execution Order**:
 1. Phase 1 standalone (single task, no dependencies)
