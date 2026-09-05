@@ -7089,6 +7089,10 @@ def _classify_suite_kind(root: Path, task: dict | None, declared: str) -> str | 
         task_text = (
             f"{task.get('description', '')} {_task_card_text(root, task)} {declared}"
         )
+    concrete = _concrete_suite_layers(root, task, declared)
+    if len(concrete) == 1:
+        only = next(iter(concrete))
+        return "integ" if only == "integration" else only
     corpus = f"{declared} {task_text}"
     has_unit = bool(_UNIT_KIND_RE.search(corpus))
     has_integ = bool(_INTEG_KIND_RE.search(corpus))
@@ -7426,8 +7430,60 @@ def _pre_test_command(root: Path, task: dict | None) -> str:
         raise typer.Exit(code=1) from exc
 
 
+_SUITE_DIR_LAYER_RE = re.compile(r"tests/(unit|integration|integ|e2e)\b", re.IGNORECASE)
+_MISE_LAYER_RE = re.compile(
+    r"\bmise\s+(?:run\s+|exec\s+--\s+)?(unit|integration|integ|e2e)\b", re.IGNORECASE
+)
+
+
+def _suite_layer_hits(text: str) -> set[str]:
+    """Layer names with concrete suite-dir or mise-rung targets in ``text``."""
+    layers: set[str] = set()
+    for hit in (*_SUITE_DIR_LAYER_RE.findall(text), *_MISE_LAYER_RE.findall(text)):
+        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+    return layers
+
+
+def _concrete_suite_layers(root: Path, task: dict | None, declared: str) -> set[str]:
+    """Layers with concrete targets (suite-dir paths, layer-scoped commands)."""
+    layers: set[str] = set()
+    if task and str(task.get("execution_mode") or "").strip().upper() == "E2E":
+        layers.add("e2e")
+    layers |= _suite_layer_hits(declared)
+    if task:
+        text = f"{task.get('description', '')} {_task_card_text(root, task)}"
+        layers |= _suite_layer_hits(text)
+    return layers
+
+
+def _classify_suite_layers(root: Path, task: dict | None) -> set[str]:
+    """Strategy stamp plus concrete targets (suite-dir paths, layer commands)."""
+    layers: set[str] = set()
+    strategy = _extract_test_strategy(root, task)
+    if strategy == "unit":
+        layers.add("unit")
+    elif strategy == "integration":
+        layers.add("integration")
+    elif strategy == "e2e":
+        layers.add("e2e")
+    if task:
+        layers |= _concrete_suite_layers(
+            root, task, _task_verification_command(root, task)
+        )
+    return layers
+
+
 def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
     """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
+    layers = _classify_suite_layers(root, task)
+    if len(layers) >= 2:
+        names = ", ".join(sorted(layers))
+        exc = VerificationUnresolvedError(
+            f"SPLIT_TASK_REQUIRED: mixed test contract spans {names} — "
+            "split into one task per layer"
+        )
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
     try:
         return _layer_contract_fields(root, task)
     except VerificationUnresolvedError as exc:
