@@ -36,6 +36,7 @@ Forbidden:
 
 
 **Blocking gate:** a failing suite routes to JUDGE via `train_feedback`. A RED warning advisory does not block GREEN start.
+
 **Handover contract — files (recommended):** When the implementation
 touches any files under `src/`, `lib/`, or `app/`, list every path you
 created or modified in the optional ``files:`` field of the YAML
