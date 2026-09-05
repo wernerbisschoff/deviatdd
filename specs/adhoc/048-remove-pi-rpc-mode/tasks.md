@@ -23,6 +23,7 @@
     - **Acceptance**: `rg -n "PI_RPC_COMMAND|_invoke_rpc_blocking" src/` returns zero hits. `mise run unit` passes for the touched file.
   - **Dependency**: TSK-048-02
 
+  - **Judge Feedback**: The next RED attempt must: retarget the stale RPC tests in tests/unit/core/test_agent.py to assert print-mode-only behavior, keep the new TestPiPrintModeOnly assertions in tests/unit/test_core/test_agent.py, and prove the full unit suite passes with zero RPC tokens.
 - TSK-048-02: Drop legacy RPC config keys and fail their validation
   - **Type**: Domain_Batch
   - **Mode**: TDD
