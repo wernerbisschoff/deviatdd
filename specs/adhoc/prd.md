@@ -685,3 +685,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-045-01 / AO-045-01: Manifest with mismatched task id, contradictory verdict/next_action, or ERROR status without rationale fails with a specific error naming the defect; available rationale or output tail is preserved in the failure.
   2. AC-ADHOC-045-02 / AO-045-02: Unparseable manifest triggers exactly one constrained format-correction retry before failing; the final failure carries the correction error instead of `unknown`.
+
+## FR-ADHOC-046: JUDGE RPC infra failures carry pi-side diagnostics into a sidecar
+- **Description**: A JUDGE pi RPC subprocess that emits no `agent_end` event writes raw stderr plus the failed `response` error into a `.raw/judge-*.log` sidecar and fails with the pi-side error text instead of `Not Found`.
+- **Preconditions**: `src/deviate/core/agent.py` `_invoke_rpc_blocking` extracts a manifest only from a JSON stdout event with `type == "agent_end"` and returns empty text otherwise; `src/deviate/cli/micro.py` `_invoke_agent` catches `EmptyOutputError` without calling `_write_invoke_sidecars`; gh issue 206 reports `AGENT_ERROR Not Found` with no sidecar on TSK-001-02, deviate 2.27.1.
+- **Inputs/Outputs**: Input — RPC stdout with a failed `prompt` response (e.g. pi extension error `Cannot read properties of undefined`) and no `agent_end`, plus subprocess stderr. Output — a `.raw/judge-*.log` sidecar holding stderr and the failed response error, a specific failure message carrying the pi-side text, and a distinguishing `JUDGE_AGENT_NO_AGENT_END`-style event separating infra crashes from compliance rejections.
+- **User Stories**:
+  1. US-046-01: As a developer triaging a JUDGE crash, I want the pi-side error text in the sidecar and the failure message so I see the real cause instead of `Not Found`. *(Ref: FR-ADHOC-046)*
+  2. US-046-02: As an operator, I want infra-crash failures tagged distinctly from compliance rejections so I route them to tooling instead of the task author. *(Ref: FR-ADHOC-046)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-046-01 / AO-046-01: RPC run with no `agent_end` writes stderr plus the failed `response` error to `.raw/judge-*.log` and fails with the pi-side error text.
+  2. AC-ADHOC-046-02 / AO-046-02: A normal `agent_end` run behaves exactly as today; no new event fires and no extra sidecar content appears.
