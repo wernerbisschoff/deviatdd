@@ -313,6 +313,32 @@ def resolve_agent_deadline(root: Path) -> int:
     return DeviateConfig().timeout_seconds
 
 
+def resolve_rollback_hook(root: Path) -> tuple[list[str], int] | None:
+    """Return the ``[rollback]`` recovery hook ``(command, timeout)``.
+
+    Returns ``None`` when the file, table, or command is absent. Timeout
+    defaults to 300 seconds when absent or not a positive int.
+    """
+    data = _load_deviate_config_toml(root)
+    if not isinstance(data, dict):
+        return None
+    table = data.get("rollback", {})
+    if not isinstance(table, dict):
+        return None
+    raw_command = table.get("command")
+    if isinstance(raw_command, str):
+        command = [raw_command] if raw_command.strip() else []
+    elif isinstance(raw_command, (list, tuple)):
+        command = [str(part) for part in raw_command if str(part)]
+    else:
+        return None
+    if not command:
+        return None
+    raw_timeout = table.get("timeout_seconds", 300)
+    timeout = raw_timeout if isinstance(raw_timeout, int) and raw_timeout > 0 else 300
+    return command, timeout
+
+
 def resolve_agent_reasons(root: Path) -> bool:
     """Return ``[log].agent_reasons`` from ``.deviate/config.toml``.
 

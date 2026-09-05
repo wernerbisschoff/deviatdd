@@ -62,6 +62,7 @@ You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAY
 - `test:e2e` — unit, integration, then E2E. Add only when an E2E layer exists.
 - `doctor:unit`, `doctor:integration`, `doctor:e2e` — read-only readiness checks for each configured layer. They do not run tests or launch services.
 - `doctor` — readiness checks for all configured layers. Without E2E, stop after integration.
+- `test:reset` — project-specific test-database reset for JUDGE rollback recovery. Detect the reset path from the stack and write it as the task command. Add only when the project uses a database. Merge missing; never overwrite an existing task.
 - Unit tests are hermetic. They require no database, Redis, network service, container, or external process.
 - Hooks: `pre-commit` = format-check + lint; `pre-push` = `unit` only. Never run integration or E2E on hooks.
 - Merge missing tasks into an existing `mise.toml`. Never overwrite existing commands, tests, or tool pins.
@@ -99,7 +100,8 @@ Analyze the project state from the contract:
 1. Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`
 2. Confirm `mise.toml` defines `test:one`, the configured `test:*` ladder, and the matching `doctor:*` ladder
 3. Check what DeviaTDD artifacts already exist (`specs/`, `issues.jsonl`, `constitution.md`)
-4. Inspect manifests, test configuration, CI, implementation files, and existing conventions to classify the repository as brownfield or greenfield
+4. Detect the test-database reset command from migrations, ORM config, and existing reset scripts; record it for the `test:reset` mise task
+5. Inspect manifests, test configuration, CI, implementation files, and existing conventions to classify the repository as brownfield or greenfield
 </step>
 
 <step id="constitution_population">

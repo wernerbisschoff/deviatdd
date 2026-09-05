@@ -88,6 +88,7 @@ from deviate.state.config import (
     resolve_agent_deadline,
     resolve_phase_model,
     resolve_reasoning_effort,
+    resolve_rollback_hook,
     JUDGE_REVERT_ACTION_ALIASES,
 )
 from deviate.ui.monitor import OrchestrationMonitor
@@ -2477,6 +2478,13 @@ def _recovery_branch_for(task_id: str, attempt: int) -> str:
     return f"{_RECOVERY_REF_PREFIX}/{sanitized}/attempt-{int(attempt)}"
 
 
+MIGRATION_PATH_PATTERNS: tuple[str, ...] = (
+    "alembic/versions",
+    "migrations",
+    "db/migrate",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class _RollbackTrace:
     """Discarded-commit index written to verdicts.jsonl and tasks.jsonl."""
@@ -2542,6 +2550,103 @@ def _resolve_tasks_md_boundary(root: Path) -> str:
         "**/tasks.md",
     )
     return out.splitlines()[0].strip() if out else ""
+
+
+def _reverted_migration_paths(
+    root: Path, *, head_sha: str, boundary_sha: str
+) -> list[str]:
+    """Return reverted files matching ``MIGRATION_PATH_PATTERNS``."""
+    if head_sha == boundary_sha:
+        return []
+    out = _git_capture(root, "diff", "--name-only", f"{boundary_sha}..{head_sha}")
+    return [p for p in out.splitlines() if any(m in p for m in MIGRATION_PATH_PATTERNS)]
+
+
+def _hook_output(stdout: str | None, stderr: str | None) -> str:
+    return f"{stdout or ''}{stderr or ''}".strip()
+
+
+def _rollback_hook_error(
+    code: str,
+    *,
+    command: list[str] | None,
+    boundary_sha: str,
+    task_id: str,
+    detail: str,
+) -> PhaseFailedError:
+    """Build one named rollback-recovery error naming hook plus boundary."""
+    hook_name = " ".join(command) if command else "[rollback] recovery hook"
+    return PhaseFailedError(
+        f"{code}: {detail} (hook={hook_name!r}, boundary={boundary_sha}, task_id={task_id!r})."
+    )
+
+
+def _run_rollback_recovery_hook(
+    root: Path,
+    *,
+    boundary_sha: str,
+    head_sha: str,
+    task_id: str,
+    hook: tuple[list[str], int] | None,
+) -> None:
+    """Run the ``[rollback]`` recovery hook on migration-bearing reverts."""
+
+    if not _reverted_migration_paths(
+        root, head_sha=head_sha, boundary_sha=boundary_sha
+    ):
+        return
+    if hook is None:
+        if "test:reset" in _mise_defined_tasks(root):
+            hook = (["mise", "run", "test:reset"], 300)
+    if hook is None:
+        raise _rollback_hook_error(
+            "ROLLBACK_RECOVERY_HOOK_MISSING",
+            command=None,
+            boundary_sha=boundary_sha,
+            task_id=task_id,
+            detail=(
+                "migration-bearing rollback requires a [rollback] recovery hook "
+                "or a test:reset mise task. "
+                "Configure [rollback] command in .deviate/config.toml ",
+                "or add test:reset via /deviate-init, "
+                "then manually restore the isolated database",
+            ),
+        )
+    command, timeout = hook
+    env = {
+        **_git_env(),
+        "DEVIATE_ROLLBACK_BOUNDARY_SHA": boundary_sha,
+        "DEVIATE_ROLLBACK_TASK_ID": task_id,
+    }
+    try:
+        result = subprocess.run(
+            command,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _rollback_hook_error(
+            "ROLLBACK_RECOVERY_HOOK_FAILED",
+            command=command,
+            boundary_sha=boundary_sha,
+            task_id=task_id,
+            detail=(
+                f"recovery hook timed out after {timeout}s: {_hook_output(exc.stdout, exc.stderr)}"
+            ),
+        ) from exc
+    if result.returncode != 0:
+        raise _rollback_hook_error(
+            "ROLLBACK_RECOVERY_HOOK_FAILED",
+            command=command,
+            boundary_sha=boundary_sha,
+            task_id=task_id,
+            detail=(
+                f"recovery hook failed: {_hook_output(result.stdout, result.stderr)}"
+            ),
+        )
 
 
 def _print_judge_revert_anchor(c: Console, rollback: _RollbackTrace) -> None:
@@ -2666,6 +2771,7 @@ def _execute_rollback(
             recovery_branch=recovery_branch,
         )
 
+    hook = resolve_rollback_hook(root)
     snapshot = RollbackSnapshot(
         phase=phase,
         branch=branch,
@@ -2674,12 +2780,6 @@ def _execute_rollback(
         reason=reason[:500],
     )
     append_rollback_snapshot(snapshot, root / ".deviate")
-    subprocess.run(
-        ["git", "checkout", "--quiet", "--", ".deviate/"],
-        cwd=root,
-        capture_output=True,
-        env=_git_env(),
-    )
 
     # Reset to boundary_sha — discards ALL commits made during GREEN
     # (agent commit, orchestrator commit, residual commit) preserving only
@@ -2704,6 +2804,9 @@ def _execute_rollback(
         cwd=root,
         capture_output=True,
         env=_git_env(),
+    )
+    _run_rollback_recovery_hook(
+        root, boundary_sha=boundary_sha, head_sha=commit_sha, task_id=task_id, hook=hook
     )
     if restore_tasks_md:
         subprocess.run(
