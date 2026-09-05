@@ -663,3 +663,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-043-01 / AO-043-01: A task declaring unit plus integration test targets stops at RED pre with a split-task error; zero RED agent attempts run.
   2. AC-ADHOC-043-02 / AO-043-02: A single-layer task runs RED unchanged; the new check never fires on unit-only or integration-only contracts.
+
+## FR-ADHOC-044: JUDGE rollback restores external database state or stops with a recovery action
+- **Description**: A JUDGE rollback that discards migration files restores the isolated database to its pre-phase revision or runs a configured recovery hook; when neither is available it stops with a specific error naming the required recovery action.
+- **Preconditions**: `src/deviate/cli/micro.py` `_execute_rollback` resets Git state only and never touches external databases; no `[rollback]` recovery hook exists in `.deviate/config.toml`; gh issue 198 reports Alembic `Can't locate revision` failures after JUDGE `revert_red`/`revert_green` on deviate 2.27.1.
+- **Inputs/Outputs**: Input — JUDGE `revert_red`/`revert_green` whose reverted diff includes migration files. Output — database restored to the pre-phase revision via hook, or a specific `ROLLBACK_DB_STALE`-style error naming the hook and the manual recovery action; later Alembic commands never reference a discarded revision.
+- **User Stories**:
+  1. US-044-01: As a developer on a repo with database migrations, I want JUDGE rollback to restore the isolated database so later test commands keep working after a revert. *(Ref: FR-ADHOC-044)*
+  2. US-044-02: As an operator without a configured recovery hook, I want a specific error with the required recovery action so I fix the database instead of debugging phantom revision errors. *(Ref: FR-ADHOC-044)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-044-01 / AO-044-01: Reverted diff containing migration files triggers database recovery (hook) or a specific error naming the hook plus the manual recovery action.
+  2. AC-ADHOC-044-02 / AO-044-02: Reverted diff without migration files rolls back exactly as today; no hook runs and no new error fires.
