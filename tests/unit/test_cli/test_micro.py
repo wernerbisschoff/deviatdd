@@ -4967,9 +4967,8 @@ class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
     """Defect #3: ``_run_red_phase`` must enforce the RED contract.
 
     (a) If pytest returns ``returncode == 0`` after the RED agent's
-        commit, ``_run_red_phase`` must raise ``PhaseFailedError``
-        instead of letting the GREEN phase pick up a passing test
-        (the regression that produced the TSK-002-02 mismatch).
+        commit, ``_run_red_phase`` completes with a warning advisory
+        instead of raising (non-blocking checkpoint, US-005-05).
 
     (b) On a JUDGE ``revert_red`` retry, ``session.train_feedback``
         must be appended to the RED prompt so the agent knows what
@@ -4981,7 +4980,7 @@ class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
     @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
     @patch("deviate.cli.micro._commit_phase")
     @patch("deviate.cli.micro._invoke_agent")
-    def test_passing_test_after_red_commit_raises_phase_failed(
+    def test_passing_test_after_red_commit_completes_with_warning_advisory(
         self,
         mock_invoke: MagicMock,
         mock_commit: MagicMock,
@@ -5040,23 +5039,13 @@ class TestRunRedPhaseRejectsPassingTestsAndInjectsFeedback:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
         ):
-            with pytest.raises(Exception) as excinfo:
-                _run_red_phase(task, ledger_path, session, session_path, Console())
-        # Pin: the error message must specifically say the test passes,
-        # not the unrelated post-commit verification error (those fire
-        # on different code paths). GREEN adds a check that pytest
-        # rc == 0 raises; that message will mention "passes" / "test".
-        assert (
-            any(
-                token in str(excinfo.value).lower()
-                for token in ("test", "passes", "passing")
-            )
-            and "did not commit" not in str(excinfo.value).lower()
-        ), (
-            "_run_red_phase must raise a phase-failed error referencing "
-            "the passing test (not the post-commit verification error); "
-            f"got {type(excinfo.value).__name__}: {excinfo.value}"
-        )
+            result = _run_red_phase(task, ledger_path, session, session_path, Console())
+        # Non-blocking RED checkpoint (US-005-05 / AC-PLAN-001): a passing
+        # suite completes with a warning advisory instead of raising.
+        advisory = result[1]
+        assert advisory is not None and advisory.passes is True
+        assert advisory.severity == "warning"
+        assert result.red_commit_sha, "RED must stamp the commit SHA"
 
     @patch("deviate.cli.micro._run_format_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree", lambda *a, **kw: None)
@@ -6331,6 +6320,10 @@ class TestNoFailingTestAlreadyExistsCliCompletes:
         monkeypatch.setattr(
             "deviate.cli.micro._verify_worktree_branch", lambda *a, **kw: None
         )
+
+        # Mirror production .gitignore: the post-commit session save must not
+        # trip the clean-worktree check.
+        (root / ".gitignore").write_text(".deviate/\n", encoding="utf-8")
 
         test_file = root / self._TEST_PATH
         test_file.parent.mkdir(parents=True, exist_ok=True)

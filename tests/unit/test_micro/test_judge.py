@@ -3902,8 +3902,11 @@ class TestTddJudgeEvidenceGate:
             red_test_file=rel,
             write_on_red={rel: body},
         )
-        assert "GREEN" not in call_log, (
-            f"AC-PLAN-004: GREEN must not invent tests; call_log={call_log!r}\n{output}"
+        # Non-blocking checkpoint: each cycle flows RED -> GREEN -> JUDGE.
+        # GREEN passes through on the warning advisory; it must not author
+        # new tests, but it is invoked as part of the cycle.
+        assert call_log == ["RED", "GREEN", "JUDGE"], (
+            f"AC-PLAN-004: expected RED -> GREEN -> JUDGE, got {call_log!r}\n{output}"
         )
         assert "COMPLETED" in statuses, (
             "AC-PLAN-004: declared path in the dirty snapshot may COMPLETE; "
@@ -3935,8 +3938,8 @@ class TestTddJudgeEvidenceGate:
         )
         kept = (tmp_git_repo / rel).is_file()
         completed = "COMPLETED" in statuses
-        assert "GREEN" not in call_log, (
-            f"AC-PLAN-006: GREEN must not invent tests; call_log={call_log!r}\n{output}"
+        assert call_log == ["RED", "GREEN", "JUDGE"], (
+            f"AC-PLAN-006: expected RED -> GREEN -> JUDGE, got {call_log!r}\n{output}"
         )
         assert kept or not completed, (
             "AC-PLAN-006: runner must keep the only declared dirty tests or "
@@ -3959,9 +3962,8 @@ class TestTddJudgeEvidenceGate:
             red_test_file=missing,
             rationale=("Required behavior already exists in tests/ghost_regression.py"),
         )
-        assert "GREEN" not in call_log, (
-            "GH-185: GREEN must not invent missing tests; "
-            f"call_log={call_log!r}\n{output}"
+        assert call_log == ["RED", "GREEN", "JUDGE"], (
+            f"GH-185: expected RED -> GREEN -> JUDGE; call_log={call_log!r}\n{output}"
         )
         assert "revert_green" not in output, (
             f"GH-185: clean PASS must not train GREEN; call_log={call_log!r}\n{output}"

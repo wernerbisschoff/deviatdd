@@ -5,7 +5,7 @@ guards: empty evidence quotes, docs-only diffs, and COMPLETE routes
 whose declared regression paths miss the diff are rejected.
 
 AC-PLAN-001: non-zero result with compile-error markers commits RED / GREEN.
-AC-PLAN-002: exit 0 / exit 5 / exit 127 still route to adjudication.
+AC-PLAN-002: exit 0 / exit 5 return a warning advisory, exit 127 skips.
 AC-PLAN-003: mixed compile-error plus passing output counts as failing.
 AC-PLAN-005: no-failing-test COMPLETE keeps evidence guardrails.
 """
@@ -129,9 +129,9 @@ def test_red_phase_routes_compile_error_to_green(tmp_git_repo: Path):
 
 
 @pytest.mark.behavioral
-def test_red_phase_routes_exit_zero_to_adjudication(tmp_git_repo: Path):
+def test_red_phase_routes_exit_zero_to_advisory(tmp_git_repo: Path):
     adjudicate = _drive_red(tmp_git_repo, _proc(0, stdout="1 passed"))
-    adjudicate.assert_called_once()
+    adjudicate.assert_not_called()
 
 
 @pytest.mark.behavioral

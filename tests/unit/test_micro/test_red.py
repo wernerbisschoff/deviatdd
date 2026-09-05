@@ -6,11 +6,13 @@ from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
-from deviate.cli.micro import _run_red_phase
+from deviate.cli.micro import PhaseFailedError, _run_red_phase
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
@@ -467,3 +469,194 @@ class TestAutoRedPersistedFeedback:
         # The card keeps its history bullet; with no persisted block injected
         # it must appear exactly once.
         assert prompt.count(stale_persisted_feedback) == 1
+
+
+def _drive_red_phase(root: Path, task: dict, ledger_path: Path, proc):
+    """Drive `_run_red_phase` with a success manifest and a stubbed toolchain."""
+    from deviate.cli.micro import append_task_transition as _real_append  # noqa: F401
+
+    session = SessionState(current_phase="IDLE")
+    session_path = root / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session.save(session_path)
+    manifest = HandoverManifest(phase="RED", status="SUCCESS", task_id=task["id"])
+    appended: list[dict] = []
+
+    def _capture_append(record, path):
+        appended.append(record.model_dump())
+
+    with (
+        chdir(root),
+        patch("deviate.cli.micro._phase_already_done", return_value=False),
+        patch("deviate.cli.micro._log_run"),
+        patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+        patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+        patch("deviate.cli.micro._invoke_agent", return_value=(manifest, "")),
+        patch("deviate.cli.micro._run_test_cmd", return_value=proc),
+        patch("deviate.cli.micro._run_pytest", return_value=proc),
+        patch("deviate.cli.micro._run_format_cmd", return_value=proc),
+        patch("deviate.cli.micro.append_task_transition", side_effect=_capture_append),
+        patch("deviate.cli.micro._commit_phase", return_value=True),
+        patch("deviate.cli.micro._verify_clean_worktree"),
+    ):
+        out = _run_red_phase(
+            task, ledger_path, session, session_path, Console(quiet=True)
+        )
+    if isinstance(out, tuple):
+        return out[0], out[1], appended
+    return out, None, appended
+
+
+class TestRedHandoffAdvisory:
+    """`AC-PLAN-001` through `AC-PLAN-004`: RED returns an in-memory advisory."""
+
+    @pytest.mark.behavioral
+    def test_pass_returns_warning_advisory_without_error(self, tmp_git_repo: Path):
+        from deviate.cli.micro import RedHandoffAdvisory  # noqa: F401
+
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        task = _make_task_record(task_id="TSK-003-01").model_dump()
+        ledger_path = tmp_git_repo / "specs" / "005" / "tasks.jsonl"
+        _, advisory, _ = _drive_red_phase(tmp_git_repo, task, ledger_path, proc)
+
+        assert isinstance(advisory, RedHandoffAdvisory)
+        assert advisory.task_id == "TSK-003-01"
+        assert advisory.passes is True
+        assert advisory.severity == "warning"
+
+    @pytest.mark.behavioral
+    def test_fail_returns_ok_advisory(self, tmp_git_repo: Path):
+        from deviate.cli.micro import RedHandoffAdvisory  # noqa: F401
+
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="1 failed", stderr=""
+        )
+        task = _make_task_record(task_id="TSK-003-01").model_dump()
+        ledger_path = tmp_git_repo / "specs" / "005" / "tasks.jsonl"
+        _, advisory, appended = _drive_red_phase(tmp_git_repo, task, ledger_path, proc)
+
+        assert isinstance(advisory, RedHandoffAdvisory)
+        assert advisory.passes is False
+        assert advisory.severity == "ok"
+        assert any(row.get("status") == "RED" for row in appended)
+
+    @pytest.mark.spy
+    def test_pass_logs_red_passed_warning(self, tmp_git_repo: Path):
+        from deviate.cli.micro import RedHandoffAdvisory  # noqa: F401
+
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        task = _make_task_record(task_id="TSK-003-01").model_dump()
+        ledger_path = tmp_git_repo / "specs" / "005" / "tasks.jsonl"
+        session = SessionState(current_phase="IDLE")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session.save(session_path)
+        manifest = HandoverManifest(phase="RED", status="SUCCESS", task_id="TSK-003-01")
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._invoke_agent", return_value=(manifest, "")),
+            patch("deviate.cli.micro._run_test_cmd", return_value=proc),
+            patch("deviate.cli.micro._run_pytest", return_value=proc),
+            patch("deviate.cli.micro._run_format_cmd", return_value=proc),
+            patch("deviate.cli.micro.append_task_transition"),
+            patch("deviate.cli.micro._commit_phase", return_value=True),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+            patch("deviate.cli.micro.log_event") as mock_log_event,
+        ):
+            _run_red_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+        mock_log_event.assert_any_call("RED_PASSED_WARNING", task_id="TSK-003-01")
+
+    @pytest.mark.behavioral
+    def test_crash_surfaces_phase_error_with_no_advisory(self, tmp_git_repo: Path):
+        task = _make_task_record(task_id="TSK-003-01").model_dump()
+        ledger_path = tmp_git_repo / "specs" / "005" / "tasks.jsonl"
+        session = SessionState(current_phase="IDLE")
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session.save(session_path)
+        manifest = HandoverManifest(phase="RED", status="SUCCESS", task_id="TSK-003-01")
+        proc = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch("deviate.cli.micro._invoke_agent", return_value=(manifest, "")),
+            patch("deviate.cli.micro._run_test_cmd", side_effect=OSError("boom")),
+            patch("deviate.cli.micro._run_pytest", return_value=proc),
+            patch("deviate.cli.micro.append_task_transition") as mock_append,
+        ):
+            with pytest.raises(PhaseFailedError):
+                _run_red_phase(
+                    task, ledger_path, session, session_path, Console(quiet=True)
+                )
+        mock_append.assert_not_called()
+
+    @pytest.mark.behavioral
+    def test_absent_test_file_skips_checkpoint_with_no_advisory(
+        self, tmp_git_repo: Path
+    ):
+        proc = subprocess.CompletedProcess(
+            args=["deviate", "test"],
+            returncode=127,
+            stdout="",
+            stderr="No test command configured",
+        )
+        task = _make_task_record(task_id="TSK-003-01").model_dump()
+        ledger_path = tmp_git_repo / "specs" / "005" / "tasks.jsonl"
+        _, advisory, appended = _drive_red_phase(tmp_git_repo, task, ledger_path, proc)
+
+        assert advisory is None
+        assert not any(row.get("status") == "RED" for row in appended)
+
+    @pytest.mark.behavioral
+    def test_advisory_never_persists_to_ledger(self, tmp_git_repo: Path):
+        from deviate.cli.micro import RedHandoffAdvisory  # noqa: F401
+
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        task = _make_task_record(task_id="TSK-003-01").model_dump()
+        ledger_path = tmp_git_repo / "specs" / "005" / "tasks.jsonl"
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.micro._phase_already_done", return_value=False),
+            patch("deviate.cli.micro._log_run"),
+            patch("deviate.cli.micro._make_agent_output_callback", return_value=None),
+            patch("deviate.cli.micro.resolve_model_for_phase", return_value=None),
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                return_value=(
+                    HandoverManifest(
+                        phase="RED", status="SUCCESS", task_id="TSK-003-01"
+                    ),
+                    "",
+                ),
+            ),
+            patch("deviate.cli.micro._run_test_cmd", return_value=proc),
+            patch("deviate.cli.micro._run_pytest", return_value=proc),
+            patch("deviate.cli.micro._run_format_cmd", return_value=proc),
+            patch("deviate.cli.micro._commit_phase", return_value=True),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+        ):
+            session = SessionState(current_phase="IDLE")
+            session_path = tmp_git_repo / ".deviate" / "session.json"
+            session_path.parent.mkdir(parents=True, exist_ok=True)
+            session.save(session_path)
+            _run_red_phase(
+                task, ledger_path, session, session_path, Console(quiet=True)
+            )
+        text = ledger_path.read_text(encoding="utf-8") if ledger_path.exists() else ""
+        assert "RedHandoffAdvisory" not in text
+        assert "advisory" not in text.lower()

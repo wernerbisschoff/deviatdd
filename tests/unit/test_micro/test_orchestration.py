@@ -1437,10 +1437,10 @@ class TestMicroOrchestration:
         tmp_git_repo: Path,
         approve_gate2,
     ):
-        """RED completing with a passing test (rc 0) skips GREEN and routes the
-        decision to JUDGE. JUDGE ruling the behavior already exists
-        (``next_action: skip_refactor``) marks the task COMPLETED when RED
-        names a present regression path — no vacuous GREEN is run.
+        """RED completing with a passing test (rc 0) completes with a warning
+        advisory and passes through GREEN to JUDGE. JUDGE ruling the behavior
+        already exists (``next_action: skip_refactor``) marks the task
+        COMPLETED when RED names a present regression path.
 
         AC-PLAN-002 / FR-ADHOC-022: named ``files`` / ``test_file`` may reach
         JUDGE. Constitution §3: mock ``_run_pytest``.
@@ -1524,9 +1524,11 @@ class TestMicroOrchestration:
 
             result = runner.invoke(cli, ["micro", "run", "TSK-004-20"])
 
-            assert "RED_NO_FAILING_TEST" in result.output, result.output
-            # GREEN was skipped — the adjudication routed RED straight to JUDGE.
-            assert "GREEN" not in call_log, f"GREEN must be skipped: {call_log}"
+            # Non-blocking checkpoint: RED completes with a warning advisory,
+            # GREEN passes through, JUDGE skip_refactor completes the task.
+            assert call_log == ["RED", "GREEN", "JUDGE"], (
+                f"expected RED -> GREEN -> JUDGE, got: {call_log}"
+            )
             assert call_log.count("JUDGE") == 1, f"JUDGE must run once: {call_log}"
             assert result.exit_code == 0, f"Unexpected exit: {result.output}"
             statuses = _read_statuses(ledger_path)
@@ -1669,8 +1671,8 @@ class TestMicroOrchestration:
 
         ``failure_kind: already_satisfied`` plus a non-empty ``files`` set or
         ``test_file`` must call ``_run_judge_phase``. Empty-files is not the
-        reason to stop. GREEN stays uninvoked. Constitution §3: mock
-        ``_run_pytest``.
+        reason to stop. GREEN passes through between RED and JUDGE.
+        Constitution §3: mock ``_run_pytest``.
         """
         call_log: list[str] = []
         passing = subprocess.CompletedProcess(
@@ -1737,9 +1739,9 @@ class TestMicroOrchestration:
                 "AC-PLAN-002: named files / test_file must reach "
                 f"_run_judge_phase; call_log={call_log!r}\n{output}"
             )
-            assert "GREEN" not in call_log, (
-                "AC-PLAN-002: named already_satisfied must not invoke GREEN; "
-                f"call_log={call_log!r}\n{output}"
+            assert call_log == ["RED", "GREEN", "JUDGE"], (
+                "AC-PLAN-002: named already_satisfied flows RED -> GREEN -> "
+                f"JUDGE; call_log={call_log!r}\n{output}"
             )
 
     @patch("deviate.cli.micro._run_pytest")
@@ -1758,11 +1760,10 @@ class TestMicroOrchestration:
         mock_run_pytest,
         tmp_git_repo: Path,
     ):
-        """AC-PLAN-001: always-``revert_red`` on ``no_failing_test`` stays RED.
-
-        After two (or more) RED_NO_FAILING_TEST adjudications the next
-        ``INVOKE_AGENT`` is RED, or the loop raises ``TRAIN_EXHAUSTED`` /
-        ``PhaseFailedError``. GREEN is never invoked.
+        """AC-PLAN-001: always-``revert_red`` on ``no_failing_test`` keeps
+        retrying RED until the loop raises ``TRAIN_EXHAUSTED`` /
+        ``PhaseFailedError``. Each cycle flows RED -> GREEN -> JUDGE; the
+        ``revert_red`` verdict re-dispatches RED.
         """
         call_log: list[str] = []
         passing = subprocess.CompletedProcess(
@@ -1844,21 +1845,16 @@ class TestMicroOrchestration:
             with pytest.raises(PhaseFailedError) as excinfo:
                 _run_tdd_cycle(task, ledger_path, console)
             output = buf.getvalue()
-            assert "GREEN" not in call_log, (
-                "AC-PLAN-001: after no_failing_test / revert_red the next "
-                "INVOKE_AGENT must be RED (or TRAIN_EXHAUSTED / "
-                f"PhaseFailedError), never GREEN; got {call_log!r}\n{output}"
-            )
             assert call_log.count("RED") >= 2, (
-                "AC-PLAN-001: two or more RED_NO_FAILING_TEST adjudications "
-                f"must re-dispatch RED; got {call_log!r}\n{output}"
-            )
-            assert call_log.count("JUDGE") >= 2, (
-                "AC-PLAN-001: JUDGE must adjudicate each no_failing_test RED; "
+                "AC-PLAN-001: two or more RED cycles must re-dispatch RED; "
                 f"got {call_log!r}\n{output}"
             )
-            assert set(call_log) <= {"RED", "JUDGE"}, (
-                "AC-PLAN-001: agent phases must contain RED and JUDGE only; "
+            assert call_log.count("JUDGE") >= 2, (
+                "AC-PLAN-001: JUDGE must adjudicate each cycle; "
+                f"got {call_log!r}\n{output}"
+            )
+            assert [p for p in call_log if p not in ("RED", "GREEN", "JUDGE")] == [], (
+                "AC-PLAN-001: agent phases must contain RED, GREEN, JUDGE only; "
                 f"got {call_log!r}\n{output}"
             )
             assert "TRAIN_EXHAUSTED" in str(excinfo.value), (

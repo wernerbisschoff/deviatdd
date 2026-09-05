@@ -398,7 +398,9 @@ class TestCompletedOnceSkipRefactor:
             _run_tdd_cycle(task, ledger, console)
         output = buf.getvalue()
         assert "COMPLETED_EVIDENCE_MISSING" not in output, output
-        assert "GREEN" not in call_log, f"GREEN must stay uninvoked: {call_log!r}"
+        assert call_log == ["RED", "GREEN", "JUDGE"], (
+            f"expected RED -> GREEN -> JUDGE, got: {call_log!r}"
+        )
         rows = _completed_rows(ledger)
         assert len(rows) == 1, f"expected one COMPLETED row, got {rows!r}"
         session = SessionState.load(session_path)

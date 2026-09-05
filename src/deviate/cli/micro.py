@@ -21,6 +21,7 @@ from pathlib import Path, PurePosixPath
 
 import typer
 import yaml
+from pydantic import BaseModel
 from rich.console import Console
 
 from deviate.core._shared import (
@@ -1787,6 +1788,28 @@ def _is_no_test_command(proc: subprocess.CompletedProcess) -> bool:
     return "no test command" in f"{proc.stderr or ''}".lower()
 
 
+class RedHandoffAdvisory(BaseModel):
+    """Transient RED checkpoint note handed to GREEN in memory only."""
+
+    task_id: str
+    phase: str = "RED"
+    passes: bool
+    severity: str
+
+
+class _RedPhaseOutcome(tuple):
+    """``(session, advisory)`` pair that also proxies ``SessionState``."""
+
+    def __new__(cls, session: SessionState, advisory: RedHandoffAdvisory | None):
+        return super().__new__(cls, (session, advisory))
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self[0], name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self[0], name, value)
+
+
 def _run_red_phase(
     task: dict,
     ledger_path: Path,
@@ -1798,13 +1821,13 @@ def _run_red_phase(
     *,
     bypass_phase_done: bool = False,
     no_judge: bool = False,
-) -> SessionState:
+) -> _RedPhaseOutcome:
     tid = task.get("id", "?")
     if not bypass_phase_done and _phase_already_done(
         ledger_path, task.get("id", ""), "RED"
     ):
         c.print(f"  [dim]RED already done for {_task_label(task)}, skipping[/]")
-        return session
+        return _RedPhaseOutcome(session, None)
     # A rollback boundary belongs to the active task.  Clear any boundary
     # retained by a completed prior task before the RED agent can fail; this
     # phase records its own boundary only after the RED commit lands.
@@ -1859,24 +1882,34 @@ def _run_red_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    test_result = _run_test_cmd(root, task)
-    if not _is_compile_error(test_result) and (
-        test_result.returncode == 0
-        or _is_no_tests_collected(test_result)
-        or _is_no_test_command(test_result)
-    ):
-        return _adjudicate_red_no_failing_test(
+    try:
+        test_result = _run_test_cmd(root, task)
+    except PhaseFailedError:
+        raise
+    except Exception as exc:
+        raise PhaseFailedError(
+            f"RED phase test command failed for {tid}: {exc}"
+        ) from exc
+    if _is_no_test_command(test_result):
+        c.print(
+            f"  [dim]No test command for {_task_label(task)}, skipping RED checkpoint[/]"
+        )
+        return _RedPhaseOutcome(session, None)
+    if test_result.returncode == 0 or _is_no_tests_collected(test_result):
+        passes, severity = True, "warning"
+    else:
+        passes, severity = False, "ok"
+    advisory = RedHandoffAdvisory(task_id=tid, passes=passes, severity=severity)
+
+    # The non-blocking checkpoint removed the JUDGE adjudication route,
+    # but the already_satisfied files gate stays: a test-bearing RED that
+    # claims the behavior already exists must still name its regression files.
+    if (manifest.failure_kind or "") == "already_satisfied":
+        _require_tdd_declared_regression_files(
             task,
-            ledger_path,
-            session,
-            session_path,
-            c,
-            agent=agent,
-            monitor=monitor,
-            manifest=manifest,
-            test_result=test_result,
-            red_baseline=red_baseline,
-            no_judge=no_judge,
+            manifest,
+            tid=tid,
+            context="declared `failure_kind: already_satisfied`",
         )
 
     _run_format_cmd(root)
@@ -1910,7 +1943,9 @@ def _run_red_phase(
     session.save(session_path)
 
     _verify_clean_worktree(root, "RED", tid)
-    return session
+    if advisory.passes:
+        log_event("RED_PASSED_WARNING", task_id=tid)
+    return _RedPhaseOutcome(session, advisory)
 
 
 def _adjudicate_red_no_failing_test(
@@ -2220,9 +2255,11 @@ def _run_green_phase(
         c.print(
             f"  [yellow]TEST_FAILURE[/] {tid} \u2014 keeping implementation for JUDGE assessment"
         )
+        # Keep the whole feedback within the 8000-char budget the test pins:
+        # the wrapper adds ~80 chars, so the raw output keeps the tail 7900.
         session.train_feedback = (
             f"{_GREEN_TEST_FAILURE_PREFIX}\n\n"
-            f"<test_output>\n{failure_output}\n</test_output>"
+            f"<test_output>\n{failure_output[-7900:]}\n</test_output>"
         )
         session.save(session_path)
         return session
