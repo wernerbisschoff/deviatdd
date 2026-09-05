@@ -7432,7 +7432,15 @@ _MISE_LAYER_RE = re.compile(
 )
 
 
-def _concrete_suite_layers(root: Path, task: dict | None) -> set[str]:
+def _suite_layer_hits(text: str) -> set[str]:
+    """Layer names with concrete suite-dir or mise-rung targets in ``text``."""
+    layers: set[str] = set()
+    for hit in (*_SUITE_DIR_LAYER_RE.findall(text), *_MISE_LAYER_RE.findall(text)):
+        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+    return layers
+
+
+def _classify_suite_layers(root: Path, task: dict | None) -> set[str]:
     """Layers with concrete targets (suite-dir paths, layer-scoped commands)."""
     layers: set[str] = set()
     strategy = _extract_test_strategy(root, task)
@@ -7442,24 +7450,16 @@ def _concrete_suite_layers(root: Path, task: dict | None) -> set[str]:
         layers.add("integration")
     elif strategy == "e2e":
         layers.add("e2e")
-    declared = _task_verification_command(root, task) if task else ""
-    for hit in _SUITE_DIR_LAYER_RE.findall(declared):
-        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
-    for hit in _MISE_LAYER_RE.findall(declared):
-        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
-    text = _task_card_text(root, task) if task else ""
     if task:
-        text = f"{task.get('description', '')} {text}"
-    for hit in _SUITE_DIR_LAYER_RE.findall(text):
-        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
-    for hit in _MISE_LAYER_RE.findall(text):
-        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+        layers |= _suite_layer_hits(_task_verification_command(root, task))
+        text = f"{task.get('description', '')} {_task_card_text(root, task)}"
+        layers |= _suite_layer_hits(text)
     return layers
 
 
 def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
     """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
-    layers = _concrete_suite_layers(root, task)
+    layers = _classify_suite_layers(root, task)
     if len(layers) >= 2:
         names = ", ".join(sorted(layers))
         exc = VerificationUnresolvedError(
