@@ -726,15 +726,29 @@ def _invoke_agent(
             partial_stdout=partial_output,
         )
         return _AgentInvokeResult(None, partial_output, timed_out=True)
+    except AgentSubprocessError as exc:
+        c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
+        _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
+        _raise_schema_limit_phase_error(exc, phase, task_id)
+        return _AgentInvokeResult(None, "")
     except (
-        AgentSubprocessError,
         MalformedHandoverManifestError,
         EmptyOutputError,
     ) as exc:
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
         _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
+        _write_invoke_sidecars(
+            task_id=task_id, phase=phase, stdout=str(exc), prompt=prompt
+        )
+        if phase == "JUDGE":
+            _log_run(
+                "JUDGE_AGENT_NO_AGENT_END",
+                task_id=task_id,
+                phase=phase,
+                error=str(exc),
+            )
         _raise_schema_limit_phase_error(exc, phase, task_id)
-        return _AgentInvokeResult(None, "")
+        return _AgentInvokeResult(None, str(exc))
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
         return _AgentInvokeResult(None, "")
@@ -4036,7 +4050,7 @@ def _run_judge_phase(
     manifest: HandoverManifest | None = None
     schema_errors: list[str] = []
     for attempt in range(1, _MAX_JUDGE_MANIFEST_ATTEMPTS + 1):
-        manifest, _ = _invoke_agent(
+        manifest, _tail = _invoke_agent(
             prompt,
             c,
             backend_name=backend,
@@ -4046,8 +4060,9 @@ def _run_judge_phase(
             model=judge_model,
         )
         if manifest is None:
+            detail = f": {_tail}" if _tail else ""
             raise PhaseFailedError(
-                f"JUDGE phase agent error for {tid}: agent returned no manifest"
+                f"JUDGE phase agent error for {tid}: agent returned no manifest{detail}"
             )
         schema_errors = _judge_manifest_schema_errors(manifest)
         if not schema_errors:
