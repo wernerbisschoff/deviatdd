@@ -133,6 +133,30 @@ _REVIEW_PAUSE_PHASES = frozenset({"RED", "GREEN", "REFACTOR", "EXECUTE"})
 _REVIEW_CONFIRM_YES = frozenset({"", "y", "yes"})
 
 
+@dataclass(frozen=True, slots=True)
+class KernelOutcome:
+    token: str
+
+
+class KernelError(Exception):
+    def __init__(self, token: str, detail: str = "") -> None:
+        super().__init__(token)
+        self.token = token
+        self.detail = detail
+
+
+def print_kernel_outcome(outcome: KernelOutcome) -> int:
+    print(outcome.token)
+    return 0
+
+
+def handle_kernel_error(err: KernelError, surface: str = "manual") -> int | str:
+    if surface == "auto":
+        return err.token
+    print(err.token)
+    return 1
+
+
 def _set_review_context(
     *,
     enabled: bool,
