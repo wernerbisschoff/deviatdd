@@ -1248,6 +1248,15 @@ def _deviatdd_skill_target(
     return target_dir / "deviatdd" / "SKILL.md"
 
 
+def _write_deviatdd_skill(target: Path, body: str, workdir: Path) -> None:
+    if target.exists() and target.read_text(encoding="utf-8") == body:
+        console.print(f"  [yellow]SKIP[/] {_display_install_path(target, workdir)}")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+    console.print(f"  [green]INSTALL[/] {_display_install_path(target, workdir)}")
+
+
 def _install_deviatdd_skill(
     workdir: Path, agents: list[str], export_mode: str = "local"
 ) -> None:
@@ -1260,29 +1269,17 @@ def _install_deviatdd_skill(
     if export_mode == "local" and "codex" in agents and "pi" in agents:
         target = _deviatdd_skill_target(install_root, "codex", export_mode)
         assert target is not None
-        if target.exists() and target.read_text(encoding="utf-8") == body:
-            console.print(f"  [yellow]SKIP[/] {_display_install_path(target, workdir)}")
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(body, encoding="utf-8")
-            console.print(
-                f"  [green]INSTALL[/] {_display_install_path(target, workdir)}"
-            )
+        _write_deviatdd_skill(target, body, workdir)
         stale = install_root / ".pi" / "skills" / "deviatdd"
         if stale.exists():
             shutil.rmtree(stale)
         return
     for agent in agents:
         target = _deviatdd_skill_target(install_root, agent, export_mode)
-        if _skip_unknown_agent(agent, target.parent if target is not None else None):
+        if target is None:
+            _skip_unknown_agent(agent, None)
             continue
-        assert target is not None
-        if target.exists() and target.read_text(encoding="utf-8") == body:
-            console.print(f"  [yellow]SKIP[/] {_display_install_path(target, workdir)}")
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body, encoding="utf-8")
-        console.print(f"  [green]INSTALL[/] {_display_install_path(target, workdir)}")
+        _write_deviatdd_skill(target, body, workdir)
 
 
 def _ensure_gitignore(workdir: Path) -> None:
