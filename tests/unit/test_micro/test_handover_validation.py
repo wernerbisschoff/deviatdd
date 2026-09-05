@@ -204,3 +204,74 @@ def test_hostile_extra_keys_stay_inert_data() -> None:
     result = _run_invoke(manifest)
     assert result.manifest is manifest
     assert result.manifest.model_extra["__import__"] == "os"
+
+
+# TSK-045-03 (AC-PLAN-006/007, US-045-02): exactly one format-correction retry.
+
+
+def _retry_manifest() -> HandoverManifest:
+    return HandoverManifest(
+        phase="RED",
+        status="PASS",
+        task_id="TSK-045-03",
+        verdict="pass",
+        next_action="continue_refactor",
+        rationale="recovered",
+    )
+
+
+def _run_retry_case(side_effects: list, prompt_holder: list) -> object:
+    def _fake(prompt, *args, **kwargs):
+        prompt_holder.append(prompt)
+        effect = side_effects[len(prompt_holder) - 1]
+        if isinstance(effect, BaseException):
+            raise effect
+        return effect
+
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with (
+        patch.object(AgentBackend, "invoke", side_effect=_fake),
+        patch("deviate.cli.micro._run_pytest", return_value=completed),
+        patch("deviate.cli.micro._log_run"),
+        patch("deviate.cli.micro._write_invoke_sidecars"),
+    ):
+        return _invoke_agent(
+            "prompt",
+            Console(quiet=True),
+            backend_name="pi",
+            task_id="TSK-045-03",
+            phase="RED",
+        )
+
+
+@pytest.mark.behavioral
+def test_unparseable_first_attempt_recovers_via_exactly_one_retry() -> None:
+    prompts: list = []
+    first = MalformedHandoverManifestError("No YAML handover manifest detected")
+    result = _run_retry_case([first, _retry_manifest()], prompts)
+    assert result.manifest is not None
+    assert result.manifest.task_id == "TSK-045-03"
+    assert len(prompts) == 2
+    assert prompts[0] == "prompt"
+    assert "format" in prompts[1].lower()
+
+
+@pytest.mark.behavioral
+def test_failed_correction_raises_specific_error_without_bare_unknown() -> None:
+    prompts: list = []
+    miss = MalformedHandoverManifestError("No YAML handover manifest detected")
+    with pytest.raises(PhaseFailedError) as exc:
+        _run_retry_case([miss, miss], prompts)
+    msg = str(exc.value)
+    assert len(prompts) == 2
+    assert "unknown" not in msg.lower()
+    assert "correction" in msg.lower() or "HANDOVER_INVALID" in msg
+
+
+@pytest.mark.spy
+def test_retry_path_never_issues_third_backend_call() -> None:
+    prompts: list = []
+    miss = MalformedHandoverManifestError("No YAML handover manifest detected")
+    with pytest.raises(PhaseFailedError):
+        _run_retry_case([miss, miss], prompts)
+    assert len(prompts) == 2
