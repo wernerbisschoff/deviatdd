@@ -1077,3 +1077,54 @@ class TestMergePushGateLanguageAgnostic:
         hook = self._read_hook()
         assert "if [ -s .testmondata ]" in hook
         assert "mise run test" in hook
+
+
+class TestRedCheckpointCompletion:
+    """AC-PLAN-001 (US-005-11, FR-005-06): RED templates state checkpoint
+    completion with a warning advisory handed to GREEN; no rejection
+    statement survives.
+    """
+
+    _REJECTION_PHRASES = (
+        "rejects a passing test",
+        "reject a passing test",
+        "RED rejects",
+    )
+
+    @staticmethod
+    def _read_command_red() -> str:
+        return (
+            Path(__file__).resolve().parents[3]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-red.md"
+        ).read_text(encoding="utf-8")
+
+    @pytest.mark.behavioral
+    def test_auto_red_states_checkpoint_completion_with_warning(self) -> None:
+        text = _read_template("red.md")
+        lowered = text.lower()
+        assert "completes" in lowered
+        assert "warning" in lowered
+        assert "advisory" in lowered or "RedHandoffAdvisory" in text
+        assert "green" in lowered
+
+    @pytest.mark.behavioral
+    def test_command_red_states_checkpoint_completion_with_warning(self) -> None:
+        text = self._read_command_red()
+        lowered = text.lower()
+        assert "completes" in lowered
+        assert "warning" in lowered
+        assert "advisory" in lowered or "RedHandoffAdvisory" in text
+        assert "green" in lowered
+
+    @pytest.mark.behavioral
+    def test_red_templates_carry_no_rejection_statement(self) -> None:
+        for text in (_read_template("red.md"), self._read_command_red()):
+            lowered = text.lower()
+            for phrase in self._REJECTION_PHRASES:
+                assert phrase.lower() not in lowered, (
+                    f"stale rejection statement survives: {phrase!r}"
+                )
