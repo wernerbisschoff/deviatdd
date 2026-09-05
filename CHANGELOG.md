@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`/deviate-merge` and `/deviate-adhoc` now use the canonical commit scope (`ADH-NNN` / `NNN-NNN`).** The merge example was `-m "{commit_type}({ISSUE_ID})..."` (raw ledger ID, e.g. `ISS-ADH-044`) and adhoc committed `docs(adhoc): add issue ...`; both now use `{COMMIT_SCOPE}` with the legacy `ISS-` prefix stripped, per CONTRIBUTING.md (`docs(ADH-044): add issue ISS-ADH-044`). Pinned by `tests/unit/test_meso/test_auto_prompt_templates.py::TestCommitScopeConvention`.
+
 - **`deviate merge --delete-branch` no longer hides unexpected remote-cleanup errors.** Best-effort handling now covers only operating-system failures while local cleanup still continues after expected remote command failures.
 
 - **Fresh `deviate micro run` (and each new TDD cycle) resets leftover TRAIN counters.** `_run_tdd_cycle_impl` calls `_reset_tdd_retry_budget` once at cycle entry, zeroing only `green_attempts` / `red_attempts`. Leftover TRAIN 3/3 in gitignored `.deviate/session.json` no longer blocks a retry the operator thinks is fresh after `git reset` or a new `micro run` / `--all` task. `train_feedback`, `red_commit_sha`, and `pending_judge_action` stay so JUDGE notes are still injected. Increment still happens at each GREEN start in the same invocation; three GREENs in one cycle still escalate. No new flag. Pinned by `tests/test_micro/test_two_counter_retry.py`.

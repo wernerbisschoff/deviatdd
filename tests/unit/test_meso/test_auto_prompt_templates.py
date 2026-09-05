@@ -339,6 +339,33 @@ class TestMergePromptBaseBranch:
         assert "if not `{base_branch}`" in prompt or "if not {base_branch}" in prompt
 
 
+class TestCommitScopeConvention:
+    """Commit subjects in /deviate-merge and /deviate-adhoc use the canonical
+    CONTRIBUTING.md scope: `ADH-NNN` / `NNN-NNN`, never the legacy `ISS-`
+    prefix or a literal `(adhoc)` scope."""
+
+    @staticmethod
+    def _read_prompt(name: str) -> str:
+        return (
+            Path(__file__).resolve().parents[3]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / name
+        ).read_text(encoding="utf-8")
+
+    def test_merge_uses_commit_scope_not_issue_id(self):
+        prompt = self._read_prompt("deviate-merge.md")
+        assert '-m "{commit_type}({COMMIT_SCOPE})' in prompt
+        assert '-m "{commit_type}({ISSUE_ID})' not in prompt
+
+    def test_adhoc_uses_commit_scope_not_literal_adhoc(self):
+        prompt = self._read_prompt("deviate-adhoc.md")
+        assert '"docs({COMMIT_SCOPE}): add issue {ISSUE_ID}"' in prompt
+        assert "docs(adhoc): add issue" not in prompt
+
+
 class TestReviewPromptSecurityTaxonomy:
     """The review prompt's cross-task Security section must align with the
     OWASP/NIST/LLM taxonomy so aggregation findings cite the same baseline as

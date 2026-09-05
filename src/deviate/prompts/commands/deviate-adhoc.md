@@ -2,7 +2,7 @@
 name: deviate-adhoc
 description: Emit a single ad-hoc vertical-slice issue from a natural-language task with lightweight discovery, shared PRD tracking, and User Stories + ATDD.
 category: deviatdd-macro-layer
-version: 1.0.0
+version: 1.0.1
 aliases:
   - adhoc
   - /deviate-adhoc
@@ -82,11 +82,14 @@ The ad-hoc issue describes implementation of requested application behavior in a
 ```
 Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reuse the same `NNN` allocated in step 5. `ISS-ADH-NNN` and `ISS-NNN` share that ordinal. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
-7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. Completion is driven by the real workflow (`plan` → `tasks` → red/green → merge audit), never by creation. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here.
+7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. Completion is driven by the real workflow (`plan` → `tasks` → red/green → merge audit), never by creation. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here. Use the canonical commit scope from CONTRIBUTING.md: strip the legacy `ISS-` prefix, so `ISS-ADH-044` becomes `ADH-044` (likewise `ISS-043` becomes `043`).
 
    ```
-   git add -A && git commit -m "docs(adhoc): add issue {ISSUE_ID}"
+   git add -A && git commit -m "docs({COMMIT_SCOPE}): add issue {ISSUE_ID}"
    ```
+
+   Example: `docs(ADH-044): add issue ISS-ADH-044`.
+
 
 8. **Output Summary**: Display the `## Discovery Audit`, the `## Target Issue Emission`, and the `## Ledger Registration` blocks to the user in clean Markdown. Do NOT emit the full PRD contents — only confirm the FR section was appended.
 

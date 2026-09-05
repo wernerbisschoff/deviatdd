@@ -2,7 +2,7 @@
 name: deviate-merge
 description: Squash-merge a feature branch into the configured base branch with a conventional-commit message, then update the ledger with a full IssueRecord.
 category: deviatdd-meso-layer
-version: 2.5.0
+version: 2.5.1
 aliases:
   - merge
   - /deviate-merge
@@ -207,13 +207,15 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    the project's commit convention (emoji prefix if configured, no-op otherwise):
    ```bash
    deviate merge --issue {ISSUE_ID} \
-     -m "{commit_type}({ISSUE_ID}): {description}" \
+     -m "{commit_type}({COMMIT_SCOPE}): {description}" \
      -m "{summary paragraph}" \
      -m "## Changes
    - {change 1}
    - {change 2}" \
      -m "Closes {ISSUE_ID}"
    ```
+
+   `{COMMIT_SCOPE}` is the canonical issue ID per CONTRIBUTING.md: strip the legacy `ISS-` prefix, so `ISS-ADH-044` becomes `ADH-044` (likewise `ISS-043` becomes `043`).
 
 6. **Run the push gate** — inlines the body of `.githooks/pre-push` verbatim so
    the safety net fires even though no `git push` happens yet. The inline copy
