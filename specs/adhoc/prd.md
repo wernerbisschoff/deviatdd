@@ -696,3 +696,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-046-01 / AO-046-01: RPC run with no `agent_end` writes stderr plus the failed `response` error to `.raw/judge-*.log` and fails with the pi-side error text.
   2. AC-ADHOC-046-02 / AO-046-02: A normal `agent_end` run behaves exactly as today; no new event fires and no extra sidecar content appears.
+
+## FR-ADHOC-047: Consolidate skill export to single shared directory for Pi and Codex
+- **Description**: A single shared skill export removes duplicate skill copies so Pi stops warning about duplicate skills when both Codex (`.agents/skills/`) and Pi (`.pi/skills/`) installs exist.
+- **Preconditions**: `specs/explore/skills-export-agents.md` exists with export-path findings; `src/deviate/cli/__init__.py` `_get_agent_skill_dir` maps codex to `.agents/skills` and pi to `.pi/skills`; Pi discovers `.agents/skills/` natively.
+- **Inputs/Outputs**: Input — `deviate setup` with codex and pi agents selected. Output — one skill copy under the shared directory (plus compatibility link when needed); Pi emits no duplicate-skill warning.
+- **User Stories**:
+  1. US-047-01: As a developer running setup for codex and pi, I want one shared skill copy so Pi stops warning about duplicate skills. *(Ref: FR-ADHOC-047)*
+  2. US-047-02: As an operator with only pi or only codex selected, I want setup to keep working unchanged so single-agent flows never break. *(Ref: FR-ADHOC-047)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-047-01 / AO-047-01: Setup with codex plus pi writes one skill copy under the shared directory and Pi reports no duplicate-skill warning.
+  2. AC-ADHOC-047-02 / AO-047-02: Setup with a single agent installs exactly as today; no extra directories appear and no existing skill path breaks.
