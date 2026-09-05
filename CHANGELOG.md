@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Optional `product` pack is back for greenfield scope tracking.** `deviate setup --packs product` installs `/deviate-flows`, `/deviate-architecture`, and `/deviate-release`, which author standalone planning artifacts under `specs/_product/` (flow catalog + index, cross-epic architecture + domain model, release plan). The pack never gates execution, writes no ledger, and defines no `flow_refs` contract — `FLOW-NN` IDs are prose anchors within product artifacts only, and no Macro/Meso/Micro phase reads `specs/_product/`. Constitution 0.11.0 records the optional layer. Pinned by `tests/test_product_pack.py`.
 - **Setup on a TTY picks optional packs with a checkbox multi-select.** `deviate setup` with omitted `--packs` shows one optional pack per row where Space toggles and Enter confirms instead of a comma-separated prompt (AC-PLAN-002).
 
+### Removed
+
+- **Pi RPC mode is removed; `pi -p` print mode is the only Pi transport.** `PI_RPC_COMMAND`, `AgentBackend._invoke_rpc_blocking`, the `use_rpc` dispatch branch, and the `pi_rpc` / `transport` / `rpc_uri` config keys (plus `resolve_transport` and legacy-CLI fallback resolvers) are deleted. Setup writers no longer emit `transport` and drop legacy keys on rewrite. Pinned by `tests/unit/core/test_agent.py::TestPiPrintModeOnly`.
+
 ### Fixed
 
 - **`/deviate-merge` and `/deviate-adhoc` now use the canonical commit scope (`ADH-NNN` / `NNN-NNN`).** The merge example was `-m "{commit_type}({ISSUE_ID})..."` (raw ledger ID, e.g. `ISS-ADH-044`) and adhoc committed `docs(adhoc): add issue ...`; both now use `{COMMIT_SCOPE}` with the legacy `ISS-` prefix stripped, per CONTRIBUTING.md (`docs(ADH-044): add issue ISS-ADH-044`). Pinned by `tests/unit/test_meso/test_auto_prompt_templates.py::TestCommitScopeConvention`.
