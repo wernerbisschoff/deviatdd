@@ -52,3 +52,7 @@ task_id: "{TASK_ID}"
 $ARGUMENTS
 </user_input>
 </context>
+### RED Checkpoint
+
+When the suite passes, this phase completes with a warning advisory
+(`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start.

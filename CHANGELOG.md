@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Acceptance gates: RED checkpoint completes with a warning, GREEN blocks on a failing suite, REFACTOR fails on a post-polish regression.** RED no longer rejects a passing test — it completes with a warning advisory (`RedHandoffAdvisory`) handed to GREEN. A failing GREEN suite routes to JUDGE via `train_feedback`. A non-zero REFACTOR post-polish test result fails the phase. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.
+
 - **Explore completion now prints the artifact path and clear next commands for research or ad-hoc work.**
+
 
 - **README phase-transparency table names `COVERAGE_INCOMPLETE` as the `review pre` fail-closed token.** The review row keeps its comments-only default and not-a-merge-gate wording.
 

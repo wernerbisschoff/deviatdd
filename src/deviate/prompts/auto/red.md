@@ -252,3 +252,7 @@ Use `status: "ERROR"` only for tool failures, file write errors, unavailable req
 | Test file already exists | Read it, understand current state, add new failing tests |
 
 </edge_case_handling>
+<red_checkpoint>
+RED checkpoint: when the suite passes, RED completes with a warning advisory
+(`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start.
+</red_checkpoint>

@@ -1077,3 +1077,90 @@ class TestMergePushGateLanguageAgnostic:
         hook = self._read_hook()
         assert "if [ -s .testmondata ]" in hook
         assert "mise run test" in hook
+
+
+class TestRedCheckpointCompletion:
+    """AC-PLAN-001 (US-005-11, FR-005-06): RED templates state checkpoint
+    completion with a warning advisory handed to GREEN; no rejection
+    statement survives.
+    """
+
+    _REJECTION_PHRASES = (
+        "rejects a passing test",
+        "reject a passing test",
+        "RED rejects",
+    )
+
+    @staticmethod
+    def _read_command_red() -> str:
+        return (
+            Path(__file__).resolve().parents[3]
+            / "src"
+            / "deviate"
+            / "prompts"
+            / "commands"
+            / "deviate-red.md"
+        ).read_text(encoding="utf-8")
+
+    @pytest.mark.behavioral
+    def test_auto_red_states_checkpoint_completion_with_warning(self) -> None:
+        text = _read_template("red.md")
+        lowered = text.lower()
+        assert "completes" in lowered
+        assert "warning" in lowered
+        assert "advisory" in lowered or "RedHandoffAdvisory" in text
+        assert "green" in lowered
+
+    @pytest.mark.behavioral
+    def test_command_red_states_checkpoint_completion_with_warning(self) -> None:
+        text = self._read_command_red()
+        lowered = text.lower()
+        assert "completes" in lowered
+        assert "warning" in lowered
+        assert "advisory" in lowered or "RedHandoffAdvisory" in text
+        assert "green" in lowered
+
+    @pytest.mark.behavioral
+    def test_red_templates_carry_no_rejection_statement(self) -> None:
+        for text in (_read_template("red.md"), self._read_command_red()):
+            lowered = text.lower()
+            for phrase in self._REJECTION_PHRASES:
+                assert phrase.lower() not in lowered, (
+                    f"stale rejection statement survives: {phrase!r}"
+                )
+
+
+class TestGreenRefactorGateSemantics:
+    """AC-PLAN-002/003 (US-005-11, FR-005-06): GREEN blocking gate with
+    JUDGE routing and REFACTOR regression gate.
+    """
+
+    @pytest.mark.behavioral
+    def test_green_states_blocking_gate_with_judge_routing(self) -> None:
+        text = _read_template("green.md")
+        lowered = text.lower()
+        assert "failing" in lowered
+        assert "judge" in lowered
+        assert "train_feedback" in text
+        assert "blocking gate" in lowered or (
+            "failing suite" in lowered and "routes to judge" in lowered
+        )
+
+    @pytest.mark.behavioral
+    def test_green_states_red_warning_does_not_block_start(self) -> None:
+        text = _read_template("green.md")
+        lowered = text.lower()
+        assert "red" in lowered and "warning" in lowered
+        assert "does not block" in lowered
+
+    @pytest.mark.behavioral
+    def test_refactor_states_regression_gate(self) -> None:
+        text = _read_template("refactor.md")
+        lowered = text.lower()
+        assert "non-zero" in lowered or "nonzero" in lowered
+        assert "fails the phase" in lowered
+        assert (
+            "post-polish" in lowered
+            or "post polish" in lowered
+            or "post_polish" in lowered
+        )

@@ -786,8 +786,11 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   Doctor failure is `ENV_NOT_READY` — not RED established, GREEN fail, or
   `failure_kind: mechanical`. Absence of doctor skips preflight. The exact command string is
   logged (`TEST_COMMAND`) and injected into the phase prompt; agents must not invent a bare
-  `pytest` / `mix test` when mise was resolved. Validates the test fails explicitly (ASSERTION_FAILURE, not PASS or
-  SYNTAX_ERROR), runs the test command, and reports whether the test failed as expected.
+  `pytest` / `mix test` when mise was resolved. On a genuinely failing test (ASSERTION_FAILURE,
+  not SYNTAX_ERROR), reports the failure as expected and commits the RED transition.
+  **RED checkpoint:** when the suite passes, RED completes with a warning advisory
+  (`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start,
+  and RED never rejects a passing test.
   Optional ``--task-id`` is compared to the resolved pending record
   (``session.active_issue_id`` → first PENDING) **before** the ledger transition
   and commit. Mismatch prints ``TASK_ID_MISMATCH`` and exits 1 with no ledger
@@ -842,7 +845,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Verifies a RED transition exists for the active issue. Runs the project's
   resolved test command (language-agnostic, e.g. `mix test` / `cargo test` / `pytest`), requires
-  returncode 0. Appends GREEN transition to ledger, forces session to GREEN,
+  returncode 0. **Blocking gate:** a failing suite routes to JUDGE via `train_feedback`.
+  A RED warning advisory (`RedHandoffAdvisory`) does not block GREEN start.
+  Appends GREEN transition to ledger, forces session to GREEN,
   commits with `feat({scope}): GREEN phase - implementation passes tests`.
 
 #### `deviate judge pre`
@@ -881,8 +886,22 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 * **Source:** `src/deviate/cli/micro.py`
 * **Description:** Verifies a GREEN transition exists. Appends REFACTOR transition, runs
   the AST-based return type mismatch check (Python only), runs the resolved test command
-  before/after to detect regression. On regression, restores via `git restore .` and halts.
+  before/after to detect regression. **Regression gate:** a non-zero post-polish test result fails
+  the phase. On regression, restores via `git restore .` and halts.
   Commits with `refactor({scope}): REFACTOR phase - code cleanup`.
+
+#### Acceptance gates (RED checkpoint, GREEN gate, REFACTOR gate)
+
+* **Verification-mode contract:** every `AC-PLAN-NNN` scenario carries exactly one
+  `**Verification Mode**: <automated|manual|deferred>` line (`src/deviate/core/validation.py::validate_acceptance_contract`).
+* **Traceability:** `TaskRecord.acceptance_criteria` holds this task's `criterion_id` set;
+  JUDGE resolves required tokens from it first via `resolve_task_ac_tokens`;
+  the `RedHandoffAdvisory` handoff carries the RED warning advisory to GREEN.
+* **RED checkpoint:** when the suite passes, RED completes with a warning advisory handed
+  to GREEN; the warning does not block GREEN start and RED never rejects a passing test.
+* **GREEN blocking gate:** a failing suite routes to JUDGE via `train_feedback`;
+  the RED warning advisory does not block GREEN start.
+* **REFACTOR regression gate:** a non-zero post-polish test result fails the phase.
 
 #### `deviate execute pre [--task <id>]`
 
@@ -1805,6 +1824,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | `description` | `str` | Task description |
 | `status` | Literal | `PENDING`, `RED`, `GREEN`, `JUDGE`, `REFACTOR`, `COMPLETED`, `FAILED` |
 | `execution_mode` | Literal | `TDD`, `DIRECT`, `E2E` |
+| `acceptance_criteria` | `list[AcceptanceCriterion]` | `AC-PLAN-NNN` traceability for this task (`criterion_id` per scenario); JUDGE resolves required tokens from this field first (`resolve_task_ac_tokens`) |
 | `created_at` | `datetime` | When the task was created |
 | `evidence` | `TaskEvidenceBundle \| None` | Optional. Present only on the `COMPLETED` row (GH-84). Default absent so legacy rows still parse. `TaskEvidenceBundle` holds `items` (`list` of `{ac, test_path, test_quote, impl_path, impl_quote}` copied from the runner-validated `HandoverManifest.evidence`) plus commit provenance `red` (`session.red_commit_sha` when present), `green`, and `head` (`HEAD` at the COMPLETED write). Earlier RED/GREEN/JUDGE rows stay lean. `.deviate/` session files are not the proof store. |
 | `judge_action` | `Literal["revert_red", "revert_green"] \| None` | Optional. Present on the post-reset JUDGE revert row. Omitted on earlier rows. |

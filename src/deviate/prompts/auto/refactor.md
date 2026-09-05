@@ -111,6 +111,8 @@ Run lint to ensure code quality:
 
 **Invariant**: You may modify application code, but you MUST NOT modify tests. If a test fails after your refactor, your refactor has introduced a regression — revert and re-apply.
 
+**Regression gate:** a non-zero post-polish test result fails the phase.
+
 </execution_sequence>
 
 <output_contract>
