@@ -1000,3 +1000,39 @@ class TestSetup037TtyEmptyConfirmAndProductPr:
             result = runner.invoke(cli, ["setup", "--agent", "opencode"])
         assert result.exit_code == 0, result.output
         assert "Optional command packs" not in seen
+
+
+class TestSetupMultiAgentSelection:
+    """TSK-047-01 RED: comma-separated `--agent` selection contract."""
+
+    @pytest.mark.behavioral
+    def test_validate_comma_pair_returns_both_in_order(self) -> None:
+        from deviate.cli import _validate_agent_choice
+
+        assert _validate_agent_choice("codex,pi") == ["codex", "pi"]
+
+    @pytest.mark.behavioral
+    def test_validate_single_value_passes_through(self) -> None:
+        from deviate.cli import _validate_agent_choice
+
+        assert _validate_agent_choice("pi") == "pi"
+        assert _validate_agent_choice("codex") == "codex"
+
+    @pytest.mark.behavioral
+    def test_resolve_install_agents_dedupes_in_order(self) -> None:
+        assert _resolve_install_agents(["codex", "pi", "codex"]) == ["codex", "pi"]
+        assert _resolve_install_agents("pi") == ["pi"]
+
+    @pytest.mark.behavioral
+    def test_validate_whitespace_and_empty_segments_fail_closed(self) -> None:
+        import typer
+
+        from deviate.cli import _validate_agent_choice
+
+        assert _validate_agent_choice("codex, pi") == ["codex", "pi"]
+        with pytest.raises(typer.BadParameter):
+            _validate_agent_choice("codex,,pi")
+        with pytest.raises(typer.BadParameter):
+            _validate_agent_choice("not-an-agent")
+        with pytest.raises(typer.BadParameter):
+            _validate_agent_choice("pi,not-an-agent")

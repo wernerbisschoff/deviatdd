@@ -1,0 +1,1 @@
+{"id":"TSK-047-01","issue_id":"ISS-ADH-047","description":"Accept comma-separated `--agent` list and resolve install targets","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-05T10:55:15.561142Z","security_profile":null,"acceptance_criteria":null}
