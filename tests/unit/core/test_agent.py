@@ -280,3 +280,72 @@ class TestPiPrintModeOnly:
         mock_popen.side_effect = FileNotFoundError("pi")
         with pytest.raises(AgentBinaryNotFoundError):
             AgentBackend(config=AgentConfig(backend="pi")).invoke("test prompt")
+
+
+class TestPiLeanSharedSkill:
+    """TSK-047-03 / AC-PLAN-002 (US-047-01): Pi lean flags prefer shared skill."""
+
+    _SHARED_REL = Path(".agents") / "skills" / "deviatdd" / "SKILL.md"
+
+    def _write(self, root: Path, rel: Path) -> Path:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# deviatdd\n", encoding="utf-8")
+        return target
+
+    @pytest.mark.behavioral
+    def test_shared_skill_preferred(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: both copies present resolves the shared path."""
+        self._write(tmp_path, self._SHARED_REL)
+        self._write(tmp_path, _DEVIATDD_SKILL_REL)
+        from deviate.core.agent import _pi_lean_flags as lean
+
+        flags = lean(str(tmp_path))
+        assert flags[flags.index("--skill") + 1].endswith(str(self._SHARED_REL))
+
+    @pytest.mark.behavioral
+    def test_shared_skill_only(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: shared copy alone injects the shared path."""
+        self._write(tmp_path, self._SHARED_REL)
+        from deviate.core.agent import _pi_lean_flags as lean
+
+        flags = lean(str(tmp_path))
+        assert flags[flags.index("--skill") + 1].endswith(str(self._SHARED_REL))
+
+    @pytest.mark.behavioral
+    def test_legacy_fallback(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: single-Pi layout keeps the legacy path."""
+        self._write(tmp_path, _DEVIATDD_SKILL_REL)
+        from deviate.core.agent import _pi_lean_flags as lean
+
+        flags = lean(str(tmp_path))
+        assert flags[flags.index("--skill") + 1].endswith(str(_DEVIATDD_SKILL_REL))
+
+    @pytest.mark.behavioral
+    def test_no_skill_flag_when_missing(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: neither copy emits no --skill flag."""
+        from deviate.core.agent import _pi_lean_flags as lean
+
+        flags = lean(str(tmp_path))
+        assert "--skill" not in flags
+
+    @pytest.mark.behavioral
+    def test_lean_flag_sequence_preserved(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: --tools plus --no-skills sequence stays intact."""
+        self._write(tmp_path, self._SHARED_REL)
+        from deviate.core.agent import _pi_lean_flags as lean
+
+        flags = lean(str(tmp_path))
+        assert flags[:3] == ["--tools", ",".join(_CODING_TOOLS), "--no-skills"]
+
+    @pytest.mark.behavioral
+    def test_cwd_none_defaults_to_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-PLAN-002: cwd=None resolves the shared copy under cwd."""
+        self._write(tmp_path, self._SHARED_REL)
+        monkeypatch.chdir(tmp_path)
+        from deviate.core.agent import _pi_lean_flags as lean
+
+        flags = lean(None)
+        assert flags[flags.index("--skill") + 1].endswith(str(self._SHARED_REL))

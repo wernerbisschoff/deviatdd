@@ -226,6 +226,7 @@ def resolve_agent_to_backend(agent: str) -> str:
 
 PI_CODING_TOOLS: tuple[str, ...] = ("read", "bash", "edit", "write")
 PI_DEVIATDD_SKILL = Path(".pi") / "skills" / "deviatdd" / "SKILL.md"
+PI_SHARED_DEVIATDD_SKILL = Path(".agents") / "skills" / "deviatdd" / "SKILL.md"
 SCHEMA_REJECTION_TOKENS: tuple[str, ...] = (
     "tool_count_limit",
     "unsupported_tool_schema",
@@ -243,7 +244,9 @@ def _pi_lean_flags(cwd: str | None) -> list[str]:
         "--no-skills",
     ]
     skill_root = Path(cwd) if cwd is not None else Path.cwd()
-    if (skill_root / PI_DEVIATDD_SKILL).is_file():
+    if (skill_root / PI_SHARED_DEVIATDD_SKILL).is_file():
+        flags.extend(["--skill", str(PI_SHARED_DEVIATDD_SKILL)])
+    elif (skill_root / PI_DEVIATDD_SKILL).is_file():
         flags.extend(["--skill", str(PI_DEVIATDD_SKILL)])
     return flags
 

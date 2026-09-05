@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+import shutil
 from pathlib import Path
 
 import typer
@@ -713,7 +714,7 @@ def _resolve_setup_claim_remote(
     return False
 
 
-def _validate_agent_choice(value: str | None) -> str | None:
+def _validate_agent_choice(value: str | None) -> str | list[str] | None:
     """Typer callback: validate ``--agent`` value and emit Typer error.
 
     ``None`` is allowed — that means the user did not pass ``--agent`` and
@@ -722,11 +723,20 @@ def _validate_agent_choice(value: str | None) -> str | None:
     """
     if value is None:
         return None
-    if value not in AGENT_CHOICES:
+    if "," not in value:
+        if value not in AGENT_CHOICES:
+            raise typer.BadParameter(
+                f"Invalid agent '{value}'. Must be one of: {', '.join(AGENT_CHOICES)}"
+            )
+        return value
+    parts = [part.strip() for part in value.split(",")]
+    if any(not part for part in parts) or any(
+        part not in AGENT_CHOICES for part in parts
+    ):
         raise typer.BadParameter(
             f"Invalid agent '{value}'. Must be one of: {', '.join(AGENT_CHOICES)}"
         )
-    return value
+    return parts
 
 
 def _resolve_setup_selected_agent(
@@ -757,7 +767,7 @@ def _resolve_setup_selected_agent(
     raise typer.Exit(code=1)
 
 
-def _resolve_install_agents(selected_agent: str) -> list[str]:
+def _resolve_install_agents(selected_agent: str | list[str]) -> list[str]:
     """Return exactly one install target.
 
     Never consults ``detect_agents`` or leftover agent directories.
@@ -766,7 +776,9 @@ def _resolve_install_agents(selected_agent: str) -> list[str]:
     picker resolve a single name first; this helper only wraps that
     name as the install list.
     """
-    return [selected_agent]
+    if isinstance(selected_agent, str):
+        return [selected_agent]
+    return list(dict.fromkeys(selected_agent))
 
 
 def _insert_toml_root_line(content: str, line: str) -> str:
@@ -1214,6 +1226,25 @@ def _get_agent_skill_dir(
     return None
 
 
+def _deviatdd_skill_target(
+    install_root: Path, agent: str, export_mode: str = "local"
+) -> Path | None:
+    """Shared target-path computation for the skip check and the write path."""
+    target_dir = _get_agent_skill_dir(install_root, agent, export_mode)
+    if target_dir is None:
+        return None
+    return target_dir / "deviatdd" / "SKILL.md"
+
+
+def _write_deviatdd_skill(target: Path, body: str, workdir: Path) -> None:
+    if target.exists() and target.read_text(encoding="utf-8") == body:
+        console.print(f"  [yellow]SKIP[/] {_display_install_path(target, workdir)}")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+    console.print(f"  [green]INSTALL[/] {_display_install_path(target, workdir)}")
+
+
 def _install_deviatdd_skill(
     workdir: Path, agents: list[str], export_mode: str = "local"
 ) -> None:
@@ -1223,17 +1254,20 @@ def _install_deviatdd_skill(
         console.print("  [yellow]SKIP[/] deviatdd skill source missing")
         return
     install_root = _agent_install_root(workdir, export_mode)
+    if export_mode == "local" and "codex" in agents and "pi" in agents:
+        target = _deviatdd_skill_target(install_root, "codex", export_mode)
+        assert target is not None
+        _write_deviatdd_skill(target, body, workdir)
+        stale = install_root / ".pi" / "skills" / "deviatdd"
+        if stale.exists():
+            shutil.rmtree(stale)
+        return
     for agent in agents:
-        target_dir = _get_agent_skill_dir(install_root, agent, export_mode)
-        if _skip_unknown_agent(agent, target_dir):
+        target = _deviatdd_skill_target(install_root, agent, export_mode)
+        if target is None:
+            _skip_unknown_agent(agent, None)
             continue
-        target = target_dir / "deviatdd" / "SKILL.md"
-        if target.exists() and target.read_text(encoding="utf-8") == body:
-            console.print(f"  [yellow]SKIP[/] {_display_install_path(target, workdir)}")
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body, encoding="utf-8")
-        console.print(f"  [green]INSTALL[/] {_display_install_path(target, workdir)}")
+        _write_deviatdd_skill(target, body, workdir)
 
 
 def _ensure_gitignore(workdir: Path) -> None:
@@ -1357,7 +1391,8 @@ def setup(
     selected_agent = _resolve_setup_selected_agent(agent, workdir, config_path)
     install_agents = _resolve_install_agents(selected_agent)
 
-    backend = _resolve_agent_to_backend(selected_agent)
+    backend = _resolve_agent_to_backend(install_agents[0]) if install_agents else None
+
     if claim_remote and no_claim_remote:
         console.print(
             "[red]CONFLICT[/] --claim-remote and --no-claim-remote are "
