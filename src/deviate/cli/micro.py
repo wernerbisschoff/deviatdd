@@ -7426,8 +7426,48 @@ def _pre_test_command(root: Path, task: dict | None) -> str:
         raise typer.Exit(code=1) from exc
 
 
+_SUITE_DIR_LAYER_RE = re.compile(r"tests/(unit|integration|integ|e2e)\b", re.IGNORECASE)
+_MISE_LAYER_RE = re.compile(
+    r"\bmise\s+(?:run\s+|exec\s+--\s+)?(unit|integration|integ|e2e)\b", re.IGNORECASE
+)
+
+
+def _concrete_suite_layers(root: Path, task: dict | None) -> set[str]:
+    """Layers with concrete targets (suite-dir paths, layer-scoped commands)."""
+    layers: set[str] = set()
+    strategy = _extract_test_strategy(root, task)
+    if strategy == "unit":
+        layers.add("unit")
+    elif strategy == "integration":
+        layers.add("integration")
+    elif strategy == "e2e":
+        layers.add("e2e")
+    declared = _task_verification_command(root, task) if task else ""
+    for hit in _SUITE_DIR_LAYER_RE.findall(declared):
+        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+    for hit in _MISE_LAYER_RE.findall(declared):
+        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+    text = _task_card_text(root, task) if task else ""
+    if task:
+        text = f"{task.get('description', '')} {text}"
+    for hit in _SUITE_DIR_LAYER_RE.findall(text):
+        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+    for hit in _MISE_LAYER_RE.findall(text):
+        layers.add("integration" if hit.lower().startswith("integ") else hit.lower())
+    return layers
+
+
 def _pre_layer_contract(root: Path, task: dict | None) -> dict[str, str]:
     """``test_strategy``, ``test_write_dir``, and ``test_command`` for pre JSON."""
+    layers = _concrete_suite_layers(root, task)
+    if len(layers) >= 2:
+        names = ", ".join(sorted(layers))
+        exc = VerificationUnresolvedError(
+            f"SPLIT_TASK_REQUIRED: mixed test contract spans {names} — "
+            "split into one task per layer"
+        )
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(code=1) from exc
     try:
         return _layer_contract_fields(root, task)
     except VerificationUnresolvedError as exc:
