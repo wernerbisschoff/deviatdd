@@ -691,6 +691,10 @@ when no other framework is detected. Test discovery follows each project's own c
 the command's exit code plus `_is_no_tests_collected` (pytest exit 5) and `_is_no_test_command`
 (returncode 127) sentinels. `_run_pytest()` remains the Python-specific subprocess runner
 (`tests/**/test_*.py` + `python -m pytest -v`), used where a Python command was resolved.
+`_run_format_cmd()` is optional polish after RED/GREEN/REFACTOR (and `red post`):
+it runs `mise run format` only when `[tasks.format]` is defined. Missing mise
+returns exit 127 without raising; a missing format task is a no-op. Format never
+gates the phase.
 
 | Testing Framework | CLI Invocation Strategy | Success Validation | Error Parse Pattern | Scope Protection |
 | :--- | :--- | :--- | :--- | :--- |
