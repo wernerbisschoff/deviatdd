@@ -114,7 +114,7 @@ class AgentTimeoutError(Exception):
 
 _STREAMING_STALL_TOKENS = ("STALL_DETECTED", "SMART_STALL_DETECTED")
 # Print-mode CLIs that buffer all stdout until process exit. A stdout-silence
-# stall cannot distinguish working from hung on these transports (GH-166).
+# stall cannot distinguish working from hung on these CLIs (GH-166).
 _BUFFERED_PRINT_BACKENDS: frozenset[str] = frozenset({"pi", "omp"})
 
 
@@ -233,7 +233,7 @@ SCHEMA_REJECTION_TOKENS: tuple[str, ...] = (
 
 
 def _pi_lean_flags(cwd: str | None) -> list[str]:
-    """Return the default lean Pi tool policy after the transport prefix."""
+    """Return the default lean Pi tool policy after the command prefix."""
     # No --no-extensions: extension-registered providers (e.g. commandcode)
     # must load, otherwise pi cannot resolve a saved default model from that
     # provider and silently falls back to whatever env keys authenticate.
