@@ -701,29 +701,30 @@ def _invoke_agent(
         # Last 50 non-blank stdout lines from the agent invocation, used
         # by the phase runner as a fallback diagnostic when the
         # manifest's `rationale` is empty (the prior "unknown" symptom).
-        tail_lines = [line for line in raw_lines if line.strip()][-50:]
-        tail = "\n".join(tail_lines)
+        tail = "\n".join([line for line in raw_lines if line.strip()][-50:])
+        msg = ""
         if manifest is not None:
             status_norm = str(getattr(manifest, "status", "") or "").upper()
-            verdict = str(getattr(manifest, "verdict", "") or "")
-            next_action = str(getattr(manifest, "next_action", None) or "")
+            verdict_str = str(getattr(manifest, "verdict", "") or "")
+            next_action_str = str(getattr(manifest, "next_action", None) or "")
             if (
                 status_norm == "PASS"
-                and verdict == "COMPLIANCE_VIOLATION"
-                and next_action == "revert_red"
+                and verdict_str == "COMPLIANCE_VIOLATION"
+                and next_action_str == "revert_red"
             ):
                 msg = (
                     f"HANDOVER_INVALID contradiction for {task_id}: status PASS "
-                    f"with verdict {verdict} and next_action {next_action}"
+                    f"with verdict {verdict_str} and next_action {next_action_str}"
                 )
-                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg)
-                raise PhaseFailedError(msg)
-            rationale = getattr(manifest, "rationale", None)
-            if status_norm == "ERROR" and not (rationale or "").strip():
+            elif (
+                status_norm == "ERROR"
+                and not (getattr(manifest, "rationale", None) or "").strip()
+            ):
                 detail = tail if tail else "[empty-tail: missing rationale]"
                 msg = (
                     f"HANDOVER_INVALID ERROR without rationale for {task_id}: {detail}"
                 )
+            if msg:
                 _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg)
                 raise PhaseFailedError(msg)
         return _AgentInvokeResult(manifest, tail)
