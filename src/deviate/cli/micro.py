@@ -2993,9 +2993,11 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
     Empty ``session.red_commit_sha`` is ``ROLLBACK_BOUNDARY_MISSING``.
     After a commit-train rebase the stored SHA may no longer be an
     ancestor of HEAD: classify first, then remap a rewritten RED by
-    subject via ``_refresh_session_commit_anchors``. Already-reverted
-    and unresolvable SHAs raise ``ROLLBACK_STALE_RED_SHA`` and do not
-    reset — that refuse is ``revert_green`` only.
+    subject via ``_refresh_session_commit_anchors``. An already-reverted
+    anchor resolves to HEAD and a tasks.md-safe fallback covers the rest;
+    only a boundary with no safe on-branch match raises
+    ``ROLLBACK_STALE_RED_SHA`` and does not reset — that refuse is
+    ``revert_green`` only.
     """
     sha = session.red_commit_sha.strip()
     if not sha:
@@ -3011,6 +3013,14 @@ def _require_revert_green_boundary(root: Path, session: SessionState, tid: str) 
         kind = _red_anchor_kind(root, sha)
     if kind == "current" and _is_ancestor(root, sha, "HEAD"):
         return _git_full_sha(root, sha) or sha
+    tasks_safe = _resolve_tasks_md_boundary(root)
+    safe_ok = not tasks_safe or _is_ancestor(root, tasks_safe, "HEAD")
+    if kind == "already_reverted" and _git_full_sha(root, sha) and safe_ok:
+        head = _git_full_sha(root, "HEAD")
+        if head:
+            return head
+    if tasks_safe and _is_ancestor(root, tasks_safe, "HEAD"):
+        return tasks_safe
     raise PhaseFailedError(
         f"ROLLBACK_STALE_RED_SHA: revert_green for {tid} stored "
         f"red_commit_sha={sha} is not an ancestor of HEAD and no "
