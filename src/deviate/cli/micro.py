@@ -1338,9 +1338,17 @@ def _require_tdd_completed_evidence(
     for item in typed_items:
         rel = (item.test_path or "").strip()
         if not rel:
-            continue
+            raise PhaseFailedError(
+                "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                "missing or empty for cited acceptance tokens"
+            )
         candidate = Path(rel)
         if candidate.is_absolute() or ".." in candidate.parts:
+            raise PhaseFailedError(
+                "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                f"not in the injected diff or HEAD: {rel}"
+            )
+        if not _is_test_path(rel):
             raise PhaseFailedError(
                 "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
                 f"not in the injected diff or HEAD: {rel}"
@@ -1353,7 +1361,7 @@ def _require_tdd_completed_evidence(
 
 
 def _append_status_transition(
-    task_data: dict, new_status: str, ledger_path: Path
+    task_data: dict, new_status: str, ledger_path: Path, reason: str = ""
 ) -> None:
     if new_status == "COMPLETED" and _phase_already_done(
         ledger_path, task_data.get("id", ""), "COMPLETED"
@@ -1377,6 +1385,7 @@ def _append_status_transition(
         execution_mode=task_data.get("execution_mode", "TDD"),
         test_strategy=parse_test_strategy(task_data.get("test_strategy")),
         evidence=bundle,
+        judge_feedback=reason or None,
     )
     append_task_transition(record, ledger_path)
 
@@ -1735,12 +1744,35 @@ def _fail_red_on_agent_timeout(root: Path, baseline: list[str], tid: str) -> NoR
     raise PhaseFailedError(f"RED phase agent timeout for {tid}")
 
 
+_COMPILE_ERROR_MARKERS = (
+    "modulenotfounderror",
+    "traceback (most recent call last)",
+    "syntaxerror",
+    "compileerror",
+    "compilation failed",
+    "undefined function",
+    "is not available",
+    "cannot find module",
+)
+
+
+def _test_output_text(proc: subprocess.CompletedProcess) -> str:
+    """Return combined stdout plus stderr in lowercase."""
+    return f"{proc.stdout or ''} {proc.stderr or ''}".lower()
+
+
+def _is_compile_error(proc: subprocess.CompletedProcess) -> bool:
+    """Return whether test output shows a compile/collection failure."""
+    if proc.returncode == 0:
+        return False
+    return any(m in _test_output_text(proc) for m in _COMPILE_ERROR_MARKERS)
+
+
 def _is_no_tests_collected(proc: subprocess.CompletedProcess) -> bool:
     """Return whether a pytest-style exit 5 means 'no test ran'."""
     if proc.returncode != 5:
         return False
-    output = f"{proc.stdout or ''} {proc.stderr or ''}".lower()
-    return "no tests" in output
+    return "no tests" in _test_output_text(proc)
 
 
 def _is_no_test_command(proc: subprocess.CompletedProcess) -> bool:
@@ -1828,7 +1860,7 @@ def _run_red_phase(
     scope = _build_scope(issue_id, tid)
 
     test_result = _run_test_cmd(root, task)
-    if (
+    if not _is_compile_error(test_result) and (
         test_result.returncode == 0
         or _is_no_tests_collected(test_result)
         or _is_no_test_command(test_result)
@@ -1994,6 +2026,12 @@ def _adjudicate_red_no_failing_test(
             tid=tid,
             context="is about to COMPLETE with no failing test",
         )
+        for rel in declared:
+            if not (root / rel).is_file():
+                raise PhaseFailedError(
+                    "COMPLETED_EVIDENCE_MISSING: JUDGE evidence test_path is "
+                    f"not in the injected diff or HEAD: {rel}"
+                )
         _restore_worktree_to_baseline(root, red_baseline, keep_paths=declared)
         if action != "skip_refactor":
             session.pending_judge_action = "skip_refactor"
@@ -4954,14 +4992,27 @@ def _raise_train_exhausted(
     c: Console,
     *,
     task_id: str,
+    task: dict | None = None,
+    ledger_path: Path | None = None,
 ) -> NoReturn:
-    """Print TRAIN_EXHAUSTED, zero counters, and hand off to the operator."""
+    """Print TRAIN_EXHAUSTED, record a FAILED row, and hand off to the operator."""
     message = f"TRAIN_EXHAUSTED: {task_id} reached {_MAX_RED_ATTEMPTS} RED escalates"
     c.print(f"  [red]TRAIN_EXHAUSTED[/] {message}")
     _reset_tdd_retry_budget(session)
     _clear_judge_retry_gate(session)
     session.save(session_path)
-    raise PhaseFailedError(message)
+    if task is not None and ledger_path is not None:
+        try:
+            _append_status_transition(task, "FAILED", ledger_path, reason=message)
+        except Exception as e:
+            err = PhaseFailedError(
+                f"TRAIN_EXHAUSTED ledger update failed for {task_id}: {e}"
+            )
+            err.train_exhausted = True
+            raise err from e
+    err = PhaseFailedError(message)
+    err.train_exhausted = True
+    raise err
 
 
 def _account_red_escalate(
@@ -4970,13 +5021,22 @@ def _account_red_escalate(
     c: Console,
     *,
     task_id: str,
+    task: dict | None = None,
+    ledger_path: Path | None = None,
 ) -> None:
     """Reset GREEN trains, count one RED escalate, and stop at the cap."""
     session.green_attempts = 0
     session.red_attempts += 1
     session.save(session_path)
     if session.red_attempts >= _MAX_RED_ATTEMPTS:
-        _raise_train_exhausted(session, session_path, c, task_id=task_id)
+        _raise_train_exhausted(
+            session,
+            session_path,
+            c,
+            task_id=task_id,
+            task=task,
+            ledger_path=ledger_path,
+        )
 
 
 def _rollback_pre_red_if_resolvable(
@@ -5071,7 +5131,9 @@ def _escalate_to_new_red(
     """
     tid = task.get("id", "?")
     task_desc = task.get("description", "")
-    _account_red_escalate(session, session_path, c, task_id=tid)
+    _account_red_escalate(
+        session, session_path, c, task_id=tid, task=task, ledger_path=ledger_path
+    )
     _inject_escalate_note(session, session_path, reason=reason)
     _rollback_pre_red_if_resolvable(
         root,
@@ -5731,7 +5793,7 @@ def _run_execute_phase(
 
 
 class PhaseFailedError(Exception):
-    pass
+    train_exhausted = False
 
 
 class JudgeRevertConfirmRequiredError(PhaseFailedError):
@@ -6004,6 +6066,13 @@ def _execute_task_with_retry(
                 _append_status_transition(task, "HITL_PENDING", ledger_file)
                 return False
             except Exception as exc:
+                if getattr(exc, "train_exhausted", False):
+                    c.print(f"  [red]FAILED[/] {tid}: {exc}")
+                    _log_run("TASK_FAILED", task_id=tid, error=str(exc))
+                    monitor.push_event(
+                        "task_failed", task_id=tid, error_reason=str(exc)
+                    )
+                    return False
                 if attempt == 1:
                     c.print(f"  [red]FAILED[/] {tid} after 2 attempts: {exc}")
                     _log_run("TASK_FAILED", task_id=tid, error=str(exc))
