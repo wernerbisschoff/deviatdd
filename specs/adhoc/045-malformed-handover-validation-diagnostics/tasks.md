@@ -65,6 +65,7 @@
 
 ---
 
+  - **Judge Feedback**: The next GREEN attempt must: remove the tail early-return branch in _invoke_agent so every unparseable first attempt issues exactly one retry call with a format-only suffix regardless of tail content; preserve the truncated 50-line tail for the failure diagnostic; re-run the same consistency path once on the retry result and raise HANDOVER_INVALID format correction failed on second miss with no bare unknown; keep the invoke count at exactly 2 and verify with a test where the first invoke populates raw_lines via output_callback before raising.
 ## Implementation Strategy
 **Execution Order**:
 1. Phase 1 -> Phase 2 (Phase 2 retry reuses the Phase 1 consistency check)
