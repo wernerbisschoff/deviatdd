@@ -309,7 +309,9 @@ to invoke, but model selection is delegated to the calling environment.
     * **Feedback-commit recovery:** The TRAIN loop writes `{task_id, feedback, feedback_source}` to `SessionState.pending_judge_feedback` before the hook-enabled marker commit. Startup session updates preserve this payload. If hooks reject or time out, the task remains resumable without advancing `red_commit_sha`; a later explicit run or `--all` drain reselects the matching task even after a `FAILED` ledger transition, retries the same commit without invoking JUDGE again, then clears the payload and enters GREEN only after the boundary commit succeeds.
 * **REFACTOR (The Polish Gate):**
     * **Action:** If the Judge accepts the work, the workspace unlocks for an isolated run to polish readability.
-    * **Regression Gate:** Post-refactor, the CLI re-runs the test suite. If the tests fail (agent broke code), the CLI safely discards the refactor (`git reset --hard`) and successfully completes the task using the verified Green commit.
+    * **Regression gate:** a non-zero post-polish test result fails the phase. On regression, the CLI restores via `git restore .` and halts; tests stay unmodified.
+    * **RED checkpoint:** when the suite passes, RED completes with a warning advisory (`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start and RED never rejects a passing test.
+    * **GREEN gate with JUDGE routing:** a failing suite routes to JUDGE via `train_feedback`; the RED warning advisory does not block GREEN start.
 
 
 ### 3.1 Spec-Driven Development (SDD)
