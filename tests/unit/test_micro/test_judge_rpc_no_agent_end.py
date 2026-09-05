@@ -99,3 +99,210 @@ def test_valid_agent_end_flows_through_unchanged() -> None:
     )
     text, _stderr = _invoke(_proc(stdout))
     assert text == manifest
+
+
+PI_SIDECAR_ERROR = "pi-side boom"
+
+
+@pytest.mark.behavioral
+def test_invoke_agent_writes_sidecar_on_empty_output_judge() -> None:
+    """AC-PLAN-002: JUDGE empty-manifest path writes sidecar with pi-side text."""
+    import unittest.mock as _mock
+
+    import deviate.cli.micro as micro
+    from deviate.core.agent import EmptyOutputError
+    from rich.console import Console
+
+    seen: dict[str, object] = {}
+    events: list[str] = []
+
+    def fake_sidecars(
+        *, task_id: str, phase: str, stdout: str, prompt: str = ""
+    ) -> None:
+        seen["task_id"] = task_id
+        seen["phase"] = phase
+        seen["stdout"] = stdout
+
+    def fake_log(event: str, **kwargs: object) -> None:
+        events.append(event)
+
+    backend = MagicMock()
+    backend.invoke.side_effect = EmptyOutputError(PI_SIDECAR_ERROR)
+    with (
+        _mock.patch.object(micro, "AgentBackend", return_value=backend),
+        _mock.patch.object(micro, "_write_invoke_sidecars", side_effect=fake_sidecars),
+        _mock.patch.object(micro, "_log_run", side_effect=fake_log),
+    ):
+        manifest, _tail = micro._invoke_agent(
+            "judge prompt",
+            Console(),
+            task_id="TSK-046-02",
+            phase="JUDGE",
+        )
+    assert manifest is None
+    assert PI_SIDECAR_ERROR in str(seen.get("stdout", ""))
+    assert "JUDGE_AGENT_NO_AGENT_END" in events
+
+
+@pytest.mark.spy
+def test_invoke_agent_no_distinguishing_event_for_non_judge() -> None:
+    """AC-PLAN-002: sidecar write stays generic, event is JUDGE-scoped."""
+    import unittest.mock as _mock
+
+    import deviate.cli.micro as micro
+    from deviate.core.agent import EmptyOutputError
+    from rich.console import Console
+
+    events: list[str] = []
+
+    def fake_log(event: str, **kwargs: object) -> None:
+        events.append(event)
+
+    backend = MagicMock()
+    backend.invoke.side_effect = EmptyOutputError(PI_SIDECAR_ERROR)
+    with (
+        _mock.patch.object(micro, "AgentBackend", return_value=backend),
+        _mock.patch.object(micro, "_write_invoke_sidecars"),
+        _mock.patch.object(micro, "_log_run", side_effect=fake_log),
+    ):
+        micro._invoke_agent("red prompt", Console(), task_id="TSK-046-02", phase="RED")
+    assert "JUDGE_AGENT_NO_AGENT_END" not in events
+
+
+@pytest.mark.behavioral
+def test_invoke_agent_empty_stderr_keeps_response_error_in_sidecar() -> None:
+    """AC-PLAN-003: empty stderr still writes the response error text."""
+    import unittest.mock as _mock
+
+    import deviate.cli.micro as micro
+    from deviate.core.agent import EmptyOutputError
+    from rich.console import Console
+
+    seen: dict[str, object] = {}
+
+    def fake_sidecars(
+        *, task_id: str, phase: str, stdout: str, prompt: str = ""
+    ) -> None:
+        seen["stdout"] = stdout
+
+    backend = MagicMock()
+    backend.invoke.side_effect = EmptyOutputError(PI_SIDECAR_ERROR)
+    with (
+        _mock.patch.object(micro, "AgentBackend", return_value=backend),
+        _mock.patch.object(micro, "_write_invoke_sidecars", side_effect=fake_sidecars),
+    ):
+        micro._invoke_agent(
+            "judge prompt",
+            Console(),
+            task_id="TSK-046-02",
+            phase="JUDGE",
+        )
+    assert PI_SIDECAR_ERROR in str(seen.get("stdout", ""))
+
+
+@pytest.mark.behavioral
+def test_judge_phase_failed_error_carries_pi_side_text(tmp_path) -> None:
+    """AC-PLAN-002: JUDGE PhaseFailedError message carries the pi-side text."""
+    import subprocess
+    import unittest.mock as _mock
+    from pathlib import Path
+    from rich.console import Console
+
+    import deviate.cli.micro as micro
+    from deviate.state.config import SessionState
+
+    task = {
+        "id": "TSK-046-02",
+        "issue_id": "ISS-ADH-046",
+        "description": "Write judge sidecar and distinguishing event",
+        "status": "PENDING",
+        "execution_mode": "TDD",
+    }
+    ledger_path = tmp_path / "tasks.jsonl"
+    session = SessionState()
+    session_path = tmp_path / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        _mock.patch.object(micro, "Path", wraps=Path),
+        _mock.patch.object(
+            micro, "_refresh_session_commit_anchors", return_value=False
+        ),
+        _mock.patch.object(
+            micro, "_assemble_judge_injected_diff", return_value="diff text"
+        ),
+        _mock.patch.object(micro, "_build_auto_prompt", return_value="judge prompt"),
+        _mock.patch.object(micro, "resolve_model_for_phase", return_value=None),
+        _mock.patch.object(
+            micro, "_invoke_agent", return_value=(None, PI_SIDECAR_ERROR)
+        ),
+        _mock.patch.object(
+            micro,
+            "_run_pytest",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            ),
+        ),
+    ):
+        with pytest.raises(micro.PhaseFailedError) as exc_info:
+            micro._run_judge_phase(task, ledger_path, session, session_path, Console())
+    assert PI_SIDECAR_ERROR in str(exc_info.value)
+
+
+@pytest.mark.behavioral
+def test_valid_manifest_run_emits_no_distinguishing_event(tmp_path) -> None:
+    """AC-PLAN-004: valid agent_end run keeps existing events only."""
+    import subprocess
+    import unittest.mock as _mock
+    from pathlib import Path
+    from rich.console import Console
+
+    import deviate.cli.micro as micro
+    from deviate.core.agent import HandoverManifest
+    from deviate.state.config import SessionState
+
+    manifest = HandoverManifest(phase="JUDGE", status="PASS", verdict="COMPLIANCE_PASS")
+    events: list[str] = []
+    real_log = micro._log_run
+
+    def fake_log(event: str, **kwargs: object) -> None:
+        events.append(event)
+        if event != "JUDGE_AGENT_NO_AGENT_END":
+            try:
+                real_log(event, **kwargs)
+            except Exception:
+                pass
+
+    task = {
+        "id": "TSK-046-02",
+        "issue_id": "ISS-ADH-046",
+        "description": "Write judge sidecar and distinguishing event",
+        "status": "PENDING",
+        "execution_mode": "TDD",
+    }
+    ledger_path = tmp_path / "tasks.jsonl"
+    session = SessionState()
+    session_path = tmp_path / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        _mock.patch.object(micro, "Path", wraps=Path),
+        _mock.patch.object(
+            micro, "_refresh_session_commit_anchors", return_value=False
+        ),
+        _mock.patch.object(
+            micro, "_assemble_judge_injected_diff", return_value="diff text"
+        ),
+        _mock.patch.object(micro, "_build_auto_prompt", return_value="judge prompt"),
+        _mock.patch.object(micro, "resolve_model_for_phase", return_value=None),
+        _mock.patch.object(micro, "_invoke_agent", return_value=(manifest, "")),
+        _mock.patch.object(micro, "_log_run", side_effect=fake_log),
+        _mock.patch.object(
+            micro,
+            "_run_pytest",
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            ),
+        ),
+        _mock.patch.object(micro, "_apply_judge_verdict", return_value=session),
+    ):
+        micro._run_judge_phase(task, ledger_path, session, session_path, Console())
+    assert "JUDGE_AGENT_NO_AGENT_END" not in events
