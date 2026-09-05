@@ -725,7 +725,7 @@ def _resolve_setup_claim_remote(
     return False
 
 
-def _validate_agent_choice(value: str | None) -> str | None:
+def _validate_agent_choice(value: str | None) -> str | list[str] | None:
     """Typer callback: validate ``--agent`` value and emit Typer error.
 
     ``None`` is allowed — that means the user did not pass ``--agent`` and
@@ -734,11 +734,20 @@ def _validate_agent_choice(value: str | None) -> str | None:
     """
     if value is None:
         return None
-    if value not in AGENT_CHOICES:
+    if "," not in value:
+        if value not in AGENT_CHOICES:
+            raise typer.BadParameter(
+                f"Invalid agent '{value}'. Must be one of: {', '.join(AGENT_CHOICES)}"
+            )
+        return value
+    parts = [part.strip() for part in value.split(",")]
+    if any(not part for part in parts) or any(
+        part not in AGENT_CHOICES for part in parts
+    ):
         raise typer.BadParameter(
             f"Invalid agent '{value}'. Must be one of: {', '.join(AGENT_CHOICES)}"
         )
-    return value
+    return parts
 
 
 def _resolve_setup_selected_agent(
@@ -769,7 +778,7 @@ def _resolve_setup_selected_agent(
     raise typer.Exit(code=1)
 
 
-def _resolve_install_agents(selected_agent: str) -> list[str]:
+def _resolve_install_agents(selected_agent: str | list[str]) -> list[str]:
     """Return exactly one install target.
 
     Never consults ``detect_agents`` or leftover agent directories.
@@ -778,7 +787,9 @@ def _resolve_install_agents(selected_agent: str) -> list[str]:
     picker resolve a single name first; this helper only wraps that
     name as the install list.
     """
-    return [selected_agent]
+    if isinstance(selected_agent, str):
+        return [selected_agent]
+    return list(dict.fromkeys(selected_agent))
 
 
 def _insert_toml_root_line(content: str, line: str) -> str:
