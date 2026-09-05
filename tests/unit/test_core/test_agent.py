@@ -1437,15 +1437,23 @@ class TestPiBackendRegistration:
         with pytest.raises(ValidationError):
             AgentConfig(backend="unknown")
 
-    def test_pi_rpc_field_defaults_to_false(self):
-        """Opt-in RPC mode must default off (print mode is the default)."""
-        config = AgentConfig(backend="pi")
-        assert getattr(config, "pi_rpc", False) is False
+    @pytest.mark.behavioral
+    def test_pi_rpc_field_rejected(self):
+        """AC-PLAN-002: legacy ``pi_rpc`` input fails validation."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", pi_rpc=True)  # type: ignore[call-arg]
 
-    def test_pi_rpc_field_opt_in(self):
-        """Setting ``pi_rpc=True`` persists on the model."""
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        assert config.pi_rpc is True
+    @pytest.mark.behavioral
+    def test_transport_field_rejected(self):
+        """AC-PLAN-002: legacy ``transport`` input fails validation."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", transport="rpc")  # type: ignore[call-arg]
+
+    @pytest.mark.behavioral
+    def test_rpc_uri_field_rejected(self):
+        """AC-PLAN-002: legacy ``rpc_uri`` input fails validation."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", rpc_uri="stdio://x")  # type: ignore[call-arg]
 
     def test_backend_commands_includes_pi(self):
         """AC-009-07: ``BACKEND_COMMANDS['pi'] == 'pi -p'``."""
@@ -2052,7 +2060,7 @@ class TestCodexBackendRegistration:
     def test_agent_config_literal_accepts_codex(self) -> None:
         config = AgentConfig(backend="codex")
         assert config.backend == "codex"
-        assert config.transport == "cli"
+        assert not hasattr(config, "transport")
 
     def test_resolve_agent_to_backend_codex_identity(self) -> None:
         from deviate.core.agent import resolve_agent_to_backend
@@ -2159,7 +2167,7 @@ class TestPiPrintModeOnly:
 
     The RPC branch (``PI_RPC_COMMAND``, ``_invoke_rpc_blocking``, ``use_rpc``)
     is removed from ``src/deviate/core/agent.py``. Every Pi invoke spawns
-    print mode. A legacy ``pi_rpc=True`` flag is ignored at this layer.
+    print mode. A legacy ``pi_rpc=True`` flag fails validation.
     """
 
     @pytest.mark.behavioral
@@ -2179,25 +2187,10 @@ class TestPiPrintModeOnly:
         assert "rpc" not in cmd, f"Print mode must omit rpc (got {cmd})"
 
     @pytest.mark.behavioral
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_legacy_pi_rpc_flag_still_spawns_print_mode(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """AC-PLAN-001 edge case: legacy ``pi_rpc=True`` still spawns ``pi -p``."""
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (b"phase: RED\nstatus: OK\n", b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        AgentBackend(config=AgentConfig(backend="pi", pi_rpc=True)).invoke(
-            "test prompt"
-        )
-
-        cmd = mock_popen.call_args[0][0]
-        assert cmd[:2] == ["pi", "-p"], (
-            f"Legacy pi_rpc must still spawn pi -p (got {cmd})"
-        )
-        assert "--mode" not in cmd, f"Legacy pi_rpc must omit --mode (got {cmd})"
+    def test_legacy_pi_rpc_flag_rejected(self) -> None:
+        """AC-PLAN-002: legacy ``pi_rpc=True`` fails validation (print mode only)."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", pi_rpc=True)  # type: ignore[call-arg]
 
     @pytest.mark.behavioral
     def test_no_rpc_symbols_importable(self) -> None:

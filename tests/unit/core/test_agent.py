@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from deviate.core.agent import AgentBackend, AgentConfig, AgentSubprocessError
 
@@ -184,25 +185,10 @@ class TestPiPrintModeOnly:
         )
 
     @pytest.mark.behavioral
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_legacy_pi_rpc_flag_still_spawns_print_mode(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """AC-PLAN-001 edge case: legacy ``pi_rpc=True`` is ignored, spawns ``pi -p``."""
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (b"phase: RED\nstatus: OK\n", b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        AgentBackend(config=config).invoke("test prompt")
-
-        cmd = mock_popen.call_args[0][0]
-        assert cmd[:2] == ["pi", "-p"], (
-            f"Legacy pi_rpc must still spawn pi -p (got {cmd})"
-        )
-        assert "--mode" not in cmd, f"Legacy pi_rpc must not spawn --mode (got {cmd})"
-        assert "rpc" not in cmd, f"Legacy pi_rpc must not spawn rpc (got {cmd})"
+    def test_legacy_pi_rpc_flag_rejected(self) -> None:
+        """AC-PLAN-002: legacy ``pi_rpc=True`` fails validation (print mode only)."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", pi_rpc=True)  # type: ignore[call-arg]
 
     @pytest.mark.behavioral
     @patch("deviate.core.agent.subprocess.Popen")
