@@ -445,6 +445,20 @@ class AgentBackend:
             return cleaned
 
     @staticmethod
+    def _check_task_id(
+        manifest: HandoverManifest, expected_task_id: str | None
+    ) -> None:
+        if expected_task_id is None:
+            return
+        received = manifest.task_id
+        if received != expected_task_id:
+            label = received if received else "<missing>"
+            raise MalformedHandoverManifestError(
+                f"HANDOVER_INVALID task_id mismatch: expected {expected_task_id}, "
+                f"received {label}"
+            )
+
+    @staticmethod
     def _yaml_error_hint(text: str) -> str:
         if '\\""' in text or '\\\\"' in text:
             return (
@@ -470,6 +484,7 @@ class AgentBackend:
     def parse_output(
         stdout: str,
         backend_name: str,
+        expected_task_id: str | None = None,
     ) -> HandoverManifest:
         if not stdout.strip():
             raise EmptyOutputError(
@@ -525,12 +540,16 @@ class AgentBackend:
             recovered["parse_errors"] = parse_errors
             recovered["phase"] = recovered.get("phase") or "UNKNOWN"
             recovered["status"] = recovered.get("status") or "UNKNOWN"
-            return HandoverManifest(**recovered)
+            manifest = HandoverManifest(**recovered)
+            AgentBackend._check_task_id(manifest, expected_task_id)
+            return manifest
         if missing:
             manifest.parse_errors = [
                 f"{name}: field missing or empty" for name in missing
             ]
+            AgentBackend._check_task_id(manifest, expected_task_id)
             return manifest
+        AgentBackend._check_task_id(manifest, expected_task_id)
         return manifest
 
     def _invoke_blocking(

@@ -632,6 +632,36 @@ def _unpack_agent_invoke(
     return manifest, tail, bool(getattr(result, "timed_out", False))
 
 
+_FORMAT_CORRECTION_SUFFIX = (
+    "\n\nFormat correction: re-emit ONLY the handover manifest block "
+    "in the required format with no content changes."
+)
+
+
+def _correction_failure_tail_preserved(tail: str) -> bool:
+    """True when *tail* carries a plain-output diagnosis worth preserving."""
+    lowered = tail.lower()
+    return "test_defect" in lowered or "failure_kind" in lowered
+
+
+def _correction_failure(
+    raw_lines: list[str],
+    task_id: str,
+    phase: str,
+    reason: str,
+    exc: BaseException | None = None,
+) -> _AgentInvokeResult:
+    tail2 = "\n".join([line for line in raw_lines if line.strip()][-50:])
+    if _correction_failure_tail_preserved(tail2):
+        return _AgentInvokeResult(None, tail2)
+    detail2 = tail2 if tail2 else "[empty-tail: correction retry missed]"
+    msg2 = (
+        f"HANDOVER_INVALID format correction failed for {task_id}: {reason}: {detail2}"
+    )
+    _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg2)
+    raise PhaseFailedError(msg2) from exc
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -672,13 +702,37 @@ def _invoke_agent(
             if output_callback:
                 output_callback(line)
 
-        manifest = backend.invoke(
-            prompt,
-            timeout=resolve_agent_deadline(Path.cwd()),
-            output_callback=collecting_handler,
-            model=model,
-            stall_timeout=stall_timeout,
-        )
+        try:
+            manifest = backend.invoke(
+                prompt,
+                timeout=resolve_agent_deadline(Path.cwd()),
+                output_callback=collecting_handler,
+                model=model,
+                stall_timeout=stall_timeout,
+            )
+        except MalformedHandoverManifestError as retry_exc:
+            _raise_schema_limit_phase_error(retry_exc, phase, task_id)
+            c.print(f"  [yellow]AGENT_ERROR[/] {retry_exc}")
+            _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(retry_exc))
+            try:
+                manifest = backend.invoke(
+                    prompt + _FORMAT_CORRECTION_SUFFIX,
+                    timeout=resolve_agent_deadline(Path.cwd()),
+                    output_callback=collecting_handler,
+                    model=model,
+                    stall_timeout=stall_timeout,
+                )
+            except (
+                MalformedHandoverManifestError,
+                EmptyOutputError,
+                AgentSubprocessError,
+            ) as exc2:
+                _raise_schema_limit_phase_error(exc2, phase, task_id)
+                return _correction_failure(raw_lines, task_id, phase, str(exc2), exc2)
+            if manifest is None:
+                return _correction_failure(
+                    raw_lines, task_id, phase, "retry returned no valid manifest"
+                )
         c.print("")
         status = getattr(manifest, "status", "?")
         verdict = getattr(manifest, "verdict", "")
@@ -702,8 +756,33 @@ def _invoke_agent(
         # Last 50 non-blank stdout lines from the agent invocation, used
         # by the phase runner as a fallback diagnostic when the
         # manifest's `rationale` is empty (the prior "unknown" symptom).
-        tail_lines = [line for line in raw_lines if line.strip()][-50:]
-        return _AgentInvokeResult(manifest, "\n".join(tail_lines))
+        tail = "\n".join([line for line in raw_lines if line.strip()][-50:])
+        msg = ""
+        if manifest is not None:
+            status_norm = str(getattr(manifest, "status", "") or "").upper()
+            verdict_str = str(getattr(manifest, "verdict", "") or "")
+            next_action_str = str(getattr(manifest, "next_action", None) or "")
+            if (
+                status_norm == "PASS"
+                and verdict_str == "COMPLIANCE_VIOLATION"
+                and next_action_str == "revert_red"
+            ):
+                msg = (
+                    f"HANDOVER_INVALID contradiction for {task_id}: status PASS "
+                    f"with verdict {verdict_str} and next_action {next_action_str}"
+                )
+            elif (
+                status_norm == "ERROR"
+                and not (getattr(manifest, "rationale", None) or "").strip()
+            ):
+                detail = tail if tail else "[empty-tail: missing rationale]"
+                msg = (
+                    f"HANDOVER_INVALID ERROR without rationale for {task_id}: {detail}"
+                )
+            if msg:
+                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg)
+                raise PhaseFailedError(msg)
+        return _AgentInvokeResult(manifest, tail)
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
@@ -731,7 +810,8 @@ def _invoke_agent(
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
         _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
         _raise_schema_limit_phase_error(exc, phase, task_id)
-        return _AgentInvokeResult(None, "")
+        tail = "\n".join([line for line in raw_lines if line.strip()][-50:])
+        return _AgentInvokeResult(None, tail)
     except (
         MalformedHandoverManifestError,
         EmptyOutputError,
@@ -749,6 +829,8 @@ def _invoke_agent(
             )
         _raise_schema_limit_phase_error(exc, phase, task_id)
         return _AgentInvokeResult(None, err)
+    except PhaseFailedError:
+        raise
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
         return _AgentInvokeResult(None, "")
