@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from deviate.core.profile import canonicalize_profile
 
@@ -21,41 +21,9 @@ class AgentConfig(BaseModel):
     backend: Literal["opencode", "claude", "droid", "pi", "omp", "codex"] = "pi"
     # Agent-process and test-command deadlines resolve from the single
     # consolidated DeviateConfig.timeout_seconds via resolve_agent_deadline().
-    # Opt-in RPC mode for Pi — spawns `pi --mode rpc --no-session` instead of `pi -p`
-    pi_rpc: bool = Field(
-        default=False,
-        description="Opt-in RPC mode for Pi (spawns pi --mode rpc --no-session instead of pi -p)",
-    )
-
-    # Transport mode: "rpc" (JSON-RPC over stdio) or "cli" (legacy subprocess)
-    # Defaults to "rpc" for Pi and OMP, "cli" for other backends
-    transport: Literal["rpc", "cli"] = Field(default="cli")
-    # Optional RPC URI override (e.g., "stdio://pi --mode rpc --no-session")
-    rpc_uri: Optional[str] = Field(default=None)
     # Codex-only: forwarded as ``codex exec -c model_reasoning_effort=<value>``.
     # Official values are minimal|low|medium|high|xhigh. Other backends ignore it.
     reasoning_effort: Optional[ReasoningEffort] = Field(default=None)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_transport(cls, data: dict[str, object]) -> dict[str, object]:
-        """Normalize transport field: set default based on backend if not specified.
-
-        If `transport` is not set and `pi_rpc` is True, upgrade to RPC mode.
-        """
-        if isinstance(data, dict):
-            # Migrate legacy pi_rpc flag
-            pi_rpc = data.get("pi_rpc")
-            if pi_rpc is True:
-                data["transport"] = "rpc"
-            # Set default transport based on backend if not specified
-            if "transport" not in data:
-                backend = data.get("backend", "pi")
-                if backend in ("pi", "omp"):
-                    data["transport"] = "rpc"
-                else:
-                    data["transport"] = "cli"
-        return data
 
     @field_validator("reasoning_effort", mode="before")
     @classmethod
@@ -65,37 +33,6 @@ class AgentConfig(BaseModel):
         return value
 
     model_config = {"extra": "forbid"}
-
-
-# ---------------------------------------------------------------------------
-# Transport resolution helpers for C5 backend substitution
-# ---------------------------------------------------------------------------
-
-
-def resolve_transport(models: dict[str, object]) -> Literal["rpc", "cli"]:
-    """Resolve the transport mode from a [models] dict.
-
-    Returns "rpc" by default (the default for Pi and OMP backends).
-    """
-    raw = models.get("transport")
-    if isinstance(raw, str) and raw in frozenset({"rpc", "cli"}):
-        return raw  # type: ignore[return-value]
-    if raw is not None:
-        raise ValueError(f"transport must be one of ('rpc', 'cli'), got {raw!r}")
-    # Default is "rpc" when not specified
-    return "rpc"
-
-
-def resolve_legacy_cli_fallback(models: dict[str, object]) -> bool:
-    """Resolve the legacy_cli_fallback flag from a [models] dict.
-
-    Returns True by default (preserves existing subprocess path for non-RPC backends).
-    """
-    raw = models.get("legacy_cli_fallback")
-    if isinstance(raw, bool):
-        return raw
-    # Default is True when not specified
-    return True
 
 
 _VALID_PHASES = frozenset(

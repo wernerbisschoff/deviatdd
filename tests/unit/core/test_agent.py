@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from deviate.core.agent import AgentBackend, AgentConfig, AgentSubprocessError
 
@@ -155,78 +155,62 @@ class TestAgentCommandModel:
         assert cmd[idx + 1] == "nonexistent/model"
 
 
-class TestPiRpcMode:
-    """TSK-009-03: RPC mode opt-in via ``agent.pi_rpc = true``.
+class TestPiPrintModeOnly:
+    """ISS-ADH-048 / AC-PLAN-001: ``pi -p`` is the only Pi transport.
 
-    AC-009-10: When ``agent.pi_rpc = true``, the subprocess spawns
-    ``["pi", "--mode", "rpc", "--no-session"]`` instead of ``["pi", "-p"]``.
-    The prompt is sent as JSONL over stdin. JSONL events on stdout
-    (``agent_start``, ``message_update``, ``agent_end``) are parsed line-by-line.
-    The handover manifest is extracted from the ``agent_end`` event's
-    ``message.content`` payload.
+    The RPC branch (``PI_RPC_COMMAND``, ``_invoke_rpc_blocking``, ``use_rpc``)
+    is removed. Every Pi invoke spawns print mode. A legacy ``pi_rpc=True``
+    flag is ignored at this layer and still spawns ``pi -p``.
     """
 
+    @pytest.mark.behavioral
     @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_mode_opt_in(self, mock_popen: MagicMock) -> None:
-        """AC-009-10: ``pi_rpc=True`` spawns ``["pi", "--mode", "rpc", "--no-session"]``."""
-        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
-        jsonl_output = (
-            json.dumps({"type": "agent_start"})
-            + "\n"
-            + json.dumps({"type": "agent_end", "message": {"content": yaml_output}})
-            + "\n"
-        ).encode("utf-8")
-
+    def test_pi_invoke_spawns_print_mode(self, mock_popen: MagicMock) -> None:
+        """AC-PLAN-001: default Pi invoke spawns ``pi -p`` without RPC flags."""
         mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (jsonl_output, b"")
+        mock_proc.communicate.return_value = (b"phase: RED\nstatus: OK\n", b"")
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
 
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
+        backend = AgentBackend(config=AgentConfig(backend="pi"))
         backend.invoke("test prompt")
 
         cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "pi", f"Expected first argv 'pi', got {cmd[0]!r}"
-        assert "--mode" in cmd, f"RPC mode requires --mode flag (got {cmd})"
-        assert "rpc" in cmd, f"RPC mode requires 'rpc' value (got {cmd})"
-        assert "--no-session" in cmd, f"RPC mode requires --no-session flag (got {cmd})"
-        assert "-p" not in cmd, (
-            f"Print-mode flag must not appear in RPC mode command (got {cmd})"
+        assert cmd[1] == "-p", f"Expected print-mode '-p', got {cmd}"
+        assert "--mode" not in cmd, f"Print mode must not contain --mode (got {cmd})"
+        assert "rpc" not in cmd, f"Print mode must not contain rpc (got {cmd})"
+        assert "--no-session" not in cmd, (
+            f"Print mode must not contain --no-session (got {cmd})"
         )
 
+    @pytest.mark.behavioral
+    def test_legacy_pi_rpc_flag_rejected(self) -> None:
+        """AC-PLAN-002: legacy ``pi_rpc=True`` fails validation (print mode only)."""
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", pi_rpc=True)  # type: ignore[call-arg]
+
+    @pytest.mark.behavioral
     @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_lean_spawn_flags(
+    def test_pi_print_lean_spawn_flags(
         self, mock_popen: MagicMock, tmp_path: Path
     ) -> None:
-        """AC-PLAN-001 / AC-PLAN-002: RPC argv keeps AC-009-10 then lean flags."""
+        """AC-PLAN-001: print-mode argv keeps the lean tool policy after ``pi -p``."""
         skill_path = tmp_path / _DEVIATDD_SKILL_REL
         skill_path.parent.mkdir(parents=True)
         skill_path.write_text("# deviatdd\n", encoding="utf-8")
 
-        yaml_output = "phase: RED\nstatus: TEST_WRITTEN_FAILING\n"
-        jsonl_output = (
-            json.dumps({"type": "agent_start"})
-            + "\n"
-            + json.dumps({"type": "agent_end", "message": {"content": yaml_output}})
-            + "\n"
-        ).encode("utf-8")
-
         mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (jsonl_output, b"")
+        mock_proc.communicate.return_value = (b"phase: RED\nstatus: OK\n", b"")
         mock_proc.returncode = 0
         mock_popen.return_value = mock_proc
 
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
-        backend.invoke("test prompt", cwd=str(tmp_path))
+        AgentBackend(config=AgentConfig(backend="pi")).invoke(
+            "test prompt", cwd=str(tmp_path)
+        )
 
         cmd = mock_popen.call_args[0][0]
-        assert cmd[0] == "pi", f"Expected first argv 'pi', got {cmd[0]!r}"
-        assert cmd[1:4] == ["--mode", "rpc", "--no-session"], (
-            f"RPC prefix must stay pi --mode rpc --no-session (got {cmd})"
-        )
-        assert "-p" not in cmd, f"RPC argv must omit print-mode -p (got {cmd})"
+        assert cmd[:2] == ["pi", "-p"], f"Print prefix must stay pi -p (got {cmd})"
         assert not _has_long_or_short(cmd, "--no-extensions", "-ne"), (
             f"Pi spawn must load extension providers, got {cmd}"
         )
@@ -238,41 +222,38 @@ class TestPiRpcMode:
         assert skill_arg is not None, (
             f"Expected --skill when skill file exists (got {cmd})"
         )
-        assert Path(skill_arg) == skill_path or skill_arg.endswith(
-            str(_DEVIATDD_SKILL_REL)
-        ), f"--skill must point at {_DEVIATDD_SKILL_REL} (got {skill_arg!r})"
 
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_lean_tools_remain_when_skill_missing(
-        self, mock_popen: MagicMock, tmp_path: Path
-    ) -> None:
-        """AC-PLAN-002: missing skill file still lists the four coding tools on RPC."""
-        yaml_output = "phase: RED\nstatus: OK\n"
-        jsonl_output = (
-            json.dumps({"type": "agent_end", "message": {"content": yaml_output}})
-            + "\n"
-        ).encode("utf-8")
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (jsonl_output, b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
+    @pytest.mark.behavioral
+    def test_no_pi_rpc_command_symbol(self) -> None:
+        """AC-PLAN-001: ``PI_RPC_COMMAND`` no longer exists on the agent module."""
+        import deviate.core.agent as agent_mod
 
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
-        backend.invoke("test prompt", cwd=str(tmp_path))
-
-        cmd = mock_popen.call_args[0][0]
-        assert "--mode" in cmd and "rpc" in cmd and "--no-session" in cmd
-        _assert_pi_lean_coding_tools(cmd)
-        assert _flag_value(cmd, "--skill") is None, (
-            f"Missing skill file must not add --skill (got {cmd})"
+        assert not hasattr(agent_mod, "PI_RPC_COMMAND"), (
+            "PI_RPC_COMMAND must be removed; pi -p is the only Pi transport"
         )
 
+    @pytest.mark.behavioral
+    def test_no_invoke_rpc_blocking(self) -> None:
+        """AC-PLAN-001: ``AgentBackend._invoke_rpc_blocking`` is removed."""
+        assert not hasattr(AgentBackend, "_invoke_rpc_blocking"), (
+            "_invoke_rpc_blocking must be removed; Pi always calls _invoke_streaming"
+        )
+
+    @pytest.mark.behavioral
+    def test_agent_source_has_zero_rpc_tokens(self) -> None:
+        """AC-PLAN-001: no RPC dispatch token remains in ``src/deviate/core/agent.py``."""
+        src = Path("src/deviate/core/agent.py").read_text(encoding="utf-8")
+        for token in ("PI_RPC_COMMAND", "_invoke_rpc_blocking", "use_rpc"):
+            assert token not in src, (
+                f"RPC token {token!r} must be removed from agent.py"
+            )
+
+    @pytest.mark.behavioral
     @patch("deviate.core.agent.subprocess.Popen")
     def test_claude_invoke_omits_pi_lean_tool_flags(
         self, mock_popen: MagicMock
     ) -> None:
-        """AC-PLAN-002: non-Pi backends keep their argv and skip Pi lean flags."""
+        """Preservation: non-Pi backends keep their argv and skip Pi lean flags."""
         mock_proc = MagicMock()
         mock_proc.communicate.return_value = (b"phase: RED\nstatus: PASS\n", b"")
         mock_proc.returncode = 0
@@ -290,166 +271,12 @@ class TestPiRpcMode:
         assert "--tools" not in cmd and "-t" not in cmd
         assert "--skill" not in cmd
 
+    @pytest.mark.behavioral
     @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_mode_sends_jsonl_prompt_over_stdin(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """AC-009-10: RPC mode sends prompt as JSONL ``{"type":"prompt","content":...}``."""
-        jsonl_output = (
-            json.dumps({"type": "agent_start"})
-            + "\n"
-            + json.dumps(
-                {
-                    "type": "agent_end",
-                    "message": {"content": "phase: RED\nstatus: OK\n"},
-                }
-            )
-            + "\n"
-        ).encode("utf-8")
+    def test_pi_missing_binary_still_raises(self, mock_popen: MagicMock) -> None:
+        """Preservation: a missing ``pi`` binary uses the existing spawn error path."""
+        from deviate.core.agent import AgentBinaryNotFoundError
 
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (jsonl_output, b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
-        backend.invoke("hello world")
-
-        call_args = mock_proc.communicate.call_args
-        stdin_bytes = (
-            call_args.kwargs.get("input")
-            if call_args.kwargs
-            else (call_args[1].get("input") if len(call_args) > 1 else None)
-        )
-        assert stdin_bytes is not None, "Expected prompt piped via stdin"
-        stdin_text = stdin_bytes.decode("utf-8")
-
-        first_line = stdin_text.split("\n", 1)[0]
-        parsed = json.loads(first_line)
-        assert parsed["type"] == "prompt", (
-            f"RPC prompt frame must have type='prompt' (got {parsed!r})"
-        )
-        assert parsed["content"] == "hello world", (
-            f"RPC prompt content must equal user prompt (got {parsed!r})"
-        )
-
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_mode_extracts_manifest_from_agent_end(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """AC-009-10: Manifest is extracted from ``agent_end.message.content``."""
-        agent_start = json.dumps({"type": "agent_start"})
-        message_update = json.dumps({"type": "message_update", "delta": "thinking..."})
-        agent_end = json.dumps(
-            {
-                "type": "agent_end",
-                "message": {
-                    "content": (
-                        "phase: RED\n"
-                        "status: TEST_WRITTEN_FAILING\n"
-                        "task_id: TSK-009-03\n"
-                    ),
-                },
-            }
-        )
-        jsonl_output = (
-            agent_start + "\n" + message_update + "\n" + agent_end + "\n"
-        ).encode("utf-8")
-
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (jsonl_output, b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
-        manifest = backend.invoke("test prompt")
-
-        assert manifest.phase == "RED"
-        assert manifest.status == "TEST_WRITTEN_FAILING"
-        assert manifest.task_id == "TSK-009-03"
-
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_mode_skips_malformed_jsonl_lines(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """Edge case: malformed JSONL line is skipped, valid ``agent_end`` still parsed."""
-        agent_start = json.dumps({"type": "agent_start"})
-        bad_line = "{this is not json"
-        agent_end = json.dumps(
-            {
-                "type": "agent_end",
-                "message": {"content": "phase: GREEN\nstatus: OK\n"},
-            }
-        )
-        jsonl_output = (agent_start + "\n" + bad_line + "\n" + agent_end + "\n").encode(
-            "utf-8"
-        )
-
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (jsonl_output, b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
-
-        manifest = backend.invoke("test prompt")
-
-        assert manifest.phase == "GREEN"
-        assert manifest.status == "OK"
-
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_pi_rpc_mode_default_off_uses_print_mode(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """Regression: ``pi_rpc=False`` (default) keeps print-mode ``pi -p`` command."""
-        yaml_output = "phase: RED\nstatus: OK\n"
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (yaml_output.encode("utf-8"), b"")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        config = AgentConfig(backend="pi")
-        backend = AgentBackend(config=config)
-        backend.invoke("test prompt")
-
-        cmd = mock_popen.call_args[0][0]
-        assert cmd[0] == "pi"
-        assert cmd[1] == "-p"
-        assert "--mode" not in cmd, (
-            f"Print mode must not contain --mode flag (got {cmd})"
-        )
-
-    @patch("deviate.core.agent.subprocess.Popen")
-    def test_invoke_rpc_aborts_on_unsupported_tool_schema(
-        self, mock_popen: MagicMock
-    ) -> None:
-        """AC-PLAN-003: RPC blocking abort on first schema-rejection line."""
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = (
-            b"",
-            b"unsupported_tool_schema tool_count_limit\n",
-        )
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
-
-        config = AgentConfig(backend="pi", pi_rpc=True)
-        backend = AgentBackend(config=config)
-        with (
-            patch("time.sleep", return_value=None) as mock_sleep,
-            pytest.raises(
-                AgentSubprocessError,
-                match="unsupported_tool_schema|tool_count_limit",
-            ),
-        ):
-            backend.invoke("test prompt")
-
-        mock_proc.kill.assert_called()
-        assert mock_popen.call_count == 1, (
-            "schema rejection must not start EmptyOutputError manifest retry"
-        )
-        for call in mock_sleep.call_args_list:
-            if call.args and call.args[0] == 30:
-                pytest.fail("schema rejection must skip the 30s timeout retry")
+        mock_popen.side_effect = FileNotFoundError("pi")
+        with pytest.raises(AgentBinaryNotFoundError):
+            AgentBackend(config=AgentConfig(backend="pi")).invoke("test prompt")

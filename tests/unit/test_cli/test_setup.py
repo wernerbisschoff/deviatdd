@@ -388,17 +388,18 @@ class TestSetupConfigAllowlist:
         )
         assert parsed["base_branch"] == "trunk"
 
-    def test_pi_writes_transport_not_pi_rpc(self, tmp_path: Path) -> None:
+    @pytest.mark.behavioral
+    def test_pi_writes_backend_only_no_transport(self, tmp_path: Path) -> None:
+        """AC-PLAN-002: pi setup writes backend only, no transport key."""
         with chdir(tmp_path):
             result = runner.invoke(cli, ["setup", "--agent", "pi"])
             assert result.exit_code == 0, result.output
         text = (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
         parsed = tomllib.loads(text)
-        assert parsed["agent"]["backend"] == "pi"
-        assert parsed["agent"].get("transport") == "rpc"
-        assert "pi_rpc" not in parsed["agent"]
+        assert parsed["agent"] == {"backend": "pi"}
+        assert "transport" not in text
+        assert "pi_rpc" not in text
         assert "timeout" not in parsed["agent"]
-        assert 'transport = "rpc"  # pi/omp only; omit on other backends' in text
 
     def test_switch_pi_to_codex_strips_dead_keys(self, tmp_path: Path) -> None:
         dot = tmp_path / ".deviate"
@@ -422,6 +423,75 @@ class TestSetupConfigAllowlist:
         assert "transport" not in parsed["agent"]
         assert parsed["agent"]["reasoning_effort"] == "high"
         assert parsed["models"]["default"] == "gpt-5.6-luna"
+
+
+class TestLegacyRpcConfigRemoval:
+    """AC-PLAN-002: legacy RPC keys fail validation or drop on rewrite."""
+
+    @pytest.mark.behavioral
+    def test_agent_config_rejects_pi_rpc(self) -> None:
+        from pydantic import ValidationError
+
+        from deviate.state.config import AgentConfig
+
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", pi_rpc=True)  # type: ignore[call-arg]
+
+    @pytest.mark.behavioral
+    def test_agent_config_rejects_transport(self) -> None:
+        from pydantic import ValidationError
+
+        from deviate.state.config import AgentConfig
+
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", transport="rpc")  # type: ignore[call-arg]
+
+    @pytest.mark.behavioral
+    def test_agent_config_rejects_rpc_uri(self) -> None:
+        from pydantic import ValidationError
+
+        from deviate.state.config import AgentConfig
+
+        with pytest.raises(ValidationError):
+            AgentConfig(backend="pi", rpc_uri="stdio://x")  # type: ignore[call-arg]
+
+    @pytest.mark.behavioral
+    def test_rewrite_drops_legacy_keys_keeps_backend(self, tmp_path: Path) -> None:
+        dot = tmp_path / ".deviate"
+        dot.mkdir()
+        config_path = dot / "config.toml"
+        config_path.write_text(
+            "[agent]\n"
+            'backend = "pi"\n'
+            'transport = "rpc"\n'
+            "pi_rpc = false\n"
+            'rpc_uri = "stdio://x"\n',
+            encoding="utf-8",
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "pi"])
+            assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        assert parsed["agent"] == {"backend": "pi"}
+
+    @pytest.mark.behavioral
+    def test_resolve_phase_model_still_resolves(self) -> None:
+        from deviate.state.config import resolve_phase_model
+
+        models = {"default": "m-default", "judge": "m-judge"}
+        assert resolve_phase_model("judge", models) == "m-judge"
+        assert resolve_phase_model("red", models) == "m-default"
+        assert resolve_phase_model("red", {}) is None
+
+    @pytest.mark.behavioral
+    def test_non_pi_backend_write_unchanged(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["setup", "--agent", "claude"])
+            assert result.exit_code == 0, result.output
+        parsed = tomllib.loads(
+            (tmp_path / ".deviate" / "config.toml").read_text(encoding="utf-8")
+        )
+        assert parsed["agent"] == {"backend": "claude"}
 
 
 class TestSetupLibrefOptIn:

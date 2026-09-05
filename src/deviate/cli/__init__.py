@@ -125,7 +125,6 @@ _CONFIG_TOML_COMMENTS: dict[str, str] = {
     "timeout_seconds": "agent spawn + test wall clock (seconds)",
     "claim_remote": "push the claim branch as a lock",
     "use_libref": "enable the libref CLI for offline documentation lookups",
-    "transport": "pi/omp only; omit on other backends",
 }
 
 
@@ -389,11 +388,9 @@ def _apply_codex_setup_defaults(config_path: Path) -> bool:
 
 
 def _write_agent_block_to_config(config_path: Path, backend: str) -> bool:
-    """Rewrite ``[agent]`` to persist *backend* with backend-correct keys.
+    """Rewrite ``[agent]`` to persist *backend*; drop legacy RPC keys.
 
-    Non-pi/omp backends drop ``pi_rpc`` and ``transport``. Pi/OMP keep
-    ``transport`` (default ``rpc``) and never write ``pi_rpc``. Other
-    tables in the file are preserved.
+    Other tables in the file are preserved.
     """
     content = config_path.read_text(encoding="utf-8")
     new_content, changed = _rewrite_agent_table(content, backend)
@@ -563,7 +560,6 @@ def _agent_table_for_backend(
     backend: str,
     *,
     reasoning_effort: str | None = None,
-    transport: str | None = None,
 ) -> dict[str, object]:
     """Return the persistable ``[agent]`` keys for *backend*.
 
@@ -571,8 +567,6 @@ def _agent_table_for_backend(
     read top-level ``timeout_seconds`` (AC-PLAN-005).
     """
     table: dict[str, object] = {"backend": backend}
-    if backend in ("pi", "omp"):
-        table["transport"] = transport or "rpc"
     if backend == "codex" and reasoning_effort:
         table["reasoning_effort"] = reasoning_effort
     return table
@@ -615,22 +609,16 @@ def _rewrite_agent_table(content: str, backend: str) -> tuple[str, bool]:
     re-running setup does not invent ``timeout`` on a hand-edited file.
     """
     existing = _parse_existing_agent_table(content)
-    dead = {"pi_rpc", "timeout"}
-    if backend not in ("pi", "omp"):
-        dead.add("transport")
-    extras = {key for key in existing if key in dead}
+    allowed = {"backend", "reasoning_effort"}
+    extras = {key for key in existing if key not in allowed}
     if existing.get("backend") == backend and not extras:
         return content, False
     reasoning = existing.get("reasoning_effort")
     if not isinstance(reasoning, str) or not reasoning.strip():
         reasoning = None
-    transport = existing.get("transport")
-    if not isinstance(transport, str):
-        transport = None
     table = _agent_table_for_backend(
         backend,
         reasoning_effort=reasoning,
-        transport=transport,
     )
     body = []
     for key, value in table.items():
