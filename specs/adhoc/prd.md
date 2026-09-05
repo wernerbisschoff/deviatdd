@@ -652,3 +652,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-042-01 / AO-042-01: Stale stored RED SHA on revert_green resets to a safe on-branch boundary and the task continues.
   2. AC-ADHOC-042-02 / AO-042-02: Rollback that cannot find any safe boundary refuses with a plain error and leaves the branch unchanged.
+
+## FR-ADHOC-043: RED fails fast on multi-layer split test contracts
+- **Description**: A task whose contract declares test targets in more than one layer (unit plus integration) fails fast at RED pre with a specific split-task error instead of silently targeting one layer until TRAIN_EXHAUSTED.
+- **Preconditions**: `src/deviate/cli/micro.py` `_layer_contract_fields` resolves exactly one `test_strategy` per task; `src/deviate/prompts/auto/red.md` layer-lock rule assigns one layer per RED; gh issue 182 reports TSK-001-02 looping 3 RED escalates on the unit target while JUDGE rejects the absent integration target.
+- **Inputs/Outputs**: Input — task contract with test files or commands spanning two or more layers. Output — RED pre stops with a `SPLIT_TASK` error naming both layers and the required planner action (split into one task per layer); no RED attempt runs, no TRAIN_EXHAUSTED loop starts.
+- **User Stories**:
+  1. US-043-01: As a developer with a split unit plus integration task, I want RED to refuse the mixed contract at once so I split the task instead of watching three doomed RED retries. *(Ref: FR-ADHOC-043)*
+  2. US-043-02: As an operator, I want the split-task error to name the detected layers and the required fix so I act without reading runner internals. *(Ref: FR-ADHOC-043)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-043-01 / AO-043-01: A task declaring unit plus integration test targets stops at RED pre with a split-task error; zero RED agent attempts run.
+  2. AC-ADHOC-043-02 / AO-043-02: A single-layer task runs RED unchanged; the new check never fires on unit-only or integration-only contracts.
