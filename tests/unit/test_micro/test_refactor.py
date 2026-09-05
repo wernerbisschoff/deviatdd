@@ -5,6 +5,11 @@ import subprocess
 import textwrap
 from contextlib import chdir
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+from rich.console import Console
 
 from typer.testing import CliRunner
 from deviate.cli import cli
@@ -441,3 +446,166 @@ class TestCheckReturnTypeMismatch:
         assert issues == [], (
             f"Expected empty issues for unannotated function, got: {issues}"
         )
+
+
+def _gate_harness(tmp_path: Path, monkeypatch):
+    """Patch REFACTOR seams; return (task, ledger, session, path, spies)."""
+    import deviate.cli.micro as m
+
+    ledger = tmp_path / "tasks.jsonl"
+    ledger.write_text("", encoding="utf-8")
+    task = {
+        "id": "TSK-004-01",
+        "issue_id": "ISS-001-004",
+        "description": "REFACTOR phase task",
+        "status": "GREEN",
+        "execution_mode": "TDD",
+    }
+    session = SessionState(current_phase="REFACTOR", active_issue_id="ISS-001-004")
+    session_path = tmp_path / "session.json"
+    session.save(session_path)
+    monkeypatch.setattr(m, "_build_auto_prompt", lambda *a, **k: "prompt")
+    monkeypatch.setattr(m, "resolve_model_for_phase", lambda *a, **k: None)
+    monkeypatch.setattr(
+        m,
+        "_invoke_agent",
+        lambda *a, **k: (SimpleNamespace(status="PASS", rationale="ok"), ""),
+    )
+    monkeypatch.setattr(m, "_verify_clean_worktree", lambda *a, **k: None)
+    return task, ledger, session, session_path
+
+
+class TestRefactorRegressionGate:
+    @pytest.mark.behavioral
+    def test_nonzero_test_result_raises_with_tail_and_no_completed(
+        self, tmp_path, monkeypatch
+    ):
+        """AC-PLAN-001 (US-005-09): non-zero gate raises PhaseFailedError."""
+        import deviate.cli.micro as m
+
+        task, ledger, session, session_path = _gate_harness(tmp_path, monkeypatch)
+        fail = subprocess.CompletedProcess(
+            args=["pytest"], returncode=1, stdout="FAILED test_x", stderr="boom"
+        )
+        with (
+            patch.object(m, "_run_pytest", return_value=fail),
+            patch.object(m, "_run_test_cmd", return_value=fail),
+            patch.object(m, "_run_format_cmd") as run_format,
+            patch.object(m, "_append_status_transition") as append,
+            patch.object(m, "_commit_phase") as commit,
+        ):
+            with chdir(tmp_path):
+                with pytest.raises(m.PhaseFailedError) as exc_info:
+                    m._run_refactor_phase(
+                        task, ledger, session, session_path, Console()
+                    )
+            assert "TSK-004-01" in str(exc_info.value)
+            assert "FAILED test_x" in str(exc_info.value)
+            run_format.assert_not_called()
+            commit.assert_not_called()
+            assert append.call_count == 0 or all(
+                c.args[1] != "COMPLETED" for c in append.call_args_list
+            )
+
+    @pytest.mark.behavioral
+    def test_zero_test_result_runs_format_appends_completed_goes_idle(
+        self, tmp_path, monkeypatch
+    ):
+        """AC-PLAN-002 (US-005-10): zero gate completes the task."""
+        import deviate.cli.micro as m
+
+        task, ledger, session, session_path = _gate_harness(tmp_path, monkeypatch)
+        ok = subprocess.CompletedProcess(
+            args=["pytest"], returncode=0, stdout="ok", stderr=""
+        )
+        with (
+            patch.object(m, "_run_pytest", return_value=ok),
+            patch.object(m, "_run_test_cmd", return_value=ok),
+            patch.object(m, "_run_format_cmd") as run_format,
+            patch.object(m, "_append_status_transition") as append,
+            patch.object(m, "_commit_phase") as commit,
+        ):
+            with chdir(tmp_path):
+                out = m._run_refactor_phase(
+                    task, ledger, session, session_path, Console()
+                )
+            run_format.assert_called_once()
+            append.assert_called_once()
+            assert append.call_args.args[1] == "COMPLETED"
+            commit.assert_called_once()
+            assert out.current_phase == "IDLE"
+
+    @pytest.mark.behavioral
+    def test_unchanged_passing_suite_has_only_normal_completion_path(
+        self, tmp_path, monkeypatch
+    ):
+        """AC-PLAN-003 (US-005-10): clean gate adds no extra side effects."""
+        import deviate.cli.micro as m
+
+        task, ledger, session, session_path = _gate_harness(tmp_path, monkeypatch)
+        ok = subprocess.CompletedProcess(
+            args=["pytest"], returncode=0, stdout="3 passed", stderr=""
+        )
+        with (
+            patch.object(m, "_run_pytest", return_value=ok),
+            patch.object(m, "_run_test_cmd", return_value=ok) as run_test,
+            patch.object(m, "_run_format_cmd") as run_format,
+            patch.object(m, "_append_status_transition") as append,
+            patch.object(m, "_commit_phase") as commit,
+        ):
+            with chdir(tmp_path):
+                m._run_refactor_phase(task, ledger, session, session_path, Console())
+            assert run_test.call_count == 1
+            assert run_format.call_count == 1
+            assert append.call_count == 1
+            assert commit.call_count == 1
+
+    @pytest.mark.behavioral
+    def test_crash_with_empty_output_raises_without_completed(
+        self, tmp_path, monkeypatch
+    ):
+        """Edge: test-command crash (non-zero, empty output) still fails."""
+        import deviate.cli.micro as m
+
+        task, ledger, session, session_path = _gate_harness(tmp_path, monkeypatch)
+        crash = subprocess.CompletedProcess(
+            args=["pytest"], returncode=2, stdout="", stderr=""
+        )
+        with (
+            patch.object(m, "_run_pytest", return_value=crash),
+            patch.object(m, "_run_test_cmd", return_value=crash),
+            patch.object(m, "_run_format_cmd") as run_format,
+            patch.object(m, "_append_status_transition") as append,
+            patch.object(m, "_commit_phase") as commit,
+        ):
+            with chdir(tmp_path):
+                with pytest.raises(m.PhaseFailedError):
+                    m._run_refactor_phase(
+                        task, ledger, session, session_path, Console()
+                    )
+            run_format.assert_not_called()
+            commit.assert_not_called()
+            assert all(c.args[1] != "COMPLETED" for c in append.call_args_list)
+
+    @pytest.mark.behavioral
+    def test_already_completed_bypasses_gate(self, tmp_path, monkeypatch):
+        """AC-PLAN-004: COMPLETED ledger row skips the gate entirely."""
+        import deviate.cli.micro as m
+
+        task, ledger, session, session_path = _gate_harness(tmp_path, monkeypatch)
+        done = TaskRecord(
+            id="TSK-004-01", issue_id="ISS-001-004", description="t", status="COMPLETED"
+        )
+        ledger.write_text(done.model_dump_json() + "\n", encoding="utf-8")
+        with (
+            patch.object(m, "_run_pytest") as run_pytest,
+            patch.object(m, "_run_test_cmd") as run_test,
+            patch.object(m, "_run_format_cmd") as run_format,
+            patch.object(m, "_invoke_agent") as invoke,
+        ):
+            with chdir(tmp_path):
+                m._run_refactor_phase(task, ledger, session, session_path, Console())
+            run_test.assert_not_called()
+            run_pytest.assert_not_called()
+            run_format.assert_not_called()
+            invoke.assert_not_called()

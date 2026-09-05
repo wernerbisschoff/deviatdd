@@ -1,0 +1,1 @@
+{"id":"TSK-004-01","issue_id":"005-004","description":"Blocking REFACTOR regression gate on `_run_test_cmd` returncode","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-05T11:32:45.600400Z","security_profile":null,"acceptance_criteria":null}
