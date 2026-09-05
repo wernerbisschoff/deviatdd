@@ -1,0 +1,1 @@
+{"id":"TSK-046-01","issue_id":"ISS-ADH-046","description":"Surface pi-side response error on no-agent_end RPC run","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-05T10:48:49.013807Z","security_profile":null,"acceptance_criteria":null}
