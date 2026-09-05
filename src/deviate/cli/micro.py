@@ -643,6 +643,24 @@ def _correction_failure_tail_preserved(tail: str) -> bool:
     return "test_defect" in lowered or "failure_kind" in lowered
 
 
+def _correction_failure(
+    raw_lines: list[str],
+    task_id: str,
+    phase: str,
+    reason: str,
+    exc: BaseException | None = None,
+) -> _AgentInvokeResult:
+    tail2 = "\n".join([line for line in raw_lines if line.strip()][-50:])
+    if _correction_failure_tail_preserved(tail2):
+        return _AgentInvokeResult(None, tail2)
+    detail2 = tail2 if tail2 else "[empty-tail: correction retry missed]"
+    msg2 = (
+        f"HANDOVER_INVALID format correction failed for {task_id}: {reason}: {detail2}"
+    )
+    _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg2)
+    raise PhaseFailedError(msg2) from exc
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -709,27 +727,11 @@ def _invoke_agent(
                 AgentSubprocessError,
             ) as exc2:
                 _raise_schema_limit_phase_error(exc2, phase, task_id)
-                tail2 = "\n".join([line for line in raw_lines if line.strip()][-50:])
-                if _correction_failure_tail_preserved(tail2):
-                    return _AgentInvokeResult(None, tail2)
-                detail2 = tail2 if tail2 else "[empty-tail: correction retry missed]"
-                msg2 = (
-                    f"HANDOVER_INVALID format correction failed for {task_id}: "
-                    f"{exc2}: {detail2}"
-                )
-                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg2)
-                raise PhaseFailedError(msg2) from exc2
+                return _correction_failure(raw_lines, task_id, phase, str(exc2), exc2)
             if manifest is None:
-                tail2 = "\n".join([line for line in raw_lines if line.strip()][-50:])
-                if _correction_failure_tail_preserved(tail2):
-                    return _AgentInvokeResult(None, tail2)
-                detail2 = tail2 if tail2 else "[empty-tail: correction retry missed]"
-                msg2 = (
-                    f"HANDOVER_INVALID format correction failed for {task_id}: "
-                    f"retry returned no valid manifest: {detail2}"
+                return _correction_failure(
+                    raw_lines, task_id, phase, "retry returned no valid manifest"
                 )
-                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg2)
-                raise PhaseFailedError(msg2)
         c.print("")
         status = getattr(manifest, "status", "?")
         verdict = getattr(manifest, "verdict", "")
