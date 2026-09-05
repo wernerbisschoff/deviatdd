@@ -2152,3 +2152,95 @@ class TestCodexBackendRegistration:
         cmd = mock_popen.call_args[0][0]
         assert "-c" not in cmd
         assert "model_reasoning_effort=high" not in cmd
+
+
+class TestPiPrintModeOnly:
+    """ISS-ADH-048 / AC-PLAN-001: ``pi -p`` is the only Pi transport.
+
+    The RPC branch (``PI_RPC_COMMAND``, ``_invoke_rpc_blocking``, ``use_rpc``)
+    is removed from ``src/deviate/core/agent.py``. Every Pi invoke spawns
+    print mode. A legacy ``pi_rpc=True`` flag is ignored at this layer.
+    """
+
+    @pytest.mark.behavioral
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_pi_invoke_spawns_print_mode(self, mock_popen: MagicMock) -> None:
+        """AC-PLAN-001: Pi invoke spawns ``pi -p`` without RPC flags."""
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (b"phase: RED\nstatus: OK\n", b"")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        AgentBackend(config=AgentConfig(backend="pi")).invoke("test prompt")
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[:2] == ["pi", "-p"], f"Pi must spawn pi -p (got {cmd})"
+        assert "--mode" not in cmd, f"Print mode must omit --mode (got {cmd})"
+        assert "rpc" not in cmd, f"Print mode must omit rpc (got {cmd})"
+
+    @pytest.mark.behavioral
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_legacy_pi_rpc_flag_still_spawns_print_mode(
+        self, mock_popen: MagicMock
+    ) -> None:
+        """AC-PLAN-001 edge case: legacy ``pi_rpc=True`` still spawns ``pi -p``."""
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (b"phase: RED\nstatus: OK\n", b"")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        AgentBackend(config=AgentConfig(backend="pi", pi_rpc=True)).invoke(
+            "test prompt"
+        )
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[:2] == ["pi", "-p"], (
+            f"Legacy pi_rpc must still spawn pi -p (got {cmd})"
+        )
+        assert "--mode" not in cmd, f"Legacy pi_rpc must omit --mode (got {cmd})"
+
+    @pytest.mark.behavioral
+    def test_no_rpc_symbols_importable(self) -> None:
+        """AC-PLAN-001: RPC symbols are no longer importable from agent.py."""
+        import deviate.core.agent as agent_mod
+
+        assert not hasattr(agent_mod, "PI_RPC_COMMAND"), (
+            "PI_RPC_COMMAND must be removed"
+        )
+        assert not hasattr(AgentBackend, "_invoke_rpc_blocking"), (
+            "_invoke_rpc_blocking must be removed"
+        )
+
+    @pytest.mark.behavioral
+    def test_agent_source_has_zero_rpc_tokens(self) -> None:
+        """AC-PLAN-001: token scan finds zero RPC tokens in agent.py."""
+        from pathlib import Path as _Path
+
+        src = _Path("src/deviate/core/agent.py").read_text(encoding="utf-8")
+        for token in ("PI_RPC_COMMAND", "_invoke_rpc_blocking", "use_rpc"):
+            assert token not in src, (
+                f"RPC token {token!r} must be removed from agent.py"
+            )
+
+    @pytest.mark.behavioral
+    @patch("deviate.core.agent.subprocess.Popen")
+    def test_non_pi_backend_dispatch_unchanged(self, mock_popen: MagicMock) -> None:
+        """Preservation: non-Pi backends keep their argv after the removal."""
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (b"phase: RED\nstatus: PASS\n", b"")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
+
+        AgentBackend(config=AgentConfig(backend="claude")).invoke("test prompt")
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[:4] == ["claude", "-p", "--permission-mode", "auto"], (
+            f"Claude argv must stay unchanged (got {cmd})"
+        )
+
+    @pytest.mark.behavioral
+    def test_pi_stall_handling_still_buffered(self) -> None:
+        """Preservation: ``pi -p`` keeps buffered-print stall handling."""
+        from deviate.core.agent import _is_buffered_print_cli
+
+        assert _is_buffered_print_cli("pi", ["pi", "-p"]) is True
