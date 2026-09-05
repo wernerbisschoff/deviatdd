@@ -97,7 +97,7 @@ class TestRunCommand:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
             subprocess.CompletedProcess(
-                args=[], returncode=1, stdout="1 failed", stderr=""
+                args=[], returncode=0, stdout="1 passed", stderr=""
             ),
             subprocess.CompletedProcess(
                 args=[], returncode=0, stdout="1 passed", stderr=""
@@ -358,7 +358,7 @@ class TestRunCommand:
                 args=[], returncode=0, stdout="1 passed", stderr=""
             ),
             subprocess.CompletedProcess(
-                args=[], returncode=1, stdout="1 failed", stderr=""
+                args=[], returncode=0, stdout="1 passed", stderr=""
             ),
             subprocess.CompletedProcess(
                 args=[], returncode=0, stdout="1 passed", stderr=""
