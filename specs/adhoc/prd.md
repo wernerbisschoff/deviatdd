@@ -674,3 +674,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-044-01 / AO-044-01: Reverted diff containing migration files triggers database recovery (hook) or a specific error naming the hook plus the manual recovery action.
   2. AC-ADHOC-044-02 / AO-044-02: Reverted diff without migration files rolls back exactly as today; no hook runs and no new error fires.
+
+## FR-ADHOC-045: Phase handover manifests validate consistency and carry diagnostics
+- **Description**: A phase handover manifest validates phase, task id, status, verdict, and next action as one consistent result and rejects or corrects inconsistent output with a specific error instead of an opaque failure.
+- **Preconditions**: `src/deviate/core/agent.py` `parse_output` checks YAML syntax and required `phase`/`status` fields but enforces no phase-specific consistency; `src/deviate/cli/micro.py` `_invoke_agent` catches `MalformedHandoverManifestError`/`EmptyOutputError` and raises `PhaseFailedError` with `unknown` or `agent returned no manifest`; gh issue 199 reports four malformed-handover cases on TSK-001-01, deviate 2.27.1.
+- **Inputs/Outputs**: Input — agent handover output with mismatched task id, contradictory status/verdict/next_action, missing rationale, or missing manifest. Output — a specific `HANDOVER_INVALID`-style failure naming the inconsistency, one format-correction retry on parse failure, and preserved rationale or tail text in the error; a mismatched task id is rejected explicitly.
+- **User Stories**:
+  1. US-045-01: As a developer watching a micro run, I want a malformed handover to name the exact inconsistency so I fix the prompt or task instead of decoding `unknown`. *(Ref: FR-ADHOC-045)*
+  2. US-045-02: As an operator, I want one format-correction retry to recover a malformed manifest so a single bad emission does not kill the task. *(Ref: FR-ADHOC-045)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-045-01 / AO-045-01: Manifest with mismatched task id, contradictory verdict/next_action, or ERROR status without rationale fails with a specific error naming the defect; available rationale or output tail is preserved in the failure.
+  2. AC-ADHOC-045-02 / AO-045-02: Unparseable manifest triggers exactly one constrained format-correction retry before failing; the final failure carries the correction error instead of `unknown`.
