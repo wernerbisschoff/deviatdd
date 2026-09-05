@@ -42,6 +42,7 @@
     - **Edge Cases**: Handle a stored config file that still holds legacy keys by dropping them on rewrite and accepting the file until rewrite. Handle unknown `transport` values by rejection, not silent default.
     - **Acceptance**: `rg -n "pi_rpc|resolve_transport|rpc_uri|_normalize_transport|resolve_legacy_cli_fallback" src/ tests/` returns zero hits except the new rejection assertions. `mise run unit` passes for the touched file.
 
+  - **Judge Feedback**: The next RED attempt must: retarget or remove the stale pi transport expectation so setup for pi asserts backend-only writes, add failing assertions that AgentConfig rejects pi_rpc plus transport plus rpc_uri input, add a rewrite assertion that legacy keys drop while backend stays, keep resolve_phase_model coverage, and rerun the focused unit file before handing off.
 - TSK-048-03: Retarget leftover RPC tests, strip RPC docs, verify full suite
   - **Type**: Verification_Batch
   - **Mode**: IMMEDIATE
