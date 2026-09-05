@@ -7859,12 +7859,38 @@ def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedP
 
 
 def _run_format_cmd(root: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["mise", "run", "format"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-    )
+    """Run ``mise run format`` when configured; never raise if mise is missing.
+
+    Format is optional polish. Auto RED/GREEN/REFACTOR discard the result;
+    ``red post`` prints a warning on non-zero. A missing ``[tasks.format]``
+    is a silent no-op (returncode 0). A missing ``mise`` binary returns
+    exit 127 — the same sentinel ``run_safe_command`` uses for an absent
+    executable — instead of raising ``FileNotFoundError``. When mise is
+    on PATH and ``[tasks.format]`` is defined, this is a real
+    ``mise run format`` subprocess.
+    """
+    argv = ["mise", "run", "format"]
+    if "format" not in _mise_defined_tasks(root):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            "",
+            "No [tasks.format] defined; skipping",
+        )
+    try:
+        return subprocess.run(
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(
+            argv,
+            127,
+            "",
+            "mise not found on PATH",
+        )
 
 
 _SOURCE_TRACK_PREFIXES: tuple[str, ...] = ("src/", "lib/", "app/")

@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`deviate micro run` no longer crashes when `mise` is absent from PATH.** `_run_format_cmd` skips when `[tasks.format]` is not defined and returns exit 127 (no `FileNotFoundError`) when mise is missing, matching other optional tooling. Real `mise run format` is unchanged when mise exists and the task is defined. Pinned by `tests/unit/test_cli/test_format_cmd.py` and `tests/unit/test_cli/test_micro.py::TestNoFailingTestAlreadyExistsCliCompletes`.
+
 - **`/deviate-merge` and `/deviate-adhoc` now use the canonical commit scope (`ADH-NNN` / `NNN-NNN`).** The merge example was `-m "{commit_type}({ISSUE_ID})..."` (raw ledger ID, e.g. `ISS-ADH-044`) and adhoc committed `docs(adhoc): add issue ...`; both now use `{COMMIT_SCOPE}` with the legacy `ISS-` prefix stripped, per CONTRIBUTING.md (`docs(ADH-044): add issue ISS-ADH-044`). Pinned by `tests/unit/test_meso/test_auto_prompt_templates.py::TestCommitScopeConvention`.
 
 - **`deviate merge --delete-branch` no longer hides unexpected remote-cleanup errors.** Best-effort handling now covers only operating-system failures while local cleanup still continues after expected remote command failures.

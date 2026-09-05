@@ -791,6 +791,10 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   **RED checkpoint:** when the suite passes, RED completes with a warning advisory
   (`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start,
   and RED never rejects a passing test.
+  After the test command, `_run_format_cmd` runs `mise run format` when
+  `[tasks.format]` is defined. Missing mise returns exit 127 without raising
+  (`FileNotFoundError` is not a phase failure); a missing format task is a
+  no-op. Non-zero format is a warning on `red post`, never a phase gate.
   Optional ``--task-id`` is compared to the resolved pending record
   (``session.active_issue_id`` → first PENDING) **before** the ledger transition
   and commit. Mismatch prints ``TASK_ID_MISMATCH`` and exits 1 with no ledger
