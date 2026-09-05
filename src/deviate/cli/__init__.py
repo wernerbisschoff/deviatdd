@@ -1403,7 +1403,8 @@ def setup(
     selected_agent = _resolve_setup_selected_agent(agent, workdir, config_path)
     install_agents = _resolve_install_agents(selected_agent)
 
-    backend = _resolve_agent_to_backend(selected_agent)
+    backend = _resolve_agent_to_backend(install_agents[0]) if install_agents else None
+
     if claim_remote and no_claim_remote:
         console.print(
             "[red]CONFLICT[/] --claim-remote and --no-claim-remote are "
