@@ -707,3 +707,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-047-01 / AO-047-01: Setup with codex plus pi writes one skill copy under the shared directory and Pi reports no duplicate-skill warning.
   2. AC-ADHOC-047-02 / AO-047-02: Setup with a single agent installs exactly as today; no extra directories appear and no existing skill path breaks.
+
+## FR-ADHOC-048: Remove Pi RPC mode; print mode is the only Pi transport
+- **Description**: Deleting the dead RPC path makes `pi -p` the single Pi transport so config, dispatch, and docs stop advertising a mode that never fires and whose framing pi rejects.
+- **Preconditions**: Python 3.13. `src/deviate/core/agent.py` defines `PI_RPC_COMMAND` and `_invoke_rpc_blocking` but `invoke()` gates on `config.pi_rpc`, which `src/deviate/cli/micro.py::_invoke_agent` and `src/deviate/cli/meso.py::_invoke_agent_phase` never set (fresh `AgentConfig(backend=...)` defaults it off); `AgentConfig` also carries `transport`/`rpc_uri` plus `resolve_transport`/`resolve_legacy_cli_fallback`, which no dispatch reads. Live probe `echo '{"type":"prompt"}' | pi --mode rpc --no-session` returns `success:false` (`Cannot read properties of undefined`).
+- **Inputs/Outputs**: Input — Pi backend invocations plus config files holding legacy `pi_rpc`/`transport` keys. Output — every Pi spawn uses `BACKEND_COMMANDS["pi"]` (`pi -p`) with the lean tool policy; `AgentConfig` rejects unknown `pi_rpc` input; setup writes `[agent]` backend-only and strips legacy keys on rewrite; authoritative specs and CHANGELOG record the removal.
+- **User Stories**:
+  1. US-048-01: As a developer reading the agent layer, I want one Pi spawn path so I stop tracing a dispatch branch that never executes. *(Ref: FR-ADHOC-048)*
+  2. US-048-02: As an operator with `transport = "rpc"` in config, I want setup runs to keep working and strip the dead key so my workflow never breaks. *(Ref: FR-ADHOC-048)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-048-01 / AO-048-01: No `PI_RPC_COMMAND`, `_invoke_rpc_blocking`, `pi_rpc`, `transport`, `rpc_uri`, or `resolve_transport` token remains in source or tests; Pi invoke always spawns `pi -p` without `--mode`.
+  2. AC-ADHOC-048-02 / AO-048-02: Full unit suite passes, `mise run check` is clean, and a rewrite over a config holding legacy keys drops them while keeping the backend.
