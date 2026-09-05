@@ -4744,7 +4744,16 @@ def _run_refactor_phase(
     issue_id = task.get("issue_id", "")
     scope = _build_scope(issue_id, tid)
 
-    _run_test_cmd(root, task)
+    test_result = _run_test_cmd(root, task)
+    if not _is_no_test_command(test_result) and test_result.returncode != 0:
+        failure_output = test_result.stdout or ""
+        if test_result.stderr:
+            failure_output += "\n--- stderr ---\n" + test_result.stderr
+        tail = failure_output[-7900:] or "(no test output captured)"
+        raise PhaseFailedError(
+            f"REFACTOR regression failure for {tid}:\n"
+            f"<test_output>\n{tail}\n</test_output>"
+        )
     _run_format_cmd(root)
 
     try:
