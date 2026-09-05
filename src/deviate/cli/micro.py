@@ -7395,27 +7395,47 @@ def _validate_manifest(manifest_path: str | None) -> dict | None:
     return data
 
 
+def _red_pre_kernel(
+    task_id: str | None,
+    root: Path,
+    contract_override: dict[str, object] | None = None,
+) -> dict[str, object]:
+    if contract_override is not None:
+        raise KernelError("CONTRACT_REJECTED", "doctored contract input")
+    try:
+        resolved = _resolve_task_context(task_id, root)
+    except typer.Exit as exc:
+        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
+    if resolved is None:
+        raise KernelError("TASK_NOT_FOUND", str(task_id or ""))
+    task_data, ledger_path = resolved
+    try:
+        contract: dict[str, object] = {
+            "task_id": task_data.get("id", ""),
+            **_pre_layer_contract(root, task_data),
+            "lint_command": "mise run lint",
+            "spec_dir": str(ledger_path.parent),
+            "task_entry": _task_card_text(root, task_data),
+        }
+        _attach_mise_pre(root, contract, task_data)
+    except typer.Exit as exc:
+        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
+    return contract
+
+
 @red_app.command(name="pre")
 def red_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
 ) -> None:
     root = Path.cwd()
-    task_data, ledger_path = _resolve_task_context(task, root)
-
-    spec_dir = str(ledger_path.parent)
-    # Mirror green_pre's task_entry: the manual RED agent gets the card
-    # (including **Judge Feedback** history) through the contract because
-    # slash-command bodies do no placeholder substitution.
-    contract = {
-        "task_id": task_data.get("id", ""),
-        **_pre_layer_contract(root, task_data),
-        "lint_command": "mise run lint",
-        "spec_dir": spec_dir,
-        "task_entry": _task_card_text(root, task_data),
-    }
-    doctor = _attach_mise_pre(root, contract, task_data)
+    try:
+        contract = _red_pre_kernel(task, root)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail or task or ''}".rstrip())
+        raise typer.Exit(code=1) from exc
     print(json.dumps(contract, ensure_ascii=False))
-    _fail_pre_if_doctor_failed(doctor)
+    doctor = contract.get("doctor")
+    _fail_pre_if_doctor_failed(doctor if isinstance(doctor, dict) else None)  # type: ignore[arg-type]
     raise typer.Exit(code=0)
 
 
