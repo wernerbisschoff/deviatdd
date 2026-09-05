@@ -811,6 +811,7 @@ class AgentBackend:
                 exit_code=proc.returncode,
             )
         manifest_text = ""
+        response_errors: list[str] = []
         for raw_line in stdout.splitlines():
             line = raw_line.strip()
             if not line:
@@ -822,6 +823,12 @@ class AgentBackend:
             if not isinstance(event, dict):
                 continue
             if event.get("type") != "agent_end":
+                if event.get("type") == "response" and not event.get("success", True):
+                    for key in ("error", "message"):
+                        value = event.get(key)
+                        if isinstance(value, str) and value.strip():
+                            response_errors.append(value.strip())
+                            break
                 continue
             message = event.get("message")
             if not isinstance(message, dict):
@@ -830,6 +837,15 @@ class AgentBackend:
             if isinstance(content, str):
                 manifest_text = content
                 break
+        if not manifest_text:
+            parts = [*response_errors]
+            if stderr.strip():
+                parts.append(stderr)
+            raise EmptyOutputError(
+                "\n".join(parts)
+                if parts
+                else f"Agent backend '{backend_name}' returned empty output"
+            )
         return manifest_text, stderr
 
     def invoke(
