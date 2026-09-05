@@ -7404,12 +7404,9 @@ def _red_pre_kernel(
         raise KernelError("CONTRACT_REJECTED", "doctored contract input")
     try:
         resolved = _resolve_task_context(task_id, root)
-    except typer.Exit as exc:
-        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
-    if resolved is None:
-        raise KernelError("TASK_NOT_FOUND", str(task_id or ""))
-    task_data, ledger_path = resolved
-    try:
+        if resolved is None:
+            raise KernelError("TASK_NOT_FOUND", str(task_id or ""))
+        task_data, ledger_path = resolved
         contract: dict[str, object] = {
             "task_id": task_data.get("id", ""),
             **_pre_layer_contract(root, task_data),
