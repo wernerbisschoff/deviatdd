@@ -1,0 +1,1 @@
+{"id":"TSK-043-01","issue_id":"ISS-043","description":"Detect multi-layer contract and stop RED pre before spawn","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-05T09:38:12.589266Z","security_profile":null,"acceptance_criteria":null}
