@@ -702,7 +702,31 @@ def _invoke_agent(
         # by the phase runner as a fallback diagnostic when the
         # manifest's `rationale` is empty (the prior "unknown" symptom).
         tail_lines = [line for line in raw_lines if line.strip()][-50:]
-        return _AgentInvokeResult(manifest, "\n".join(tail_lines))
+        tail = "\n".join(tail_lines)
+        if manifest is not None:
+            status_norm = str(getattr(manifest, "status", "") or "").upper()
+            verdict = str(getattr(manifest, "verdict", "") or "")
+            next_action = str(getattr(manifest, "next_action", None) or "")
+            if (
+                status_norm == "PASS"
+                and verdict == "COMPLIANCE_VIOLATION"
+                and next_action == "revert_red"
+            ):
+                msg = (
+                    f"HANDOVER_INVALID contradiction for {task_id}: status PASS "
+                    f"with verdict {verdict} and next_action {next_action}"
+                )
+                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg)
+                raise PhaseFailedError(msg)
+            rationale = getattr(manifest, "rationale", None)
+            if status_norm == "ERROR" and not (rationale or "").strip():
+                detail = tail if tail else "[empty-tail: missing rationale]"
+                msg = (
+                    f"HANDOVER_INVALID ERROR without rationale for {task_id}: {detail}"
+                )
+                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg)
+                raise PhaseFailedError(msg)
+        return _AgentInvokeResult(manifest, tail)
     except AgentBinaryNotFoundError:
         c.print(
             f"  [yellow]AGENT_NOT_AVAILABLE[/] {backend_name} not found on PATH, skipping"
@@ -734,7 +758,10 @@ def _invoke_agent(
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
         _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
         _raise_schema_limit_phase_error(exc, phase, task_id)
-        return _AgentInvokeResult(None, "")
+        tail = "\n".join([line for line in raw_lines if line.strip()][-50:])
+        return _AgentInvokeResult(None, tail)
+    except PhaseFailedError:
+        raise
     except Exception as exc:
         c.print(f"  [yellow]AGENT_SKIP[/] {exc}")
         return _AgentInvokeResult(None, "")
