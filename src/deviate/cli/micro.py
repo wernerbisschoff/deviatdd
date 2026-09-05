@@ -631,6 +631,18 @@ def _unpack_agent_invoke(
     return manifest, tail, bool(getattr(result, "timed_out", False))
 
 
+_FORMAT_CORRECTION_SUFFIX = (
+    "\n\nFormat correction: re-emit ONLY the handover manifest block "
+    "in the required format with no content changes."
+)
+
+
+def _correction_failure_tail_preserved(tail: str) -> bool:
+    """True when *tail* carries a plain-output diagnosis worth preserving."""
+    lowered = tail.lower()
+    return "test_defect" in lowered or "failure_kind" in lowered
+
+
 def _invoke_agent(
     prompt: str,
     c: Console,
@@ -671,13 +683,53 @@ def _invoke_agent(
             if output_callback:
                 output_callback(line)
 
-        manifest = backend.invoke(
-            prompt,
-            timeout=resolve_agent_deadline(Path.cwd()),
-            output_callback=collecting_handler,
-            model=model,
-            stall_timeout=stall_timeout,
-        )
+        try:
+            manifest = backend.invoke(
+                prompt,
+                timeout=resolve_agent_deadline(Path.cwd()),
+                output_callback=collecting_handler,
+                model=model,
+                stall_timeout=stall_timeout,
+            )
+        except (MalformedHandoverManifestError, EmptyOutputError) as retry_exc:
+            _raise_schema_limit_phase_error(retry_exc, phase, task_id)
+            c.print(f"  [yellow]AGENT_ERROR[/] {retry_exc}")
+            _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(retry_exc))
+            try:
+                manifest = backend.invoke(
+                    prompt + _FORMAT_CORRECTION_SUFFIX,
+                    timeout=resolve_agent_deadline(Path.cwd()),
+                    output_callback=collecting_handler,
+                    model=model,
+                    stall_timeout=stall_timeout,
+                )
+            except (
+                MalformedHandoverManifestError,
+                EmptyOutputError,
+                AgentSubprocessError,
+            ) as exc2:
+                _raise_schema_limit_phase_error(exc2, phase, task_id)
+                tail2 = "\n".join([line for line in raw_lines if line.strip()][-50:])
+                if _correction_failure_tail_preserved(tail2):
+                    return _AgentInvokeResult(None, tail2)
+                detail2 = tail2 if tail2 else "[empty-tail: correction retry missed]"
+                msg2 = (
+                    f"HANDOVER_INVALID format correction failed for {task_id}: "
+                    f"{exc2}: {detail2}"
+                )
+                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg2)
+                raise PhaseFailedError(msg2) from exc2
+            if manifest is None:
+                tail2 = "\n".join([line for line in raw_lines if line.strip()][-50:])
+                if _correction_failure_tail_preserved(tail2):
+                    return _AgentInvokeResult(None, tail2)
+                detail2 = tail2 if tail2 else "[empty-tail: correction retry missed]"
+                msg2 = (
+                    f"HANDOVER_INVALID format correction failed for {task_id}: "
+                    f"retry returned no valid manifest: {detail2}"
+                )
+                _log_run("HANDOVER_INVALID", task_id=task_id, phase=phase, error=msg2)
+                raise PhaseFailedError(msg2)
         c.print("")
         status = getattr(manifest, "status", "?")
         verdict = getattr(manifest, "verdict", "")
@@ -751,11 +803,7 @@ def _invoke_agent(
             partial_stdout=partial_output,
         )
         return _AgentInvokeResult(None, partial_output, timed_out=True)
-    except (
-        AgentSubprocessError,
-        MalformedHandoverManifestError,
-        EmptyOutputError,
-    ) as exc:
+    except AgentSubprocessError as exc:
         c.print(f"  [yellow]AGENT_ERROR[/] {exc}")
         _log_run("AGENT_ERROR", task_id=task_id, phase=phase, error=str(exc))
         _raise_schema_limit_phase_error(exc, phase, task_id)
