@@ -1036,3 +1036,70 @@ class TestSetupMultiAgentSelection:
             _validate_agent_choice("not-an-agent")
         with pytest.raises(typer.BadParameter):
             _validate_agent_choice("pi,not-an-agent")
+
+
+class TestSetup047SharedSkillCopy:
+    """TSK-047-02 RED: one shared skill copy for codex plus pi."""
+
+    @pytest.mark.behavioral
+    def test_dual_install_writes_one_shared_copy(self, tmp_path: Path) -> None:
+        from deviate.cli import _install_deviatdd_skill
+
+        with chdir(tmp_path):
+            _install_deviatdd_skill(tmp_path, ["codex", "pi"])
+        shared = tmp_path / ".agents" / "skills" / "deviatdd" / "SKILL.md"
+        stale = tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md"
+        assert shared.is_file()
+        assert not stale.exists()
+        copies = list(tmp_path.glob("*/skills/deviatdd/SKILL.md"))
+        copies += list((tmp_path / ".agents").glob("skills/deviatdd/SKILL.md"))
+        assert len({p.resolve() for p in copies if p.is_file()}) == 1
+
+    @pytest.mark.behavioral
+    def test_rerun_over_two_copy_layout_converges(self, tmp_path: Path) -> None:
+        from deviate.cli import _install_deviatdd_skill
+
+        old_shared = tmp_path / ".agents" / "skills" / "deviatdd" / "SKILL.md"
+        old_stale = tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md"
+        old_shared.parent.mkdir(parents=True)
+        old_stale.parent.mkdir(parents=True)
+        old_shared.write_text("shared-body", encoding="utf-8")
+        old_stale.write_text("stale-body", encoding="utf-8")
+        (tmp_path / ".pi" / "prompts" / "deviate-red.md").parent.mkdir(parents=True)
+        (tmp_path / ".pi" / "prompts" / "deviate-red.md").write_text(
+            "x", encoding="utf-8"
+        )
+        with chdir(tmp_path):
+            _install_deviatdd_skill(tmp_path, ["codex", "pi"])
+        assert (tmp_path / ".agents" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        assert not (tmp_path / ".pi" / "skills" / "deviatdd").exists()
+        assert (tmp_path / ".pi" / "prompts" / "deviate-red.md").is_file()
+
+    @pytest.mark.behavioral
+    def test_cleanup_preserves_sibling_skills(self, tmp_path: Path) -> None:
+        from deviate.cli import _install_deviatdd_skill
+
+        sibling = tmp_path / ".pi" / "skills" / "other" / "SKILL.md"
+        sibling.parent.mkdir(parents=True)
+        sibling.write_text("keep", encoding="utf-8")
+        with chdir(tmp_path):
+            _install_deviatdd_skill(tmp_path, ["codex", "pi"])
+        assert sibling.is_file()
+        assert sibling.read_text(encoding="utf-8") == "keep"
+        assert not (tmp_path / ".pi" / "skills" / "deviatdd").exists()
+
+    @pytest.mark.behavioral
+    def test_single_agent_and_global_roots_unchanged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from deviate.cli import _agent_install_root, _install_deviatdd_skill
+
+        with chdir(tmp_path):
+            _install_deviatdd_skill(tmp_path, ["pi"])
+        assert (tmp_path / ".pi" / "skills" / "deviatdd" / "SKILL.md").is_file()
+        assert not (tmp_path / ".agents" / "skills" / "deviatdd" / "SKILL.md").exists()
+        fake_home = tmp_path / "homeuser"
+        fake_home.mkdir()
+        monkeypatch.setattr("deviate.cli._user_home", lambda: fake_home)
+        assert _agent_install_root(tmp_path, "global") == fake_home
+        assert _agent_install_root(tmp_path, "local") == tmp_path
