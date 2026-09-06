@@ -183,7 +183,7 @@ Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their doc
 
 ```yaml
 phase: JUDGE
-status: "PASS"
+status: "FAILURE"
 task_id: "{TASK_ID}"
 next_phase: "IDLE"
 next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
