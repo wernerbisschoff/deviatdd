@@ -106,6 +106,7 @@
 
 ---
 
+  - **Judge Feedback**: The next RED attempt must: read manual refactor pre output from result.stdout (with capsys fallback as in the sibling AC-PLAN-009 test), never from bare capsys.readouterr().out alone; invoke the CLI via CliRunner, parse the first JSON line, and assert each shared eight-field key equals _refactor_pre_kernel output for the same task; retain the remaining AC-PLAN-009, AC-PLAN-011, and AC-PLAN-012 assertions unchanged.
 ## Phase 3: Thin wrappers and auto delegation
 **Goal**: Convert manual commands to single-kernel wrappers and delegate auto phases
 
