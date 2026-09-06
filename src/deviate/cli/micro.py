@@ -7569,6 +7569,175 @@ def _refactor_post_kernel(
     return KernelOutcome(token="REFACTOR_POST_OK")
 
 
+def _red_post_kernel(
+    task_id: str | None,
+    root: Path,
+) -> KernelOutcome:
+    """Shared RED post side-effect kernel for manual and auto surfaces."""
+    tid = (task_id or "").strip()
+    if tid and not re.match(r"^TSK-\d{3}-\d{2}$", tid):
+        raise KernelError("TASK_NOT_FOUND", f"Unrecognised task ID format: {tid}")
+    if not _test_command_candidates(root):
+        raise KernelError(
+            "TEST_NOT_FOUND",
+            "No test command configured and no test project detected",
+        )
+    dot_dir = root / ".deviate"
+    session_path = dot_dir / "session.json"
+    early_session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    pending_for_cmd = _resolve_first_pending(root, early_session.active_issue_id or "")
+    proc = _run_test_cmd(root, pending_for_cmd[0] if pending_for_cmd else None)
+    if proc.returncode == 0:
+        raise KernelError(
+            "RedMustPassError",
+            "Test passed, expected a failing test "
+            "(no new failing test was produced). Fix the test so it fails "
+            "against the current implementation. If the required behavior "
+            "already exists, declare `failure_kind: already_satisfied` in "
+            "the RED handover manifest so `deviate micro run` adjudicates "
+            "the task as COMPLETED.inant",
+        )
+    fmt = _run_format_cmd(root)
+    if fmt.returncode != 0:
+        if fmt.stderr.strip():
+            console.print(f"[yellow]Format stderr:[/] {fmt.stderr.strip()}")
+        if fmt.stdout.strip():
+            console.print(f"[yellow]Format stdout:[/] {fmt.stdout.strip()}")
+    session = early_session
+    issue_id = session.active_issue_id or ""
+    pending = (
+        pending_for_cmd
+        if pending_for_cmd is not None
+        else _resolve_first_pending(root, issue_id)
+    )
+    if pending is None:
+        raise KernelError("NO_PENDING_TASKS", "No PENDING task found for active issue")
+    pending_record, ledger_path = pending
+    task_uuid = pending_record.get("id", "")
+    expected_task_id = (task_id or "").strip()
+    if expected_task_id and expected_task_id != task_uuid:
+        raise KernelError(
+            "TASK_ID_MISMATCH",
+            f"--task-id {expected_task_id} does not match pending task {task_uuid}",
+        )
+    try:
+        record = TaskRecord.model_validate(pending_record)
+        record.status = "RED"  # type: ignore[assignment]
+        append_task_transition(record, ledger_path)
+    except Exception as exc:
+        raise KernelError("LEDGER_UPDATE_FAILED", str(exc)) from exc
+    session = session.force_transition_to("RED")
+    session.save(session_path)
+    scope = _build_scope(issue_id, task_uuid)
+    _commit_phase(
+        f"test({scope}): RED phase - failing test",
+        root,
+        no_verify=True,
+        phase="red",
+    )
+    head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    session.red_commit_sha = head_sha
+    session.save(session_path)
+    return KernelOutcome(token="RED_POST_OK")
+
+
+def _green_pre_kernel(
+    task_id: str | None,
+    root: Path,
+) -> dict[str, object]:
+    """Shared GREEN pre-contract kernel for manual and auto surfaces."""
+    try:
+        resolved = _resolve_task_context(task_id, root)
+        if resolved is None:
+            raise KernelError("TASK_NOT_FOUND", str(task_id or ""))
+        task_data, ledger_path = resolved
+    except typer.Exit as exc:
+        if getattr(exc, "code", 1) == 0:
+            raise
+        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
+    test_files = _find_test_files(root)
+    src_files = _find_source_files(root)
+    contract_task_id = task_data.get("id", "")
+    task_entry = ""
+    tasks_md = _find_tasks_md_for_issue(root, task_data.get("issue_id", ""))
+    if tasks_md is not None:
+        content = tasks_md.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        capture = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- ") and contract_task_id in stripped:
+                capture = True
+            elif capture and re.match(r"- (?:\[.\]\s+)?TSK-\d{3}-\d{2}:", stripped):
+                break
+            if capture:
+                task_entry += line + "\n"
+    contract: dict[str, object] = {
+        "task_id": contract_task_id,
+        "task_entry": task_entry.strip(),
+        "test_file": str(test_files[0]) if test_files else "",
+        "implementation_targets": [str(f) for f in src_files],
+        **_pre_layer_contract(root, task_data),
+    }
+    _attach_mise_pre(root, contract, task_data)
+    return contract
+
+
+def _judge_pre_kernel(
+    task_id: str | None = None,
+    root: Path | None = None,
+) -> dict[str, object]:
+    """Shared JUDGE pre-contract kernel for manual and auto surfaces."""
+    work = root or Path.cwd()
+    tid = (task_id or "").strip()
+    if tid:
+        if not re.match(r"^TSK-\d{3}-\d{2}$", tid):
+            raise KernelError("TASK_NOT_FOUND", f"Unrecognised task ID format: {tid}")
+        if _find_task_record(work, tid) is None:
+            raise KernelError("TASK_NOT_FOUND", tid)
+    changed = _detect_phase_changes(work)
+    protected = _find_protected_modules(work)
+    violations: list[dict[str, str]] = []
+    for changed_file in changed:
+        for protected_path in protected:
+            changed_normalized = changed_file.rstrip("/")
+            if changed_normalized == protected_path:
+                violations.append(
+                    {"file": changed_file, "protected_module": protected_path}
+                )
+            elif protected_path.startswith(changed_normalized + "/"):
+                violations.append(
+                    {"file": changed_file, "protected_module": protected_path}
+                )
+    return {
+        "verdict": "COMPLIANCE_VIOLATION" if violations else "COMPLIANCE_PASS",
+        "details": violations,
+    }
+
+
+def _judge_post_kernel(
+    task_id: str | None = None,
+    root: Path | None = None,
+) -> KernelOutcome:
+    """Shared JUDGE post side-effect kernel for manual and auto surfaces."""
+    work = root or Path.cwd()
+    tid = (task_id or "").strip()
+    if tid:
+        if not re.match(r"^TSK-\d{3}-\d{2}$", tid):
+            raise KernelError("TASK_NOT_FOUND", f"Unrecognised task ID format: {tid}")
+        if _find_task_record(work, tid) is None:
+            raise KernelError("TASK_NOT_FOUND", tid)
+    return KernelOutcome(token="JUDGE_POST_OK")
+
+
 @red_app.command(name="pre")
 def red_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
@@ -8613,87 +8782,12 @@ def red_post(
     ),
 ) -> None:
     root = Path.cwd()
-    if not _test_command_candidates(root):
-        console.print(
-            "[red]TEST_NOT_FOUND[/] No test command configured and no test project detected"
-        )
-        raise typer.Exit(code=1)
-
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
-    early_session = (
-        SessionState.load(session_path) if session_path.exists() else SessionState()
-    )
-    pending_for_cmd = _resolve_first_pending(root, early_session.active_issue_id or "")
-    proc = _run_test_cmd(root, pending_for_cmd[0] if pending_for_cmd else None)
-
-    if proc.returncode == 0:
-        console.print(
-            "[red]RedMustPassError:[/] Test passed, expected a failing test "
-            "(no new failing test was produced). Fix the test so it fails "
-            "against the current implementation. If the required behavior "
-            "already exists, declare `failure_kind: already_satisfied` in "
-            "the RED handover manifest so `deviate micro run` adjudicates "
-            "the task as COMPLETED."
-        )
-        raise typer.Exit(code=1)
-
-    fmt = _run_format_cmd(root)
-    if fmt.returncode != 0:
-        console.print(f"[yellow]Format stderr:[/] {fmt.stderr.strip()}")
-        if fmt.stdout.strip():
-            console.print(f"[yellow]Format stdout:[/] {fmt.stdout.strip()}")
-
-    session = early_session
-    issue_id = session.active_issue_id or ""
-    pending = (
-        pending_for_cmd
-        if pending_for_cmd is not None
-        else _resolve_first_pending(root, issue_id)
-    )
-    if pending is None:
-        console.print("[red]NO_PENDING_TASKS[/] No PENDING task found for active issue")
-        raise typer.Exit(code=1)
-
-    pending_record, ledger_path = pending
-    task_uuid = pending_record.get("id", "")
-    expected_task_id = (task_id or "").strip()
-    if expected_task_id and expected_task_id != task_uuid:
-        console.print(
-            f"[red]TASK_ID_MISMATCH[/] --task-id {expected_task_id} does not "
-            f"match pending task {task_uuid}"
-        )
-        raise typer.Exit(code=1)
-
     try:
-        record = TaskRecord.model_validate(pending_record)
-        record.status = "RED"  # type: ignore[assignment]
-        append_task_transition(record, ledger_path)
-    except Exception as e:
-        console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
-        raise typer.Exit(code=1)
-
-    session = session.force_transition_to("RED")
-    session.save(session_path)
-    scope = _build_scope(issue_id, task_uuid)
-    _commit_phase(
-        f"test({scope}): RED phase - failing test",
-        root,
-        no_verify=True,
-        phase="red",
-    )
-
-    head_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    ).stdout.strip()
-    session.red_commit_sha = head_sha
-    session.save(session_path)
-
-    console.print("[green]RED_POST_OK[/]")
+        outcome = _red_post_kernel(task_id, root)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail}".rstrip())
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]{outcome.token}[/]")
     raise typer.Exit(code=0)
 
 
@@ -8702,101 +8796,34 @@ def green_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
 ) -> None:
     root = Path.cwd()
-    task_data, ledger_path = _resolve_task_context(task, root)
-
-    test_files = _find_test_files(root)
-    src_files = _find_source_files(root)
-
-    task_id = task_data.get("id", "")
-    task_entry = ""
-    tasks_md = _find_tasks_md_for_issue(root, task_data.get("issue_id", ""))
-    if tasks_md is not None:
-        content = tasks_md.read_text(encoding="utf-8")
-        lines = content.splitlines()
-        capture = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("- ") and task_id in stripped:
-                capture = True
-            elif capture and re.match(r"- (?:\[.\]\s+)?TSK-\d{3}-\d{2}:", stripped):
-                break
-            if capture:
-                task_entry += line + "\n"
-
-    contract = {
-        "task_id": task_id,
-        "task_entry": task_entry.strip(),
-        "test_file": str(test_files[0]) if test_files else "",
-        "implementation_targets": [str(f) for f in src_files],
-        **_pre_layer_contract(root, task_data),
-    }
-    doctor = _attach_mise_pre(root, contract, task_data)
+    try:
+        contract = _green_pre_kernel(task, root)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail or task or ''}".rstrip())
+        raise typer.Exit(code=1) from exc
     print(json.dumps(contract, ensure_ascii=False))
-    _fail_pre_if_doctor_failed(doctor)
+    doctor = contract.get("doctor")
+    _fail_pre_if_doctor_failed(doctor if isinstance(doctor, dict) else None)  # type: ignore[arg-type]
     raise typer.Exit(code=0)
 
 
 @green_app.command(name="post")
 def green_post() -> None:
     root = Path.cwd()
-    if not _test_command_candidates(root):
-        console.print(
-            "[red]TEST_NOT_FOUND[/] No test command configured and no test project detected"
-        )
-        raise typer.Exit(code=1)
-
-    dot_dir = root / ".deviate"
-    session_path = dot_dir / "session.json"
+    session_path = root / ".deviate" / "session.json"
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
-
     issue_id = session.active_issue_id or ""
-
-    # Verify the specific task has a RED entry (RED phase completed)
     red_task = _resolve_latest_task(root, issue_id, "RED")
-    if red_task is None:
-        console.print(
-            "[red]MISSING_RED_PHASE[/] No RED transition found — RED phase must complete before GREEN"
-        )
-        raise typer.Exit(code=1)
-
-    task_uuid = red_task[0].get("id", "")
-
-    # Append GREEN transition for this specific task
+    tid = red_task[0].get("id", "") if red_task is not None else ""
     try:
-        record = TaskRecord.model_validate(red_task[0])
-        record.status = "GREEN"  # type: ignore[assignment]
-        append_task_transition(record, red_task[1])
-    except Exception as e:
-        console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
-        raise typer.Exit(code=1)
-
-    session = session.force_transition_to("GREEN")
-    session.save(session_path)
-
-    scope = _build_scope(issue_id, task_uuid)
-    status_check = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=_git_env(),
-    )
-    if not status_check.stdout.strip():
-        console.print("[green]GREEN_POST_OK[/]")
-        raise typer.Exit(code=0)
-
-    committed = _commit_phase(
-        f"feat({scope}): GREEN phase - implementation passes tests", root
-    )
-
-    if committed:
-        console.print("[green]GREEN_POST_OK[/]")
-    else:
-        console.print("[red]COMMIT_FAILED[/]")
-
-    raise typer.Exit(code=0 if committed else 1)
+        outcome = _green_post_kernel(root, tid)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail}".rstrip())
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]{outcome.token}[/]")
+    raise typer.Exit(code=0)
 
 
 # ---------------------------------------------------------------------------
@@ -8854,36 +8881,13 @@ def _find_protected_modules(root: Path) -> list[str]:
 @judge_app.command(name="pre")
 def judge_pre() -> None:
     root = Path.cwd()
-
+    try:
+        verdict = _judge_pre_kernel(root=root)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail}".rstrip())
+        raise typer.Exit(code=1) from exc
     if not _load_skill_content("JUDGE"):
         console.print("[yellow]SKILL_NOT_FOUND[/] deviate-judge")
-
-    changed = _detect_phase_changes(root)
-
-    protected = _find_protected_modules(root)
-    violations: list[dict[str, str]] = []
-    for changed_file in changed:
-        for protected_path in protected:
-            changed_normalized = changed_file.rstrip("/")
-            if changed_normalized == protected_path:
-                violations.append(
-                    {
-                        "file": changed_file,
-                        "protected_module": protected_path,
-                    }
-                )
-            elif protected_path.startswith(changed_normalized + "/"):
-                violations.append(
-                    {
-                        "file": changed_file,
-                        "protected_module": protected_path,
-                    }
-                )
-
-    verdict = {
-        "verdict": "COMPLIANCE_VIOLATION" if violations else "COMPLIANCE_PASS",
-        "details": violations,
-    }
     print(json.dumps(verdict, ensure_ascii=False))
     raise typer.Exit(code=0)
 
@@ -8943,6 +8947,7 @@ def judge_post(
 ) -> None:
     """Apply JUDGE verdict side effects: revert, tasks.md feedback, commit."""
     root = Path.cwd()
+    _ = _judge_post_kernel(task_id=None, root=root)
     yaml_text = _read_judge_handover(manifest)
     try:
         handover = AgentBackend.parse_output(yaml_text, "cli")
