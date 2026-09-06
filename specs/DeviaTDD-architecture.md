@@ -937,7 +937,7 @@ standard `AgentBackend.invoke()` contract with these customisations:
    writes that layout under `~/.{agent}/…` (Codex: `~/.agents/skills`)
    instead of the project; the choice is not persisted in `config.toml`.
    Pi discovers commands from `.pi/prompts/` natively per its documented
-   slash-command convention. The corresponding project-root `.gitignore`
+   slash-command convention. The corresponding local `.git/info/exclude`
    entries (``*/commands/deviate-*.md``, ``*/prompts/deviate-*.md``) are added by
    `_ensure_root_gitignore` (see `src/deviate/cli/__init__.py:638`),
    preventing the file-copied commands from being committed. The
@@ -947,9 +947,9 @@ standard `AgentBackend.invoke()` contract with these customisations:
    `.factory/commands/`, `.pi/prompts/`) plus any future agent, but
    tight enough NOT to match the deviatdd project's own command
    sources at ``src/deviate/prompts/commands/deviate-*.md`` (three
-   directories deep). The root gitignore is the single source of
-   truth for all agent-platform exclusions; per-agent `.gitignore`
-   files were consolidated.
+   directories deep). The local `.git/info/exclude` is the single
+   source of truth for all agent-platform exclusions; per-agent
+   `.gitignore` files were consolidated.
    **DeviaTDD does NOT write to `~/.pi/agent/`** — the operator's global Pi config
    is out of scope. Idempotency: re-running setup with identical command content
    is a no-op (`install_command` compares file content before writing). Total cost
@@ -1118,14 +1118,15 @@ backticked event name in the Troubleshooting section is a real
 emitted event — guards against invented event names. Per-event
 field schemas live in `micro.py` itself, not duplicated here.
 
-**`.gitignore` exclusions:** `_ensure_root_gitignore` adds
+**`.git/info/exclude` exclusions:** `_ensure_root_gitignore` adds
 `*/skills/deviatdd/` to the entries tuple alongside
 `*/commands/deviate-*.md` and `*/prompts/deviate-*.md`. The
 single-level wildcard covers every selected-agent skill install
 (`.claude/`, `.opencode/`, `.factory/`, `.pi/`, `.omp/`, `.agents/`)
 with one pattern. `*/skills/deviate-*/` covers Codex per-command
 skill dirs. `.worktrees/`, `.deviate/`, and `.zvec-grep/` exclude local
-workspace, runtime, and search-index state. The single-level prefix
+workspace, runtime, and search-index state. The shared `.gitignore`
+is never touched. The single-level prefix
 (`*/`, not `**/`) scopes agent patterns to the project root. It never matches
 the deviatdd project's source at `src/deviate/prompts/skills/deviatdd/`.
 

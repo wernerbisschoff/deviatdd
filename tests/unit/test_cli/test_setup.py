@@ -1173,3 +1173,75 @@ class TestSetup047SharedSkillCopy:
         monkeypatch.setattr("deviate.cli._user_home", lambda: fake_home)
         assert _agent_install_root(tmp_path, "global") == fake_home
         assert _agent_install_root(tmp_path, "local") == tmp_path
+
+
+class TestSetupLocalExclude:
+    """``deviate setup`` excludes personal artifacts via ``.git/info/exclude``.
+
+    Agent installs are operator-local: setup must never create or modify the
+    shared root ``.gitignore`` inside a git repo. Legacy DeviaTDD entries
+    from older setups are stripped from ``.gitignore`` on upgrade.
+    """
+
+    _ENTRIES = (
+        "*/commands/deviate-*.md",
+        "*/prompts/deviate-*.md",
+        "*/skills/deviatdd/",
+        "*/skills/deviate-*/",
+        ".worktrees/",
+        ".deviate/",
+        ".zvec-grep/",
+    )
+
+    def _exclude(self, repo: Path) -> Path:
+        return repo / ".git" / "info" / "exclude"
+
+    def test_setup_writes_exclude_not_gitignore(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _mock_agent_dirs(tmp_git_repo, monkeypatch)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+        assert not (tmp_git_repo / ".gitignore").exists()
+        content = self._exclude(tmp_git_repo).read_text(encoding="utf-8")
+        for entry in self._ENTRIES:
+            assert entry in content
+        check = subprocess.run(
+            ["git", "check-ignore", ".deviate/"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            capture_output=True,
+            text=True,
+        )
+        assert check.returncode == 0
+
+    def test_setup_exclude_idempotent(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _mock_agent_dirs(tmp_git_repo, monkeypatch)
+        with chdir(tmp_git_repo):
+            assert runner.invoke(cli, ["setup", "--agent", "opencode"]).exit_code == 0
+            assert runner.invoke(cli, ["setup", "--agent", "opencode"]).exit_code == 0
+        content = self._exclude(tmp_git_repo).read_text(encoding="utf-8")
+        for entry in self._ENTRIES:
+            assert content.count(entry) == 1, f"{entry} duplicated in .git/info/exclude"
+
+    def test_setup_strips_legacy_gitignore_entries(
+        self, tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_git_repo / ".gitignore").write_text(
+            "# user content\ncustom-thing/\n*/commands/deviate-*.md\n.deviate/\n",
+            encoding="utf-8",
+        )
+        _mock_agent_dirs(tmp_git_repo, monkeypatch)
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["setup", "--agent", "opencode"])
+            assert result.exit_code == 0, result.output
+        root_gi = (tmp_git_repo / ".gitignore").read_text(encoding="utf-8")
+        assert "# user content" in root_gi
+        assert "custom-thing/" in root_gi
+        for entry in self._ENTRIES:
+            assert entry not in root_gi.splitlines(), (
+                f"{entry} left in shared .gitignore"
+            )

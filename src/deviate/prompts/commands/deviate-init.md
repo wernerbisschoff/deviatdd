@@ -133,7 +133,7 @@ deviate init post
 The post-script:
 1. Validates `mise.toml` exists and has valid tasks
 2. Validates `specs/` directory exists
-3. Commits all init artifacts, including `.gitignore`
+3. Commits all init artifacts
 4. Emits status JSON to stdout
 
 **IMPORTANT**: Allocate at least 180s timeout for the post-script (git hooks may run).

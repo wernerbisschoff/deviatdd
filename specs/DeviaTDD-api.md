@@ -110,10 +110,10 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   mechanism); `.omp/` →
   `.omp/prompts/` (OMP is an extensible wrapper around the Pi executor; it
   discovers slash commands from `.omp/prompts/`). All five command
-  directories are excluded from version control via the project-root
-  `.gitignore` (see `_ensure_root_gitignore` in `src/deviate/cli/__init__.py`),
-  which also ignores `.deviate/`, `.worktrees/`, and `.zvec-grep/` by default.
-  Additionally, both `deviate setup` and `deviate init pre` provision a project-root
+  directories are excluded from version control via the local
+  `.git/info/exclude` (see `_ensure_root_gitignore` in `src/deviate/cli/__init__.py`),
+  which also excludes `.deviate/`, `.worktrees/`, and `.zvec-grep/` by default.
+  The shared root `.gitignore` is never touched. Additionally, both `deviate setup` and `deviate init pre` provision a project-root
   `.gitattributes` declaring `merge=union` for `specs/issues.jsonl` and
   `specs/**/tasks.jsonl` (see `_ensure_root_gitattributes` at
   `src/deviate/cli/__init__.py:675` and the `DEVIATE_GITATTRIBUTES_SEED`
@@ -199,7 +199,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   * `.deviate/session.json` — Current session state snapshot
   * `.deviate/.gitignore` — Excludes session.json and runtime state
     directories from version control
-  * `<workdir>/.gitignore` — Updated with seven concise DeviaTDD
+  * `<gitdir>/info/exclude` — Updated with seven concise DeviaTDD
     exclusions: `*/commands/deviate-*.md`,
     `*/prompts/deviate-*.md` (covers every supported agent directory
     — ``.claude/commands/``, ``.opencode/commands/``,
@@ -356,7 +356,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   backticked event name in the Troubleshooting section is a real
   emitted event — guards against invented event names. Per-event
   field schemas are documented in `micro.py`, not duplicated here.
-* **`.gitignore` exclusions:** `_ensure_root_gitignore` adds
+* **`.git/info/exclude` exclusions:** `_ensure_root_gitignore` adds
   `*/skills/deviatdd/` to the entries tuple alongside
   `*/commands/deviate-*.md` and `*/prompts/deviate-*.md`. The
   single-level wildcard covers every selected-agent skill install

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.resources
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import typer
@@ -1517,17 +1518,60 @@ def _ensure_root_gitattributes(workdir: Path) -> None:
         console.print("  [green]CREATE[/] .gitattributes with union-merge rules")
 
 
+def _resolve_git_dir(workdir: Path) -> Path | None:
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=workdir,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        out = ""
+    if not out:
+        fallback = workdir / ".git"
+        return fallback if fallback.is_dir() else None
+    cand = Path(out)
+    return cand if cand.is_absolute() else workdir / cand
+
+
+def _ensure_root_gitignore_fallback(workdir: Path, entries: tuple[str, ...]) -> None:
+    path = workdir / ".gitignore"
+    if path.exists():
+        lines = path.read_text(encoding="utf-8").splitlines()
+        missing = [e for e in entries if e not in lines]
+        if not missing:
+            return
+        merged = list(lines)
+        if merged and merged[-1].strip():
+            merged.append("")
+        merged.extend(missing)
+        path.write_text("\n".join(merged) + "\n", encoding="utf-8")
+    else:
+        path.write_text("\n".join(entries) + "\n", encoding="utf-8")
+    console.print(f"  [green]CREATE[/] .gitignore with {len(entries)} entries")
+
+
+def _strip_root_gitignore_entries(workdir: Path, entries: tuple[str, ...]) -> None:
+    path = workdir / ".gitignore"
+    if not path.exists():
+        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    wanted = set(entries)
+    kept = [ln for ln in lines if ln not in wanted]
+    if len(kept) != len(lines):
+        path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        console.print("  [green]UPDATE[/] .gitignore removed DeviaTDD personal entries")
+
+
 def _ensure_root_gitignore(workdir: Path) -> None:
-    """Update the project-root ``.gitignore`` to exclude DeviaTDD-installed
-    artifacts and workspace state on all agent platforms.
-    Seven entry groups must not be committed:
-    - ``deviate-*`` commands under ``<agent>/commands/`` and
-      ``<agent>/prompts/`` — the core DeviaTDD command library.
-    - The ``deviatdd`` skill under ``<agent>/skills/deviatdd/``.
-    - Codex per-command skills under ``.agents/skills/deviate-*/``.
-    - ``.worktrees/`` — isolated task worktrees managed by DeviaTDD.
-    - ``.deviate/`` — per-project runtime state and local config.
-    - ``.zvec-grep/`` — local zvec-grep search index state.
+    """Exclude DeviaTDD personal artifacts via ``.git/info/exclude``.
+
+    The seven entry groups (agent commands/prompts/skills, ``.worktrees/``,
+    ``.deviate/``, ``.zvec-grep/``) are operator-local and must never dirty
+    the shared ``.gitignore``. Entries already present in a root
+    ``.gitignore`` from older setups are removed. Outside a git repo,
+    falls back to the previous ``.gitignore`` provisioning.
     """
     entries = (
         "*/commands/deviate-*.md",
@@ -1538,22 +1582,26 @@ def _ensure_root_gitignore(workdir: Path) -> None:
         ".deviate/",
         ".zvec-grep/",
     )
-    gitignore_path = workdir / ".gitignore"
-    if gitignore_path.exists():
-        content = gitignore_path.read_text(encoding="utf-8")
-        existing_lines = content.splitlines()
-        missing = [entry for entry in entries if entry not in existing_lines]
-        if not missing:
-            return
-        merged = list(existing_lines)
+    gitdir = _resolve_git_dir(workdir)
+    if gitdir is None:
+        _ensure_root_gitignore_fallback(workdir, entries)
+        return
+    exclude = gitdir / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    existing = (
+        exclude.read_text(encoding="utf-8").splitlines() if exclude.exists() else []
+    )
+    missing = [e for e in entries if e not in existing]
+    if missing:
+        merged = list(existing)
         if merged and merged[-1].strip():
             merged.append("")
         merged.extend(missing)
-        gitignore_path.write_text("\n".join(merged) + "\n", encoding="utf-8")
-        console.print(f"  [green]UPDATE[/] .gitignore added {len(missing)} entries")
-    else:
-        gitignore_path.write_text("\n".join(entries) + "\n", encoding="utf-8")
-        console.print(f"  [green]CREATE[/] .gitignore with {len(entries)} entries")
+        exclude.write_text("\n".join(merged) + "\n", encoding="utf-8")
+        console.print(
+            f"  [green]UPDATE[/] .git/info/exclude added {len(missing)} entries"
+        )
+    _strip_root_gitignore_entries(workdir, entries)
 
 
 # Command panels — keep "Run by you (start here)" at the top so first-timers
