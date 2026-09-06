@@ -107,6 +107,7 @@
 ---
 
   - **Judge Feedback**: The next RED attempt must: read manual refactor pre output from result.stdout (with capsys fallback as in the sibling AC-PLAN-009 test), never from bare capsys.readouterr().out alone; invoke the CLI via CliRunner, parse the first JSON line, and assert each shared eight-field key equals _refactor_pre_kernel output for the same task; retain the remaining AC-PLAN-009, AC-PLAN-011, and AC-PLAN-012 assertions unchanged.
+  - **Judge Feedback**: The next RED attempt must: seed a valid SessionState phase and set the ledger TaskRecord status to a non-GREEN value to exercise the _refactor_pre_kernel guard; read manual refactor pre output from result.stdout with capsys fallback as in the sibling AC-PLAN-009 test; invoke the CLI via CliRunner, parse the first JSON line, and assert each shared eight-field key equals _refactor_pre_kernel output for the same task; retain the remaining AC-PLAN-009, AC-PLAN-011, and AC-PLAN-012 assertions unchanged. Diagnostic: helper _seed builds SessionState(current_phase='PENDING') but valid phases exclude PENDING, so the seed raises ValidationError before the kernel runs; the spec edge requires a ledger-status guard, not a PENDING session phase.
 ## Phase 3: Thin wrappers and auto delegation
 **Goal**: Convert manual commands to single-kernel wrappers and delegate auto phases
 
