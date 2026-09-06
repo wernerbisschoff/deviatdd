@@ -7469,6 +7469,109 @@ def _green_post_kernel(
     return KernelOutcome(token="GREEN_POST_OK")
 
 
+def _refactor_pre_kernel(
+    task_id: str | None,
+    root: Path,
+) -> dict[str, object]:
+    """Shared REFACTOR pre-contract kernel for manual and auto surfaces."""
+    try:
+        resolved = _resolve_task_context(task_id, root)
+        if resolved is None:
+            raise KernelError("TASK_NOT_FOUND", str(task_id or ""))
+        task_data, ledger_path = resolved
+        if task_id is not None and task_data.get("status") not in (
+            "GREEN",
+            "JUDGE",
+            "REFACTOR",
+            "YELLOW",
+            "COMPLETED",
+        ):
+            raise KernelError(
+                "REFACTOR_GUARD_REJECTED",
+                f"expected GREEN, found {task_data.get('status', '')}",
+            )
+        card = _task_card_text(root, task_data)
+        contract: dict[str, object] = {
+            "status": "READY",
+            "task_id": task_data.get("id", ""),
+            "task_title": task_data.get("description", ""),
+            "task_type": _task_type_from_card(card),
+            **_pre_layer_contract(root, task_data),
+            "lint_command": _resolve_lint_command(root) or "mise run lint",
+            "spec_dir": str(ledger_path.parent),
+            "verification": _task_verification_command(root, task_data),
+            "repo_root": str(root.resolve()),
+            "git_branch": _git_branch(root),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "files_to_refactor": _resolve_files_to_refactor(root, task_data),
+        }
+        _attach_mise_pre(root, contract, task_data)
+    except typer.Exit as exc:
+        raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
+    return contract
+
+
+def _refactor_post_kernel(
+    task_id: str | None = None,
+    root: Path | None = None,
+    regression_passed: bool | None = None,
+) -> KernelOutcome:
+    """Shared REFACTOR post side-effect kernel with regression gate."""
+    if regression_passed is False:
+        raise KernelError("REFACTOR_REGRESSION_FAILED", "regression gate failed")
+    work = root or Path.cwd()
+    tid = (task_id or "").strip()
+    issue_id = ""
+    if tid:
+        found = _find_task_record(work, tid)
+        if found is not None:
+            issue_id = str(found[0].get("issue_id", ""))
+            tid = str(found[0].get("id", tid))
+    if not issue_id:
+        session_path = work / ".deviate" / "session.json"
+        session = (
+            SessionState.load(session_path) if session_path.exists() else SessionState()
+        )
+        issue_id = session.active_issue_id or ""
+    green_task = _resolve_latest_task(work, issue_id, "GREEN") if issue_id else None
+    if green_task is None and tid:
+        rec = _find_task_record(work, tid)
+        if rec is not None and rec[0].get("status") in ("GREEN", "COMPLETED"):
+            _, ledger_path = rec
+            green_task = _resolve_latest_task(
+                work, str(rec[0].get("issue_id", "")), "GREEN"
+            )
+            if green_task is None:
+                green_task = rec if rec[0].get("status") == "GREEN" else None
+            issue_id = str(rec[0].get("issue_id", issue_id))
+    if green_task is None:
+        raise KernelError("MISSING_GREEN_PHASE", "no GREEN transition found")
+    record_data, ledger_path = green_task
+    task_uuid = str(record_data.get("id", tid))
+    try:
+        record = TaskRecord.model_validate(record_data)
+        record.status = "COMPLETED"  # type: ignore[assignment]
+        append_task_transition(record, ledger_path)
+    except Exception as exc:
+        raise KernelError("LEDGER_UPDATE_FAILED", str(exc)) from exc
+    session_path = work / ".deviate" / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    ).force_transition_to("IDLE")
+    session.save(session_path)
+    scope = _build_scope(issue_id, task_uuid)
+    with contextlib.redirect_stdout(io.StringIO()):
+        _commit_phase(
+            f"refactor({scope}): REFACTOR phase \u2014 code cleanup",
+            work,
+        )
+    try:
+        _append_status_transition(record_data, "COMPLETED", ledger_path)
+    except Exception:
+        pass
+    return KernelOutcome(token="REFACTOR_POST_OK")
+
+
 @red_app.command(name="pre")
 def red_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
@@ -8923,27 +9026,14 @@ def refactor_pre(
     task: str | None = typer.Option(None, "--task", "-t", help="Task ID"),
 ) -> None:
     root = Path.cwd()
-    task_data, ledger_path = _resolve_task_context(task, root)
-
-    spec_dir = str(ledger_path.parent)
-    card = _task_card_text(root, task_data)
-    contract = {
-        "status": "READY",
-        "task_id": task_data.get("id", ""),
-        "task_title": task_data.get("description", ""),
-        "task_type": _task_type_from_card(card),
-        **_pre_layer_contract(root, task_data),
-        "lint_command": _resolve_lint_command(root) or "mise run lint",
-        "spec_dir": spec_dir,
-        "verification": _task_verification_command(root, task_data),
-        "repo_root": str(root.resolve()),
-        "git_branch": _git_branch(root),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "files_to_refactor": _resolve_files_to_refactor(root, task_data),
-    }
-    doctor = _attach_mise_pre(root, contract, task_data)
+    try:
+        contract = _refactor_pre_kernel(task, root)
+    except KernelError as exc:
+        console.print(f"[red]{exc.token}[/] {exc.detail or task or ''}".rstrip())
+        raise typer.Exit(code=1) from exc
     print(json.dumps(contract, ensure_ascii=False))
-    _fail_pre_if_doctor_failed(doctor)
+    doctor = contract.get("doctor")
+    _fail_pre_if_doctor_failed(doctor if isinstance(doctor, dict) else None)  # type: ignore[arg-type]
     raise typer.Exit(code=0)
 
 
@@ -9034,27 +9124,26 @@ def _check_return_type_mismatch(filepath: str) -> list[str]:
 def refactor_post() -> None:
     root = Path.cwd()
     if not _test_command_candidates(root):
-        console.print("[yellow]NO_TESTS_TO_CHECK[/]")
+        try:
+            outcome = _refactor_post_kernel(task_id=None, root=root)
+        except KernelError as exc:
+            console.print(f"[red]{exc.token}[/] {exc.detail}".rstrip())
+            raise typer.Exit(code=1) from exc
+        console.print(f"[green]{outcome.token}[/]")
         raise typer.Exit(code=0)
-
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
     )
-
     issue_id = session.active_issue_id or ""
-
-    # Verify the specific task has a GREEN entry (GREEN phase completed)
     green_task = _resolve_latest_task(root, issue_id, "GREEN")
     if green_task is None:
         console.print(
             "[red]MISSING_GREEN_PHASE[/] No GREEN transition found — GREEN phase must complete before REFACTOR"
         )
         raise typer.Exit(code=1)
-
     task_uuid = green_task[0].get("id", "")
-
     try:
         record = TaskRecord.model_validate(green_task[0])
         record.status = "COMPLETED"  # type: ignore[assignment]
@@ -9062,16 +9151,12 @@ def refactor_post() -> None:
     except Exception as e:
         console.print(f"[red]LEDGER_UPDATE_FAILED[/] {e}")
         raise typer.Exit(code=1)
-
     session = session.force_transition_to("IDLE")
     session.save(session_path)
-
     scope = _build_scope(issue_id, task_uuid)
-
     proc_before = _run_pytest(root)
     before_returncode = proc_before.returncode
     before_output = _normalize_pytest_output(proc_before.stdout)
-
     changed = _detect_phase_changes(root)
     for changed_file in changed:
         full_path = root / changed_file
@@ -9085,34 +9170,27 @@ def refactor_post() -> None:
                     "[red]RefactorRegressionError:[/] " + "; ".join(type_issues)
                 )
                 raise typer.Exit(code=1)
-
     proc_after = _run_pytest(root)
     after_returncode = proc_after.returncode
     after_output = _normalize_pytest_output(proc_after.stdout)
-
     if after_returncode != before_returncode or after_output != before_output:
         subprocess.run(["git", "restore", "."], cwd=root, env=_git_env(), check=False)
         console.print(
             "[red]RefactorRegressionError:[/] Test regression detected after refactor"
         )
         raise typer.Exit(code=1)
-
     committed = _commit_phase(
         f"refactor({scope}): REFACTOR phase \u2014 code cleanup", root
     )
-
     if committed:
         console.print("[green]REFACTOR_POST_OK[/]")
-
         task_record = green_task[0]
         _append_status_transition(task_record, "COMPLETED", green_task[1])
         console.print(f"  [bold green]COMPLETED[/] {task_uuid}")
-
         session = session.force_transition_to("IDLE")
         session.save(session_path)
     else:
         console.print("[yellow]NOTHING_CHANGED[/]")
-
     raise typer.Exit(code=0)
 
 
