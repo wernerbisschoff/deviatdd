@@ -111,13 +111,74 @@ def _run_invoke(manifest=None, *, output_lines=(), error=None):
 
 
 @pytest.mark.behavioral
-def test_pass_with_violation_verdict_rejected_as_contradiction() -> None:
+def test_pass_violation_revert_red_coerced_to_revert_red() -> None:
+    manifest = _contradiction_manifest()
+    with patch("deviate.cli.micro._log_run") as log_run:
+        with (
+            patch.object(AgentBackend, "invoke", return_value=manifest),
+            patch(
+                "deviate.cli.micro._run_pytest",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="", stderr=""
+                ),
+            ),
+            patch("deviate.cli.micro._write_invoke_sidecars"),
+        ):
+            result = _invoke_agent(
+                "prompt",
+                Console(quiet=True),
+                backend_name="pi",
+                task_id="TSK-045-02",
+                phase="JUDGE",
+            )
+    assert result.manifest is manifest
+    assert result.manifest.next_action == "revert_red"
+    feedback = result.manifest.model_extra.get(
+        "train_feedback", getattr(result.manifest, "train_feedback", "")
+    )
+    assert feedback == "judge found a violation"
+    assert any(c.args and c.args[0] == "JUDGE_REJECTED" for c in log_run.call_args_list)
+
+
+@pytest.mark.behavioral
+def test_pass_violation_forward_action_still_raises_handover_invalid() -> None:
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="PASS",
+        task_id="TSK-045-02",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="skip_refactor",
+        rationale="bad mix",
+    )
     with pytest.raises(PhaseFailedError) as exc:
-        _run_invoke(_contradiction_manifest())
-    msg = str(exc.value)
-    assert "contradiction" in msg.lower()
-    assert "COMPLIANCE_VIOLATION" in msg
-    assert "revert_red" in msg
+        _run_invoke(manifest)
+    assert "HANDOVER_INVALID" in str(exc.value)
+
+
+@pytest.mark.behavioral
+def test_coerced_mix_without_rationale_uses_empty_feedback() -> None:
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="PASS",
+        task_id="TSK-045-02",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_red",
+        rationale=None,
+    )
+    result = _run_invoke(manifest)
+    assert result.manifest.next_action == "revert_red"
+    feedback = result.manifest.model_extra.get(
+        "train_feedback", getattr(result.manifest, "train_feedback", None)
+    )
+    assert feedback == ""
+
+
+@pytest.mark.behavioral
+def test_repeat_contradictions_coerce_without_exit() -> None:
+    first = _run_invoke(_contradiction_manifest())
+    second = _run_invoke(_contradiction_manifest())
+    assert first.manifest.next_action == "revert_red"
+    assert second.manifest.next_action == "revert_red"
 
 
 @pytest.mark.behavioral
