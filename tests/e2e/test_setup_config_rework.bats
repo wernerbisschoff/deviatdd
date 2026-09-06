@@ -8,9 +8,9 @@
 #   2. Bare `setup` with leftover agent dirs does not spray — non-TTY
 #      fail-closes with NO_AGENT_SELECTED.
 #   3. `--agent factory` pins factory even when leftover dirs exist.
-#   4. AC-PLAN-001 — setup provisions a root ignore entry so
-#      `git check-ignore .deviate/` resolves and `.deviate/` never
-#      appears as an untracked candidate.
+#   4. AC-PLAN-001 — setup writes `.deviate/` to `.git/info/exclude`
+#      (not the shared `.gitignore`) so `git check-ignore .deviate/`
+#      resolves and `.deviate/` never appears as an untracked candidate.
 #   5. AC-PLAN-005 / AC-PLAN-006 — the config schema has one
 #      consolidated `timeout_seconds`, no `[agent] timeout`, no
 #      `graphite` key, rejects a stale `graphite` key via extra=forbid,
@@ -84,12 +84,15 @@ _deviate() {
     run _deviate setup --agent opencode
     [ "$status" -eq 0 ]
 
-    # The root ignore entry resolves .deviate/ as ignored.
+    # Personal artifacts are excluded locally; shared .gitignore is untouched.
     run git check-ignore .deviate/
     [ "$status" -eq 0 ]
     [[ "$output" == *".deviate/"* ]]
 
-    grep -q "^\.deviate/$" .gitignore
+    grep -q "^\.deviate/$" .git/info/exclude
+    if [ -f .gitignore ]; then
+        ! grep -qxF ".deviate/" .gitignore
+    fi
 
     # .deviate/ is not reported as an untracked candidate.
     git add -A
