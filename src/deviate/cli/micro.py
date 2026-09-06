@@ -7428,14 +7428,8 @@ def _green_post_kernel(
     surface: str = "manual",
 ) -> KernelOutcome:
     """Shared GREEN post side-effect kernel for manual and auto surfaces."""
-    _ = surface
     tid = (task_id or "").strip()
-    latest: tuple[dict, Path] | None = None
-    if tid:
-        for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
-            for rec in _read_ledger_records(ledger_file):
-                if rec.get("id") == tid:
-                    latest = (rec, ledger_file)
+    latest = _find_task_record(root, tid) if tid else None
     if latest is None:
         raise KernelError("TASK_NOT_FOUND", tid)
     record_data, ledger_path = latest
@@ -7453,8 +7447,7 @@ def _green_post_kernel(
     session_path = root / ".deviate" / "session.json"
     session = (
         SessionState.load(session_path) if session_path.exists() else SessionState()
-    )
-    session = session.force_transition_to("GREEN")
+    ).force_transition_to("GREEN")
     session.save(session_path)
     probe = subprocess.run(
         ["git", "rev-parse", "--git-dir"],
