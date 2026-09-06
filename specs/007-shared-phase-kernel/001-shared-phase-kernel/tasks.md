@@ -62,6 +62,7 @@
 ---
 
   - **Judge Feedback**: The next RED attempt must: replace invalid TSK-001-03-A id with a valid TSK-NNN-NN id in tests/unit/test_micro/test_red_post.py, keep honest two-surface parity assertions for AC-PLAN-005 covering matching ledger rows plus session transitions plus commits plus RED_POST_OK, and run uv run pytest tests/unit/test_micro/ -v to prove the setup error is gone.
+  - **Judge Feedback**: The next RED attempt must: relax the ledger parity assertion in tests/unit/test_micro/test_red_post.py to compare semantic fields excluding wall-clock created_at, keep assertions for matching session transition to RED plus matching commit subjects plus RED_POST_OK plus guard rejection with zero partial ledger write, and run uv run pytest tests/unit/test_micro/ -v to prove all pass. Byte-identical rows are unachievable because preserving input timestamps replays differing seed times, minting now() differs per run, and quantizing timestamps falsifies audit data under the append-only ledger protocol.
 ## Phase 2: GREEN and REFACTOR kernels
 **Goal**: Unify GREEN post and REFACTOR pre/post side effects behind kernels
 
