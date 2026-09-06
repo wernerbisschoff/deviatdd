@@ -7527,11 +7527,11 @@ def _refactor_post_kernel(
         if found is not None:
             issue_id = str(found[0].get("issue_id", ""))
             tid = str(found[0].get("id", tid))
+    session_path = work / ".deviate" / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
     if not issue_id:
-        session_path = work / ".deviate" / "session.json"
-        session = (
-            SessionState.load(session_path) if session_path.exists() else SessionState()
-        )
         issue_id = session.active_issue_id or ""
     green_task = _resolve_latest_task(work, issue_id, "GREEN") if issue_id else None
     if green_task is None and tid:
@@ -7554,10 +7554,7 @@ def _refactor_post_kernel(
         append_task_transition(record, ledger_path)
     except Exception as exc:
         raise KernelError("LEDGER_UPDATE_FAILED", str(exc)) from exc
-    session_path = work / ".deviate" / "session.json"
-    session = (
-        SessionState.load(session_path) if session_path.exists() else SessionState()
-    ).force_transition_to("IDLE")
+    session = session.force_transition_to("IDLE")
     session.save(session_path)
     scope = _build_scope(issue_id, task_uuid)
     with contextlib.redirect_stdout(io.StringIO()):
