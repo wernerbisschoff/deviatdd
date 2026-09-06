@@ -7597,7 +7597,7 @@ def _red_post_kernel(
             "against the current implementation. If the required behavior "
             "already exists, declare `failure_kind: already_satisfied` in "
             "the RED handover manifest so `deviate micro run` adjudicates "
-            "the task as COMPLETED.inant",
+            "the task as COMPLETED.",
         )
     fmt = _run_format_cmd(root)
     if fmt.returncode != 0:
