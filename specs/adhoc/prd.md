@@ -718,3 +718,13 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-048-01 / AO-048-01: No `PI_RPC_COMMAND`, `_invoke_rpc_blocking`, `pi_rpc`, `transport`, `rpc_uri`, or `resolve_transport` token remains in source or tests; Pi invoke always spawns `pi -p` without `--mode`.
   2. AC-ADHOC-048-02 / AO-048-02: Full unit suite passes, `mise run check` is clean, and a rewrite over a config holding legacy keys drops them while keeping the backend.
+
+## FR-ADHOC-049: JUDGE PASS + COMPLIANCE_VIOLATION contradiction no longer hard-fails the micro run
+- **Description**: A JUDGE handover that pairs status PASS with verdict COMPLIANCE_VIOLATION and next_action revert_red routes as a rejection back to RED instead of raising PhaseFailedError and exiting the micro run.
+- **Preconditions**: `src/deviate/cli/micro.py::_invoke_agent` validates JUDGE handovers; `src/deviate/prompts/auto/judge.md` shows `status: "PASS"` in both schema examples.
+- **Inputs/Outputs**: Input — JUDGE manifest with status PASS, verdict COMPLIANCE_VIOLATION, next_action revert_red. Output — micro run continues onto the revert_red route with a JUDGE_REJECTED log entry; no HANDOVER_INVALID PhaseFailedError for this known contradiction.
+- **User Stories**:
+  1. US-049-01: As an operator running `deviate micro run`, I want a self-contradicting JUDGE handover to route back to RED so my run keeps moving instead of exiting 1. *(Ref: FR-ADHOC-049)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-049-01 / AO-049-01: A JUDGE manifest with status PASS plus verdict COMPLIANCE_VIOLATION plus next_action revert_red routes to the revert_red path; the run does not raise PhaseFailedError for this combination.
+  2. AC-ADHOC-049-02 / AO-049-02: The JUDGE prompt schema no longer shows `status: "PASS"` on the COMPLIANCE_VIOLATION example, and the full unit suite plus `mise run check` stay clean.
