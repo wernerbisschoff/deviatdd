@@ -61,6 +61,7 @@
 
 ---
 
+  - **Judge Feedback**: The next RED attempt must: replace invalid TSK-001-03-A id with a valid TSK-NNN-NN id in tests/unit/test_micro/test_red_post.py, keep honest two-surface parity assertions for AC-PLAN-005 covering matching ledger rows plus session transitions plus commits plus RED_POST_OK, and run uv run pytest tests/unit/test_micro/ -v to prove the setup error is gone.
 ## Phase 2: GREEN and REFACTOR kernels
 **Goal**: Unify GREEN post and REFACTOR pre/post side effects behind kernels
 
