@@ -7,7 +7,9 @@ import os
 import re
 import shlex
 
+import contextlib
 import contextvars
+import io
 import subprocess
 import time
 import logging
@@ -7418,6 +7420,60 @@ def _red_pre_kernel(
     except typer.Exit as exc:
         raise KernelError("TASK_NOT_FOUND", str(task_id or "")) from exc
     return contract
+
+
+def _green_post_kernel(
+    root: Path,
+    task_id: str | None,
+    surface: str = "manual",
+) -> KernelOutcome:
+    """Shared GREEN post side-effect kernel for manual and auto surfaces."""
+    _ = surface
+    tid = (task_id or "").strip()
+    latest: tuple[dict, Path] | None = None
+    if tid:
+        for ledger_file in sorted(root.glob(_LEDGER_GLOB)):
+            for rec in _read_ledger_records(ledger_file):
+                if rec.get("id") == tid:
+                    latest = (rec, ledger_file)
+    if latest is None:
+        raise KernelError("TASK_NOT_FOUND", tid)
+    record_data, ledger_path = latest
+    if record_data.get("status") != "RED":
+        raise KernelError(
+            "GREEN_GUARD_REJECTED",
+            f"expected RED, found {record_data.get('status', '')}",
+        )
+    try:
+        record = TaskRecord.model_validate(record_data)
+    except Exception as exc:
+        raise KernelError("TASK_NOT_FOUND", tid) from exc
+    record.status = "GREEN"  # type: ignore[assignment]
+    append_task_transition(record, ledger_path)
+    session_path = root / ".deviate" / "session.json"
+    session = (
+        SessionState.load(session_path) if session_path.exists() else SessionState()
+    )
+    session = session.force_transition_to("GREEN")
+    session.save(session_path)
+    probe = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    )
+    if probe.returncode == 0:
+        scope = _build_scope(record_data.get("issue_id", ""), tid)
+        with contextlib.redirect_stdout(io.StringIO()):
+            _commit_phase(
+                f"feat({scope}): GREEN phase - implementation passes tests",
+                root,
+                no_verify=True,
+                phase="green",
+                task_id=tid,
+            )
+    return KernelOutcome(token="GREEN_POST_OK")
 
 
 @red_app.command(name="pre")
