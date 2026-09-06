@@ -40,7 +40,7 @@
     - **Acceptance**: Both surfaces emit matching shared keys, additive doctor fields present.
   - **Dependency**: TSK-001-01
 
-- TSK-001-03: RED post kernel with unified no-failing-test adjudication
+- TSK-001-03: RED post kernel with shared side effects
   - **Type**: Feature_Batch
   - **Mode**: TDD
   - **Test Strategy**: unit
@@ -49,19 +49,18 @@
   - **Files**:
     - `src/deviate/cli/micro.py`
     - `tests/unit/test_micro/test_red_post.py`
-  - **Rationale**: `src/deviate/cli/micro.py` owns RED side effects for `US-007-01` plus `AC-PLAN-005` and `AC-PLAN-006`; the test file proves ledger, session, commit, token, and adjudication parity.
+  - **Rationale**: `src/deviate/cli/micro.py` owns RED side effects for `US-007-01` plus `AC-PLAN-005`; the test file proves ledger, session, commit, and token parity.
   - **Details**:
-    - **Red**: Write failing unit tests in `tests/unit/test_micro/` only — forbid `tests/integration` and `tests/e2e` in this RED. Assert manual `red post` and auto `_run_red_phase` produce matching ledger rows, session transitions, and commits with `RED_POST_OK`, and route no-failing-test adjudication identically.
-    - **Green**: Implement `_red_post_kernel` plus `_adjudicate_red_no_failing_test` in `src/deviate/cli/micro.py`; wire both surfaces to it.
+    - **Red**: Write failing unit tests in `tests/unit/test_micro/` only — forbid `tests/integration` and `tests/e2e` in this RED. Assert manual `red post` and auto `_run_red_phase` produce matching ledger rows, session transitions, and commits with `RED_POST_OK`.
+    - **Green**: Implement `_red_post_kernel` in `src/deviate/cli/micro.py`; wire both surfaces to it.
     - **Refactor**: Keep commit subjects and flags verbatim from pre-change behavior.
-    - **Edge Cases**: Handle zero failing tests via shared adjudication; handle guard rejection with no partial ledger write.
-    - **Acceptance**: Side effects match on both surfaces, `RED_POST_OK` prints, adjudication routes identically.
+    - **Edge Cases**: Handle guard rejection with no partial ledger write.
+    - **Acceptance**: Side effects match on both surfaces, `RED_POST_OK` prints.
   - **Dependency**: TSK-001-02
+  - **Rescope (2026-09-05)**: AC-PLAN-006 adjudication unification moved to TSK-001-09 after three JUDGE rejects — RED was unformulable while both adjudication variants already existed.
 
 ---
 
-  - **Judge Feedback**: The next RED attempt must: author honest two-surface tests in tests/unit/test_micro/test_red_post.py that drive manual red post and auto _run_red_phase for AC-PLAN-005 and assert matching ledger rows plus session transitions plus commits plus RED_POST_OK, drive shared adjudication on both surfaces for zero failing tests for AC-PLAN-006 plus CHANGELOG bullet, and forbid tests/integration and tests/e2e in this RED. Keep guard-rejection test asserting zero partial ledger write.
-  - **Judge Feedback**: The next RED attempt must: author honest two-surface tests in tests/unit/test_micro/test_red_post.py that drive manual red post and auto _run_red_phase for AC-PLAN-005 and assert matching ledger rows plus session transitions plus commits plus RED_POST_OK, drive shared adjudication on both surfaces for zero failing tests for AC-PLAN-006 asserting identical fail-close per FR-007-03/AC-007-03-02 plus CHANGELOG bullet, update tests/unit/test_micro/test_red.py TestRedPost passing-test case to the manual adjudication path, and forbid tests/integration and tests/e2e in this RED. Keep guard-rejection test asserting zero partial ledger write.
 ## Phase 2: GREEN and REFACTOR kernels
 **Goal**: Unify GREEN post and REFACTOR pre/post side effects behind kernels
 
@@ -170,6 +169,23 @@
     - **Acceptance**: `pytest tests/unit/test_micro/ -v` passes, retry contracts hold on either surface, `CHANGELOG.md` carries the bullet.
   - **Dependency**: TSK-001-07
 
+- TSK-001-09: Unified no-failing-test adjudication behind shared helper
+  - **Type**: Refactor_Batch
+  - **Mode**: DIRECT
+  - **Test Strategy**: unit
+  - **Verification**: `uv run pytest tests/unit/test_micro/test_red_post.py tests/unit/test_micro/test_red.py -v`
+  - **Estimated Time**: 60 minutes
+  - **Files**:
+    - `src/deviate/cli/micro.py`
+    - `tests/unit/test_micro/test_red_post.py`
+  - **Rationale**: Manual `red post` adjudicates inline (`RedMustPassError`) while auto `_run_red_phase` routes through `_adjudicate_red_no_failing_test`; AC-PLAN-006 needs one shared path.
+  - **Details**:
+    - **Implementation**: Route the manual `red post` zero-failing-test path through `_adjudicate_red_no_failing_test`; keep exit codes and user-visible tokens byte-identical; extend `test_red_post.py` parity tests to spy the shared helper on both surfaces.
+    - **Refactor**: Keep commit subjects and flags verbatim.
+    - **Edge Cases**: Handle guard rejection with no partial ledger write.
+    - **Acceptance**: Both surfaces call the shared helper, tokens and exit codes unchanged, parity tests pass.
+  - **Dependency**: TSK-001-03
+
 ---
 
 ## Implementation Strategy
@@ -179,6 +195,7 @@
 **Critical Dependency Chains**:
 - TSK-001-01 must precede TSK-001-02
 - TSK-001-02 must precede TSK-001-03
+- TSK-001-03 must precede TSK-001-09
 - TSK-001-05 must precede TSK-001-06
 - TSK-001-06 must precede TSK-001-07
 - TSK-001-07 must precede TSK-001-08
