@@ -767,17 +767,12 @@ def _invoke_agent(
                 and verdict_str == "COMPLIANCE_VIOLATION"
                 and next_action_str == "revert_red"
             ):
-                extra = getattr(manifest, "model_extra", None) or {}
                 feedback = (
                     getattr(manifest, "rationale", None)
                     or getattr(manifest, "train_feedback", None)
-                    or extra.get("train_feedback", "")
                     or ""
                 )
-                try:
-                    manifest.model_extra["train_feedback"] = feedback
-                except Exception:
-                    pass
+                manifest.model_extra["train_feedback"] = feedback
                 _log_run(
                     "JUDGE_REJECTED",
                     task_id=task_id,
