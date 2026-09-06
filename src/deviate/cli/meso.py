@@ -763,8 +763,12 @@ def _try_claim_issue(
             except subprocess.CalledProcessError:
                 console.print("[yellow]COMMIT_CLAIM_SKIP[/] could not commit claim")
 
-            if local:
-                console.print("[yellow]LOCAL_ONLY[/] skipping push")
+            if local or remote is None:
+                console.print(
+                    "[yellow]LOCAL_ONLY[/] skipping push"
+                    if local
+                    else "[yellow]NO_REMOTE[/] no origin remote \u2014 skipping push"
+                )
             else:
                 pushed = _push_claim_with_collision_retry(
                     remote=remote,

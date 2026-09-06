@@ -562,3 +562,75 @@ class TestSpecifyCollisionRetryKeepsRemoteClaim:
             f"collision retry must win on 019-*, got {result['branch']!r}"
         )
         assert resolve_claim_remote(tmp_git_repo) is True
+
+
+class TestSpecifyNoRemote:
+    def test_specify_pre_without_origin_skips_push(
+        self,
+        tmp_git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import subprocess
+
+        import typer
+
+        from deviate.cli.meso import _specify_pre
+        from deviate.state.ledger import IssueRecord, append_issue_transition
+        from datetime import datetime, timezone
+
+        subprocess.run(
+            ["git", "remote", "remove", "origin"],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        (tmp_git_repo / ".deviate").mkdir(exist_ok=True)
+        (tmp_git_repo / ".deviate" / "session.json").write_text(
+            '{"current_phase": "IDLE", "active_issue_id": null}'
+        )
+        (tmp_git_repo / ".deviate" / "config.toml").write_text(
+            "claim_remote = true\n",
+            encoding="utf-8",
+        )
+        specs_dir = tmp_git_repo / "specs"
+        specs_dir.mkdir(exist_ok=True)
+        (specs_dir / "constitution.md").write_text(
+            "# Constitution\ntest_command = pytest\n"
+        )
+        append_issue_transition(
+            IssueRecord(
+                issue_id="ISS-001-001",
+                type="feature",
+                title="No remote",
+                status="BACKLOG",
+                source_file="specs/test-epic/issues/iss-001.md",
+                timestamp=datetime.now(timezone.utc),
+            ),
+            specs_dir / "issues.jsonl",
+        )
+        monkeypatch.setattr("deviate.cli.meso._setup_mise", lambda *a, **k: None)
+        subprocess.run(
+            ["git", "add", "specs/issues.jsonl"],
+            cwd=tmp_git_repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "seed ISS-001-001"],
+            cwd=tmp_git_repo,
+            check=True,
+            capture_output=True,
+        )
+
+        with chdir(tmp_git_repo):
+            try:
+                result = _specify_pre(issue_id="ISS-001-001", local=False)
+                exit_code = 0
+            except typer.Exit as exc:
+                result = None
+                exit_code = exc.exit_code
+
+        output = capsys.readouterr().out
+        assert exit_code == 0, output
+        assert result is not None
+        assert "NO_REMOTE" in output, output
