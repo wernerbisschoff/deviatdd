@@ -767,6 +767,26 @@ def _invoke_agent(
                 and verdict_str == "COMPLIANCE_VIOLATION"
                 and next_action_str == "revert_red"
             ):
+                extra = getattr(manifest, "model_extra", None) or {}
+                feedback = (
+                    getattr(manifest, "rationale", None)
+                    or getattr(manifest, "train_feedback", None)
+                    or extra.get("train_feedback", "")
+                    or ""
+                )
+                try:
+                    manifest.model_extra["train_feedback"] = feedback
+                except Exception:
+                    pass
+                _log_run(
+                    "JUDGE_REJECTED",
+                    task_id=task_id,
+                    phase=phase,
+                    verdict=verdict_str,
+                    next_action=next_action_str,
+                )
+                return _AgentInvokeResult(manifest, tail)
+            if verdict_str == "COMPLIANCE_VIOLATION" and status_norm == "PASS":
                 msg = (
                     f"HANDOVER_INVALID contradiction for {task_id}: status PASS "
                     f"with verdict {verdict_str} and next_action {next_action_str}"
