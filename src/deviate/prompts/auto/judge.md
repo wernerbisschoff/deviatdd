@@ -348,6 +348,8 @@ security hole, gate skip, flow break, dishonest test), never a refactor.
 <constraints>
 - Evaluate only the `git diff` scope — do not analyze pre-existing code.
 - Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence`. Empty `evidence` is not a pass when those task tokens exist. Do not require unassigned plan tokens in this verdict.
+- Every `evidence` item must be an object with `ac`, `test_path`, and `test_quote`, plus applicable `impl_path` and `impl_quote`.
+- Never emit plain strings or bare AC IDs as evidence, including on COMPLIANCE_VIOLATION. Check the complete YAML before submission.
 - Emit COMPLIANCE_VIOLATION only for the eight Categories of Violations above.
 - Refactoring opportunities are NEVER blocking. Surface them as informational notes in `train_feedback` on a passing verdict, or omit them entirely.
 - Violations must be specific and actionable, citing FR-NN / AC-PLAN-NNN where applicable.

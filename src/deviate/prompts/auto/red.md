@@ -46,7 +46,7 @@ permanently after 2 attempts.**
 
 <step id="feedback_ingestion">
 1. Read all numbered JUDGE rounds in `<train_feedback>` in recorded order, followed by any current retry feedback.
-2. The runner combines recorded history and live feedback into this single section.
+2. The runner combines recorded history and live feedback into this single section. Read XML character references as literal text.
 3. Keep earlier constraints unless later feedback explicitly replaces them. Explain any replacement in the rationale.
 4. Treat the section as a **mandatory correction list** within this task's acceptance contract and RED's tests-only boundary.
 5. For each applicable correction, cite the changed test or give a test-based justification.

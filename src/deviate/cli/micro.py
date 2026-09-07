@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.resources
+import html
 import json
 import os
 import re
@@ -1599,7 +1600,7 @@ def _train_feedback_placeholder(phase: str, train_feedback: str) -> str:
     """
     if not train_feedback:
         return ""
-    return f"<train_feedback>\n{train_feedback}\n</train_feedback>"
+    return f"<train_feedback>\n{html.escape(train_feedback, quote=False)}\n</train_feedback>"
 
 
 def _build_auto_prompt(
@@ -4206,9 +4207,10 @@ def _run_judge_phase(
     judge_model = resolve_model_for_phase("JUDGE", root, backend=backend)
     manifest: HandoverManifest | None = None
     schema_errors: list[str] = []
+    retry_prompt = prompt
     for attempt in range(1, _MAX_JUDGE_MANIFEST_ATTEMPTS + 1):
         manifest, tail = _invoke_agent(
-            prompt,
+            retry_prompt,
             c,
             backend_name=backend,
             task_id=tid,
@@ -7429,6 +7431,8 @@ def _legacy_full_suite_command(root: Path, declared: str) -> str:
 
 
 def _scoped_declared_command(root: Path, declared: str) -> str:
+    if declared.startswith("mise run ") or declared.startswith("mise exec "):
+        return declared
     if _mise_present(root):
         return f"mise exec -- {declared}"
     return declared
@@ -9103,6 +9107,12 @@ def run_command(
             agent=agent,
             model=model,
         )
+    except PhaseFailedError as exc:
+        if not str(exc).startswith("JUDGE_MANIFEST_INVALID"):
+            raise
+        console.print(str(exc), markup=False, highlight=False)
+        console.print("GREEN preserved. Retry JUDGE with deviate micro run.")
+        raise typer.Exit(code=1) from None
     finally:
         run_logger.close()
         set_run_logger(None)

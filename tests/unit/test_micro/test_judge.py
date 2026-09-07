@@ -4636,6 +4636,20 @@ class TestJudgeManifestInvalidKeepsGreen:
             f"GH-167: JUDGE must retry on the same GREEN tree; "
             f"got {invoke.call_count} invokes"
         )
+        prompts = [call.args[0] for call in invoke.call_args_list]
+        assert "<judge_manifest_repair>" not in prompts[0]
+        for prompt in prompts[1:]:
+            assert prompt.count("<judge_manifest_repair>") == 1
+            for error in malformed.parse_errors:
+                assert error in prompt
+            schema = json.loads(
+                prompt.split("<evidence_item_schema>\n", 1)[1].split(
+                    "</evidence_item_schema>", 1
+                )[0]
+            )
+            assert schema["required"] == ["ac", "test_path", "test_quote"]
+            assert "never strings" in prompt
+            assert "Do not edit files" in prompt
         _assert_green_preserved(tmp_git_repo, green_sha)
         _assert_forward(
             session,
@@ -4643,6 +4657,23 @@ class TestJudgeManifestInvalidKeepsGreen:
             action="continue_refactor",
             completed=False,
         )
+
+    def test_micro_run_reports_invalid_judge_without_traceback(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.micro import PhaseFailedError
+
+        _, green_sha, _ = _seed_gh167_judge_post_repo(tmp_git_repo)
+        error = "JUDGE_MANIFEST_INVALID for TSK-011-01: evidence.0: invalid object"
+        with (
+            chdir(tmp_git_repo),
+            patch("deviate.cli.micro._run_single", side_effect=PhaseFailedError(error)),
+        ):
+            result = runner.invoke(cli, ["micro", "run", _GATE_TASK_ID])
+        assert result.exit_code == 1
+        assert error in result.output
+        assert not isinstance(result.exception, PhaseFailedError)
+        _assert_green_preserved(tmp_git_repo, green_sha)
 
     def test_auto_judge_uses_the_shared_phase_heading(self, tmp_git_repo: Path) -> None:
         red_sha = _seed_red_green(tmp_git_repo)

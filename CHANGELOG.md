@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Retain every complete JUDGE feedback round in one RED/GREEN training section. Preserve earlier constraints and exclude feedback from acceptance cards.
+- Give malformed JUDGE retries explicit validation errors and the evidence schema. Preserve GREEN and report exhaustion without a traceback.
+- Escape feedback text at prompt insertion so literal XML delimiters cannot break the training section. Keep stored Markdown unchanged.
+- Preserve declared `mise run` and `mise exec` verification commands without wrapping them in another mise invocation.
 
 - Preserve the latest JUDGE feedback in `tasks.md` and `tasks.jsonl` when GREEN-budget exhaustion resets to pre-RED.
 
