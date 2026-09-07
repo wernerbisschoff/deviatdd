@@ -728,3 +728,16 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-049-01 / AO-049-01: A JUDGE manifest with status PASS plus verdict COMPLIANCE_VIOLATION plus next_action revert_red routes to the revert_red path; the run does not raise PhaseFailedError for this combination.
   2. AC-ADHOC-049-02 / AO-049-02: The JUDGE prompt schema no longer shows `status: "PASS"` on the COMPLIANCE_VIOLATION example, and the full unit suite plus `mise run check` stay clean.
+
+
+## FR-ADHOC-050: JUDGE rejection feedback describes a clean-slate retry
+- **Description**: JUDGE writes rejection feedback as a durable construction contract for the next RED or GREEN attempt. The feedback assumes the rejected commits and their artifacts are absent after rollback.
+- **Preconditions**: `src/deviate/prompts/auto/judge.md` routes `revert_green` feedback to GREEN and `revert_red` feedback to RED. `src/deviate/cli/micro.py` resets the rejected Git state before it persists the feedback commit.
+- **Inputs/Outputs**: Input — a JUDGE `COMPLIANCE_VIOLATION` with `next_action` set to `revert_green` or `revert_red`. Output — `train_feedback` names the required end state and proof without asking the next agent to edit, preserve, or inspect discarded work.
+- **User Stories**:
+  1. US-050-01: As a retry agent, I want JUDGE feedback to describe the required result from the restored baseline so that I avoid rebuilding the rejected state. *(Ref: FR-ADHOC-050)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-050-01 / AO-050-01: Feedback for `revert_green` guides a new GREEN implementation from the retained RED test and contains no dependency on discarded GREEN artifacts.
+  2. AC-ADHOC-050-02 / AO-050-02: Feedback for `revert_red` guides a new RED test from the pre-RED baseline and contains no dependency on discarded RED or GREEN artifacts.
+- **Constitution Reference**: `specs/constitution.md` §1 requires Micro phase order and Git isolation. Source: “Every task loop executes on a clean git branch or worktree.”
+- **Source Anchors**: `src/deviate/prompts/auto/judge.md` states: “`revert_green` discards GREEN and keeps RED” and “`revert_red` discards RED+GREEN.” `src/deviate/cli/micro.py::_commit_judge_feedback_and_advance` states that the caller resets before feedback persistence.
