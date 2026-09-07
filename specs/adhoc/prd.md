@@ -740,6 +740,7 @@
   1. AC-ADHOC-050-01 / AO-050-01: After NO_PENDING_TASKS, unit and integration suites run and pass before the micro run reports success.
   2. AC-ADHOC-050-02 / AO-050-02: `mise doctor` runs after unit plus integration; e2e runs only when doctor passes, and any gate failure fails the run with a named signal.
 
+
 ## FR-ADHOC-050: JUDGE rejection feedback describes a clean-slate retry
 - **Description**: JUDGE writes rejection feedback as a durable construction contract for the next RED or GREEN attempt. The feedback assumes the rejected commits and their artifacts are absent after rollback.
 - **Preconditions**: `src/deviate/prompts/auto/judge.md` routes `revert_green` feedback to GREEN and `revert_red` feedback to RED. `src/deviate/cli/micro.py` resets the rejected Git state before it persists the feedback commit.

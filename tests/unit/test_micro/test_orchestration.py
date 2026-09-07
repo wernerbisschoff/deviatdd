@@ -2422,6 +2422,33 @@ def test_judge_auto_prompt_names_next_action_and_revert_meanings() -> None:
     )
 
 
+@pytest.mark.behavioral
+def test_judge_rejection_feedback_uses_restored_baselines() -> None:
+    """Rejection feedback must survive rollback as replacement-state guidance."""
+    from importlib import resources
+
+    judge_prompt = (
+        resources.files("deviate.prompts.auto")
+        .joinpath("judge.md")
+        .read_text(encoding="utf-8")
+    )
+
+    assert (
+        "runner removes the rejected commit set before the next agent" in judge_prompt
+    )
+    assert "revert_green" in judge_prompt
+    assert "retained RED test" in judge_prompt
+    assert "restored implementation baseline" in judge_prompt
+    assert "durable behavior, interface, file, and proof requirements" in judge_prompt
+    assert "revert_red" in judge_prompt
+    assert "pre-RED baseline" in judge_prompt
+    assert "durable replacement-state test and proof requirements" in judge_prompt
+    assert "diagnostic context only" in judge_prompt
+    assert "discarded GREEN artifacts" in judge_prompt
+    assert "discarded RED artifacts" in judge_prompt
+    assert "discarded RED or GREEN artifacts" not in judge_prompt
+
+
 class TestYellowHandoffContract:
     @patch("deviate.cli.micro._verify_clean_worktree")
     @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
