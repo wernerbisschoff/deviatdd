@@ -751,4 +751,17 @@
   1. AC-ADHOC-050-01 / AO-050-01: Feedback for `revert_green` guides a new GREEN implementation from the retained RED test and contains no dependency on discarded GREEN artifacts.
   2. AC-ADHOC-050-02 / AO-050-02: Feedback for `revert_red` guides a new RED test from the pre-RED baseline and contains no dependency on discarded RED or GREEN artifacts.
 - **Constitution Reference**: `specs/constitution.md` §1 requires Micro phase order and Git isolation. Source: “Every task loop executes on a clean git branch or worktree.”
+
+## FR-ADHOC-051: Restore a committed RED boundary after session loss
+- **Description**: The JSONL task ledger remains authoritative across session loss. A micro run reconstructs the task-specific RED commit boundary from the ledger and Git evidence, then resumes GREEN without rerunning or rolling back RED.
+- **Preconditions**: `src/deviate/cli/micro.py` `_tdd_pre_green_decision` escalates when `SessionState.red_commit_sha` is empty; Git and task ledger evidence can identify a committed RED boundary.
+- **Inputs/Outputs**: Input — authoritative task JSONL RED state, Git commit history, and session state with an empty or stale RED reference. Output — restored session reference and GREEN resume, or a named diagnostic for missing or ambiguous evidence.
+- **User Stories**:
+  1. US-051-01: As an operator, I want a completed RED boundary restored after session loss so the micro run continues with GREEN. *(Ref: FR-ADHOC-051)*
+  2. US-051-02: As a developer, I want ambiguous RED evidence to produce a diagnostic so the runner never destroys completed work. *(Ref: FR-ADHOC-051)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-051-01 / AO-051-01: A RED ledger state with matching on-branch or cherry-picked commit evidence restores the boundary and resumes GREEN without RED or rollback.
+  2. AC-ADHOC-051-02 / AO-051-02: Missing or ambiguous evidence emits a named diagnostic and preserves the committed work; rejection state from an earlier attempt does not affect the recovered boundary.
+- **Constitution Reference**: `specs/constitution.md` §1 requires user scenarios, Git isolation, and session continuity. Source: “Every task loop executes on a clean git branch or worktree.”
 - **Source Anchors**: `src/deviate/prompts/auto/judge.md` states: “`revert_green` discards GREEN and keeps RED” and “`revert_red` discards RED+GREEN.” `src/deviate/cli/micro.py::_commit_judge_feedback_and_advance` states that the caller resets before feedback persistence.
+- **Authority Rule**: Every dispatch decision reads the JSONL ledger first. `SessionState.red_commit_sha` is a recoverable cache and never overrides the ledger.
