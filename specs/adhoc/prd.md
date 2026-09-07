@@ -728,3 +728,14 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-049-01 / AO-049-01: A JUDGE manifest with status PASS plus verdict COMPLIANCE_VIOLATION plus next_action revert_red routes to the revert_red path; the run does not raise PhaseFailedError for this combination.
   2. AC-ADHOC-049-02 / AO-049-02: The JUDGE prompt schema no longer shows `status: "PASS"` on the COMPLIANCE_VIOLATION example, and the full unit suite plus `mise run check` stay clean.
+
+## FR-ADHOC-050: Final verification gate at end of micro run after all tasks complete
+- **Description**: After the last task reaches COMPLETED and the queue drains to NO_PENDING_TASKS, the micro run executes one final verification pass over unit, integration, and e2e suites so a green task queue implies a green tree.
+- **Preconditions**: All issue tasks COMPLETED; `mise.toml` defines `unit`, `integration`, `doctor`, and `e2e` rungs; `src/deviate/cli/micro.py` owns the micro run drain loop and the `e2e pre` completeness check.
+- **Inputs/Outputs**: Input — drained task queue plus repo test suites. Output — final gate result: unit plus integration always run; `mise doctor` runs next and gates e2e; e2e runs only when doctor passes; gate failure blocks the run from reporting success.
+- **User Stories**:
+  1. US-050-01: As an operator finishing `deviate micro run`, I want one final full-suite check after the last task so merged work never hides a cross-task regression. *(Ref: FR-ADHOC-050)*
+  2. US-050-02: As a developer with a broken local environment, I want e2e to skip when `mise doctor` fails so I get a clear ENV_NOT_READY signal instead of noisy e2e failures. *(Ref: FR-ADHOC-050)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-050-01 / AO-050-01: After NO_PENDING_TASKS, unit and integration suites run and pass before the micro run reports success.
+  2. AC-ADHOC-050-02 / AO-050-02: `mise doctor` runs after unit plus integration; e2e runs only when doctor passes, and any gate failure fails the run with a named signal.
