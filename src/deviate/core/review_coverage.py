@@ -16,7 +16,9 @@ from deviate.state.ledger import _read_ledger
 
 _BRANCH_SLUG_RE = re.compile(r"^feat/([^/]+)/([^/]+(?:/[^/]+)*)$")
 _TASK_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
-_NAMED_CHECK_RE = re.compile(r"\bAC-(?:ADHOC-\d{3}-\d{2}|PLAN-\d{3}|\d{3}-\d{2})\b")
+_NAMED_CHECK_RE = re.compile(
+    r"\b(?:AC-(?:ADHOC-\d{3}-\d{2}|PLAN-\d{3}|\d{3}-\d{2})|AO-\d{3})\b"
+)
 _TEST_FILE_RE = re.compile(
     r"(?:^|/)(?:tests?/|test_)|(?:^|/)conftest\.py$|"
     r"(?:_test|Test|_spec|\.test)\.[^/]+$|\.bats$",

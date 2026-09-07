@@ -106,6 +106,16 @@ class TestReviewCommentsOnly:
         assert contract["issue_brief_path"] == str(brief.resolve())
         assert contract["plan_path"] is None
 
+    def test_review_pre_accepts_acceptance_outline_checks(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_named_brief(tmp_git_repo, token="AO-001")
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["review", "pre"])
+
+        assert result.exit_code == 0, result.stdout
+
     def test_review_pre_default_apply_is_false(self, tmp_git_repo: Path) -> None:
         _seed_named_brief(tmp_git_repo)
         with chdir(tmp_git_repo):
