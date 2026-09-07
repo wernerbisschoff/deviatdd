@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Give JUDGE a GREEN-only diff for phase attribution. Keep RED changes and runner feedback out of GREEN scope accusations.
 - Retain every complete JUDGE feedback round in one RED/GREEN training section. Preserve earlier constraints and exclude feedback from acceptance cards.
 - Give malformed JUDGE retries explicit validation errors and the evidence schema. Preserve GREEN and report exhaustion without a traceback.
 - Escape feedback text at prompt insertion so literal XML delimiters cannot break the training section. Keep stored Markdown unchanged.

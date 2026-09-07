@@ -3959,6 +3959,7 @@ def _assemble_judge_injected_diff(
     *,
     red_commit_sha: str,
     red_baseline: list[str] | None,
+    include_red: bool = True,
 ) -> str:
     """Build RED-parent-to-HEAD plus dirty and untracked JUDGE diff.
 
@@ -3975,8 +3976,12 @@ def _assemble_judge_injected_diff(
     / deleted + size when known). Never ``git diff --text`` / ``-a``.
     """
     if red_commit_sha:
-        diff_base = _resolve_judge_diff_base(root, red_commit_sha)
-        committed_diff = _git_diff_for_judge(root, f"{diff_base}^..HEAD")
+        diff_base = (
+            f"{_resolve_judge_diff_base(root, red_commit_sha)}^"
+            if include_red
+            else red_commit_sha
+        )
+        committed_diff = _git_diff_for_judge(root, f"{diff_base}..HEAD")
     elif red_baseline is not None:
         committed_diff = ""
     else:
@@ -4157,6 +4162,22 @@ def _run_judge_phase(
         "judge", task, root, train_feedback=session.train_feedback
     )
     prompt += f"\n\n<diff>\n{diff}\n</diff>\n"
+    if session.red_commit_sha:
+        green_diff = _assemble_judge_injected_diff(
+            root,
+            red_commit_sha=session.red_commit_sha,
+            red_baseline=red_baseline,
+            include_red=False,
+        )
+        prompt += f"\n<green_diff>\n{green_diff}\n</green_diff>\n"
+        prompt += (
+            "Use <diff> for combined RED and GREEN evidence. "
+            "Use <green_diff> to attribute changes to GREEN. "
+            "Do not blame GREEN for changes present only in RED. "
+            "Route RED scope violations to revert_red, not revert_green. "
+            "Runner-authored ledger transitions and JUDGE feedback are not "
+            "agent scope violations.\n"
+        )
     if session.train_feedback:
         prompt += f"\n\n<test_feedback>\n{session.train_feedback}\n</test_feedback>\n"
     if session.failure_kind == "mechanical":

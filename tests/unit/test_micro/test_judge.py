@@ -4818,3 +4818,35 @@ class TestJudgePromptEvidenceExamples:
             assert "validate the AC-NN" not in section, (
                 f"{section_name} must not cite AC-NN as the evidence token"
             )
+
+
+def test_green_diff_excludes_red_changes_and_keeps_dirty_work(tmp_git_repo: Path):
+    from deviate.cli.micro import _assemble_judge_injected_diff
+
+    repo = tmp_git_repo
+    _seed_red_green(repo, impl_body=None)
+    _write_gate_file(repo, "uv.lock", "RED-only lock change\n")
+    _gate_commit(repo, f"test({_GATE_TASK_ID}): RED phase - failing test", "uv.lock")
+    _write_gate_file(repo, "feedback.md", "Retry GREEN.\n")
+    feedback_sha = _gate_commit(
+        repo, f"docs({_GATE_TASK_ID}): add judge feedback for retry", "feedback.md"
+    )
+    _write_gate_file(repo, _GATE_IMPL_PATH, _GATE_IMPL_BODY)
+    _gate_commit(
+        repo, f"feat({_GATE_TASK_ID}): GREEN phase - implementation", _GATE_IMPL_PATH
+    )
+    _write_gate_file(repo, _GATE_IMPL_PATH, _GATE_IMPL_BODY + "# dirty GREEN edit\n")
+    _write_gate_file(repo, "src/new_client.py", "client = None\n")
+
+    combined = _assemble_judge_injected_diff(
+        repo, red_commit_sha=feedback_sha, red_baseline=None
+    )
+    green = _assemble_judge_injected_diff(
+        repo, red_commit_sha=feedback_sha, red_baseline=None, include_red=False
+    )
+
+    assert "RED-only lock change" in combined
+    assert "uv.lock" not in green
+    assert _GATE_IMPL_QUOTE in green
+    assert "dirty GREEN edit" in green
+    assert "src/new_client.py" in green
