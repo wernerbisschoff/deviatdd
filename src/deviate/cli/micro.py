@@ -4453,7 +4453,11 @@ def _apply_judge_verdict(
         # in WHICH phase the runner hands control to next.
         feedback, feedback_source = _judge_feedback_from_manifest(manifest)
         planned = _planned_revert_anchor(
-            root, session=session, action=action, tid=tid, attempt=1
+            root,
+            session=session,
+            action=action,
+            tid=tid,
+            attempt=max(1, session.red_attempts + 1),
         )
         rollback = _RollbackTrace()
 
