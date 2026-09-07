@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Resuming `deviate micro run` after `revert_red` no longer discards the new RED commit.** The runner clears the previous JUDGE decision after RED records its commit, then continues to GREEN.
+
 - **`deviate specify` no longer crashes with `TypeError` when the repo has no `origin` remote.** `_try_claim_issue` skips the push with a `NO_REMOTE` note and keeps the claimed worktree instead of passing `None` to `git push`. Pinned by `tests/unit/test_meso/test_specify.py::TestSpecifyNoRemote`.
 
 - **`deviate micro run` no longer crashes when `mise` is absent from PATH.** `_run_format_cmd` skips when `[tasks.format]` is not defined and returns exit 127 (no `FileNotFoundError`) when mise is missing, matching other optional tooling. Real `mise run format` is unchanged when mise exists and the task is defined. Pinned by `tests/unit/test_cli/test_format_cmd.py` and `tests/unit/test_cli/test_micro.py::TestNoFailingTestAlreadyExistsCliCompletes`.

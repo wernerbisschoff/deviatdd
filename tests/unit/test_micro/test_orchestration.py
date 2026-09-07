@@ -116,6 +116,57 @@ def _seed_tracked_test_file(root: Path, name: str = "test_seed_failing.py") -> N
     )
 
 
+@pytest.mark.parametrize("test_returncode", [0, 1])
+def test_resumed_revert_red_reaches_green_without_another_rollback(
+    tmp_git_repo: Path, test_returncode: int
+) -> None:
+    with chdir(tmp_git_repo):
+        ledger_path, task = _seed_already_satisfied_tdd(
+            tmp_git_repo,
+            task_id="TSK-022-01",
+            issue_id="ISS-ADH-022",
+            description="Resume rejected RED",
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        SessionState(
+            current_phase="RED",
+            pending_judge_action="revert_red",
+            judge_rejected=True,
+            train_feedback="Exercise the production call site.",
+        ).save(session_path)
+
+        with (
+            patch("deviate.cli.micro._verify_worktree_branch"),
+            patch("deviate.cli.micro._verify_clean_worktree"),
+            patch("deviate.cli.micro._run_format_cmd"),
+            patch("deviate.cli.micro._run_pytest"),
+            patch(
+                "deviate.cli.micro._run_test_cmd",
+                return_value=subprocess.CompletedProcess([], test_returncode),
+            ),
+            patch(
+                "deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent
+            ) as agent,
+            patch(
+                "deviate.cli.micro._escalate_to_new_red",
+                side_effect=AssertionError("Successful RED must not roll back"),
+            ),
+            patch(
+                "deviate.cli.micro._run_green_phase",
+                side_effect=RuntimeError("GREEN reached"),
+            ),
+            pytest.raises(RuntimeError, match="GREEN reached"),
+        ):
+            _run_tdd_cycle(task, ledger_path, Console(file=io.StringIO()))
+
+        assert agent.call_count == 1
+        persisted = SessionState.load(session_path)
+        assert persisted.red_commit_sha
+        assert persisted.pending_judge_action == ""
+        assert not persisted.judge_rejected
+        assert persisted.train_feedback == "Exercise the production call site."
+
+
 class TestMicroOrchestration:
     @patch("deviate.cli.micro._run_test_cmd")
     @patch("deviate.cli.micro._verify_clean_worktree")

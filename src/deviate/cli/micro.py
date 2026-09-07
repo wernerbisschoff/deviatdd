@@ -5643,6 +5643,8 @@ def _run_tdd_cycle_impl(
             monitor=monitor,
             no_judge=no_judge,
         )
+        _consume_retry_gate_after_red(session)
+        session.save(session_path)
 
     def _escalate(reason: str) -> SessionState:
         return _escalate_to_new_red(
