@@ -214,6 +214,9 @@ def _extract_labeled_sections(text: str, names: frozenset[str] | set[str]) -> li
     current: list[str] = []
     capturing = False
     for line in text.splitlines():
+        if capturing and not _CARD_STRUCTURE_LINE.match(line):
+            current.append(line)
+            continue
         heading = _section_name(line)
         if heading is not None:
             if current:
@@ -222,9 +225,6 @@ def _extract_labeled_sections(text: str, names: frozenset[str] | set[str]) -> li
             capturing = heading in names
             if capturing:
                 current.append(line)
-            continue
-        if capturing and not _CARD_STRUCTURE_LINE.match(line):
-            current.append(line)
             continue
         if current:
             blocks.append("\n".join(current))

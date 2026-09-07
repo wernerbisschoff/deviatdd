@@ -1231,7 +1231,7 @@ class TestJudgeFeedbackLogging:
         assert added == 2, f"Expected 2 lines inserted, got {added}"
         content = tasks_md.read_text(encoding="utf-8")
         assert (
-            "**Judge Feedback**: First line of feedback\nSecond line of feedback"
+            "**Judge Feedback**: First line of feedback\n    Second line of feedback"
             in content
         )
 
@@ -1254,7 +1254,7 @@ class TestJudgeFeedbackLogging:
             "File should be unchanged when no task line matches"
         )
 
-    def test_feedback_is_bounded_deduplicated_and_task_scoped(
+    def test_feedback_retains_every_round_and_stays_task_scoped(
         self, tmp_path: Path
     ) -> None:
         from deviate.cli.micro import _append_judge_feedback
@@ -1272,10 +1272,10 @@ class TestJudgeFeedbackLogging:
             _append_judge_feedback(tasks_md, "TSK-011-05", feedback)
 
         lines = tasks_md.read_text(encoding="utf-8").splitlines()
-        assert "one" not in "\n".join(lines)
+        assert "one" in "\n".join(lines)
         assert "two" in "\n".join(lines)
         assert "three" in "\n".join(lines)
-        assert lines.count("  - **Judge Feedback**: four") == 1
+        assert lines.count("  - **Judge Feedback**: four") == 2
         assert "sibling" in "\n".join(lines)
         assert "nested" in "\n".join(lines)
         assert "untouched" in "\n".join(lines)

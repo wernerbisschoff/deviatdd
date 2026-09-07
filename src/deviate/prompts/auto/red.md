@@ -42,44 +42,16 @@ permanently after 2 attempts.**
 {task_content}
 </task_content>
 
-<train_feedback>
-When the orchestrator retries this RED phase because a prior GREEN run
-declared ``failure_kind: test_defect`` (the test itself was wrong, not
-the implementation), the runner injects the GREEN's rationale below as
-the defect to fix. Treat injected ``<train_feedback>`` as a **mandatory
-correction list**: each item must change the test design or receive a
-test-based justification. Treat the feedback as the **authoritative,
-current** instruction from the orchestrator — the authoritative defect
-description: re-author the failing test so it asserts the behavior the
-spec actually requires — do NOT keep the prior assertion that GREEN
-judged wrong. After rewriting, run the test_command and confirm the
-test fails for the intended reason (missing implementation, not a
-syntactic error).
-If ``<train_feedback>`` is absent and the prompt contains a
-``<persisted_judge_feedback>`` block, treat that as the source of
-truth: each line inside is a verbatim ``**Judge Feedback**`` bullet;
-resolve every bullet before declaring RED done. If both are present,
-``<train_feedback>`` wins — ``<persisted_judge_feedback>`` is stale
-history and must be ignored.
 {train_feedback}
-</train_feedback>
 
 <step id="feedback_ingestion">
-1. If the ``<train_feedback>`` block above is non-empty, treat it as the
-   **authoritative, current** instruction from the orchestrator. Re-author
-   against it directly — it reflects the live retry signal.
-2. If ``<train_feedback>`` is empty and the prompt contains a
-   ``<persisted_judge_feedback>`` block, treat that as the source of truth.
-   Each ``**Judge Feedback**`` bullet inside is a verbatim correction
-   persisted under this task in ``tasks.md`` by a previous JUDGE run;
-   resolve every bullet before declaring RED done.
-3. If both are present, ``<train_feedback>`` wins — the persisted block is
-   stale history and must be ignored (the orchestrator only ever surfaces
-   one at a time).
-4. Treat injected feedback (either source) as a mandatory correction list.
-   Each item must change the test design or receive an explicit, test-based
-   justification in the RED rationale. Do not silently keep an assertion
-   that the feedback rejects.
+1. Read all numbered JUDGE rounds in `<train_feedback>` in recorded order, followed by any current retry feedback.
+2. The runner combines recorded history and live feedback into this single section.
+3. Keep earlier constraints unless later feedback explicitly replaces them. Explain any replacement in the rationale.
+4. Treat the section as a **mandatory correction list** within this task's acceptance contract and RED's tests-only boundary.
+5. For each applicable correction, cite the changed test or give a test-based justification.
+6. Preserve GREEN-directed constraints for handoff. Do not implement production changes or sibling-task criteria in RED.
+7. Report unresolved conflicts with the acceptance contract; do not silently widen scope or discard constraints.
 </step>
 
 <spec_content>
@@ -152,9 +124,10 @@ task_id: "TASK-105"
 </step>
 
 <step id="feedback_ingestion">
-1. If the prompt contains a `<train_feedback>` block with injected content, treat it as the **authoritative, current** instruction from the orchestrator — a **mandatory correction list**. Each item must change the test design or receive a test-based justification.
-2. If `<train_feedback>` is absent and the prompt contains a `<persisted_judge_feedback>` block, treat that as the source of truth. Each line inside is a verbatim `**Judge Feedback**` bullet persisted under this task in `tasks.md` by a previous JUDGE run; resolve every bullet before declaring RED done.
-3. If both are present, `<train_feedback>` wins — `<persisted_judge_feedback>` is stale history and must be ignored (the orchestrator only ever surfaces one at a time).
+1. Read all rounds and current retry instructions in `<train_feedback>` as one **mandatory correction list**.
+2. Keep earlier constraints unless later feedback explicitly replaces them. Explain replacements and unresolved conflicts in the rationale.
+3. Apply corrections within the assigned acceptance contract and RED's tests-only boundary. Cite test changes or test-based justifications.
+4. Preserve GREEN-directed constraints for handoff; do not implement production changes or sibling-task criteria.
 </step>
 
 <step id="test_writing">
@@ -245,8 +218,7 @@ Use `status: "ERROR"` only for tool failures, file write errors, unavailable req
 | Syntax error, missing fixture, or incorrect test setup | Does not establish RED. Fix the test or setup; only a missing-behavior failure counts. |
 | Required service unavailable (e.g. PostgreSQL) | Emit `status: "ERROR"` with the connection failure. Do not substitute an offline test. |
 | `<train_feedback>` block present | Treat it as a mandatory correction list; each item changes the test design or receives a test-based justification. |
-| `<persisted_judge_feedback>` block present | Treat every `**Judge Feedback**` bullet as a required fix; do not silently re-trigger the failing path |
-| Both `<train_feedback>` and `<persisted_judge_feedback>` present | Use `<train_feedback>` exclusively; the persisted block is stale history from a prior JUDGE run and must be ignored |
+| Multiple feedback rounds present | Apply all rounds within task and phase boundaries; only explicit later corrections replace earlier constraints |
 | Lint fails | Fix lint issues before proceeding |
 | No matching spec.md found | Proceed with minimal test structure based on task description |
 | Test file already exists | Read it, understand current state, add new failing tests |

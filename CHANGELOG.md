@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Retain every complete JUDGE feedback round in one RED/GREEN training section. Preserve earlier constraints and exclude feedback from acceptance cards.
+
 - Preserve the latest JUDGE feedback in `tasks.md` and `tasks.jsonl` when GREEN-budget exhaustion resets to pre-RED.
 
 ### Added

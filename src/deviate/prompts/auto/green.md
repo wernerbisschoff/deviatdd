@@ -92,9 +92,12 @@ task will fail permanently.**
 </step>
 
 <step id="feedback_ingestion">
-1. If the prompt contains a `<train_feedback>` block, treat it as the **authoritative, current** instruction from the orchestrator. Implement against it directly — it reflects the live retry signal.
-2. If `<train_feedback>` is absent and the prompt contains a `<persisted_judge_feedback>` block, treat that as the source of truth. Each line inside is a verbatim `**Judge Feedback**` bullet persisted under this task in `tasks.md` by a previous JUDGE run; resolve every bullet before declaring GREEN done.
-3. If both are present, `<train_feedback>` wins — `<persisted_judge_feedback>` is stale history and must be ignored (the orchestrator only ever surfaces one at a time).
+1. Read all numbered JUDGE rounds in `<train_feedback>` in recorded order, followed by any current retry feedback.
+2. The runner combines recorded history and live feedback into this single section.
+3. Keep earlier constraints unless later feedback explicitly replaces them. Explain any replacement in the rationale.
+4. Treat the section as a mandatory correction list within this task's acceptance contract and GREEN's implementation boundary.
+5. For each applicable correction, cite the implementation change and verification, or give a test-based justification.
+6. Preserve RED tests. If feedback requires test changes or sibling-task criteria, report the conflict instead of widening scope.
 </step>
 
 <step id="implementation">
@@ -179,7 +182,6 @@ Use `status: "ERROR"` strictly for tool failures (test_command crashed, lint bin
 | RED test asserts behavior the spec does not require (wrong assertion, wrong abstraction, contradicts spec/data-model) | Set `status: FAILURE` with `rationale:` citing the FR/AC the test contradicts, plus `failure_kind: test_defect`. JUDGE will route to RED via `revert_red`; do not retry the implementation. |
 | Post-script returns COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
 | No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
-| `<persisted_judge_feedback>` block present | Treat every `**Judge Feedback**` bullet as a required fix; do not silently re-trigger the failing path |
-| Both `<train_feedback>` and `<persisted_judge_feedback>` present | Use `<train_feedback>` exclusively; the persisted block is stale history from a prior JUDGE run and must be ignored |
+| Multiple feedback rounds present | Apply all rounds within task and phase boundaries; only explicit later corrections replace earlier constraints |
 
 </edge_case_handling>

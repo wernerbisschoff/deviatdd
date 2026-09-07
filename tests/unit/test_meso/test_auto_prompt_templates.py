@@ -735,7 +735,8 @@ class TestManualDerivationDriftGuard:
         installed = self._install("deviate-red", tmp_path)
         assert "task_entry" in installed
         assert "**Judge Feedback**" in installed
-        assert "persisted_judge_feedback" in installed
+        assert "<train_feedback>" in installed
+        assert "all complete `**Judge Feedback**` rounds" in installed
 
     def test_manual_green_matches_auto_role_language(self, tmp_path):
         """The derived manual GREEN inherits auto's "write ONLY production
@@ -953,9 +954,12 @@ class TestRedTransportAndIdentityPrompts:
         red = self._red()
         assert "mandatory correction list" in red
         assert "<train_feedback>" in red
-        assert "<persisted_judge_feedback>" in red
+        assert "persisted_judge_feedback" not in red
         assert "test design" in red.lower() or "test-based justification" in red.lower()
-        assert "authoritative, current" in red
+        assert (
+            "Keep earlier constraints unless later feedback explicitly replaces them"
+            in red
+        )
 
     def test_red_never_mocks_the_system_under_test(self) -> None:
         red = self._red()

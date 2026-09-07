@@ -232,53 +232,34 @@ class TestGreenAutoPromptFeedback:
 
         prompt = _capture_green_prompt(tmp_path, task, ledger_path)
 
-        expected_line = f"- **Judge Feedback**: {feedback}"
-        assert "<persisted_judge_feedback>" in prompt
-        persisted_block = prompt.rsplit("<persisted_judge_feedback>", 1)[1].split(
-            "</persisted_judge_feedback>", 1
-        )[0]
-        assert expected_line in persisted_block
-        task_block = prompt.rsplit("<task_content>", 1)[1].split("</task_content>", 1)[
+        block = prompt.split("<train_feedback>\n", 1)[1].split("</train_feedback>", 1)[
             0
         ]
-        assert expected_line in task_block, (
-            "GH-150: this-task card in <task_content> keeps Judge Feedback history"
-        )
-        assert prompt.count(expected_line) == 2, (
-            "Judge Feedback belongs in <task_content> and <persisted_judge_feedback> "
-            "only — not a third copy"
-        )
+        assert feedback in block
+        assert prompt.count(feedback) == 1
+        assert "persisted_judge_feedback" not in prompt
         assert _PREFIX_COLLISION_FEEDBACK not in prompt
         assert _NEIGHBOR_TASK_FEEDBACK not in prompt
 
-    def test_auto_green_prefers_session_feedback_without_persisted_duplicate(
+    def test_auto_green_retains_prior_constraints_with_session_feedback(
         self, tmp_path: Path
     ) -> None:
         session_feedback = "Use the Judge-required transaction boundary."
-        stale_persisted_feedback = "STALE PERSISTED FEEDBACK MUST NOT LEAK"
+        prior_feedback = "Preserve caller ownership."
         task, ledger_path = _write_feedback_specs(
-            tmp_path, session_feedback, stale_persisted_feedback
+            tmp_path, session_feedback, prior_feedback
         )
-
         prompt = _capture_green_prompt(
-            tmp_path,
-            task,
-            ledger_path,
-            session_feedback=session_feedback,
+            tmp_path, task, ledger_path, session_feedback=session_feedback
         )
-
-        assert f"<train_feedback>\n{session_feedback}\n</train_feedback>" in prompt
-        assert "<persisted_judge_feedback>\n- **Judge Feedback**:" not in prompt
-        task_block = prompt.rsplit("<task_content>", 1)[1].split("</task_content>", 1)[
+        block = prompt.split("<train_feedback>\n", 1)[1].split("</train_feedback>", 1)[
             0
         ]
-        assert session_feedback in task_block
-        assert stale_persisted_feedback in task_block, (
-            "GH-150: this-task card keeps persisted Judge Feedback history"
-        )
-        assert stale_persisted_feedback not in prompt.split("</task_content>", 1)[-1], (
-            "stale persisted feedback must not leak outside the this-task card"
-        )
+        assert session_feedback in block
+        assert prior_feedback in block
+        assert prompt.count(session_feedback) == 1
+        assert prompt.count("<train_feedback>\n") == 1
+        assert "persisted_judge_feedback" not in prompt
         assert _PREFIX_COLLISION_FEEDBACK not in prompt
         assert _NEIGHBOR_TASK_FEEDBACK not in prompt
 

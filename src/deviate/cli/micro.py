@@ -43,6 +43,7 @@ from deviate.core.agent import (
 )
 from deviate.core.convention import format_commit_message
 from deviate.core.judge_evidence import (
+    _extract_labeled_sections,
     _strip_judge_feedback,
     evaluate_judge_evidence,
     resolve_task_ac_tokens,
@@ -1027,7 +1028,6 @@ _MODE_LINE_RE = re.compile(r"^\s*-\s+\*\*Mode\*\*:\s*(\S+)")
 _TYPE_LINE_RE = re.compile(r"^\s*-\s+\*\*Type\*\*:\s*(\S+)")
 _TASK_BULLET_HEAD_RE = re.compile(r"^- (?:\[(?:x| )\]\s+)?(TSK-\d{3}-\d{2}):")
 _MD_HEADING_RE = re.compile(r"^#{1,6}\s")
-_JUDGE_FEEDBACK_BULLET_RE = re.compile(r"^  - \*\*Judge Feedback\*\*:\s*(.*)")
 
 # GH-53: DIRECT EXECUTE phases run deterministic long pipelines (clean-checkout
 # ``mise run check``, cargo release builds) that can emit nothing for >15 min.
@@ -1580,15 +1580,14 @@ def _build_scope(issue_id: str, task_id: str) -> str:
 def _this_task_prompt_card(root: Path, task: dict, *, phase: str) -> str:
     """Return this task's ``tasks.md`` card for auto ``{task_content}``.
 
-    RED/GREEN/REFACTOR get the raw card (description,
-    AC-PLAN, Judge Feedback history). JUDGE gets the GH-118
-    Judge-Feedback-stripped card so prior-round prose cannot bias
-    AC-token matching. Sibling cards are never included.
+    RED/GREEN receive feedback separately in one train block. JUDGE never
+    receives prior corrections in its acceptance card. REFACTOR keeps the
+    raw card. Sibling cards are never included.
     """
     card = _task_card_text(root, task)
     if not card:
         return ""
-    if phase == "judge":
+    if phase in {"red", "green", "judge"}:
         return _strip_judge_feedback(card)
     return card
 
@@ -1596,14 +1595,10 @@ def _this_task_prompt_card(root: Path, task: dict, *, phase: str) -> str:
 def _train_feedback_placeholder(phase: str, train_feedback: str) -> str:
     """Fill ``{train_feedback}`` for the assembled auto prompt.
 
-    RED's template already wraps the placeholder in ``<train_feedback>``.
-    Other phases receive the GREEN-style block only when feedback exists
-    so an empty tag cannot suppress ``<persisted_judge_feedback>``.
+    Emit one block only when feedback exists.
     """
     if not train_feedback:
         return ""
-    if phase == "red":
-        return train_feedback
     return f"<train_feedback>\n{train_feedback}\n</train_feedback>"
 
 
@@ -1650,6 +1645,8 @@ def _build_auto_prompt(
             prd_content = prd_path.read_text(encoding="utf-8")
 
     task_content = _this_task_prompt_card(root, task, phase=phase)
+    if phase in {"red", "green"}:
+        train_feedback = _task_train_feedback(root, task, train_feedback)
     layer = _layer_contract_fields(root, task)
     test_command = layer["test_command"]
     lint_command = _resolve_lint_command(root)
@@ -1955,14 +1952,6 @@ def _run_red_phase(
     prompt = _build_auto_prompt(
         "red", task, root, train_feedback=session.train_feedback
     )
-    if not session.train_feedback:
-        # GREEN's fallback: a JUDGE revert_red rejection persists its feedback
-        # to tasks.md, but session.train_feedback only carries the most
-        # recent retry. Without this read, a fresh RED run (new session,
-        # resumed session) silently drops the correction.
-        persisted = _read_judge_feedback_from_tasks_md(root, task)
-        if persisted:
-            prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "RED")
     red_model = resolve_model_for_phase("RED", root, backend=backend)
     manifest, agent_tail, timed_out = _unpack_agent_invoke(
@@ -2249,10 +2238,6 @@ def _run_green_phase(
             "anything missing before reporting success.\n"
             "</rollback_context>\n"
         )
-    if not session.train_feedback:
-        persisted = _read_judge_feedback_from_tasks_md(root, task)
-        if persisted:
-            prompt += f"\n\n<persisted_judge_feedback>\n{persisted}\n</persisted_judge_feedback>\n"
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
     _require_green_entry_red_sha(root, session, tid)
@@ -2488,11 +2473,8 @@ def _task_card_text(root: Path, task: dict) -> str:
     return "\n".join(lines[start:end]).strip()
 
 
-_MAX_JUDGE_FEEDBACK = 3
-
-
 def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int | None:
-    """Store bounded, deduplicated feedback rounds under one task."""
+    """Append a complete feedback round without removing earlier constraints."""
     lines = tasks_md.read_text(encoding="utf-8").splitlines()
     target_index = next(
         (
@@ -2512,54 +2494,30 @@ def _append_judge_feedback(tasks_md: Path, task_id: str, feedback: str) -> int |
         ),
         len(lines),
     )
-    history = [
-        match.group(1).rstrip()
-        for line in lines[target_index + 1 : end]
-        if (match := _JUDGE_FEEDBACK_BULLET_RE.match(line))
-    ]
-    candidate = feedback.strip() or ""
-    history = [item for item in history if item != candidate]
-    history.append(candidate)
-    history = history[-_MAX_JUDGE_FEEDBACK:]
-    retained = [
-        line
-        for line in lines[target_index + 1 : end]
-        if not _JUDGE_FEEDBACK_BULLET_RE.match(line)
-    ]
-    replacement = [f"  - **Judge Feedback**: {item}" for item in history]
-    updated = lines[: target_index + 1] + retained + replacement + lines[end:]
+    candidate = feedback.strip().splitlines() or [""]
+    replacement = [f"  - **Judge Feedback**: {candidate[0]}"]
+    replacement.extend(f"    {line}" for line in candidate[1:])
+    updated = lines[:end] + replacement + lines[end:]
     tasks_md.write_text("\n".join(updated) + "\n", encoding="utf-8")
-    return len(candidate.splitlines()) or 1
-    return len(replacement)
+    return len(candidate)
 
 
-def _read_judge_feedback_from_tasks_md(root: Path, task: dict) -> str:
-    """Read persisted Judge Feedback bullets for the exact task block."""
-    target = task.get("id", "")
-    if not target:
-        return ""
-    tasks_md = _resolve_tasks_md(root, task)
-    if tasks_md is None:
-        return ""
-    try:
-        lines = tasks_md.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return ""
-    feedback: list[str] = []
-    in_target = False
-    for line in lines:
-        head = _TASK_BULLET_HEAD_RE.match(line)
-        if head is not None:
-            if in_target:
-                break
-            if head.group(1) == target:
-                in_target = True
-            continue
-        if in_target:
-            match = _JUDGE_FEEDBACK_BULLET_RE.match(line)
-            if match is not None:
-                feedback.append(f"- **Judge Feedback**: {match.group(1).rstrip()}")
-    return "\n".join(feedback)
+def _task_train_feedback(root: Path, task: dict, current: str = "") -> str:
+    """Combine complete JUDGE rounds and any unrecorded retry instruction."""
+    rounds = []
+    for block in _extract_labeled_sections(
+        _task_card_text(root, task), {"judge feedback"}
+    ):
+        lines = block.splitlines()
+        first = lines[0].split("**Judge Feedback**:", 1)[1].strip()
+        body = [line.removeprefix("    ") for line in lines[1:]]
+        rounds.append("\n".join([first, *body]).strip())
+    sections = [
+        f"JUDGE feedback round {i}:\n{feedback}" for i, feedback in enumerate(rounds, 1)
+    ]
+    if current.strip() and current.strip() not in rounds:
+        sections.append(f"Current retry feedback:\n{current.strip()}")
+    return "\n\n".join(sections)
 
 
 # Defensive regex matching RED-phase task-id characters used by

@@ -428,47 +428,29 @@ class TestAutoRedPersistedFeedback:
 
         prompt = _capture_red_prompt(tmp_path, task, ledger_path)
 
-        expected_line = (
-            "- **Judge Feedback**: forbid offline SQL rendering in the RED test"
-        )
-        assert "<persisted_judge_feedback>" in prompt
-        persisted_block = prompt.rsplit("<persisted_judge_feedback>", 1)[1].split(
-            "</persisted_judge_feedback>", 1
-        )[0]
-        assert expected_line in persisted_block
-        # Card carries the history too, and nothing duplicates it a third time.
-        # (Count-based: <task_content> also appears in template prose, so block
-        # extraction by tag is ambiguous in the composed RED prompt.)
-        assert prompt.count(expected_line) == 2
+        expected = "forbid offline SQL rendering in the RED test"
+        block = prompt.split("<train_feedback>\n", 1)[1].split("</train_feedback>", 1)[
+            0
+        ]
+        assert expected in block
+        assert prompt.count(expected) == 1
+        assert "persisted_judge_feedback" not in prompt
 
-    def test_auto_red_prefers_session_feedback_without_persisted_duplicate(
+    def test_auto_red_retains_prior_constraints_with_session_feedback(
         self, tmp_path: Path
     ):
         session_feedback = "Use the Judge-required transaction boundary."
-        stale_persisted_feedback = "STALE PERSISTED FEEDBACK MUST NOT LEAK"
         task, ledger_path = _write_red_feedback_specs(tmp_path)
-        tasks_md = ledger_path.parent / "tasks.md"
-        tasks_md.write_text(
-            tasks_md.read_text(encoding="utf-8").replace(
-                "forbid offline SQL rendering in the RED test",
-                stale_persisted_feedback,
-            ),
-            encoding="utf-8",
-        )
-
         prompt = _capture_red_prompt(
             tmp_path, task, ledger_path, session_feedback=session_feedback
         )
-
-        # RED's template embeds the feedback inside its own <train_feedback>
-        # block (with retry prose), unlike GREEN's wrapped placeholder.
-        assert session_feedback in prompt
-        # Same discriminator GREEN pins: the injected block, not the bare tag
-        # name (which also appears in the feedback_ingestion instructions).
-        assert "<persisted_judge_feedback>\n- **Judge Feedback**:" not in prompt
-        # The card keeps its history bullet; with no persisted block injected
-        # it must appear exactly once.
-        assert prompt.count(stale_persisted_feedback) == 1
+        block = prompt.split("<train_feedback>\n", 1)[1].split("</train_feedback>", 1)[
+            0
+        ]
+        assert session_feedback in block
+        assert "forbid offline SQL rendering in the RED test" in block
+        assert prompt.count("<train_feedback>\n") == 1
+        assert "persisted_judge_feedback" not in prompt
 
 
 def _drive_red_phase(root: Path, task: dict, ledger_path: Path, proc):
