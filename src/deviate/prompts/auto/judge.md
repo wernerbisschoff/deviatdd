@@ -20,6 +20,7 @@ This is the **JUDGE** (compliance gate) phase of the DeviaTDD micro-cycle. Use i
 After completion:
 - **COMPLIANCE_PASS**: Pipeline proceeds to REFACTOR (or COMPLETED if REFACTOR skipped).
 - **COMPLIANCE_VIOLATION**: Pipeline routes on `next_action`. `revert_green` discards GREEN and keeps RED — `train_feedback` is the next GREEN's memory. `revert_red` discards RED+GREEN — `train_feedback` is the next RED's memory. Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged.
+- The runner removes the rejected commit set before the next agent runs. A `revert_green` retry starts from the retained RED test and the restored implementation baseline. A `revert_red` retry starts from the pre-RED baseline.
 
 ## What JUDGE Does NOT Do
 
@@ -178,7 +179,9 @@ Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their doc
 3. **Write the instruction as an imperative** — lead with the actions the next agent must take, using parallel verbs when useful. Example: `Isolate the import boundary, block hosted imports during collection, and run the subprocess guard before loading application modules.` Place brief diagnostic context after the action when it helps.
 4. **Prefer action phrases over failure statements** — write `isolate the import boundary and block hosted imports during collection` instead of `the RED test does not isolate the import boundary`. State a prohibition only when it prevents repeating a concrete defect.
 5. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
-6. **On `next_action: revert_red` or `revert_green`**: do NOT cite `path:line` locations from the commit that rollback will discard. Write a durable rewrite contract (behavior + required proof). The runner also strips leftover `file:line` tokens on these routes.
+6. **On `next_action: revert_green`**: write feedback for a new GREEN attempt against the retained RED test and restored implementation baseline. Require durable behavior, interface, file, and proof requirements. Do not instruct GREEN to modify or inspect discarded GREEN artifacts.
+7. **On `next_action: revert_red`**: write feedback for a new RED attempt against the pre-RED baseline. Require durable replacement-state test and proof requirements. Treat rejected RED and GREEN references as diagnostic context only; do not instruct RED to fix, edit, preserve, or inspect discarded RED artifacts or discarded GREEN artifacts.
+8. **On either rejection route**: do not cite `path:line` locations from commits the rollback removes. Write a durable rewrite contract that remains valid after rollback. The runner also strips leftover `file:line` tokens on these routes.
 7. **Keep operator-directed observations in `summary`** — `train_feedback` is reserved for instructions the next-running agent can execute.
 
 ```yaml
