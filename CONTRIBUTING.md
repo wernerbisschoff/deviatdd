@@ -82,9 +82,10 @@ Per [`specs/constitution.md` §4](specs/constitution.md#4-development-workflow):
 - Task-level micro commits continue to use their task scope, such as
   `TSK-001-01`.
 
-Direct commits to `main` are acceptable for **docs-only or CI-only
-changes** that do not touch `src/` or `specs/`. Anything else goes
-through a feature branch.
+Direct commits to `main` are allowed for code, specs, docs, and CI changes
+after required verification. Feature branches are optional for manual work.
+Automated micro tasks still use isolated branches or worktrees.
+Direct commits do not bypass required human approval gates.
 
 ---
 
@@ -122,7 +123,7 @@ Never use an `ISS-` prefix in a commit scope. Body lines wrap at 72 characters.
 
 1. **Open or find an issue first.** Even small fixes benefit from a
    tracking issue with an acceptance criterion.
-2. **Branch from `main`** using the convention above.
+2. Work directly on `main`, or **branch from `main`** using the convention above.
 3. **Develop in tight commits.** Each commit should leave the tree in
    a passing state.
 4. **Run the gates locally** before pushing:
