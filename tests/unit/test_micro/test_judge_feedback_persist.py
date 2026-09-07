@@ -452,3 +452,47 @@ class TestRevertRedViolationsReachRetryRed:
         assert _REWRITE_RECOMMENDATION in retry, retry
         assert "previous cycle failed because" not in retry, retry
         assert _head_sha(tmp_git_repo) == feedback_sha
+
+
+def test_green_budget_escalation_persists_feedback_before_retry_red(
+    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    red_sha, ledger_path = _seed_green_repo(tmp_git_repo)
+    pre_red = _rev_parse(tmp_git_repo, f"{red_sha}^")
+    feedback = "The next GREEN attempt must: implement the assigned behavior."
+    session = _apply_existing(
+        tmp_git_repo,
+        ledger_path,
+        _manifest(
+            verdict="COMPLIANCE_FAIL",
+            next_action="revert_green",
+            train_feedback=feedback,
+        ),
+    )
+    md_rel = ledger_path.with_suffix(".md").relative_to(tmp_git_repo).as_posix()
+
+    def retry_red(*args: object, **kwargs: object) -> SessionState:
+        assert _parent_sha(tmp_git_repo) == pre_red
+        assert feedback in _head_blob(tmp_git_repo, md_rel)
+        row = _latest_judge_row(_jsonl_rows(ledger_path.read_text()))
+        assert row["judge_feedback"] == feedback
+        assert row["judge_action"] == "revert_red"
+        assert row["status"] == "PENDING"
+        assert not (tmp_git_repo / "feature.py").exists()
+        assert not (tmp_git_repo / "impl.py").exists()
+        assert session.red_commit_sha == ""
+        return session
+
+    monkeypatch.setattr("deviate.cli.micro._run_red_phase", retry_red)
+    _escalate_to_new_red(
+        _task(),
+        ledger_path,
+        session,
+        tmp_git_repo / ".deviate" / "session.json",
+        Console(file=io.StringIO()),
+        agent=None,
+        monitor=None,
+        no_judge=False,
+        root=tmp_git_repo,
+        reason="green_budget_exhausted",
+    )

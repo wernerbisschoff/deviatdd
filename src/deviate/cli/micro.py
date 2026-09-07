@@ -5306,7 +5306,7 @@ def _rollback_pre_red_if_resolvable(
     task_id: str,
     attempt: int,
     reason: str,
-) -> None:
+) -> _RollbackTrace | None:
     """Reset to the pre-RED SHA when git can resolve a full 40-char SHA.
 
     Skip when ``_apply_judge_verdict`` already reset and HEAD is the
@@ -5316,14 +5316,14 @@ def _rollback_pre_red_if_resolvable(
     if session.pending_judge_action == "revert_red":
         head_subject = _git_commit_subject(root, "HEAD")
         if head_subject and _JUDGE_FEEDBACK_SUBJECT_RE.match(head_subject):
-            return
+            return None
     red_sha = session.red_commit_sha
     if not red_sha or not re.fullmatch(r"[a-f0-9]{40}", red_sha):
-        return
+        return None
     pre_red = _resolve_pre_red_sha(root, red_sha)
     if not pre_red or not re.fullmatch(r"[a-f0-9]{40}", pre_red):
-        return
-    _execute_rollback(
+        return None
+    return _execute_rollback(
         root,
         boundary_sha=pre_red,
         reason=reason,
@@ -5395,13 +5395,28 @@ def _escalate_to_new_red(
         session, session_path, c, task_id=tid, task=task, ledger_path=ledger_path
     )
     _inject_escalate_note(session, session_path, reason=reason)
-    _rollback_pre_red_if_resolvable(
+    rolled_back = _rollback_pre_red_if_resolvable(
         root,
         session,
         task_id=tid,
         attempt=session.red_attempts,
         reason=reason,
     )
+    if rolled_back and session.pending_judge_action == "revert_green":
+        session.red_commit_sha = ""
+        session.pending_judge_action = "revert_red"
+        session = _commit_judge_feedback_and_advance(
+            root,
+            task,
+            session.train_feedback,
+            "train_feedback",
+            c,
+            session,
+            session_path,
+            ledger_path=ledger_path,
+            judge_action="revert_red",
+            rollback=rolled_back,
+        )
     _maybe_push_event(
         monitor,
         "phase_change",

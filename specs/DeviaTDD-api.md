@@ -1042,6 +1042,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     while-loop. After COMPLETE/REFACTOR or `TRAIN_EXHAUSTED` the existing
     reset stays (idempotent). `green_attempts` counts each GREEN phase run
     at start (including the first) so it equals GREENs already started.
+    After `revert_green`, GREEN-budget escalation commits the latest JUDGE feedback again after the pre-RED reset.
+    It updates `tasks.md` and appends a `tasks.jsonl` row with `judge_action=revert_red` and status `PENDING`.
+    It clears the RED boundary before committing feedback, then dispatches retry RED.
     TRAIN 3/3 is a real GREEN. After three GREEN runs, the next train
     escalates (`green_budget_exhausted`) instead of burning the last
     slot on escalate. `revert_green` keeps the standing RED contract;

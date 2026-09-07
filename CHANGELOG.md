@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve the latest JUDGE feedback in `tasks.md` and `tasks.jsonl` when GREEN-budget exhaustion resets to pre-RED.
+
 ### Added
 
 - **JUDGE rejection feedback now uses a repair contract:** requirement, evidence, correction, verification, and phase boundary. Routing remains unchanged.
