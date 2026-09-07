@@ -60,13 +60,12 @@ violations:
     severity: "CRITICAL" | "HIGH" | "MEDIUM"
     recommendation: "How to resolve the violation"
 train_feedback: |
-  COMPLIANCE_VIOLATION: Instructions for the next-running agent.
-  revert_green → "The next GREEN attempt must:" (keep RED and implement the required behavior).
-  revert_red → "The next RED attempt must:" (author the required behavioral test).
-  Use "REFACTOR NOTE:" only for optional COMPLIANCE_PASS advice for REFACTOR.
-
-  COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
-  observations for the REFACTOR phase.
+  The next GREEN attempt must:
+  - Requirement: AC-PLAN-001 requires incrementing the input by one.
+  - Evidence: The rejected implementation returned a constant instead of computing from the input.
+  - Correction: Implement increment in src/example.py using the supplied input.
+  - Verification: Run the retained tests/example.py regression; expect all assertions to pass.
+  - Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
 evaluation:
   spec_compliance: "PASS" | "FAIL"
   functional_invariance: "PASS" | "FAIL"

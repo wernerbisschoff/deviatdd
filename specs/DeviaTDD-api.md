@@ -1872,6 +1872,16 @@ All state transitions are append-only. No existing line is ever modified or over
 | `timestamp` | `datetime` (auto-set on each transition via `force_transition_to`/`transition_to`) | Wall-clock record of last phase change |
 
 
+#### JUDGE rejection repair contract
+
+Rejection `train_feedback` remains a text field. Its prompt-defined repair contract contains five labeled bullets per confirmed defect:
+`Requirement`, `Evidence`, `Correction`, `Verification`, and `Boundary`.
+Start with `The next GREEN attempt must:` for `revert_green`, or `The next RED attempt must:` for `revert_red`.
+Cite an assigned acceptance criterion or applicable invariant. Describe the mismatch, executable correction, and expected verification result.
+Instructions must work after rollback. GREEN preserves tests; RED changes tests without changing production code.
+Do not expand the acceptance contract or require later-task work. Keep non-blocking suggestions outside rejection feedback.
+This guidance applies to automatic and installed manual prompts. It adds no schema validation, rejection gate, or routing change.
+
 #### JUDGE `next_action` Routing Table
 
 `HandoverManifest.next_action` (`src/deviate/core/agent.py`) carries the JUDGE agent's

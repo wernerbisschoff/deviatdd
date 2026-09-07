@@ -34,7 +34,7 @@ REFACTOR owns structural improvements. You MUST NOT flag refactoring opportuniti
 
 If you observe a refactoring opportunity, unused import, warning, or style nit, surface it as an **informational note** in `train_feedback` on a COMPLIANCE_PASS verdict, prefixed `REFACTOR NOTE:`. A REFACTOR NOTE is optional advice for the REFACTOR phase. It is not a reason to revert. `next_action` on a pass is `continue_refactor` or `skip_refactor` (or `proceed_to_refactor_no_diff` for the empty-diff sign-off). Never emit `revert_red` / `revert_green` on a COMPLIANCE_PASS. The orchestrator injects the note into the REFACTOR prompt; it does not train GREEN or RED. Never emit COMPLIANCE_VIOLATION for a refactoring opportunity, unused import, warning, or style nit.
 
-**CRITICAL — `train_feedback` on a COMPLIANCE_VIOLATION is route-specific. `next_action: revert_green` injects it into the next GREEN (discard GREEN, keep RED). `next_action: revert_red` injects it into the next RED (discard RED+GREEN). It is also appended to `tasks.md`. Do NOT put `REFACTOR NOTE:` content in rejection feedback — the prefix tells GREEN to defer to REFACTOR, which defeats the training purpose. On COMPLIANCE_VIOLATION, see the Format Requirements in STEP_3 below.**
+**CRITICAL — `train_feedback` on a COMPLIANCE_VIOLATION is route-specific. `next_action: revert_green` injects it into the next GREEN (discard GREEN, keep RED). `next_action: revert_red` injects it into the next RED (discard RED+GREEN). It is also appended to `tasks.md`. Do NOT put `REFACTOR NOTE:` content in rejection feedback — the prefix tells GREEN to defer to REFACTOR, which defeats the training purpose. On COMPLIANCE_VIOLATION, use the repair contract in STEP_3 below.**
 
 </system_instructions>
 
@@ -173,16 +173,29 @@ Cite only the resolved task `AC-PLAN-NNN` tokens in `evidence` (from this task's
 
 Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their documented three-way (or single-outcome) choice. Do not collapse those rows into this GREEN PASS mapping.
 
-**Format Requirements for Rejection `train_feedback`:** Every COMPLIANCE_VIOLATION `train_feedback` MUST guide the next-running agent:
-1. **Lead with the required action** — start with `The next GREEN attempt must:` or `The next RED attempt must:` according to `next_action`.
-2. **Give concrete implementation steps** — name the behavior, files, interfaces, and proof the next agent must produce. Example: `Implement the feature in src/gatekeeper.ts per AC-PLAN-001, then add an assertion that exercises the required path.`
-3. **Write the instruction as an imperative** — lead with the actions the next agent must take, using parallel verbs when useful. Example: `Isolate the import boundary, block hosted imports during collection, and run the subprocess guard before loading application modules.` Place brief diagnostic context after the action when it helps.
-4. **Prefer action phrases over failure statements** — write `isolate the import boundary and block hosted imports during collection` instead of `the RED test does not isolate the import boundary`. State a prohibition only when it prevents repeating a concrete defect.
-5. **NEVER contain the `REFACTOR NOTE:` prefix** — that prefix tells GREEN to defer to REFACTOR. If you must note a refactoring concern alongside a correctness gap, put it in `summary`, not `train_feedback`.
-6. **On `next_action: revert_green`**: write feedback for a new GREEN attempt against the retained RED test and restored implementation baseline. Require durable behavior, interface, file, and proof requirements. Do not instruct GREEN to modify or inspect discarded GREEN artifacts.
-7. **On `next_action: revert_red`**: write feedback for a new RED attempt against the pre-RED baseline. Require durable replacement-state test and proof requirements. Treat rejected RED and GREEN references as diagnostic context only; do not instruct RED to fix, edit, preserve, or inspect discarded RED artifacts or discarded GREEN artifacts.
-8. **On either rejection route**: do not cite `path:line` locations from commits the rollback removes. Write a durable rewrite contract that remains valid after rollback. The runner also strips leftover `file:line` tokens on these routes.
-9. **Keep operator-directed observations in `summary`** — `train_feedback` is reserved for instructions the next-running agent can execute.
+**Repair contract for rejection `train_feedback`:** Give the next-running agent a short correction plan within the existing text field.
+This is prompt guidance, not a new rejection gate or manifest schema.
+Start with `The next GREEN attempt must:` or `The next RED attempt must:` according to `next_action`.
+For each confirmed defect, include these five labeled bullets:
+
+- **Requirement**: Name the assigned `AC-PLAN-NNN` or applicable invariant that requires the behavior.
+- **Evidence**: Describe the concrete mismatch and observed behavior. Treat rejected artifacts as diagnostic context only.
+- **Correction**: Give executable instructions. Name the required behavior, files, and interfaces available after rollback.
+- **Verification**: State the command or behavioral check and expected result that proves the correction.
+- **Boundary**: State what must remain unchanged. Do not expand the acceptance contract or require later-task work.
+
+**On `next_action: revert_green`**: Use the retained RED test and restored implementation baseline.
+Require durable behavior, interface, file, and proof requirements. GREEN must not edit tests.
+Do not instruct GREEN to modify or inspect discarded GREEN artifacts.
+**On `next_action: revert_red`**: Use the pre-RED baseline.
+Require durable replacement-state test and proof requirements. RED must not edit production code.
+Do not instruct RED to fix, edit, preserve, or inspect discarded RED artifacts or discarded GREEN artifacts.
+Verification must distinguish a behavioral assertion failure from setup, import, or collection failures.
+
+Do not cite `path:line` locations from commits the rollback removes.
+Write a durable rewrite contract that remains valid after rollback.
+Keep operator observations and non-blocking suggestions in `summary`.
+Never include `REFACTOR NOTE:` in rejection feedback. That prefix is reserved for optional advice on a passing verdict.
 
 ```yaml
 phase: JUDGE
@@ -205,13 +218,12 @@ violations:
     severity: "CRITICAL" | "HIGH" | "MEDIUM"
     recommendation: "How to resolve the violation (specific files, specific changes)"
 train_feedback: |
-  COMPLIANCE_VIOLATION: Specific, actionable instructions for the next agent.
-  revert_green → "The next GREEN attempt must:" (discard GREEN, keep RED).
-  revert_red → "The next RED attempt must:" (discard RED+GREEN).
-  NEVER "REFACTOR NOTE:" or operator observations here — those go in summary.
-
-  COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
-  observations for the REFACTOR phase.
+  The next GREEN attempt must:
+  - Requirement: AC-PLAN-001 requires incrementing the input by one.
+  - Evidence: The rejected implementation returned a constant instead of computing from the input.
+  - Correction: Implement increment in src/example.py using the supplied input.
+  - Verification: Run the retained tests/example.py regression; expect all assertions to pass.
+  - Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
 evaluation:
   spec_compliance: "PASS" | "FAIL"
   functional_invariance: "PASS" | "FAIL"
@@ -258,13 +270,12 @@ violations:
     severity: "..."
     recommendation: "..."
 train_feedback: |
-  COMPLIANCE_VIOLATION: Instructions for the next-running agent.
-  revert_green → "The next GREEN attempt must:" (keep RED and implement the required behavior).
-  revert_red → "The next RED attempt must:" (author the required behavioral test).
-  Use "REFACTOR NOTE:" only for optional COMPLIANCE_PASS advice for REFACTOR.
-
-  COMPLIANCE_PASS: Optional informational REFACTOR NOTE: about non-blocking
-  observations for the REFACTOR phase.
+  The next RED attempt must:
+  - Requirement: AC-PLAN-001 requires incrementing the input by one.
+  - Evidence: The rejected test mocked increment itself, bypassing the required behavior.
+  - Correction: Author tests/example.py to call the real increment function with distinct inputs.
+  - Verification: Run the regression; expect an assertion failure caused by incorrect output, not setup failure.
+  - Boundary: Change tests only. Do not edit production code or expand the acceptance contract.
 evaluation:
   spec_compliance: "PASS" | "FAIL"
   functional_invariance: "PASS" | "FAIL"
