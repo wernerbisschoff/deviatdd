@@ -564,13 +564,12 @@ class TestLayerStampedPrompts:
         assert "**Verification**: `pytest tests/`" not in auto
         assert "mise unit" in auto or "tests/unit" in auto
 
-    def test_tasks_closing_sweep_follows_existing_rungs(self):
+    def test_tasks_uses_one_strategy_per_tdd_task_and_allows_ladder(self):
         auto = _read_template("tasks.md")
-        assert "[E2E]" in auto
-        assert "[VERIFY]" in auto
-        assert "never manufacture empty E2E" in auto.lower() or (
-            "never emit empty e2e" in auto.lower()
-        )
+        assert "each TDD task with exactly one strategy" in auto
+        assert "Different TDD tasks may use different strategies" in auto
+        assert "MUST NOT have a `Test Strategy`" in auto
+        assert "mise unit`, `mise integration`" in auto
 
     def test_tasks_migration_ac_is_integration(self):
         auto = _read_template("tasks.md")
@@ -643,6 +642,14 @@ class TestVerificationBatchImmediateRouting:
             f"{path.name}: must lock Verification_Batch so it cannot emit Mode: TDD"
         )
         assert "Type→Mode lock" in text or "hard type→mode lock" in text
+
+    def test_auto_tasks_selects_one_strategy_per_tdd_task(self):
+        repo = Path(__file__).resolve().parents[3]
+        path = repo / "src" / "deviate" / "prompts" / "auto" / "tasks.md"
+        text = path.read_text(encoding="utf-8")
+        assert "each TDD task with exactly one strategy" in text
+        assert "Different TDD tasks may use different strategies" in text
+        assert "MUST NOT have a `Test Strategy`" in text
 
 
 class TestManualDerivationDriftGuard:
