@@ -113,7 +113,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - `**Dependency**` MUST be inline: `TSK-001-01` not on separate line
 
 **CRITICAL TASK ID CONSTRAINT:**
-- Task IDs MUST follow the format `TSK-{NNN}-{NN}:` where `NNN` is the 3-digit issue number and `NN` is the 2-digit task index within the issue, starting from `TSK-001-01:`.
+- Task IDs MUST follow the format `TSK-{NNN}-{NN}:` where `NNN` is the 3-digit **issue number from `issue_id`**, never the epic number, and `NN` is the 2-digit task index within that issue, starting from `TSK-001-01:`.
 
 **TASK STRUCTURE CONSTRAINTS** — every task MUST contain:
 - **Type**: `Feature_Batch | Infra_Batch | Domain_Batch | Bugfix | Migration | Config | Verification_Batch`
@@ -130,7 +130,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
   - **Refactor**: Code quality improvements, pattern alignment
   - **Edge Cases**: Error handling, boundary conditions
   - **Acceptance**: Concrete "done" criteria beyond test passing
-- **Dependency**: (Optional) `TSK-{NNN}-{NN}` if this task requires another task to complete first (inline value)
+- **Dependency**: (Optional) `TSK-{NNN}-{NN}` from the same issue if this task requires another task to complete first (inline value)
 
 **OUTPUT TEMPLATE** — the complete file should follow this structure:
 
