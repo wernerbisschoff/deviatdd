@@ -152,6 +152,17 @@ class TestResolveVerificationCommand:
         assert "mise test" not in resolved
         assert "mise unit" not in resolved
 
+    def test_declared_mise_run_is_not_wrapped_in_mise_exec(
+        self, tmp_path: Path
+    ) -> None:
+        _write_mise(tmp_path, '[tasks.test]\nrun = "pytest"\n')
+        declared = "mise run test -- tests/e2e/test_full_local_startup.py"
+        resolved = micro._resolve_verification_command(
+            tmp_path, _make_task(verification=declared)
+        )
+        assert resolved == declared
+        assert "mise exec -- mise run" not in resolved
+
     def test_partial_k_filter_wraps_mise_exec(self, tmp_path: Path) -> None:
         _write_mise(
             tmp_path,

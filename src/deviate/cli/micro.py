@@ -4234,6 +4234,22 @@ def _run_judge_phase(
             next_action=getattr(manifest, "next_action", "") or "",
         )
         if attempt < _MAX_JUDGE_MANIFEST_ATTEMPTS:
+            errors_text = "\n".join(schema_errors)
+            retry_prompt = (
+                f"{prompt}\n\n<judge_manifest_repair>\n"
+                "Your previous JUDGE handover failed schema validation.\n"
+                "GREEN is preserved. Do not edit files or run rollback commands.\n"
+                "Re-emit the complete handover as valid YAML, not a patch.\n"
+                "Evidence items must be objects, never strings or bare AC IDs.\n"
+                "Use only assigned ACs and real citations from the supplied diff "
+                "or allowed HEAD files. Do not fabricate evidence or change the "
+                "verdict merely to satisfy the schema.\n"
+                f"Validation errors:\n{errors_text}\n"
+                "Each evidence item must follow this schema:\n"
+                "<evidence_item_schema>\n"
+                f"{json.dumps(EvidenceItem.model_json_schema(), indent=2)}\n"
+                "</evidence_item_schema>\n</judge_manifest_repair>\n"
+            )
             c.print(
                 f"  [yellow]JUDGE_MANIFEST_INVALID[/] {tid} "
                 f"(attempt {attempt}/{_MAX_JUDGE_MANIFEST_ATTEMPTS}): "
