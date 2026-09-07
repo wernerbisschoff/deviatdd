@@ -182,7 +182,7 @@ Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their doc
 6. **On `next_action: revert_green`**: write feedback for a new GREEN attempt against the retained RED test and restored implementation baseline. Require durable behavior, interface, file, and proof requirements. Do not instruct GREEN to modify or inspect discarded GREEN artifacts.
 7. **On `next_action: revert_red`**: write feedback for a new RED attempt against the pre-RED baseline. Require durable replacement-state test and proof requirements. Treat rejected RED and GREEN references as diagnostic context only; do not instruct RED to fix, edit, preserve, or inspect discarded RED artifacts or discarded GREEN artifacts.
 8. **On either rejection route**: do not cite `path:line` locations from commits the rollback removes. Write a durable rewrite contract that remains valid after rollback. The runner also strips leftover `file:line` tokens on these routes.
-7. **Keep operator-directed observations in `summary`** — `train_feedback` is reserved for instructions the next-running agent can execute.
+9. **Keep operator-directed observations in `summary`** — `train_feedback` is reserved for instructions the next-running agent can execute.
 
 ```yaml
 phase: JUDGE
