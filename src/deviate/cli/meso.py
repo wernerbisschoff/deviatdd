@@ -39,6 +39,7 @@ from deviate.core.repo import gather_git_state
 from deviate.core.validation import (
     repair_missing_verification_mode,
     validate_acceptance_contract,
+    validate_issue_traceability,
 )
 from deviate.core.worktree import (
     branch_exists_on_remote,
@@ -883,6 +884,19 @@ def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
     return Path(setup_result["worktree_path"])
 
 
+def _check_issue_traceability(issue_file: Path) -> dict[str, object]:
+    """Run the shared traceability validator over an issue file body."""
+    try:
+        body = issue_file.read_text(encoding="utf-8")
+    except OSError:
+        return {
+            "status": "NOT_READY",
+            "missing_fields": ["issue body unreadable"],
+            "repair_hint": "repair the issue file so it is readable",
+        }
+    return validate_issue_traceability(body)
+
+
 @with_json_quiet
 def _plan_pre(
     issue_id: str | None = None,
@@ -938,6 +952,8 @@ def _plan_pre(
 
     spec_path: str = ""
     status: str = "READY"
+    missing_fields: list[str] = []
+    repair_hint: str = ""
     if resolved_issue_id:
         found = _find_issue_file(resolved_issue_id)
         if found is None:
@@ -950,6 +966,14 @@ def _plan_pre(
             console.print(
                 f"[green]SPEC_DISCOVERED[/] {spec_path} (issue file IS the spec)"
             )
+            gate = _check_issue_traceability(found)
+            if gate["status"] == "NOT_READY":
+                status = "NOT_READY"
+                missing_fields = gate["missing_fields"]
+                repair_hint = gate["repair_hint"]
+                console.print(
+                    f"[red]NOT_READY[/] missing: {', '.join(missing_fields)} — {repair_hint}"
+                )
     else:
         status = "ISSUE_NOT_FOUND"
         console.print("[red]NO_ACTIVE_ISSUE[/]")
@@ -988,6 +1012,9 @@ def _plan_pre(
         "force": force,
         "dry_run": dry_run,
     }
+    if status == "NOT_READY":
+        contract["missing_fields"] = missing_fields
+        contract["repair_hint"] = repair_hint
     print(json.dumps(contract, indent=2))
 
 
