@@ -102,6 +102,7 @@ Run lint to ensure code quality:
 </execution_sequence>
 
 <output_contract>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 
 After completing the refactoring, emit a structured handover:
 

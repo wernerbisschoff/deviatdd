@@ -119,7 +119,7 @@ Start with `The next GREEN attempt must:` or `The next RED attempt must:` accord
 For each confirmed defect, include these five labeled bullets:
 
 - **Requirement**: Name the assigned `AC-PLAN-NNN` or applicable invariant that requires the behavior.
-- **Evidence**: Describe the concrete mismatch and observed behavior. Treat rejected artifacts as diagnostic context only.
+- **Evidence**: State the concrete mismatch and observed behavior in one sentence. Treat rejected artifacts as diagnostic context only.
 - **Correction**: Give executable instructions. Name the required behavior, files, and interfaces available after rollback.
 - **Verification**: State the command or behavioral check and expected result that proves the correction.
 - **Boundary**: State what must remain unchanged. Do not expand the acceptance contract or require later-task work.

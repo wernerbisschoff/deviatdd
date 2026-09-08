@@ -51,6 +51,7 @@ The orchestrator runs `deviate plan post` after your response. Do NOT run it you
 </execution_sequence>
 
 <output_format_schemas>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 
 **CRITICAL FORMAT RULES:**
 - Use `## Section Name` headers for all sections

@@ -165,6 +165,7 @@ task_id: "{TASK_ID}"
 </execution_sequence>
 
 <output_format_schemas>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 
 
 # DeviaTDD Micro Red: {TASK_ID}

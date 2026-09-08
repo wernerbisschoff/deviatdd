@@ -113,6 +113,7 @@ The orchestrator runs `deviate explore post` after your response. Do NOT run it 
 </execution_sequence>
 
 <output_format_schemas>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 ## Problem Definition
 **Statement**: Concise description of the resolved problem space.
 **Scope**: In-scope structural components verified across the scan.

@@ -132,6 +132,7 @@ The orchestrator runs `deviate research post` after your response. Returns `STAT
 </execution_sequence>
 
 <output_format_schemas_design_md>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 ## Recommended Architecture
 [Summary]: 2-4 paragraph executive summary of the recommended **floor** approach.
 [Module_Surface]: Modules to add (new), modules to modify (existing), integration seams.
@@ -190,6 +191,7 @@ Contested clauses only (Tension / Violation) plus at most 3 key Aligned rows. Ne
 </output_format_schemas_design_md>
 
 <output_format_schemas_data_model_md>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 ## Entity Definitions
 ## Relationship Graph
 ## Schema Tables

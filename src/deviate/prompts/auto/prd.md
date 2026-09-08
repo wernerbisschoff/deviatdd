@@ -94,6 +94,7 @@ After writing `prd.md` and the manifest, run `deviate prd post .deviate/artifact
 </execution_sequence>
 
 <output_format_schemas>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 ## Document Control and Metadata
 - **Upstream Reference**: `<relative path to explore.md>`
 - **Status**: PROPOSED

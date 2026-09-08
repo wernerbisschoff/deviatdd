@@ -88,6 +88,7 @@ The orchestrator runs `deviate shard post` after your response. Do NOT run it yo
 
 </execution_sequence>
 <output_format_schemas>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 
 
 ## Shard Generation Manifest

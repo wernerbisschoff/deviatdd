@@ -133,6 +133,7 @@ files:
 </execution_sequence>
 
 <output_format_schemas>
+Write for a skimming reader: bullets over paragraphs, cite over restate, omit over hedge.
 
 Use `status: "ERROR"` strictly for tool failures (test_command crashed, lint binary missing, subprocess IO error). Use `status: FAILURE` when you cannot make the RED test pass within mechanical scope (see Mandate 3). The runner distinguishes these: `ERROR` routes through defensive checks; `FAILURE` is treated as a normal phase outcome for JUDGE review.
 
