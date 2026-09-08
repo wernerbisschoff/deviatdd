@@ -821,3 +821,13 @@
 - **Constitution Reference**: `specs/constitution.md` §1 requires Macro PRD/shard/adhoc artifacts carry User Stories plus ATDD acceptance outlines. Source: “Macro PRD/shard/adhoc artifacts carry User Stories plus ATDD acceptance outlines; Plan owns the finalized Gherkin Acceptance Contract.”
 - **Source Anchors**: `src/deviate/prompts/auto/plan.md` line 66 states: “`**Upstream Traceability**: `US-NNN-NN`, `FR-NNN-ID`, `AC-NNN-ID-NN`. At minimum one `US-`, one `FR-`, and one `AC-` token”. `src/deviate/cli/meso.py` line 514 defines `_validate_prd_traceability` with FAIL plus detail. `src/deviate/prompts/auto/shard.md` line 14 states: “Every shard issue MUST encode the user-visible job as `## User Stories Ledger`”.
 - **Authority Rule**: The gate checks presence before the agent plans. The repair path restores the missing sections. Nothing else ships.
+
+## FR-ADHOC-056: Intuitive inspect defaults for issues and tasks
+- **Description**: Bare `deviate inspect issues` lists issues and bare `deviate inspect tasks` lists tasks. Help appears only on `--help`.
+- **Preconditions**: Issue ledger at `specs/issues.jsonl` and per-issue task ledgers parse under current append-only rules.
+- **Inputs/Outputs**: Inputs are optional `--type`, `--status`, `--json` filters. Outputs are the existing Rich tables plus JSON arrays.
+- **User Stories**:
+  1. US-056-01: As a CLI user, I want bare inspect group names to list records so that I review issues and tasks without memorizing subcommands
+- **Acceptance Outline**:
+  1. AC-ADHOC-056-01 / AO-056-01: Bare `deviate inspect issues` renders the issues table
+  2. AC-ADHOC-056-02 / AO-056-02: Bare `deviate inspect tasks` renders the tasks table with explicit `list` and `show` paths unchanged
