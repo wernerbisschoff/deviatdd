@@ -63,6 +63,12 @@
     - **Acceptance**: Unit suite passes. Legacy fixture flows NOT_READY to repair to READY. Complete legacy issues skip repair.
   - **Dependency**: TSK-055-02
 
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: TSK-055-03 requires only a repair helper that inserts absent sections and revalidates via validate_issue_traceability. No tasks_pre wiring is required.
+    - Evidence: The rejected RED added test_tasks_pre_reuses_shared_gate_helper asserting _check_issue_traceability in _tasks_pre source. The rejected GREEN added that gate and 3 existing tests now return NOT_READY instead of READY.
+    - Correction: Author tests in tests/unit/test_cli/test_meso.py only for repair_issue_traceability and _check_issue_traceability gate behavior. Delete any assertion on _tasks_pre source or _tasks_pre status. Do not edit production code.
+    - Verification: Run uv run pytest tests/unit/test_cli/test_meso.py -v plus the three named tasks_pre contract tests; expect repair tests to fail for missing implementation and the three existing tasks_pre tests to pass.
+    - Boundary: Change tests only. Do not edit src/deviate/cli/meso.py. Do not expand the contract to tasks_pre or later tasks.
 - TSK-055-04: Align plan, shard, and adhoc templates plus specs and CHANGELOG
   - **Type**: Config
   - **Mode**: IMMEDIATE
