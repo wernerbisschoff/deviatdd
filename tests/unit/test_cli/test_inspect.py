@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from contextlib import chdir
 from datetime import datetime, timezone
@@ -13,6 +14,15 @@ from typer.testing import CliRunner
 from deviate.cli import cli
 
 runner = CliRunner()
+
+# Strip ANSI before substring checks: under FORCE_COLOR / GITHUB_ACTIONS, Rich
+# splits `--` from the flag name into separate style runs, so `--type` is
+# visually present but absent as a contiguous literal in `.output`.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _seed_issues_jsonl(path: Path, records: list[dict]) -> Path:
@@ -785,8 +795,9 @@ class TestExplicitPathsAndHelp:
         assert len(data) == 1
         assert set(data[0]) >= {"issue_id", "type", "title", "status"}
         assert help_result.exit_code == 0, help_result.output
+        help_text = _plain(help_result.output)
         for flag in ("--type", "--status", "--json"):
-            assert flag in help_result.output
+            assert flag in help_text
 
     @pytest.mark.behavioral
     def test_explicit_tasks_list_flags_and_shape(self, tmp_path: Path) -> None:
@@ -809,8 +820,9 @@ class TestExplicitPathsAndHelp:
         assert len(data) == 1
         assert set(data[0]) >= {"id", "issue_id", "description", "status"}
         assert help_result.exit_code == 0, help_result.output
+        help_text = _plain(help_result.output)
         for flag in ("--status", "--json"):
-            assert flag in help_result.output
+            assert flag in help_text
 
     @pytest.mark.behavioral
     def test_explicit_show_paths_unchanged(self, tmp_path: Path) -> None:
