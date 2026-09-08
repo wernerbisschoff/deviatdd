@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Give malformed JUDGE retries explicit validation errors and the evidence schema. Preserve GREEN and report exhaustion without a traceback.
 - Escape feedback text at prompt insertion so literal XML delimiters cannot break the training section. Keep stored Markdown unchanged.
 - Preserve declared `mise run` and `mise exec` verification commands without wrapping them in another mise invocation.
+- **Prompt schemas and post-script validators are aligned with substance checks and loud failures.** Required section lists agree one-to-one per phase; `Session State` leaves the PRD contract for manifest JSON and `Source Registry` folds into Document Control. Empty mandated sections fail naming the section, File Registry (12 rows) and Risk Register (4 rows) warn at row-count caps, PRD FR sub-fields Preconditions, State Transition, Exception are omit-if-N/A, and a missing verification mode errors with the scenario id instead of silent repair. Shipped pre-alignment sample artifacts under `specs/` are grandfathered. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.
 
 - Preserve the latest JUDGE feedback in `tasks.md` and `tasks.jsonl` when GREEN-budget exhaustion resets to pre-RED.
 

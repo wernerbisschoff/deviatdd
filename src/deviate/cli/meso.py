@@ -39,7 +39,6 @@ from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
 from deviate.core.validation import (
     ISSUE_TRACEABILITY_SECTIONS,
-    repair_missing_verification_mode,
     validate_acceptance_contract,
     validate_issue_traceability,
     validate_sections,
@@ -1079,27 +1078,8 @@ def _plan_pre(
 
 
 def _validate_or_repair_plan(content: str) -> tuple[list[str], str]:
-    """Validate a plan contract; auto-fill a missing Verification Mode.
-
-    When the contract fails *only* because scenarios lack a ``**Verification
-    Mode**:`` line, inject the default ``automated`` value and return the
-    repaired body with empty errors. Any other failure (invalid or duplicated
-    mode, missing clauses, bad AO traceability) is returned unchanged so the
-    caller rejects it.
-    """
-    errors = validate_acceptance_contract(content)
-    if not errors:
-        return [], content
-    if not all(e.endswith("missing Verification Mode") for e in errors):
-        return errors, content
-    repaired, count = repair_missing_verification_mode(content)
-    if count == 0:
-        return errors, content
-    console.print(
-        f"[yellow]PLAN_MODE_REPAIR[/] auto-filled {count} missing "
-        "**Verification Mode** line(s) as `automated`"
-    )
-    return validate_acceptance_contract(repaired), repaired
+    """Validate a plan contract; missing Verification Mode is a loud error."""
+    return validate_acceptance_contract(content), content
 
 
 def _plan_post(force: bool = False, issue_id: str | None = None) -> None:

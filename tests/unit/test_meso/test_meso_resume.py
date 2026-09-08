@@ -156,7 +156,7 @@ class TestMesoIdempotentResume:
         mock_invoke.assert_not_called()
         assert "MESO_TASKS_INVALID" in capsys.readouterr().out
 
-    def test_modeless_contract_is_repaired_on_resume(
+    def test_modeless_contract_fails_loud_on_resume(
         self,
         tmp_git_repo,
         capsys: pytest.CaptureFixture[str],
@@ -178,15 +178,14 @@ class TestMesoIdempotentResume:
         tasks_path = tmp_git_repo / "specs/test-epic/iss-001/tasks.md"
 
         with chdir(tmp_git_repo):
-            state = _resolve_meso_resume_state(plan_path, tasks_path)
+            with pytest.raises(typer.Exit):
+                _resolve_meso_resume_state(plan_path, tasks_path)
 
-        assert state == "TASKS"
-        repaired = plan_path.read_text(encoding="utf-8")
-        assert repaired != original
-        assert "**Verification Mode**: automated" in repaired
+        assert plan_path.read_text(encoding="utf-8") == original
         captured = capsys.readouterr().out
-        assert "PLAN_MODE_REPAIR" in captured
-        assert "MESO_PLAN_INVALID" not in captured
+        assert "MESO_PLAN_INVALID" in captured
+        assert "AC-PLAN-001: missing Verification Mode" in captured
+        assert "PLAN_MODE_REPAIR" not in captured
 
     @patch("deviate.cli.meso._invoke_agent_phase")
     def test_illegal_mode_contract_stops_without_overwrite(

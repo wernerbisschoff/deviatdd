@@ -182,10 +182,6 @@ Optional short list of named extras in the maximal bracket. Not a PRD input for 
 
 
 
-## Source Registry
-| ID | Type | Source / Path | Relevance Note |
-| :--- | :--- | :--- | :--- |
-| [SRC_ID] | [Codebase_File / Constitution / Explore_MD] | [relative/path] | [1-sentence relevance] |
 
 ## Status Summary
 | Metric | Value |

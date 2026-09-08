@@ -151,6 +151,7 @@ When a nearest existing user flow exists, catalog it as fact. Quote paths. Do no
 
 If no nearest sibling exists, write `None observed` under this heading.
 
+
 ## Ecosystem Research
 - **Best Practices**
 - **Common Use Cases & Pitfalls**
@@ -172,6 +173,8 @@ EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote a
 | New External Integrations | [Yes / No] |
 | Upstream / Cross-Cutting Concerns | [description or "None"] |
 | Rationale | [1-2 sentence factual justification] |
+
+
 
 
 ## Status Summary

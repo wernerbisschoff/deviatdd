@@ -31,7 +31,4 @@ Stub.
 
 ## Ambiguity Resolution and Stakeholder Decisions
 Stub.
-
-## Session State
-Stub.
 """

@@ -27,7 +27,6 @@ ARTIFACT_VALIDATORS: dict[str, list[str]] = {
         "Risk Register",
         "Constitutional Alignment Audit",
         "Pending HITL Decisions",
-        "Source Registry",
         "Status Summary",
     ],
     "data_model": [
@@ -36,7 +35,6 @@ ARTIFACT_VALIDATORS: dict[str, list[str]] = {
         "Schema Tables",
         "State Transitions",
         "Data Flow",
-        "Source Registry",
     ],
     "prd": [
         "Document Control and Metadata",
@@ -49,6 +47,47 @@ ARTIFACT_VALIDATORS: dict[str, list[str]] = {
 }
 
 
+_ROW_CAP_WARNINGS: dict[str, int] = {"File Registry": 12, "Risk Register": 4}
+_FR_OPTIONAL_SUBFIELDS = ("Preconditions", "State Transition", "Exception")
+
+
+def _substance_errors(content: str, required: list[str]) -> list[str]:
+    errors: list[str] = []
+    for section in required:
+        body = extract_section_body(content, section)
+        if body is not None and not body.strip():
+            errors.append(f"empty section: {section}")
+    return errors
+
+
+def _row_cap_warnings(content: str, required: list[str]) -> list[str]:
+    warnings: list[str] = []
+    for section, cap in _ROW_CAP_WARNINGS.items():
+        if section not in required:
+            continue
+        body = extract_section_body(content, section)
+        if body is None:
+            continue
+        rows = [ln for ln in body.splitlines() if ln.strip().startswith(("-", "*"))]
+        if len(rows) > cap:
+            warnings.append(f"{section} has {len(rows)} rows, over cap of {cap}")
+    return warnings
+
+
+def _fr_subfield_errors(content: str) -> list[str]:
+    body = extract_section_body(content, "Functional Requirements and Epics")
+    if body is None:
+        return []
+    errors: list[str] = []
+    for field in _FR_OPTIONAL_SUBFIELDS:
+        match = re.search(
+            rf"^\s*[-*]?\s*\*\*{re.escape(field)}\*\*\s*:(.*)$", body, re.MULTILINE
+        )
+        if match is not None and not match.group(1).strip():
+            errors.append(f"empty sub-field: {field}")
+    return errors
+
+
 def validate_artifact(content: str | None, artifact_type: str) -> ValidationResult:
     required = ARTIFACT_VALIDATORS.get(artifact_type)
     if required is None:
@@ -58,8 +97,16 @@ def validate_artifact(content: str | None, artifact_type: str) -> ValidationResu
             warnings=[],
         )
     missing = validate_sections(content, required)
-    passed = len(missing) == 0
-    return ValidationResult(passed=passed, errors=missing, warnings=[])
+    if missing and (not content or not content.strip()):
+        return ValidationResult(passed=False, errors=missing, warnings=[])
+    errors = list(missing)
+    warnings: list[str] = []
+    if content and content.strip():
+        errors.extend(
+            _substance_errors(content, [s for s in required if s not in missing])
+        )
+        warnings.extend(_row_cap_warnings(content, required))
+    return ValidationResult(passed=len(errors) == 0, errors=errors, warnings=warnings)
 
 
 def extract_section_body(content: str, header: str) -> str | None:
@@ -139,7 +186,6 @@ def validate_acceptance_outline(content: str) -> list[str]:
 PRD_CONTRACT_SECTIONS = ARTIFACT_VALIDATORS["prd"] + [
     "Acceptance Outline",
     "Ambiguity Resolution and Stakeholder Decisions",
-    "Session State",
 ]
 SHARD_CONTRACT_SECTIONS = [
     "System Topology Mapping",
@@ -157,6 +203,9 @@ def validate_macro_contract(content: str, artifact: str) -> list[str]:
     """Validate the shared PRD/Shard contract before committing artifacts."""
     required = PRD_CONTRACT_SECTIONS if artifact == "prd" else SHARD_CONTRACT_SECTIONS
     errors = validate_sections(content, required)
+    errors.extend(_substance_errors(content, [s for s in required if s not in errors]))
+    if artifact == "prd":
+        errors.extend(_fr_subfield_errors(content))
     outline = extract_section_body(content, "Acceptance Outline") or ""
     if not _AO_PATTERN.search(outline):
         errors.append(
@@ -221,55 +270,8 @@ def validate_acceptance_contract(content: str) -> list[str]:
 
 
 def repair_missing_verification_mode(content: str) -> tuple[str, int]:
-    """Insert a default ``automated`` Verification Mode into every AC-PLAN-NNN
-    scenario absent that line; return the repaired content and repair count.
-
-    Only a genuine absence is filled. An existing mode line — even an
-    invalid or duplicated one — is never touched, so ``validate_acceptance_contract``
-    still rejects those. Callers should gate repair on the contract failing
-    *only* for ``missing Verification Mode`` errors.
-    """
-    lines = content.splitlines()
-    header_idx = next(
-        (i for i, ln in enumerate(lines) if ln.strip() == "## Acceptance Contract"),
-        None,
-    )
-    if header_idx is None:
-        return content, 0
-
-    sec_end = len(lines)
-    for idx in range(header_idx + 1, len(lines)):
-        if lines[idx].lstrip().startswith("## "):
-            sec_end = idx
-            break
-
-    insertions: list[tuple[int, str]] = []
-    i = header_idx + 1
-    while i < sec_end:
-        if lines[i].lstrip().startswith("**Scenario AC-PLAN-"):
-            k = i + 1
-            mode_present = False
-            insert_after: int | None = None
-            while k < sec_end and not lines[k].lstrip().startswith(
-                "**Scenario AC-PLAN-"
-            ):
-                if re.search(r"\*\*Verification Mode\*\*", lines[k], re.IGNORECASE):
-                    mode_present = True
-                if lines[k].strip():
-                    insert_after = k
-                k += 1
-            if not mode_present and insert_after is not None:
-                insertions.append((insert_after, "- **Verification Mode**: automated"))
-            i = k
-        else:
-            i += 1
-
-    if not insertions:
-        return content, 0
-    result = list(lines)
-    for pos, line in sorted(insertions, key=lambda t: t[0], reverse=True):
-        result.insert(pos + 1, line)
-    return "\n".join(result), len(insertions)
+    """Fail loud on missing Verification Mode; never insert a default."""
+    return content, 0
 
 
 def validate_sections(content: str | None, required: list[str]) -> list[str]:

@@ -117,10 +117,10 @@ authorization/ownership; amount + fee; reserve/consume/release; skip_locked; one
 ## Functional Requirements and Epics
 ### FR-{NNN}-{ID}: [Module Name]
 - **Description**
-- **Preconditions**
+- **Preconditions** (omit-if-N/A)
 - **Inputs/Outputs**
-- **State Transition**
-- **Exception Strategy**
+- **State Transition** (omit-if-N/A)
+- **Exception Strategy** (omit-if-N/A)
 - **AO References**
   `AO-{NNN}` tokens defined in the top-level Acceptance Outline.
 
@@ -131,7 +131,6 @@ Define each `AO-NNN` outcome once here. This is the canonical outline consumed b
 ## Issue Sharding Strategy
 FRs are traceability units only. Do not prescribe issue count, issue IDs, or shard topology. Leave grouping, boundaries, and the dependency DAG to shard.
 ## Ambiguity Resolution and Stakeholder Decisions
-## Session State
 </output_format_schemas>
 
 <edge_case_handling>

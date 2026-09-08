@@ -108,6 +108,7 @@ The orchestrator runs `deviate plan post` after your response. Do NOT run it you
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | <risk description> | <High/Medium/Low> | <High/Medium/Low> | <mitigation strategy> |
+Keep this table to one line per risk and at most 4 rows; row-count caps warn, never fail.
 
 
 ## Security Profile

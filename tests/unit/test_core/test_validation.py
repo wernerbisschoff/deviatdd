@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import pytest
 
+from deviate.cli.meso import _validate_or_repair_plan
 from deviate.core.validation import (
+    ARTIFACT_VALIDATORS,
+    PRD_CONTRACT_SECTIONS,
     extract_section_body,
     repair_missing_verification_mode,
     validate_acceptance_contract,
     validate_acceptance_outline,
+    validate_artifact,
     validate_gherkin_syntax,
     validate_issue_traceability,
+    validate_macro_contract,
     validate_sections,
     validate_source_file,
     validate_task_id,
@@ -365,46 +370,41 @@ class TestVerificationModeValidation:
         ]
 
 
-class TestRepairMissingVerificationMode:
-    def test_repairs_single_missing_mode(self):
+class TestMissingVerificationModeLoudFailure:
+    @pytest.mark.behavioral
+    def test_missing_mode_errors_with_scenario_id(self):
         content = _wrap_contract([_contract_scenario(mode_line="")])
-        repaired, count = repair_missing_verification_mode(content)
-        assert count == 1
-        assert validate_acceptance_contract(repaired) == []
-
-    def test_repairs_multiple_missing_modes(self):
-        bodies = [
-            _contract_scenario("AC-PLAN-001", mode_line=""),
-            _contract_scenario("AC-PLAN-002", mode_line=""),
+        assert validate_acceptance_contract(content) == [
+            "AC-PLAN-001: missing Verification Mode",
         ]
-        repaired, count = repair_missing_verification_mode(_wrap_contract(bodies))
-        assert count == 2
-        assert validate_acceptance_contract(repaired) == []
 
-    def test_leaves_present_mode_untouched(self):
-        content = _wrap_contract(
-            [_contract_scenario(mode_line="- **Verification Mode**: deferred")]
-        )
-        repaired, count = repair_missing_verification_mode(content)
-        assert count == 0
+    @pytest.mark.behavioral
+    def test_repair_helper_inserts_no_default(self):
+        content = _wrap_contract([_contract_scenario(mode_line="")])
+        repaired, _count = repair_missing_verification_mode(content)
+        assert "**Verification Mode**" not in repaired
         assert repaired == content
-
-    def test_leaves_invalid_mode_untouched(self):
-        content = _wrap_contract(
-            [_contract_scenario(mode_line="- **Verification Mode**: soon")]
-        )
-        repaired, count = repair_missing_verification_mode(content)
-        assert count == 0
         assert validate_acceptance_contract(repaired) == [
-            "AC-PLAN-001: invalid Verification Mode 'soon'; "
-            "expected one of automated|manual|deferred",
+            "AC-PLAN-001: missing Verification Mode",
         ]
 
-    def test_missing_contract_section_is_noop(self):
-        content = "## Other Section\nbody\n"
-        repaired, count = repair_missing_verification_mode(content)
-        assert count == 0
-        assert repaired == content
+    @pytest.mark.behavioral
+    def test_plan_post_path_errors_with_id_and_inserts_no_default(self):
+        content = _wrap_contract([_contract_scenario(mode_line="")])
+        errors, returned = _validate_or_repair_plan(content)
+        assert errors == ["AC-PLAN-001: missing Verification Mode"]
+        assert returned == content
+        assert "**Verification Mode**" not in returned
+
+    @pytest.mark.behavioral
+    def test_valid_modes_still_pass(self):
+        content = _wrap_contract(
+            [_contract_scenario(mode_line="- **Verification Mode**: automated")]
+        )
+        assert validate_acceptance_contract(content) == []
+        errors, returned = _validate_or_repair_plan(content)
+        assert errors == []
+        assert returned == content
 
 
 class TestValidateSections:
@@ -675,3 +675,147 @@ class TestValidateIssueTraceability:
         assert result["status"] == "NOT_READY"
         joined = " ".join(result["missing_fields"])
         assert "Acceptance Outline" in joined
+
+
+def _sections_doc(sections: list[str], ao_token: bool = False) -> str:
+    parts = []
+    for section in sections:
+        body = (
+            "substance line"
+            if section != "Acceptance Outline"
+            else "- **AO-001**: aligned lists.│"
+        )
+        parts.append(f"## {section}\n{body}\n")
+    return "\n".join(parts)
+
+
+class TestPromptValidatorAlignmentRed:
+    @pytest.mark.behavioral
+    def test_prd_validates_without_session_state(self):
+        sections = [s for s in PRD_CONTRACT_SECTIONS if s != "Session State"]
+        assert "Session State" not in sections
+        content = _sections_doc(sections)
+        assert validate_macro_contract(content, "prd") == []
+
+    @pytest.mark.behavioral
+    def test_prd_contract_sections_exclude_session_state(self):
+        assert "Session State" not in PRD_CONTRACT_SECTIONS
+
+    @pytest.mark.behavioral
+    def test_design_validates_without_source_registry(self):
+        required = [s for s in ARTIFACT_VALIDATORS["design"] if s != "Source Registry"]
+        assert "Source Registry" not in required
+        content = _sections_doc(required)
+        assert validate_artifact(content, "design").passed is True
+
+    @pytest.mark.behavioral
+    def test_data_model_validates_without_source_registry(self):
+        required = [
+            s for s in ARTIFACT_VALIDATORS["data_model"] if s != "Source Registry"
+        ]
+        assert "Source Registry" not in required
+        content = _sections_doc(required)
+        assert validate_artifact(content, "data_model").passed is True
+
+    @pytest.mark.behavioral
+    def test_validator_lists_exclude_source_registry(self):
+        assert "Source Registry" not in ARTIFACT_VALIDATORS["design"]
+        assert "Source Registry" not in ARTIFACT_VALIDATORS["data_model"]
+
+    @pytest.mark.behavioral
+    def test_missing_mandated_section_still_rejected(self):
+        content = _sections_doc(
+            [s for s in ARTIFACT_VALIDATORS["design"] if s != "Source Registry"]
+        )
+        missing = [s for s in ARTIFACT_VALIDATORS["design"] if s not in content]
+        assert validate_sections(content, ARTIFACT_VALIDATORS["design"]) == missing
+
+    @pytest.mark.behavioral
+    def test_malformed_frontmatter_still_rejected(self):
+        assert (
+            validate_yaml_frontmatter(
+                "---\ntitle: unmatched quote\nfr: 'broken\n---\n\nBody\n"
+            )
+            is False
+        )
+
+    @pytest.mark.behavioral
+    def test_missing_section_body_does_not_crash(self):
+        assert extract_section_body("## Other\nbody\n", "Absent Section") is None
+        assert validate_sections(None, ["A"]) == ["A"]
+
+
+class TestSubstanceAndCapsRed:
+    @pytest.mark.behavioral
+    def test_empty_mandated_section_fails_naming_section(self):
+        content = _sections_doc([s for s in ARTIFACT_VALIDATORS["design"]])
+        content = content.replace(
+            "## Recommended Architecture\nsubstance line",
+            "## Recommended Architecture\n   ",
+        )
+        result = validate_artifact(content, "design")
+        assert result.passed is False
+        assert any("Recommended Architecture" in e for e in result.errors)
+
+    @pytest.mark.behavioral
+    def test_oversized_file_registry_warns_at_cap_without_failing(self):
+        rows = "\n".join(f"- row-{i}: src/f{i}.py" for i in range(13))
+        parts = []
+        for s in ARTIFACT_VALIDATORS["explore"]:
+            body = rows if s == "File Registry" else "substance line"
+            parts.append(f"## {s}\n{body}\n")
+        result = validate_artifact("\n".join(parts), "explore")
+        assert result.passed is True
+        assert any("File Registry" in w and "12" in w for w in result.warnings)
+
+    @pytest.mark.behavioral
+    def test_oversized_risks_warn_at_cap_without_failing(self):
+        rows = "\n".join(f"- risk-{i}: mitigated" for i in range(5))
+        parts = []
+        for s in ARTIFACT_VALIDATORS["design"]:
+            body = rows if s == "Risk Register" else "substance line"
+            parts.append(f"## {s}\n{body}\n")
+        result = validate_artifact("\n".join(parts), "design")
+        assert result.passed is True
+        assert any("Risk Register" in w and "4" in w for w in result.warnings)
+
+    @pytest.mark.behavioral
+    def test_fr_subfields_absent_as_na_pass(self):
+        sections = [s for s in PRD_CONTRACT_SECTIONS]
+        parts = []
+        for s in sections:
+            if s == "Functional Requirements and Epics":
+                body = "**FR-001-X**: does a thing\n- **Given**: a repo\n"
+            elif s == "Acceptance Outline":
+                body = "- **AO-001**: aligned lists."
+            else:
+                body = "substance line"
+            parts.append(f"## {s}\n{body}\n")
+        assert validate_macro_contract("\n".join(parts), "prd") == []
+
+    @pytest.mark.behavioral
+    def test_fr_subfields_present_but_empty_fail(self):
+        sections = [s for s in PRD_CONTRACT_SECTIONS]
+        parts = []
+        for s in sections:
+            if s == "Functional Requirements and Epics":
+                body = "**FR-001-X**: does a thing\n- **Preconditions**:   \n"
+            elif s == "Acceptance Outline":
+                body = "- **AO-001**: aligned lists."
+            else:
+                body = "substance line"
+            parts.append(f"## {s}\n{body}\n")
+        errors = validate_macro_contract("\n".join(parts), "prd")
+        assert any("Preconditions" in e for e in errors)
+
+    @pytest.mark.behavioral
+    def test_valid_artifact_still_passes(self):
+        content = _sections_doc([s for s in ARTIFACT_VALIDATORS["design"]])
+        result = validate_artifact(content, "design")
+        assert result.passed is True
+        assert result.errors == []
+
+    @pytest.mark.behavioral
+    def test_missing_section_body_substance_does_not_crash(self):
+        result = validate_artifact("## Other\nbody\n", "design")
+        assert result.passed is False
