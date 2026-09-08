@@ -694,3 +694,78 @@ class TestBareInspectIssues:
         with chdir(tmp_path):
             result = runner.invoke(cli, ["inspect", "issues"])
         assert result.exit_code != 0
+
+
+class TestBareInspectTasks:
+    """US-056-02 (AC-PLAN-003, AC-PLAN-004): bare tasks group lists records."""
+
+    @staticmethod
+    def _seed(tmp_path: Path) -> Path:
+        tasks = TestTasksList._seed_issue(
+            tmp_path, "ISS-001", "adhoc", "056-inspect-intuitive-defaults"
+        )
+        for r in [
+            {
+                "id": "TSK-056-01",
+                "issue_id": "ISS-001",
+                "description": "Task A",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+            {
+                "id": "TSK-056-02",
+                "issue_id": "ISS-001",
+                "description": "Task B",
+                "status": "COMPLETED",
+                "execution_mode": "TDD",
+            },
+        ]:
+            TestTasksList._seed_task(tasks, r)
+        return tasks
+
+    @pytest.mark.behavioral
+    def test_bare_tasks_matches_list_table(self, tmp_path: Path) -> None:
+        self._seed(tmp_path)
+        with chdir(tmp_path):
+            bare = runner.invoke(cli, ["inspect", "tasks"])
+            explicit = runner.invoke(cli, ["inspect", "tasks", "list"])
+        assert bare.exit_code == 0, bare.output
+        assert explicit.exit_code == 0, explicit.output
+        assert bare.output == explicit.output
+
+    @pytest.mark.behavioral
+    def test_bare_tasks_flags_match_list(self, tmp_path: Path) -> None:
+        self._seed(tmp_path)
+        flags = ["--status", "PENDING", "--json"]
+        with chdir(tmp_path):
+            bare = runner.invoke(cli, ["inspect", "tasks", *flags])
+            explicit = runner.invoke(cli, ["inspect", "tasks", "list", *flags])
+        assert bare.exit_code == 0, bare.output
+        assert explicit.exit_code == 0, explicit.output
+        assert bare.output == explicit.output
+        data = json.loads(bare.stdout)
+        assert [e["id"] for e in data] == ["TSK-056-01"]
+
+    @pytest.mark.behavioral
+    def test_bare_tasks_malformed_warns_and_skips(self, tmp_path: Path) -> None:
+        tasks = self._seed(tmp_path)
+        with tasks.open("a", encoding="utf-8") as f:
+            f.write("{invalid json line\n")
+        with chdir(tmp_path):
+            bare = runner.invoke(cli, ["inspect", "tasks", "--json"])
+            explicit = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
+        assert bare.exit_code == 0, bare.output
+        assert explicit.exit_code == 0, explicit.output
+        assert bare.output == explicit.output
+        data = json.loads(bare.stdout)
+        assert {e["id"] for e in data} == {"TSK-056-01", "TSK-056-02"}
+
+    @pytest.mark.behavioral
+    def test_bare_tasks_missing_ledger_is_empty(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            bare = runner.invoke(cli, ["inspect", "tasks", "--json"])
+            explicit = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
+        assert bare.exit_code == 0, bare.output
+        assert explicit.exit_code == 0, explicit.output
+        assert bare.output == explicit.output
+        assert bare.stdout.strip() == "[]"
