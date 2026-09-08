@@ -940,7 +940,8 @@ class TestRedTransportAndIdentityPrompts:
                 f"RED must list invalid failure cause {token!r} (AC-2)"
             )
         assert 'status: "ERROR"' in red
-        assert "PostgreSQL" in red or "postgres" in lowered
+        assert "PRECONDITIONS_NOT_READY" in red
+        assert "BLOCKED" in red
         assert "do not substitute an offline test" in lowered
 
     def test_red_requires_ac_to_test_matrix_before_authoring(self) -> None:

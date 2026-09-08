@@ -129,7 +129,7 @@ Do not write tests in any other layer directory.
    ```
    {test_command_rule}
 4. **Git Isolation**: scope `test_command` to an isolated temp dir per the micro-shared Git Isolation rule — never run git inside the project repository.
-5. Validate that the execution crashes explicitly due to assertion failures or missing function components — the missing behavior the AC names. A suite exit ≠ 0 counts as RED only when that is the failure. Syntax errors, missing fixtures, incorrect test setup, or unavailable required services do **not** establish RED. If a required service (e.g. PostgreSQL) is unavailable, emit `status: "ERROR"` with the connection failure. Do not substitute an offline test. If the suite passes immediately, the required behavior may already exist: keep the test and emit `failure_kind: already_satisfied` with a non-empty `files` set and/or `test_file` naming the regression test path(s), plus a `rationale` explaining why no implementation is needed. A passing suite with no named test files is not a COMPLETE. If the test itself cannot target the required behavior, emit `failure_kind: test_defect`. Only a parsing syntax failure is a hard abort — fix it and re-run. Never emit a bare PASS when the suite does not fail.
+5. Validate that the execution crashes explicitly due to assertion failures or missing function components — the missing behavior the AC names. A suite exit ≠ 0 counts as RED only when that is the failure. Syntax errors, missing fixtures, or incorrect test setup do **not** establish RED. If required infrastructure is unavailable, emit the named precondition signal `PRECONDITIONS_NOT_READY` with the required setup command and report non-error RED status `BLOCKED`. The signal always names the setup command. Do not substitute an offline test. RED produces exactly one outcome: RED proof or the named signal. If the suite passes immediately, the required behavior may already exist: keep the test and emit `failure_kind: already_satisfied` with a non-empty `files` set and/or `test_file` naming the regression test path(s), plus a `rationale` explaining why no implementation is needed. A passing suite with no named test files is not a COMPLETE. If the test itself cannot target the required behavior, emit `failure_kind: test_defect`. Only a parsing syntax failure is a hard abort — fix it and re-run. Never emit a bare PASS when the suite does not fail.
 6. Run the `lint_command` to ensure lint compliance:
    ```bash
    {lint_command}
@@ -182,7 +182,7 @@ task_id: "{TASK_ID}"
 # rationale: <why no implementation is needed / why the test cannot target the behavior>
 </handover_manifest>
 
-Use `status: "ERROR"` only for tool failures, file write errors, unavailable required services (emit the connection failure), or other unforeseen problems. NEVER use `status: "FAIL"`. Do not substitute an offline test when a required service is unavailable.
+Use `status: "ERROR"` only for tool failures, file write errors, or other unforeseen problems. NEVER use `status: "FAIL"`. Unavailable infrastructure is not an error: emit the named precondition signal `PRECONDITIONS_NOT_READY` with the required setup command and report RED status `BLOCKED`.
 </output_format_schemas>
 
 <edge_case_handling>
@@ -193,7 +193,7 @@ Use `status: "ERROR"` only for tool failures, file write errors, unavailable req
 | Test crashes with syntax error | Fix syntax, re-run, verify FAIL status |
 | Offline SQL rendering (`as_sql=True`) or substring asserts on generated SQL | Does **not** satisfy RED for migration/integration ACs. Call `upgrade()` against the real engine and inspect the live catalog. |
 | Syntax error, missing fixture, or incorrect test setup | Does not establish RED. Fix the test or setup; only a missing-behavior failure counts. |
-| Required service unavailable (e.g. PostgreSQL) | Emit `status: "ERROR"` with the connection failure. Do not substitute an offline test. |
+| Required infrastructure unavailable | Emit the named precondition signal `PRECONDITIONS_NOT_READY` with the required setup command and report RED status `BLOCKED` (non-error). The signal always names the setup command. Do not substitute an offline test. |
 | `<train_feedback>` block present | Treat it as a mandatory correction list; each item changes the test design or receives a test-based justification. |
 
 </edge_case_handling>
