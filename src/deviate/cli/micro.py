@@ -6065,6 +6065,61 @@ class EnvNotReadyError(PhaseFailedError):
     """
 
 
+PRECONDITION_SIGNAL_NAME = "PRECONDITIONS_NOT_READY"
+RED_PRECONDITION_STATUS = "BLOCKED"
+DEFAULT_PRECONDITION_SETUP_COMMAND = "mise run setup:e2e"
+
+
+class PreconditionNotReadyError(EnvNotReadyError):
+    """Named missing-infrastructure signal carrying the setup command."""
+
+
+def build_precondition_signal(
+    *,
+    setup_command: str = DEFAULT_PRECONDITION_SETUP_COMMAND,
+    detail: str = "",
+) -> PreconditionNotReadyError:
+    """Build the named precondition signal with setup command plus probe detail."""
+    return PreconditionNotReadyError(
+        f"{PRECONDITION_SIGNAL_NAME}: {detail} (setup: {setup_command})"
+    )
+
+
+def build_precondition_signal_for_env_file(
+    *,
+    path: str,
+    error: str,
+    setup_command: str = DEFAULT_PRECONDITION_SETUP_COMMAND,
+) -> PreconditionNotReadyError:
+    """Name the malformed env file plus parse failure in one signal."""
+    return build_precondition_signal(
+        setup_command=setup_command, detail=f"{path}: {error}"
+    )
+
+
+def is_precondition_signal(obj: object) -> bool:
+    """True for the named signal, the ENV_NOT_READY alias, or signal errors."""
+    if isinstance(obj, EnvNotReadyError):
+        return True
+    if isinstance(obj, str):
+        return PRECONDITION_SIGNAL_NAME in obj or "ENV_NOT_READY" in obj
+    return False
+
+
+def red_status_for_signal(signal: object) -> str:
+    """Map a precondition signal to the non-error RED status."""
+    return RED_PRECONDITION_STATUS
+
+
+def coerce_partial_infra_result(
+    *,
+    has_red_proof: bool,
+    signal: PreconditionNotReadyError,
+) -> PreconditionNotReadyError | None:
+    """Resolve partial infra to exactly one outcome: RED proof or named signal."""
+    return None if has_red_proof else signal
+
+
 class VerificationUnresolvedError(PhaseFailedError):
     """Task Test Strategy cannot resolve to an existing suite.
 
