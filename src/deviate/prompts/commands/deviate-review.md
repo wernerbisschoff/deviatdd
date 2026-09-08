@@ -19,11 +19,10 @@ You are a **COMMENTS_ONLY** reviewer at **HITL Gate 3** unless the slash argumen
 
 **`--apply` (opt-in, not default):** after comments, you MAY apply **CRITICAL** findings only (security / data loss / broken build / named-check fail with a concrete FIX). Never auto-apply SUGGESTION or OPPORTUNITY. Commit only when `--apply` actually landed a CRITICAL fix.
 
-Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped). Do **not** assume JUDGE already ran. Do **not** "light-sniff because JUDGE validated". Read this issue's brief and this diff.
+Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped). Do **not** assume JUDGE already ran. Read this issue's brief and this diff.
 
 You are **not** a merge gate. Never emit `REQUEST_CHANGES`. Never merge.
 
-**Model**: V4 Flash. Same inputs → same comments.
 
 ## This-issue read set
 
@@ -47,11 +46,11 @@ MUST NOT:
 
 Non-DeviaTDD: if a brief with named checks is provided, comments only (apply still requires `--apply`); if not, stop with `brief incomplete`.
 
-`uncovered` / `coverage_complete` from `deviate review pre` are **inputs to comments**, not a reason to auto-fix. Do not require `coverage_complete` to comment. There is no always-on STEP 4.
+`uncovered` / `coverage_complete` from `deviate review pre` are **inputs to comments**, not a reason to auto-fix. Do not require `coverage_complete` to comment.
 
 ## Contract Structure
 
-When you run `deviate review pre` (add `--apply` only when the slash argument is `--apply`):
+When you run `deviate review pre`:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -64,7 +63,6 @@ When you run `deviate review pre` (add `--apply` only when the slash argument is
 | `apply` | bool | `true` only when `--apply` was passed; default `false` |
 | `apply_scope` | str/null | `CRITICAL` when `apply` is true; otherwise null |
 
-If stdout is exactly `brief incomplete`, stop. Do not hunt Explore.
 
 ## Comment checklist (deterministic)
 
@@ -99,7 +97,7 @@ deviate review pre
 
 If stdout is exactly `brief incomplete` (or the contract is missing named checks): emit exactly `brief incomplete` and stop. Do not hunt Explore.
 
-Parse `diff`, `issue_brief_path`, `plan_path`, `uncovered`, `apply`. Read the brief and, if present, this issue's plan AC-PLAN lines. Read the test hunks and production hunks. Do not read leftover research/docs unless the brief names those paths.
+Parse `diff`, `issue_brief_path`, `plan_path`, `uncovered`, `apply`. Read the brief and, if present, this issue's plan AC-PLAN lines. Read the test hunks and production hunks.
 
 If `diff` is empty after a complete brief, emit `SKIP: no changes since {base_branch}` and exit.
 
@@ -114,7 +112,7 @@ Single pass. Produce comments:
 
 ### STEP 3: SURFACE — Comments (always)
 
-Output findings as chat text. If a GitHub PR exists for this branch, also post a PR review with event **COMMENT** (never `REQUEST_CHANGES`, never approve-to-merge, never merge):
+Output findings as chat text. If a GitHub PR exists for this branch, also post a PR review with event **COMMENT** (never `REQUEST_CHANGES`):
 
 ```bash
 gh pr review --event COMMENT --body "..."
@@ -147,21 +145,20 @@ If there is nothing to comment:
 
 ### STEP 4: APPLY — only when `--apply` (CRITICAL only)
 
-STEP 4 only when `--apply` (contract `apply` is true). If `--apply` was not passed, do not enter this step.
+STEP 4 only when `--apply` (contract `apply` is true).
 
-Apply **CRITICAL** findings only: security / data loss / broken build / named-check fail **with a concrete FIX**. Never auto-apply SUGGESTION or OPPORTUNITY.
+Apply **CRITICAL** findings only: security / data loss / broken build / named-check fail **with a concrete FIX**.
 
 **Selection rule** (deterministic — no `ask` tool):
 - Apply a finding only when severity is `[CRITICAL]`, the category is security / data loss / broken build / named-check fail, and a concrete `### FIX-NNN` exists.
-- Skip every `[SUGGESTION]` entry.
-- Skip every `[OPPORTUNITY]` entry.
+- Skip every `[OPPORTUNITY]` / `[SUGGESTION]` entry.
 - If no CRITICAL+FIX items qualify → emit `No CRITICAL items with a concrete FIX — nothing to apply, nothing to commit.` and exit without `git add` or `git commit`.
 
 **Per-fix protocol**:
 1. Read the FIX-NNN entry (file, line, current snippet, expected snippet).
 2. Apply the transformation with the `edit` tool on the target file.
 3. Validate the file still parses with a syntax-only fast gate.
-4. If the edit fails or the post-edit parse breaks: `git restore -- <file>` to revert that fix, log the failure, continue with the next CRITICAL+FIX. Never leave a broken file in the tree.
+4. On edit or parse failure: `git restore -- <file>`, log the failure, continue with the next CRITICAL+FIX. Never leave a broken file in the tree.
 
 **Aggregate validation** (mandatory before commit):
 - Prefer `mise run check` when `.mise.toml` exists.
@@ -188,7 +185,7 @@ If `--apply` is set but no CRITICAL fix landed: do not `git add`, do not `git co
 | Binary files in diff | Skip binary files, note count |
 | GitHub PR exists | PR review event COMMENT only. Never REQUEST_CHANGES. Never merge. |
 | No PR | Stdout comments only |
-| No `--apply` (default) | Print/post comments and stop. No edits. No `git add`. No `git commit`. No always-on STEP 4. |
+| No `--apply` (default) | Print/post comments and stop. No edits. No `git add`. No `git commit`. |
 | `--apply` with no CRITICAL+FIX | Comments stand. Nothing to apply, nothing to commit. |
 | `--apply` SUGGESTION or OPPORTUNITY | Never auto-apply SUGGESTION or OPPORTUNITY. |
 | `--apply` CRITICAL without a concrete FIX | Comment only. Do not invent a patch. |

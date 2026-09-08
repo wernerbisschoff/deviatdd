@@ -11,7 +11,7 @@ aliases:
 
 <system_instructions>
 
-This skill is the final gate in the DeviaTDD meso workflow. It opens a pull request (GitHub) or merge request (GitLab) from the feature branch, or pushes the branch without opening one if the operator so chooses.
+This skill pushes the branch and optionally opens a GH PR / GL MR. Work stays on the branch — `deviate-merge` owns the final squash-to-base gate.
 
 Key invariants:
 
@@ -30,7 +30,7 @@ Key invariants:
    ```
    deviate pr pre
    ```
-   The contract on stdout contains: `status` (`READY`|`FAILURE`), `phase`, `issue_id`, `branch_name`, `base_branch`, `pr_title`, `issue_title`, `commit_titles` (pipe-separated), `changed_files` (comma-separated), `diff_summary`, `git_state`, `timestamp`.
+   Parse `deviate pr pre` JSON; halt on FAILURE.
 2. **Active issue**: `issue_id` must resolve. If `NO_ACTIVE_ISSUE` or `ISSUE_NOT_FOUND`, halt and report; the issue must exist in `specs/issues.jsonl` before a PR can be opened.
 3. **Worktree cleanliness**: `git status --porcelain` — the operative work must be committed on the branch before PR creation. If non-empty, halt with `Failure_State: Working_Tree_Not_Clean`.
 </step>

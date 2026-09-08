@@ -7,11 +7,10 @@ version: 3.0.0
 
 # deviatdd — Per-task micro orchestrator
 
-This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner picks the next unchecked task from `tasks.md` and runs it; the agent re-invokes the same command on each iteration. **Do NOT use `deviate micro run --all`** — that flag is intentionally off-limits here so the agent can stop and react on each failure. The loop terminates when the runner exits with `NO_PENDING_TASKS`. When a failure escapes micro's scope, the skill points you at the canonical slash command (see **Dispatch to slash commands** below) — it does not act inline.
+This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner picks the next unchecked task from `tasks.md` and runs it; the agent re-invokes the same command on each iteration. The loop terminates when the runner exits with `NO_PENDING_TASKS`. When a failure escapes micro's scope, the skill points you at the canonical slash command (see **Dispatch to slash commands** below) — it does not act inline.
 
 **Default invoke** (no skill argument): after exit 0, immediately re-invoke `deviate micro run` until `NO_PENDING_TASKS`. **Review invoke** when `$ARGUMENTS` contains the token `review`, or the operator said `/deviatdd review` / "deviatdd with review": after each successful `deviate micro run`, STOP. Show the task id and the commits just made. Wait for the human to continue. Then run the next `deviate micro run`. Never pass `--review` or `--all` to the runner — this skill's `review` argument is an agent loop policy, not a CLI flag. Failure-path triage is the same in both modes.
 
-The default posture is **repeat stepping**: the agent runs the bare `deviate micro run` on repeat, with the bash tool's `timeout` parameter set (see the timeout guidance in **Per-task stepping loop** below). Each invocation consumes one unchecked task from `tasks.md`; the loop terminates when the runner exits with `NO_PENDING_TASKS`. A single task boundary keeps the queue inspectable and prevents one bad task from cascading into the next.
 
 ## First action: prepare Meso, then run Micro
 
@@ -21,7 +20,7 @@ Run this command first:
 deviate meso run
 ```
 
-Set the bash tool's `timeout` parameter on this call. Meso spawns up to two agent phases (PLAN, then TASKS), each bounded at `timeout_seconds` (default 1800s) via `resolve_agent_deadline` (`src/deviate/state/config.py`), so a cold run needs **`timeout: 3660`** (2 × 1800s + 60s buffer). The `MESO_ALREADY_COMPLETE` and resume paths finish in seconds; the value only needs to cover the cold case.
+Set the bash tool's `timeout` parameter on this call. Meso spawns up to two agent phases (PLAN, then TASKS), each bounded at `timeout_seconds` (default 1800s) via `resolve_agent_deadline` (`src/deviate/state/config.py`), so a cold run needs **`timeout: 3660`** (2 × 1800s + 60s buffer).
 
 `deviate meso run` owns issue discovery, Specify, Plan, Tasks, and resume decisions.
 Do not inspect `plan.md` or `tasks.md` manually before this command.
@@ -41,9 +40,8 @@ Stop if Meso exits non-zero. Report `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, o
 Do not start Micro after a Meso failure.
 
 After Meso succeeds or emits `MESO_ALREADY_COMPLETE`, run `deviate micro run` in the returned worktree.
-The runner picks the next unchecked task from `tasks.md`. Default invoke: re-run it after each successful task. Review invoke: stop after each success, show the task id and the commits just made, and wait for the human.
 
-Do not waste turns on pre-run code exploration. Meso owns preparation.
+Skip pre-run code exploration — meso owns preparation.
 Micro owns RED, GREEN, JUDGE, and REFACTOR.
 
 ## Code change policy
@@ -61,7 +59,7 @@ By default, do not edit the project's `src/`, `tests/`, `specs/`, or other files
 
 ## Per-task stepping loop
 
-Instead of `--all`, run tasks one at a time. **Default invoke** (no argument) **loops until the queue is empty**. **Review invoke** (`review` in `$ARGUMENTS`, `/deviatdd review`, or "deviatdd with review") stops after each successful task for a human look, then continues on the human's go-ahead. The canonical command is the **bare** `deviate micro run` (no task ID) — the runner resolves the next unchecked task from `tasks.md` and runs it. Re-invoke the same command; it picks the next task each time. The loop terminates when the runner emits `NO_PENDING_TASKS` (exit 0). Any other exit 0 means ONE task completed — it does NOT mean the queue is drained. On the default path the agent MUST re-invoke; on the review path the agent STOPS after a completed task. Failure-path triage is unchanged. The agent also stops inspecting when a task fails, behaves unexpectedly, or the runner emits `NO_PENDING_TASKS`.
+Run tasks one at a time — never `--all`. **Default invoke** (no argument) **loops until the queue is empty**: re-invoke the bare `deviate micro run` after each success; any exit 0 other than `NO_PENDING_TASKS` means ONE task completed, not a drained queue.
 
 ### Source of truth: `tasks.md` (NOT the ledger)
 
@@ -85,17 +83,17 @@ Flags you may need:
 - `--model <name>` — override model for this task
 - `--dry-run` — preview before executing
 
-Do NOT use `--all`. The skill is built around per-task stepping; `--all` defeats the per-task inspection loop and is reserved for the `deviate run` meso driver.
 
-Set a **decent timeout** on the bash invocation of `deviate micro run`. The CLI has no end-to-end deadline (`src/deviate/cli/micro.py::run_command` does not bound the subprocess); it self-bounds only per component — each agent call via `resolve_agent_deadline` and each test command via `_resolve_test_timeout_seconds`, both defaulting to 1800s. **Use the bash tool's own `timeout` parameter** — the shell binary `timeout` and `gtimeout` are NOT installed in this environment. Do NOT wrap the command in a shell-level `timeout` invocation; rely on the harness. Size the value for the **whole cycle**, not one phase: full profile runs up to 4 agent phases (RED, GREEN, JUDGE, REFACTOR; JUDGE runs no test command) plus a test command in each of the other three → **`timeout: 9000`** (4 × 1800s agent + 3 × 1800s test + buffer). Fast profile runs 2 phases (RED, GREEN), each with a test command → **`timeout: 5400`** (2 × 1800s agent + 2 × 1800s test + buffer). The per-phase deadlines inside the runner usually fire first; the bash timeout is the backstop for a legitimately slow cycle.
+Set a **decent timeout** on the bash invocation of `deviate micro run`, sized for the **whole cycle**: full profile → **`timeout: 9000`**, fast profile (RED, GREEN only) → **`timeout: 5400`**. The shell binaries `timeout`/`gtimeout` are NOT installed here — use the bash tool's own `timeout` parameter, never a shell-level wrapper.
 
-If the timeout fires, the task is still in the ledger; the next repeat invocation picks it up from the same phase state. Do NOT bypass with `kill -9` unless the runner left session state corrupted (then run the **Clean-slate retry** gate).
+If the timeout fires, the task is still in the ledger; the next repeat invocation picks it up from the same phase state.
+
 ### Step 2: Check the result
 
 Exit code 0 has two valid outcomes. Read the output before you decide:
 
 - `NO_PENDING_TASKS`: the queue is empty. Stop.
-- A task completed: **Default invoke:** **Do NOT stop here** — re-invoke `deviate micro run`. **Review invoke:** show the task ID and commits, then wait for the human. Never pass `--review` or `--all`.
+- A task completed: **Default invoke:** **Do NOT stop here** — **MUST re-invoke** `deviate micro run`. **Review invoke:** show the task ID and commits, then wait for the human.
 
 If the command exits non-zero, inspect the per-task transcript before
 deciding how to proceed:
@@ -114,10 +112,13 @@ Key signals:
 | `PHASE_DECISION` `decision=JUDGE_REJECTED` | JUDGE found compliance issues. |
 | `AGENT_RESULT` `status=error` | Agent subprocess error (timeout, crash, etc.). |
 | `POST_CMD_FAILURE` | Post-phase commit/lint hook failed. |
+| `JUDGE_REJECTED` with `head_sha`/`reset_to`/`recovery_ref` | Rolled-back tree — `git show <head_sha>` or `git switch <recovery_ref>` inspects it (never `git stash`). |
+| `LOOP_DETECTED` / `CYCLE_END` | Repeated JUDGE rejects (`blast=`, `streak=`) / task left the cycle — read `.verdicts.jsonl`. |
+| `FEEDBACK_COMMIT_FAILED` | Auto-GREEN feedback-marker commit failed; train boundary degraded. |
 
 ### Step 3: Unblock or escalate
 
-Use this bounded ladder. Stop at the first matching row. Do not use repeated retries as diagnosis.
+Use this bounded ladder. Do not use repeated retries as diagnosis.
 
 | Condition | Action | Retry limit |
 |---|---|---|
@@ -128,7 +129,7 @@ Use this bounded ladder. Stop at the first matching row. Do not use repeated ret
 | Git, ledger, rollback, or internal `src/deviate/...` failure | Treat it as a harness bug. Preserve logs, check for an open issue, then escalate. | No retry unless a documented workaround exists. |
 | Failure ownership is unclear, evidence conflicts, or recovery can lose data | Stop and ask the operator. Include the task ID, command, last error, dirty-file list, and recommended slash command. | No retry. |
 
-Escalate immediately when a destructive command needs approval, ledger writes are dirty, a failure repeats after its allowed retry, or the same harness signature affects two tasks. Do not skip a task by editing `tasks.jsonl`; it is append-only.
+Escalation triggers are the approval, dirty-ledger, and repeat-failure rows above. Escalate when the same harness signature affects two tasks instead of retrying each one. Do not skip a task by editing `tasks.jsonl`; it is append-only.
 
 If a bad task commit needs rollback, use `git revert <SHA>`, then re-run the task. Do not use `git reset` outside the clean-slate gate.
 
@@ -145,11 +146,9 @@ deviate micro run
 ```
 
 - If the runner emits `NO_PENDING_TASKS` (exit 0), the queue is drained — emit the skill's output contract and stop.
-- If the runner exits 0 after completing a task, re-invoke `deviate micro run` to consume the next unchecked task. Repeat indefinitely.
+- If the runner exits 0 after completing a task, re-invoke `deviate micro run` for the next unchecked task. Repeat indefinitely.
 
-**Why this matters:** a single `deviate micro run` invocation runs ONE task's full cycle and exits 0 on success. That exit means only this task is done, not the queue. The agent MUST re-invoke the command, otherwise it will stop after one task while `tasks.md` still has unchecked work. The runner's `NO_PENDING_TASKS` exit is the only authoritative "no more work" signal — do NOT use `deviate inspect tasks list --status PENDING` to gate the loop (that reads the ledger, not `tasks.md`, and will give false negatives).
-
-**Review invoke does not use this step after a success.** After exit 0, the agent already stopped in Step 2 / Step 3 for the human. Resume here only when the human continues (or when Step 3 decided to retry a failure — failure-path triage is unchanged).
+**Review invoke skips this step after a success** — resume here only when the human continues or Step 3 ordered a retry.
 
 ---
 ---
@@ -180,47 +179,9 @@ events to two sinks under `.deviate/logs/` via the dispatcher in
   (optional `<phase>-<n>.prompt.log`). Verbatim stdout lives here so the
   main transcript stays scannable.
 
-Each line is `[<UTC iso>] <EVENT>\n  <kwarg>: <value>\n` (multi-line
-values are indented four-space under a `key:` header). The
-`_log_run("<NAME>", ...)` calls in `src/deviate/cli/micro.py` are the
-authoritative event inventory — refer to that file for the per-event
-keyword schema rather than guessing fields. Event names that matter
-for triage:
+Each line is `[<UTC iso>] <EVENT>\n  <kwarg>: <value>\n` (multi-line values are indented four-space under a `key:` header).
+Triage on these events: `TASK_FAILED` (start here), `PHASE_DECISION` (routing), `AGENT_RESULT` (agent output), `INVOKE_AGENT` (spawn record), `CYCLE_END` (cycle exit).
 
-- `TASK_FAILED` — top-level post-cycle failure; carries `error=`.
-  Read this first.
-- `PHASE_START` / `PHASE_DECISION` — phase transitions. `PHASE_DECISION`
-  is NOT necessarily terminal: the same event is emitted for
-  intermediate JUDGE routing decisions and for the final CYCLE outcome.
-  Use the `decision=` / `reroute=` / `action=` keywords plus the
-  matching `phase=` to interpret it; do NOT assume `PHASE_DECISION`
-  means "done".
-- `INVOKE_AGENT` — short line: `task_id=`, `phase=`, `backend=`,
-  `model=`. No prompt body.
-- `AGENT_RESULT` — summary only: `status=`, `verdict=`,
-  `next_action=` (when present). Full stdout is in the raw sidecar,
-  not this event.
-- `JUDGE_REJECTED`, `JUDGE_AGENT_NO_FEEDBACK`, `JUDGE_REFACTOR_NOTE`,
-  `JUDGE_REVERT_CONFIRM_REQUIRED`, `JUDGE_REVERT_DECLINED`
-  — judge-specific. `JUDGE_REFACTOR_NOTE` carries `note=` (the
-  refactor hint), not `note_preview=`. `JUDGE_REJECTED` and the
-  confirm/decline events carry `head_sha=`, `reset_to=`,
-  `recovery_ref=` (`tmp/deviate-agent-work/<task>/attempt-N`) so
-  later review is `rg head_sha` then `git switch <recovery_ref>`
-  (not `git stash`). Manual `judge post` does not reset until
-  TTY confirm or `--yes` / `--revert`.
-- `POST_CMD_FAILURE` — `_execute_post_cmd` hook failure; carries
-  `uncommitted_count=` and `files=` (the dirty files the hook refused),
-  NOT `returncode=`/`stderr=`.
-- `FEEDBACK_COMMIT_FAILED` — auto-GREEN's feedback-marker commit
-  failed; the runner continues but the train boundary is degraded.
-- `CYCLE_END` — task left `_run_tdd_cycle` (complete, fail, or
-  skip). Carries `completed=`, `phase_decisions=` (PHASE_DECISION
-  actions this run), `reject_count=`, `last_blast=` (`red` /
-  `green` / `none`), `max_streak=`. The same payload is appended to
-  `.verdicts.jsonl` as `{"event":"cycle_end", ...}`.
-- `LOOP_DETECTED` — two or more consecutive JUDGE rejects with the
-  same blast (`streak>=2`). Carries `blast=` and `streak=`.
 
 Quick lookup:
 
@@ -236,14 +197,10 @@ ls -t .deviate/logs/run_*.log | head -1 | xargs cat
 cat .deviate/logs/<ISSUE_ID>/<TASK_ID>.log | tail -20
 ```
 
-If the log points at a git / rollback / ledger anomaly, follow the
-**Clean-slate retry** gate below. If it points at meso state or a
-task that should never have been claimed, dispatch to the matching
-slash command in the **Dispatch** table.
 
 ## Canonical invocation
 
-This skill accepts an optional **skill argument** (not a CLI flag). Detect review mode when `$ARGUMENTS` contains the token `review`, or when the operator invoked `/deviatdd review` / "deviatdd with review".
+This skill accepts an optional **skill argument** (not a CLI flag): `review` in `$ARGUMENTS` selects review mode.
 
 ```text
 # Skill invoke — default (no argument): auto-continue after each success.
@@ -256,7 +213,7 @@ This skill accepts an optional **skill argument** (not a CLI flag). Detect revie
 # or: the operator said "deviatdd with review"
 ```
 
-The spawned runner command is **always** the bare `deviate micro run` (optional runner flags from the list below). **Do not pass `--review` or `--all` into the runner.** `--review` is a different, runner-owned pause before each phase commit. This skill's `review` argument only changes the agent's after-success loop policy.
+The spawned runner command is **always** the bare `deviate micro run` (plus optional flags from the list below). **Do not pass `--review` or `--all` into the runner.**
 
 ```bash
 # Default: bare command, on repeat. The runner picks the next unchecked task from tasks.md.
@@ -270,7 +227,7 @@ deviate micro run --profile fast
 deviate micro run <TASK_ID>
 ```
 
-The per-task stepping loop is the default mode. **Do NOT use `--all`** — it is reserved for the `deviate run` meso driver that chains meso into micro end-to-end. Here, every PENDING task gets its own invocation so the agent can inspect the result and decide whether to advance. Review invoke still uses one bare `deviate micro run` per task; it only changes whether the agent waits for a human after exit 0.
+Every PENDING task gets its own invocation so the agent can inspect the result and decide whether to advance.
 
 ## Error triage table
 
@@ -279,7 +236,7 @@ diagnostic, and the next action.
 
 | Failure class | Diagnostic | Next action |
 |---|---|---|
-| `NO_PENDING_TASKS` | micro emits `[yellow]NO_PENDING_TASKS[/]` and exits 0 | Nothing to do — the queue is empty. Fail here gracefully. |
+| `NO_PENDING_TASKS` | micro emits `[yellow]NO_PENDING_TASKS[/]` and exits 0 | Nothing to do — the queue is empty. |
 | Single task stuck in `FAILED` | micro prints `TASK_FAILED` for one task and exits non-zero | Inspect `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`. If a previous RED was rolled back, run `/deviate-red` (or `/deviate-green` / `/deviate-refactor`) on the task directly. If the failure looks like a deviatdd harness bug, file a deviatdd issue (see **Filing deviatdd issues** below). |
 | `MERGE_CONFLICT` during `deviate merge` between micro runs | git reports conflicts in `specs/issues.jsonl` / `specs/**/tasks.jsonl` | Do NOT resolve manually — the append-only ledgers are union-merged via `.gitattributes`. Surface the conflict to the operator and dispatch to `/deviate-merge` or `/squash-merge`. |
 | Pre-commit hook failure | `git commit` exits non-zero with hook stderr | Read hook stderr verbatim. Fix the underlying issue (lint / format / type / test). Do NOT pass `--no-verify`. Retry the task. |
@@ -289,35 +246,16 @@ diagnostic, and the next action.
 | Uncommitted spec files | `git status --porcelain -- specs/` shows dirty entries | The deviatdd append-only ledger protocol commits specs at every phase post. Dirty specs mean a phase post was interrupted. Inspect, then dispatch to `/deviate-meso` for a clean rerun. |
 | Detached HEAD | micro refuses to dispatch tasks | `git checkout <branch>` to the worktree's branch. If the branch is gone, the worktree is gone — run the clean-slate retry below. |
 | Branch drift | the worktree branch has diverged from `origin/<base>` | Run `/deviate-merge` to land the diverged work, or rebase manually only if you have operator sign-off. |
-| Judge emits `COMPLIANCE_PASS` on a slice whose diff is intrinsically empty (e.g. RED-only deliverable, fixture file, generated types, doc-only slice) | micro routes the JUDGE verdict to `next_action: proceed_to_refactor_no_diff` and enters REFACTOR regardless of `--no-refactor`; the GREEN-empty branch never enters the rejection cascade. Inspect the task log to confirm the GREEN diff is genuinely empty | No operator action — REFACTOR commits the empty-diff sign-off and marks the task COMPLETED. If REFACTOR runs but the task doesn't progress (legacy runner without the discriminator), dispatch `/deviate-execute` for the task to land it as DIRECT. |
+| Judge emits `COMPLIANCE_PASS` on an intrinsically empty diff (RED-only deliverable, fixture, generated types, doc-only slice) | micro routes the verdict to `next_action: proceed_to_refactor_no_diff` and enters REFACTOR regardless of `--no-refactor` | No action — REFACTOR commits the empty-diff sign-off and marks COMPLETED. |
 | Agent subprocess timeout | micro prints `AGENT_TIMEOUT` after N seconds | Inspect the task log; if the model was rate-limited, retry once. If it persists, dispatch `/deviate-meso` to claim a fresh session. |
 | Pattern: repeated harness failures across different tasks | Multiple tasks fail with similar git/ledger/agent errors | **Do not retry**. File a deviatdd issue (see below). The harness has a bug, not the task. |
 
 ## Filing deviatdd issues
 
-When a task failure reveals a bug in the deviatdd harness itself
-(not in the task being executed), file an issue on the deviatdd
-repository so the root cause is tracked and fixed.
 
-### Indicators of a harness bug
+File an issue only when the triage table classifies the failure as a harness bug — git, ledger, session, or agent errors repeating across tasks. Never file for task-level failures (lint, test logic, formatting, missing implementation).
 
-These are signals that the task itself is probably fine but the
-orchestration layer is broken:
-
-- Git operations fail in ways the task could not cause (e.g. detached
-  HEAD in a freshly-created worktree, `git commit` even though the task
-  ran correctly).
-- Ledger corruption or ledger write failures that leave tasks in
-  an unprocessable state.
-- Session state corruption visible across multiple tasks.
-- Error messages that reference internal deviatdd code paths
-  (`src/deviate/...`) with stack traces.
-- `POST_CMD_FAILURE` that is not a lint/format issue (e.g. `git`
-  misconfiguration, hook script itself crashing).
-- Agent backend issues that persist across retries (same error,
-  different tasks).
-- Rollback logic fails or leaves the worktree in a dirty state
-  that the clean-slate retry cannot recover.
+Typical harness signals: operations the task could not cause (detached HEAD in a fresh worktree, `src/deviate/...` stack traces, non-lint `POST_CMD_FAILURE`), ledger or session corruption across tasks, rollback leaving a dirty tree.
 
 ### How to file a deviatdd issue
 
@@ -338,9 +276,7 @@ the new evidence and task context on the existing issue instead:
 gh issue comment <ISSUE_NUMBER> --repo wernerbisschoff/deviatdd --body "<evidence + task context>"
 ```
 
-Only when no open issue matches do you create a new one. The deviatdd
-repo is the current working directory
-(`/Users/werner/Projects/tools/deviatdd`).
+Only when no open issue matches do you create a new one. The repo is the current working directory.
 
 ```bash
 # Capture the evidence first — copy the relevant log:
@@ -371,18 +307,8 @@ gh issue create \
 "
 ```
 
-If the log is very large, truncate to the relevant section and note
-that the full log is available at the path shown.
 
-After filing (or commenting on) the issue, decide whether to:
-
-1. **Continue** — if the bug is isolated to one task, skip that task
-   via the ledgers and proceed to the next.
-2. **Stop** — if the harness is fundamentally broken (session state,
-   git isolation), halt and surface the issue to the operator with a
-   `next_action: /deviate-meso` recommendation.
-3. **Workaround** — if there is a known workaround (e.g. clean-slate
-   retry), apply it and note the issue reference in the status output.
+After filing (or commenting), follow Step 3: continue past an isolated task, stop on fundamental breakage, or apply a documented workaround.
 
 ---
 
@@ -398,8 +324,7 @@ human confirmation; the gate enforces that.
 git status --porcelain -- specs/issues.jsonl specs/**/tasks.jsonl
 ```
 
-MUST be empty. The Append-Only Ledger Protocol (constitution §1) and the
-`<phase> post` scripts guarantee these are committed post-post-script.
+MUST be empty.
 
 If any are dirty → STOP. A micro task may be mid-flight and the user
 must resolve that first (do NOT reset through uncommitted ledger writes).
@@ -444,16 +369,9 @@ Then re-invoke for the next pending task:
 deviate micro run <TASK_ID>
 ```
 
-What `git clean -fd` deliberately does NOT touch (`-x` excluded):
-`.deviate/`, `.mise.toml`, `.venv/`, `__pycache__/`, `.worktrees/`,
-anything in `.gitignore`. This matches the existing rollback discipline
-at `src/deviate/cli/micro.py::_execute_rollback`.
 
 ## Dispatch to slash commands (when micro alone is not enough)
 
-When the failure mode escapes micro's scope, point the operator (or
-yourself) at the canonical slash command. Each entry lists the command
-and a one-line "use this when..." description.
 
 | Slash command | Use this when... |
 |---|---|
@@ -471,9 +389,7 @@ and a one-line "use this when..." description.
 | `/deviate-prune` | Manual honeycomb pass: classify and thin spy/impl tests for one issue. Never auto-run after COMPLETED, `--all`, or this skill's success loop. Does not delete plan.md / tasks.md. |
 | `/deviate-inspect` | You need a read-only query of the ledger / session / tasks. |
 
-This skill never invokes these on its own — it tells the operator which
-slash command to run and why, then stops. Each command's pre/post-script
-contract stays intact and individually testable.
+This skill never invokes these on its own — it tells the operator which slash command to run and why, then stops.
 
 ## What NOT to do
 
@@ -488,26 +404,14 @@ contract stays intact and individually testable.
   request).
 - Never `git push --force`.
 - Never `--no-verify` on commits.
+- Never auto-run `/deviate-prune` after a success — prune is a manual,
+  one-issue pass, never part of this skill's loop.
 - Never wrap `/deviate-meso` in this skill — meso has its own
   orchestrator with its own safety gates; duplicating it here would
   bypass them.
-- Never file a deviatdd issue for a task-level failure (lint, test
-  logic, formatting, missing implementation). Harness issues are
-  git/ledger/session/agent errors that repeat across tasks — not
-  per-task code quality problems.
-- Never file a deviatdd issue for `TASK_FAILED` errors whose root
-  cause is the task's own RED/GREEN/JUDGE logic. Verify the triage
-  table first.
-- Never pass `--review` or `--all` to `deviate micro run` from this
-  skill. Review mode is the skill argument `review` in `$ARGUMENTS`,
-  not a runner flag.
-- Never invoke `/deviate-prune` from the success loop, after COMPLETED,
-  or from `--all`. Prune is manual invoke only and never deletes
-  `plan.md` / `tasks.md`.
 
 ## Output contract
 
-The skill emits a final status block at the end of every invocation:
 
 ```
 {status: DRAINED | STUCK | BLOCKED | DEVIATDD_BUG,

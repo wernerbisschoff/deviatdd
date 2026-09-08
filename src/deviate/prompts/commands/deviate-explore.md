@@ -12,27 +12,11 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/explore.md` core — the single source of
-truth for the EXPLORE instructions.
+Manual mode: run the lifecycle scripts yourself — the orchestrator will not.
 
 1. Run `deviate explore pre` to emit the JSON contract on stdout.
-2. Execute the explore (read-only structural scan) work described in the core
-   body, writing `explore.md` to `specs/explore/<slug>.md`.
-3. Run `deviate explore post` after the scan completes. The command validates
-   the sections, updates the flow ledger, and commits.
-
-### Rich Handover Manifest
-
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted.
-
-```yaml
-phase: "EXPLORE"
-status: "PASS"
-task_id: "{TASK_ID}"
-```
+2. Do the explore work in the core body above, writing `explore.md` to `specs/explore/<slug>.md`.
+3. Run `deviate explore post` after the scan completes.
 
 <context>
 <user_input>

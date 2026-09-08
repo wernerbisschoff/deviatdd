@@ -14,7 +14,6 @@ aliases:
 
 ## Role Definition
 
-You are an **E2E_TEST_ORCHESTRATOR** operating inside the **DeviaTDD E2E phase**. Your objective is to execute end-to-end (E2E) testing after **ALL phases** are complete to verify the feature meets user intent.
 
 This phase runs E2E tests that verify complete real-world user workflows:
 - **CLI Projects**: Command execution in shell environment, argument parsing, stdin/stdout/stderr, exit codes
@@ -33,7 +32,7 @@ After completion, invoke `/deviate-review` for code review, then `/deviate-walkt
 
 ## User Story + ATDD Coverage
 
-E2E is the final verification of user-visible behavior — the only place where "did we ship the user stories?" gets answered. The E2E phase MUST verify that the implemented system preserves the parent issue's `## User Stories Ledger` plus ATDD (`## Acceptance Outline` / assigned `AC-PLAN-NNN`). Read the issue file, not a catalog. For each user story, write at least one E2E scenario that exercises that story's happy path end-to-end, plus one critical-failure path from the Acceptance Outline. Map scenario → story/AO in the E2E report under `## Story Coverage`. RED already encoded those same stories as failing tests; E2E confirms the user-facing workflow still holds.
+The E2E phase MUST verify that the implemented system preserves the parent issue's `## User Stories Ledger` plus ATDD (`## Acceptance Outline` / assigned `AC-PLAN-NNN`). Read the issue file, not a catalog. Map scenario → story/AO in the E2E report under `## Story Coverage`.
 
 </system_instructions>
 
@@ -131,7 +130,7 @@ From `<REPO_ROOT>/<SPEC_DIR>/tasks.md`, extract:
 3. User workflow tasks requiring E2E coverage
 4. Phase identifiers and task descriptions
 
-If a user-facing issue has **no** `[E2E]`/`Verification_Batch` task in `tasks.md`, emit `NO_E2E_TASK_GENERATED` in the report and note that the meso layer did not emit a closing E2E task; do not halt. Continue to surface the gap.
+If a user-facing issue has **no** `[E2E]`/`Verification_Batch` task in `tasks.md`, emit `NO_E2E_TASK_GENERATED` in the report and continue.
 
 
 ### STEP_7: GENERATE_OR_UPDATE_E2E_TESTS
@@ -185,7 +184,6 @@ deviate e2e post
 ```
 **IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
 
-The post-script stages all E2E test files, runs precommit hooks, and commits with the conventional format.
 
 </execution_sequence>
 
@@ -243,7 +241,6 @@ SHA: <COMMIT_SHA>
 </edge_case_handling>
 
 <constraints>
-- E2E tests run AFTER all tasks in all phases are complete.
 - Unit tests must pass before E2E tests execute.
 - Preserve all semantic anchor paths exactly.
 - E2E tests should focus on user-facing workflows, not duplicate integration tests.

@@ -12,10 +12,7 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/execute.md` core — the single source of
-truth for the EXECUTE instructions.
+Manual mode: run the scripts yourself.
 
 1. Run `deviate execute pre` to allocate the direct task and emit the JSON
    contract on stdout.
@@ -26,8 +23,7 @@ truth for the EXECUTE instructions.
 
 ### Rich Handover Manifest
 
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted.
+Emit this manifest:
 
 ```yaml
 phase: "EXECUTE"

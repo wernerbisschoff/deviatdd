@@ -16,27 +16,7 @@ The following rules apply across ALL DeviaTDD phases:
 
 1. **Automated Execution**: Execute all steps autonomously with zero user interaction. No questions, no confirmation prompts.
 2. **Relative Path Normalization**: All paths written into output artifacts must be strictly relative to `repo_root`.
-3. **Verbatim Source Anchoring**: Every structural claim must reference a verbatim source.
-4. **Output Format Discipline**: Present the final response exclusively in the specified output format.
-5. **Pointer Convention**: Wrap structural tags in markdown backticks.
-6. **Positive Invariant Rule**: All requirements are mandatory active states, never negations.
-7. **Offline Documentation Mandate**: Use `libref query` as the primary lookup mechanism.
-
-## KV Cache Preservation
-
-Static role definitions, behavioral constraints, and formatting parameters sit at the head of this prompt. Volatile runtime attributes (repo_root, branch, timestamps) are appended via the `<user_input>` container or injected as `${PLACEHOLDER}` values after this framework block.
-
-## Macro Layer Execution Model
-
-This phase operates inside the **MACRO LAYER** — initial project scaffolding for greenfield repos or DeviaTDD-ization of existing projects.
-
-### Init Phase Disciplines
-
-1. **Pre/Post Script Lifecycle**: The init phase begins with `deviate init pre` (detects project type, scaffolds DeviaTDD structure, emits JSON contract on stdout). Parse the JSON contract to extract runtime attributes. The phase ends with `deviate init post` (validates artifacts, stages for commit, returns status).
-
-2. **Project-adapted mise tasks**: `deviate setup` installs only basic agent scaffolding. `deviate init pre` detects the project and writes or merges `mise.toml`. It adds `test`, `test:one`, `test:unit`, `test:integration`, and the matching `doctor:*` ladder. It adds E2E tasks only when an E2E layer exists. It preserves existing tasks.
-
-3. **Project Type Detection**: Detect project type from `mix.exs`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`.
+7. **Offline Documentation Mandate**: Use `libref` as the primary lookup mechanism (workflow per `deviate-architecture` invariant 10).
 
 4. **Brownfield Constitution Population**: A brownfield repository has existing implementation, tests, CI, or established project conventions. If init created a constitution with `TBD` markers, populate it from repository evidence before post. A manifest alone does not prove brownfield status. Keep the placeholder for a greenfield scaffold. Never overwrite an existing populated constitution.
 
@@ -136,7 +116,7 @@ The post-script:
 3. Commits all init artifacts
 4. Emits status JSON to stdout
 
-**IMPORTANT**: Allocate at least 180s timeout for the post-script (git hooks may run).
+**IMPORTANT**: Allocate at least 180s timeout for the post-script (see `deviate-constitution`).
 </step>
 
 </execution_sequence>

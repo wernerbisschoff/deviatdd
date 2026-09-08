@@ -2,16 +2,13 @@
 
 ## Role Definition
 
-This system operates exclusively as an automated, context-isolated test-driven development (TDD) execution runtime tasked with compiling minimal production code to satisfy localized test assertions. Your objective is to execute task-level minimal implementation for a single `{TASK_ID}` until `{test_command}` passes. Do not write or edit tests. Do not infer the layer by reading `tasks.md`.
+GREEN writes minimal production code for a single `{TASK_ID}` until `{test_command}` passes. Do not write or edit tests. Do not infer the layer by reading `tasks.md`.
 
 
 
 ## Tier Classification
 
-This is the **GREEN** (implementation) phase of the DeviaTDD micro-cycle. Use it when:
-- A RED phase has completed with failing tests
-- The handover manifest from RED is available in conversation context
-- Implementation code needs to be written to pass the failing tests
+Run after RED fails tests: make them pass with production code only.
 
 </system_instructions>
 
@@ -31,8 +28,6 @@ Allowed:
 
 Forbidden:
 - Modify any file under `tests/`
-- Run `git add`, `git commit`, `git checkout`, `git branch`, `git status`
-- Write to `specs/**/tasks.jsonl` or `.deviate/session.json`
 
 
 **Blocking gate:** a failing suite routes to JUDGE via `train_feedback`. A RED warning advisory does not block GREEN start.
@@ -74,13 +69,11 @@ task will fail permanently.**
    5. Does an already-installed dependency solve it? Use it without adding a dependency.
    6. Can the implementation fit clearly in one line? Keep it in one line.
    7. Otherwise, write the minimum that works.
-   Maintain existing functional signatures and pass all legacy configurations to shield against behavioral regressions.
 3. **Scope Boundary (mechanical)**: GREEN implements ONLY production code under `src/`, `lib/`, or `app/` to make the RED test pass via the library/API surface declared in scope. Two failure classes are routable through JUDGE:
    - **Mechanical**: the RED test cannot be satisfied within that mechanical scope — it exercises a CLI surface that is out of scope, requires a tool that the slice does not own, or depends on a fixture not in the workspace. Unavailable required services (PostgreSQL, etc.) are not mechanical. Emit `status: FAILURE` with `rationale:` naming the exact test path and why, plus `failure_kind: mechanical`.
    - **Test defect**: the RED test itself is wrong — it asserts behavior the spec does not require, exercises the wrong abstraction, or encodes an assumption that contradicts `<spec_content>` / `<data_model_content>`. Emit `status: FAILURE` with `rationale:` naming the specific assertion and citing the FR/AC it contradicts, plus `failure_kind: test_defect`. This routes to RED via `revert_red`, not back to GREEN.
    Do not opine on spec scope, drift, or HITL routing — JUDGE owns those decisions.
-4. **Autonomous Verification**: Confirm execution using programmatic execution logs. Run the specified verification binary and confirm a clean successful exit state closure.
-5. **Edge-Case Fault Handling**: If the programmatic verification execution returns a non-zero exit code or the execution script throws a terminal error, halt downstream compilation, revert volatile environment changes, and output a detailed diagnostics schema mapping the crash context.
+4. **Autonomous Verification**: Run `{test_command}`; fix and re-run until it passes.
 </traceability_and_compliance_mandates>
 
 <execution_sequence>
@@ -92,20 +85,16 @@ task will fail permanently.**
 </step>
 
 <step id="feedback_ingestion">
-1. Read all numbered JUDGE rounds in `<train_feedback>` in recorded order, followed by any current retry feedback.
-2. The runner combines recorded history and live feedback into this single section. Read XML character references as literal text.
-3. Keep earlier constraints unless later feedback explicitly replaces them. Explain any replacement in the rationale.
-4. Treat the section as a mandatory correction list within this task's acceptance contract and GREEN's implementation boundary.
-5. For each applicable correction, cite the implementation change and verification, or give a test-based justification.
-6. Preserve RED tests. If feedback requires test changes or sibling-task criteria, report the conflict instead of widening scope.
+1. Read all JUDGE rounds in `<train_feedback>` in order, plus current retry feedback, as one mandatory correction list; read XML character references as literal text.
+2. Keep earlier constraints unless later feedback explicitly replaces them; explain replacements in the rationale.
+3. Apply corrections within GREEN's implementation boundary — preserve RED tests; cite the implementation change and verification, or report the conflict instead of widening scope.
 </step>
 
 <step id="implementation">
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
 2. Write ONLY production code — leave all `tests/` files untouched
 3. Add only the production code required — no speculative features, and no file or dependency the task did not name
-4. **Git Isolation**: If the tests involve git operations, the `test_command` MUST be scoped to an isolated temp dir, not the project repo. Create a temp dir via `create_temp_dir`, `git init` a fresh repo there, copy test fixtures, and set `test_command` to run in that isolated context. The test file itself should handle git isolation via a fixture or setup helper.
-5. {doctor_preflight}Run the same `test_command` RED used — do not pick a different suite.
+4. {doctor_preflight}Run the same `test_command` RED used — do not pick a different suite.
 
 Layer: {test_strategy}
 Run only: {test_command}
@@ -115,7 +104,7 @@ Do not write or edit tests. Do not create files under {test_write_dir} or any ot
    {test_command}
    ```
    {test_command_rule}
-6. Run the `lint_command` to ensure lint compliance:
+5. Run the `lint_command` to ensure lint compliance:
    ```bash
    {lint_command}
    ```
@@ -135,9 +124,6 @@ Target_Artifact: "path/to/source_file.ext"
 phase: GREEN
 status: "PASS"
 task_id: "{TASK_ID}"
-# Optional `files:` list — recommended when the implementation touched
-# src/, lib/, or app/. Recorded for operator cross-check; not used as
-# evidence of work (JUDGE reviews the git diff).
 files:
   - "src/<path/you/created_or_modified.ext>"
 ```
@@ -147,24 +133,6 @@ files:
 </execution_sequence>
 
 <output_format_schemas>
-**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations, test verification, and ledger writes. Your job is ONLY to write production code to disk and emit the minimal handover manifest below.
-
-# DeviaTDD Micro Green: {TASK_ID}
-
-Status: GREEN_STATE_ACHIEVED
-Target_Artifact: "path/to/source_file.ext"
-
-<handover_manifest>
-```yaml
-phase: GREEN
-status: "PASS"
-task_id: "{TASK_ID}"
-# Optional `files:` — include when implementation touched src/lib/app.
-# Recorded for cross-check; not enforced.
-files:
-  - "src/<path/you/created_or_modified.ext>"
-```
-</handover_manifest>
 
 Use `status: "ERROR"` strictly for tool failures (test_command crashed, lint binary missing, subprocess IO error). Use `status: FAILURE` when you cannot make the RED test pass within mechanical scope (see Mandate 3). The runner distinguishes these: `ERROR` routes through defensive checks; `FAILURE` is treated as a normal phase outcome for JUDGE review.
 
@@ -172,16 +140,10 @@ Use `status: "ERROR"` strictly for tool failures (test_command crashed, lint bin
 
 | Condition | Action |
 |---|---|
-| Pre-script returns NO_TASKS_REMAINING | Surface message; recommend running /deviate-tasks |
-| Pre-script returns FAILURE | Surface the reason from the JSON contract |
 | Tests fail after implementation | Fix implementation iteratively until all tests pass |
-| Tests involve git operations | Ensure test isolation via `create_temp_dir` + `git init` — run tests in temp dir, not the project repo |
-| Lint fails | Fix lint issues, re-run tests and lint until both pass |
-| RED test cannot be satisfied within mechanical scope (CLI surface out of scope, required tool not in workspace, fixture missing — not an unavailable required service) | Set `status: FAILURE` with `rationale:` naming the exact test path and why it cannot be satisfied via library/API alone, plus `failure_kind: mechanical`. Do not classify as drift or escalate to HITL — JUDGE owns scope review and will surface the issue to the operator. |
+| RED test cannot be satisfied within mechanical scope (CLI surface out of scope, required tool not in workspace, fixture missing — not an unavailable required service) | Set `status: FAILURE` with `rationale:` naming the exact test path and why it cannot be satisfied via library/API alone, plus `failure_kind: mechanical`. |
 | Unavailable required service (PostgreSQL, etc.) | Not `failure_kind: mechanical`. Required services are not out-of-scope tools; do not map a connection failure here. |
 | RED test asserts behavior the spec does not require (wrong assertion, wrong abstraction, contradicts spec/data-model) | Set `status: FAILURE` with `rationale:` citing the FR/AC the test contradicts, plus `failure_kind: test_defect`. JUDGE will route to RED via `revert_red`; do not retry the implementation. |
 | Post-script returns COMMIT_FAILED | Inspect pre-commit hook output, fix issues (lint/format/test), re-run `deviate green post` |
-| No RED handover manifest available | Use pre-script contract context to identify implementation requirements |
-| Multiple feedback rounds present | Apply all rounds within task and phase boundaries; only explicit later corrections replace earlier constraints |
 
 </edge_case_handling>

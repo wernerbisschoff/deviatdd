@@ -12,10 +12,7 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/judge.md` core — the single source of truth
-for the JUDGE instructions.
+Manual mode: run the scripts yourself.
 
 1. Run `deviate judge pre` to allocate the GREEN handover to review and emit
    the JSON contract on stdout.
@@ -33,8 +30,7 @@ for the JUDGE instructions.
 
 ### Rich Handover Manifest
 
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted. `evidence` is a list of objects
+Emit this manifest: `evidence` is a list of objects
 with `ac: "AC-PLAN-NNN"` (plan-owned Gherkin — not `AO-*`, not bare
 `AC-NN`) plus `test_path` / `test_quote` / `impl_path` / `impl_quote`.
 Do not emit string evidence items.

@@ -13,19 +13,15 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/red.md` core — the single source of truth
-for the RED instructions.
+Manual mode: run the scripts yourself.
 
 1. Run `deviate red pre` to allocate the active TDD task and emit the JSON
    contract on stdout.
 2. Parse the contract's `task_entry` field. It carries this task's
    `tasks.md` card verbatim, including all complete `**Judge Feedback**` rounds.
    Apply these rounds using the core body's `<train_feedback>` rules.
-   Keep earlier constraints unless later feedback explicitly replaces them.
-   There is no separate feedback injection in manual mode.
-3. Execute the RED (test-writing) work described in the core body.
+There is no separate feedback injection in manual mode.
+3. Execute the RED (test-writing) work described in the core body (`auto/red.md`).
 4. Run `deviate red post --task-id {TASK_ID}` after the tests are verified
    failing. The command stages the test files, verifies them failing, updates
    the task ledger, and commits. A mismatch with the resolved pending task
@@ -33,9 +29,7 @@ for the RED instructions.
 
 ### Rich Handover Manifest
 
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted. Follow the auto handover
-semantics: `status: "PASS"` with an optional `failure_kind` discriminator.
+Emit this manifest:
 
 ```yaml
 phase: "RED"

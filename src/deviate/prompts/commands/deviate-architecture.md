@@ -75,24 +75,13 @@ CRITICAL INVARIANTS:
     reference) pointing to the `libref` doc that grounded it. Claims that
     cannot be source-anchored MUST be surfaced as
     `[yellow]UNVERIFIED_CLAIM[/]` and either deferred to a downstream
-    RED/GREEN discovery task or removed. This invariant is grounded in
-    the precedent of FLOW-04 architecture, where the initial draft
-    incorrectly asserted an LSP-style transport framing and a
-    `tool_call/thinking/edit/message` event vocabulary; both errors
-    were caught only by `libref query pi rpc` / `libref query oh-my-pi
-    streaming` after the architecture had been written. Claims that cannot
-    be source-anchored MUST be surfaced as `[yellow]UNVERIFIED_CLAIM[/]`
-    and either grounded before yield or removed.
+    RED/GREEN discovery task or removed (precedent: ungrounded FLOW-04 transport claims, caught only by late `libref query`).
 11. **Draft on Disk, Commit Only on Sign-Off (Phase A / Phase B)**:
     This skill splits into two phases. Phase A (draft) writes
     `specs/_product/architecture.md` and `specs/_product/domain-model.md`
     to disk as the conversation progresses so the user can review
     intermediate state; Phase B (commit) fires exactly once after the
-    user explicitly approves the final state. Auto-committing per
-    iteration would produce a chain of one-commit-per-edit commits
-    for what is conceptually a single architectural change — the
-    protocol collapses the work into one commit at sign-off, the
-    same model `/deviate-flows` v1.4.0 enforces.
+    user explicitly approves the final state — one commit at sign-off.
 
 
 
@@ -102,12 +91,11 @@ CRITICAL INVARIANTS:
    the host agent's git tooling (e.g. `git add
    specs/_product/architecture.md specs/_product/domain-model.md`)
    so the user can `git diff --cached` while reviewing. Do NOT
-   run `git add -A`, do NOT fire any commit. The working tree
+   fire any commit. The working tree
    stays dirty-but-staged-but-uncommitted so the user can iterate
    on the architecture without polluting the log with one-commit-per-
    iteration churn. Chat-only output is not enough; the files MUST
-   land on disk so downstream phases (and any later
-   `/deviate-release` invocation) can read them.
+   land on disk.
 
    **Phase B — Sign-off and one commit.** When the user signals they
    are happy with the full set of changes ("commit", "looks good",
@@ -119,37 +107,9 @@ CRITICAL INVARIANTS:
    2. Run `git diff --cached --name-only`; if any cached path is
       outside the session-owned file set, halt and surface the
       staged list (do NOT auto-unstage).
-   3. If `<repo_root>/CONTRIBUTING.md` exists, read it in full to
-      discover the target repository's commit-message convention
-      (types, scopes, emoji prefix, subject length). The default
-      when absent is Conventional Commits (`<type>(<scope>):
-      <subject>`); if CONTRIBUTING.md exists and declares a
-      different convention, that wins. Stage every session-authored
-      architecture and domain-model file via the host agent's git
-      tooling (e.g. `git add specs/_product/architecture.md
-      specs/_product/domain-model.md`) and fire exactly one
-      `git commit -m '<subject per CONTRIBUTING.md or default>'`
-      using the type/scope/emoji declared above (e.g.
-      `docs(architecture): <one-line summary>`, or
-      `docs(architecture): <summary> and sync domain model` when
-      both files changed). Embed the classification banner
-      (`Local` / `Context-Bridging` / `Context-Creating`) in the
-      commit body. Do NOT use `git add -A` or
-      `git commit --only` — the commit must be exactly one for the
-      full session-owned file set.
-   4. Run `git commit` WITHOUT `--no-verify` by default — the
-      target repo's pre-commit hooks may check arbitrary content
-      (lint, format, secrets, links), not only Python. If
-      CONTRIBUTING.md (from step 3) exists and explicitly permits
-      `--no-verify` for docs-only commits, pass it; otherwise
-      let the hook run. If a hook fails, surface stderr verbatim
-      and stop — never retry with `--no-verify` to bypass.
+   3. Fire exactly one commit per the repo convention (`deviate-merge` Step 0 is canonical; default Conventional Commits): stage the session-owned files and run `git commit -m '<subject>'` (e.g. `docs(architecture): <summary>`), embedding the classification banner (`Local` / `Context-Bridging` / `Context-Creating`) in the body. Do NOT use `git add -A` or `git commit --only` — the commit must be exactly one for the full session-owned file set.
+   4. Run `git commit` WITHOUT `--no-verify`; if a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass (per `deviate-merge`).
 
-   This invariant is grounded in the prior session's bug where the
-   architecture was emitted into chat but never written to disk.
-   Auto-committing per iteration is the same class of failure mode
-   in slow motion: each iteration is conceptually one architectural
-   change, and the log should reflect that.
 
 
 </system_instructions>
@@ -218,52 +178,11 @@ Create the file if absent. This step is a data-only mirror — the file
 write happens in step 7 below.
 
 ## 7. Persist, Stage, and Confirm Sign-Off
-This step runs in two phases that mirror invariant 11. Do not skip the
-Phase B gate — auto-committing per iteration produces a chain of
-one-commit-per-edit commits for what is conceptually a single
-architectural change.
-
-**7a. Phase A — Persist and stage (no commit).** Write both
-`specs/_product/architecture.md` and `specs/_product/domain-model.md`
-to disk via the `write` tool. After both writes succeed, stage the
-session-owned files via the host agent's git tooling (e.g. `git add
-specs/_product/architecture.md specs/_product/domain-model.md`)
-so the user can review with `git diff --cached`. Do NOT run
-`git add -A`, do NOT fire any commit. The working tree stays
-dirty-but-staged-but-uncommitted so the user can iterate on the
-architecture without polluting the log with one-commit-per-revision
-noise. If the file write fails, halt and surface the write error
-verbatim — do not commit a partial tree.
-
-**7b. Phase B — Sign-off gate.** Surface a final summary of every
-change to `specs/_product/architecture.md` and
-`specs/_product/domain-model.md` made this session and request
-explicit user approval before committing. Recognized sign-off
+Execute Phase A then Phase B per invariant 11. Recognized sign-off
 phrases: "commit", "looks good", "done", "ship it", "approve",
-"lgtm", "yes", or any unambiguous affirmative. Silence is NOT
-sign-off — if the user asks for revisions, return to step 5.
-
-**7c. Phase B — Atomic commit (exactly once).** On explicit user
-sign-off, run `git diff --cached --name-only`; if any cached path is
-outside the session-owned file set, halt and surface the staged list
-(do NOT auto-unstage). If `<repo_root>/CONTRIBUTING.md` exists,
-read it in full to discover the target repository's
-commit-message convention (types, scopes, emoji prefix, subject
-length). The default when absent is Conventional Commits; if
-CONTRIBUTING.md exists and declares a different convention, that
-wins. Then via the host agent's git tooling fire exactly one
-`git commit -m '<subject per CONTRIBUTING.md or default>'`
-(e.g. `docs(architecture): <one-line summary>`, or
-`docs(architecture): <summary> and sync domain model` when both
-files changed). Embed the classification banner
-(`Local` / `Context-Bridging` / `Context-Creating`) in the commit
-body. Run `git commit` WITHOUT `--no-verify` by default; if
-CONTRIBUTING.md exists and explicitly permits `--no-verify` for
-this scenario, pass it; otherwise let the hook run. If a hook
-fails, surface stderr verbatim and stop. The conversational
-output of this skill MUST NOT be considered complete until both
-files are on disk and committed — `/deviate-release` may read them
-from disk as optional inputs.
+"lgtm", "yes", or any unambiguous affirmative — silence is NOT
+sign-off. If the user asks for revisions, return to step 5. The skill
+is NOT complete until both files are on disk and committed.
 
 
 ## 8. Consistency Check

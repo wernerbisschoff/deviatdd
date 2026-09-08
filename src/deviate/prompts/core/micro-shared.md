@@ -1,10 +1,9 @@
 <micro_layer_model>
 
-This phase operates inside the **MICRO LAYER** — the Red-Green-Refactor cycle for individual tasks.
 
 <rgr_cycle>
 
-Each task is a Logical Unit (30-90 min) — one fail-to-pass contract, not a duration floor — that undergoes ONE complete R-G-R cycle:
+Each task undergoes ONE complete R-G-R cycle:
 
 <item>
 **RED**: Write a failing test — verified to fail due to missing implementation, not syntax errors.
@@ -29,7 +28,7 @@ No production code is written before a failing test exists. Tests are the execut
 
 <item>
 <title>Sociable Tests Over Solitary</title>
-Prefer-sociable, mock-only-externals is a RED **style** rule inside `unit` tests — not a verification bucket. Exercise real in-process collaborators; restrict mocking exclusively to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (system epoch timers, cryptographic entropy paths). A sociable unit test must still run with the DB down under `mise unit`. Test Strategy remains `unit` | `integration` | `e2e`.
+Exercise real in-process collaborators; restrict mocking to non-deterministic externals (external networks, third-party transactional interfaces, epoch timers, entropy paths). A sociable unit test must still run with the DB down under `mise unit`. Test Strategy remains `unit` | `integration` | `e2e`.
 </item>
 
 <item>
@@ -44,12 +43,12 @@ Any test that invokes git operations MUST operate on an isolated temporary direc
 
 <item>
 <title>YAML Quoting Rule</title>
-ALL string values in the handover manifest YAML MUST be wrapped in double quotes. A value containing a colon (`:`) will BREAK YAML parsing if unquoted.
+ALL string values in the handover manifest YAML MUST be wrapped in double quotes.
 </item>
 
 <item>
 <title>User-Scenario Encoding</title>
-**red** MUST encode the parent issue's user scenarios (`## User Stories Ledger` plus ATDD / `## Acceptance Outline`, via the assigned `AC-PLAN-NNN` Given/When/Then) as failing tests before GREEN. GREEN still cannot edit tests. After COMPLETED, those tests *are* the flow. **judge** scores Spec Compliance against that same user-visible behavior. **green**, **refactor**, and **execute** implement or polish only the workstation files required by those scenarios.
+**red** MUST encode the parent issue's user scenarios (`## User Stories Ledger` plus ATDD / `## Acceptance Outline`, via the assigned `AC-PLAN-NNN` Given/When/Then) as failing tests before GREEN. After COMPLETED, those tests *are* the flow. **judge** scores Spec Compliance against that same user-visible behavior. **green**, **refactor**, and **execute** implement or polish only the workstation files required by those scenarios.
 </item>
 
 </shared_disciplines>

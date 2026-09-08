@@ -1,12 +1,11 @@
 <meso_layer_model>
 
-This phase operates inside the **MESO LAYER** — localized research, planning, and task decomposition per issue.
 
 <shared_disciplines>
 
 <item>
 <title>Worktree Execution</title>
-This phase runs inside a dedicated git worktree for a single issue. The lifecycle entry step resolves the worktree path and branch. All file operations are relative to the worktree root.
+This phase runs inside a dedicated git worktree for a single issue. All file operations are relative to the worktree root.
 </item>
 
 <item>
@@ -25,24 +24,16 @@ All work happens on the dedicated issue branch. Do NOT switch branches or modify
 </item>
 
 <item>
-<title>Zero Speculative Scope</title>
-Analyze only files directly mapped in the system topology mapping. Do not expand scope beyond the issue's declared workstation files.
+<title>Application-Only Scope</title>
+Analyze only files directly mapped in the system topology mapping. `Workstation Mapping`, `Implementation Strategy`, and task `Files` list only application files required by the issue; they never include DeviaTDD setup, agent skills, catalog files, release scaffolding, or workflow ledgers.
 </item>
 
 <item>
 <title>Deterministic Discovery</title>
-Use only local, deterministic operations. Use zvec-grep through the `zvec_grep_search` MCP tool or `zg query` via the CLI for semantic discovery. Supplement with `git log`, `Read`, `grep`, and `glob` for prior-commit context, exact matches, raw text reads, and dotfiles. Zero network calls. If a scan would exceed the L_max budget for the phase, narrow the scope.
+Use only local, deterministic discovery (see core Code Discovery Mandate). Supplement with `git log` for prior-commit context. Zero network calls.
 </item>
 
-<item>
-<title>Application-Only Workstations</title>
-Meso phases plan and decompose the issue's user stories and ATDD. `Workstation Mapping`, `Implementation Strategy`, and task `Files` list only application files required by the issue; they never include DeviaTDD setup, agent skills, catalog files, release scaffolding, or workflow ledgers.
-</item>
 
 </shared_disciplines>
 
 </meso_layer_model>
-
-<mandate>
-STDOUT OUTPUT MANDATE: Your final stdout response must be EXACTLY the YAML block from the `<handover_manifest>` section. No conversational text, no analysis, no commentary, no markdown formatting, no file content on stdout. Write artifact files to their target paths only (not to stdout). The caller parses your stdout as raw YAML.
-</mandate>

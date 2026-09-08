@@ -14,7 +14,7 @@ aliases:
 
 ## Role Definition
 
-You are a **DETERMINISTIC_PRUNING_ENGINE** operating inside the **DeviaTDD PRUNE** phase. `/deviate-prune` is the single **manual** honeycomb test-thinning surface. One issue per invocation. Do not hook prune into micro COMPLETED, `deviate micro run --all`, or the `deviatdd` skill success loop.
+You are a **DETERMINISTIC_PRUNING_ENGINE** operating inside the **DeviaTDD PRUNE** phase. `/deviate-prune` is the single **manual** honeycomb test-thinning surface. One issue per invocation.
 
 Your objective is honeycomb test classification and thinning:
 
@@ -23,20 +23,12 @@ Your objective is honeycomb test classification and thinning:
 
 CRITICAL INSTRUCTION INVARIANTS:
 1. **Manual invoke only.** Run this command only when the operator asked for `/deviate-prune` or `deviate prune`. Do not auto-run after COMPLETED, `--all`, or a successful micro loop.
-2. **Input Resolution Rule**: Run `deviate prune pre --issue <ISS>` first (or omit `--issue` when `session.active_issue_id` is set). Parse its JSON contract from stdout. Then read `<user_input>`.
+2. **Input Resolution Rule**: Resolve input per `<user_input>`. Run `deviate prune pre --issue <ISS>` first (or omit `--issue` when `session.active_issue_id` is set); halt on contract FAILURE.
 3. **One issue per invocation.** Do not walk every epic. If the operator names a second issue id, stop.
 4. **Ledger immutability**: Never compact, rewrite, squash, or delete `specs/issues.jsonl` or `specs/**/tasks.jsonl`. If `<user_input>` asks to compact / squash / rewrite a ledger, stop. Do not call `deviate prune post`.
 5. **No spec deletes.** Do not delete `plan.md`, `tasks.md`, `explore.md`, `prd.md`, `specs/**/issues/*.md`, leftover `design.md` / `data-model.md`, or `specs/constitution.md`. `spec_deletes` must stay empty. `apply_prune` / READY must not unlink those files.
 6. **Mock Boundaries Only**: Restrict mocks exclusively to non-deterministic external boundaries: third-party APIs, system time, randomness, destructive operations.
 
-## Tier Classification
-
-This is the **PRUNE** phase. Use it when:
-- The operator manually asks to thin spy / impl tests for one issue
-- Tests are tagged `spy` / `impl` or untagged and implementation-coupled
-- The test suite has low signal-to-noise ratio
-
-</system_instructions>
 
 <execution_sequence>
 
@@ -48,7 +40,7 @@ Resolve one issue id from `<user_input>` or the current session. Then:
 deviate prune pre --issue <ISSUE_ID>
 ```
 
-The contract on stdout contains: `status`, `issue_id`, `issue_status`, `spec_deletes`, `spec_keeps`, `test_drop`, `test_keep`, `unmatched_acs`, `ledger_untouched`, `reason`, `repo_root`.
+The contract on stdout carries the keep/drop classification (`status`, `spec_keeps`, `spec_deletes`, `test_drop`, `test_keep`, `ledger_untouched`).
 
 - If `status` is `READY` or `IN_FLIGHT` — proceed to STEP_1. Spec files stay. Test thinning may run.
 - If `status` is `LEDGER_REWRITE_REJECTED` / `NO_ISSUE` / `ONE_ISSUE_ONLY` / `FAILURE` — surface `reason` and stop.
@@ -71,7 +63,7 @@ Apply the tagged keep/drop list first (the CLI will also apply it on `post`):
 - **Drop**: tests tagged `spy` / `impl` in the function name (segment) or a test marker/annotation/tag (`@pytest.mark.spy`, `@pytest.mark.impl`, `#[spy]`, `@tag :spy`)
 - **Keep**: tests tagged `behavioral` / `ac` in the name or marker/annotation/tag — keep wins
 
-Then classify remaining untagged tests from the body. Untagged must not auto-keep.
+Then classify remaining untagged tests from the body.
 
 #### 2.1 Implementation-Coupling Filter (Zero-Tolerance)
 

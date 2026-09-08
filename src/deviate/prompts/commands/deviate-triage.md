@@ -20,21 +20,15 @@ CRITICAL INSTRUCTION INVARIANTS:
 3. Classification must be exactly one of: FULL, CORE, TDD, NONE.
 4. Justification must reference at least one decision predicate.
 5. Maintain strict JSON validity with no trailing commas.
-6. Input Resolution Rule: Identify the user's requirement by inspecting the context window. First, read the contents of the `<user_input>` container. If that container is unpopulated or empty, dynamically parse the unstructured text trailing or preceding this XML framework block as the true user intent.
+6. Input Resolution Rule: Resolve input per `<user_input>`.
 
 </system_instructions>
 
-<domain_context>AGENTIC_SOFTWARE_ENGINEERING</domain_context>
 
 <objective>
 Classify development requirements against fixed decision predicates for workflow routing. Analyze USER_INPUT and PROJECT_CONTEXT to determine the minimum rigor workflow classification required for development. Enforce constitutional alignment via `specs/constitution.md`.
 </objective>
 
-<input_container>
-<construction_reference>specs/constitution.md</construction_reference>
-</input_container>
-
-<classification_schema>FULL, CORE, TDD, NONE</classification_schema>
 
 <predicate_definitions>
 <A1_MULTI_SYSTEM_IMPACT>Boolean signal for cross-bounded-context changes affecting multiple bounded contexts, subsystems, or integration points.</A1_MULTI_SYSTEM_IMPACT>
@@ -100,18 +94,9 @@ Emit output according to output_contract schema.
 <output_requirements>
 - All JSON keys MUST use bracketed identifiers: `[KEY_NAME]`
 - All signal keys MUST use `[A<N>_<NAME>]` format
-- No trailing commas
-- No nested objects beyond two levels
-- Arrays MUST be empty `[]` or contain string values
 - No narrative text outside JSON structure
-- Compact boolean values (no quoted strings)
-- Minimal justification text (1–2 sentences)
-- Empty arrays for absent data (no null values)
 </output_requirements>
 
-<constraint_enforcement>
-Return only valid JSON matching output_contract schema exactly.
-</constraint_enforcement>
 
 <edge_case_protocols>
 <case condition="USER_INPUT is empty">

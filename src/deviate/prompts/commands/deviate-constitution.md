@@ -12,11 +12,11 @@ aliases:
 
 <system_instructions>
 
-This engine operates strictly as an isolated, context-bounded structural configuration and governance transpiler for software architecture specifications. Your objective is to initialize or update the `specs/constitution.md` file as an authoritative governance artifact defining architectural standards, tech stack constraints, testing mandates, and completion criteria.
+This engine operates strictly as an isolated, context-bounded structural configuration and governance transpiler for software architecture specifications. Initialize or update `specs/constitution.md`.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. **Input Resolution Rule**: Run `deviate constitution pre` first. Parse its JSON contract from stdout. The contract carries `repo_root`, `git_branch`, `timestamp`, `constitution_path` (absolute path to `specs/constitution.md`), `test_command`, `lint_command`, `plan_target` (absolute path where you must write the execution manifest), and `dry_run`. The pre-script has already gathered git state and discovered the constitution — do NOT re-derive paths.
-2. **Output Format Constraint**: Present the final response exclusively using human-readable Standard Markdown formatting as defined in the target template. Do not encapsulate or wrap output data artifacts within structural XML syntax nodes.
+1. **Input Resolution Rule**: Resolve input per `<user_input>`; halt on empty. Run `deviate constitution pre` first and parse its JSON contract from stdout — do NOT re-derive paths. The contract carries `repo_root`, `git_branch`, `timestamp`, `constitution_path`, `test_command`, `lint_command`, `plan_target`, and `dry_run`.
+2. **Output Format Constraint**: Emit Markdown per `<required_output_template>`.
 3. **Zero-Tolerance Semantic Shift**: Preserve all user variable definitions, macro expressions (e.g., Jinja, Chezmoi wrappers), configuration paths, and environment shell variables (in `$NAME` form) byte-for-byte.
 4. **Source Precedence Hierarchy**: Apply a deterministic sequence where higher-precedence sources completely override lower values:
    * Level 1: Active context resolved from the user input.
@@ -120,23 +120,19 @@ The generated output file must match the structural alignment defined below:
 - **EMPTY_USER_INPUT**: Read and parse existing constitution and alternative file states. If all targets are absent, fallback to minimum standard structural architecture templates.
 - **MISSING_PROJECT_STATE**: Limit extraction exclusively to available definitions inside `<project_state_sources>`; maintain pre-existing parameters or defaults without failing execution.
 - **MALFORMED_EXISTING_CONSTITUTION**: Extract valid structural components from surviving file text fragments, preserve the current version string, and execute a semantic patch increment.
-- **EXTREMELY_LONG_INPUT**: Stream and process total textual metadata context comprehensively without clipping or payload truncation.
 </edge_case_handling>
 
 <execution_sequence>
 
 <step id="pre_script">
-Run the pre-script to gather git state, discover the constitution path, resolve test/lint commands, and emit a JSON contract:
+Run `deviate constitution pre` to emit the JSON contract:
 ```bash
 deviate constitution pre
 ```
 
-The contract on stdout contains: `repo_root`, `git_branch`, `timestamp`, `constitution_path` (absolute path to specs/constitution.md), `test_command`, `lint_command`, `plan_target` (absolute path for the execution manifest), `dry_run`, `user_input`.
-
 After parsing the contract:
 - If `status` is `FAILURE` — surface the `reason` to the user and stop.
-- If `status` is `READY` — extract `constitution_path`, `test_command`, `lint_command`, `plan_target`, and proceed.
-- For `dry_run: true` — write a preview constitution and skip post.
+- If `status` is `READY` — proceed; for `dry_run: true`, write a preview constitution and skip post.
 </step>
 
 <step id="project_analysis">

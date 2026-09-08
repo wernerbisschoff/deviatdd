@@ -1,6 +1,6 @@
 ## ⚡ DeviaTDD Verification and Mise Tasks
 
-Use `mise run <task>` for project checks. `/deviate-init` creates or merges these tasks:
+Use `mise run <task>`:
 
 | Task | Purpose |
 |------|---------|
@@ -8,15 +8,14 @@ Use `mise run <task>` for project checks. `/deviate-init` creates or merges thes
 {{targeted_test_row}}
 | `mise run test:unit` | Unit tests only |
 | `mise run test:integration` | Unit plus integration tests |
-| `mise run test:e2e` | Unit plus integration plus E2E tests, when configured |
-| `mise run doctor` | Readiness checks for all configured layers |
-| `mise run doctor:unit` | Unit toolchain readiness; no external services |
-| `mise run doctor:integration` | Unit and integration dependency readiness |
-| `mise run doctor:e2e` | Unit, integration, and E2E dependency readiness, when configured |
+| `mise run test:e2e` | Unit plus integration plus E2E tests |
+| `mise run doctor` | Readiness |
+| `mise run doctor:unit` | Unit readiness |
+| `mise run doctor:integration` | Unit+integration readiness |
+| `mise run doctor:e2e` | Unit+integration+E2E readiness |
 
 {{targeted_test_guidance}}
 Before completion, run the matching `test:*` layer task.
-Verify before you say a task is done.
 
-Unit tests must not require a database, Redis, network service, container, or other external service.
+Unit tests must not require external services.
 Put service-dependent checks in integration tests.

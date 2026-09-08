@@ -90,9 +90,9 @@ class TestShardCommandIssueIdFormat:
         assert "ISS-<epic>-<NNN>" not in text
 
     def test_manifest_example_uses_per_epic_format(self):
-        """Manifest example must show per-epic ids (``002-001``, not 3-segment legacy)."""
+        """Issue ID examples must show per-epic ids (``002-001``, not 3-segment legacy)."""
         text = self._command_text()
-        assert '"issue_id": "002-001"' in text
+        assert '"002-001"' in text
         assert "ISS-003-001" not in text
         assert "ISS-003-002" not in text
 
@@ -254,7 +254,9 @@ class TestDeviateHtmlCommand:
 
 
 class TestConsumerRepositoryPromptBoundaries:
-    def test_issue_and_task_commands_have_valid_frontmatter_and_boundary(self):
+    def test_issue_and_task_commands_have_valid_frontmatter_and_boundary(
+        self, tmp_path
+    ):
         for command_name in (
             "deviate-adhoc",
             "deviate-shard",
@@ -272,23 +274,31 @@ class TestConsumerRepositoryPromptBoundaries:
             assert isinstance(frontmatter.get("aliases"), list)
 
             body = parts[2]
-            assert "<consumer_repository_boundary>" in body
-            assert "META_WORK_NOT_ALLOWED" in body
-            assert "application behavior" in body
+            if command_name != "deviate-adhoc":
+                # Boundary lives once in the auto core middle, not the overlay.
+                assert "<consumer_repository_boundary>" not in body
+            installed = self._installed_text(command_name, tmp_path)
+            assert "META_WORK_NOT_ALLOWED" in installed
+            assert "application behavior" in installed
 
-    def test_commands_keep_dev_repo_setup_out_of_generated_work(self):
+    @staticmethod
+    def _installed_text(command_name: str, tmp_path: Path) -> str:
+        """Text of the prompt as installed (auto middle + overlay + core prefix)."""
+        target = tmp_path / command_name
+        assert install_command(command_name, target)
+        return (target / f"{command_name}.md").read_text(encoding="utf-8")
+
+    def test_commands_keep_dev_repo_setup_out_of_generated_work(self, tmp_path):
         for command_name in (
             "deviate-adhoc",
             "deviate-shard",
             "deviate-plan",
             "deviate-tasks",
         ):
-            content = resolve_command(
-                command_name, commands_root=_SOURCE_COMMANDS_ROOT
-            ).read_text(encoding="utf-8")
-            assert "agent skill" in content
-            assert "META_WORK_NOT_ALLOWED" in content
-            assert "do not" in content.lower()
+            installed = self._installed_text(command_name, tmp_path)
+            assert "agent skill" in installed
+            assert "META_WORK_NOT_ALLOWED" in installed
+            assert "do not" in installed.lower()
 
 
 class TestComposeCommandBodyConstitutionInjection:

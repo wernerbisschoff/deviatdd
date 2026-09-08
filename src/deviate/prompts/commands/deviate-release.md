@@ -61,14 +61,11 @@ CRITICAL INVARIANTS:
    ```
 
    The commit message MUST follow Conventional Commits per
-   `specs/constitution.md:71-75`. The skill MUST NOT pass
+   `specs/constitution.md`. The skill MUST NOT pass
    `no_verify=True` per `AGENTS.md` §Commit Authority. If a pre-commit
    hook fails, surface the failure verbatim and stop — do not retry
-   with `--no-verify`. Conversational output alone is not sufficient —
-   this invariant is grounded in the prior session's bug where the
-   release was emitted into chat but never written to disk, leaving
-   `/deviate-explore` (the recommended next step) without a guiding
-   compass file to read.
+   with `--no-verify`. Conversational output alone is insufficient —
+   the file must be on disk and committed.
 10. **No Ledger Grounding**: There is no flow ledger (`flows.jsonl`), no coverage helper, and no drift taxonomy. Ground the release in the operator's goal plus the flow catalog (`index.md`) and `architecture.md` when they exist. When absent, proceed with the goal alone.
 
 
@@ -81,8 +78,7 @@ If `specs/_product/release-next.md` already exists, surface
 `[yellow]RELEASE_OVERRIDE[/]` and stage a diff preview before overwriting.
 Flows and architecture are optional inputs — proceed without them when
 absent.
-## 2. Read Catalogs
-Load the flow catalog from `specs/_product/flows/index.md` and the component descriptions from `specs/_product/architecture.md` when they exist. Flows and architecture are optional inputs — proceed with the operator's goal alone when absent.
+Load `specs/_product/flows/index.md` + `specs/_product/architecture.md` when present.
 
 
 ## 3. Accept Release Goal
@@ -103,15 +99,7 @@ Derive from the goal:
 - **Acceptance Criteria section** — concrete, testable statements.
 
 ## 5. Override or Create
-If `specs/_product/release-next.md` exists, surface `[yellow]RELEASE_OVERRIDE[/]`
-before overwriting. Compare Acceptance Criteria and surface any omissions.
-
-## 6. Write Release File
-Compose the release content per the schema in step 4. Step 7 handles
-the actual disk write and git commit; this step focuses on content
-correctness. Use the schema established at `release-next.md:1-26` as
-the canonical structure (Goal, Constraints, Included Flows, Included
-Work, Deferred Epics, Acceptance Criteria).
+Compose per the step-4 schema; on an existing file surface `[yellow]RELEASE_OVERRIDE[/]` per invariant 5 (compare Acceptance Criteria, surface omissions).
 
 ## 7. Persist and Commit
 `specs/_product/release-next.md` MUST be written to disk via the `write`

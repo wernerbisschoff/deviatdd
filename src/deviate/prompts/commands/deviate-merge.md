@@ -94,7 +94,7 @@ Generate a conventional-commit title and multi-paragraph description synthesised
 {type}({COMMIT_SCOPE}): {description}
 ```
 
-The ``deviate merge --message`` CLI applies the project's emoji convention (read from CONTRIBUTING.md / .commit-convention.md by ``format_commit_message``), so do NOT pre-pend an emoji here — the CLI will. If neither CONTRIBUTING.md nor `.commit-convention.md` declares an emoji convention, the CLI leaves the subject unchanged.
+Do NOT pre-pend an emoji here — the CLI applies the project's emoji convention automatically (see Step 0). If no convention is declared, the CLI leaves the subject unchanged.
 
 - **type**: `feature → feat`, `bug → fix`, `chore → chore`, `refactor → refactor`, `docs → docs`, default → `feat`
 - **COMMIT_SCOPE**: strip a leading `ISS-` from the stored issue ID. Thus
@@ -103,21 +103,7 @@ The ``deviate merge --message`` CLI applies the project's emoji convention (read
 - Max 72 characters, imperative mood, no period.
 - Example: `feat(002-001): add user authentication`
 
-**Step B — Description body** (2-4 paragraphs):
-
-```
-{Summary — 2-4 sentences, problem-led}
-
-## Changes
-- {grouped by logical concern with file refs inline}
-- {NEVER list every file individually — group by directory or concern}
-
-## Technical Details
-{optional — architectural decisions, non-obvious choices, migrations}
-
-Closes {ISSUE_ID}
-```
-
+**Step B — Description body** (per `deviate-pr` `<pr_body_format>`: 2-4 sentence problem-led summary, `## Changes` grouped by concern, `## Technical Details` optional, `Closes {ISSUE_ID}`):
 </step>
 
 <step id="confirmation">
@@ -190,17 +176,7 @@ If the user chooses **Edit commit message**, collect the revised message and re-
    fi
    ```
 
-   The diagnostic is **dual-channel** so the operator sees it regardless of
-   how the framework renders failure states:
-
-   1. **stderr** — ``git status --porcelain`` output is printed to stderr
-      verbatim (line-for-line, no truncation, no reformatting) before halting.
-   2. **`Failure_State` message body** — the same porcelain dump is embedded
-      inside the ``Failure_State`` string itself, prefixed with a one-line
-      cause. This guarantees the dump reaches the operator even if the
-      framework only renders the label.
-   Do NOT silently ``git add`` stray files and do NOT ``--amend`` anything —
-   the operator decides whether to investigate, drop, or commit strays.
+The diagnostic is **dual-channel**: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` body. Do NOT silently ``git add`` stray files and do NOT ``--amend`` anything — the operator decides whether to investigate, drop, or commit strays.
 
 5. **Commit everything together** — a single commit containing both the feature
    changes and the ledger update. The ``deviate merge --message`` CLI applies
@@ -269,18 +245,7 @@ If the user chooses **Edit commit message**, collect the revised message and re-
   fi
   ```
 
-   Notes specific to running this body **outside** the hook context:
-
-   - `GIT_DIR` unset + trap is a no-op for non-hook subprocesses but is
-     preserved verbatim so the byte-equivalence claim holds.
-   - On a freshly-squashed `{base_branch}`, `@{u}` typically does not exist yet
-     (the user has not pushed since the squash), so the script falls through
-     to `HEAD~1` — exactly the prior tip of `{base_branch}`. That is the correct
-     base: the diff captures everything the squash introduced.
-   - After the operator pushes and the real `pre-push` hook fires on a
-     future merge, `@{u}` will resolve and the hook will switch to the
-     merge-base view. Both copies answer the same question under that
-     condition.
+   Note: on a freshly-squashed `{base_branch}`, `@{u}` typically does not exist yet, so the script falls through to `HEAD~1` — the correct base (the diff captures everything the squash introduced).
 
   On non-zero exit from any of the three commands (`mise run format-check`,
   `mise run lint`, `mise run test[-affected]`) halt with
@@ -348,11 +313,7 @@ deviate merge --issue {ISSUE_ID} --delete-branch [--delete-worktree]
    implicitly handles this; pairing with ``--delete-worktree`` runs the
    worktree cleanup first.
 
-Tag push and remote branch delete are **best-effort by design** — the user
-asked for ``--delete-branch`` to also remove the worktree and the branch
-locally and on origin, so the local cleanup completes even when the remote
-is briefly unreachable. Surface ``PUSH_WARN`` from each step so the operator
-can retry manually.
+Tag push and remote branch delete are **best-effort by design** — local cleanup completes even when the remote is unreachable. Surface `PUSH_WARN` from each step so the operator can retry manually.
 
 Session is reset to IDLE once cleanup completes (whether or not the remote
 operations succeeded).
@@ -371,8 +332,7 @@ operations succeeded).
 | Unstaged files after squash + ledger staging (`git diff --quiet` reports changes; staged tree empty via `git diff --cached --quiet`; untracked files via `git ls-files --others --exclude-standard`) | Fail with `Failure_State: Unstaged_Files_Post_Merge`, `Nothing_To_Stage`, or `Untracked_Files_Post_Merge` respectively. Dual-channel diagnostic: print `git status --porcelain` to stderr verbatim AND embed the same dump in the `Failure_State` message body so the operator sees it regardless of how the framework renders failures. Do NOT silently `git add` or `--amend` — operator decides whether to investigate, drop, or commit strays |
 | Issue not found in ledger | Proceed with merge anyway (the branch may have been created outside DeviaTDD). Pass `deviate merge --issue {ISSUE_ID}` — it will fail cleanly with `ISSUE_NOT_FOUND` |
 | Issue already COMPLETED | The ledger step is idempotent — `deviate merge` exits cleanly with `ALREADY_COMPLETED` |
-| `git push` fails (diverged / rejected) | Halt with `Failure_State: Push_Failed`. The squash-merge commit and the ledger transition inside it are already on `{base_branch}`; only the network push is blocked. Surface the raw `git push` stderr so the operator can resolve (pull --rebase + retry, force-with-lease, or leave the commit local). Do NOT amend the commit, do NOT retry automatically. |
-| User chooses **Stop — I'll push manually** | Halt with `Failure_State: Push_Deferred`. The squash-merge commit is already on `{base_branch}`; only the network push is deferred. Operator runs `git push` later; the real `pre-push` hook fires at that point. |
+| `git push` fails, or user chooses **Stop — I'll push manually** | See step 7: halt with `Failure_State: Push_Failed` / `Push_Deferred`; the squash-merge commit is already on `{base_branch}` — only the network push is blocked or deferred. Do NOT amend, do NOT retry automatically. |
 | `push_gate` (inline `pre-push` mirror) fails | Halt with `Failure_State: Push_Gate_Failed`. The squash-merge commit has already landed. Operator decides whether to fix forward, `git reset --soft HEAD~1` and recommit, or push without the gate (`git push --no-verify`). |
 
 </edge_cases>

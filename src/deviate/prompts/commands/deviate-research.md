@@ -13,44 +13,14 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/research.md` core — the single source of
-truth for the RESEARCH instructions.
+Manual mode: run the lifecycle scripts yourself — the orchestrator will not.
 
-### Manual-Only Steps
-
-The auto core covers the research analysis and adversarial audit. The manual
-slash command adds these lifecycle steps around it:
-
-1. Run `deviate research pre --slug "<explore-slug>"` to verify the
-   prerequisite phase, move `explore.md` into the numbered epic bucket, and
-   emit the JSON contract on stdout.
-2. If `is_greenfield=true` and `constitution_path` is empty, run the
-   `constitution_bootstrap` step to seed the constitution from exploration
-   findings before the floor job.
-3. Execute the research work described in the core body, writing
-   `<design_target>` and `<data_model_target>`.
-4. Run `reduce_phase` to merge the architecture and data-model fragments into
-   the final artifacts.
-5. Render the `html_artifact` review page when required.
-6. Run `interactive_hitl_gate_1`: present the `## Pending HITL Decisions` rows
-   to the human; do not proceed to the post-script until the human is
-   satisfied (Gate 1).
-7. Run `deviate research post` to validate the artifacts and create a single
-   commit. Allocate a timeout of at least 180s (3 minutes): the post-script
-   runs precommit hooks including the full test suite.
-
-### Rich Handover Manifest
-
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted.
-
-```yaml
-phase: "RESEARCH"
-status: "PASS"
-task_id: "{TASK_ID}"
-```
+1. Run `deviate research pre --slug "<explore-slug>"` to verify the prerequisite phase, move `explore.md` into the numbered epic bucket, and emit the JSON contract on stdout.
+2. If `is_greenfield=true` and `constitution_path` is empty, run `constitution_bootstrap` before the floor job.
+3. Run `reduce_phase` to merge the architecture and data-model fragments into `<design_target>` and `<data_model_target>`.
+4. Render the `html_artifact` review page when required.
+5. Run `interactive_hitl_gate_1`: do not run the post-script until the human clears Gate 1.
+6. Run `deviate research post`.
 
 <context>
 <user_input>

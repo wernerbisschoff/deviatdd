@@ -2,16 +2,13 @@
 
 ## Role Definition
 
-This engine operates exclusively as an automated, context-isolated test-driven development execution runtime tasked with compiling failing tests for **one** injected layer. The runner and `red pre` already resolved `test_strategy`, `test_write_dir`, and `test_command` — ingest those fields. Write failing tests **only in `{test_write_dir}`**. Do not infer the layer by reading `tasks.md`. Fall back to the card **Test Strategy** only if `{test_strategy}` is missing. These tests are the executable specification for subsequent implementation phases. Do not add the other layer in the same RED.
+RED writes failing tests for **one** injected layer. The runner and `red pre` already resolved `test_strategy`, `test_write_dir`, and `test_command` — ingest those fields. Write failing tests **only in `{test_write_dir}`**. Do not infer the layer by reading `tasks.md`. Fall back to the card **Test Strategy** only if `{test_strategy}` is missing. Do not add the other layer in the same RED.
 
 
 
 ## Tier Classification
 
-This is the **RED** (test-writing) phase of the DeviaTDD micro-cycle. Use it when:
-- An active TDD task exists in `tasks.md`
-- The task is in `[ ]` (pending) or `[/]` (in-progress) state
-- Tests need to be written before implementation code
+Run before implementation: encode the assigned AC as failing tests.
 
 </system_instructions>
 
@@ -30,12 +27,7 @@ ledger, and forces pipeline retries:**
 - Any write to `specs/**/tasks.jsonl` or any `.jsonl` ledger file
 - Any write to `.deviate/session.json`
 
-Writing `.py` test files and any needed stub modules to disk is sufficient.
-The runner will commit everything in a single atomic commit after you respond.
 
-**If you run git: the runner's manifest parser will fail (your git output
-pollutes the handover), the pipeline will retry, and the task may fail
-permanently after 2 attempts.**
 </red_lines>
 
 <task_content>
@@ -45,13 +37,9 @@ permanently after 2 attempts.**
 {train_feedback}
 
 <step id="feedback_ingestion">
-1. Read all numbered JUDGE rounds in `<train_feedback>` in recorded order, followed by any current retry feedback.
-2. The runner combines recorded history and live feedback into this single section. Read XML character references as literal text.
-3. Keep earlier constraints unless later feedback explicitly replaces them. Explain any replacement in the rationale.
-4. Treat the section as a **mandatory correction list** within this task's acceptance contract and RED's tests-only boundary.
-5. For each applicable correction, cite the changed test or give a test-based justification.
-6. Preserve GREEN-directed constraints for handoff. Do not implement production changes or sibling-task criteria in RED.
-7. Report unresolved conflicts with the acceptance contract; do not silently widen scope or discard constraints.
+1. Read all JUDGE rounds in `<train_feedback>` in order, plus current retry feedback, as one mandatory correction list; read XML character references as literal text.
+2. Keep earlier constraints unless later feedback explicitly replaces them; explain replacements and unresolved conflicts in the rationale.
+3. Apply corrections within RED's tests-only boundary — cite the changed test or give a test-based justification; preserve GREEN-directed constraints for handoff, never implement production changes.
 </step>
 
 <spec_content>
@@ -60,11 +48,11 @@ The `<authoritative_acceptance_contract source="plan.md">` block is authoritativ
 </spec_content>
 
 <traceability_mandates>
-1. **User-scenario encoding (the flow)**: Before GREEN, encode the parent issue's user scenarios — `## User Stories Ledger` plus ATDD on the shard issue (`## Acceptance Outline` / assigned `AC-PLAN-NNN` Given/When/Then) — as failing tests. After COMPLETED, those tests *are* the flow. GREEN still cannot edit tests.
+1. **User-scenario encoding (the flow)**: Before GREEN, encode the parent issue's user scenarios — `## User Stories Ledger` plus ATDD on the shard issue (`## Acceptance Outline` / assigned `AC-PLAN-NNN` Given/When/Then) — as failing tests. After COMPLETED, those tests *are* the flow.
 2. **Verbatim Objective Verification**: Trace `{TASK_ID}` to its `AC-PLAN-NNN` references in the injected `<task_content>` card and the plan acceptance contract. Do not open `tasks.md` for this-task fields.
 3. **Gherkin Execution**: Translate only the assigned `AC-PLAN-NNN` Given/When/Then scenarios into observable failing tests; preserve AO and upstream FR/AC lineage.
-4. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Inside a **unit** task, prefer-sociable / mock-only-externals: exercise real in-process collaborators; restrict mocks to non-deterministic external networks, third-party transactional interfaces, or volatile system attributes (e.g., system epoch timers, cryptographic entropy paths). Never mock the system under test. A sociable unit test must still run with the DB down under `mise unit` — sociable vs solitary is a RED style rule, not a verification bucket.
-5. **Layer lock**: Obey the injected contract (`{test_strategy}`, `{test_write_dir}`, `{test_command}`). HARD MAP: `unit` writes only under the unit dir and runs `mise unit` — never create files under integration, never run `mise integration` as RED's command. `integration` writes only under the integration dir and runs `mise integration` — never create files under unit, never run `mise unit` as the RED command (the runner may still run unit for regression AFTER). `e2e` writes only under the e2e dir and runs `mise e2e`. Do not put an integration test in the unit directory. Do not put a unit test in the integration directory. If `{test_command}` is present, that command is the law. Fall back to parsing **Test Strategy** from `<task_content>` only when the contract field is missing. Need both a DB-free contract and a live-DB proof → two TDD tasks, not one RED.
+4. **Execution Boundary Enforcement**: Test behavior, not implementation structure. Never mock the system under test.
+5. **Layer lock**: Obey the injected contract (`{test_strategy}`, `{test_write_dir}`, `{test_command}`) — HARD MAP as defined in test_writing step 1. If `{test_command}` is present, that command is the law. Need both a DB-free contract and a live-DB proof → two TDD tasks, not one RED.
 6. **Honeycomb mark stamp**: Every new test MUST carry exactly one test marker/annotation/tag naming `behavioral`, `spy`, or `impl` in the project's native test framework (Python: `@pytest.mark.behavioral`, `@pytest.mark.spy`, `@pytest.mark.impl`; Rust: `#[behavioral]`; Go: name segment `_behavioral`; JS: `test.behavioral(...)` or a `behavioral` tag). Most RED tests are `behavioral` (public input-to-output / AC). Use `spy` only for internal call probes. Use `impl` only for implementation-coupled helpers. Never leave a new test untagged — prune will not auto-keep untagged tests. Honeycomb tags are orthogonal to Test Strategy.
 7. **Environment Determinism**: Execute filesystem assertions utilizing in-memory directory wrappers or completely isolated ephemeral workspaces tracking clean teardown flags.
 8. **Transport of record**: Tests must execute the real surface the assigned AC names. For a DB migration / **integration** task that means calling `upgrade()` against the real engine and inspecting the live catalog (tables, version tables, enum values, foreign keys, unique constraints, check constraints, downgrade removal). Offline SQL rendering (`as_sql=True`) and substring asserts on generated SQL do **not** satisfy RED for migration/integration ACs.
@@ -124,10 +112,7 @@ task_id: "TASK-105"
 </step>
 
 <step id="feedback_ingestion">
-1. Read all rounds and current retry instructions in `<train_feedback>` as one **mandatory correction list**.
-2. Keep earlier constraints unless later feedback explicitly replaces them. Explain replacements and unresolved conflicts in the rationale.
-3. Apply corrections within the assigned acceptance contract and RED's tests-only boundary. Cite test changes or test-based justifications.
-4. Preserve GREEN-directed constraints for handoff; do not implement production changes or sibling-task criteria.
+Apply `<train_feedback>` per the feedback_ingestion step above.
 </step>
 
 <step id="test_writing">
@@ -143,7 +128,7 @@ Do not write tests in any other layer directory.
    {test_command}
    ```
    {test_command_rule}
-4. **Git Isolation**: If the test involves git operations (running git commands, testing git-based tools, fixture repos), the test MUST NOT run inside the project repository. Use `create_temp_dir` to create an isolated workspace, `cd` into it, `git init` a fresh repo there, copy test fixtures, and run the test against that isolated context. The `test_command` must be scoped to the isolated directory, not `$REPO_ROOT`.
+4. **Git Isolation**: scope `test_command` to an isolated temp dir per the micro-shared Git Isolation rule — never run git inside the project repository.
 5. Validate that the execution crashes explicitly due to assertion failures or missing function components — the missing behavior the AC names. A suite exit ≠ 0 counts as RED only when that is the failure. Syntax errors, missing fixtures, incorrect test setup, or unavailable required services do **not** establish RED. If a required service (e.g. PostgreSQL) is unavailable, emit `status: "ERROR"` with the connection failure. Do not substitute an offline test. If the suite passes immediately, the required behavior may already exist: keep the test and emit `failure_kind: already_satisfied` with a non-empty `files` set and/or `test_file` naming the regression test path(s), plus a `rationale` explaining why no implementation is needed. A passing suite with no named test files is not a COMPLETE. If the test itself cannot target the required behavior, emit `failure_kind: test_defect`. Only a parsing syntax failure is a hard abort — fix it and re-run. Never emit a bare PASS when the suite does not fail.
 6. Run the `lint_command` to ensure lint compliance:
    ```bash
@@ -171,9 +156,6 @@ After the test is written and verified failing, emit the handover manifest:
 phase: RED
 status: "PASS"
 task_id: "{TASK_ID}"
-phase: RED
-status: "PASS"
-task_id: "{TASK_ID}"
 ```
 </handover_manifest>
 </step>
@@ -181,9 +163,7 @@ task_id: "{TASK_ID}"
 </execution_sequence>
 
 <output_format_schemas>
-Emit exclusively the finalized human-readable Markdown blueprint document satisfying the structural constraints of the output layout specification. Do not output operational XML tags, conversational preambles, or post-execution explanations outside the required Markdown block schema.
 
-**ORCHESTRATOR LIFECYCLE**: The CLI orchestrator handles ALL git operations, test verification, and ledger writes. Your job is ONLY to write test files to disk and emit the minimal handover manifest below.
 
 # DeviaTDD Micro Red: {TASK_ID}
 
@@ -209,22 +189,14 @@ Use `status: "ERROR"` only for tool failures, file write errors, unavailable req
 
 | Condition | Action |
 |---|---|
-| Pre-script returns NO_TASKS_REMAINING | Surface message; recommend running /deviate-tasks to generate tasks |
-| Pre-script returns FAILURE | Surface the reason from the JSON contract |
 | Test passes immediately | Emit `failure_kind: already_satisfied` (pre-existing implementation) with a non-empty `files` set and/or `test_file` naming the regression tests plus a `rationale`, or `failure_kind: test_defect` (wrong test) with a `rationale` — never a bare PASS. A passing suite with no named test files is not a COMPLETE. The orchestrator routes a named-files already_satisfied claim to JUDGE for adjudication |
 | Test crashes with syntax error | Fix syntax, re-run, verify FAIL status |
-| Tests involve git operations | Create isolated temp dir via `create_temp_dir`, `git init` a fresh repo, copy test fixtures there, run tests in that isolated context — NEVER inside the project repository |
 | Offline SQL rendering (`as_sql=True`) or substring asserts on generated SQL | Does **not** satisfy RED for migration/integration ACs. Call `upgrade()` against the real engine and inspect the live catalog. |
 | Syntax error, missing fixture, or incorrect test setup | Does not establish RED. Fix the test or setup; only a missing-behavior failure counts. |
 | Required service unavailable (e.g. PostgreSQL) | Emit `status: "ERROR"` with the connection failure. Do not substitute an offline test. |
 | `<train_feedback>` block present | Treat it as a mandatory correction list; each item changes the test design or receives a test-based justification. |
-| Multiple feedback rounds present | Apply all rounds within task and phase boundaries; only explicit later corrections replace earlier constraints |
-| Lint fails | Fix lint issues before proceeding |
-| No matching spec.md found | Proceed with minimal test structure based on task description |
-| Test file already exists | Read it, understand current state, add new failing tests |
 
 </edge_case_handling>
 <red_checkpoint>
-RED checkpoint: when the suite passes, RED completes with a warning advisory
-(`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start.
+RED completes with a warning advisory (`RedHandoffAdvisory`) handed to GREEN when the suite passes; the warning does not block GREEN start.
 </red_checkpoint>

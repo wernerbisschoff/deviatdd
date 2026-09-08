@@ -19,7 +19,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 2. **Single Issue Mandate**: You must emit exactly ONE vertical-slice issue. Never generate horizontal-layer shards (separate DB, API, UI tasks). The issue must represent a functional, user-testable capability cutting through all required layers.
 3. **Shared PRD Invariant**: All ad-hoc issues trace to a shared append-only requirements ledger at `specs/adhoc/prd.md`. If the file does not exist, initialize it. Each invocation appends exactly one new FR section with globally unique tokens (`FR-ADHOC-NNN`).
 4. **Constitutional Validation Gate**: Prior to generating requirements, verify the presence and technical parameters of `specs/constitution.md`. If the file is missing, note the gap but proceed — ad-hoc issues do not require a constitution. If present, every requirement must comply.
-5. **Lightweight Discovery**: You must explore the codebase to ground the issue in reality — identify the target files, existing patterns, and relevant modules. This is NOT the full 3-subagent explore phase. Use zvec-grep through the `zvec_grep_search` MCP tool or `zg query` via the CLI for semantic discovery. Reserve `grep`, `glob`, `ls`, and `read` for exact matches, dotfiles, and last-mile inspection.
+5. **Lightweight Discovery**: You must explore the codebase to ground the issue in reality — identify the target files, existing patterns, and relevant modules. Use zvec-grep through the `zvec_grep_search` MCP tool or `zg query` via the CLI for semantic discovery. Reserve `grep`, `glob`, `ls`, and `read` for exact matches, dotfiles, and last-mile inspection.
 6. **Context Packaging Invariant**: The generated issue must inject precise entities, Defensive Exclusions, upstream tokens, implementation-independent `AO-NNN` acceptance outlines, and a verification command blueprint. **Named anti-pattern — Gherkin leakage:** macro artifacts MUST NOT contain bold `**Given**` / `**When**` / `**Then**`; halt with `GHERKIN_LEAK_DETECTED` if detected. Final Gherkin belongs to `/deviate-plan`.
 7. **Output Format Constraint**: Present the final response exclusively using human-readable Markdown. Do not wrap output in XML boundaries. Inner frontmatter blocks within the issue file emission must use quadruple backticks to prevent syntax corruption.
 8. **Template Engine Safety**: Preserve all double-curly variable syntax markers as inert string values using raw literal encapsulation.
@@ -43,7 +43,6 @@ The ad-hoc issue describes implementation of requested application behavior in a
 2.5. **Existing Explore Check**: Check whether an explore.md already exists for this problem description in either the post-research location (numbered epic dir) or the pre-research staging location:
     - Derive a kebab-case slug from the user's description. **First**, check for `specs/{NNN}-<slug>/explore.md` (the post-research location — `deviate research pre` moves explore.md into the numbered epic dir). If found, read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/{NNN}-<slug>/explore.md"`.
     - If not found in the numbered dir, **fall back** to `specs/explore/<slug>.md` (the pre-research staging location). If found, consume it the same way and note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md (pre-research staging)"`.
-    - If found: read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md"`.
     - If not found: proceed to step 3 (Lightweight Discovery Pass) as normal.
 
 3. **Lightweight Discovery Pass**: Skip this step if an existing explore.md was consumed in step 2.5. Otherwise, explore the codebase to ground the issue:
@@ -51,7 +50,7 @@ The ad-hoc issue describes implementation of requested application behavior in a
    - Identify existing patterns, hooks, utilities, or components that the task should extend or integrate with
    - Map target files (both existing files to modify and new files to create)
    - Determine scope boundaries: what is in-scope vs defensively excluded
-   - Register relevant documentation sources via `libref add <source>` for detected frameworks and libraries (e.g., `libref add <git-repo-url> --name <lib> --path docs --tag <semver>`). Use `libref list` to check what is already available.
+   - Register relevant documentation sources via `libref` (offline-docs workflow per `deviate-architecture` invariant 10). Use `libref list` to check what is already available.
    - Output findings in a `## Discovery Audit` block
 
 4. **Shared PRD Lifecycle**:
@@ -82,7 +81,7 @@ The ad-hoc issue describes implementation of requested application behavior in a
 ```
 Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reuse the same `NNN` allocated in step 5. `ISS-ADH-NNN` and `ISS-NNN` share that ordinal. Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 
-7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. Completion is driven by the real workflow (`plan` → `tasks` → red/green → merge audit), never by creation. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here. Use the canonical commit scope from CONTRIBUTING.md: strip the legacy `ISS-` prefix, so `ISS-ADH-044` becomes `ADH-044` (likewise `ISS-043` becomes `043`).
+7. **Commit**: Commit all changes with a plain `git commit`. Do NOT run `deviate adhoc post` and do NOT append a `COMPLETED` transition to `specs/issues.jsonl`: the record stays `BACKLOG` until the meso/micro pipeline actually ships the work. The ledger may only record `BACKLOG` (step 6); `SPECIFIED` / `SHARDED` / `COMPLETED` are written by later phase post-scripts, not here. For `COMMIT_SCOPE`, strip the legacy `ISS-` prefix per `deviate-merge` (e.g. `ISS-ADH-044` becomes `ADH-044`).
 
    ```
    git add -A && git commit -m "docs({COMMIT_SCOPE}): add issue {ISSUE_ID}"

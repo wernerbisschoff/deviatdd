@@ -13,10 +13,7 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/green.md` core — the single source of truth
-for the GREEN instructions.
+Manual mode: run the scripts yourself.
 
 1. Run `deviate green pre` to allocate the active TDD task and emit the JSON
    contract on stdout.
@@ -27,8 +24,7 @@ for the GREEN instructions.
 
 ### Rich Handover Manifest
 
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted.
+Emit this manifest:
 
 ```yaml
 phase: "GREEN"

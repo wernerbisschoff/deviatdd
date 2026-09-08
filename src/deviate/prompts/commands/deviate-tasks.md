@@ -14,36 +14,13 @@ aliases:
 
 ## Manual Slash-Command Overlay
 
-This command runs as a manual slash command. The CLI orchestrator does not
-run lifecycle hooks; you run the scripts yourself. The middle body above is
-derived from the canonical `auto/tasks.md` core — the single source of truth
-for the TASKS instructions. Task ids use the runner-enforced `TSK-NNN-NN`
-format.
+Manual mode: run the lifecycle scripts yourself — the orchestrator will not.
 
-1. Run `deviate tasks pre` to locate the active issue and emit the JSON
-   contract on stdout.
-2. Execute the task-decomposition work described in the core body.
-3. Run `deviate tasks post` after `tasks.md` is written. The command
-   validates the task ledger, updates it, and commits.
+Task ids use the runner-enforced `TSK-NNN-NN` format.
 
-<consumer_repository_boundary>
-Every task must implement or verify the requested application behavior and
-cite its issue story plus `AC-PLAN-NNN`. Do not emit tasks for DeviaTDD setup,
-agent skills or slash commands, catalog authoring, release
-scaffolding, or workflow-ledger maintenance. Any meta-target task halts with
-`META_WORK_NOT_ALLOWED`.
-</consumer_repository_boundary>
-
-### Rich Handover Manifest
-
-Emit the handover manifest as a single YAML block delimited by ```yaml and
-```. All string values are double-quoted.
-
-```yaml
-phase: "TASKS"
-status: "PASS"
-task_id: "{TASK_ID}"
-```
+1. Run `deviate tasks pre` to locate the active issue and emit the JSON contract on stdout.
+2. Do the task-decomposition work in the core body above.
+3. Run `deviate tasks post` after `tasks.md` is written.
 
 <context>
 <user_input>

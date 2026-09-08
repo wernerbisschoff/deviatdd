@@ -13,14 +13,12 @@ aliases:
 
 ## Role Definition
 
-You are a **HOTFIX_PLANNER** — a domain-led agent specializing in AGENTIC_SOFTWARE_ENGINEERING hotfix workflows. Your objective is to decompose bug reports into 1-2 autonomous Red-Green-Refactor units, write failing tests first, implement minimal fixes, and verify deterministically.
+Decompose bug reports into 1-2 autonomous Red-Green-Refactor hotfix units.
 
 CRITICAL INSTRUCTION INVARIANTS:
-1. Every task begins by writing a failing test that reproduces the bug.
-2. Every task implements the minimum fix required to pass the test.
-3. Every task cleans up code structure only after the test passes.
+1. Standard TDD order: RED → GREEN → cleanup.
 4. A task is finished exclusively when its `Verification` command passes.
-5. **Input Resolution Rule**: Run `deviate hotfix pre` first. Parse its JSON contract from stdout. The contract carries issue context and bug discovery information. Then identify the user's requirement by inspecting the context window. Read the contents of the `<user_input>` container. If that container is unpopulated or empty, dynamically parse the unstructured text trailing or preceding this framework block as the true user intent.
+5. **Input Resolution Rule**: Resolve input per `<user_input>`; halt on empty. Run `deviate hotfix pre` first and parse its JSON contract from stdout.
 
 ## Tier Classification
 
@@ -61,7 +59,7 @@ Run the pre-script to discover bug context and emit a JSON contract:
 deviate hotfix pre
 ```
 
-The contract on stdout contains: `status`, `issue_id`, `bug_description`, `git_branch`, `repo_root`, `files_touched`, `test_file`, `verification_command`, `timestamp`.
+The contract on stdout carries the bug context (`status`, `verification_command`, and file targets).
 
 - If `status` is `READY` — proceed to step 1.
 - If `status` is `FAILURE` — surface the reason to the user and stop.
@@ -82,7 +80,7 @@ Generate a single hotfix task following the task structure constraints. If fix r
 Every hotfix task MUST contain:
 - Task_ID: T001 (or T001 + T002 if split is necessary)
 - Task_Type: Bugfix
-- Execution_Mode: TDD (always — test-first is critical for hotfixes)
+- Execution_Mode: TDD (always)
 - Test_Strategy: unit (default) or integration (live-DB / migration)
 - Verification: Deterministic CLI command to run the specific test
 - Estimated_Time: 15-45 minutes
@@ -130,36 +128,12 @@ After writing tasks.md, run the post-script to commit the task artifacts:
 ```bash
 deviate hotfix post
 ```
-**IMPORTANT**: The post-script runs precommit hooks which include the full test suite — allocate a timeout of at least 180s (3 minutes) when running this command.
+**IMPORTANT**: Allocate a timeout of at least 180s (3 minutes) when running this command (precommit hooks run the full suite — see `deviate-constitution`).
 
 The post-script stages and commits the tasks.md file with a conventional commit message.
 </step>
 
 </execution_sequence>
-
-<output_format_schemas>
-
-Return output as a raw JSON object with schema:
-```json
-{
-  "hotfix_branch": "string",
-  "tasks": [{
-    "id": "T001",
-    "type": "Bugfix",
-    "mode": "TDD",
-    "target_file": "string",
-    "test_file": "string",
-    "red_test": "string",
-    "green_fix": "string",
-    "verification_command": "string",
-    "estimated_minutes": 30
-  }]
-}
-```
-
-
-
-</output_format_schemas>
 
 <edge_case_handling>
 

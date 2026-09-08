@@ -27,7 +27,7 @@ aliases:
 SCOPE: DeviaTDD Product-layer flow authoring.
 WRITES: `specs/_product/flows/flows-<domain>.md` files and `specs/_product/flows/index.md`.
 DOES NOT WRITE: `specs/_product/architecture.md`, `specs/_product/domain-model.md`, `specs/_product/release-next.md`.
-SEED: `specs/_product/flows/flows-product.md` is an optional starter template; treat its example as illustrative, not as a fixed FLOW-01/02/03 triple. The first flow the operator authors is FLOW-01; subsequent flows become FLOW-02, FLOW-03, etc.
+SEED: `specs/_product/flows/flows-product.md` is an optional starter template. The first flow the operator authors is FLOW-01; subsequent flows become FLOW-02, FLOW-03, etc.
 GOAL: Produce `FLOW-NN` flow blocks that conform to the seed's section schema, stay terse, and remain a readable scope record for greenfield planning. There is no machine-consumed `flow_refs` contract — FLOW-NN IDs are prose anchors within product artifacts only.
 </domain_construct>
 
@@ -35,9 +35,9 @@ GOAL: Produce `FLOW-NN` flow blocks that conform to the seed's section schema, s
 
 CRITICAL INVARIANTS:
 
-0. **Input Resolution Rule**: First, read and consider the contents of the `<user_input>` container before continuing with execution. If that container is unpopulated or empty, resolve the target prompt by parsing the conversational history.
+0. **Input Resolution Rule**: Resolve input per `<user_input>`; halt on empty.
 
-1. **No Mandated Triple**: The agent does NOT need to author a fixed FLOW-01/02/03 set. FLOW-01 is whatever the operator's first flow turns out to be; FLOW-02 the next, and so on. If `specs/_product/flows/flows-product.md` exists, treat its example as a starting template, not as a required skeleton — the operator can replace its example block with their own first flow, append new `flows-<domain>.md` files for additional flows, or skip it entirely. The previous wording that required seeding FLOW-01/02/03 is RETIRED — consumer repos may ship with zero flow files.
+1. **No Mandated Triple**: The agent does NOT need to author a fixed FLOW-01/02/03 set. FLOW-01 is whatever the operator's first flow turns out to be; FLOW-02 the next, and so on. If `specs/_product/flows/flows-product.md` exists, treat its example as a starting template, not as a required skeleton — the operator can replace its example block with their own first flow, append new `flows-<domain>.md` files for additional flows, or skip it entirely. Consumer repos may ship with zero flow files.
 2. **Flow ID Format**: Every flow block carries a `## FLOW-NN <Name>` header where `NN` is a zero-padded two-digit (or more) integer. IDs are stable prose anchors for cross-references between product artifacts (`architecture.md`, `release-next.md`). No downstream phase consumes them.
 3. **Index Sync Discipline**: After authoring any new flow file under
    `specs/_product/flows/`, append a row to `specs/_product/flows/index.md`
@@ -80,9 +80,7 @@ CRITICAL INVARIANTS:
    - `Metrics / Signals`: 0–3 bullets. Omit the heading if there are none.
      Cross-references to other `FLOW-NN` IDs go here in the form
      `references FLOW-XX, FLOW-YY`.
-   - Total flow block target: **≤ 35 lines of markdown**. The previous
-     bloat (~150 lines per flow) was the bug; keep each flow scannable
-     in a single screen.
+   - Total flow block target: **≤ 35 lines of markdown**.
 
 9. **Commit at Sign-Off (end-of-session atomic commit)**:
    This skill splits into two phases. Phase A (draft) writes every
@@ -107,32 +105,8 @@ CRITICAL INVARIANTS:
    2. Run `git diff --cached --name-only`; if any cached path is
       outside the session-owned file set, halt and surface the
       staged list (do NOT auto-unstage).
-   3. If `<repo_root>/CONTRIBUTING.md` exists, read it in full to
-      discover the target repository's commit-message convention
-      (types, scopes, emoji prefix, subject length). The default
-      when absent is Conventional Commits (`<type>(<scope>):
-      <subject>`); if CONTRIBUTING.md exists and declares a
-      different convention, that wins. Stage every session-authored
-      flow file plus `specs/_product/flows/index.md` via the host
-      agent's git tooling (e.g. `git add
-      specs/_product/flows/flows-<domain>.md
-      specs/_product/flows/index.md`) and fire exactly one
-      `git commit -m '<subject per CONTRIBUTING.md or default>'`
-      using the type/scope/emoji declared above (e.g.
-      `docs(flows): add FLOW-NN[, FLOW-MM, ...] and update index`
-      under the default; `docs: add FLOW-NN and update index`
-      if CONTRIBUTING.md omits the scope; emoji-prefixed variant
-      if it declares a gitmoji rule). Do NOT emit one commit per
-      file (the prior per-file-commit helper was retired) and do
-      NOT use `git add -A` or `git commit --only` — the commit
-      must be exactly one for the full session-owned file set.
-   4. Run `git commit` WITHOUT `--no-verify` by default — the
-      target repo's pre-commit hooks may check arbitrary content
-      (lint, format, secrets, links), not only Python. If
-      `CONTRIBUTING.md` from step 3 explicitly permits
-      `--no-verify` for docs-only commits, pass it; otherwise
-      let the hook run. If a hook fails, surface stderr verbatim
-      and stop — never retry with `--no-verify` to bypass.
+   3. Fire exactly one commit per the repo convention (`deviate-merge` Step 0 is canonical; default Conventional Commits): stage the session-owned files and run `git commit -m '<subject>'` (e.g. `docs(flows): add FLOW-NN and update index`). Do NOT emit one commit per file and do NOT use `git add -A` or `git commit --only` — the commit must be exactly one for the full session-owned file set.
+   4. Run `git commit` WITHOUT `--no-verify`; if a hook fails, surface stderr verbatim and stop — never retry with `--no-verify` to bypass (per `deviate-merge`).
 </system_instructions>
 
 <execution_sequence>
@@ -141,14 +115,7 @@ CRITICAL INVARIANTS:
 
 Read `<user_input>` first; if empty, parse conversational history.
 
-**Discovery discipline** (adapted from the "grill with docs" pattern, made active):
-- **Ask ONE question at a time**, with your recommended answer, and wait for the human's response before asking the next. Do not advance to the next question until the human has answered.
-- **Walk the dependency tree** dependency-first: resolve Actor before Domain, Domain before Trigger, Trigger before Happy Path.
-- **Read first, ask second**: if a question can be answered by reading the codebase, existing flow files, or `specs/_product/architecture.md`, do that instead of asking.
-- **Term-challenge against the glossary** (at most once per turn): if the user's term conflicts with `flows-product.md`, `specs/_product/domain-model.md`, or any existing `flows-<domain>.md`, call it out immediately — "The seed defines X as Y, but you seem to mean Z — which is it?" Propose a canonical name for vague terms ("account", "thing"). Do not loop on challenges — surface once, then move on.
-- **Sharpen fuzzy language**: when the user names the flow with a vague term, propose a precise canonical name and confirm before writing the `## FLOW-NN <Name>` header.
-- **Stress-test with scenarios**: for each happy-path step, invent one concrete edge case ("what if the user is offline when the trigger fires?") and ask the human to confirm the alternate-path behavior.
-- **Update flow file inline**: as terms and scenarios resolve, update the in-progress flow block immediately. Do not batch up the corrections — capture them as they happen.
+**Discovery discipline**: **Ask ONE question at a time**, with your recommended answer, and wait for the human's response before asking the next. **Update the flow file inline** as terms and scenarios resolve — do not batch up the corrections. (Full discovery protocol per `deviate-architecture` step 3.)
 
 Ask targeted questions to clarify:
 - Actor (Developer / End-User / Operator / External System)
@@ -159,8 +126,7 @@ Ask targeted questions to clarify:
 - Happy path (3–7 primary steps)
 - Alternate / error paths (only if non-obvious; otherwise mark `TBD`)
 
-If `specs/_product/flows/flows-product.md` is populated, read it first as a
-starting template — the example block is illustrative, not a mandated triple.
+starting template.
 
 ## 2. Determine Flow ID
 Scan existing IDs in `specs/_product/flows/index.md`. Assign the next
@@ -181,19 +147,10 @@ header row if absent). Source column carries the relative path of the new
 flow file.
 
 ## 5. Confirm Sign-Off (Phase B gate)
-Surface a final summary of every flow written this session and
-request explicit user approval before committing. Silence is not
-sign-off; if the user asks for revisions, return to step 3. See
-invariant 9 for the full Phase B protocol.
+Confirm sign-off per invariant 9 Phase B — silence is not sign-off; if the user asks for revisions, return to step 3.
 
 ## 6. Atomic Commit (Phase B, exactly once)
-Stage the full session-owned file set (`flows-<domain>.md`, `index.md`) via the host
-agent's git tooling and fire exactly one `git commit -m '<subject
-derived from CONTRIBUTING.md or the Conventional Commits default>'`.
-Do not run `git add -A`. Pre-commit hooks configured in the target
-repo (via `.git/hooks/`, `core.hooksPath`, or `husky`/`pre-commit`
-framework) run automatically when `git commit` is invoked without
-`--no-verify`.
+Fire exactly one commit per invariant 9 Phase B.
 
 ## 7. Next Step
 Inform the user that the new `FLOW-NN` ID(s) can now be referenced in prose by `/deviate-architecture` and `/deviate-release`. Do NOT trigger any downstream phase automatically.
