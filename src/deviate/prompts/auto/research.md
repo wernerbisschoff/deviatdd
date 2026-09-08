@@ -32,9 +32,9 @@ Instructions:
 - Consume `explore_md_path` and the constitution. Read the FILE_REGISTRY, DISCOVERY_AUDIT_RESULTS, ARCHITECTURAL_BASELINES, SIBLING_FLOW_INVENTORY, and ECOSYSTEM_RESEARCH from `explore.md`.
 - For a new path parallel to an existing flow, inspect the nearest sibling for ownership, state, and persistence conventions; the floor matches sibling conventions. Floor includes a separate `fee` field when the sibling-flow inventory records an `amount + fee` convention.
 - Identify the architectural surface area: modules to add, modules to modify, integration seams.
-- For each viable option, evaluate across: complexity, testability, alignment with constitution, alignment with existing patterns, reversibility, blast radius.
+- For each viable option, evaluate across: complexity, testability, alignment with constitution, alignment with existing patterns. Note blast radius in one line only for High-blast options.
 - If only one option satisfies all constraints, apply the Single Option Dominance Rule and emit it alone in the matrix with a `## Rejected Options` block enumerating the alternatives considered and the exact reason for rejection.
-- Every claim in the matrix and trade-offs MUST reference back to a source path or a verbatim quote.
+- Anchor contested or high-blast claims in the matrix and trade-offs with a source path or verbatim quote; a Source Registry ID suffices elsewhere.
 - Apply this test to each proposed field, state, job, and control before it enters the floor or Schema Tables:
   - required by the requested user flow;
   - required by existing behavior compatibility;
@@ -45,7 +45,7 @@ Instructions:
 - Keep as Required (do not weaken): authorization/ownership, money amount + fee, reserve/consume/release atomicity, skip_locked claim, and constitution mandates.
 - Named extras belong in the maximal bracket / `## Deferred` list, not extra schema columns.
 - Data modeling derives from the recommended **floor** architecture: for each floor entity, name, attributes (typed), invariants, source-of-truth, lifecycle owner. For each relationship, cardinality, navigation direction, on-delete / on-cascade semantics, integrity constraints. For each state machine, states, transitions, guards, terminal states, side effects. For each schema table, emit a concrete schema definition in the language declared in the constitution's `Tech Stack Standards` section. If greenfield, derive the schema language from explore.md's FILE_REGISTRY or ECOSYSTEM_RESEARCH.
-- Anchor every entity / relationship / state / schema to a source path or verbatim quote from `explore.md`.
+- Anchor each entity / relationship / state / schema with a source ID from `explore.md`; verbatim quote required only for contested or high-blast claims.
 </job_floor>
 
 <job_attack>
@@ -65,7 +65,7 @@ Instructions:
 
 <traceability_mandates>
 1. **Constitutional Validation**: Prior to synthesis, verify the constitution from `constitution_path`. Every architectural decision must comply with its core rules. A constitution requirement remains required even when the agent considers it unnecessary.
-2. **Source Anchoring**: Every option matrix row, entity definition, risk register entry, and alignment audit row must reference a verbatim source.
+2. **Source Anchoring**: Every option matrix row, entity definition, risk register entry, and alignment audit row must carry a source anchor — a Source Registry ID suffices; verbatim quote required only for contested or high-blast claims.
 3. **HITL Gate 1 Handoff**: After post-script emits `STATUS: AWAITING_HITL_GATE_1`, terminate. Display handoff block for human review of `design.md` and `data-model.md`. Do NOT proceed to `/prd`.
 4. **Floor Test**: Each floor field, state, job, and control must satisfy at least one of: requested user flow; existing behavior compatibility; constitution; authorization / money safety / provider correctness / data integrity.
 </traceability_mandates>
@@ -85,7 +85,7 @@ Populate TBD sections ONLY when this is greenfield bootstrap:
 
 A real constitution (already populated, no seed TBD markers) is READ-ONLY. Do not rewrite it to echo the epic. Any other constitution change is an explicit HITL amendment — halt and surface the amendment to the human.
 
-When the gate passes, populate every TBD section with real analysis from explore findings:
+When the gate passes, populate every TBD section with one tight paragraph each, citing the explore finding — no new exposition:
 
 - **Architectural Principles** from codebase patterns and conventions observed during exploration.
 - **Tech Stack Standards** from dependency manifests, CI config, and ecosystem research.
@@ -138,13 +138,11 @@ The orchestrator runs `deviate research post` after your response. Returns `STAT
 [Rationale]: Why this option over the alternatives; anchored to constitution quotes and explore.md FILE_REGISTRY / Sibling Flow Inventory rows.
 
 ## Options Matrix
-| Option | Complexity | Testability | Constitutional Alignment | Reversibility | Blast Radius | Verdict |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Option A: [name] | [L/M/H] | [L/M/H] | [Aligned/Tension/Violation] | [Easy/Hard] | [Local/Module/System] | [Recommended / Rejected] |
+| Option | Complexity | Testability | Constitutional Alignment | Verdict |
+| :--- | :--- | :--- | :--- | :--- |
+| Option A: [name] | [L/M/H] | [L/M/H] | [Aligned/Tension/Violation] | [Recommended / Rejected: 1-sentence reason] |
 
-
-## Rejected Options
-- [Option name]: [1-2 sentence rejection reason, anchored to a constitution clause or explore.md finding]
+The Verdict column is the rejection record. Keep `## Rejected Options` below to one line per option not shown here; if every considered alternative appears above, write one line: `None — all alternatives adjudicated in the Verdict column.`
 
 ## Design Trade-Offs
 | Decision | Trade-off | Why This Side |
@@ -157,9 +155,10 @@ The orchestrator runs `deviate research post` after your response. Returns `STAT
 Omit invented rows.
 
 ## Risk Register
-| Risk ID | Risk | Likelihood | Impact | Mitigation | Scope Status | Owner | Source Anchor |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| RSK-001 | [Description] | [L/M/H] | [L/M/H] | [Concrete mitigation] | [Required / Recommended / Deferred / Open Decision] | [Module/team] | [Path/quote] |
+Cap at ≤4 rows. `None` is not allowed — surface the top risks only.
+| Risk ID | Risk | Likelihood | Impact | Mitigation | Scope Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| RSK-001 | [Description] | [L/M/H] | [L/M/H] | [Concrete mitigation] | [Required / Recommended / Deferred / Open Decision] |
 
 Label each extra and each mitigation with Scope Status. `Required` only if requested user flow, existing behavior compatibility, constitution, or authorization / money safety / provider correctness / data integrity.
 
@@ -167,9 +166,8 @@ Label each extra and each mitigation with Scope Status. `Required` only if reque
 Optional short list of named extras in the maximal bracket. Not a PRD input for FRs. Do not add extra schema columns for these items.
 
 ## Constitutional Alignment Audit
+Contested clauses only (Tension / Violation) plus at most 3 key Aligned rows. Never emit an all-Aligned table.
 | Constitutional Clause | Architectural Decision | Alignment | Notes |
-| :--- | :--- | :--- | :--- |
-| [Quote from the constitution's Architectural Principles or Testing Protocols] | [Decision] | [Aligned / Tension / Violation] | [Specific source anchor] |
 
 ## Pending HITL Decisions
 

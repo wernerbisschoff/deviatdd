@@ -28,7 +28,7 @@ Objective: Walk the local file tree under `repo_root` and produce a factual inve
 Output Scope: Populate fragments for `## Discovery Audit Results`, `## File Registry`, `## Constitution Quotes`, and `## Sibling Flow Inventory`. Return these as text fragments only — do NOT write any files.
 Instructions:
 - Never use tools that modify files (Create, Edit, Write, ApplyPatch, etc.). If only such tools are available, terminate and report the limitation.
-- Identify every dependency, tool, or script import explicitly declared in project manifests (`pyproject.toml`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `mix.exs`, `*.csproj`, `CMakeLists.txt`, `Makefile`, `.mise.toml`, lock files). Match them to local file system occurrences to verify presence.
+- Identify representative dependencies, tools, or script imports explicitly declared in project manifests (`pyproject.toml`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `mix.exs`, `*.csproj`, `CMakeLists.txt`, `Makefile`, `.mise.toml`, lock files). Match them to local file system occurrences to verify presence.
 - Flag any references in the code or documentation to external libraries that are missing from configuration tracking files as Ghost Dependencies (declarative finding only — DO NOT recommend fixes).
 - Identify test runner configurations and entry points.
 - Map every extracted path as a relative structural string calculated from `repo_root`.
@@ -57,7 +57,7 @@ Output Scope: Populate fragments for `## Ecosystem Research`. Return these as te
 Instructions:
 - Use `libref list` to check what documentation sources are already available. Use `libref query <lib> "<topic>"` for offline, version-pinned documentation. If the library is not in libref, use web search or web fetch tools directly to query documentation, authoritative blogs, and standard library references.
 - Focus on: (1) Best practices for the specific problem domain, (2) Common use cases and pitfalls, (3) Standard tools/libraries that solve this problem in the language/framework identified in the constitution.
-- For every finding, capture the source URL and a brief verbatim snippet (≤ 10 lines) or a precise summary of the finding.
+- For each material finding, capture the source URL and a brief verbatim snippet (≤ 10 lines) or a precise summary of the finding.
 - Catalog only: no recommendations or trade-off evaluations.
 - If web search tools are unavailable, report `WEB_SEARCH_UNAVAILABLE` and skip this subagent; the orchestrator will proceed with local findings only.
 </subagent_ecosystem_prompt>
@@ -120,10 +120,9 @@ The orchestrator runs `deviate explore post` after your response. Do NOT run it 
 
 ## Discovery Audit Results
 ### Verified Dependencies
+Quote the manifest-declared dependencies verified present. If manifest declarations conflict with constitution quotes, add one line here: `divergence: <manifest says X vs constitution says Y>` — do not adjudicate.
 ### Ghost Dependencies
-### Manifest Files Observed
 ### Test Runner Configuration
-### Manifest-Constitution Divergence
 
 ## Constitution Quotes
 - **Architectural Principles**: "<verbatim quote>"
@@ -132,14 +131,10 @@ The orchestrator runs `deviate explore post` after your response. Do NOT run it 
 - **Definition of Done**: "<verbatim quote>"
 
 ## Architectural Baselines
-- **Existing Architectural Patterns**
-- **Infrastructure & Operations**
-- **Data & State Management**
-- **Quality, Safety & Observability**
-- **External Integrations**
+Emit only categories with ≥1 local finding. Omit the rest — never write absence filler ("No containerization", "No database"). If no category has findings, write one line: `None observed`.
 
 ## Sibling Flow Inventory
-When a nearest existing user flow exists, catalog it as fact. Quote paths. Do not recommend.
+Only when a nearest existing user flow exists: one row per observed dimension below, plus freeform `path + fact` rows for anything else. Quote paths. Do not recommend.
 
 | Dimension | Observed fact | Path |
 | :--- | :--- | :--- |
@@ -149,18 +144,17 @@ When a nearest existing user flow exists, catalog it as fact. Quote paths. Do no
 | Idempotency | [one vendor create / retry / none observed] | [relative/path] |
 | Destination shape | [typed snapshot / generic payload / none observed] | [relative/path] |
 
-If no nearest sibling exists, write `None observed` under this heading.
+If no nearest sibling exists, write one line under this heading: `None observed`. Do not restate the table.
 
 
 ## Ecosystem Research
-- **Best Practices**
-- **Common Use Cases & Pitfalls**
-- **Standard Tooling**
+Skip with one line `SKIPPED (sibling + constitution sufficient)` unless `is_greenfield` is true or no sibling flow exists. When emitted, cap at ~10 lines:
 
 ## File Registry
+Representative files only — ≤12 rows. Pattern over instance: one base controller, not all 50.
 | Path | Type | Purpose | Verbatim Snippet (≤10 lines) |
 
-EVERY row MUST carry its verbatim quote excerpt. Rows without a verbatim quote are rejected by the post-script.
+EVERY emitted row MUST carry its verbatim quote excerpt. Rows without a verbatim quote are rejected by the post-script — satisfy this by emitting fewer rows, not thinner quotes.
 
 ## Scope Sizing
 

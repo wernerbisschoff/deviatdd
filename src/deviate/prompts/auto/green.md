@@ -92,7 +92,7 @@ task will fail permanently.**
 
 <step id="implementation">
 1. Implement the minimal codebase changes necessary to resolve the failing assertions
-2. Write ONLY production code — leave all `tests/` files untouched
+2. Write ONLY production code — leave all `tests/` files untouched. New git-interacting core functions MUST accept an optional `repo_path: Path | None = None` parameter defaulting to `Path.cwd()` so tests can pass an isolated repo.
 3. Add only the production code required — no speculative features, and no file or dependency the task did not name
 4. {doctor_preflight}Run the same `test_command` RED used — do not pick a different suite.
 

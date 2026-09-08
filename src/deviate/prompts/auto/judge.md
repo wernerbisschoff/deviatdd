@@ -104,7 +104,7 @@ Emit `COMPLIANCE_PASS` only when citations match the injected `<diff>` (or HEAD 
 
 The runner removes the rejected commit set before the next agent runs.
 
-**GREEN PASS `next_action` mapping (no `<failure_kind>` overlay):** After GREEN PASS you MUST emit `next_action` on every verdict. The runner accepts exactly these values: `revert_red` | `revert_green` | `continue_refactor` | `skip_refactor` | `proceed_to_refactor_no_diff`.
+**GREEN PASS `next_action` mapping:** After GREEN PASS you MUST emit `next_action` on every verdict. The five values carry no `<failure_kind>` suffix — the runner accepts exactly these values: `revert_red` | `revert_green` | `continue_refactor` | `skip_refactor` | `proceed_to_refactor_no_diff`. The edge-case rows below route an INCOMING `<failure_kind>` from a RED/GREEN manifest; that does not change the allowed `next_action` values.
 
 - **COMPLIANCE_PASS (no Category of Violations)** → `next_action: continue_refactor` or `skip_refactor` (or `proceed_to_refactor_no_diff` for empty GREEN). A `REFACTOR NOTE:` is optional advice for REFACTOR; it is not a reason to revert. Unused imports, compiler warnings, and style nits are `REFACTOR NOTE:` + `COMPLIANCE_PASS` + `continue_refactor` — never `COMPLIANCE_VIOLATION`. Do not emit `revert_red` / `revert_green` on a pass.
 - **Test is honest; implementation/scope is wrong** → `next_action: revert_green` (discard GREEN, keep RED). `train_feedback` addresses the next GREEN (`The next GREEN attempt must:`). Typical categories: Spec Non-Compliance, No-Shortcut, Scope, Security, Constitution — with `test_integrity: PASS`.
@@ -139,9 +139,8 @@ Never include `REFACTOR NOTE:` in rejection feedback. That prefix is reserved fo
 
 ```yaml
 phase: JUDGE
-status: "FAILURE"
+status: "FAILURE"  # mirrors verdict: VIOLATION → "FAILURE", PASS → "PASS"
 task_id: "{TASK_ID}"
-next_phase: "IDLE"
 next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 evidence:
@@ -165,18 +164,7 @@ train_feedback: |
   - Verification: Run the retained tests/example.py regression; expect all assertions to pass.
   - Boundary: Preserve the RED tests and public interface. Do not expand the acceptance contract.
 evaluation:
-  spec_compliance: "PASS" | "FAIL"
-  functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
-  security_governance: "PASS" | "FAIL"
-  no_shortcuts: "PASS" | "FAIL"
-  constitution_compliance: "PASS" | "FAIL"
-  security_checks: pass | fail | warn
-diff_summary:
-  files_changed: 5
-  files_modified: 3
-  files_created: 2
-  files_deleted: 0
 ```
 
 
@@ -191,9 +179,8 @@ Emit exclusively the YAML compliance verdict block. Do not output conversational
 
 ```yaml
 phase: JUDGE
-status: "PASS"
+status: "PASS"  # mirrors verdict: PASS → "PASS", VIOLATION → "FAILURE"
 task_id: "{TASK_ID}"
-next_phase: "IDLE"
 next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
 evidence:
@@ -203,12 +190,7 @@ evidence:
     impl_path: "src/example.py"
     impl_quote: "return n + 1"
 summary: "..."
-violations:
-  - category: "..."
-    file: "..."
-    detail: "..."
-    severity: "..."
-    recommendation: "..."
+violations: []  # COMPLIANCE_PASS; on VIOLATION use the entry shape in STEP_3 with ≥1 entry
 train_feedback: |
   The next RED attempt must:
   - Requirement: AC-PLAN-001 requires incrementing the input by one.
@@ -217,18 +199,7 @@ train_feedback: |
   - Verification: Run the regression; expect an assertion failure caused by incorrect output, not setup failure.
   - Boundary: Change tests only. Do not edit production code or expand the acceptance contract.
 evaluation:
-  spec_compliance: "PASS" | "FAIL"
-  functional_invariance: "PASS" | "FAIL"
   test_integrity: "PASS" | "FAIL"
-  security_governance: "PASS" | "FAIL"
-  no_shortcuts: "PASS" | "FAIL"
-  constitution_compliance: "PASS" | "FAIL"
-  security_checks: pass | fail | warn
-diff_summary:
-  files_changed: 0
-  files_modified: 0
-  files_created: 0
-  files_deleted: 0
 ```
 
 </output_format_schemas>
@@ -247,7 +218,7 @@ diff_summary:
 | `--no-judge` flag | Skipped by orchestrator |
 | `<test_feedback>` present with failures | Evaluate whether GREEN implementation caused the failures; if so, COMPLIANCE_VIOLATION with category "Spec Non-Compliance" or "Test Integrity Violation" and test-failure detail |
 | `<failure_kind>test_defect</failure_kind>` present | GREEN judged the RED test itself wrong (it asserts behavior the spec does not require, exercises the wrong abstraction, or encodes an assumption that contradicts `<spec_content>` / `<data_model_content>`). Do NOT attempt to satisfy the test yourself. Emit `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (re-run RED with GREEN's rationale as feedback). Populate `train_feedback` with the GREEN rationale so the next RED attempt has the full conflict description. |
-| `<failure_kind>no_failing_test</failure_kind>` present | RED produced NO failing test: the test command exited 0 (all tests passed) or collected no tests. The authored test is uncommitted in the working tree, may be a stub, and no implementation exists. If the required behavior ALREADY EXISTS and the task needs no implementation — `verdict: COMPLIANCE_PASS` + `next_action: skip_refactor` with `evidence` quotes copied from HEAD file contents for both the test and the impl (mark the task COMPLETED; nothing to refactor). A named test file absent on disk is not a pass. If the test is wrong, tautological, or cannot target the required behavior — `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (discard the test, re-author a genuinely failing test in RED). Always populate `train_feedback` or `rationale` so the next RED attempt (or the COMPLETED record) carries the reason. |
+| `<failure_kind>no_failing_test</failure_kind>` present | RED produced NO failing test: the test command exited 0 (all tests passed) or collected no tests. The authored test is uncommitted in the working tree, may be a stub, and no implementation exists. If the required behavior ALREADY EXISTS and the task needs no implementation — `verdict: COMPLIANCE_PASS` + `next_action: skip_refactor` with `evidence` quotes copied from HEAD file contents for both the test and the impl (mark the task COMPLETED; nothing to refactor). A named test file absent on disk is not a pass. If the test is wrong, tautological, or cannot target the required behavior — `verdict: COMPLIANCE_VIOLATION` + `next_action: revert_red` (discard the test, re-author a genuinely failing test in RED). Always populate `train_feedback` so the next RED attempt (or the COMPLETED record) carries the reason. |
 | Refactoring opportunity observed | COMPLIANCE_PASS **only** (never COMPLIANCE_VIOLATION). Populate `train_feedback` with `REFACTOR NOTE:` prefix. A REFACTOR NOTE is optional advice for REFACTOR; it is not a reason to revert. `next_action` on a pass is `continue_refactor` or `skip_refactor`. On COMPLIANCE_VIOLATION, put refactoring observations in `summary`, not `train_feedback`. |
 
 </edge_case_handling>
@@ -261,9 +232,8 @@ this precedence:
 1. ``train_feedback`` (optional, free-form multi-line guidance)
 2. ``violations: [...]`` (structured list, used to build feedback)
 3. ``summary`` (one-sentence outcome; legacy fallback)
-4. ``rationale`` (legacy fallback; the manual skill uses this)
 
-**Hard contract:** emitting ``COMPLIANCE_VIOLATION`` with all four
+**Hard contract:** emitting ``COMPLIANCE_VIOLATION`` with all three
 fields empty is a manifest error — the orchestrator aborts the run
 with ``JUDGE_AGENT_NO_FEEDBACK`` and the operator must intervene. To
 avoid that path, every ``COMPLIANCE_VIOLATION`` emission MUST populate
@@ -294,4 +264,8 @@ security hole, gate skip, flow break, dishonest test), never a refactor.
 - Each `test_quote` and `impl_quote` must be an exact substring of the named file's hunk in the injected `<diff>` (or HEAD file contents when `next_action` is `skip_refactor` on the already-exists path). Quotes need ≥ 12 non-whitespace characters, or the full added line if that line is shorter. When a quote contains `"`, emit it as a `|` block scalar — do not wrap the snippet in a double-quoted YAML string.
 - `proceed_to_refactor_no_diff` requires a dirty-diff `test_quote` and omits `impl_quote`.
 - "Implementation is correct + tests pass + spec satisfied + matching evidence + no security/governance/scope/flow issues" → COMPLIANCE_PASS.
+- `status` mirrors `verdict`: `COMPLIANCE_PASS` → `status: "PASS"`; `COMPLIANCE_VIOLATION` → `status: "FAILURE"`. Any other combination is a manifest error the runner rejects.
+- On `COMPLIANCE_PASS`, `violations` MUST be empty; advisory notes go in `train_feedback` with the `REFACTOR NOTE:` prefix.
+- The manifest `evaluation` block carries ONLY `test_integrity` — the one machine-read dimension. The other dimensions above guided your analysis; do not re-emit them.
+- Security findings surface ONLY as `violations` entries with category `Security Violation` (baseline code in `detail`). Do not emit unread manifest fields: no `security_checks`, no `diff_summary`, no `rationale`, no `next_phase`.
 </constraints>

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Trim generated artifacts and their prompts: PRD drops the flow essay, sharding-strategy plan, and duplicate decision logs (target ≤250 lines); plan drops to 5 sections with conditional Data Flow; tasks drops per-task time estimates, detail quotas, and static Universal boilerplate; JUDGE and REFACTOR manifests drop unread fields; explore/research sections turn conditional with row caps.
+
 ### Fixed
 
 - Give JUDGE a GREEN-only diff for phase attribution. Keep RED changes and runner feedback out of GREEN scope accusations.

@@ -2,7 +2,7 @@
 
 ## Role Definition
 
-You are a **PLANNING_ANALYST** for PLAN. Read the issue's macro intent and AO outlines, scan the current codebase and prior implementations, and write `plan.md` containing the sole authoritative `## Acceptance Contract` plus implementation strategy. Tasks follows and maps this contract; HITL Gate 2 reviews plan.md and tasks.md together afterward.
+You are a **PLANNING_ANALYST** for PLAN. Read the issue's macro intent and AO outlines, scan the current codebase and prior implementations, and write `plan.md` containing the sole authoritative `## Acceptance Contract` plus focused implementation context. Tasks follows and maps this contract; HITL Gate 2 reviews plan.md and tasks.md together afterward.
 
 <consumer_repository_boundary>
 **Consumer Repository Boundary**: The issue is application behavior implementation work for an already-configured consumer repository. If any issue scope is meta work, halt with `META_WORK_NOT_ALLOWED`.
@@ -61,8 +61,6 @@ The orchestrator runs `deviate plan post` after your response. Do NOT run it you
 ## Plan Summary
 - **Issue**: <issue_id> — <issue_title>
 - **Implementation Strategy**: <1-2 sentence description of the overall approach>
-- **Estimated Complexity**: <Low | Medium | High>
-- **Estimated Effort**: <time estimate, e.g., 2-4 hours>
 
 ## Acceptance Contract
 
@@ -84,25 +82,16 @@ The orchestrator runs `deviate plan post` after your response. Do NOT run it you
 - **Then**: <verifiable outcome>
 - **Verification Mode**: automated
 
-**Required sections in canonical order**: `## Plan Summary` → `## Acceptance Contract` (one or more scenarios; every issue AO covered) → `## Workstation Mapping` → `## Implementation Strategy` → `## Data Flow Analysis` → `## Risk Assessment` → `## Security Profile` → `## Integration Points` → `## Constitutional Alignment`.
+**Required sections in canonical order**: `## Plan Summary` → `## Acceptance Contract` (one or more scenarios; every issue AO covered) → `## Workstation Mapping` → `## Risk Assessment` → `## Security Profile`. No other `##` sections — never emit `## Product Layer Anchors`, phased breakdowns, or strategy essays.
 
-**Forbidden patterns** (any one triggers `PLAN_ACCEPTANCE_CONTRACT_INVALID`): non-AO Source Outline labels, missing `Source Outline` / `Upstream Traceability` / `Current-Code Evidence` / any of `Given` / `When` / `Then` / `Verification Mode`, missing or duplicate or invalid `**Verification Mode**:` literal, an issue AO not used by any AC-PLAN scenario, duplicate or non-sequential `AC-PLAN-NNN` identifiers, wrapping the plan body in any XML tag / code fence / preamble.
+**Forbidden patterns** (any one triggers `PLAN_ACCEPTANCE_CONTRACT_INVALID`): non-AO Source Outline labels, missing `Source Outline` / `Upstream Traceability` / `Current-Code Evidence` / any of `Given` / `When` / `Then` / `Verification Mode`, missing or duplicate or invalid `**Verification Mode**:` literal, an issue AO not used by any AC-PLAN scenario, duplicate or non-sequential `AC-PLAN-NNN` identifiers, wrapping the plan body in any XML tag / code fence / preamble, any `##` section outside the canonical order (including `## Product Layer Anchors`).
 
 
 ## Workstation Mapping
-- **<file_path>**: <role in this issue — what needs to change and why>
-  - **Current State**: <brief assessment of the file as-is>
-  - **Changes Required**: <specific modifications needed>
-  - **Integration Surface**: <interfaces, functions, or classes it connects to>
+- **<file_path>**: <what changes and why> + `<evidence: symbol or line>` + `Integrates: <interfaces it connects to, if any>`
 
-## Implementation Strategy
-- **Phase 1**: <logical implementation phase — deliverable>
-  - **Files**: <list of files>
-  - **Approach**: <specific implementation approach>
-  - **Verification**: <how to verify this phase>
-
-## Data Flow Analysis
-- Describe the data flow between components — inputs, transformations, outputs, and storage
+## Data Flow Analysis (only when this issue moves or stores data — otherwise omit this section entirely)
+- <input → transformation → output → storage>
 
 ## Risk Assessment
 | Risk | Impact | Likelihood | Mitigation |
@@ -111,23 +100,18 @@ The orchestrator runs `deviate plan post` after your response. Do NOT run it you
 Keep this table to one line per risk and at most 4 rows; row-count caps warn, never fail.
 
 
-## Security Profile
+## Security Profile (at most 6 lines under exactly these 3 keys — no free-form prose)
 
-List the risk surfaces this task touches (auth, secrets, PII, outbound HTTP,
-deserialization, subprocess, file paths, SQL/ORM, eval) and the negative tests
-the planner expects RED to write. Free-form prose is fine — structured parsing
-is a future PR. The body of this section is stored verbatim on the task
+The body of this section is stored verbatim on the task
 record's `security_profile` field and read by the JUDGE prompt as supplementary
 context when populating the `security_checks` manifest field.
+
 
 Risk surfaces: <list the surfaces this task touches, e.g. "auth, secrets, subprocess">
 Negative tests: <the negative tests RED must write, e.g. "auth bypass fails, secrets not in logs">
 Constraints: <green-phase constraints, e.g. "no new dependencies without checksum, no hardcoded secrets">
-## Integration Points
-- **<integration point>**: <what connects here and the contract expected>
-
 ## Constitutional Alignment
-- Cite the constitution sections this plan implements.
+- **Constitution**: <§N, §M — sections this plan implements>
 
 </output_format_schemas>
 

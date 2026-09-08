@@ -31,7 +31,7 @@ Every task must implement or verify requested application behavior. Any meta-tar
 1. **Slice over Step**: Tasks are defined by WHAT they add to the feature, not the technical step.
 2. **30-90 Minute Rule**: 30–90 names one observable fail-to-pass contract (Beck: exactly one item on the test list), not a wall-clock splitter. One TDD task equals one fail-to-pass contract — not one assert, not one feature file, not a whole epic. Merge fake splits of the same AC (test-skeleton vs implement vs add-the-route). Split only when a GREEN packet would bury the contract (mixed 10-file / >400 LOC); JUDGE still sees one behavior (safe default ≲2 files / ≲3 hunks / ≲30 production LOC; review ceiling <200 LOC typical / 400 max).
 3. **Traceability Audit**: Verify no task touches files in spec.md's Defensive Exclusions. Incorporate design.md Risk Register if available.
-4. **File Rationale Assignment**: Every task must explain WHY each file is touched, tied to specific story identifiers and ACs.
+4. **File Rationale Assignment**: Every task must explain WHY each file is touched, tied to specific story identifiers and ACs — at most 3 lines.
 5. **User-Scenario Rationale**: The `Rationale` field MUST cite the user story and `AC-PLAN-NNN` the task serves. Application acceptance mapping is required; empty or missing stories are not enabling/infrastructure exemptions.
 </traceability_mandates>
 
@@ -70,14 +70,15 @@ Map all files touched by each user story from spec.md's system topology mapping.
 For each workstation cluster:
 1. **Group Items**: Cluster into Batched Logical Units (vertical slices).
 2. **Assign Execution_Mode**: Type `Verification_Batch` is always **IMMEDIATE** (hard type→mode lock — never TDD). For other types, use the decision tree — TDD for new business logic, state mutations, integration boundaries, or non-trivial ACs; IMMEDIATE for config, docs, constants, trivial boilerplate. Never emit `Mode: TDD` for `Verification_Batch`.
-3. **Assign Test Strategy**: Stamp each TDD task with exactly one strategy: `unit`, `integration`, or `e2e`. Different TDD tasks may use different strategies when their acceptance criteria require different execution boundaries. Default is **unit**. Migration / live-DB acceptance criteria → **integration**; user-facing workflow acceptance criteria → **e2e**. Read `verification_suites` from the `deviate tasks pre` contract — do not stamp a strategy absent from it. RED may write tests only in the task's stamped layer. Never put more than one strategy on a single TDD task. When both a DB-free contract and a live-DB proof are required, create two TDD tasks.
-4. **Assign Verification**: Stamp **Verification** as this layer's named mise task. Prefer `mise integration` (never a short alias) when that task exists:
-   - `unit` → write only under the unit dir (`tests/unit/` or Elixir `test/` excluding `test/integration`); Verification ``mise unit``. Never integration/e2e. Never `pytest tests/` / the whole tree.
-   - `integration` → write only under the integration dir (`tests/integration/` or `test/integration/`); Verification ``mise integration``. Never create files under the unit dir. The runner may still run unit for regression after. Integration cannot resolve if `integration` is not in `verification_suites` — fail loud, do not silently run `mise test`.
-   - `e2e` → write only under the e2e dir (`tests/e2e/`); Verification ``mise e2e``.
-   Missing cheaper rung = skip, not fail. Do not invent integration/e2e.
+3. **Assign Test Strategy**: Stamp each TDD task with exactly one strategy (`unit` | `integration` | `e2e`), present in the `deviate tasks pre` contract's `verification_suites`. Default `unit`. Different TDD tasks may use different strategies when their acceptance criteria require different execution boundaries. Split DB-free vs live-DB proof into two tasks.
+4. **Assign Verification**: Stamp **Verification** as this layer's named mise task:
+| Strategy | Write only under | Verification |
+| unit | `tests/unit/` (Elixir `test/` excluding `test/integration`) | `mise unit` |
+| integration | `tests/integration/` (or `test/integration/`) | `mise integration` |
+| e2e | `tests/e2e/` | `mise e2e` |
+Missing cheaper rung = skip, not fail. Never `pytest tests/` for a unit task. Integration unresolvable when absent from `verification_suites` — fail loud, do not silently run `mise test`.
 5. **Validate Structure**: No "testing-only" TDD tasks — tests are the Red phase of every TDD task. RED Details must name one focused verification file, its exact observable assertions, the layer folder/tag, and the other forbidden layer.
-6. **File Rationale**: Explain WHY each file is touched.
+6. **File Rationale**: Explain WHY each file is touched — story + AC-PLAN-NNN + cause, at most 3 lines.
 7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
 9. **Adapter Transport Split**: When the slice names an external SDK or provider adapter, split adapter transport from port behavior into its own task card. Each adapter task card carries one concrete contract row per method: dependency signature, auth wiring, request identity, response lookup.
@@ -101,6 +102,7 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - `**Files**` MUST be followed by indented file paths on separate lines (not inline)
 - `**Details**` MUST be followed by indented bullet points on separate lines (not inline)
 - `**Dependency**` MUST be inline: `TSK-001-01` not on separate line
+- Never emit per-task `Flow References` lines or `Judge Feedback` / runtime-commentary headings — the file is the ledger body
 
 **CRITICAL TASK ID CONSTRAINT:**
 - Task IDs MUST follow the format `TSK-{NNN}-{NN}:` where `NNN` is the 3-digit **issue number from `issue_id`**, never the epic number, and `NN` is the 2-digit task index within that issue, starting from `TSK-001-01:`.
@@ -110,23 +112,22 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
 - **Mode**: `TDD | IMMEDIATE`. **Type→Mode lock**: `Verification_Batch` MUST be `IMMEDIATE` — never emit `Mode: TDD` for that type.
 - **Test Strategy**: `unit | integration | e2e` (required if Mode is TDD). Default `unit`. Migration / live-DB AC → `integration`.
 - **Verification**: A **Deterministic CLI Command** scoped to that layer plus cheaper existing rungs (e.g., `mise unit`). Never `pytest tests/` for a unit task.
-- **Estimated Time**: `30-90 minutes` or `60 minutes`
 - **Files**: List of paths (multi-line, indented, minimum 2 files). A TDD logical unit names exactly one focused verification file.
-- **Rationale**: Required — explain WHY each file is touched, tie to specific story identifiers and acceptance criteria.
-- **Details**: 4-8 detailed bullet points:
+- **Rationale**: Required, at most 3 lines — story + AC-PLAN-NNN + file-cause.
+- **Details**: Red, Green (or Implementation), and Acceptance are mandatory; Refactor and Edge Cases only if material. Each Red/Green entry at most 6 lines:
 - **Red**: One focused test file, test cases, and exact assertions (TDD only). Name the layer folder/tag and forbid the other layer. The test MUST encode the issue's User Stories + ATDD as a failing observable, not an internal function signature.
 - **Green**: Exact functions/methods to implement, signatures, and logic (TDD only). GREEN cannot edit tests.
   - **Implementation**: Exact implementation steps (IMMEDIATE only)
-  - **Refactor**: Code quality improvements, pattern alignment
-  - **Edge Cases**: Error handling, boundary conditions
-  - **Acceptance**: Concrete "done" criteria beyond test passing
+  - **Refactor**: Code quality improvements, pattern alignment (only if material)
+  - **Edge Cases**: Error handling, boundary conditions (only if material)
+  - **Acceptance**: Only done criteria NOT covered by Verification; omit when none exist
 - **Dependency**: (Optional) `TSK-{NNN}-{NN}` from the same issue if this task requires another task to complete first (inline value)
 
 **OUTPUT TEMPLATE** — the complete file should follow this structure:
 
 # Implementation Tasks: `{BRANCH_NAME}`
 
-## Phase 1: <Feature Slice Name>
+## Phase 1: <Feature Slice Name> (omit the Phase wrapper when a phase holds a single task)
 **Goal**: <what capability this slice delivers>
 
 ### Tasks
@@ -136,44 +137,26 @@ Render output to `<tasks_target>` using the following format. No XML wrapper tag
   - **Mode**: TDD
   - **Test Strategy**: unit
   - **Verification**: `mise unit`
-  - **Estimated Time**: 60 minutes
   - **Files**:
     - `path/to/file1.py`
     - `path/to/file2.py`
-  - **Rationale**: <Why these files? Tie to specific story US_### and AC-PLAN-NNN>
+  - **Rationale**: <story + AC-PLAN-NNN + cause, at most 3 lines>
   - **Details**:
     - **Red**: Write failing tests in the stamped layer only — forbid the other layers. Assert <expected behavior from the issue's User Stories + ATDD>
     - **Green**: Implement `<function>()` with <logic>
-    - **Refactor**: <code quality improvement>
-    - **Edge Cases**: Handle <error> by <action>
-    - **Acceptance**: <concrete done criteria>
+    - **Refactor**: <code quality improvement> (only if material)
+    - **Edge Cases**: Handle <error> by <action> (only if material)
+    - **Acceptance**: <done criteria NOT covered by Verification; omit if none>
 
 ---
 
-## Implementation Strategy
-**Execution Order**:
-1. Phase 1 -> Phase 2 (Logical dependency order)
-
-**Critical Dependency Chains**:
-- TSK-{NNN}-{NN} must precede TSK-{NNN}-{NN}
-
-**Risk Hotspots**:
-- <description of risk>
-
+## Implementation Strategy (Merge Conflict Boundaries only — Execution Order, Dependency Chains, and Risk Hotspots duplicate task Dependencies and the plan Risk Assessment)
 **Merge Conflict Boundaries**:
 - Files touched by multiple phases: <list_files>
 
 ---
 
-## Universal Test Constraints (ALL TASKS)
-
-- **Git Isolation Mandatory**: Any test that invokes git operations MUST operate on a temporary directory initialized as a fresh git repo. Tests MUST NOT run git commands within the real repository's working tree.
-- **Implementation Pattern**: Use a shared `tmp_git_repo` fixture from `tests/conftest.py`. Pass `repo=tmp_git_repo` to all git-interacting functions. Never reference `Path.cwd()` or the real repo root.
-- **Rationale**: Prevent accidental commits, branch creation, or state mutation in the actual project repo during test execution.
-
-## Universal API Design Constraint (ALL CORE MODULES)
-
-Every git-interacting function in core modules MUST accept an optional `repo_path: Path | None = None` parameter. When `None`, default to `Path.cwd()`.
+Do NOT emit `## Universal Test Constraints` or `## Universal API Design Constraint` sections — Git Isolation is owned by the micro-phase runtime context, and new git-interacting core functions take an optional `repo_path` per the GREEN implementation rules.
 
 **Write the entire content directly to `<tasks_target>`**. The post-script reads the file and commits it.
 

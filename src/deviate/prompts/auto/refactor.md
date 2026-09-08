@@ -116,20 +116,10 @@ Task: {TASK_ID} refactored and committed
 phase: REFACTOR
 status: "PASS"
 task_id: "{TASK_ID}"
-next_phase: "IDLE"
 files:
   - "path/to/source_file.ext"
-refactoring:
-  smells_addressed:
-    - "<SMELL_1>"
-    - "<SMELL_2>"
-  patterns_applied:
-    - "<PATTERN_1>"
-    - "<PATTERN_2>"
 test:
   command: "{test_command}"
-  status: PASS
-  output: "<TRUNCATED_TEST_OUTPUT>"
 summary: "<ONE_LINE_SUMMARY>"
 ```
 </handover_manifest>

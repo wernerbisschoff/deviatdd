@@ -2412,17 +2412,16 @@ class TestJudgeRefactorNoteOnPass:
         )
 
 
-class TestJudgeSecurityChecksField:
-    """The JUDGE prompt must declare `security_checks` as a required manifest field.
+class TestJudgeSecuritySignalMerged:
+    """Security surfaces once: as `violations` entries, not a manifest score field.
 
-    Pins the contract that the JUDGE verdict manifest carries a structured
-    `security_checks: {pass | fail | warn}` field. The vocabulary is locked
-    (`pass | fail | warn`, not `true | false`, not `ok | warn`) so future
-    renames are a deliberate design decision, not prompt drift. The instruction
-    tells the agent that absence of the field is a Judge rejection.
+    The runner never reads a `security_checks` manifest field — only
+    `evaluation.test_integrity` is machine-consumed — so the prompt must not
+    mandate the unread field. A scan finding becomes a `violations` entry
+    with category `Security Violation` and the baseline code in `detail`.
     """
 
-    def test_judge_prompt_declares_security_checks_as_required_field(
+    def test_judge_prompt_reports_security_via_violations_not_score_field(
         self,
         tmp_path: Path,
     ) -> None:
@@ -2447,35 +2446,33 @@ class TestJudgeSecurityChecksField:
         task = {
             "id": "TSK-014-01",
             "issue_id": "ISS-ADH-014",
-            "description": "Verify security_checks manifest field",
+            "description": "Verify security signal contract",
             "status": "PENDING",
             "execution_mode": "TDD",
         }
 
         prompt = _build_auto_prompt("judge", task, tmp_path)
 
-        # The field name is present in the manifest schema.
-        assert "security_checks" in prompt, (
-            "Auto judge prompt must declare `security_checks` as a manifest field"
+        # No unread score field is declared on the manifest schema (the word may
+        # still appear in the constraints ban-list, which names what NOT to emit).
+        assert "security_checks:" not in prompt, (
+            "Auto judge prompt must not declare a `security_checks` manifest "
+            "field; only `evaluation.test_integrity` is machine-read"
+        )
+        assert "pass | fail | warn" not in prompt, (
+            "Auto judge prompt must not carry the old score-field vocabulary"
         )
 
-        # The vocabulary is exactly `pass | fail | warn`. Pin the literal
-        # delimiter-pipe form so future renames are a deliberate design
-        # decision, not prompt drift.
-        assert "pass | fail | warn" in prompt, (
-            "Auto judge prompt must enumerate `security_checks` allowed "
-            "values as `pass | fail | warn` (not `true | false`, "
-            "not `ok | warn`, not `green | red`)"
+        # The machine-read dimension is still declared.
+        assert "test_integrity" in prompt, (
+            "Auto judge prompt must declare `test_integrity` as the manifest "
+            "evaluation dimension"
         )
 
-        # The field is mandatory — absence on the manifest is a rejection.
-        assert (
-            ("security_checks" in prompt and "mandatory" in prompt.lower())
-            or "security_checks" in prompt
-            and "required" in prompt.lower()
-        ), (
-            "Auto judge prompt must instruct the agent that `security_checks` "
-            "is mandatory on the manifest; absence is a Judge rejection"
+        # The single security signal: violations with Security Violation category.
+        assert "Security Violation" in prompt, (
+            "Auto judge prompt must surface security findings as `violations` "
+            "entries with category `Security Violation`"
         )
 
 
