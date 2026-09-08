@@ -769,3 +769,130 @@ class TestBareInspectTasks:
         assert explicit.exit_code == 0, explicit.output
         assert bare.output == explicit.output
         assert bare.stdout.strip() == "[]"
+
+
+class TestExplicitPathsAndHelp:
+    """AC-PLAN-005 (US-056-01, US-056-02): explicit paths unchanged, help documents defaults."""
+
+    @pytest.mark.behavioral
+    def test_explicit_issues_list_flags_and_shape(self, tmp_path: Path) -> None:
+        _seed_issues_jsonl(tmp_path, [_make_issue("ISS-001", status="BACKLOG")])
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "issues", "list", "--json"])
+            help_result = runner.invoke(cli, ["inspect", "issues", "list", "--help"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert len(data) == 1
+        assert set(data[0]) >= {"issue_id", "type", "title", "status"}
+        assert help_result.exit_code == 0, help_result.output
+        for flag in ("--type", "--status", "--json"):
+            assert flag in help_result.output
+
+    @pytest.mark.behavioral
+    def test_explicit_tasks_list_flags_and_shape(self, tmp_path: Path) -> None:
+        tasks = TestTasksList._seed_issue(tmp_path, "ISS-001", "adhoc", "056-help-pin")
+        TestTasksList._seed_task(
+            tasks,
+            {
+                "id": "TSK-001-01",
+                "issue_id": "ISS-001",
+                "description": "Task A",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+        )
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
+            help_result = runner.invoke(cli, ["inspect", "tasks", "list", "--help"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert len(data) == 1
+        assert set(data[0]) >= {"id", "issue_id", "description", "status"}
+        assert help_result.exit_code == 0, help_result.output
+        for flag in ("--status", "--json"):
+            assert flag in help_result.output
+
+    @pytest.mark.behavioral
+    def test_explicit_show_paths_unchanged(self, tmp_path: Path) -> None:
+        _seed_issues_jsonl(tmp_path, [_make_issue("ISS-013", status="BACKLOG")])
+        tasks = TestTasksList._seed_issue(tmp_path, "ISS-013", "adhoc", "056-help-show")
+        TestTasksList._seed_task(
+            tasks,
+            {
+                "id": "TSK-013-01",
+                "issue_id": "ISS-013",
+                "description": "Target",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+        )
+        with chdir(tmp_path):
+            issue = runner.invoke(
+                cli, ["inspect", "issues", "show", "ISS-013", "--json"]
+            )
+            task = runner.invoke(
+                cli, ["inspect", "tasks", "show", "TSK-013-01", "--json"]
+            )
+        assert issue.exit_code == 0, issue.output
+        assert json.loads(issue.stdout)["issue_id"] == "ISS-013"
+        assert task.exit_code == 0, task.output
+        assert json.loads(task.stdout)["id"] == "TSK-013-01"
+
+    @pytest.mark.behavioral
+    def test_bare_inspect_shows_group_help(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect"])
+        assert result.exit_code in (0, 2), result.output
+        assert "issues" in result.output
+        assert "tasks" in result.output
+
+    @pytest.mark.behavioral
+    def test_group_help_documents_bare_default(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            issues_help = runner.invoke(cli, ["inspect", "issues", "--help"])
+            tasks_help = runner.invoke(cli, ["inspect", "tasks", "--help"])
+        assert issues_help.exit_code == 0, issues_help.output
+        assert tasks_help.exit_code == 0, tasks_help.output
+        assert "list" in issues_help.output.lower()
+        assert "default" in issues_help.output.lower()
+        assert "list" in tasks_help.output.lower()
+        assert "default" in tasks_help.output.lower()
+
+    @pytest.mark.behavioral
+    def test_help_levels_need_no_ledger(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            for args in (
+                ["inspect", "--help"],
+                ["inspect", "issues", "--help"],
+                ["inspect", "tasks", "--help"],
+                ["inspect", "issues", "list", "--help"],
+                ["inspect", "tasks", "list", "--help"],
+            ):
+                result = runner.invoke(cli, args)
+                assert result.exit_code == 0, result.output
+
+    @pytest.mark.behavioral
+    def test_malformed_tasks_ledger_warns_explicitly(self, tmp_path: Path) -> None:
+        tasks = TestTasksList._seed_issue(tmp_path, "ISS-001", "adhoc", "056-warn-pin")
+        TestTasksList._seed_task(
+            tasks,
+            {
+                "id": "TSK-001-01",
+                "issue_id": "ISS-001",
+                "description": "Task A",
+                "status": "PENDING",
+                "execution_mode": "TDD",
+            },
+        )
+        with tasks.open("a", encoding="utf-8") as f:
+            f.write("{invalid json line\n")
+        with chdir(tmp_path):
+            import warnings as _warnings
+
+            with _warnings.catch_warnings(record=True) as caught:
+                _warnings.simplefilter("always")
+                result = runner.invoke(cli, ["inspect", "tasks", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        assert any("Skipping" in str(w.message) for w in caught)
+        data = json.loads(result.stdout)
+        assert [e["id"] for e in data] == ["TSK-001-01"]
