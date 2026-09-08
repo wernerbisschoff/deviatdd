@@ -38,6 +38,7 @@ import pytest
 from deviate.cli import micro
 from deviate.cli._safe_commands import (
     TEST_TIMEOUT_EXIT_CODE,
+    _kill_process_group,
     run_safe_command,
 )
 
@@ -311,6 +312,121 @@ class TestRunSafeCommandTimeoutExpired:
         ):
             result = run_safe_command("pytest tests/", tmp_path, timeout=5)
         assert result.returncode == TEST_TIMEOUT_EXIT_CODE
+
+
+class TestKillProcessGroupEPERM:
+    """EPERM during timeout escalation is a terminal end-state (AC-PLAN-001)."""
+
+    @pytest.mark.behavioral
+    def test_swallow_eperm_sigterm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raise_eperm(pid: int, sig: int) -> None:
+            raise PermissionError(pid)
+
+        monkeypatch.setattr("deviate.cli._safe_commands.os.killpg", _raise_eperm)
+        _kill_process_group(99999, signal.SIGTERM)
+
+    @pytest.mark.behavioral
+    def test_swallow_eperm_sigkill(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raise_eperm(pid: int, sig: int) -> None:
+            raise PermissionError(pid)
+
+        monkeypatch.setattr("deviate.cli._safe_commands.os.killpg", _raise_eperm)
+        _kill_process_group(99999, signal.SIGKILL)
+
+    @pytest.mark.behavioral
+    def test_timeout_escalation_eperm_both_returns_124(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        exc = subprocess.TimeoutExpired(cmd=["pytest", "tests/"], timeout=5)
+        exc.stdout = b"partial-stdout"
+        exc.stderr = b"partial-stderr"
+        _reset_popen_config()
+        _popen_config.communicate_raises = exc
+        _popen_config.communicate_raises_after_first = True
+        _popen_config.communicate_result = ("", "")
+        _popen_config.pid = 99999
+
+        def _raise_eperm(pid: int, sig: int) -> None:
+            raise PermissionError(pid)
+
+        monkeypatch.setattr("deviate.cli._safe_commands.os.killpg", _raise_eperm)
+        monkeypatch.setattr("deviate.cli._safe_commands.time.sleep", lambda _s: None)
+        with patch(
+            "deviate.cli._safe_commands.subprocess.Popen",
+            _fake_popen_factory,
+        ):
+            result = run_safe_command("pytest tests/", tmp_path, timeout=5)
+        assert result.returncode == TEST_TIMEOUT_EXIT_CODE == 124
+        assert "partial-stdout" in (result.stdout or "")
+        assert "partial-stderr" in (result.stderr or "")
+
+    @pytest.mark.behavioral
+    def test_timeout_escalation_eperm_sigterm_only_returns_124(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        exc = subprocess.TimeoutExpired(cmd=["pytest", "tests/"], timeout=5)
+        exc.stdout = b"partial-stdout"
+        exc.stderr = b"partial-stderr"
+        _reset_popen_config()
+        _popen_config.communicate_raises = exc
+        _popen_config.communicate_raises_after_first = True
+        _popen_config.communicate_result = ("", "")
+        _popen_config.pid = 99999
+        calls: list[int] = []
+
+        def _eperm_then_ok(pid: int, sig: int) -> None:
+            calls.append(sig)
+            if sig == signal.SIGTERM:
+                raise PermissionError(pid)
+
+        monkeypatch.setattr("deviate.cli._safe_commands.os.killpg", _eperm_then_ok)
+        monkeypatch.setattr("deviate.cli._safe_commands.time.sleep", lambda _s: None)
+        with patch(
+            "deviate.cli._safe_commands.subprocess.Popen",
+            _fake_popen_factory,
+        ):
+            result = run_safe_command("pytest tests/", tmp_path, timeout=5)
+        assert result.returncode == 124
+        assert "partial-stdout" in (result.stdout or "")
+
+    @pytest.mark.behavioral
+    def test_timeout_escalation_eperm_sigkill_only_returns_124(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        exc = subprocess.TimeoutExpired(cmd=["pytest", "tests/"], timeout=5)
+        exc.stdout = b"partial-stdout"
+        exc.stderr = b"partial-stderr"
+        _reset_popen_config()
+        _popen_config.communicate_raises = exc
+        _popen_config.communicate_raises_after_first = True
+        _popen_config.communicate_result = ("", "")
+        _popen_config.pid = 99999
+
+        def _ok_then_eperm(pid: int, sig: int) -> None:
+            if sig == signal.SIGKILL:
+                raise PermissionError(pid)
+
+        monkeypatch.setattr("deviate.cli._safe_commands.os.killpg", _ok_then_eperm)
+        monkeypatch.setattr("deviate.cli._safe_commands.time.sleep", lambda _s: None)
+        with patch(
+            "deviate.cli._safe_commands.subprocess.Popen",
+            _fake_popen_factory,
+        ):
+            result = run_safe_command("pytest tests/", tmp_path, timeout=5)
+        assert result.returncode == 124
+        assert "partial-stdout" in (result.stdout or "")
+
+    @pytest.mark.behavioral
+    def test_invalid_pids_return_early(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[tuple[int, int]] = []
+
+        def _record(pid: int, sig: int) -> None:
+            calls.append((pid, sig))
+
+        monkeypatch.setattr("deviate.cli._safe_commands.os.killpg", _record)
+        _kill_process_group(0, signal.SIGTERM)
+        _kill_process_group(-1, signal.SIGKILL)
+        assert calls == []
 
 
 # ---------------------------------------------------------------------------
