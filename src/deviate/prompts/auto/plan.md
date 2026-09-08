@@ -34,6 +34,9 @@ Reconcile every AO-NNN against current code. Emit complete `AC-PLAN-NNN` scenari
 **Self-check before writing**: every `AC-PLAN-NNN` carries exactly one legal `**Verification Mode**:` line; RED/GREEN scenarios MUST use `automated`.
 </step>
 
+<step id="adapter_split">
+When the plan names an external SDK or provider adapter, split adapter transport from port behavior: emit concrete adapter acceptance criteria separate from port behavior criteria (dependency signature, authentication, request identity, response lookup). Keep the rule silent otherwise.
+</step>
 <step id="write_plan">
 Write the plan to `{plan_path}` following the output format schema. Write exactly the plan content — no preamble, no postamble, no extra tracking sections.
 </step>

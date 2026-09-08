@@ -80,7 +80,8 @@ For each workstation cluster:
 6. **File Rationale**: Explain WHY each file is touched.
 7. **Acceptance Mapping**: Every task MUST cite the `AC-PLAN-NNN` scenarios it implements. No issue-level AC/Gherkin fallback is permitted.
 8. **Consumer Implementation Audit**: Every task MUST have at least one application implementation or application verification target tied to a named story and `AC-PLAN-NNN`. A task whose primary target is DeviaTDD setup, an agent skill, a slash command, a catalog file, release scaffolding, or a workflow ledger is invalid; halt with `META_WORK_NOT_ALLOWED`.
-9. **Closing verification task** (issue-end, last, no forward Dependency). It is always `Verification_Batch` / `IMMEDIATE`, and MUST NOT have a `Test Strategy` because it creates no tests. Never emit empty e2e files. Never require integration setup. Its Verification may run the full existing ladder: `mise unit`, `mise integration` if available, and `mise e2e` when applicable.
+9. **Adapter Transport Split**: When the slice names an external SDK or provider adapter, split adapter transport from port behavior into its own task card. Each adapter task card carries one concrete contract row per method: dependency signature, auth wiring, request identity, response lookup.
+10. **Closing verification task** (issue-end, last, no forward Dependency). It is always `Verification_Batch` / `IMMEDIATE`, and MUST NOT have a `Test Strategy` because it creates no tests. Never emit empty e2e files. Never require integration setup. Its Verification may run the full existing ladder: `mise unit`, `mise integration` if available, and `mise e2e` when applicable.
 </step>
 
 <step id="write_tasks">
