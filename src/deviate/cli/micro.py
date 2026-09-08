@@ -6065,6 +6065,61 @@ class EnvNotReadyError(PhaseFailedError):
     """
 
 
+PRECONDITION_SIGNAL_NAME = "PRECONDITIONS_NOT_READY"
+RED_PRECONDITION_STATUS = "BLOCKED"
+DEFAULT_PRECONDITION_SETUP_COMMAND = "mise run setup:e2e"
+
+
+class PreconditionNotReadyError(EnvNotReadyError):
+    """Named missing-infrastructure signal carrying the setup command."""
+
+
+def build_precondition_signal(
+    *,
+    setup_command: str = DEFAULT_PRECONDITION_SETUP_COMMAND,
+    detail: str = "",
+) -> PreconditionNotReadyError:
+    """Build the named precondition signal with setup command plus probe detail."""
+    return PreconditionNotReadyError(
+        f"{PRECONDITION_SIGNAL_NAME}: {detail} (setup: {setup_command})"
+    )
+
+
+def build_precondition_signal_for_env_file(
+    *,
+    path: str,
+    error: str,
+    setup_command: str = DEFAULT_PRECONDITION_SETUP_COMMAND,
+) -> PreconditionNotReadyError:
+    """Name the malformed env file plus parse failure in one signal."""
+    return build_precondition_signal(
+        setup_command=setup_command, detail=f"{path}: {error}"
+    )
+
+
+def is_precondition_signal(obj: object) -> bool:
+    """True for the named signal, the ENV_NOT_READY alias, or signal errors."""
+    if isinstance(obj, EnvNotReadyError):
+        return True
+    if isinstance(obj, str):
+        return PRECONDITION_SIGNAL_NAME in obj or "ENV_NOT_READY" in obj
+    return False
+
+
+def red_status_for_signal(signal: object) -> str:
+    """Map a precondition signal to the non-error RED status."""
+    return RED_PRECONDITION_STATUS
+
+
+def coerce_partial_infra_result(
+    *,
+    has_red_proof: bool,
+    signal: PreconditionNotReadyError,
+) -> PreconditionNotReadyError | None:
+    """Resolve partial infra to exactly one outcome: RED proof or named signal."""
+    return None if has_red_proof else signal
+
+
 class VerificationUnresolvedError(PhaseFailedError):
     """Task Test Strategy cannot resolve to an existing suite.
 
@@ -7155,6 +7210,29 @@ def _task_verification_command(root: Path, task: dict | None) -> str:
     return ""
 
 
+def resolve_task_preconditions(root: Path, task: dict | None) -> str:
+    """Return the optional ``preconditions`` setup command for *task*."""
+    if not task:
+        return ""
+    raw = task.get("preconditions", "")
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip().strip("`").strip()
+
+
+def prepare_task_preconditions(root: Path, task: dict | None) -> None:
+    """Run the task-card ``preconditions`` setup command before verification."""
+    cmd = resolve_task_preconditions(root, task)
+    if not cmd:
+        return
+    proc = run_safe_command(cmd, root)
+    if proc.returncode != 0:
+        output = f"{proc.stdout or ''}{proc.stderr or ''}".strip()
+        raise RuntimeError(
+            f"{PRECONDITION_SIGNAL_NAME}: setup command failed: {cmd}: {output}"
+        )
+
+
 def _resolve_task_verification_value(root: Path, task: dict | None) -> str:
     if task:
         command = _normalise_test_command(task.get("verification"))
@@ -7498,6 +7576,39 @@ def _resolve_verification_rungs(root: Path, task: dict | None = None) -> list[st
 
     fallback = _legacy_full_suite_command(root, declared)
     return [fallback] if fallback else []
+
+
+def is_child_process_e2e(task: dict | None) -> bool:
+    """True when the E2E task description declares a child API process."""
+    if not task:
+        return False
+    text = f"{task.get('description', '')} {task.get('verification', '')}".lower()
+    return "child" in text and ("api" in text or "process" in text)
+
+
+def red_timeout_seconds(root: Path, task: dict | None = None) -> int:
+    """Bound RED verification deadline by the task card timeout."""
+    cap = _resolve_test_timeout_seconds(root)
+    if task:
+        raw = task.get("timeout_seconds")
+        if isinstance(raw, int) and raw > 0:
+            return min(raw, cap)
+    return cap
+
+
+def resolve_red_verification_rungs(
+    root: Path, task: dict | None = None, preconditions_ready: bool = True
+) -> list[str]:
+    """Bounded RED subset: one rung for child-process E2E, full ladder otherwise."""
+    setup = resolve_task_preconditions(root, task)
+    if setup and not preconditions_ready:
+        raise build_precondition_signal(
+            setup_command=setup, detail="preconditions not prepared"
+        )
+    rungs = _resolve_verification_rungs(root, task)
+    if is_child_process_e2e(task):
+        return rungs[:1]
+    return rungs
 
 
 def _is_full_tree_verification(command: str) -> bool:
@@ -7848,6 +7959,7 @@ def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedP
     :func:`_resolve_verification_rungs` is executed through
     :func:`run_safe_command`. Stop at the first failure.
     """
+    prepare_task_preconditions(root, task)
     doctor = _maybe_run_doctor(root, task)
     _require_doctor_ok(doctor)
     candidates = _test_command_candidates(root, task)

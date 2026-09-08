@@ -64,3 +64,10 @@ E2E tasks stall in RED when the verification command needs local infrastructure 
 ```bash
 mise run test
 ```
+
+## Exploration Findings (2026-09-08)
+- Generic E2E ladder exists: `src/deviate/cli/micro.py::_resolve_verification_rungs` builds unit → integ → e2e rungs; `mise e2e` resolves via `_suite_rung_command`. No setup/precondition hook runs before RED.
+- Missing-infra signal exists only as abort: `mise doctor` preflight raises `EnvNotReadyError` (`ENV_NOT_READY`), and `src/deviate/prompts/auto/red.md` orders `status: "ERROR"` for unavailable services. No named signal carries the setup command, and RED counts it as agent error.
+- No task-card `preconditions` field: verification resolves only `verification` plus Test Strategy (`_resolve_task_verification_value`). Nothing declares or prepares per-task infrastructure.
+- No bounded RED rule for child-process E2E tests: the ladder runs the full e2e rung in RED.
+- Downstream specifics from issue 212 (`.env.instance`, `setup:e2e`, `test_full_local_startup.py`) do not exist in this repo. Plan must design the harness-generic mechanism, not downstream wiring.
