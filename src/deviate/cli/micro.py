@@ -7155,6 +7155,29 @@ def _task_verification_command(root: Path, task: dict | None) -> str:
     return ""
 
 
+def resolve_task_preconditions(root: Path, task: dict | None) -> str:
+    """Return the optional ``preconditions`` setup command for *task*."""
+    if not task:
+        return ""
+    raw = task.get("preconditions", "")
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip().strip("`").strip()
+
+
+def prepare_task_preconditions(root: Path, task: dict | None) -> None:
+    """Run the task-card ``preconditions`` setup command before verification."""
+    cmd = resolve_task_preconditions(root, task)
+    if not cmd:
+        return
+    proc = run_safe_command(cmd, root)
+    if proc.returncode != 0:
+        output = f"{proc.stdout or ''}{proc.stderr or ''}".strip()
+        raise RuntimeError(
+            f"PRECONDITIONS_NOT_READY: setup command failed: {cmd}: {output}"
+        )
+
+
 def _resolve_task_verification_value(root: Path, task: dict | None) -> str:
     if task:
         command = _normalise_test_command(task.get("verification"))
@@ -7848,6 +7871,7 @@ def _run_test_cmd(root: Path, task: dict | None = None) -> subprocess.CompletedP
     :func:`_resolve_verification_rungs` is executed through
     :func:`run_safe_command`. Stop at the first failure.
     """
+    prepare_task_preconditions(root, task)
     doctor = _maybe_run_doctor(root, task)
     _require_doctor_ok(doctor)
     candidates = _test_command_candidates(root, task)
