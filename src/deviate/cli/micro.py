@@ -7578,6 +7578,39 @@ def _resolve_verification_rungs(root: Path, task: dict | None = None) -> list[st
     return [fallback] if fallback else []
 
 
+def is_child_process_e2e(task: dict | None) -> bool:
+    """True when the E2E task description declares a child API process."""
+    if not task:
+        return False
+    text = f"{task.get('description', '')} {task.get('verification', '')}".lower()
+    return "child" in text and ("api" in text or "process" in text)
+
+
+def red_timeout_seconds(root: Path, task: dict | None = None) -> int:
+    """Bound RED verification deadline by the task card timeout."""
+    cap = _resolve_test_timeout_seconds(root)
+    if task:
+        raw = task.get("timeout_seconds")
+        if isinstance(raw, int) and raw > 0:
+            return min(raw, cap)
+    return cap
+
+
+def resolve_red_verification_rungs(
+    root: Path, task: dict | None = None, preconditions_ready: bool = True
+) -> list[str]:
+    """Bounded RED subset: one rung for child-process E2E, full ladder otherwise."""
+    setup = resolve_task_preconditions(root, task)
+    if setup and not preconditions_ready:
+        raise build_precondition_signal(
+            setup_command=setup, detail="preconditions not prepared"
+        )
+    rungs = _resolve_verification_rungs(root, task)
+    if is_child_process_e2e(task):
+        return rungs[:1]
+    return rungs
+
+
 def _is_full_tree_verification(command: str) -> bool:
     """True for an unscoped whole-tree collect (``pytest tests/``, ``mise test``)."""
     if not command.strip():
