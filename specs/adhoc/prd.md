@@ -807,3 +807,17 @@
 - **Constitution Reference**: `specs/constitution.md` §5 requires governance checks before merge. Source: “All code must pass `mise run check` before merge.”
 - **Source Anchors**: `src/deviate/core/validation.py` line 275 defines `validate_sections` as header-presence only. `src/deviate/core/validation.py` line 139 defines `PRD_CONTRACT_SECTIONS` with Session State. `src/deviate/core/validation.py` line 223 defines `repair_missing_verification_mode` inserting a default mode.
 - **Authority Rule**: The prompt names it, the validator checks it, and the check measures substance. Nothing else is required.
+
+## FR-ADHOC-055: Validate issue traceability before PLAN starts with legacy repair
+- **Description**: `plan pre` rejects READY for issues missing the PLAN traceability contract and names the repair step. Legacy issues without stories or tracing gain a guided repair path.
+- **Preconditions**: PLAN requires Upstream Traceability tokens drawn from the issue. Shard and adhoc templates require stories plus ATDD on the issue.
+- **Inputs/Outputs**: Input — a `plan pre` request against an issue missing stories, tracing, or acceptance outlines. Output — a named NOT_READY diagnostic plus a repair command, and passing `plan pre` once repaired.
+- **User Stories**:
+  1. US-055-01: As a plan agent, I want `plan pre` to fail fast on untraceable issues so that I never invent identifiers to satisfy the contract. *(Ref: FR-ADHOC-055)*
+  2. US-055-02: As a maintainer, I want a legacy issue repair path so that old issues gain stories and tracing without hand edits. *(Ref: FR-ADHOC-055)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-055-01 / AO-055-01: `plan pre` returns NOT_READY with the missing fields named when the issue lacks stories, tracing, or acceptance outlines.
+  2. AC-ADHOC-055-02 / AO-055-02: A legacy issue follows the repair path and then passes `plan pre` with a READY contract.
+- **Constitution Reference**: `specs/constitution.md` §1 requires Macro PRD/shard/adhoc artifacts carry User Stories plus ATDD acceptance outlines. Source: “Macro PRD/shard/adhoc artifacts carry User Stories plus ATDD acceptance outlines; Plan owns the finalized Gherkin Acceptance Contract.”
+- **Source Anchors**: `src/deviate/prompts/auto/plan.md` line 66 states: “`**Upstream Traceability**: `US-NNN-NN`, `FR-NNN-ID`, `AC-NNN-ID-NN`. At minimum one `US-`, one `FR-`, and one `AC-` token”. `src/deviate/cli/meso.py` line 514 defines `_validate_prd_traceability` with FAIL plus detail. `src/deviate/prompts/auto/shard.md` line 14 states: “Every shard issue MUST encode the user-visible job as `## User Stories Ledger`”.
+- **Authority Rule**: The gate checks presence before the agent plans. The repair path restores the missing sections. Nothing else ships.
