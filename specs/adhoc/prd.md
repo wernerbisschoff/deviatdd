@@ -765,3 +765,17 @@
 - **Constitution Reference**: `specs/constitution.md` §1 requires user scenarios, Git isolation, and session continuity. Source: “Every task loop executes on a clean git branch or worktree.”
 - **Source Anchors**: `src/deviate/prompts/auto/judge.md` states: “`revert_green` discards GREEN and keeps RED” and “`revert_red` discards RED+GREEN.” `src/deviate/cli/micro.py::_commit_judge_feedback_and_advance` states that the caller resets before feedback persistence.
 - **Authority Rule**: Every dispatch decision reads the JSONL ledger first. `SessionState.red_commit_sha` is a recoverable cache and never overrides the ledger.
+
+## FR-ADHOC-052: E2E task preconditions and RED verification responsibilities
+- **Description**: The runner owns E2E infrastructure preconditions before RED verification runs. RED writes the E2E failing test and runs the declared verification command within a bounded attempt. Missing infrastructure reports a named signal and never counts as an agent error.
+- **Preconditions**: E2E tasks declare a `verification` command and infrastructure prerequisites in the task card. `src/deviate/prompts/auto/red.md` governs RED layer behavior. `src/deviate/cli/micro.py::_run_pytest` executes verification.
+- **Inputs/Outputs**: Input — an E2E task with a declared verification command and unmet local infrastructure. Output — a failing E2E test on disk plus either a RED failure proof or a named precondition signal with the exact setup command.
+- **User Stories**:
+  1. US-052-01: As a task author, I want the verification path to prepare E2E preconditions so that RED agents never stall on missing environment files. *(Ref: FR-ADHOC-052)*
+  2. US-052-02: As a RED agent, I want missing infrastructure reported as a named precondition signal so that a valid RED phase never counts as my error. *(Ref: FR-ADHOC-052)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-052-01 / AO-052-01: RED writes the E2E failing test and the documented verification path prepares preconditions or fails with the explicit setup command.
+  2. AC-ADHOC-052-02 / AO-052-02: Unavailable infrastructure emits a named signal with the required setup command and the RED phase keeps a non-error status.
+- **Constitution Reference**: `specs/constitution.md` §1 requires session continuity and Git isolation. Source: “Every task loop executes on a clean git branch or worktree.”
+- **Source Anchors**: `src/deviate/prompts/auto/red.md` states: “If a required service (e.g. PostgreSQL) is unavailable, emit `status: \"ERROR\"` with the connection failure.” `src/deviate/cli/micro.py` line 6302 emits `ENV_NOT_READY` with the task id and error.
+- **Authority Rule**: The runner prepares preconditions. The agent writes tests. Missing infrastructure is a signal, never an agent defect.
