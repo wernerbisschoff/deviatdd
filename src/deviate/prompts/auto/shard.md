@@ -58,7 +58,7 @@ For each vertical slice, write a shard issue markdown file to `<issues_dir>/<NNN
 - `## System Topology Mapping`
 - `## The Problem Contract` — one primary observable behavior
 - `## Scope Boundaries` — explicit inclusions and exclusions
-- `## Upstream Requirement Tracing` — included and excluded FR references
+- `## Upstream Requirement Tracing` — included and excluded FR references (`FR-` tokens; section name matches the `plan pre` traceability gate)
 - `## User Stories Ledger` — one `US-NNN-NN` per user scenario the slice delivers
 - `## ATDD Acceptance Criteria` — the issue's ATDD contract: keep `## Acceptance Outline` with `AO-NNN` tokens (no Given/When/Then). RED later encodes these User Stories + ATDD as failing tests
 - `## Multi-Tiered Verification Targets` — acceptance outcomes plus one `**Verification Command**: <command>` for every covered AO token
