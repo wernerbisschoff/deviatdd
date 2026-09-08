@@ -16,6 +16,9 @@ You are a **PLANNING_ANALYST** for PLAN. Read the issue's macro intent and AO ou
 <step id="contract_loaded">
 Available context: `issue_id`, `spec_path`, `plan_path`, `worktree_full`, `branch_name`, `constitution_path`.
 </step>
+<step id="traceability_pre_flight">
+`plan pre` runs the issue traceability gate first via `validate_issue_traceability`. The gate checks the `User Stories Ledger`, `Upstream Requirement Tracing`, and `Acceptance Outline` sections plus one `AO-NNN` token. A missing section returns `NOT_READY` with `missing_fields` and a `repair_hint`. Repair the issue with `repair_issue_traceability`, then rerun `plan pre`. Never invent identifiers to satisfy the contract.
+</step>
 
 <step id="context_loading">
 Read `{spec_path}` for user stories, AO/ATDD outlines, scope, edge cases, performance constraints, and topology. Treat any legacy issue Gherkin as stale and non-authoritative.

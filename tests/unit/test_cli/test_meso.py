@@ -1050,6 +1050,88 @@ class TestSpecifyPushNameCollisionRetry:
         )
 
 
+class TestRepairIssueTraceability:
+    """TSK-055-03 RED: repair helper restores absent sections then re-passes the gate."""
+
+    LEGACY_BODY = "# Legacy issue\n\nSome old prose without traceability.\n"
+
+    COMPLETE_BODY = (
+        "# Legacy issue\n\n"
+        "## User Stories Ledger\n\n- **US-055-02**: maintainer repair path.\n\n"
+        "## Upstream Requirement Tracing\n\n- **FR-ADHOC-055**\n\n"
+        "## Acceptance Outline\n\n- **AO-055-02** repaired issue passes the gate.\n"
+    )
+
+    def _write_issue(self, repo: Path, body: str) -> Path:
+        issue = repo / "specs" / "adhoc" / "issues" / "055-legacy.md"
+        issue.parent.mkdir(parents=True, exist_ok=True)
+        issue.write_text(body, encoding="utf-8")
+        return issue
+
+    @pytest.mark.behavioral
+    def test_repair_restores_sections_then_gate_ready(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.meso import (
+            _check_issue_traceability,
+            repair_issue_traceability,
+        )
+
+        issue = self._write_issue(tmp_git_repo, self.LEGACY_BODY)
+        assert _check_issue_traceability(issue)["status"] == "NOT_READY"
+        repair_issue_traceability(issue)
+        body = issue.read_text(encoding="utf-8")
+        assert "User Stories Ledger" in body
+        assert "Upstream Requirement Tracing" in body
+        assert "Acceptance Outline" in body
+        assert _check_issue_traceability(issue)["status"] == "READY"
+
+    @pytest.mark.behavioral
+    def test_incomplete_repair_still_not_ready_naming_gap(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.meso import (
+            _check_issue_traceability,
+            repair_issue_traceability,
+        )
+
+        issue = self._write_issue(tmp_git_repo, self.LEGACY_BODY)
+        repair_issue_traceability(issue, skip=["Acceptance Outline"])
+        gate = _check_issue_traceability(issue)
+        assert gate["status"] == "NOT_READY"
+        assert any("Acceptance Outline" in f for f in gate["missing_fields"])
+
+    @pytest.mark.behavioral
+    def test_complete_issue_ready_without_repair_write(
+        self, tmp_git_repo: Path
+    ) -> None:
+        from deviate.cli.meso import (
+            _check_issue_traceability,
+            repair_issue_traceability,
+        )
+
+        issue = self._write_issue(tmp_git_repo, self.COMPLETE_BODY)
+        assert _check_issue_traceability(issue)["status"] == "READY"
+        before = issue.read_text(encoding="utf-8")
+        repair_issue_traceability(issue)
+        assert issue.read_text(encoding="utf-8") == before
+
+    @pytest.mark.behavioral
+    def test_repair_preserves_present_text(self, tmp_git_repo: Path) -> None:
+        from deviate.cli.meso import repair_issue_traceability
+
+        body = self.COMPLETE_BODY.replace(
+            "- **US-055-02**: maintainer repair path.",
+            "- **US-055-02**: author prose must survive.",
+        ).replace(
+            "## Acceptance Outline\n\n- **AO-055-02** repaired issue passes the gate.\n",
+            "",
+        )
+        issue = self._write_issue(tmp_git_repo, body)
+        repair_issue_traceability(issue)
+        after = issue.read_text(encoding="utf-8")
+        assert "author prose must survive" in after
+        assert "Acceptance Outline" in after
+
+
 class TestSetupMiseIntegration:
     """_setup_mise runs setup:integration only when the task is defined."""
 

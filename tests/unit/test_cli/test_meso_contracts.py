@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 import os
 import subprocess
@@ -9,6 +11,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.cli.meso import _plan_pre
 
 runner = CliRunner()
 
@@ -361,3 +364,129 @@ class TestMesoContracts:
         contract = self._extract_contract(result.output)
         assert contract["status"] == "READY", result.output
         assert "export_plan" not in contract
+
+
+TRACEABLE_ISSUE_BODY = """
+## User Stories Ledger
+
+- **US-055-01**: As a plan agent, I want fail fast. *(Ref: FR-ADHOC-055)*
+
+## Upstream Requirement Tracing
+
+- **Requirements Tokens**: `FR-ADHOC-055`
+- **Acceptance Criteria Tokens**: `AC-ADHOC-055-01`
+
+## Acceptance Outline
+
+- **AO-055-01** *(Ref: AC-ADHOC-055-01, US-055-01)*: traceable issue passes.
+"""
+
+
+class TestPlanPreTraceabilityGate:
+    @staticmethod
+    def _setup_plan_env(path: Path, issue_id: str, body: str | None) -> None:
+        TestMesoContracts._setup_git_repo(path)
+        TestMesoContracts._setup_minimal_env(
+            path, session_phase="PLAN", active_issue_id=issue_id
+        )
+        specs_dir = path / "specs"
+        record = {
+            "issue_id": issue_id,
+            "type": "feature",
+            "title": "Traceability gate",
+            "status": "BACKLOG",
+            "source_file": f"specs/adhoc/issues/{issue_id}.md",
+            "timestamp": "2026-01-01T00:00:00Z",
+        }
+        (specs_dir / "issues.jsonl").write_text(json.dumps(record) + "\n")
+        if body is not None:
+            issue_dir = specs_dir / "adhoc" / "issues"
+            issue_dir.mkdir(parents=True, exist_ok=True)
+            (issue_dir / f"{issue_id}.md").write_text(body, encoding="utf-8")
+
+    @staticmethod
+    def _invoke_plan_pre(tmp_path: Path, issue_id: str, capsys) -> dict:
+        with chdir(tmp_path):
+            _plan_pre(issue_id=issue_id, skip_auto_claim=True)
+            out, _ = capsys.readouterr()
+        start = out.index("{")
+        end = out.rindex("}") + 1
+        return json.loads(out[start:end])
+
+    @pytest.mark.behavioral
+    def test_plan_pre_not_ready_names_missing_fields(self, tmp_path, capsys) -> None:
+        self._setup_plan_env(tmp_path, "ISS-ADH-055", "# Spec\n\nNo sections.\n")
+        contract = self._invoke_plan_pre(tmp_path, "ISS-ADH-055", capsys)
+        assert contract["status"] == "NOT_READY"
+        missing = " ".join(contract["missing_fields"])
+        assert "User Stories Ledger" in missing
+        assert "Upstream Requirement Tracing" in missing
+        assert "Acceptance Outline" in missing
+        assert "repair" in contract["repair_hint"].lower()
+
+    @pytest.mark.behavioral
+    def test_plan_pre_ready_for_traceable_issue(self, tmp_path, capsys) -> None:
+        self._setup_plan_env(tmp_path, "ISS-ADH-055", TRACEABLE_ISSUE_BODY)
+        contract = self._invoke_plan_pre(tmp_path, "ISS-ADH-055", capsys)
+        assert contract["status"] == "READY"
+        assert contract["spec_path"].endswith("specs/adhoc/issues/ISS-ADH-055.md")
+        assert contract["plan_target"].endswith("specs/adhoc/ISS-ADH-055/plan.md")
+
+    @pytest.mark.behavioral
+    def test_plan_pre_partial_names_only_missing_subset(self, tmp_path, capsys) -> None:
+        body = "## User Stories Ledger\n\n- **US-055-01**: present.\n"
+        self._setup_plan_env(tmp_path, "ISS-ADH-055", body)
+        contract = self._invoke_plan_pre(tmp_path, "ISS-ADH-055", capsys)
+        assert contract["status"] == "NOT_READY"
+        missing = " ".join(contract["missing_fields"])
+        assert "User Stories Ledger" not in missing
+        assert "Acceptance Outline" in missing
+
+    @pytest.mark.behavioral
+    def test_plan_pre_issue_not_found_preserved(self, tmp_path, capsys) -> None:
+        self._setup_plan_env(tmp_path, "ISS-ADH-055", None)
+        contract = self._invoke_plan_pre(tmp_path, "ISS-ADH-055", capsys)
+        assert contract["status"] == "ISSUE_NOT_FOUND"
+
+    @pytest.mark.behavioral
+    def test_plan_pre_ready_shape_keeps_existing_keys(self, tmp_path, capsys) -> None:
+        self._setup_plan_env(tmp_path, "ISS-ADH-055", TRACEABLE_ISSUE_BODY)
+        contract = self._invoke_plan_pre(tmp_path, "ISS-ADH-055", capsys)
+        for key in (
+            "issue_id",
+            "spec_path",
+            "plan_target",
+            "worktree_full",
+            "constitution_path",
+            "timestamp",
+            "status",
+            "phase",
+        ):
+            assert key in contract
+
+    @pytest.mark.behavioral
+    def test_plan_pre_path_traversal_fails_closed(self, tmp_path, capsys) -> None:
+        TestMesoContracts._setup_git_repo(tmp_path)
+        TestMesoContracts._setup_minimal_env(
+            tmp_path, session_phase="PLAN", active_issue_id="ISS-ADH-055"
+        )
+        specs_dir = tmp_path / "specs"
+        record = {
+            "issue_id": "ISS-ADH-055",
+            "type": "feature",
+            "title": "Traversal",
+            "status": "BACKLOG",
+            "source_file": "specs/adhoc/issues/../../evil.md",
+            "timestamp": "2026-01-01T00:00:00Z",
+        }
+        (specs_dir / "issues.jsonl").write_text(json.dumps(record) + "\n")
+        contract = self._invoke_plan_pre(tmp_path, "ISS-ADH-055", capsys)
+        assert contract["status"] == "ISSUE_NOT_FOUND"
+
+    @pytest.mark.behavioral
+    def test_plan_pre_legacy_id_gated_like_epic_prefix(self, tmp_path, capsys) -> None:
+        self._setup_plan_env(tmp_path, "ISS-001", "# Spec\n\nNo sections.\n")
+        contract = self._invoke_plan_pre(tmp_path, "ISS-001", capsys)
+        assert contract["status"] == "NOT_READY"
+        assert contract["missing_fields"]
+        assert "repair" in contract["repair_hint"].lower()
