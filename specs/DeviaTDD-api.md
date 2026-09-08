@@ -549,7 +549,7 @@ accepts `--json` (emit JSON contract to stdout) and `--quiet` (suppress output).
 * **Description:** Selects and claims an issue. If `--issue` is given, selects that specific
   issue and fails if unclaimable. If omitted, iterates `select_unblocked_candidates()` in a
   try-claim loop. Each claim creates a git worktree at `.worktrees/feat/{epic}/{issue}/`,
-  runs mise setup, writes the claim to the worktree's ledger, pushes the branch to remote,
+  runs mise setup (plus `mise run setup:integration` when that task is defined), writes the claim to the worktree's ledger, pushes the branch to remote,
   and emits a JSON contract with spec_target, worktree_path, branch_name, traceability
   status, constitution commands, etc. If no feature workspace exists yet, invokes
   `deviate feature create` internally to scaffold it.
@@ -1402,7 +1402,8 @@ uses the same `_resolve_task_context` selector as the other micro pres.
      linked worktree at `.worktrees/feat/{epic}/{issue}/`, copies `.claude/`, `.opencode/`,
      `.factory/`, `.pi/`, `.omp/` agent skill directories and `.env` (if present) into the
      worktree, runs `mise trust && mise install && mise run setup` (`.env` is now available
-     during setup), claims the issue via `claim_issue()`, and commits the claim to the
+     during setup), then `mise run setup:integration` when that task is defined in the worktree's
+     `mise.toml`, claims the issue via `claim_issue()`, and commits the claim to the
      worktree's `specs/issues.jsonl`. Default claim (`claim_remote = false` / absent key,
      no `--local`) stays local-only and does not `git push`. When push-as-lock is on
      (`claim_remote = true`, no `--local`) the branch is pushed to origin as a distributed

@@ -43,6 +43,7 @@ You are a **PROJECT_INITIALIZATION_SCAFFOLDER** operating inside the **MACRO LAY
 - `doctor:unit`, `doctor:integration`, `doctor:e2e` — read-only readiness checks for each configured layer. They do not run tests or launch services.
 - `doctor` — readiness checks for all configured layers. Without E2E, stop after integration.
 - `test:reset` — project-specific test-database reset for JUDGE rollback recovery. Detect the reset path from the stack and write it as the task command. Add only when the project uses a database. Merge missing; never overwrite an existing task.
+- `setup:integration` — provisioning for the integration layer (test databases, services, `.env.instance`). Runs on worktree create when defined. Add when the project needs integration tests.
 - Unit tests are hermetic. They require no database, Redis, network service, container, or external process.
 - Hooks: `pre-commit` = format-check + lint; `pre-push` = `unit` only. Never run integration or E2E on hooks.
 - Merge missing tasks into an existing `mise.toml`. Never overwrite existing commands, tests, or tool pins.

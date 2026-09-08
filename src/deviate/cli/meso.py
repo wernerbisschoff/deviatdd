@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import tomllib
 
 import shutil
 import subprocess
@@ -433,6 +434,10 @@ def _resolve_and_validate_issue(issue_id: str, phase: str) -> IssueRecord:
 
 def _setup_mise(worktree_path: Path | None = None) -> None:
     """Run mise trust && install && setup if mise is on PATH."""
+    """
+    Runs `mise run setup:integration` when that task is defined in the
+    worktree's mise.toml — opt-in provisioning for integration-test repos.
+    """
     repo = worktree_path or Path.cwd()
     try:
         subprocess.run(["mise", "--version"], capture_output=True, check=True)
@@ -448,8 +453,29 @@ def _setup_mise(worktree_path: Path | None = None) -> None:
             ["mise", "run", "setup"], cwd=repo, check=True, capture_output=True
         )
         console.print("[green]MISE[/] setup complete")
+        if _mise_task_defined(repo, "setup:integration"):
+            subprocess.run(
+                ["mise", "run", "setup:integration"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            console.print("[green]MISE[/] setup:integration complete")
     except subprocess.CalledProcessError as e:
         console.print(f"[yellow]MISE_WARN[/] setup step failed — {e}")
+
+
+def _mise_task_defined(repo: Path, name: str) -> bool:
+    """True when `name` is a task in `mise.toml` / `.mise.toml`."""
+    for filename in ("mise.toml", ".mise.toml"):
+        try:
+            config = tomllib.loads((repo / filename).read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        tasks = config.get("tasks")
+        if isinstance(tasks, dict) and name in tasks:
+            return True
+    return False
 
 
 _AGENT_DIRS = (".claude", ".opencode", ".factory", ".pi", ".omp", ".agents")

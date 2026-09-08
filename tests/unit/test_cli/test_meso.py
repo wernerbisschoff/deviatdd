@@ -1048,3 +1048,40 @@ class TestSpecifyPushNameCollisionRetry:
             "winning branch must exist on origin (not a local-only win): "
             f"{result['branch']!r}"
         )
+
+
+class TestSetupMiseIntegration:
+    """_setup_mise runs setup:integration only when the task is defined."""
+
+    def test_runs_setup_integration_when_defined(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _setup_mise
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "mise.toml").write_text(
+            '[tasks."setup:integration"]\nrun = "echo integration"\n',
+            encoding="utf-8",
+        )
+        with patch("deviate.cli.meso.subprocess.run") as mock_run:
+            _setup_mise(repo)
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        assert ["mise", "run", "setup:integration"] in commands
+
+    def test_skips_setup_integration_when_undefined(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        from deviate.cli.meso import _setup_mise
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "mise.toml").write_text(
+            '[tasks.setup]\nrun = "echo setup"\n',
+            encoding="utf-8",
+        )
+        with patch("deviate.cli.meso.subprocess.run") as mock_run:
+            _setup_mise(repo)
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        assert ["mise", "run", "setup:integration"] not in commands
+        assert ["mise", "run", "setup"] in commands

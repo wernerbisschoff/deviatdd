@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Worktree setup runs `mise run setup:integration` when that task is defined.** Worktree create runs `mise trust && mise install && mise run setup`, then `setup:integration` for integration-test repos (test databases, services, `.env.instance`). Repos without the task see no change. The `/deviate-init` contract documents the task.
 - **JUDGE rejection feedback now uses a repair contract:** requirement, evidence, correction, verification, and phase boundary. Routing remains unchanged.
 
 - **Acceptance gates: RED checkpoint completes with a warning, GREEN blocks on a failing suite, REFACTOR fails on a post-polish regression.** RED no longer rejects a passing test — it completes with a warning advisory (`RedHandoffAdvisory`) handed to GREEN. A failing GREEN suite routes to JUDGE via `train_feedback`. A non-zero REFACTOR post-polish test result fails the phase. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.
