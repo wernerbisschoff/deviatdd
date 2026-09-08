@@ -7,6 +7,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+
+import pytest
 import typer
 from rich.console import Console
 from typer.testing import CliRunner
@@ -1274,3 +1276,136 @@ class TestAutoFlag:
         mock_all.assert_not_called()
         # Slash command still forwarded correctly for omp.
         assert _DEVIATDD_SLASH_COMMAND["omp"] == "/skills:deviatdd"
+
+
+class TestStaleRejectionRecovery:
+    """AC-PLAN-001 / AC-PLAN-004: dispatch clears stale attempt rejection on a
+    recovered RED boundary and resumes GREEN end to end.
+
+    Session loss empties ``red_commit_sha`` while the JSONL ledger still
+    records RED and the RED commit stays on-branch. A stale
+    ``pending_judge_action`` / ``judge_rejected`` pair from an earlier attempt
+    (here the unbound pre-fix GH-148 poison) must not block the later
+    boundary — recovery restores the SHA through the forward-route helpers
+    and GREEN runs without RED or rollback.
+    """
+
+    @pytest.mark.behavioral
+    @patch("deviate.cli.micro._verify_clean_worktree")
+    @patch("deviate.cli.micro._commit_phase", return_value=True)
+    @patch("deviate.cli.micro._find_test_files", return_value=["tests/test_red.py"])
+    @patch("deviate.cli.micro._run_test_cmd")
+    @patch("deviate.cli.micro._invoke_agent", side_effect=_mock_invoke_agent)
+    def test_dispatch_clears_stale_rejection_and_resumes_green(
+        self,
+        mock_agent,
+        mock_run_test,
+        mock_find_tests,
+        mock_commit,
+        mock_verify,
+        tmp_git_repo: Path,
+        approve_gate2,
+    ):
+        from deviate.cli import micro as micro_mod
+
+        task_id = "TSK-051-03"
+        mock_run_test.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="1 passed", stderr=""
+        )
+        with chdir(tmp_git_repo):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            # Session loss: empty SHA plus stale rejection from an earlier
+            # attempt (unbound GH-148 poison: no judge_task_id binding).
+            session = SessionState(
+                current_phase="RED",
+                red_commit_sha="",
+                pending_judge_action="skip_refactor",
+                judge_rejected=True,
+            )
+            session.save(dot_dir / "session.json")
+
+            task = _make_task_record(
+                task_id=task_id,
+                issue_id="ISS-ADH-051",
+                description="Recovered boundary resumes GREEN",
+                status="PENDING",
+                execution_mode="TDD",
+            )
+            ledger_path = Path("specs") / "adhoc" / "051-red-boundary" / "tasks.jsonl"
+            _write_ledger(ledger_path, task)
+            append_task_transition(
+                _make_task_record(
+                    task_id=task_id,
+                    issue_id="ISS-ADH-051",
+                    description="Recovered boundary resumes GREEN",
+                    status="RED",
+                    execution_mode="TDD",
+                ),
+                ledger_path,
+            )
+            # On-branch RED commit carrying the task evidence.
+            marker = tmp_git_repo / "red_boundary.txt"
+            marker.write_text("red boundary\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"test({task_id}): red failing test"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+            approve_gate2(tmp_git_repo, issue_id=task.issue_id)
+
+            invalidate_cleared: list[bool] = []
+            real_invalidate = micro_mod._invalidate_stale_forward_route
+
+            def _recording_invalidate(session, task_id):
+                cleared = real_invalidate(session, task_id)
+                invalidate_cleared.append(cleared)
+                return cleared
+
+            with (
+                patch.object(
+                    micro_mod,
+                    "_invalidate_stale_forward_route",
+                    side_effect=_recording_invalidate,
+                ),
+                patch.object(
+                    micro_mod,
+                    "_clear_judge_retry_gate",
+                    wraps=micro_mod._clear_judge_retry_gate,
+                ) as mock_gate,
+            ):
+                result = runner.invoke(
+                    cli, ["micro", "run", task_id, "--profile", "fast"]
+                )
+
+            assert result.exit_code == 0, (
+                f"Expected exit 0, got {result.exit_code}: {result.output}"
+            )
+            assert "GREEN" in result.output, (
+                f"Expected GREEN to resume on the recovered boundary: {result.output}"
+            )
+            assert (
+                "RED \u2192" not in result.output and "\u25d0  RED" not in result.output
+            ), f"RED must not re-run when the boundary is recovered: {result.output}"
+            assert "COMPLETED" in result.output, (
+                f"Expected task to reach COMPLETED: {result.output}"
+            )
+            assert any(invalidate_cleared), (
+                "recovery must clear the stale rejection via "
+                "_invalidate_stale_forward_route"
+            )
+            mock_gate.assert_not_called()
+            recovered = SessionState.load(dot_dir / "session.json")
+            assert recovered.red_commit_sha.strip(), (
+                "recovery must restore the later RED boundary"
+            )
+            assert recovered.pending_judge_action == "", (
+                "stale pending_judge_action must be cleared on the recovered boundary"
+            )
+            assert recovered.judge_rejected is False, (
+                "stale judge_rejected must not block the recovered run"
+            )
