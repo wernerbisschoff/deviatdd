@@ -1,1 +1,2 @@
 {"id":"TSK-051-01","issue_id":"ISS-ADH-051","description":"Recover the RED boundary and resume GREEN after session loss","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-08T08:27:35.315300Z","security_profile":null,"acceptance_criteria":null}
+{"id":"TSK-051-01","issue_id":"ISS-ADH-051","description":"Recover the RED boundary and resume GREEN after session loss","status":"GREEN","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-08T08:35:46.967831Z","security_profile":null,"acceptance_criteria":null}
