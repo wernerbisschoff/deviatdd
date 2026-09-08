@@ -2849,3 +2849,91 @@ def test_recover_red_boundary_accepts_cherry_picked_commit(tmp_git_repo: Path) -
         assert not diagnostic, f"expected clean recovery, got {diagnostic!r}"
         assert session.red_commit_sha.strip() == picked
         assert micro._tdd_pre_green_decision(session, task_id) == "green"
+
+
+@pytest.mark.behavioral
+def test_safe_stop_on_missing_red_evidence(tmp_git_repo: Path) -> None:
+    """AC-PLAN-003: no RED ledger state emits a named missing diagnostic; no RED rerun, no rollback."""
+    from deviate.cli import micro
+
+    recover = getattr(micro, "_recover_red_commit_boundary", None)
+    assert callable(recover), "micro must expose _recover_red_commit_boundary"
+    task_id = "TSK-051-02"
+    with chdir(tmp_git_repo):
+        ledger_path = (
+            tmp_git_repo / "specs" / "adhoc" / "051-red-boundary" / "tasks.jsonl"
+        )
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_ledger(ledger_path, _make_task_record(task_id=task_id, status="PENDING"))
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(current_phase="RED", red_commit_sha="").save(session_path)
+        session = SessionState.load(session_path)
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                side_effect=AssertionError("RED must not rerun on safe stop"),
+            ),
+            patch(
+                "deviate.cli.micro._execute_rollback",
+                side_effect=AssertionError("rollback must not run on safe stop"),
+            ),
+        ):
+            diagnostic = recover(tmp_git_repo, session, task_id)
+        assert diagnostic, "missing evidence must emit a diagnostic"
+        assert task_id in str(diagnostic), "diagnostic must name the task"
+        assert "missing" in str(diagnostic).lower(), (
+            f"diagnostic must name the missing evidence gap, got {diagnostic!r}"
+        )
+        assert session.red_commit_sha == "", "safe stop must not set a boundary"
+        assert micro._tdd_pre_green_decision(session, task_id) != "green"
+
+
+@pytest.mark.behavioral
+def test_safe_stop_on_ambiguous_red_evidence(tmp_git_repo: Path) -> None:
+    """AC-PLAN-003: two candidates matching partial evidence emit an ambiguity diagnostic."""
+    from deviate.cli import micro
+
+    recover = getattr(micro, "_recover_red_commit_boundary", None)
+    assert callable(recover), "micro must expose _recover_red_commit_boundary"
+    task_id = "TSK-051-02"
+    with chdir(tmp_git_repo):
+        ledger_path = (
+            tmp_git_repo / "specs" / "adhoc" / "051-red-boundary" / "tasks.jsonl"
+        )
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_ledger(ledger_path, _make_task_record(task_id=task_id, status="RED"))
+        for i in (1, 2):
+            marker = tmp_git_repo / f"red_partial_{i}.txt"
+            marker.write_text(f"partial {i}\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"test({task_id}): red partial {i}"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(current_phase="RED", red_commit_sha="").save(session_path)
+        session = SessionState.load(session_path)
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                side_effect=AssertionError("RED must not rerun on ambiguity"),
+            ),
+            patch(
+                "deviate.cli.micro._execute_rollback",
+                side_effect=AssertionError("rollback must not run on ambiguity"),
+            ),
+        ):
+            diagnostic = recover(tmp_git_repo, session, task_id)
+        assert diagnostic, "ambiguous evidence must emit a diagnostic"
+        assert task_id in str(diagnostic), "diagnostic must name the task"
+        assert "ambigu" in str(diagnostic).lower(), (
+            f"diagnostic must name the ambiguity gap, got {diagnostic!r}"
+        )
+        assert session.red_commit_sha == "", "safe stop must not set a boundary"
+        assert micro._tdd_pre_green_decision(session, task_id) != "green"
