@@ -5193,22 +5193,21 @@ def _recover_red_commit_boundary(
             return (
                 f"RED_BOUNDARY_AMBIGUOUS: {task_id} matches {len(candidates)} commits"
             )
-    if not candidates:
-        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing on-branch RED commit"
-    resolved = _resolve_rewritten_sha(root, candidates[0]) or candidates[0]
-    if not _is_ancestor(root, resolved, "HEAD"):
-        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing on-branch RED commit"
-    session.red_commit_sha = resolved
-    _clear_judge_retry_gate(session)
-    _refresh_session_commit_anchors(root, session)
-    _log_run(
-        "PHASE_DECISION",
-        task_id=task_id,
-        phase="CYCLE",
-        decision="recover_red_commit_boundary",
-        red_commit_sha=resolved,
-    )
-    return ""
+    if candidates:
+        resolved = _resolve_rewritten_sha(root, candidates[0]) or candidates[0]
+        if _is_ancestor(root, resolved, "HEAD"):
+            session.red_commit_sha = resolved
+            _clear_judge_retry_gate(session)
+            _refresh_session_commit_anchors(root, session)
+            _log_run(
+                "PHASE_DECISION",
+                task_id=task_id,
+                phase="CYCLE",
+                decision="recover_red_commit_boundary",
+                red_commit_sha=resolved,
+            )
+            return ""
+    return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing on-branch RED commit"
 
 
 def _tdd_pre_green_decision(
