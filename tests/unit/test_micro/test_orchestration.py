@@ -2733,3 +2733,207 @@ class TestTwoCounterStubJudgeLoops:
             f"AC-PLAN-005: test_defect coerce must escalate now; got {call_log!r}"
         )
         assert "TRAIN_EXHAUSTED" not in buf.getvalue()
+
+
+def _seed_red_ledger_with_on_branch_commit(
+    repo: Path, *, task_id: str, issue_id: str
+) -> tuple[Path, Path]:
+    """Seed a RED ledger row plus an on-branch RED commit carrying task evidence."""
+    ledger_path = repo / "specs" / "adhoc" / "051-red-boundary" / "tasks.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    record = _make_task_record(
+        task_id=task_id,
+        issue_id=issue_id,
+        description="Restore a committed RED boundary after session loss",
+        status="RED",
+    )
+    _write_ledger(ledger_path, record)
+    test_file = repo / "tests" / "test_red_boundary_051.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text(
+        "def test_red_boundary_051():\n    assert False\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"test({task_id}): red failing test"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+    )
+    subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        env=_git_env(),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    session_path = repo / ".deviate" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="RED", red_commit_sha="").save(session_path)
+    return ledger_path, session_path
+
+
+@pytest.mark.behavioral
+def test_recover_red_boundary_restores_sha_and_routes_green(tmp_git_repo: Path) -> None:
+    """AC-PLAN-001: ledger RED + on-branch commit with empty session SHA resumes GREEN."""
+    from deviate.cli import micro
+
+    recover = getattr(micro, "_recover_red_commit_boundary", None)
+    assert callable(recover), "micro must expose _recover_red_commit_boundary"
+    task_id = "TSK-051-01"
+    with chdir(tmp_git_repo):
+        ledger_path, session_path = _seed_red_ledger_with_on_branch_commit(
+            tmp_git_repo, task_id=task_id, issue_id="ISS-ADH-051"
+        )
+        session = SessionState.load(session_path)
+        assert session.red_commit_sha == ""
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                side_effect=AssertionError("RED must not run on recovery"),
+            ),
+            patch(
+                "deviate.cli.micro._execute_rollback",
+                side_effect=AssertionError("rollback must not run on recovery"),
+            ),
+        ):
+            diagnostic = recover(tmp_git_repo, session, task_id)
+            assert not diagnostic, f"expected clean recovery, got {diagnostic!r}"
+            assert session.red_commit_sha.strip(), (
+                "recovery must restore red_commit_sha"
+            )
+            assert micro._tdd_pre_green_decision(session, task_id) == "green"
+
+
+@pytest.mark.behavioral
+def test_recover_red_boundary_accepts_cherry_picked_commit(tmp_git_repo: Path) -> None:
+    """AC-PLAN-002: a cherry-picked RED commit with matching evidence is valid."""
+    from deviate.cli import micro
+
+    recover = getattr(micro, "_recover_red_commit_boundary", None)
+    assert callable(recover), "micro must expose _recover_red_commit_boundary"
+    task_id = "TSK-051-01"
+    with chdir(tmp_git_repo):
+        ledger_path, session_path = _seed_red_ledger_with_on_branch_commit(
+            tmp_git_repo, task_id=task_id, issue_id="ISS-ADH-051"
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD~1"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "cherry-pick", "--no-commit", "@{1}"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"test({task_id}): red failing test"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+        picked = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        session = SessionState.load(session_path)
+        diagnostic = recover(tmp_git_repo, session, task_id)
+        assert not diagnostic, f"expected clean recovery, got {diagnostic!r}"
+        assert session.red_commit_sha.strip() == picked
+        assert micro._tdd_pre_green_decision(session, task_id) == "green"
+
+
+@pytest.mark.behavioral
+def test_safe_stop_on_missing_red_evidence(tmp_git_repo: Path) -> None:
+    """AC-PLAN-003: no RED ledger state emits a named missing diagnostic; no RED rerun, no rollback."""
+    from deviate.cli import micro
+
+    recover = getattr(micro, "_recover_red_commit_boundary", None)
+    assert callable(recover), "micro must expose _recover_red_commit_boundary"
+    task_id = "TSK-051-02"
+    with chdir(tmp_git_repo):
+        ledger_path = (
+            tmp_git_repo / "specs" / "adhoc" / "051-red-boundary" / "tasks.jsonl"
+        )
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_ledger(ledger_path, _make_task_record(task_id=task_id, status="PENDING"))
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(current_phase="RED", red_commit_sha="").save(session_path)
+        session = SessionState.load(session_path)
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                side_effect=AssertionError("RED must not rerun on safe stop"),
+            ),
+            patch(
+                "deviate.cli.micro._execute_rollback",
+                side_effect=AssertionError("rollback must not run on safe stop"),
+            ),
+        ):
+            diagnostic = recover(tmp_git_repo, session, task_id)
+        assert diagnostic, "missing evidence must emit a diagnostic"
+        assert task_id in str(diagnostic), "diagnostic must name the task"
+        assert "missing" in str(diagnostic).lower(), (
+            f"diagnostic must name the missing evidence gap, got {diagnostic!r}"
+        )
+        assert session.red_commit_sha == "", "safe stop must not set a boundary"
+        assert micro._tdd_pre_green_decision(session, task_id) != "green"
+
+
+@pytest.mark.behavioral
+def test_safe_stop_on_ambiguous_red_evidence(tmp_git_repo: Path) -> None:
+    """AC-PLAN-003: two candidates matching partial evidence emit an ambiguity diagnostic."""
+    from deviate.cli import micro
+
+    recover = getattr(micro, "_recover_red_commit_boundary", None)
+    assert callable(recover), "micro must expose _recover_red_commit_boundary"
+    task_id = "TSK-051-02"
+    with chdir(tmp_git_repo):
+        ledger_path = (
+            tmp_git_repo / "specs" / "adhoc" / "051-red-boundary" / "tasks.jsonl"
+        )
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_ledger(ledger_path, _make_task_record(task_id=task_id, status="RED"))
+        for i in (1, 2):
+            marker = tmp_git_repo / f"red_partial_{i}.txt"
+            marker.write_text(f"partial {i}\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", "."], cwd=tmp_git_repo, env=_git_env(), check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"test({task_id}): red partial {i}"],
+                cwd=tmp_git_repo,
+                env=_git_env(),
+                check=True,
+            )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        SessionState(current_phase="RED", red_commit_sha="").save(session_path)
+        session = SessionState.load(session_path)
+        with (
+            patch(
+                "deviate.cli.micro._invoke_agent",
+                side_effect=AssertionError("RED must not rerun on ambiguity"),
+            ),
+            patch(
+                "deviate.cli.micro._execute_rollback",
+                side_effect=AssertionError("rollback must not run on ambiguity"),
+            ),
+        ):
+            diagnostic = recover(tmp_git_repo, session, task_id)
+        assert diagnostic, "ambiguous evidence must emit a diagnostic"
+        assert task_id in str(diagnostic), "diagnostic must name the task"
+        assert "ambigu" in str(diagnostic).lower(), (
+            f"diagnostic must name the ambiguity gap, got {diagnostic!r}"
+        )
+        assert session.red_commit_sha == "", "safe stop must not set a boundary"
+        assert micro._tdd_pre_green_decision(session, task_id) != "green"

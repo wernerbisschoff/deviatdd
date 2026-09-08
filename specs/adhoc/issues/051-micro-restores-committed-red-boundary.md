@@ -88,3 +88,10 @@ This issue implements `specs/constitution.md` §1 **User Scenarios Are the Flow*
 GitHub issue 211 reports that a committed RED state can lose this session reference and trigger another RED attempt.
 
 The runner must always rebuild session state from the JSONL ledger before dispatch decisions. `SessionState.red_commit_sha` supports the decision but does not override ledger state.
+
+## Explore Findings (2026-09-08, specs/explore/051-red-boundary-recovery.md)
+
+- Root gap is confirmed: `_run_red_phase` writes the RED ledger row with status only (`record.status = "RED"`, no `head_sha`) and stores the commit SHA only in `session.red_commit_sha` after `git rev-parse HEAD`. Session loss therefore orphans the boundary.
+- Recovery has two ready helpers to reuse: `_collect_latest_task_records` (latest-per-task ledger parse) and `_resolve_rewritten_sha` / `_refresh_session_commit_anchors` (rewrite-aware SHA resolution).
+- Stale-rejection clearing has a pattern to reuse: `_forward_route_is_stale` / `_invalidate_stale_forward_route` already bind JUDGE routes to task plus SHA.
+- No new modules, persistence, or integrations are needed. Estimated scope: `src/deviate/cli/micro.py` plus `tests/unit/test_micro/test_orchestration.py` and `tests/unit/test_micro/test_run.py`.
