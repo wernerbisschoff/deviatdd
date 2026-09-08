@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import warnings
 from pathlib import Path
 
 import typer
@@ -14,12 +13,13 @@ from deviate.core._shared import git_env as _git_env
 from deviate.core.worktree import detect_remote
 from deviate.state.ledger import (
     IssueRecord,
+    _read_ledger,
     _read_ledger_strict,
 )
 
 inspect_app = typer.Typer(no_args_is_help=True)
 issues_app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
-tasks_app = typer.Typer(no_args_is_help=True)
+tasks_app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
 inspect_app.add_typer(issues_app, name="issues")
 inspect_app.add_typer(tasks_app, name="tasks")
 
@@ -259,16 +259,7 @@ def _tasks_list(
         tasks_ledger = repo / tasks_dir / "tasks.jsonl"
         if not tasks_ledger.exists():
             continue
-        try:
-            raw_records = _read_ledger_strict(tasks_ledger)
-        except ValueError:
-            # Malformed per-issue ledger: surface to the caller via stderr but
-            # don't abort the whole aggregation. Existing strict semantics
-            # for ``specs/issues.jsonl`` are preserved by re-raising there.
-            warnings.warn(
-                f"Skipping malformed tasks ledger: {tasks_ledger}", stacklevel=2
-            )
-            continue
+        raw_records = _read_ledger(tasks_ledger)
         # Group this issue's records by task id (sequential-ledger parsed in
         # file order), then reduce to one record per task.
         per_task: dict[str, list[dict]] = {}
@@ -320,13 +311,10 @@ def _tasks_list(
     return rows
 
 
-@tasks_app.command("list")
-def tasks_list_command(
-    status_filter: str | None = typer.Option(
-        None, "--status", help="Filter by task status"
-    ),
-    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+def _render_tasks(
+    status_filter: str | None = None,
+    json_flag: bool = False,
+    quiet: bool = False,
 ) -> None:
     tasks = _tasks_list(
         status_filter=status_filter,
@@ -351,3 +339,27 @@ def tasks_list_command(
                 task.get("execution_mode", ""),
             )
         console.print(table)
+
+
+@tasks_app.callback()
+def tasks_callback(
+    ctx: typer.Context,
+    status_filter: str | None = typer.Option(
+        None, "--status", help="Filter by task status"
+    ),
+    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+) -> None:
+    if ctx.invoked_subcommand is None:
+        _render_tasks(status_filter, json_flag, quiet)
+
+
+@tasks_app.command("list")
+def tasks_list_command(
+    status_filter: str | None = typer.Option(
+        None, "--status", help="Filter by task status"
+    ),
+    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+) -> None:
+    _render_tasks(status_filter, json_flag, quiet)
