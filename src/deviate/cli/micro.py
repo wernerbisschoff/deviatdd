@@ -7229,7 +7229,7 @@ def prepare_task_preconditions(root: Path, task: dict | None) -> None:
     if proc.returncode != 0:
         output = f"{proc.stdout or ''}{proc.stderr or ''}".strip()
         raise RuntimeError(
-            f"PRECONDITIONS_NOT_READY: setup command failed: {cmd}: {output}"
+            f"{PRECONDITION_SIGNAL_NAME}: setup command failed: {cmd}: {output}"
         )
 
 
