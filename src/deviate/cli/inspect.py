@@ -18,7 +18,7 @@ from deviate.state.ledger import (
 )
 
 inspect_app = typer.Typer(no_args_is_help=True)
-issues_app = typer.Typer(no_args_is_help=True)
+issues_app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
 tasks_app = typer.Typer(no_args_is_help=True)
 inspect_app.add_typer(issues_app, name="issues")
 inspect_app.add_typer(tasks_app, name="tasks")
@@ -138,14 +138,11 @@ def _issues_list(
     return result
 
 
-@issues_app.command("list")
-def issues_list_command(
-    type_filter: str | None = typer.Option(None, "--type", help="Filter by issue type"),
-    status_filter: str | None = typer.Option(
-        None, "--status", help="Filter by issue status"
-    ),
-    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+def _render_issues(
+    type_filter: str | None = None,
+    status_filter: str | None = None,
+    json_flag: bool = False,
+    quiet: bool = False,
 ) -> None:
     issues = _issues_list(
         type_filter=type_filter,
@@ -176,6 +173,32 @@ def issues_list_command(
                 orphan_str,
             )
         console.print(table)
+
+
+@issues_app.callback()
+def issues_callback(
+    ctx: typer.Context,
+    type_filter: str | None = typer.Option(None, "--type", help="Filter by issue type"),
+    status_filter: str | None = typer.Option(
+        None, "--status", help="Filter by issue status"
+    ),
+    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+) -> None:
+    if ctx.invoked_subcommand is None:
+        _render_issues(type_filter, status_filter, json_flag, quiet)
+
+
+@issues_app.command("list")
+def issues_list_command(
+    type_filter: str | None = typer.Option(None, "--type", help="Filter by issue type"),
+    status_filter: str | None = typer.Option(
+        None, "--status", help="Filter by issue status"
+    ),
+    json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
+) -> None:
+    _render_issues(type_filter, status_filter, json_flag, quiet)
 
 
 def _tasks_dir_from_source(source_file: str) -> Path | None:
