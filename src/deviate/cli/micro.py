@@ -5168,20 +5168,24 @@ def _recover_red_commit_boundary(
     if _has_red_commit_boundary(session):
         _refresh_session_commit_anchors(root, session)
         return ""
-    latest_status = ""
-    for rec, _ in _collect_latest_task_records(root):
-        if rec.get("id") == task_id:
-            latest_status = rec.get("status", "")
+    latest_status = next(
+        (
+            rec.get("status", "")
+            for rec, _ in _collect_latest_task_records(root)
+            if rec.get("id") == task_id
+        ),
+        "",
+    )
     if latest_status != "RED":
         return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} has no RED ledger state"
-    train = _head_commit_subjects(root)
-    candidates = [sha for sha, subject in train if task_id in subject]
+    subjects = dict(_head_commit_subjects(root))
+    candidates = [sha for sha, subject in subjects.items() if task_id in subject]
     if len(candidates) > 1:
         red_like = [
             sha
-            for sha, subject in train
-            if task_id in subject
-            and (_PRE_RED_SHA_PARENT_RE.match(subject) or "red" in subject.lower())
+            for sha in candidates
+            if _PRE_RED_SHA_PARENT_RE.match(subjects[sha])
+            or "red" in subjects[sha].lower()
         ]
         if len(red_like) == 1:
             candidates = red_like
@@ -5666,10 +5670,13 @@ def _run_tdd_cycle_impl(
     # entirely and mark the task COMPLETED with its test never implemented.
     judge_passed = False
     green_test_failure = False
-    if start_phase != "GREEN" and not _has_red_commit_boundary(session):
-        if not _recover_red_commit_boundary(root, session, tid):
-            start_phase = "GREEN"
-            session.save(session_path)
+    if (
+        start_phase != "GREEN"
+        and not _has_red_commit_boundary(session)
+        and not _recover_red_commit_boundary(root, session, tid)
+    ):
+        start_phase = "GREEN"
+        session.save(session_path)
     if start_phase != "GREEN":
         _maybe_push_event(
             monitor, "phase_change", task_id=tid, phase="RED", description=task_desc
@@ -5715,9 +5722,10 @@ def _run_tdd_cycle_impl(
         )
 
     while not judge_passed:
-        if not _has_red_commit_boundary(session):
-            if not _recover_red_commit_boundary(root, session, tid):
-                session.save(session_path)
+        if not _has_red_commit_boundary(session) and not _recover_red_commit_boundary(
+            root, session, tid
+        ):
+            session.save(session_path)
         pre_green = _tdd_pre_green_decision(session, tid)
         if pre_green == "escalate":
             session = _escalate("no_failing_test_adjudicated")
