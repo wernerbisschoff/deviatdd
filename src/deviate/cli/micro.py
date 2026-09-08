@@ -5177,7 +5177,7 @@ def _recover_red_commit_boundary(
         "",
     )
     if latest_status != "RED":
-        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} has no RED ledger state"
+        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing RED ledger state"
     subjects = dict(_head_commit_subjects(root))
     candidates = [sha for sha, subject in subjects.items() if task_id in subject]
     if len(candidates) > 1:
@@ -5194,10 +5194,10 @@ def _recover_red_commit_boundary(
                 f"RED_BOUNDARY_AMBIGUOUS: {task_id} matches {len(candidates)} commits"
             )
     if not candidates:
-        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} has no on-branch RED commit"
+        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing on-branch RED commit"
     resolved = _resolve_rewritten_sha(root, candidates[0]) or candidates[0]
     if not _is_ancestor(root, resolved, "HEAD"):
-        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} has no on-branch RED commit"
+        return f"RED_BOUNDARY_NOT_RECOVERABLE: {task_id} missing on-branch RED commit"
     session.red_commit_sha = resolved
     _clear_judge_retry_gate(session)
     _refresh_session_commit_anchors(root, session)
