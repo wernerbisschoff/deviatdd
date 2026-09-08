@@ -793,3 +793,17 @@
 - **Constitution Reference**: `specs/constitution.md` §1 requires Micro-layer scope and session continuity. Source: “Every task loop executes on a clean git branch or worktree.”
 - **Source Anchors**: `src/deviate/prompts/auto/judge.md` states: “mocking the system under test to bypass real behavior” counts as a Test Integrity Violation. `src/deviate/prompts/auto/tasks.md` states: “Split by runtime boundary when one proposed task touches multiple hubs.”
 - **Authority Rule**: The plan splits the boundary. The agent tests the real dependency. JUDGE enforces the split.
+
+## FR-ADHOC-054: Prompt schemas agree with post-script validators without filler
+- **Description**: Prompt schema lists and post-script validator required lists agree one-to-one per phase. Validators check substance as well as presence. Silent repairs fail loudly instead. Shipped sample artifacts pass or carry an explicit grandfather note.
+- **Preconditions**: `src/deviate/core/validation.py` holds `ARTIFACT_VALIDATORS`, `PRD_CONTRACT_SECTIONS`, `validate_sections`, and `repair_missing_verification_mode`. Phase prompts hold the per-phase schema lists.
+- **Inputs/Outputs**: Input — a prompt schema list and its validator required list for one phase. Output — matching one-to-one lists, substance checks with row-count warning caps, and loud failures for missing verification modes.
+- **User Stories**:
+  1. US-054-01: As a phase agent, I want prompts and validators to require the same sections so that my artifact never fails a check the prompt never named. *(Ref: FR-ADHOC-054)*
+  2. US-054-02: As a maintainer, I want validators to reward substance over filler so that generated artifacts stay short and honest. *(Ref: FR-ADHOC-054)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-054-01 / AO-054-01: Prompt schema lists and validator required lists agree one-to-one per phase, Session State leaves the PRD contract for manifest JSON, and shipped sample artifacts pass or carry an explicit grandfather note.
+  2. AC-ADHOC-054-02 / AO-054-02: Empty mandated sections fail substance checks, oversized registries warn at row-count caps, and a missing verification mode fails loudly instead of silent repair.
+- **Constitution Reference**: `specs/constitution.md` §5 requires governance checks before merge. Source: “All code must pass `mise run check` before merge.”
+- **Source Anchors**: `src/deviate/core/validation.py` line 275 defines `validate_sections` as header-presence only. `src/deviate/core/validation.py` line 139 defines `PRD_CONTRACT_SECTIONS` with Session State. `src/deviate/core/validation.py` line 223 defines `repair_missing_verification_mode` inserting a default mode.
+- **Authority Rule**: The prompt names it, the validator checks it, and the check measures substance. Nothing else is required.
