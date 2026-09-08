@@ -886,11 +886,16 @@ def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
     return Path(setup_result["worktree_path"])
 
 
-_REPAIR_SECTION_STUBS: dict[str, str] = {
-    "User Stories Ledger": "- **US-055-02**: legacy repair placeholder.\n",
-    "Upstream Requirement Tracing": "- **FR-ADHOC-055**\n",
-    "Acceptance Outline": "- **AO-055-02** legacy repair placeholder.\n",
-}
+_REPAIR_SECTION_STUBS: dict[str, str] = dict(
+    zip(
+        ISSUE_TRACEABILITY_SECTIONS,
+        [
+            "- **US-055-02**: legacy repair placeholder.\n",
+            "- **FR-ADHOC-055**\n",
+            "- **AO-055-02** legacy repair placeholder.\n",
+        ],
+    )
+)
 
 
 def _check_issue_traceability(issue_file: Path) -> dict[str, object]:
