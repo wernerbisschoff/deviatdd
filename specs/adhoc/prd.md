@@ -831,3 +831,13 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-056-01 / AO-056-01: Bare `deviate inspect issues` renders the issues table
   2. AC-ADHOC-056-02 / AO-056-02: Bare `deviate inspect tasks` renders the tasks table with explicit `list` and `show` paths unchanged
+
+## FR-ADHOC-057: Harden timeout cleanup against killpg PermissionError
+- **Description**: Treat `PermissionError` from `os.killpg` as a terminal cleanup end-state in the timeout path so `deviate micro run` returns exit code 124 instead of crashing.
+- **Preconditions**: Timeout escalation path in `src/deviate/cli/_safe_commands.py` uses `_kill_process_group` for SIGTERM/SIGKILL on the child process group.
+- **Inputs/Outputs**: Input: expired child process group with EPERM on signal. Output: deterministic `CompletedProcess` with returncode 124 plus partial output.
+- **User Stories**:
+  1. US-057-01: As a CLI operator, I want timed-out runs to return exit code 124 even when the process group cannot be signaled so that the runner reports a timeout instead of crashing
+- **Acceptance Outline**:
+  1. AC-ADHOC-057-01 / AO-057-01: Timed-out run whose process group raises PermissionError returns exit code 124 with partial output
+  2. AC-ADHOC-057-02 / AO-057-02: ESRCH plus invalid-pid cleanup behavior stays unchanged
