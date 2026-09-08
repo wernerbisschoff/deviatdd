@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from deviate.core.validation import (
     extract_section_body,
     repair_missing_verification_mode,
     validate_acceptance_contract,
     validate_acceptance_outline,
     validate_gherkin_syntax,
+    validate_issue_traceability,
     validate_sections,
     validate_source_file,
     validate_task_id,
@@ -610,3 +613,65 @@ class TestValidateSourceFile:
             )
             is False
         )
+
+
+TRACEABLE_BODY = (
+    "## User Stories Ledger\n"
+    "- **US-055-01**: As a plan agent, I want a fail-fast gate.\n"
+    "\n"
+    "## Upstream Requirement Tracing\n"
+    "- **Requirements Tokens**: FR-ADHOC-055\n"
+    "\n"
+    "## Acceptance Outline\n"
+    "- **AO-055-01** *(Ref: AC-ADHOC-055-01)*: plan pre fails fast.\n"
+)
+
+STORIES_ONLY_BODY = (
+    "## User Stories Ledger\n"
+    "- **US-055-01**: As a plan agent, I want a fail-fast gate.\n"
+)
+
+
+class TestValidateIssueTraceability:
+    @pytest.mark.behavioral
+    def test_partial_issue_names_only_absent_family(self):
+        result = validate_issue_traceability(STORIES_ONLY_BODY)
+        assert result["status"] == "NOT_READY"
+        joined = " ".join(result["missing_fields"])
+        assert "Upstream Requirement Tracing" in joined or "tracing" in joined.lower()
+        assert "Acceptance Outline" in joined or "AO-" in joined
+        assert not any("User Stories" in f for f in result["missing_fields"])
+
+    @pytest.mark.behavioral
+    def test_empty_body_names_all_missing_fields(self):
+        result = validate_issue_traceability("")
+        assert result["status"] == "NOT_READY"
+        joined = " ".join(result["missing_fields"])
+        assert "User Stories" in joined
+        assert "Upstream Requirement Tracing" in joined or "tracing" in joined.lower()
+        assert "Acceptance Outline" in joined or "AO-" in joined
+
+    @pytest.mark.behavioral
+    def test_traceable_body_reports_ready(self):
+        result = validate_issue_traceability(TRACEABLE_BODY)
+        assert result["status"] == "READY"
+        assert result["missing_fields"] == []
+
+    @pytest.mark.behavioral
+    def test_diagnostic_lists_missing_fields_plus_repair_step(self):
+        result = validate_issue_traceability("")
+        assert len(result["missing_fields"]) >= 3
+        assert result["repair_hint"]
+        assert "repair" in result["repair_hint"].lower()
+
+    @pytest.mark.behavioral
+    def test_ao_tokens_without_outline_section_name_section_gap(self):
+        body = (
+            "## User Stories Ledger\n- **US-055-01**: story.\n\n"
+            "## Upstream Requirement Tracing\n- FR-ADHOC-055\n\n"
+            "See **AO-055-01** inline but no outline section.\n"
+        )
+        result = validate_issue_traceability(body)
+        assert result["status"] == "NOT_READY"
+        joined = " ".join(result["missing_fields"])
+        assert "Acceptance Outline" in joined
