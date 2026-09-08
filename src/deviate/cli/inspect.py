@@ -316,14 +316,10 @@ def _render_tasks(
     json_flag: bool = False,
     quiet: bool = False,
 ) -> None:
-    tasks = _tasks_list(
-        status_filter=status_filter,
-    )
+    tasks = _tasks_list(status_filter)
     if json_flag:
         typer.echo(json.dumps(tasks))
-    elif quiet:
-        pass
-    else:
+    elif not quiet:
         table = Table(title="Tasks")
         table.add_column("ID", style="cyan")
         table.add_column("Issue ID")
