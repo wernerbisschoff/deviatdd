@@ -1,0 +1,1 @@
+{"id":"TSK-057-01","issue_id":"ISS-ADH-057","description":"Widen `_kill_process_group` to swallow EPERM on timeout path","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-08T13:17:17.755665Z","security_profile":null,"acceptance_criteria":null}
