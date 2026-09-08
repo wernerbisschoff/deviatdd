@@ -18,10 +18,22 @@ from deviate.state.ledger import (
 )
 
 inspect_app = typer.Typer(no_args_is_help=True)
-issues_app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
-tasks_app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
-inspect_app.add_typer(issues_app, name="issues")
-inspect_app.add_typer(tasks_app, name="tasks")
+issues_app = typer.Typer(
+    no_args_is_help=False,
+    invoke_without_command=True,
+    help="Inspect issues (default: list issues)",
+)
+tasks_app = typer.Typer(
+    no_args_is_help=False,
+    invoke_without_command=True,
+    help="Inspect tasks (default: list tasks)",
+)
+inspect_app.add_typer(
+    issues_app, name="issues", help="Inspect issues (default: list issues)"
+)
+inspect_app.add_typer(
+    tasks_app, name="tasks", help="Inspect tasks (default: list tasks)"
+)
 
 
 @issues_app.command("show")
@@ -185,6 +197,7 @@ def issues_callback(
     json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
     quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
 ) -> None:
+    """Inspect issues (default: list issues)."""
     if ctx.invoked_subcommand is None:
         _render_issues(type_filter, status_filter, json_flag, quiet)
 
@@ -346,6 +359,7 @@ def tasks_callback(
     json_flag: bool = typer.Option(False, "--json", help="Output as JSON array"),
     quiet: bool = typer.Option(False, "--quiet", help="Suppress non-JSON output"),
 ) -> None:
+    """Inspect tasks (default: list tasks)."""
     if ctx.invoked_subcommand is None:
         _render_tasks(status_filter, json_flag, quiet)
 
