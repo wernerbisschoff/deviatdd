@@ -37,9 +37,11 @@ from deviate.core.constitution import extract_commands
 from deviate.core.issues import claim_issue
 from deviate.core.repo import gather_git_state
 from deviate.core.validation import (
+    ISSUE_TRACEABILITY_SECTIONS,
     repair_missing_verification_mode,
     validate_acceptance_contract,
     validate_issue_traceability,
+    validate_sections,
 )
 from deviate.core.worktree import (
     branch_exists_on_remote,
@@ -884,6 +886,13 @@ def _claim_and_setup(issue_id: str, force: bool, dry_run: bool) -> Path:
     return Path(setup_result["worktree_path"])
 
 
+_REPAIR_SECTION_STUBS: dict[str, str] = {
+    "User Stories Ledger": "- **US-055-02**: legacy repair placeholder.\n",
+    "Upstream Requirement Tracing": "- **FR-ADHOC-055**\n",
+    "Acceptance Outline": "- **AO-055-02** legacy repair placeholder.\n",
+}
+
+
 def _check_issue_traceability(issue_file: Path) -> dict[str, object]:
     """Run the shared traceability validator over an issue file body."""
     try:
@@ -895,6 +904,26 @@ def _check_issue_traceability(issue_file: Path) -> dict[str, object]:
             "repair_hint": "repair the issue file so it is readable",
         }
     return validate_issue_traceability(body)
+
+
+def repair_issue_traceability(
+    issue_file: Path, skip: list[str] | None = None
+) -> dict[str, object]:
+    """Insert absent traceability sections, then revalidate the gate."""
+    if "specs" not in issue_file.parts:
+        raise ValueError(f"refusing repair outside specs/: {issue_file}")
+    skipped = set(skip or [])
+    body = issue_file.read_text(encoding="utf-8")
+    missing = validate_sections(body, ISSUE_TRACEABILITY_SECTIONS)
+    to_add = [
+        s for s in ISSUE_TRACEABILITY_SECTIONS if s in missing and s not in skipped
+    ]
+    if to_add:
+        chunks = [body.rstrip("\n") + "\n" if body.strip() else body]
+        for section in to_add:
+            chunks.append(f"\n## {section}\n\n{_REPAIR_SECTION_STUBS[section]}")
+        issue_file.write_text("".join(chunks), encoding="utf-8")
+    return _check_issue_traceability(issue_file)
 
 
 @with_json_quiet
