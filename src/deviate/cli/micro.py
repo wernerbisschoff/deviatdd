@@ -5113,6 +5113,7 @@ def _bind_judge_forward_route(session: SessionState, task_id: str) -> None:
 def _clear_stale_forward_route(session: SessionState) -> None:
     """Drop a forward route that does not belong to the active task/SHA."""
     session.pending_judge_action = ""
+    session.judge_rejected = False
     session.last_judge_verdict = ""
     session.validated_evidence = []
     session.train_feedback = ""
@@ -5197,7 +5198,7 @@ def _recover_red_commit_boundary(
         resolved = _resolve_rewritten_sha(root, candidates[0]) or candidates[0]
         if _is_ancestor(root, resolved, "HEAD"):
             session.red_commit_sha = resolved
-            _clear_judge_retry_gate(session)
+            _invalidate_stale_forward_route(session, task_id)
             _refresh_session_commit_anchors(root, session)
             _log_run(
                 "PHASE_DECISION",
