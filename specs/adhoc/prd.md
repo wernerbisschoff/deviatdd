@@ -779,3 +779,17 @@
 - **Constitution Reference**: `specs/constitution.md` §1 requires session continuity and Git isolation. Source: “Every task loop executes on a clean git branch or worktree.”
 - **Source Anchors**: `src/deviate/prompts/auto/red.md` states: “If a required service (e.g. PostgreSQL) is unavailable, emit `status: \"ERROR\"` with the connection failure.” `src/deviate/cli/micro.py` line 6302 emits `ENV_NOT_READY` with the task id and error.
 - **Authority Rule**: The runner prepares preconditions. The agent writes tests. Missing infrastructure is a signal, never an agent defect.
+
+## FR-ADHOC-053: Concrete external adapter contract coverage
+- **Description**: Plans that name an external SDK or provider adapter split port behavior from concrete transport work. Each concrete adapter ships acceptance criteria and tests against the installed dependency signature. JUDGE rejects fake-only coverage for tasks that claim real provider integration.
+- **Preconditions**: The plan names an external SDK or provider adapter. RED and JUDGE prompts govern test integrity and constitution compliance. The installed dependency is inspectable at task time.
+- **Inputs/Outputs**: Input — a task that claims real provider integration with tests exercising only a fake port. Output — split tasks with concrete adapter acceptance criteria, dependency-signature tests, and a JUDGE rejection for fake-only coverage.
+- **User Stories**:
+  1. US-053-01: As a plan author, I want adapter transport work split from port behavior so that the concrete SDK contract gets its own acceptance criteria. *(Ref: FR-ADHOC-053)*
+  2. US-053-02: As an operator, I want JUDGE to reject fake-only coverage for provider integration tasks so that SDK mismatches surface in the original task. *(Ref: FR-ADHOC-053)*
+- **Acceptance Outline**:
+  1. AC-ADHOC-053-01 / AO-053-01: A plan naming an external adapter carries separate acceptance criteria and tests for the concrete adapter transport, including dependency signature, authentication, and response handling.
+  2. AC-ADHOC-053-02 / AO-053-02: JUDGE rejects a provider-integration task whose tests exercise only the fake port, with feedback naming the missing concrete contract evidence.
+- **Constitution Reference**: `specs/constitution.md` §1 requires Micro-layer scope and session continuity. Source: “Every task loop executes on a clean git branch or worktree.”
+- **Source Anchors**: `src/deviate/prompts/auto/judge.md` states: “mocking the system under test to bypass real behavior” counts as a Test Integrity Violation. `src/deviate/prompts/auto/tasks.md` states: “Split by runtime boundary when one proposed task touches multiple hubs.”
+- **Authority Rule**: The plan splits the boundary. The agent tests the real dependency. JUDGE enforces the split.
