@@ -333,3 +333,23 @@ def validate_source_file(source_file: str, epic_slug: str) -> bool:
     if not parts[3].endswith(".md"):
         return False
     return True
+
+
+def validate_issue_traceability(body: str | None) -> dict[str, object]:
+    """Check issue stories, tracing, and outline plus AO tokens."""
+    required = [
+        "User Stories Ledger",
+        "Upstream Requirement Tracing",
+        "Acceptance Outline",
+    ]
+    missing = validate_sections(body, required)
+    outline = extract_section_body(body or "", "Acceptance Outline")
+    if outline is not None and not _AO_PATTERN.search(outline):
+        missing.append("Acceptance Outline must contain at least one AO-NNN token")
+    if missing:
+        return {
+            "status": "NOT_READY",
+            "missing_fields": missing,
+            "repair_hint": f"repair the issue by adding the missing sections: {', '.join(missing)}",
+        }
+    return {"status": "READY", "missing_fields": [], "repair_hint": ""}
