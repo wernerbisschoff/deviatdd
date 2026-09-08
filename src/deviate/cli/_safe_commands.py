@@ -408,11 +408,11 @@ def _kill_process_group(pid: int, sig: int) -> None:
     machinery has already SIGKILL'd the immediate child. ESRCH means
     the group already exited, also a fine end-state.
     """
-    if pid <= 0:
+    if pid is None or pid <= 0:
         return
     try:
         os.killpg(pid, sig)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return
 
 
