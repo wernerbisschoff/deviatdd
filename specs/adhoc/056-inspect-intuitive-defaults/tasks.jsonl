@@ -1,0 +1,1 @@
+{"id":"TSK-056-01","issue_id":"ISS-ADH-056","description":"Bare inspect issues lists table with flags and error path","status":"RED","execution_mode":"TDD","test_strategy":"unit","created_at":"2026-09-08T12:11:58.773780Z","security_profile":null,"acceptance_criteria":null}

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
@@ -647,3 +648,49 @@ class TestInspectById:
         if isinstance(evidence, dict):
             assert evidence["red"] == "aaa111"
             assert evidence["head"] == "bbb222"
+
+
+class TestBareInspectIssues:
+    """US-056-01 (AC-PLAN-001, AC-PLAN-002): bare issues group lists records."""
+
+    @staticmethod
+    def _seed(tmp_path: Path) -> None:
+        _seed_issues_jsonl(
+            tmp_path,
+            [
+                _make_issue("ISS-F1", type="feature", status="BACKLOG"),
+                _make_issue("ISS-B1", type="bug", status="BACKLOG"),
+            ],
+        )
+
+    @pytest.mark.behavioral
+    def test_bare_issues_matches_list_table(self, tmp_path: Path) -> None:
+        self._seed(tmp_path)
+        with chdir(tmp_path):
+            bare = runner.invoke(cli, ["inspect", "issues"])
+            explicit = runner.invoke(cli, ["inspect", "issues", "list"])
+        assert bare.exit_code == 0, bare.output
+        assert explicit.exit_code == 0, explicit.output
+        assert bare.output == explicit.output
+
+    @pytest.mark.behavioral
+    def test_bare_issues_flags_match_list(self, tmp_path: Path) -> None:
+        self._seed(tmp_path)
+        flags = ["--type", "feature", "--status", "BACKLOG", "--json"]
+        with chdir(tmp_path):
+            bare = runner.invoke(cli, ["inspect", "issues", *flags])
+            explicit = runner.invoke(cli, ["inspect", "issues", "list", *flags])
+        assert bare.exit_code == 0, bare.output
+        assert explicit.exit_code == 0, explicit.output
+        assert bare.output == explicit.output
+        data = json.loads(bare.stdout)
+        assert [e["issue_id"] for e in data] == ["ISS-F1"]
+
+    @pytest.mark.behavioral
+    def test_bare_issues_malformed_fails(self, tmp_path: Path) -> None:
+        ledger = tmp_path / "specs" / "issues.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text("{invalid json line\n", encoding="utf-8")
+        with chdir(tmp_path):
+            result = runner.invoke(cli, ["inspect", "issues"])
+        assert result.exit_code != 0
