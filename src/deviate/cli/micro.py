@@ -1727,6 +1727,14 @@ _NO_FAILING_TEST_FORWARD_ROUTES = frozenset(
     {"continue_refactor", "proceed_to_refactor_no_diff", "skip_refactor"}
 )
 _GREEN_TEST_FAILURE_PREFIX = "The test suite failed after GREEN implementation."
+_RED_MUST_PASS_DETAIL = (
+    "Test passed, expected a failing test "
+    "(no new failing test was produced). Fix the test so it fails "
+    "against the current implementation. If the required behavior "
+    "already exists, declare `failure_kind: already_satisfied` in "
+    "the RED handover manifest so `deviate micro run` adjudicates "
+    "the task as COMPLETED."
+)
 
 
 def _is_green_test_failure(session: SessionState) -> bool:
@@ -2140,18 +2148,19 @@ def _verify_red_worktree_clean(root: Path, tid: str) -> None:
 
 
 def _adjudicate_red_no_failing_test(
-    task: dict,
-    ledger_path: Path,
-    session: SessionState,
-    session_path: Path,
-    c: Console,
+    task: dict | None = None,
+    ledger_path: Path | None = None,
+    session: SessionState | None = None,
+    session_path: Path | None = None,
+    c: Console | None = None,
     *,
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
-    manifest: HandoverManifest,
-    test_result: subprocess.CompletedProcess,
-    red_baseline: list[str],
+    manifest: HandoverManifest | None = None,
+    test_result: subprocess.CompletedProcess | None = None,
+    red_baseline: list[str] | None = None,
     no_judge: bool = False,
+    dry_run: bool = False,
 ) -> SessionState:
     """Adjudicate a RED phase that produced no failing test.
 
@@ -2167,6 +2176,16 @@ def _adjudicate_red_no_failing_test(
     route, ``_require_tdd_declared_regression_files`` owns the files gate.
     Empty ``files`` / ``test_file`` raise ``PhaseFailedError``. EXECUTE,
     IMMEDIATE, and DIRECT stay ungated."""
+    if dry_run:
+        raise KernelError("RedMustPassError", _RED_MUST_PASS_DETAIL)
+    assert task is not None
+    assert ledger_path is not None
+    assert session is not None
+    assert session_path is not None
+    assert c is not None
+    assert manifest is not None
+    assert test_result is not None
+    assert red_baseline is not None
     tid = task.get("id", "?")
     if (manifest.failure_kind or "") == "already_satisfied":
         _require_tdd_declared_regression_files(
@@ -7761,15 +7780,9 @@ def _red_post_kernel(
             "No test command configured and no test project detected",
         )
     if proc.returncode == 0:
-        raise KernelError(
-            "RedMustPassError",
-            "Test passed, expected a failing test "
-            "(no new failing test was produced). Fix the test so it fails "
-            "against the current implementation. If the required behavior "
-            "already exists, declare `failure_kind: already_satisfied` in "
-            "the RED handover manifest so `deviate micro run` adjudicates "
-            "the task as COMPLETED.",
-        )
+        # Shared adjudication guard: dry_run raises RedMustPassError with the
+        # `failure_kind: already_satisfied` detail; no ledger write occurs.
+        _adjudicate_red_no_failing_test(test_result=proc, dry_run=True)
     fmt = _run_format_cmd(root)
     if fmt.returncode != 0:
         if fmt.stderr.strip():
