@@ -95,6 +95,12 @@ def load_template(
         parts.append(style)
 
     # 5.
+    if template_name == "plan":
+        from deviate.prompts.handover import format_handover_checklist
+
+        parts.append(format_handover_checklist())
+
+    # 6.
     phase = _read_resource(_AUTO_DIR, f"{template_name}.md")
     if not phase:
         raise FileNotFoundError(f"Template '{template_name}' not found in {_AUTO_DIR}")

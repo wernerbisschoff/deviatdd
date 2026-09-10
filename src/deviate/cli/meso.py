@@ -50,6 +50,7 @@ from deviate.core.worktree import (
     remove_worktree,
     resolve_start_point,
 )
+from deviate.prompts.handover import emit_plan_handover_checklist
 from deviate.state.config import (
     AgentConfig,
     SessionState,
@@ -1008,6 +1009,7 @@ def _plan_pre(
     except Exception:
         pass
     console.print(f"[green]WORKTREE[/] {worktree_full} [{branch_name}]")
+    emit_plan_handover_checklist()
 
     spec_path: str = ""
     status: str = "READY"
