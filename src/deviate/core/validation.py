@@ -96,9 +96,7 @@ def _data_flow_runtime_errors(content: str) -> list[str]:
     if not local_only and not _has_fenced_sequence_diagram(body):
         errors.append("Data Flow: missing sequenceDiagram or None — local-only")
     if not local_only and _DATA_FLOW_OUTBOUND.search(body) is None:
-        errors.append(
-            "Data Flow: missing Outbound integrations or None — local-only"
-        )
+        errors.append("Data Flow: missing Outbound integrations or None — local-only")
     return errors
 
 
