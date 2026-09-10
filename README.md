@@ -125,7 +125,7 @@ deviate meso run --no-setup --local --issue ISS-001-007
 ```
 /deviate-pr       T001                   # conventional-commit PR; merge appends COMPLETED
 /deviate-review                          # ← Gate 3: comments-only PR scan (not a merge gate)
-/deviate-walkthrough                     # four-look map (brief, tests, production vs checks, command)
+/deviate-walkthrough                     # cover sheet + four-look map (brief, tests, production vs checks, command)
 ```
 
 **Or, run the unattended one-shot pipeline** — the top-level
@@ -219,7 +219,7 @@ style Ex fill:#f5e1e1
 | **Micro · Run** *(agent-internal drain)* | `deviate micro run [task-id] --all` | Completed task commits per the cycle | Agent-internal dispatch — `deviate micro run <task-id>` runs a single task; `deviate micro run --all` drains every PENDING task. Top-level `deviate run` invokes this with `--all` inside the worktree the meso step just created. Forwards `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json`. |
 | **Release** | `/deviate-pr <task-id>` | A conventional-commit PR | Optional pack. Open the PR; on merge, the issue ledger is appended with `COMPLETED`. |
 | **Release** *(Gate 3)* | `/deviate-review` | Comments-only PR scan (optional pack) | **Gate 3**: comments only by default (stdout / GitHub COMMENT). Not a merge gate. Opt-in `--apply` is CRITICAL-only. |
-| **Walkthrough** | `/deviate-walkthrough` | Four-look map (optional pack; no commit) | Brief location, test hunks, production hunks vs named checks, command to run those checks. Does not approve or auto-edit. |
+| **Walkthrough** | `/deviate-walkthrough` | Cover sheet + four-look map (optional pack; no commit) | ≤6-line cover (intent, deviations, evidence, ops), then brief location, test hunks, production hunks vs named checks, command to run those checks. Does not approve or auto-edit. |
 | **Cleanup** | `/deviate-prune` | Spy/impl tests thinned; `plan.md` / `tasks.md` and JSONL ledgers unchanged | Manual honeycomb pass for **one** issue. Drops `spy` / `impl` (marks, name tags, or untagged internal probes); keeps `behavioral` / `ac` and public input-to-output. Never deletes `plan.md`, `tasks.md`, `explore.md`, `prd.md`, or `issues/*.md`. Never touches `issues.jsonl` or `tasks.jsonl`. Manual invoke only — not hooked into COMPLETED, `--all`, or the skill success loop. |
 
 Operational tools (no gate): `/deviate-triage`, `/deviate-constitution`, `/deviate-hotfix`. `/deviate-prune` is the manual honeycomb test-thinning surface (thin CLI `deviate prune pre` / `post`; the slash command commits the cleanup).
@@ -239,7 +239,7 @@ Default setup installs **macro + meso + micro** plus the shared `deviatdd` skill
 | **meso** | Default: worktree + claim, then PLAN → TASKS (spawns the agent). Path A: `deviate meso run --no-setup --local` stays in this clone and skips the remote lock. | Yes — claim, `plan post`, `tasks post`. | `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, `NO_CLAIMABLE_ISSUES`. |
 | **micro** | RED → GREEN → JUDGE → REFACTOR (or EXECUTE). Spawns the agent each phase. `--profile fast` skips **JUDGE and REFACTOR**. `deviate micro run --review` is a **TTY pause before the phase commit**, not `/deviate-review`. Skill argument `review` is an agent loop policy — never pass `--review` from the skill. | Yes — each phase. RED uses `git commit --no-verify`. | `REVIEW_REQUIRES_TTY`, `TRAIN_EXHAUSTED`, `COMMIT_FAILED`. `NO_PENDING_TASKS` (exit 1) means the queue is empty. |
 | **review** | Optional pack. `/deviate-review` is **comments-only** by default. Not a merge gate. | No (unless opt-in `--apply` landed a CRITICAL fix). | `review pre` fail-closes with `COVERAGE_INCOMPLETE`. Missing named checks → `brief incomplete`. Unclaimed plan ACs stay comment input (`uncovered`); not a fail-close. |
-| **walkthrough** | Optional pack. Four-look map: brief location, test hunks, production hunks vs named checks, command to run those checks. | No. | Missing brief / named checks: stop. |
+| **walkthrough** | Optional pack. ≤6-line cover (intent, deviations, evidence, ops) then four-look map: brief location, test hunks, production hunks vs named checks, command to run those checks. | No. | Missing brief / named checks: stop. |
 
 Why each phase exists — and the research citations — live in [`docs/rationale.md`](docs/rationale.md).
 
