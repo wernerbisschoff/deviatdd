@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Explore can attach follow-on work to an existing epic (ADH-060 / #221).** `explore.md` catalogs `## Related Epic Candidates` (or `None observed`) and Status Summary `NEXT_ACTION` may be `attach_existing_epic <slug>`, `new_epic`, or `adhoc`. A human override (`HITL_OVERRIDE`, Pending HITL row, or explore `user_input`) wins. `deviate explore post` persists the route; `research pre` / `adhoc pre` skip a new numbered bucket and the shared adhoc PRD when attaching so the issue lands under that epic's `issues/` and reuses the epic PRD.
+
 - **`deviate plan pre` surfaces a soft 12-point handover checklist on a TTY.** Interactive Plan entry prints the shared “handover ready?” questions without prompting or blocking. Off-TTY, `--json`, `--quiet`, and `meso run` skip the banner (one-line log only). Auto and manual Plan overlays use the same text from `src/deviate/prompts/handover.py`. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`. ([#220](https://github.com/wernerbisschoff/deviatdd/issues/220))
 
 - **Worktree setup runs `mise run setup:integration` when that task is defined.** Worktree create runs `mise trust && mise install && mise run setup`, then `setup:integration` for integration-test repos (test databases, services, `.env.instance`). Repos without the task see no change. The `/deviate-init` contract documents the task.

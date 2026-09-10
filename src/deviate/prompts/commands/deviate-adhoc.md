@@ -40,6 +40,12 @@ The ad-hoc issue describes implementation of requested application behavior in a
 
 2. **Constitutional Pre-Flight**: Check `specs/constitution.md`. If present, extract constraints that govern this task. If absent, note the gap and proceed — ad-hoc issues are exempt from constitutional requirements but should respect them if available.
 
+2.4. **Attach-to-existing-epic**: Read the `deviate adhoc pre` JSON contract (and the latest `specs/explore/<slug>.md` Status Summary). If `attach_existing_epic` is true or `NEXT_ACTION` / `HITL_OVERRIDE` is `attach_existing_epic <NNN-slug>`:
+    - Do **not** append to `specs/adhoc/prd.md` and do **not** write `specs/adhoc/issues/`.
+    - Write the issue under `specs/{epic_slug}/issues/` and reuse that epic's `prd.md` (cite existing FR tokens; do not open a duplicate shared adhoc PRD or a new numbered epic).
+    - If the contract status is `HITL_PENDING_ROUTING`, halt and wait for the human to force attach vs new epic vs adhoc.
+    - Skip step 4 (Shared PRD Lifecycle). Continue from step 2.5 using the attached epic's explore/PRD as discovery context.
+
 2.5. **Existing Explore Check**: Check whether an explore.md already exists for this problem description in either the post-research location (numbered epic dir) or the pre-research staging location:
     - Derive a kebab-case slug from the user's description. **First**, check for `specs/{NNN}-<slug>/explore.md` (the post-research location — `deviate research pre` moves explore.md into the numbered epic dir). If found, read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/{NNN}-<slug>/explore.md"`.
     - If not found in the numbered dir, **fall back** to `specs/explore/<slug>.md` (the pre-research staging location). If found, consume it the same way and note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md (pre-research staging)"`.
@@ -53,7 +59,7 @@ The ad-hoc issue describes implementation of requested application behavior in a
    - Register relevant documentation sources via `libref` (offline-docs workflow per `deviate-architecture` invariant 10). Use `libref list` to check what is already available.
    - Output findings in a `## Discovery Audit` block
 
-4. **Shared PRD Lifecycle**:
+4. **Shared PRD Lifecycle** (skip entirely when attaching to an existing epic — reuse that epic's `prd.md`):
    a) Check if `specs/adhoc/prd.md` exists. If not, create it with a minimal header:
       ```
       # ADHOC_REQUIREMENTS_LEDGER
@@ -73,7 +79,7 @@ The ad-hoc issue describes implementation of requested application behavior in a
          2. AC-ADHOC-NNN-02 / AO-NNN: [Observable error or boundary outcome]
        ```
 
-5. **Issue File Generation**: Allocate `NNN` with the remote-aware rule, then write `specs/adhoc/issues/{NNN}-{slug}.md`. Next `NNN` is `max(ordinals) + 1` over (a) current-branch `specs/issues.jsonl`, (b) `origin/<base_branch>:specs/issues.jsonl` when that blob exists, (c) already-fetched `feat/adhoc/<NNN>-*` refs via `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`. Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs; a local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. The file must contain `## User Stories Ledger`, `## Upstream Requirement Tracing`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order to pass the `plan pre` traceability gate without repair. Those User Stories + ATDD are the user-visible job; RED later encodes them as failing tests. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
+5. **Issue File Generation**: Allocate `NNN` with the remote-aware rule, then write `specs/adhoc/issues/{NNN}-{slug}.md` (or `specs/{epic_slug}/issues/{NNN}-{slug}.md` when attaching). Next `NNN` is `max(ordinals) + 1` over (a) current-branch `specs/issues.jsonl`, (b) `origin/<base_branch>:specs/issues.jsonl` when that blob exists, (c) already-fetched `feat/adhoc/<NNN>-*` refs via `git for-each-ref --format='%(refname:short)' refs/remotes/origin/feat`. Parse `ISS-ADH-NNN` and `ISS-NNN` as one series (last numeric segment). Count only remote-tracking refs; a local-only unpushed `feat/adhoc/<NNN>-*` branch does not reserve. The file must contain `## User Stories Ledger`, `## Upstream Requirement Tracing`, `## Acceptance Outline`, `## Edge Cases and Boundaries`, and `## Performance Constraints` in shard canonical order to pass the `plan pre` traceability gate without repair. Those User Stories + ATDD are the user-visible job; RED later encodes them as failing tests. Reject any Given/When/Then clause with `GHERKIN_LEAK_DETECTED`.
 
 6. **Ledger Registration**: Append exactly ONE newline-delimited JSON record to `specs/issues.jsonl`. The record MUST use this exact `IssueRecord` schema — no extra fields, no alternate names:
 ```json
@@ -110,10 +116,10 @@ Substitute `ISS-NNN`, `NNN-slug.md`, title, and timestamps with real values. Reu
 - **AO-NNN** *(Ref: AC-ADHOC-NNN-02)*: [Observable error or boundary outcome]
 
 ## Shared PRD Append
-Appended FR-ADHOC-NNN section to `specs/adhoc/prd.md`.
+Appended FR-ADHOC-NNN section to `specs/adhoc/prd.md`. Skip this block when attaching — reuse `specs/{epic_slug}/prd.md`.
 
 ## Target Issue Emission
-**File_Target_Path**: `specs/adhoc/issues/{NNN}-{slug}.md`
+**File_Target_Path**: `specs/adhoc/issues/{NNN}-{slug}.md` (or `specs/{epic_slug}/issues/{NNN}-{slug}.md` when attaching)
 
 ````markdown
 ---

@@ -11,6 +11,7 @@ from deviate.cli import cli
 from deviate.state.config import SessionState
 
 from tests.conftest import _git_env
+from tests.explore_artifact import render_explore_md
 
 runner = CliRunner()
 
@@ -189,6 +190,90 @@ class TestResearchExploreMove:
             assert "RESEARCH_HALTED" in result.output
             assert "explore.md" in result.output
             assert not (Path("specs") / "001-ghost").exists()
+
+
+class TestResearchPreAttachRouting:
+    def _seed_attach(
+        self,
+        tmp_path: Path,
+        *,
+        explore_slug: str = "follow-on",
+        epic_slug: str = "006-existing-epic",
+        next_action: str | None = None,
+        hitl_override: str = "none",
+        session_action: str = "",
+        session_epic: str = "",
+        session_hitl: bool = False,
+        create_epic: bool = True,
+    ) -> Path:
+        dot_dir = tmp_path / ".deviate"
+        dot_dir.mkdir(parents=True)
+        session = SessionState(
+            current_phase="EXPLORE",
+            explore_next_action=session_action,
+            attach_epic_slug=session_epic,
+            explore_hitl_pending=session_hitl,
+        )
+        session.save(dot_dir / "session.json")
+        specs = tmp_path / "specs"
+        (specs / "explore").mkdir(parents=True)
+        action = next_action or f"attach_existing_epic `{epic_slug}`"
+        (specs / "explore" / f"{explore_slug}.md").write_text(
+            render_explore_md(
+                next_action=action,
+                attach_epic=epic_slug,
+                hitl_override=hitl_override,
+            ),
+            encoding="utf-8",
+        )
+        (specs / "constitution.md").write_text("# Constitution\n")
+        if create_epic:
+            epic = specs / epic_slug
+            epic.mkdir(parents=True)
+            (epic / "explore.md").write_text("# original epic explore\n")
+            (epic / "prd.md").write_text("# original epic prd\n")
+        return specs
+
+    def test_research_pre_skips_allocate_on_attach(self, tmp_path: Path) -> None:
+        import json
+
+        with chdir(tmp_path):
+            specs = self._seed_attach(tmp_path)
+            result = runner.invoke(cli, ["research", "pre", "--slug", "follow-on"])
+
+        assert result.exit_code == 0, result.output
+        assert "ATTACH_EXISTING_EPIC" in result.output
+        assert not (specs / "001-follow-on").exists()
+        assert not (specs / "007-follow-on").exists()
+        assert (specs / "explore" / "follow-on.md").exists()
+        assert (specs / "006-existing-epic" / "explore.md").read_text() == (
+            "# original epic explore\n"
+        )
+        start = result.output.index("{")
+        end = result.output.rindex("}") + 1
+        contract = json.loads(result.output[start:end])
+        assert contract["attach_existing_epic"] is True
+        assert contract["allocate_bucket"] is False
+        assert contract["epic_slug"] == "006-existing-epic"
+        assert contract["prd_path"].endswith("specs/006-existing-epic/prd.md")
+
+    def test_research_pre_halts_when_attach_epic_missing(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            self._seed_attach(tmp_path, create_epic=False)
+            result = runner.invoke(cli, ["research", "pre", "--slug", "follow-on"])
+
+        assert result.exit_code != 0
+        assert "ATTACH_EPIC_NOT_FOUND" in result.output
+        assert not (tmp_path / "specs" / "001-follow-on").exists()
+
+    def test_research_pre_halts_when_hitl_pending(self, tmp_path: Path) -> None:
+        with chdir(tmp_path):
+            self._seed_attach(tmp_path, hitl_override="pending")
+            result = runner.invoke(cli, ["research", "pre", "--slug", "follow-on"])
+
+        assert result.exit_code != 0
+        assert "HITL_PENDING_ROUTING" in result.output
+        assert not (tmp_path / "specs" / "001-follow-on").exists()
 
 
 class TestResearchPostCommitsExploreMove:

@@ -80,6 +80,9 @@ class TestExploreSiblingFlowInventory:
         assert "destination shape" in text.lower()
         assert "Do not recommend" in text
         assert "Quote paths" in text or "quote paths" in text.lower()
+        assert "## Related Epic Candidates" in text
+        assert "attach_existing_epic" in text
+        assert "None observed" in text
 
     def test_ecosystem_rows_are_catalog_not_required(self) -> None:
         text = _read_auto("explore.md")
@@ -244,6 +247,8 @@ class TestAutoPromptsCanonicalForDerivedManuals:
         assert "UPSTREAM_INCONSISTENT" in prd
         assert "SCOPE_DRIFT" in prd
         assert "## Sibling Flow Inventory" in explore
+        assert "## Related Epic Candidates" in explore
+        assert "attach_existing_epic" in explore
         assert research.count("$ARGUMENTS") == 1
         assert prd.count("$ARGUMENTS") == 1
         assert explore.count("$ARGUMENTS") == 1

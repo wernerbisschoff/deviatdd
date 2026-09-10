@@ -444,8 +444,13 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 
 * **Source:** `src/deviate/cli/macro.py`
 * **Description:** Validate `explore.md` output. Reads the artifact, validates required
-  sections via `validate_artifact()`, runs pre-commit hooks, commits with `docs({NNN}):
-  create explore.md`, and saves the session.
+  sections via `validate_artifact()` (including `## Related Epic Candidates`), parses
+  Status Summary `NEXT_ACTION` / `HITL_OVERRIDE` / `ATTACH_EPIC` (and optional
+  `## Pending HITL Decisions`) into `SessionState.explore_next_action`,
+  `attach_epic_slug`, and `explore_hitl_pending`, runs pre-commit hooks, commits with
+  `docs({NNN}): create explore.md`, and prints attach / new-epic / adhoc next steps.
+  Human override (`HITL_OVERRIDE` or user_input `attach <slug>` / `new epic` / `adhoc`)
+  wins over the agent's `NEXT_ACTION`. Pending HITL does not fail post.
 
 #### `deviate research pre [<epic>]`
 
@@ -453,11 +458,16 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 * **Description:** Validates that `specs/explore/<slug>.md` exists. If `specs/constitution.md`
   is missing, bootstraps it from the `constitution_seed.md` package resource (the macro
   layer owns the placeholder scaffold — `deviate setup` does NOT touch the constitution),
-  then validates the freshly-scaffolded constitution. **Moves** the explore artifact into
-  the new numbered epic directory at `specs/{NNN}-<slug>/explore.md`, transitions session
-  to RESEARCH, and emits the JSON contract (`explore_md_path` pointing at the moved
-  location, `design_target`, `data_model_target`, `is_greenfield`, etc.).
-  `specs/explore/<slug>.md` is removed on success — there is no orphan staging copy.
+  then validates the freshly-scaffolded constitution. When explore routing is
+  `attach_existing_epic`, **does not** call `allocate_feature_bucket()`, **does not**
+  move `explore.md` over the existing epic explore, and emits
+  `attach_existing_epic=true` / `allocate_bucket=false` pointing at the existing
+  epic's `issues/` and `prd.md`. Pending HITL routing halts with `HITL_PENDING_ROUTING`.
+  Otherwise **moves** the explore artifact into the new numbered epic directory at
+  `specs/{NNN}-<slug>/explore.md`, transitions session to RESEARCH, and emits the JSON
+  contract (`explore_md_path` pointing at the moved location, `design_target`,
+  `data_model_target`, `is_greenfield`, etc.). `specs/explore/<slug>.md` is removed on
+  the new-epic path — there is no orphan staging copy.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate research post`
@@ -513,7 +523,12 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 #### `deviate adhoc pre <task-description>`
 
 * **Source:** `src/deviate/cli/adhoc.py`
-* **Description:** Compressed fast-path for low/medium complexity tasks. Runs a complexity
+* **Description:** Compressed fast-path for low/medium complexity tasks. Reads explore
+  `NEXT_ACTION` / session attach fields first. On `attach_existing_epic`, skips the
+  shared `specs/adhoc/prd.md` path and emits `attach_existing_epic=true`,
+  `shared_prd=false`, `issue_dir=specs/{epic}/issues`, `prd_path=specs/{epic}/prd.md`
+  (HIGH complexity does not reject — the work lands under the existing epic). Pending
+  HITL routing halts with `HITL_PENDING_ROUTING`. Otherwise runs a complexity
   gate evaluation (`ComplexityGate.classify()` in `core/complexity.py`) before proceeding.
   On acceptance, performs proportional lightweight codebase exploration, emits a JSON
   contract with `next_ADH_num`, `adhoc_dir`, and `prd_path` for the agent to synthesize a
@@ -1727,6 +1742,7 @@ src/deviate/
 │   ├── constitution.py       # resolve_constitution, extract_commands, validate
 │   ├── contract.py           # emit_contract, load_contract
 │   ├── epic.py               # allocate_feature_bucket, discover_epic, remote-aware feat ordinals
+│   ├── explore_routing.py    # parse explore NEXT_ACTION / HITL attach vs new_epic vs adhoc
 │   ├── issues.py             # claim_issue
 │   ├── prune.py              # manual honeycomb keep/drop inventory + apply
 │   ├── prd.py                # extract_prd_requirements
