@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`/deviate-walkthrough` emits a ≤6-line human cover sheet before the four looks.** Cover is look 0 or a preamble (intent, deviations or `None`, evidence/check command, Ops/ADR/Data Flow or `None`), then the existing looks (brief, test hunks, named-check claims, check command) with one-look-per-turn `ask` pacing. Same this-issue read set; no `closeout.md` and no `/deviate-closeout`. Pinned by `tests/unit/test_cli/test_walkthrough.py::TestWalkthroughPromptCoverSheet`. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`. ([#223](https://github.com/wernerbisschoff/deviatdd/issues/223))
+
 - **Research `data-model.md` `## Data Flow` is a request-flow / runtime scenario.** Agents emit primary-scenario prose, a fenced Mermaid `sequenceDiagram` (or `None — local-only` when explore proves zero externals), an Outbound integrations table (or the same marker), between-hops reliability, and an alternate path. `research post` rejects schema-only Data Flow. `design.md` cross-links to that section; PRD Functional Flow reuses the research sequence. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.
 
 - Trim generated artifacts and their prompts: PRD drops the flow essay, sharding-strategy plan, and duplicate decision logs (target ≤250 lines); plan drops to 5 sections with conditional Data Flow; tasks drops per-task time estimates, detail quotas, and static Universal boilerplate; JUDGE and REFACTOR manifests drop unread fields; explore/research sections turn conditional with row caps.

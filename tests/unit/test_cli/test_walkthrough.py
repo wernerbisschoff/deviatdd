@@ -9,7 +9,11 @@ import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.commands import OPTIONAL_PACKS
 from tests.conftest import _git_env
+
+_WALKTHROUGH_PROMPT = Path("src/deviate/prompts/commands/deviate-walkthrough.md")
+_CLOSEOUT_PROMPT = Path("src/deviate/prompts/commands/deviate-closeout.md")
 
 runner = CliRunner()
 
@@ -144,3 +148,73 @@ class TestWalkthroughPre:
 
         assert result.exit_code == 0, result.stdout
         assert result.stdout.strip() == "SKIP: no changes since main"
+
+
+class TestWalkthroughPromptCoverSheet:
+    """ADH-061 / #223: ≤6-line cover sheet before the four looks (closeout MVP)."""
+
+    @staticmethod
+    def _prompt() -> str:
+        return _WALKTHROUGH_PROMPT.read_text(encoding="utf-8")
+
+    @pytest.mark.behavioral
+    def test_cover_sheet_before_look_1_of_4(self) -> None:
+        text = self._prompt()
+        cover_at = text.lower().find("cover")
+        look1_at = text.find("1/4")
+        assert cover_at != -1, "prompt must name a cover sheet"
+        assert look1_at != -1
+        assert cover_at < look1_at
+        assert "STEP 2" in text
+        step2 = text.split("### STEP 2", 1)[1].split("### STEP 3", 1)[0]
+        assert "COVER" in step2.upper() or "cover" in step2.lower()
+
+    @pytest.mark.behavioral
+    def test_cover_sheet_has_six_line_fields(self) -> None:
+        text = self._prompt()
+        assert "≤6" in text or "6-line" in text or "6 lines" in text
+        assert "Intent" in text
+        assert "Deviation" in text
+        assert "Evidence" in text
+        assert "check command" in text.lower()
+        assert "ADR" in text
+        assert "Data Flow" in text
+        assert "`None`" in text or "or `None`" in text
+        assert "Four looks follow" in text
+
+    @pytest.mark.behavioral
+    def test_cover_is_preamble_or_look_0_then_ask(self) -> None:
+        text = self._prompt()
+        lowered = text.lower()
+        assert "look 0" in lowered or "preamble" in lowered
+        assert "one look per turn" in lowered
+        assert "1/4" in text and "4/4" in text
+        assert "cover + look" in lowered or "fold" in lowered or "preamble" in lowered
+
+    @pytest.mark.behavioral
+    def test_four_looks_remain_visible_and_paced(self) -> None:
+        text = self._prompt()
+        assert "**(a) Brief**" in text
+        assert "**(b) Test hunks**" in text
+        assert "**(c) Named-check claims**" in text
+        assert "**(d) Check command**" in text
+        assert "Present look (a)" in text or "look (a)" in text
+        assert "Two looks in one response is a bug" in text
+        assert "Skip this look" in text
+
+    @pytest.mark.behavioral
+    def test_same_read_set_no_epic_explore_or_prd(self) -> None:
+        text = self._prompt()
+        assert "MUST NOT read unless this brief names those paths" in text
+        assert "epic explore" in text
+        assert "PRD" in text
+        assert "issue_brief_path" in text
+        assert "Do not hunt Explore" in text
+
+    @pytest.mark.behavioral
+    def test_no_closeout_artifact_or_pack(self) -> None:
+        assert not _CLOSEOUT_PROMPT.exists()
+        assert "closeout" not in OPTIONAL_PACKS
+        assert "deviate-closeout" not in {
+            stem for stems in OPTIONAL_PACKS.values() for stem in stems
+        }

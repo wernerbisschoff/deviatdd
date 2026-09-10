@@ -134,10 +134,14 @@ only when such a fix landed. Never auto-apply SUGGESTION or OPPORTUNITY. There
 is no always-on STEP 4.
 
 Alongside the review, `/deviate-walkthrough` (see `src/deviate/cli/walkthrough.py`)
-is the four-look map of the same this-issue read set: (a) where the brief is
-plus this issue's plan AC lines if `plan.md` exists; (b) which hunks are the
-test diff; (c) which production hunks claim which named check; (d) the command
-to run those checks. `deviate walkthrough pre` emits `issue_brief_path`,
+is the four-look map of the same this-issue read set, preceded by a ≤6-line
+human cover sheet (intent, deviations or `None`, evidence/check command,
+Ops/ADR/Data Flow or `None`) as look 0 or a preamble before look 1/4: (a) where
+the brief is plus this issue's plan AC lines if `plan.md` exists; (b) which
+hunks are the test diff; (c) which production hunks claim which named check;
+(d) the command to run those checks. Cover does not hide a look. Closeout MVP
+is this cover sheet — no `closeout.md` and no `/deviate-closeout`.
+`deviate walkthrough pre` emits `issue_brief_path`,
 `plan_path` (null if absent), and classified `test_files` / `production_files`.
 It does not send constitution/prd as default inputs unless this brief names
 those paths. The walkthrough must not reimplement, approve, hide hunks, tell
@@ -666,7 +670,7 @@ The remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
     * Rationale for removal: the system never blocks on human approval. Plan and Tasks still commit their authored artifacts to the worktree for out-of-band review, but execution auto-advances into Micro.
 * **Gate 3: Final Merge Audit (After micro, via `deviate review` / `deviate walkthrough`)**
     * *Trigger:* The operator (or agent) runs the optional `review` / `walkthrough` packs after micro. Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
-    * *Action:* `/deviate-walkthrough` emits the four-look map for THIS issue/PR. `/deviate-review` comments only (stdout and/or GitHub `COMMENT`): named-check checklist + test-weakening + this-issue cross-task drift. A brief with no named checks emits exactly `brief incomplete`. Unclaimed plan-AC tokens are comment input via `uncovered`. Neither command applies, commits, `REQUEST_CHANGES`, or merges.
+    * *Action:* `/deviate-walkthrough` emits a ≤6-line cover sheet (look 0 or preamble) then the four-look map for THIS issue/PR. `/deviate-review` comments only (stdout and/or GitHub `COMMENT`): named-check checklist + test-weakening + this-issue cross-task drift. A brief with no named checks emits exactly `brief incomplete`. Unclaimed plan-AC tokens are comment input via `uncovered`. Neither command applies, commits, `REQUEST_CHANGES`, or merges.
 
 ---
 
