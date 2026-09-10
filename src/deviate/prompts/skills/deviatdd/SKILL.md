@@ -130,7 +130,7 @@ Use this bounded ladder. Do not use repeated retries as diagnosis.
 |---|---|---|
 | Transient agent timeout or model rate-limit; worktree and ledgers are clean | Re-run the same task ID. | Once. Escalate if the same signal returns. |
 | Hook, lint, format, missing import, or typo blocks a commit | Apply only the minimum operational fix. Do not implement task behavior. Report the edit, then re-run the same task ID. | Once after the fix. |
-| Deterministic RED, GREEN, or JUDGE task failure | Do not edit task implementation inline. Dispatch to `/deviate-red`, `/deviate-green`, or `/deviate-judge` with the failing signal. | No automatic retry. |
+| Deterministic RED, GREEN, or JUDGE task failure | Re-run `deviate micro run <TASK_ID>` once — the runner resumes at the failed phase. If the same phase fails again, drive it inline yourself by following `src/deviate/prompts/commands/deviate-<phase>.md` (run `deviate <phase> pre`, do the phase work, run `deviate <phase> post`). Never output `/deviate-green` as an instruction for the operator. | One retry, then one inline drive. |
 | Worktree or session corruption | Use the **Clean-slate retry** gate. It requires explicit approval before destructive commands. | One approved recovery. |
 | Git, ledger, rollback, or internal `src/deviate/...` failure | Treat it as a harness bug. Preserve logs, check for an open issue, then escalate. | No retry unless a documented workaround exists. |
 | Failure ownership is unclear, evidence conflicts, or recovery can lose data | Stop and ask the operator. Include the task ID, command, last error, dirty-file list, and recommended slash command. | No retry. |
@@ -396,7 +396,7 @@ deviate micro run <TASK_ID>
 | `/deviate-prune` | Manual honeycomb pass: classify and thin spy/impl tests for one issue. Never auto-run after COMPLETED, `--all`, or this skill's success loop. Does not delete plan.md / tasks.md. |
 | `/deviate-inspect` | You need a read-only query of the ledger / session / tasks. |
 
-This skill never invokes these on its own — it tells the operator which slash command to run and why, then stops.
+The table below names inline procedures this agent executes itself. Prefer `deviate micro run <TASK_ID>` (runner resumes at the failed phase). Read the phase prompt file and run its pre/work/post sequence only when the retry fails twice. Never stop and tell the operator to run a slash command.
 
 ## What NOT to do
 
