@@ -993,7 +993,7 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
     return preferred
 
 
-_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REFACTOR"}
+_TERMINAL_STATUSES = {"COMPLETED", "FAILED"}
 _ALREADY_DONE_STATUSES = {"COMPLETED"}
 
 
