@@ -89,6 +89,26 @@ class TestExploreCommand:
             assert "EXPLORE_HALTED" in result.output
 
 
+class TestExplorePreFileSlug:
+    def test_explore_pre_derives_slug_from_file_contents(self, tmp_path: Path):
+        with chdir(tmp_path):
+            dot_dir = Path(".deviate")
+            dot_dir.mkdir(parents=True)
+            session = SessionState(current_phase="IDLE")
+            session.save(dot_dir / "session.json")
+            Path("specs").mkdir(parents=True)
+            (Path("specs") / "constitution.md").write_text("# Constitution\n")
+            Path("next-release.md").write_text(
+                "# Offline Context Docs\n\nSearch local docs offline.\n"
+            )
+
+            result = runner.invoke(cli, ["explore", "pre", "next-release.md"])
+
+            assert result.exit_code == 0, result.output
+            assert "specs/explore/offline-context-docs.md" in result.output
+            assert "next-release" not in result.output
+
+
 def _seed_explore_session(root: Path, *, slug: str, body: str) -> None:
     dot_dir = root / ".deviate"
     dot_dir.mkdir(parents=True, exist_ok=True)

@@ -25,7 +25,11 @@ from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact, stage_and_commit
 from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands, resolve_constitution
-from deviate.cli.feature import _derive_slug
+from deviate.cli.feature import (
+    _derive_content_slug,
+    _derive_slug,
+    _resolve_problem_text,
+)
 from deviate.core.epic import (
     _extract_prefix_num,
     _remote_adhoc_ordinals,
@@ -398,7 +402,11 @@ def explore_pre(
     session, session_path = _load_and_transition("EXPLORE")
 
     specs_root = _resolve_specs_root()
-    final_slug = slug or _derive_slug(problem)
+    resolved_problem = _resolve_problem_text(problem)
+    if resolved_problem is not problem:
+        final_slug = slug or _derive_content_slug(resolved_problem)
+    else:
+        final_slug = slug or _derive_slug(problem)
     explore_dir = specs_root / "explore"
     explore_dir.mkdir(parents=True, exist_ok=True)
 
@@ -419,7 +427,7 @@ def explore_pre(
         spec_target_abs=spec_target_abs,
         feature_bucket=final_slug,
         explore_path=spec_target_abs,
-        problem=problem,
+        problem=resolved_problem,
         slug=final_slug,
         bucket_path=str(explore_dir),
         issue_id="",

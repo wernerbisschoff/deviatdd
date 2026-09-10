@@ -18,6 +18,30 @@ def _derive_slug(title: str) -> str:
     return slug
 
 
+def _resolve_problem_text(problem: str) -> str:
+    """Return file contents when ``problem`` names an existing file."""
+    candidate = Path(problem.strip().strip("'\""))
+    if candidate.is_file():
+        try:
+            content = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            return problem
+        if content:
+            return content
+    return problem
+
+
+def _derive_content_slug(text: str, max_words: int = 8) -> str:
+    """Derive a slug from content semantics, never a filename."""
+    for line in text.splitlines():
+        stripped = line.strip().lstrip("#").strip()
+        if stripped:
+            text = stripped
+            break
+    words = re.sub(r"[^a-z0-9]+", " ", text.lower()).split()
+    return "-".join(words[:max_words]) or "explore"
+
+
 def _create_feature_directory(slug: str, repo_path: Path) -> Path:
     spec_dir = repo_path / "specs" / slug
     spec_dir.mkdir(parents=True, exist_ok=True)

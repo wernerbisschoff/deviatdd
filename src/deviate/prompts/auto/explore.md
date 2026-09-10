@@ -66,7 +66,7 @@ Instructions:
 </subagent_blueprint_directory>
 
 <traceability_mandates>
-1. **Verbatim Objective Verification**: Extract the target `{FEATURE_SLUG}` from the pre-script contract. Trace the exploration scope to the feature bucket directory.
+1. **Verbatim Objective Verification**: Extract the target `{FEATURE_SLUG}` from the pre-script contract. Trace the exploration scope to the feature bucket directory. Always derive the slug from the problem-statement content semantics, never from a filename.
 2. **Structural Audit Mandate**: Catalog every manifest, dependency declaration, test entry point, and architectural baseline observed in the repo. No interpretation — only observation.
 3. **Grounding Rule**: Every file-registry row MUST carry a verbatim quote. Rows without one are rejected by the post-script.
 4. **Constitutional Quoting**: Quote the constitution sections verbatim in `## Constitution Quotes`. Do not classify, score, or interpret.
