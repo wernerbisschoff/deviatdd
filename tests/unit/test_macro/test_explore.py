@@ -27,9 +27,7 @@ class TestExploreCommand:
             Path("specs").mkdir(parents=True)
             (Path("specs") / "constitution.md").write_text("# Constitution\n")
 
-            result = runner.invoke(
-                cli, ["explore", "pre", "test problem", "--slug", "test-slug"]
-            )
+            result = runner.invoke(cli, ["explore", "pre", "test problem"])
             assert result.exit_code == 0, result.output
 
             loaded = SessionState.load(dot_dir / "session.json")
@@ -55,9 +53,7 @@ class TestExploreCommand:
             session.save(dot_dir / "session.json")
             # No constitution file — greenfield.
 
-            result = runner.invoke(
-                cli, ["explore", "pre", "test", "--slug", "test-slug"]
-            )
+            result = runner.invoke(cli, ["explore", "pre", "test"])
             assert result.exit_code == 0, result.output
             loaded = SessionState.load(dot_dir / "session.json")
             assert loaded.current_phase == "EXPLORE"
@@ -70,9 +66,7 @@ class TestExploreCommand:
             Path("specs").mkdir(parents=True)
             (Path("specs") / "constitution.md").write_text("# Constitution\n")
 
-            result = runner.invoke(
-                cli, ["explore", "pre", "test", "--slug", "test-slug"]
-            )
+            result = runner.invoke(cli, ["explore", "pre", "test"])
             assert result.exit_code == 0, result.output
 
             loaded = SessionState.load(dot_dir / "session.json")
@@ -82,15 +76,13 @@ class TestExploreCommand:
         with chdir(tmp_path):
             assert not Path(".deviate").exists()
 
-            result = runner.invoke(
-                cli, ["explore", "pre", "test", "--slug", "test-slug"]
-            )
+            result = runner.invoke(cli, ["explore", "pre", "test"])
             assert result.exit_code != 0
             assert "EXPLORE_HALTED" in result.output
 
 
 class TestExplorePreFileSlug:
-    def test_explore_pre_derives_slug_from_file_contents(self, tmp_path: Path):
+    def test_explore_pre_leaves_slug_to_agent(self, tmp_path: Path):
         with chdir(tmp_path):
             dot_dir = Path(".deviate")
             dot_dir.mkdir(parents=True)
@@ -105,7 +97,8 @@ class TestExplorePreFileSlug:
             result = runner.invoke(cli, ["explore", "pre", "next-release.md"])
 
             assert result.exit_code == 0, result.output
-            assert "specs/explore/offline-context-docs.md" in result.output
+            assert "Offline Context Docs" in result.output
+            assert '"slug": ""' in result.output
             assert "next-release" not in result.output
 
 

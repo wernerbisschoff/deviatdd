@@ -201,7 +201,7 @@ class TestParity:
 
         with chdir(tmp_path):
             python_result = runner.invoke(
-                cli, ["explore", "pre", "test parity feature", "--slug", "test-parity"]
+                cli, ["explore", "pre", "test parity feature"]
             )
         if python_result.exit_code != 0:
             pytest.skip(

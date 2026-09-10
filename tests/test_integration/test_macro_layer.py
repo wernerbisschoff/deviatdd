@@ -30,15 +30,13 @@ class TestExplorePre:
 
             result = runner.invoke(
                 cli,
-                ["explore", "pre", "Implement authentication", "--slug", "test-slug"],
+                ["explore", "pre", "Implement authentication"],
             )
             assert result.exit_code == 0, result.output
 
             explore_dir = spec_root / "explore"
             assert explore_dir.is_dir(), f"Explore dir {explore_dir} should exist"
-            assert (explore_dir / "test-slug.md").parent.exists(), (
-                f"Explore file test-slug.md parent {explore_dir} should exist"
-            )
+            assert explore_dir.is_dir()
 
             ledger_path = spec_root / "issues.jsonl"
             assert not ledger_path.exists(), (
@@ -64,10 +62,10 @@ class TestExplorePre:
 
             result = runner.invoke(
                 cli,
-                ["explore", "pre", "No constitution", "--slug", "no-const"],
+                ["explore", "pre", "No constitution"],
             )
             assert result.exit_code == 0, result.output
-            assert "no-const" in result.output
+            assert '"is_greenfield": true' in result.output
 
 
 class TestResearchPre:

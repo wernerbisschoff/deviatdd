@@ -156,9 +156,7 @@ class TestMacroContracts:
             self._setup_git_repo(tmp_path)
             self._setup_minimal_env(tmp_path, session_phase="IDLE")
 
-            result = runner.invoke(
-                cli, ["explore", "pre", "test problem", "--slug", "test-feature"]
-            )
+            result = runner.invoke(cli, ["explore", "pre", "test problem"])
             assert result.exit_code == 0, result.output
 
             contract = self._extract_contract(result.output)
@@ -322,9 +320,7 @@ class TestMacroContracts:
                 tmp_path, session_phase="IDLE", with_constitution=False
             )
 
-            result = runner.invoke(
-                cli, ["explore", "pre", "test problem", "--slug", "test-feature"]
-            )
+            result = runner.invoke(cli, ["explore", "pre", "test problem"])
             assert result.exit_code == 0, result.output
 
             contract = self._extract_contract(result.output)

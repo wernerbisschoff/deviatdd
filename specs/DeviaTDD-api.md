@@ -425,20 +425,20 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 
 **Active Domain Discipline** is enforced at HITL gates: the macro phases that interact with the human (`/deviate-research` Gate 1, `/deviate-prd` Ambiguity Interrogation) actively term-challenge against the upstream glossary, sharpen fuzzy language, stress-test with concrete edge-case scenarios, and update the relevant artifact (`design.md`, `data-model.md`, `prd.md`) inline as terms resolve — not as a passive sign-off step.
 
-#### `deviate explore pre <problem> [--slug]`
+#### `deviate explore pre <problem>`
 
 * **Source:** `src/deviate/cli/macro.py`
-* **Description:** Allocate a feature bucket and register a scratch ledger entry. On a
-  non-greenfield project (constitution present), validates the constitution. Transitions
-  session to EXPLORE, allocates the bucket via `allocate_feature_bucket()`, appends a DRAFT
-  issue record, and emits a JSON contract to stdout (spec_target, feature_dir, issue_id,
-  `is_greenfield`, etc.). For an unnumbered slug, `allocate_feature_bucket()` sets the next
-  epic number to `max(local numbered specs dirs ∪ remote feat/<NNN>-* prefixes) + 1` from
-  already-fetched `refs/remotes/origin/feat`. A numbered slug such as `005-acceptance-gates`
-  stays idempotent. Local-only unpushed feat branches do not reserve. On a **greenfield**
-  project (no `specs/constitution.md`), `_validate_constitution` is skipped — the contract
-  reports `is_greenfield=true` so the downstream `/research` phase knows to bootstrap the
-  constitution.
+* **Description:** Create the `specs/explore/` staging dir and transition the
+  session to EXPLORE. On a non-greenfield project (constitution present), validates
+  the constitution. When `<problem>` names an existing file, the file contents are
+  materialized into the contract `problem` field. The pre-script never determines
+  the explore slug — all slug fields (`slug`, `feature_slug`, `feature_bucket`,
+  `spec_target`) are emitted empty and the agent derives the slug from the content
+  semantics, writing the artifact to `specs/explore/<slug>.md`. Emits a JSON contract
+  to stdout (explore staging dir path, feature_dir, issue_id, `is_greenfield`, etc.).
+  On a **greenfield** project (no `specs/constitution.md`), `_validate_constitution` is
+  skipped — the contract reports `is_greenfield=true` so the downstream `/research`
+  phase knows to bootstrap the constitution.
 * **Common Flags:** `--json`, `--quiet`
 
 #### `deviate explore post`

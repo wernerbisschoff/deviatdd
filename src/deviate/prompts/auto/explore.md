@@ -66,7 +66,7 @@ Instructions:
 </subagent_blueprint_directory>
 
 <traceability_mandates>
-1. **Verbatim Objective Verification**: Extract the target `{FEATURE_SLUG}` from the pre-script contract. Trace the exploration scope to the feature bucket directory. Always derive the slug from the problem-statement content semantics, never from a filename.
+1. **Verbatim Objective Verification**: Derive `{FEATURE_SLUG}` yourself from the problem-statement content semantics — first meaningful heading or topic, kebab-case, ≤8 words — never from a filename. When the problem statement names a file, read it first and slug its contents. The pre-script contract leaves all slug fields empty.
 2. **Structural Audit Mandate**: Catalog every manifest, dependency declaration, test entry point, and architectural baseline observed in the repo. No interpretation — only observation.
 3. **Grounding Rule**: Every file-registry row MUST carry a verbatim quote. Rows without one are rejected by the post-script.
 4. **Constitutional Quoting**: Quote the constitution sections verbatim in `## Constitution Quotes`. Do not classify, score, or interpret.
@@ -78,7 +78,7 @@ Instructions:
 
 <step id="contract_loaded">
 Available context: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `spec_target`, `constitution_path`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`.
-Read `<user_input>` when present. A human routing override (`attach <epic-slug>`, `new epic`, or `adhoc`) is written into Status Summary `HITL_OVERRIDE` — it is not an architecture recommendation.
+Read `<user_input>` when present. The contract slug fields (`feature_slug`, `spec_target`, `slug`) arrive empty — you set them by deriving the slug (see traceability mandate 1). A human routing override (`attach <epic-slug>`, `new epic`, or `adhoc`) is written into Status Summary `HITL_OVERRIDE` — it is not an architecture recommendation.
 </step>
 
 <step id="constitution_reading">
@@ -107,7 +107,7 @@ Merge fragments into the final output. Enforce relative paths and verbatim evide
 </step>
 
 <step id="single_explore_md_output">
-Write the completed exploration artifact to `<spec_target>`. This is a markdown document describing what EXISTS — not code, tests, configs, or scripts.
+Write the completed exploration artifact to `specs/explore/<slug>.md` using your derived slug. This is a markdown document describing what EXISTS — not code, tests, configs, or scripts.
 </step>
 
 <step id="post_orchestrated">
@@ -193,9 +193,9 @@ EVERY emitted row MUST carry its verbatim quote excerpt. Rows without a verbatim
 | Metric | Value |
 | :--- | :--- |
 | STATUS | SUCCESS |
-| EXPLORE_SLUG | <value from contract> |
+| EXPLORE_SLUG | <your derived slug> |
 | GIT_BRANCH | <value from contract> |
-| SPEC_TARGET | <relative path from contract> |
+| SPEC_TARGET | specs/explore/<your derived slug>.md |
 | NEXT_ACTION | `attach_existing_epic` `<NNN-slug>` / `new_epic` (`/deviate-research`) / `adhoc` (`/deviate-adhoc`) — see `## Scope Sizing` |
 | ATTACH_EPIC | `<NNN-slug>` when NEXT_ACTION is attach_existing_epic; otherwise empty |
 | HITL_OVERRIDE | `none` / `pending` / `attach_existing_epic` `<NNN-slug>` / `new_epic` / `adhoc` — human force-route; wins over NEXT_ACTION |

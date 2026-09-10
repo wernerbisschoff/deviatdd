@@ -25,11 +25,7 @@ from deviate.core.agent import AgentBackend, AgentSubprocessError
 from deviate.core.commit import commit_artifact, stage_and_commit
 from deviate.core.convention import format_commit_message
 from deviate.core.constitution import extract_commands, resolve_constitution
-from deviate.cli.feature import (
-    _derive_content_slug,
-    _derive_slug,
-    _resolve_problem_text,
-)
+from deviate.cli.feature import _resolve_problem_text
 from deviate.core.epic import (
     _extract_prefix_num,
     _remote_adhoc_ordinals,
@@ -392,9 +388,8 @@ explore_app = typer.Typer(no_args_is_help=True, help="Explore phase commands")
 @with_json_quiet
 def explore_pre(
     problem: str = typer.Argument(..., help="Problem description"),
-    slug: str | None = typer.Option(None, "--slug", help="Explore slug"),
 ) -> None:
-    """Allocate explore directory and register scratch entry"""
+    """Create the explore staging dir; the agent derives the slug from content"""
     const_cmds = _resolve_constitution_commands()
     if const_cmds.get("constitution_path"):
         _validate_constitution("EXPLORE")
@@ -403,32 +398,26 @@ def explore_pre(
 
     specs_root = _resolve_specs_root()
     resolved_problem = _resolve_problem_text(problem)
-    if resolved_problem is not problem:
-        final_slug = slug or _derive_content_slug(resolved_problem)
-    else:
-        final_slug = slug or _derive_slug(problem)
     explore_dir = specs_root / "explore"
     explore_dir.mkdir(parents=True, exist_ok=True)
-
-    spec_target_rel = f"specs/explore/{final_slug}.md"
-    spec_target_abs = str((explore_dir / f"{final_slug}.md").resolve())
+    explore_dir_abs = str(explore_dir.resolve())
     console.print(f"[green]EXPLORE_DIR_CREATED[/] {explore_dir}")
 
     _emit_contract(
         "EXPLORE",
         session,
         session_path,
-        epic_id=final_slug or "",
+        epic_id="",
         is_greenfield=_resolve_greenfield_flag(const_cmds),
-        feature_slug=final_slug,
+        feature_slug="",
         feature_dir=str(explore_dir),
         specs_directory=str(specs_root),
-        spec_target=spec_target_rel,
-        spec_target_abs=spec_target_abs,
-        feature_bucket=final_slug,
-        explore_path=spec_target_abs,
+        spec_target="",
+        spec_target_abs="",
+        feature_bucket="",
+        explore_path=explore_dir_abs,
         problem=resolved_problem,
-        slug=final_slug,
+        slug="",
         bucket_path=str(explore_dir),
         issue_id="",
     )

@@ -31,17 +31,6 @@ def _resolve_problem_text(problem: str) -> str:
     return problem
 
 
-def _derive_content_slug(text: str, max_words: int = 8) -> str:
-    """Derive a slug from content semantics, never a filename."""
-    for line in text.splitlines():
-        stripped = line.strip().lstrip("#").strip()
-        if stripped:
-            text = stripped
-            break
-    words = re.sub(r"[^a-z0-9]+", " ", text.lower()).split()
-    return "-".join(words[:max_words]) or "explore"
-
-
 def _create_feature_directory(slug: str, repo_path: Path) -> Path:
     spec_dir = repo_path / "specs" / slug
     spec_dir.mkdir(parents=True, exist_ok=True)
