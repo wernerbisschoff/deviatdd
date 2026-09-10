@@ -841,3 +841,20 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-057-01 / AO-057-01: Timed-out run whose process group raises PermissionError returns exit code 124 with partial output
   2. AC-ADHOC-057-02 / AO-057-02: ESRCH plus invalid-pid cleanup behavior stays unchanged
+
+## FR-ADHOC-058: Opt-in /deviate-converge pack after Micro, before PR
+- **Description**: Add an opt-in Converge pack (`/deviate-converge` plus `deviate converge pre|post`) that assesses this issue's present-state code against the issue brief, plan AC-PLAN, and tasks after Micro drain, appends Convergence tasks for gaps, and re-enters Micro until clean — then walkthrough, review, and `/deviate-pr`.
+- **Preconditions**: `OPTIONAL_PACKS` already classifies `pr` / `review` / `walkthrough`; this issue has a brief, `plan.md` Acceptance Contract, and `tasks.md` plus ledger; `append_task_record` is the only task-ledger write path.
+- **Inputs/Outputs**: Input is this issue brief/AO, `AC-PLAN-*`, tasks plus ledger IDs/status, constitution MUST (if filled), and in-scope code. Output is either byte-unchanged `tasks.md` plus a converged report, or one appended `## Phase N: Convergence` section with PENDING `TSK-*` rows.
+- **User Stories**:
+  1. US-058-01: As an operator, I want Converge installed only when I select the `converge` pack so default setup and `deviate run` stay unchanged
+  2. US-058-02: As a Converge agent, I want a bounded read set so I do not ingest epic explore or leftover research
+  3. US-058-03: As an operator, I want gap findings appended as Convergence tasks via the ledger CLI so I can re-enter Micro without rewriting existing work
+  4. US-058-04: As an operator, I want findings classified as missing, partial, contradicts, or unrequested, and a clean run to leave `tasks.md` byte-unchanged
+  5. US-058-05: As an operator, I want Converge after Micro drain and before `/deviate-pr` so walkthrough and review still run
+- **Acceptance Outline**:
+  1. AC-ADHOC-058-01 / AO-058-01: Default setup does not install Converge; `deviate run` does not auto-invoke it in MVP
+  2. AC-ADHOC-058-02 / AO-058-02: Converge reads this issue brief, plan AC-PLAN, tasks, constitution MUST, and in-scope code — not epic explore or leftover research
+  3. AC-ADHOC-058-03 / AO-058-03: Gaps append one Convergence phase plus PENDING ledger rows; never rewrite tasks or edit application code
+  4. AC-ADHOC-058-04 / AO-058-04: Findings use missing|partial|contradicts|unrequested; clean path leaves `tasks.md` byte-unchanged
+  5. AC-ADHOC-058-05 / AO-058-05: Operator path is Micro drain → converge → (re-Micro if needed) → walkthrough → review → `/deviate-pr`
