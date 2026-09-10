@@ -238,6 +238,7 @@ class TestSetupPacks:
             "deviate-merge",
             "deviate-review",
             "deviate-walkthrough",
+            "deviate-converge",
             "deviate-html",
             "deviate-hotfix",
             "deviate-triage",
@@ -325,6 +326,7 @@ class TestSetupPacks:
         for omitted in (
             "deviate-review",
             "deviate-walkthrough",
+            "deviate-converge",
             "deviate-html",
             "deviate-hotfix",
             "deviate-triage",

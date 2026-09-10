@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in Converge pack (`ISS-ADH-058` / #219).** `deviate setup --packs converge` installs `/deviate-converge` plus `deviate converge pre|post` (same class as `pr` / `review` / `walkthrough`; not in default setup). After this issue's Micro drain and before PR, Converge assesses present-state code against this issue brief/AO, `plan.md` AC-PLAN, `tasks.md`, and filled constitution MUST. Gaps append `## Phase N: Convergence` and PENDING `TSK-*` via `append_task_record`; a clean run leaves `tasks.md` byte-unchanged and reports `CONVERGED`. `deviate run` continues into that tail when the pack is installed or `--converge` is passed, re-draining Micro until clean. The `deviatdd` skill drives `deviate run` until happy/converged; walkthrough, review, and PR stay outside that loop. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.
+
 ### Changed
 
 - **`/deviate-walkthrough` emits a ≤6-line human cover sheet before the four looks.** Cover is look 0 or a preamble (intent, deviations or `None`, evidence/check command, Ops/ADR/Data Flow or `None`), then the existing looks (brief, test hunks, named-check claims, check command) with one-look-per-turn `ask` pacing. Same this-issue read set; no `closeout.md` and no `/deviate-closeout`. Pinned by `tests/unit/test_cli/test_walkthrough.py::TestWalkthroughPromptCoverSheet`. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`. ([#223](https://github.com/wernerbisschoff/deviatdd/issues/223))

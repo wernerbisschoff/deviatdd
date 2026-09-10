@@ -1,48 +1,49 @@
 ---
 name: deviatdd
-description: Prepare missing Meso artifacts with idempotent deviate meso run, then run deviate micro run one task at a time until NO_PENDING_TASKS; inspect and triage each result. Optional review argument pauses after each successful task for a human look.
+description: Drive deviate run until this issue is happy/converged (meso if needed, micro drain, optional Converge tail). Inspect and triage failures. Optional review argument pauses after a successful run for a human look. Walkthrough, review, and PR stay outside the until-happy loop.
 category: deviatdd-tooling
-version: 3.0.0
+version: 3.1.0
 ---
 
-# deviatdd — Per-task micro orchestrator
+# deviatdd — Until-happy `deviate run` driver
 
-This skill runs `deviate micro run` (bare, no task ID) on repeat. The runner picks the next unchecked task from `tasks.md` and runs it; the agent re-invokes the same command on each iteration. The loop terminates when the runner exits with `NO_PENDING_TASKS`. When a failure escapes micro's scope, the skill points you at the canonical slash command (see **Dispatch to slash commands** below) — it does not act inline.
+This skill drives **`deviate run`** until this issue is happy. Do **not** explicitly chain `deviate meso run` then `deviate micro run`. `deviate run` already prepares Meso when needed, drains Micro, and — when the `converge` pack is installed or the operator passed `--converge` — continues into Converge. If Converge appends tasks, `deviate run` drains Micro again until Converge is clean. Stop when the output is **CONVERGED**, or **NO_PENDING** / empty queue after a clean Converge (`tasks.md` byte-unchanged). When a failure escapes that loop, point at the canonical slash command (see **Dispatch to slash commands** below) — do not act inline.
 
-**Default invoke** (no skill argument): after exit 0, immediately re-invoke `deviate micro run` until `NO_PENDING_TASKS`. **Review invoke** when `$ARGUMENTS` contains the token `review`, or the operator said `/deviatdd review` / "deviatdd with review": after each successful `deviate micro run`, STOP. Show the task id and the commits just made. Wait for the human to continue. Then run the next `deviate micro run`. Never pass `--review` or `--all` to the runner — this skill's `review` argument is an agent loop policy, not a CLI flag. Failure-path triage is the same in both modes.
+**Default invoke** (no skill argument): run `deviate run` (add `--converge` when the operator asked or the converge pack is installed). If the output is `CONVERGE_READY`, run `/deviate-converge` (`deviate converge pre` → assess → `deviate converge post`), then re-invoke `deviate run` if tasks were appended. If `CONVERGED` or `NO_PENDING` after a clean Converge, stop happy. **Review invoke** when `$ARGUMENTS` contains the token `review`, or the operator said `/deviatdd review` / "deviatdd with review": after a successful until-happy `deviate run`, STOP for a human look. Never pass `--review` or `--all` to the runner — this skill's `review` argument is an agent loop policy, not a CLI flag. Walkthrough, `/deviate-review`, and `/deviate-pr` stay **outside** this until-happy loop.
 
 
-## First action: prepare Meso, then run Micro
+## First action: drive `deviate run` until happy
 
-Run this command first:
+Run this command first (worktree / issue discovery included):
 
 ```bash
-deviate meso run
+deviate run
 ```
 
-Set the bash tool's `timeout` parameter on this call. Meso spawns up to two agent phases (PLAN, then TASKS), each bounded at `timeout_seconds` (default 1800s) via `resolve_agent_deadline` (`src/deviate/state/config.py`), so a cold run needs **`timeout: 3660`** (2 × 1800s + 60s buffer).
+If the operator selected the converge pack or asked for Converge, use:
 
-`deviate meso run` owns issue discovery, Specify, Plan, Tasks, and resume decisions.
-Do not inspect `plan.md` or `tasks.md` manually before this command.
+```bash
+deviate run --converge
+```
 
-The Meso runner is idempotent inside an existing feature worktree:
+Set the bash tool's `timeout` parameter. A cold run may spawn Meso (Plan + Tasks, each up to `timeout_seconds`, default 1800s) plus Micro cycles, so use **`timeout: 9000`** unless the slice is already prepared.
+
+`deviate run` owns Meso (issue discovery, Specify, Plan, Tasks, resume) and Micro drain. Do not inspect `plan.md` or `tasks.md` manually before this command. Do not chain Meso then Micro as two separate commands.
+
+Meso inside `deviate run` is idempotent inside an existing feature worktree:
 
 - Missing `plan.md` and `tasks.md`: run Plan, then Tasks.
 - Valid `plan.md` with no `tasks.md`: skip Plan and resume at Tasks.
 - Valid `plan.md` and non-empty `tasks.md`: emit `MESO_ALREADY_COMPLETE`.
-- Invalid existing Plan or empty Tasks: stop without overwriting the artifact.
+- Invalid existing Plan or empty Tasks: stop without overwriting the artifact (`MESO_PLAN_INVALID` / `MESO_TASKS_INVALID`).
 
-From `main` or `master`, Meso claims the next issue and creates its linked worktree.
-Use the returned worktree path for all Micro commands.
-Inside a linked `feat/...` worktree, Meso skips Specify and resumes there.
+From `main` or `master`, the run claims the next issue and creates its linked worktree. Use that worktree for follow-up commands. Inside a linked `feat/...` worktree, Meso skips Specify and resumes there.
 
-Stop if Meso exits non-zero. Report `MESO_PLAN_INVALID`, `MESO_TASKS_INVALID`, or the exact failure.
-Do not start Micro after a Meso failure.
-
-After Meso succeeds or emits `MESO_ALREADY_COMPLETE`, run `deviate micro run` in the returned worktree.
+Stop if `deviate run` exits non-zero (other than a documented handoff you will continue). Report the exact token (`MESO_PLAN_INVALID`, `TASK_FAILED`, `CONVERGE_NOT_READY`, …).
 
 Skip pre-run code exploration — meso owns preparation.
 Micro owns RED, GREEN, JUDGE, and REFACTOR.
+Converge (opt-in pack) assesses this issue after drain and may append Convergence tasks.
 
 ## Code change policy
  
@@ -57,9 +58,9 @@ The only permitted changes are:
  
 By default, do not edit the project's `src/`, `tests/`, `specs/`, or other files touched by the active task. The explicit scope-correction exception overrides that default only for the named specification artifacts.
 
-## Per-task stepping loop
+## Until-happy stepping loop
 
-Run tasks one at a time — never `--all`. **Default invoke** (no argument) **loops until the queue is empty**: re-invoke the bare `deviate micro run` after each success; any exit 0 other than `NO_PENDING_TASKS` means ONE task completed, not a drained queue.
+Drive **`deviate run`** — never invent a second top-level runner. **Default invoke** (no argument) **loops until happy/converged**: re-invoke `deviate run` after Converge appends tasks; stop on `CONVERGED` or `NO_PENDING` after a clean Converge. Walkthrough / review / PR are not part of this loop.
 
 ### Source of truth: `tasks.md` (NOT the ledger)
 
@@ -69,10 +70,13 @@ The micro runner reads from two distinct artifacts, and the right one differs by
 - **`specs/<EPIC>/<ISSUE>/tasks.jsonl`** — the **append-only event ledger**. Each row is a phase transition (PENDING, RED, GREEN, JUDGE, REFACTOR, COMPLETED, FAILED). The ledger only knows about tasks that have already been started. Do NOT use `deviate inspect tasks list --status PENDING` to discover the queue — that reads the ledger and returns `[]` while unchecked tasks in `tasks.md` still exist. The ledger is for inspecting the history and current status of already-started tasks; it is NOT the source of truth for "what's next".
 
 ```bash
-# Canonical loop — bare command, no task ID. Resolves the next unchecked task from tasks.md.
-deviate micro run
+# Canonical loop — one command. Meso if needed, Micro drain, optional Converge tail.
+deviate run
 
-# If the operator pinned a specific task:
+# Force the Converge tail even if the pack was not detected in this worktree:
+deviate run --converge
+
+# If the operator pinned a specific leftover task (triage only, not the happy path):
 deviate micro run <TASK_ID>
 ```
 
@@ -92,8 +96,10 @@ If the timeout fires, the task is still in the ledger; the next repeat invocatio
 
 Exit code 0 has two valid outcomes. Read the output before you decide:
 
-- `NO_PENDING_TASKS`: the queue is empty. Stop.
-- A task completed: **Default invoke:** **Do NOT stop here** — **MUST re-invoke** `deviate micro run`. **Review invoke:** show the task ID and commits, then wait for the human.
+- `CONVERGED` or `NO_PENDING` after a clean Converge: the issue is happy. Stop.
+- `CONVERGE_READY`: run `/deviate-converge`, then **MUST re-invoke** `deviate run` if `post` appended tasks. If `post` reports CONVERGED, stop happy.
+- `NO_PENDING_TASKS` / empty queue and Converge is not in this run: the queue is empty. Stop (pack not installed).
+- A task completed inside a pinned `deviate micro run` triage: **Default invoke:** **Do NOT stop here** — **MUST re-invoke** `deviate run` (or the pinned micro command if still unblocking). **Review invoke:** show the task ID and commits, then wait for the human.
 
 If the command exits non-zero, inspect the per-task transcript before
 deciding how to proceed:
@@ -135,20 +141,21 @@ If a bad task commit needs rollback, use `git revert <SHA>`, then re-run the tas
 
 
 
-### Step 4: Loop until the queue is empty
+### Step 4: Loop until happy / converged
 
-**Default invoke only.** After every successful task (or after Step 3 decides to retry), re-invoke `deviate micro run`. The loop terminates only when the runner emits `NO_PENDING_TASKS` (exit 0):
+**Default invoke only.** After every successful `deviate run` (or after Step 3 decides to retry), continue until the issue is happy:
 
 ```bash
-# Termination check — the runner emits NO_PENDING_TASKS when tasks.md has no unchecked `[ ]` tasks.
-deviate micro run
-# Exit code 0, output: [yellow]NO_PENDING_TASKS[/]
+# Termination — deviate run emitted CONVERGED, or NO_PENDING after a clean Converge.
+deviate run
+# Happy: CONVERGED  |  NO_PENDING after converge post left tasks.md byte-unchanged
 ```
 
-- If the runner emits `NO_PENDING_TASKS` (exit 0), the queue is drained — emit the skill's output contract and stop.
-- If the runner exits 0 after completing a task, re-invoke `deviate micro run` for the next unchecked task. Repeat indefinitely.
+- If the runner emits `CONVERGED`, or `NO_PENDING` after Converge reported clean, stop — emit the skill's output contract.
+- If the runner emits `CONVERGE_READY`, run `/deviate-converge` then re-invoke `deviate run` when tasks were appended.
+- If the runner exits 0 after a Micro-only drain (pack not installed, no `--converge`), stop. Do not invent Converge.
 
-**Review invoke skips this step after a success** — resume here only when the human continues or Step 3 ordered a retry.
+**Review invoke skips this step after a success** — resume here only when the human continues or Step 3 ordered a retry. Never start `/deviate-walkthrough`, `/deviate-review`, or `/deviate-pr` inside this loop.
 
 ---
 ---
@@ -213,21 +220,21 @@ This skill accepts an optional **skill argument** (not a CLI flag): `review` in 
 # or: the operator said "deviatdd with review"
 ```
 
-The spawned runner command is **always** the bare `deviate micro run` (plus optional flags from the list below). **Do not pass `--review` or `--all` into the runner.**
+The spawned runner command is **`deviate run`** (plus `--converge` when the pack or operator requires it). **Do not pass `--review` or `--all` into the runner.** Pinned-task triage may use `deviate micro run <TASK_ID>` only after a failure.
 
 ```bash
-# Default: bare command, on repeat. The runner picks the next unchecked task from tasks.md.
-deviate micro run
+# Default: until-happy driver.
+deviate run
 
-# Fast profile: 2 phases (RED, GREEN), no JUDGE / REFACTOR — only for very simple slices.
-# Set the bash tool's timeout per the budget in Per-task stepping loop (timeout: 5400).
+# Converge tail (pack installed or operator asked).
+deviate run --converge
+
+# Fast profile on a pinned leftover task (triage only).
+# Set the bash tool's timeout per the budget in Until-happy stepping loop (timeout: 5400).
 deviate micro run --profile fast
-
-# Pinned task: the operator gave a specific ID.
-deviate micro run <TASK_ID>
 ```
 
-Every PENDING task gets its own invocation so the agent can inspect the result and decide whether to advance.
+Re-invoke `deviate run` until CONVERGED or NO_PENDING after a clean Converge.
 
 ## Error triage table
 
@@ -236,7 +243,7 @@ diagnostic, and the next action.
 
 | Failure class | Diagnostic | Next action |
 |---|---|---|
-| `NO_PENDING_TASKS` | micro emits `[yellow]NO_PENDING_TASKS[/]` and exits 0 | Nothing to do — the queue is empty. |
+| `NO_PENDING_TASKS` / `CONVERGED` | run or micro emits empty-queue / CONVERGED and exits 0 | Happy if Converge was clean or the pack is off. If `CONVERGE_READY`, run `/deviate-converge` first. |
 | Single task stuck in `FAILED` | micro prints `TASK_FAILED` for one task and exits non-zero | Inspect `.deviate/logs/<ISSUE_ID>/<TASK_ID>.log`. If a previous RED was rolled back, run `/deviate-red` (or `/deviate-green` / `/deviate-refactor`) on the task directly. If the failure looks like a deviatdd harness bug, file a deviatdd issue (see **Filing deviatdd issues** below). |
 | `MERGE_CONFLICT` during `deviate merge` between micro runs | git reports conflicts in `specs/issues.jsonl` / `specs/**/tasks.jsonl` | Do NOT resolve manually — the append-only ledgers are union-merged via `.gitattributes`. Surface the conflict to the operator and dispatch to `/deviate-merge` or `/squash-merge`. |
 | Pre-commit hook failure | `git commit` exits non-zero with hook stderr | Read hook stderr verbatim. Fix the underlying issue (lint / format / type / test). Do NOT pass `--no-verify`. Retry the task. |
@@ -383,6 +390,7 @@ deviate micro run <TASK_ID>
 | `/deviate-refactor` | You need to drive the REFACTOR phase by hand. |
 | `/deviate-judge` | You need to drive the JUDGE phase by hand (e.g. confirm a previously rolled-back judge). |
 | `/deviate-merge` | The micro queue is drained and you need to land the worktree branch. |
+| `/deviate-converge` | After Micro drain, assess this issue vs brief/plan/tasks and append gap tasks or report CONVERGED. Opt-in pack. Inside the until-happy loop when `CONVERGE_READY`. |
 | `/deviate-pr` | The branch is merged locally and you need to open / merge the PR. |
 | `/deviate-execute` | A non-TDD task is blocking the queue and needs DIRECT execution. |
 | `/deviate-hotfix` | A production-grade bug needs a one-shot fix outside the normal task flow. |
@@ -406,9 +414,10 @@ This skill never invokes these on its own — it tells the operator which slash 
 - Never `--no-verify` on commits.
 - Never auto-run `/deviate-prune` after a success — prune is a manual,
   one-issue pass, never part of this skill's loop.
-- Never wrap `/deviate-meso` in this skill — meso has its own
-  orchestrator with its own safety gates; duplicating it here would
-  bypass them.
+- Never wrap `/deviate-meso` or `/deviate-micro` as the happy path —
+  drive `deviate run` until happy/converged instead.
+- Never start `/deviate-walkthrough`, `/deviate-review`, or `/deviate-pr`
+  inside the until-happy loop.
 
 ## Output contract
 
@@ -422,7 +431,7 @@ This skill never invokes these on its own — it tells the operator which slash 
  deviatdd_issue_filed: <issue-url | null>}
 ```
 
-- `DRAINED` — queue empty, no errors.
+- `DRAINED` — queue empty and Converge clean (or pack not installed), no errors.
 - `STUCK` — one or more tasks failed; clean-slate retry may unstick.
 - `BLOCKED` — failure mode escapes micro; dispatch to the slash command
   named in `next_action`.

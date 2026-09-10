@@ -48,7 +48,10 @@ from deviate.cli.init import init_app
 from deviate.cli.review import review_app
 from deviate.cli.prune import prune_app
 from deviate.cli.walkthrough import walkthrough_app
+from deviate.cli.converge import converge_app
+from deviate.cli.converge import run_converge_pass as _run_converge_pass
 from deviate.cli._html import html_app
+from deviate.core.converge import converge_pack_available
 from deviate.core.agent import AGENT_TO_BACKEND as AGENT_TO_BACKEND  # noqa: F401
 
 from deviate.core.agent import resolve_agent_to_backend as _resolve_agent_to_backend  # noqa: F401
@@ -1363,7 +1366,7 @@ def setup(
         "--packs",
         help=(
             "Optional packs on top of default macro+meso+micro "
-            "(merge, pr, review, walkthrough, html, hotfix, "
+            "(merge, pr, review, walkthrough, converge, html, hotfix, "
             "triage, prune, e2e). 'none', 'all-optional', or "
             "comma-separated names. Unknown names fail closed. "
             "Omitted off-TTY = default layers only. Setup does not commit."
@@ -1740,6 +1743,12 @@ cli.add_typer(
     rich_help_panel=_AGENT_PANEL,
     help="Four-look map: brief, tests, production vs checks, command (optional pack)",
 )
+cli.add_typer(
+    converge_app,
+    name="converge",
+    rich_help_panel=_AGENT_PANEL,
+    help="After Micro drain: assess this issue vs brief/plan/tasks; append gaps (optional pack)",
+)
 
 
 # Meso-phase pre/post dispatchers (agent-internal). The `pre` / `post`
@@ -1797,6 +1806,15 @@ def run_command(
         "--local",
         help=_LOCAL_CLAIM_HELP,
     ),
+    converge: bool = typer.Option(
+        False,
+        "--converge",
+        help=(
+            "After Micro drain, run Converge (or CONVERGE_READY handoff) and "
+            "re-drain if gap tasks were appended. Also on when the converge "
+            "pack is installed. Walkthrough/review/pr stay outside this loop."
+        ),
+    ),
 ) -> None:
     """Prepare the next issue end-to-end and run it.
 
@@ -1806,6 +1824,11 @@ def run_command(
     the system auto-advances. Nested spawn + phase commits (same as
     ``meso run`` then ``micro run --all``). ``claim_remote`` defaults false;
     ``--local`` skips the remote lock.
+
+    When the optional ``converge`` pack is installed, or ``--converge`` is
+    passed, a drained queue continues into Converge. Appended gap tasks
+    re-enter Micro until Converge reports clean (CONVERGED) or hands off
+    (CONVERGE_READY). Walkthrough, review, and PR stay outside this loop.
 
     The per-task / ``--all`` dispatcher can also be invoked directly via
     ``deviate micro run`` if you only want to drain pending tasks without
@@ -1827,6 +1850,40 @@ def run_command(
         console.print(f"[red]RUN_WORKTREE_MISSING[/] {worktree_path} does not exist")
         raise typer.Exit(code=1)
 
-    # Chain into micro: drain the task queue in the worktree the meso step just
-    # prepared. There is no approval step between meso and micro.
-    _run_all(worktree_path, console, model=model)
+    should_converge = converge or converge_pack_available(worktree_path)
+    while True:
+        _drain_micro(worktree_path, console, model=model)
+        if not should_converge:
+            break
+        from deviate.core.converge import CONVERGE_NOT_READY, pending_task_ids
+        from deviate.core.converge import resolve_converge_issue_id
+
+        leftover = pending_task_ids(
+            worktree_path, resolve_converge_issue_id(worktree_path)
+        )
+        if leftover:
+            console.print(
+                f"[red]{CONVERGE_NOT_READY}[/] issue queue not drained; "
+                f"pending {', '.join(leftover)}"
+            )
+            raise typer.Exit(code=1)
+        outcome = _run_converge_pass(worktree_path)
+        if outcome == "not_ready":
+            console.print(
+                f"[red]{CONVERGE_NOT_READY}[/] converge prerequisites missing"
+            )
+            raise typer.Exit(code=1)
+        if outcome == "appended":
+            continue
+        if outcome == "converged":
+            console.print("[green]CONVERGED[/]")
+        break
+
+
+def _drain_micro(worktree_path: Path, console: Console, model: str | None) -> None:
+    """Drain Micro, treating an empty queue as success so Converge can run."""
+    try:
+        _run_all(worktree_path, console, model=model)
+    except typer.Exit as exc:
+        if exc.exit_code not in (0, None):
+            raise

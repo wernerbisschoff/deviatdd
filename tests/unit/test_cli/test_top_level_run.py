@@ -35,6 +35,7 @@ def test_top_level_run_help_lists_meso_options():
     assert "--issue" in output
     assert "--force" in output
     assert "--local" in output
+    assert "--converge" in output
     for removed in ("--profile", "--no-judge", "--no-refactor", "--agent", "--json"):
         assert removed not in output
 
