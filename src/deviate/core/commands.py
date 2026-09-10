@@ -307,6 +307,12 @@ def compose_command_body(
     if style:
         parts.append(style)
 
+    # 4b. Soft Plan-entry handover checklist (same text as `deviate plan pre`).
+    if re.search(r"(?m)^name:\s*deviate-plan\s*$", frontmatter):
+        from deviate.prompts.handover import format_handover_checklist
+
+        parts.append(format_handover_checklist())
+
     prefix = "\n\n".join(parts) if parts else None
     if prefix:
         body = f"{prefix}\n\n{body}"

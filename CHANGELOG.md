@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`deviate plan pre` surfaces a soft 12-point handover checklist on a TTY.** Interactive Plan entry prints the shared “handover ready?” questions without prompting or blocking. Off-TTY, `--json`, `--quiet`, and `meso run` skip the banner (one-line log only). Auto and manual Plan overlays use the same text from `src/deviate/prompts/handover.py`. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`. ([#220](https://github.com/wernerbisschoff/deviatdd/issues/220))
+
 - **Worktree setup runs `mise run setup:integration` when that task is defined.** Worktree create runs `mise trust && mise install && mise run setup`, then `setup:integration` for integration-test repos (test databases, services, `.env.instance`). Repos without the task see no change. The `/deviate-init` contract documents the task.
 - **JUDGE rejection feedback now uses a repair contract:** requirement, evidence, correction, verification, and phase boundary. Routing remains unchanged.
 
