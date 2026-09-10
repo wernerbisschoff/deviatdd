@@ -659,6 +659,8 @@ def _unpack_agent_invoke(
     """
     if isinstance(result, _AgentInvokeResult):
         return result.manifest, result.tail, result.timed_out
+    if isinstance(result, (tuple, list)) and len(result) == 3:
+        return result[0], result[1], bool(result[2])
     manifest, tail = result  # type: ignore[misc]
     return manifest, tail, bool(getattr(result, "timed_out", False))
 
@@ -1969,6 +1971,20 @@ def _run_red_phase(
     # A rollback boundary belongs to the active task.  Clear any boundary
     # retained by a completed prior task before the RED agent can fail; this
     # phase records its own boundary only after the RED commit lands.
+    _auto_session_snapshot = (
+        session_path.read_text(encoding="utf-8") if session_path.exists() else ""
+    )
+    try:
+        _red_pre_kernel(tid, Path.cwd())
+    except KernelError as exc:
+        if exc.token == "TASK_NOT_FOUND":
+            pass
+        else:
+            if _auto_session_snapshot and session_path.exists():
+                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+            raise PhaseFailedError(
+                f"RED phase contract rejected for {tid}: {exc.detail}"
+            ) from exc
     session.red_commit_sha = ""
     session.save(session_path)
     _log_run("PHASE_START", task_id=tid, phase="RED")
@@ -2042,40 +2058,92 @@ def _run_red_phase(
             context="declared `failure_kind: already_satisfied`",
         )
 
-    _run_format_cmd(root)
-
+    _cached_red_result = test_result
+    _real_run_test_cmd = _run_test_cmd
+    globals()["_run_test_cmd"] = lambda *a, **k: _cached_red_result  # type: ignore[assignment]
     try:
-        record = TaskRecord.model_validate(task)
-        record.status = "RED"
-        append_task_transition(record, ledger_path)
-    except Exception as e:
-        raise PhaseFailedError(f"RED phase ledger update failed for {tid}: {e}")
+        _red_post_kernel(tid, root)
+    except KernelError as exc:
+        globals()["_run_test_cmd"] = _real_run_test_cmd  # type: ignore[assignment]
+        if exc.token not in (
+            "TASK_NOT_FOUND",
+            "NO_PENDING_TASKS",
+            "TASK_ID_MISMATCH",
+            "TEST_NOT_FOUND",
+            "RedMustPassError",
+        ):
+            if session_path.exists() and _auto_session_snapshot:
+                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+            raise PhaseFailedError(
+                f"RED phase rejected for {tid}: {exc.detail}"
+            ) from exc
+        _run_format_cmd(root)
+        try:
+            try:
+                record = TaskRecord.model_validate(task)
+            except Exception:
+                found = _find_task_record(root, tid)
+                record = TaskRecord.model_validate(
+                    found[0] if found is not None else task
+                )
+            record.status = "RED"
+            append_task_transition(record, ledger_path)
+        except Exception as e:
+            raise PhaseFailedError(f"RED phase ledger update failed for {tid}: {e}")
+        session = session.force_transition_to("RED")
+        session.save(session_path)
+        _commit_phase(
+            f"test({scope}): RED phase - failing test",
+            root,
+            no_verify=True,
+            phase="red",
+            task_id=tid,
+        )
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+        session.red_commit_sha = head_sha
+        session.save(session_path)
+        session = SessionState.load(session_path)
+        _verify_red_worktree_clean(root, tid)
+        if advisory.passes:
+            log_event("RED_PASSED_WARNING", task_id=tid)
+        return _RedPhaseOutcome(session, advisory)
+    globals()["_run_test_cmd"] = _real_run_test_cmd  # type: ignore[assignment]
+    session = SessionState.load(session_path)
+    _verify_red_worktree_clean(root, tid)
+    if advisory.passes:
+        log_event("RED_PASSED_WARNING", task_id=tid)
+    return _RedPhaseOutcome(session, advisory)
 
-    session = session.force_transition_to("RED")
-    session.save(session_path)
 
-    _commit_phase(
-        f"test({scope}): RED phase - failing test",
-        root,
-        no_verify=True,
-        phase="red",
-        task_id=tid,
-    )
+def _verify_red_worktree_clean(root: Path, tid: str) -> None:
+    """Clean-tree check after auto RED side effects.
 
-    head_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+    The RED commit lands before the ``red_commit_sha`` stamp is saved, so
+    the stamp dirties ``.deviate/session.json`` in worktrees that do not
+    ignore ``.deviate/`` (production worktrees ignore it). Only
+    non-``.deviate/`` residue fails the phase; session-cache residue is
+    production-clean by construction.
+    """
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
         cwd=root,
         capture_output=True,
         text=True,
         env=_git_env(),
-    ).stdout.strip()
-    session.red_commit_sha = head_sha
-    session.save(session_path)
-
-    _verify_clean_worktree(root, "RED", tid)
-    if advisory.passes:
-        log_event("RED_PASSED_WARNING", task_id=tid)
-    return _RedPhaseOutcome(session, advisory)
+    )
+    residue = [
+        line
+        for line in status.stdout.strip().splitlines()
+        if line and not line.split()[-1].startswith(".deviate/")
+    ]
+    if residue:
+        _verify_clean_worktree(root, "RED", tid)
 
 
 def _adjudicate_red_no_failing_test(
@@ -2249,6 +2317,9 @@ def _run_green_phase(
             f"  [dim]GREEN already done for {_task_label(task)}"
             f" but train_feedback present — re-running[/]"
         )
+    _auto_session_snapshot = (
+        session_path.read_text(encoding="utf-8") if session_path.exists() else ""
+    )
     _log_run("PHASE_START", task_id=tid, phase="GREEN")
     _emit_phase_callout(c, "GREEN", task, PhaseMarker.IN_PROGRESS)
     if _verbose:
@@ -2270,7 +2341,8 @@ def _run_green_phase(
         )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "GREEN")
     green_model = resolve_model_for_phase("GREEN", root, backend=backend)
-    _require_green_entry_red_sha(root, session, tid)
+    if session.current_phase == "RED" or session.red_commit_sha.strip():
+        _require_green_entry_red_sha(root, session, tid)
     session.green_attempts += 1
     session.save(session_path)
     _emit_green_train(
@@ -2390,22 +2462,61 @@ def _run_green_phase(
         session.save(session_path)
         return session
 
-    _run_format_cmd(root)
-
     try:
-        record = TaskRecord.model_validate(task)
-        record.status = "GREEN"
-        append_task_transition(record, ledger_path)
-    except Exception as e:
-        raise PhaseFailedError(f"GREEN phase ledger update failed for {tid}: {e}")
-
-    committed = _commit_phase(
-        f"feat({scope}): GREEN phase - implementation",
-        root,
-        no_verify=True,
-        phase="green",
-        task_id=tid,
-    )
+        _green_head_before = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+        ).stdout.strip()
+    except Exception:
+        _green_head_before = ""
+    try:
+        _green_post_kernel(root, tid)
+    except KernelError as exc:
+        if exc.token not in ("TASK_NOT_FOUND",):
+            if session_path.exists() and _auto_session_snapshot:
+                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+            raise PhaseFailedError(
+                f"GREEN phase rejected for {tid}: {exc.detail}"
+            ) from exc
+        try:
+            record = TaskRecord.model_validate(task)
+            record.status = "GREEN"
+            append_task_transition(record, ledger_path)
+        except Exception as e:
+            raise PhaseFailedError(f"GREEN phase ledger update failed for {tid}: {e}")
+        _green_legacy_committed = _commit_phase(
+            f"feat({scope}): GREEN phase - implementation",
+            root,
+            no_verify=True,
+            phase="green",
+            task_id=tid,
+        )
+        session = SessionState.load(session_path)
+        if is_feedback_retry and not _green_legacy_committed:
+            raise PhaseFailedError(
+                f"GREEN_STATE_DRIFT {tid}: ledger already records GREEN and JUDGE "
+                "requested changes, but the retry produced no implementation commit. "
+                "Verify the existing implementation and reconcile the task ledger."
+            )
+        try:
+            _verify_clean_worktree(root, "GREEN", tid)
+        except PhaseFailedError as e:
+            c.print(f"  [yellow]CLEAN_WORKTREE_FAILED[/] {e}")
+            session.train_feedback = str(e)
+            session.save(session_path)
+        return session
+    session = SessionState.load(session_path)
+    _green_head_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+    ).stdout.strip()
+    committed = (not _green_head_after) or (_green_head_after != _green_head_before)
     if is_feedback_retry and not committed:
         raise PhaseFailedError(
             f"GREEN_STATE_DRIFT {tid}: ledger already records GREEN and JUDGE "
@@ -5050,6 +5161,24 @@ def _run_refactor_phase(
             "PHASE_SKIP", task_id=tid, phase="REFACTOR", reason="already_completed"
         )
         return session
+    _auto_session_snapshot = (
+        session_path.read_text(encoding="utf-8") if session_path.exists() else ""
+    )
+    try:
+        _refactor_pre_kernel(tid, Path.cwd())
+    except KernelError as exc:
+        if exc.token not in ("TASK_NOT_FOUND", "REFACTOR_GUARD_REJECTED"):
+            if session_path.exists() and _auto_session_snapshot:
+                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+            raise PhaseFailedError(
+                f"REFACTOR phase contract rejected for {tid}: {exc.detail}"
+            ) from exc
+        if exc.token not in ("TASK_NOT_FOUND",):
+            if session_path.exists() and _auto_session_snapshot:
+                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+            raise PhaseFailedError(
+                f"REFACTOR phase contract rejected for {tid}: {exc.detail}"
+            ) from exc
     _log_run("PHASE_START", task_id=tid, phase="REFACTOR")
     if _verbose:
         c.print(f"[bold cyan]REFACTOR →[/] {_task_label(task)}")
@@ -5064,14 +5193,16 @@ def _run_refactor_phase(
     )
     agent_output_callback = _make_agent_output_callback(monitor, tid, "REFACTOR")
     refactor_model = resolve_model_for_phase("REFACTOR", root, backend=backend)
-    manifest, agent_tail = _invoke_agent(
-        prompt,
-        c,
-        backend_name=backend,
-        task_id=tid,
-        phase="REFACTOR",
-        output_callback=agent_output_callback,
-        model=refactor_model,
+    manifest, agent_tail, _refactor_timed_out = _unpack_agent_invoke(
+        _invoke_agent(
+            prompt,
+            c,
+            backend_name=backend,
+            task_id=tid,
+            phase="REFACTOR",
+            output_callback=agent_output_callback,
+            model=refactor_model,
+        )
     )
     if manifest is None:
         raise PhaseFailedError(
@@ -5101,22 +5232,37 @@ def _run_refactor_phase(
     _run_format_cmd(root)
 
     try:
-        _append_status_transition(task, "COMPLETED", ledger_path)
-    except PhaseFailedError:
-        raise
-    except Exception as e:
-        raise PhaseFailedError(f"REFACTOR phase ledger update failed for {tid}: {e}")
-
-    _commit_phase(
-        f"refactor({scope}): REFACTOR phase - cleanup",
-        root,
-        no_verify=True,
-        phase="refactor",
-        task_id=tid,
-    )
-
-    session = session.force_transition_to("IDLE")
-    session.save(session_path)
+        _refactor_post_kernel(task_id=tid, root=root)
+    except KernelError as exc:
+        if exc.token in ("TASK_NOT_FOUND", "MISSING_GREEN_PHASE"):
+            # The regression gate above already ran the test command and the
+            # formatter; re-running them here would duplicate side effects.
+            try:
+                _append_status_transition(task, "COMPLETED", ledger_path)
+            except PhaseFailedError:
+                raise
+            except Exception as e:
+                raise PhaseFailedError(
+                    f"REFACTOR phase ledger update failed for {tid}: {e}"
+                )
+            _commit_phase(
+                f"refactor({scope}): REFACTOR phase - cleanup",
+                root,
+                no_verify=True,
+                phase="refactor",
+                task_id=tid,
+            )
+            session = session.force_transition_to("IDLE")
+            session.save(session_path)
+            _verify_clean_worktree(root, "REFACTOR", tid)
+            c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
+            return session
+        if session_path.exists() and _auto_session_snapshot:
+            session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+        raise PhaseFailedError(
+            f"REFACTOR phase rejected for {tid}: {exc.detail}"
+        ) from exc
+    session = SessionState.load(session_path)
     _verify_clean_worktree(root, "REFACTOR", tid)
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
     return session
