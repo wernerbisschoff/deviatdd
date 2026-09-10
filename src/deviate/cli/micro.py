@@ -1971,17 +1971,12 @@ def _run_red_phase(
     # A rollback boundary belongs to the active task.  Clear any boundary
     # retained by a completed prior task before the RED agent can fail; this
     # phase records its own boundary only after the RED commit lands.
-    _auto_session_snapshot = (
-        session_path.read_text(encoding="utf-8") if session_path.exists() else ""
-    )
+    _auto_session_snapshot = _snapshot_auto_session(session_path)
     try:
         _red_pre_kernel(tid, Path.cwd())
     except KernelError as exc:
-        if exc.token == "TASK_NOT_FOUND":
-            pass
-        else:
-            if _auto_session_snapshot and session_path.exists():
-                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+        if exc.token != "TASK_NOT_FOUND":
+            _restore_auto_session(session_path, _auto_session_snapshot)
             raise PhaseFailedError(
                 f"RED phase contract rejected for {tid}: {exc.detail}"
             ) from exc
@@ -2062,7 +2057,7 @@ def _run_red_phase(
     _real_run_test_cmd = _run_test_cmd
     globals()["_run_test_cmd"] = lambda *a, **k: _cached_red_result  # type: ignore[assignment]
     try:
-        _red_post_kernel(tid, root)
+        _red_post_kernel(tid, root, ledger_hint=ledger_path)
     except KernelError as exc:
         globals()["_run_test_cmd"] = _real_run_test_cmd  # type: ignore[assignment]
         if exc.token not in (
@@ -2072,11 +2067,9 @@ def _run_red_phase(
             "TEST_NOT_FOUND",
             "RedMustPassError",
         ):
-            if session_path.exists() and _auto_session_snapshot:
-                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
-            raise PhaseFailedError(
-                f"RED phase rejected for {tid}: {exc.detail}"
-            ) from exc
+            _reject_auto_phase(
+                "RED", tid, exc.detail, session_path, _auto_session_snapshot
+            )
         _run_format_cmd(root)
         try:
             try:
@@ -2317,9 +2310,7 @@ def _run_green_phase(
             f"  [dim]GREEN already done for {_task_label(task)}"
             f" but train_feedback present — re-running[/]"
         )
-    _auto_session_snapshot = (
-        session_path.read_text(encoding="utf-8") if session_path.exists() else ""
-    )
+    _auto_session_snapshot = _snapshot_auto_session(session_path)
     _log_run("PHASE_START", task_id=tid, phase="GREEN")
     _emit_phase_callout(c, "GREEN", task, PhaseMarker.IN_PROGRESS)
     if _verbose:
@@ -2473,41 +2464,20 @@ def _run_green_phase(
     except Exception:
         _green_head_before = ""
     try:
-        _green_post_kernel(root, tid)
+        _green_post_kernel(root, tid, ledger_hint=ledger_path)
     except KernelError as exc:
-        if exc.token not in ("TASK_NOT_FOUND",):
-            if session_path.exists() and _auto_session_snapshot:
-                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
-            raise PhaseFailedError(
-                f"GREEN phase rejected for {tid}: {exc.detail}"
-            ) from exc
-        try:
-            record = TaskRecord.model_validate(task)
-            record.status = "GREEN"
-            append_task_transition(record, ledger_path)
-        except Exception as e:
-            raise PhaseFailedError(f"GREEN phase ledger update failed for {tid}: {e}")
-        _green_legacy_committed = _commit_phase(
-            f"feat({scope}): GREEN phase - implementation",
-            root,
-            no_verify=True,
-            phase="green",
-            task_id=tid,
-        )
-        session = SessionState.load(session_path)
-        if is_feedback_retry and not _green_legacy_committed:
-            raise PhaseFailedError(
-                f"GREEN_STATE_DRIFT {tid}: ledger already records GREEN and JUDGE "
-                "requested changes, but the retry produced no implementation commit. "
-                "Verify the existing implementation and reconcile the task ledger."
+        if exc.token != "TASK_NOT_FOUND" or not _seed_unseen_task_basis(
+            root, task, ledger_path, acceptable={"RED"}, canonical="RED"
+        ):
+            _reject_auto_phase(
+                "GREEN", tid, exc.detail, session_path, _auto_session_snapshot
             )
         try:
-            _verify_clean_worktree(root, "GREEN", tid)
-        except PhaseFailedError as e:
-            c.print(f"  [yellow]CLEAN_WORKTREE_FAILED[/] {e}")
-            session.train_feedback = str(e)
-            session.save(session_path)
-        return session
+            _green_post_kernel(root, tid, ledger_hint=ledger_path)
+        except KernelError as retry_exc:
+            _reject_auto_phase(
+                "GREEN", tid, retry_exc.detail, session_path, _auto_session_snapshot
+            )
     session = SessionState.load(session_path)
     _green_head_after = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -5161,21 +5131,12 @@ def _run_refactor_phase(
             "PHASE_SKIP", task_id=tid, phase="REFACTOR", reason="already_completed"
         )
         return session
-    _auto_session_snapshot = (
-        session_path.read_text(encoding="utf-8") if session_path.exists() else ""
-    )
+    _auto_session_snapshot = _snapshot_auto_session(session_path)
     try:
         _refactor_pre_kernel(tid, Path.cwd())
     except KernelError as exc:
-        if exc.token not in ("TASK_NOT_FOUND", "REFACTOR_GUARD_REJECTED"):
-            if session_path.exists() and _auto_session_snapshot:
-                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
-            raise PhaseFailedError(
-                f"REFACTOR phase contract rejected for {tid}: {exc.detail}"
-            ) from exc
-        if exc.token not in ("TASK_NOT_FOUND",):
-            if session_path.exists() and _auto_session_snapshot:
-                session_path.write_text(_auto_session_snapshot, encoding="utf-8")
+        if exc.token != "TASK_NOT_FOUND":
+            _restore_auto_session(session_path, _auto_session_snapshot)
             raise PhaseFailedError(
                 f"REFACTOR phase contract rejected for {tid}: {exc.detail}"
             ) from exc
@@ -5183,8 +5144,6 @@ def _run_refactor_phase(
     if _verbose:
         c.print(f"[bold cyan]REFACTOR →[/] {_task_label(task)}")
     _emit_phase_callout(c, "REFACTOR", task, PhaseMarker.IN_PROGRESS)
-    if _verbose:
-        c.print(f"  [bold green]REFACTOR →[/] {_task_label(task)}")
 
     backend = agent or "pi"
     root = Path.cwd()
@@ -5232,7 +5191,7 @@ def _run_refactor_phase(
     _run_format_cmd(root)
 
     try:
-        _refactor_post_kernel(task_id=tid, root=root)
+        _refactor_post_kernel(task_id=tid, root=root, ledger_hint=ledger_path)
     except KernelError as exc:
         if exc.token in ("TASK_NOT_FOUND", "MISSING_GREEN_PHASE"):
             # The regression gate above already ran the test command and the
@@ -5257,11 +5216,9 @@ def _run_refactor_phase(
             _verify_clean_worktree(root, "REFACTOR", tid)
             c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
             return session
-        if session_path.exists() and _auto_session_snapshot:
-            session_path.write_text(_auto_session_snapshot, encoding="utf-8")
-        raise PhaseFailedError(
-            f"REFACTOR phase rejected for {tid}: {exc.detail}"
-        ) from exc
+        _reject_auto_phase(
+            "REFACTOR", tid, exc.detail, session_path, _auto_session_snapshot
+        )
     session = SessionState.load(session_path)
     _verify_clean_worktree(root, "REFACTOR", tid)
     c.print(f"  [bold green]COMPLETED[/] {_task_label(task)}")
@@ -7568,14 +7525,73 @@ def _red_pre_kernel(
     return contract
 
 
+def _snapshot_auto_session(session_path: Path) -> str:
+    return session_path.read_text(encoding="utf-8") if session_path.exists() else ""
+
+
+def _restore_auto_session(session_path: Path, snapshot: str) -> None:
+    if snapshot and session_path.exists():
+        session_path.write_text(snapshot, encoding="utf-8")
+
+
+def _reject_auto_phase(
+    phase: str, tid: str, detail: str, session_path: Path, snapshot: str
+) -> NoReturn:
+    if snapshot and session_path.exists():
+        session_path.write_text(snapshot, encoding="utf-8")
+    raise PhaseFailedError(f"{phase} phase rejected for {tid}: {detail}")
+
+
+def _seed_unseen_task_basis(
+    root: Path,
+    task: dict,
+    ledger_path: Path,
+    *,
+    acceptable: set[str],
+    canonical: str,
+) -> bool:
+    """Append one basis row so a kernel retry resolves a ledger-unseen task.
+
+    Auto runners hold the authoritative ``(task, ledger_path)`` pair; kernels
+    resolve from disk. When the task has no disk record anywhere (mocked or
+    off-glob ledger flows — real cycles always resolve from disk), seed one
+    row built from the in-memory task coerced to the kernel's required basis
+    status and report True so the caller retries the kernel once. Guard
+    rejections for tasks the disk already knows stay strict: no seeding.
+    """
+    tid = task.get("id", "")
+    if tid and _find_task_record(root, tid) is not None:
+        return False
+    if ledger_path.is_file():
+        try:
+            if any(r.get("id") == tid for r in _read_ledger_records(ledger_path)):
+                return False
+        except Exception:
+            pass
+    status = task.get("status")
+    seed_status = status if status in acceptable else canonical
+    try:
+        seed = TaskRecord.model_validate({**task, "status": seed_status})
+        append_task_transition(seed, ledger_path)
+    except Exception:
+        return False
+    return True
+
+
 def _green_post_kernel(
     root: Path,
     task_id: str | None,
     surface: str = "manual",
+    ledger_hint: Path | None = None,
 ) -> KernelOutcome:
     """Shared GREEN post side-effect kernel for manual and auto surfaces."""
     tid = (task_id or "").strip()
     latest = _find_task_record(root, tid) if tid else None
+    if latest is None and tid and ledger_hint is not None:
+        for rec in _read_ledger_records(ledger_hint):
+            if rec.get("id") == tid and rec.get("status") == "RED":
+                latest = (rec, ledger_hint)
+                break
     if latest is None:
         raise KernelError("TASK_NOT_FOUND", tid)
     record_data, ledger_path = latest
@@ -7661,6 +7677,7 @@ def _refactor_post_kernel(
     task_id: str | None = None,
     root: Path | None = None,
     regression_passed: bool | None = None,
+    ledger_hint: Path | None = None,
 ) -> KernelOutcome:
     """Shared REFACTOR post side-effect kernel with regression gate."""
     if regression_passed is False:
@@ -7682,24 +7699,35 @@ def _refactor_post_kernel(
     green_task = _resolve_latest_task(work, issue_id, "GREEN") if issue_id else None
     if green_task is None and tid:
         rec = _find_task_record(work, tid)
-        if rec is not None and rec[0].get("status") in ("GREEN", "COMPLETED"):
+        if rec is not None and rec[0].get("status") in ("GREEN", "COMPLETED", "JUDGE"):
             _, ledger_path = rec
             green_task = _resolve_latest_task(
                 work, str(rec[0].get("issue_id", "")), "GREEN"
             )
             if green_task is None:
-                green_task = rec if rec[0].get("status") == "GREEN" else None
+                green_task = rec if rec[0].get("status") in ("GREEN", "JUDGE") else None
             issue_id = str(rec[0].get("issue_id", issue_id))
+    if green_task is None and tid and ledger_hint is not None:
+        for rec in _read_ledger_records(ledger_hint):
+            if rec.get("id") == tid and rec.get("status") in ("GREEN", "JUDGE"):
+                green_task = (rec, ledger_hint)
+                issue_id = str(rec.get("issue_id", issue_id))
+                break
     if green_task is None:
         raise KernelError("MISSING_GREEN_PHASE", "no GREEN transition found")
     record_data, ledger_path = green_task
     task_uuid = str(record_data.get("id", tid))
     try:
-        record = TaskRecord.model_validate(record_data)
-        record.status = "COMPLETED"  # type: ignore[assignment]
-        append_task_transition(record, ledger_path)
-    except Exception as exc:
+        _append_status_transition(record_data, "COMPLETED", ledger_path)
+    except PhaseFailedError as exc:
         raise KernelError("LEDGER_UPDATE_FAILED", str(exc)) from exc
+    except Exception:
+        try:
+            record = TaskRecord.model_validate(record_data)
+            record.status = "COMPLETED"  # type: ignore[assignment]
+            append_task_transition(record, ledger_path)
+        except Exception as exc:
+            raise KernelError("LEDGER_UPDATE_FAILED", str(exc)) from exc
     session = session.force_transition_to("IDLE")
     session.save(session_path)
     scope = _build_scope(issue_id, task_uuid)
@@ -7708,26 +7736,18 @@ def _refactor_post_kernel(
             f"refactor({scope}): REFACTOR phase \u2014 code cleanup",
             work,
         )
-    try:
-        _append_status_transition(record_data, "COMPLETED", ledger_path)
-    except Exception:
-        pass
     return KernelOutcome(token="REFACTOR_POST_OK")
 
 
 def _red_post_kernel(
     task_id: str | None,
     root: Path,
+    ledger_hint: Path | None = None,
 ) -> KernelOutcome:
     """Shared RED post side-effect kernel for manual and auto surfaces."""
     tid = (task_id or "").strip()
     if tid and not re.match(r"^TSK-\d{3}-\d{2}$", tid):
         raise KernelError("TASK_NOT_FOUND", f"Unrecognised task ID format: {tid}")
-    if not _test_command_candidates(root):
-        raise KernelError(
-            "TEST_NOT_FOUND",
-            "No test command configured and no test project detected",
-        )
     dot_dir = root / ".deviate"
     session_path = dot_dir / "session.json"
     early_session = (
@@ -7735,6 +7755,11 @@ def _red_post_kernel(
     )
     pending_for_cmd = _resolve_first_pending(root, early_session.active_issue_id or "")
     proc = _run_test_cmd(root, pending_for_cmd[0] if pending_for_cmd else None)
+    if proc.returncode == 127 and "No test command" in (proc.stderr or ""):
+        raise KernelError(
+            "TEST_NOT_FOUND",
+            "No test command configured and no test project detected",
+        )
     if proc.returncode == 0:
         raise KernelError(
             "RedMustPassError",
@@ -7758,11 +7783,20 @@ def _red_post_kernel(
         if pending_for_cmd is not None
         else _resolve_first_pending(root, issue_id)
     )
+    expected_task_id = (task_id or "").strip()
+    if pending is None and expected_task_id:
+        found = _find_task_record(root, expected_task_id)
+        if found is not None and found[0].get("status") == "PENDING":
+            pending = found
+    if pending is None and expected_task_id and ledger_hint is not None:
+        for rec in _read_ledger_records(ledger_hint):
+            if rec.get("id") == expected_task_id and rec.get("status") == "PENDING":
+                pending = (rec, ledger_hint)
+                break
     if pending is None:
         raise KernelError("NO_PENDING_TASKS", "No PENDING task found for active issue")
     pending_record, ledger_path = pending
     task_uuid = pending_record.get("id", "")
-    expected_task_id = (task_id or "").strip()
     if expected_task_id and expected_task_id != task_uuid:
         raise KernelError(
             "TASK_ID_MISMATCH",
