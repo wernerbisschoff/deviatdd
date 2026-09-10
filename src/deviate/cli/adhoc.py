@@ -11,6 +11,12 @@ from deviate.cli._common import console
 from deviate.core._shared import git_env as _git_env
 from deviate.core.complexity import ClassificationResult, ComplexityGate
 from deviate.core.convention import commit_scope, format_commit_message
+from deviate.core.explore_routing import (
+    ATTACH_EXISTING_EPIC,
+    latest_explore_content,
+    resolve_explore_routing,
+)
+from deviate.state.config import SessionState
 from deviate.state.ledger import AdhocRecord
 
 adhoc_app = typer.Typer(no_args_is_help=True)
@@ -60,6 +66,39 @@ def pre(
     ),
 ) -> None:
     """Classify an ad-hoc task description and record it for execution."""
+    session_path = Path(".deviate") / "session.json"
+    session = SessionState.load(session_path) if session_path.exists() else None
+    routing = resolve_explore_routing(
+        content=latest_explore_content(),
+        session=session,
+    )
+    if routing.hitl_pending:
+        _exit_with_error(
+            "HITL_PENDING_ROUTING resolve attach vs new_epic vs adhoc "
+            "in explore.md Status HITL_OVERRIDE or Pending HITL Decisions"
+        )
+    if routing.next_action == ATTACH_EXISTING_EPIC:
+        epic_slug = routing.epic_slug
+        if not epic_slug:
+            _exit_with_error(
+                "ATTACH_EPIC_MISSING NEXT_ACTION attach needs an epic slug"
+            )
+        epic_dir = Path("specs") / epic_slug
+        if not epic_dir.is_dir():
+            _exit_with_error(f"ATTACH_EPIC_NOT_FOUND {epic_slug}")
+        _emit_contract(
+            status="READY",
+            execution_mode="ATTACH",
+            description=description,
+            attach_existing_epic=True,
+            allocate_bucket=False,
+            shared_prd=False,
+            epic_slug=epic_slug,
+            issue_dir=str(epic_dir / "issues"),
+            prd_path=str(epic_dir / "prd.md"),
+        )
+        return
+
     result: ClassificationResult = ComplexityGate.classify(description)
 
     if result.level == "HIGH" and not skip_gates:

@@ -14,6 +14,7 @@ ARTIFACT_VALIDATORS: dict[str, list[str]] = {
         "Discovery Audit Results",
         "Constitution Quotes",
         "Architectural Baselines",
+        "Related Epic Candidates",
         "Ecosystem Research",
         "File Registry",
         "Status Summary",

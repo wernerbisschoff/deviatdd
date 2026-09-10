@@ -74,7 +74,8 @@ Instructions:
 <execution_sequence>
 
 <step id="contract_loaded">
-Available context: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`.
+Available context: `repo_root`, `git_branch`, `feature_slug`, `feature_dir`, `specs_directory`, `explore_md_path`, `design_target`, `data_model_target`, `constitution_path`, `issues_ledger`, `test_command`, `lint_command`, `type_check_command`, `epic_id`, `is_greenfield`, `attach_existing_epic`.
+If the contract has `attach_existing_epic=true` (or explore Status `NEXT_ACTION` / `HITL_OVERRIDE` is `attach_existing_epic`), halt with `ATTACH_EXISTING_EPIC`. Do not write a new `design.md` / `data-model.md` or allocate a numbered bucket. The later issue writer lands under `specs/{epic_slug}/issues/` and reuses that epic's `prd.md`.
 </step>
 
 <step id="populate_constitution">

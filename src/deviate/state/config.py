@@ -434,6 +434,15 @@ class SessionState(BaseModel):
     # field is empty (the manual-escape-hatch path where research_pre
     # never ran).
     research_explore_source: str = ""
+    # Explore routing persisted by ``deviate explore post`` (ADH-060).
+    # ``explore_next_action`` is ``attach_existing_epic`` / ``new_epic`` /
+    # ``adhoc`` (empty = unknown / dual-path). ``attach_epic_slug`` is the
+    # existing epic to reuse when attaching. ``explore_hitl_pending`` is
+    # true when the human has not yet forced attach vs new epic vs adhoc.
+    # Empty / false defaults keep pre-fix ``session.json`` files compatible.
+    explore_next_action: str = ""
+    attach_epic_slug: str = ""
+    explore_hitl_pending: bool = False
     # Transient carrier for runner-validated JUDGE citations until the
     # COMPLETED ledger row is written. Not the proof store (GH-84).
     validated_evidence: list[dict] = Field(default_factory=list)

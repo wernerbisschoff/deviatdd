@@ -33,6 +33,14 @@ from deviate.core.epic import (
     discover_latest_epic,
     resolve_active_feature,
 )
+from deviate.core.explore_routing import (
+    ADHOC,
+    ATTACH_EXISTING_EPIC,
+    NEW_EPIC,
+    apply_routing_to_session,
+    parse_explore_routing,
+    resolve_explore_routing,
+)
 from deviate.core.prd import extract_prd_requirements
 from deviate.core.repo import find_repo_root
 from deviate.core.validation import (
@@ -448,6 +456,9 @@ def explore_post(
     if not result.passed:
         _halt("EXPLORE", f"missing required sections: {', '.join(result.errors)}")
 
+    routing = parse_explore_routing(content)
+    apply_routing_to_session(session, routing)
+
     _run_pre_commit_hooks()
 
     sha = commit_artifact(
@@ -462,10 +473,32 @@ def explore_post(
     _save_session(session, session_path, "EXPLORE")
     console.print(f"[green]EXPLORE_ARTIFACT[/] {explore_path}")
     console.print("[bold]NEXT STEPS[/]")
-    console.print(
-        f"  Continue the macro flow: deviate research pre --slug {explore_path.stem}"
-    )
-    console.print('  Or run a standalone task: deviate adhoc pre "<description>"')
+    if routing.hitl_pending:
+        console.print(
+            "  [yellow]HITL[/] resolve attach vs new_epic vs adhoc "
+            "(Status `HITL_OVERRIDE` or `## Pending HITL Decisions`)"
+        )
+    if routing.next_action == ATTACH_EXISTING_EPIC and routing.epic_slug:
+        console.print(f"[green]ATTACH_EXISTING_EPIC[/] {routing.epic_slug}")
+        console.print(
+            f"  Write the next issue under specs/{routing.epic_slug}/issues/ "
+            f"and reuse specs/{routing.epic_slug}/prd.md"
+        )
+        console.print(
+            "  Do not run research pre (new numbered epic) or adhoc pre "
+            "(shared specs/adhoc/prd.md) for this work"
+        )
+    elif routing.next_action == ADHOC:
+        console.print('  Run a standalone task: deviate adhoc pre "<description>"')
+    elif routing.next_action == NEW_EPIC:
+        console.print(
+            f"  Continue the macro flow: deviate research pre --slug {explore_path.stem}"
+        )
+    else:
+        console.print(
+            f"  Continue the macro flow: deviate research pre --slug {explore_path.stem}"
+        )
+        console.print('  Or run a standalone task: deviate adhoc pre "<description>"')
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +555,58 @@ def research_pre(
     const_cmds = _resolve_constitution_commands()
     _validate_constitution("RESEARCH")
 
-    session, session_path = _load_and_transition("RESEARCH")
+    session, session_path = _load_or_create_session("RESEARCH")
+    explore_text = source_explore_path.read_text(encoding="utf-8")
+    routing = resolve_explore_routing(content=explore_text, session=session)
+    if routing.hitl_pending:
+        _halt(
+            "RESEARCH",
+            "HITL_PENDING_ROUTING: resolve attach vs new_epic vs adhoc "
+            "in explore.md Status HITL_OVERRIDE or Pending HITL Decisions",
+        )
+    if routing.next_action == ATTACH_EXISTING_EPIC:
+        epic_slug = routing.epic_slug
+        if not epic_slug:
+            _halt(
+                "RESEARCH",
+                "ATTACH_EPIC_MISSING: NEXT_ACTION attach needs an epic slug",
+            )
+        feature_dir = specs_root / epic_slug
+        if not feature_dir.is_dir():
+            _halt("RESEARCH", f"ATTACH_EPIC_NOT_FOUND: {epic_slug}")
+        apply_routing_to_session(session, routing)
+        session.save(session_path)
+        prd_path = feature_dir / "prd.md"
+        issues_dir = feature_dir / "issues"
+        console.print(f"[green]ATTACH_EXISTING_EPIC[/] {epic_slug}")
+        _emit_contract(
+            "RESEARCH",
+            session,
+            session_path,
+            is_greenfield=_resolve_greenfield_flag(const_cmds),
+            epic_id=epic_slug,
+            feature_slug=epic_slug,
+            feature_dir=str(feature_dir),
+            specs_directory=str(specs_root),
+            explore_md_path=str(source_explore_path.resolve()),
+            explore_md_rel=str(source_explore_path),
+            design_target=str(feature_dir / "design.md"),
+            design_target_abs=str((feature_dir / "design.md").resolve()),
+            data_model_target=str(feature_dir / "data-model.md"),
+            data_model_target_abs=str((feature_dir / "data-model.md").resolve()),
+            issues_ledger=str(specs_root / "issues.jsonl"),
+            issue_id="",
+            feature_bucket=epic_slug,
+            explore_path=str(source_explore_path),
+            epic_slug=epic_slug,
+            attach_existing_epic=True,
+            allocate_bucket=False,
+            prd_path=str(prd_path),
+            issue_dir=str(issues_dir),
+        )
+        return
+
+    session = session.transition_to("RESEARCH")
 
     # Allocate numbered epic bucket for downstream phases
     bucket = allocate_feature_bucket(resolved_slug)

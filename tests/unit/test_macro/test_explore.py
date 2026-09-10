@@ -4,7 +4,10 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.explore_routing import ATTACH_EXISTING_EPIC, ADHOC
 from deviate.state.config import SessionState
+
+from tests.explore_artifact import render_explore_md
 
 runner = CliRunner()
 
@@ -84,3 +87,75 @@ class TestExploreCommand:
             )
             assert result.exit_code != 0
             assert "EXPLORE_HALTED" in result.output
+
+
+def _seed_explore_session(root: Path, *, slug: str, body: str) -> None:
+    dot_dir = root / ".deviate"
+    dot_dir.mkdir(parents=True, exist_ok=True)
+    SessionState(current_phase="EXPLORE").save(dot_dir / "session.json")
+    explore_dir = root / "specs" / "explore"
+    explore_dir.mkdir(parents=True, exist_ok=True)
+    (explore_dir / f"{slug}.md").write_text(body, encoding="utf-8")
+    (root / "specs" / "constitution.md").write_text("# Constitution\n")
+
+
+class TestExplorePostAttachRouting:
+    def test_post_persists_attach_next_action(self, tmp_git_repo: Path) -> None:
+        slug = "follow-on-config"
+        body = render_explore_md(
+            next_action="attach_existing_epic `006-setup-interactive-config`",
+            attach_epic="006-setup-interactive-config",
+            candidates=(
+                "| Path | Title | Evidence |\n"
+                "| :--- | :--- | :--- |\n"
+                "| specs/006-setup-interactive-config/ | setup | "
+                '"interactive config" |\n'
+            ),
+        )
+        _seed_explore_session(tmp_git_repo, slug=slug, body=body)
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["explore", "post", "--slug", slug])
+
+        assert result.exit_code == 0, result.output
+        assert "ATTACH_EXISTING_EPIC" in result.output
+        assert "006-setup-interactive-config" in result.output
+        loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert loaded.explore_next_action == ATTACH_EXISTING_EPIC
+        assert loaded.attach_epic_slug == "006-setup-interactive-config"
+        assert loaded.explore_hitl_pending is False
+
+    def test_post_persists_adhoc_next_action(self, tmp_git_repo: Path) -> None:
+        slug = "typo-fix"
+        _seed_explore_session(
+            tmp_git_repo,
+            slug=slug,
+            body=render_explore_md(next_action="adhoc"),
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["explore", "post", "--slug", slug])
+
+        assert result.exit_code == 0, result.output
+        loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert loaded.explore_next_action == ADHOC
+        assert "adhoc pre" in result.output
+
+    def test_post_pending_hitl_does_not_allocate(self, tmp_git_repo: Path) -> None:
+        slug = "needs-hitl"
+        _seed_explore_session(
+            tmp_git_repo,
+            slug=slug,
+            body=render_explore_md(
+                next_action="attach_existing_epic 006-foo",
+                hitl_override="pending",
+            ),
+        )
+
+        with chdir(tmp_git_repo):
+            result = runner.invoke(cli, ["explore", "post", "--slug", slug])
+
+        assert result.exit_code == 0, result.output
+        assert "HITL" in result.output
+        loaded = SessionState.load(tmp_git_repo / ".deviate" / "session.json")
+        assert loaded.explore_hitl_pending is True
