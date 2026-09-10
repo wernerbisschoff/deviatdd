@@ -280,3 +280,24 @@ class TestScopeGateFixtureIntegrity:
         assert "money safety" in research.lower() or "money" in research.lower()
         assert "provider" in research.lower()
         assert "data integrity" in research.lower()
+
+
+class TestResearchDataFlowRuntime:
+    def test_research_data_flow_is_request_flow_not_schema(self) -> None:
+        research = _read_auto("research.md")
+        assert "request flow" in research.lower()
+        assert "runtime" in research.lower()
+        assert "sequenceDiagram" in research
+        assert "Outbound integrations" in research
+        assert "None — local-only" in research
+        assert "schema-only" in research.lower() or "not entity or schema" in research
+        assert "[Request_Flow]" in research
+        assert "data-model.md" in research
+        assert "## Data Flow" in research
+
+    def test_prd_reuses_research_sequence(self) -> None:
+        prd = _read_auto("prd.md")
+        assert "Reuse or refine" in prd
+        assert "sequenceDiagram" in prd
+        assert "data-model.md" in prd
+        assert "Do not invent the first sequence" in prd

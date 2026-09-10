@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Research `data-model.md` `## Data Flow` is a request-flow / runtime scenario.** Agents emit primary-scenario prose, a fenced Mermaid `sequenceDiagram` (or `None — local-only` when explore proves zero externals), an Outbound integrations table (or the same marker), between-hops reliability, and an alternate path. `research post` rejects schema-only Data Flow. `design.md` cross-links to that section; PRD Functional Flow reuses the research sequence. Specs: `specs/DeviaTDD-api.md`, `specs/DeviaTDD-architecture.md`.
+
 - Trim generated artifacts and their prompts: PRD drops the flow essay, sharding-strategy plan, and duplicate decision logs (target ≤250 lines); plan drops to 5 sections with conditional Data Flow; tasks drops per-task time estimates, detail quotas, and static Universal boilerplate; JUDGE and REFACTOR manifests drop unread fields; explore/research sections turn conditional with row caps.
 
 ### Fixed

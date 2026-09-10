@@ -114,6 +114,7 @@ Cite entities from `data-model.md`; reproduce only PRD-narrowed deltas, never th
 authorization/ownership; amount + fee; reserve/consume/release; skip_locked; one vendor create; UNKNOWN vs fail-open; typed destination snapshot.
 
 ## Functional Flow and Sequence Architecture
+Reuse or refine the Mermaid `sequenceDiagram` from `data-model.md` `## Data Flow`. Do not invent the first sequence here.
 ### System Orchestration Mapping
 ≤5-line flow pointer (entry → key transitions → exit). Meso plan owns sequencing; do not narrate FRs here.
 

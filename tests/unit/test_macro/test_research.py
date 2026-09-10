@@ -44,7 +44,11 @@ _DATA_MODEL_SECTIONS = [
 
 
 def _render_artifact(sections: list[str]) -> str:
-    return "\n\n".join(f"## {name}\n\nplaceholder" for name in sections) + "\n"
+    chunks = []
+    for name in sections:
+        body = "None — local-only" if name == "Data Flow" else "placeholder"
+        chunks.append(f"## {name}\n\n{body}")
+    return "\n\n".join(chunks) + "\n"
 
 
 def _git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -381,3 +385,33 @@ class TestResearchPostCommitsExploreMove:
         assert f"specs/explore/{slug}.md" not in show, (
             f"research post staged a deletion that never happened:\n{show}"
         )
+
+    def test_research_post_rejects_schema_only_data_flow(
+        self, tmp_git_repo: Path
+    ) -> None:
+        slug = "schema-only-flow"
+        repo, epic_slug = self._seed_repo(tmp_git_repo, slug)
+
+        with chdir(repo):
+            pre = runner.invoke(cli, ["research", "pre", "--slug", slug])
+        assert pre.exit_code == 0, pre.output
+
+        epic_dir = repo / "specs" / epic_slug
+        (epic_dir / "design.md").write_text(
+            _render_artifact(_DESIGN_SECTIONS), encoding="utf-8"
+        )
+        schema_only = "\n\n".join(
+            (
+                "## Data Flow\n\nEntities persist in the ledger and join on user_id."
+                if name == "Data Flow"
+                else f"## {name}\n\nplaceholder"
+            )
+            for name in _DATA_MODEL_SECTIONS
+        )
+        (epic_dir / "data-model.md").write_text(schema_only + "\n", encoding="utf-8")
+
+        with chdir(repo):
+            post = runner.invoke(cli, ["research", "post"])
+        assert post.exit_code != 0
+        assert "RESEARCH_HALTED" in post.output
+        assert "sequenceDiagram" in post.output or "local-only" in post.output

@@ -23,7 +23,7 @@ CRITICAL INSTRUCTION INVARIANTS:
 <job_directory>
 <job_floor>
 Persona: Principal Systems Architect, Data Modeler & Architectural Reasoning Engineer.
-Objective: Propose 2–4 viable architectural approaches, evaluate trade-offs, recommend one, AND define the floor entities, schemas, relationships, and state transitions implied by that recommended architecture — in a single coherent pass in this same prompt.
+Objective: Propose 2–4 viable architectural approaches, evaluate trade-offs, recommend one, AND define the floor entities, schemas, relationships, state transitions, and request-flow Data Flow implied by that recommended architecture — in a single coherent pass in this same prompt.
 Output Scope: Populate fragments for ALL of the following sections in one pass:
   - `## Recommended Architecture`, `## Options Matrix`, `## Rejected Options`, `## Design Trade-Offs`.
   - `## Entity Definitions`, `## Relationship Graph`, `## Schema Tables`, `## State Transitions`, `## Data Flow`.
@@ -46,6 +46,7 @@ Instructions:
 - Named extras belong in the maximal bracket / `## Deferred` list, not extra schema columns.
 - Data modeling derives from the recommended **floor** architecture: for each floor entity, name, attributes (typed), invariants, source-of-truth, lifecycle owner. For each relationship, cardinality, navigation direction, on-delete / on-cascade semantics, integrity constraints. For each state machine, states, transitions, guards, terminal states, side effects. For each schema table, emit a concrete schema definition in the language declared in the constitution's `Tech Stack Standards` section. If greenfield, derive the schema language from explore.md's FILE_REGISTRY or ECOSYSTEM_RESEARCH.
 - Anchor each entity / relationship / state / schema with a source ID from `explore.md`; verbatim quote required only for contested or high-blast claims.
+- `## Data Flow` is request flow / runtime scenarios (arc42 Runtime view), not entity or schema prose. Do not describe tables here. See the data-model output schema.
 </job_floor>
 
 <job_attack>
@@ -121,7 +122,7 @@ Write the architecture, options, trade-offs, recommendation, contrarian viewpoin
 </step>
 
 <step id="write_data_model_md">
-Write floor entities, relationships, schemas, state transitions, and data flow to `<data_model_target>`.
+Write floor entities, relationships, schemas, state transitions, and request-flow Data Flow to `<data_model_target>`.
 </step>
 
 <step id="post_orchestrated">
@@ -137,6 +138,7 @@ Write for a skimming reader: bullets over paragraphs, cite over restate, omit ov
 [Summary]: 2-4 paragraph executive summary of the recommended **floor** approach.
 [Module_Surface]: Modules to add (new), modules to modify (existing), integration seams.
 [Rationale]: Why this option over the alternatives; anchored to constitution quotes and explore.md FILE_REGISTRY / Sibling Flow Inventory rows.
+[Request_Flow]: Request flow / runtime scenarios live in `data-model.md` `## Data Flow`.
 
 ## Options Matrix
 | Option | Complexity | Testability | Constitutional Alignment | Verdict |
@@ -198,6 +200,23 @@ Write for a skimming reader: bullets over paragraphs, cite over restate, omit ov
 Schema Tables = floor only. Do not add unsupported extras to the floor or to Schema Tables.
 ## State Transitions
 ## Data Flow
+Request flow / runtime scenarios (arc42 Runtime view). Keep this heading. Not schema prose — entities belong above.
+
+Required when the feature has any external provider **or** ≥2 meaningful hops:
+
+1. **Primary scenario** — one short prose line: trigger → terminal success.
+2. **Mermaid `sequenceDiagram`** — fenced. Participants: internal components + **external** systems. Show auth hops. Mark sync vs async. Queues/jobs as participants or notes. Partial scenarios OK.
+3. **`### Outbound integrations`** table (must stay under this `## Data Flow` section — do not promote it to `##`):
+
+   | Provider | Direction | Protocol | Auth | Timing | Retry / idempotency | Failure / compensate |
+   | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+   | [name] | in / out / webhook | [HTTP/gRPC/…] | [scheme] | sync / async / queue / job | [policy] | [path] |
+
+   Write `None — local-only` **only** when explore proves zero externals.
+4. **Between hops** — bullets: retries, backoff, idempotency/event IDs, DLQ, compensate when multi-step.
+5. **Alternate / failure path** — bullets or a small second sequence.
+
+`research post` / Gate 1 reject language: schema-only Data Flow fails. A non-empty `## Data Flow` must contain a fenced `sequenceDiagram` **or** `None — local-only`, and an Outbound integrations heading/table **or** the same local-only marker.
 </output_format_schemas_data_model_md>
 
 <edge_case_handling>

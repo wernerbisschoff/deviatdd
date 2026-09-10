@@ -680,13 +680,50 @@ class TestValidateIssueTraceability:
 def _sections_doc(sections: list[str], ao_token: bool = False) -> str:
     parts = []
     for section in sections:
-        body = (
-            "substance line"
-            if section != "Acceptance Outline"
-            else "- **AO-001**: aligned lists.│"
-        )
+        if section == "Acceptance Outline":
+            body = "- **AO-001**: aligned lists.│"
+        elif section == "Data Flow":
+            body = "None — local-only"
+        else:
+            body = "substance line"
         parts.append(f"## {section}\n{body}\n")
     return "\n".join(parts)
+
+
+def _data_model_doc(*, data_flow: str) -> str:
+    parts = []
+    for section in ARTIFACT_VALIDATORS["data_model"]:
+        body = data_flow if section == "Data Flow" else "substance line"
+        parts.append(f"## {section}\n{body}\n")
+    return "\n".join(parts)
+
+
+_INTEGRATED_DATA_FLOW = """
+Trigger: client submits a payout. Terminal success: provider accepts the transfer.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Ledger
+    participant Provider
+    Client->>API: POST /payouts
+    API->>Ledger: reserve
+    API->>Provider: createTransfer
+    Provider-->>API: accepted
+```
+
+### Outbound integrations
+
+| Provider | Direction | Protocol | Auth | Timing | Retry / idempotency | Failure / compensate |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| PayoutRail | out | HTTPS | mTLS | sync | idempotency key | release reserve |
+
+- Retries: one retry on 503; no auto-resubmit after UNKNOWN.
+- Compensate: release the reserve when the provider rejects.
+
+Alternate: provider timeout → mark UNKNOWN, do not create a second transfer.
+"""
 
 
 class TestPromptValidatorAlignmentRed:
@@ -819,3 +856,76 @@ class TestSubstanceAndCapsRed:
     def test_missing_section_body_substance_does_not_crash(self):
         result = validate_artifact("## Other\nbody\n", "design")
         assert result.passed is False
+
+
+class TestDataFlowRuntimeContract:
+    @pytest.mark.behavioral
+    def test_schema_only_data_flow_fails(self):
+        content = _data_model_doc(
+            data_flow="Entities persist in the ledger table and join on user_id."
+        )
+        result = validate_artifact(content, "data_model")
+        assert result.passed is False
+        assert any("sequenceDiagram" in e for e in result.errors)
+        assert any("Outbound integrations" in e for e in result.errors)
+
+    @pytest.mark.behavioral
+    def test_sequence_without_outbound_fails(self):
+        content = _data_model_doc(
+            data_flow=(
+                "```mermaid\nsequenceDiagram\n    participant A\n    A->>A: hop\n```\n"
+            )
+        )
+        result = validate_artifact(content, "data_model")
+        assert result.passed is False
+        assert any("Outbound integrations" in e for e in result.errors)
+        assert not any("sequenceDiagram" in e for e in result.errors)
+
+    @pytest.mark.behavioral
+    def test_outbound_without_sequence_fails(self):
+        content = _data_model_doc(data_flow="### Outbound integrations\n| Provider |\n")
+        result = validate_artifact(content, "data_model")
+        assert result.passed is False
+        assert any("sequenceDiagram" in e for e in result.errors)
+        assert not any("Outbound integrations" in e for e in result.errors)
+
+    @pytest.mark.behavioral
+    def test_local_only_marker_passes(self):
+        content = _data_model_doc(data_flow="None — local-only")
+        result = validate_artifact(content, "data_model")
+        assert result.passed is True
+        assert result.errors == []
+
+    @pytest.mark.behavioral
+    def test_hyphen_local_only_marker_passes(self):
+        content = _data_model_doc(data_flow="None -- local-only")
+        result = validate_artifact(content, "data_model")
+        assert result.passed is True
+
+    @pytest.mark.behavioral
+    def test_sequence_and_outbound_pass(self):
+        result = validate_artifact(
+            _data_model_doc(data_flow=_INTEGRATED_DATA_FLOW), "data_model"
+        )
+        assert result.passed is True
+        assert result.errors == []
+
+    @pytest.mark.behavioral
+    def test_empty_data_flow_still_fails_as_empty_section(self):
+        content = _data_model_doc(data_flow="   \n")
+        result = validate_artifact(content, "data_model")
+        assert result.passed is False
+        assert any("empty section: Data Flow" in e for e in result.errors)
+        assert not any("sequenceDiagram" in e for e in result.errors)
+
+    @pytest.mark.behavioral
+    def test_unfenced_sequence_diagram_does_not_count(self):
+        content = _data_model_doc(
+            data_flow=(
+                "sequenceDiagram\n    participant A\n\n### Outbound integrations\n"
+                "None — still needs a fence.\n"
+            )
+        )
+        result = validate_artifact(content, "data_model")
+        assert result.passed is False
+        assert any("sequenceDiagram" in e for e in result.errors)
