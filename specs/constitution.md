@@ -1,6 +1,6 @@
 # Project Constitution
 
-Version: 0.11.0
+Version: 0.12.0
 
 ---
 
@@ -35,7 +35,7 @@ Version: 0.11.0
 - Config: TOML via `.deviate/config.toml`; `[models]` section for per-phase model assignment
 
 ### Infrastructure
-- Micro-sandbox: Aider Python API (`aider.coders.Coder`) as LLM execution substrate
+- LLM execution substrate: `src/deviate/core/agent.py::AgentBackend` invokes the configured agent CLI backend. Supported backends are `opencode`, `claude`, `droid`, `pi`, `omp`, and `codex`. `src/deviate/state/config.py::AgentConfig` selects the backend; `pi` is the default. Model routing follows §1. Aider support is deprecated; the current execution contract uses `AgentBackend`.
 - Version control: Git (all phase commits, lock branches for concurrency)
 - No containerization required (local execution on host)
 
@@ -94,6 +94,7 @@ Version: 0.11.0
 
 ## 6. Version History
 
+- 0.12.0 — Replaced the obsolete Aider mandate in §2 with the current `AgentBackend` execution contract. Records existing behavior; preserves §1 model routing and phase gates. The operator explicitly approved this amendment during `HITL Gate 1`.
 - 0.11.0 — Reintroduced the Product layer as an optional `product` pack (`/deviate-flows`, `/deviate-architecture`, `/deviate-release`) authoring standalone `specs/_product/` planning artifacts for greenfield scope tracking. No ledger, no `flows.jsonl`, no `flow_refs` contract, no downstream reads — FLOW-NN IDs are prose anchors only.
 - 0.10.0 — Removed the Product layer. Three layers remain: Macro, Meso, Micro. Dropped `flows.jsonl` from the append-only protocol and Database sections. User Stories + ATDD stay on the shard issue; RED encodes those user scenarios as failing tests. No replacement catalog, `_product/` folder, or `flow_refs` pointer.
 - 0.9.0 — Cut v2.15.0 release. Records the release of accumulated micro-layer hardening, doc/code drift fixes, and Product-layer discipline additions since v2.4.0 (2026-07-04).
@@ -105,3 +106,18 @@ Version: 0.11.0
 
 - 0.2.0 — Added `[models]` config section for per-phase model routing; documented resolution order and backend support matrix
 - 0.1.0 — Initial constitution generation for DeviaTDD Python CLI
+
+### ADR-001: Current LLM Execution Substrate
+
+- **Status**: Accepted through explicit operator approval during `HITL Gate 1`.
+- **Context**: §2 retained an Aider requirement after Aider support became deprecated.
+- **Decision**: Use the existing `AgentBackend` CLI integration as the §2 execution substrate.
+- **Alternative**: Restoring Aider would introduce implementation work to satisfy an obsolete requirement.
+- **Consequence**: Research evaluates backend reuse against the current execution contract. §1 phase gates and session continuity remain required.
+- **Approval**: Operator instruction: “Aider support is DEPRECATED and has been for a long time, amend the constitution”.
+- **Source**: `src/deviate/core/agent.py::AgentBackend`: `class AgentBackend:`.
+- **Source**: `src/deviate/state/config.py::AgentConfig`:
+
+```python
+    backend: Literal["opencode", "claude", "droid", "pi", "omp", "codex"] = "pi"
+```
