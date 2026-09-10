@@ -144,7 +144,15 @@ def test_help_agent_panel_lists_macro_micro_groups():
     # Operational (still agent-internal) — `html` joins this bucket: the
     # `deviate html` command is invoked from the /deviate-html slash
     # command, not run by hand.
-    for cmd in ("constitution", "init", "review", "html", "prune"):
+    for cmd in (
+        "constitution",
+        "init",
+        "review",
+        "walkthrough",
+        "converge",
+        "html",
+        "prune",
+    ):
         assert cmd in block, (
             f"Expected operational command {cmd!r} in {AGENT_PANEL!r} panel"
         )

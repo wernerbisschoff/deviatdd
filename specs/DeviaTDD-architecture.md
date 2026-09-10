@@ -146,7 +146,13 @@ is this cover sheet — no `closeout.md` and no `/deviate-closeout`.
 It does not send constitution/prd as default inputs unless this brief names
 those paths. The walkthrough must not reimplement, approve, hide hunks, tell
 the human to skip a look, auto-edit, or apply fixes. Both commands stay
-optional packs (`review`, `walkthrough`); default setup does not install them.
+optional packs (`review`, `walkthrough`, `converge`); default setup does not install them.
+The opt-in `/deviate-converge` pack (`src/deviate/cli/converge.py`) runs after this
+issue's Micro drain and before walkthrough/review/PR. It assesses present-state
+in-scope code against this issue brief, `plan.md` AC-PLAN, `tasks.md`, and filled
+constitution MUST. On gaps it appends `## Phase N: Convergence` plus PENDING
+`TSK-*` via `append_task_record`. Clean leaves `tasks.md` byte-unchanged.
+`deviate run` enters that tail when the pack is installed or `--converge` is passed.
 
 * **Shard + acceptance outline:** `/deviate-shard` produces vertical issue packets with user stories, `AO-NNN` outcomes, edge cases, performance constraints, and scope boundaries. `GHERKIN_LEAK_DETECTED` rejects Given/When/Then in macro artifacts. Standalone `/deviate-specify` remains deprecated.
 * **[HITL Gate 2 (REMOVED)]:** The post-Tasks approval hard gate was removed. The system never blocks on human approval. `deviate run` chains meso into micro end-to-end; plan and tasks artifacts are committed to the worktree and may be reviewed out-of-band, but execution does not wait on the human.
@@ -543,7 +549,7 @@ emitting the auto core only; the manual overlay never leaks into the auto path. 
 drift-guard tests `TestManualDerivationFromAutoCore` and `TestManualDerivationDriftGuard`
 pin the identical-middle invariant across all 11 overlapping phases. The 15
 commands-only prompts (adhoc, architecture, constitution, e2e, flows, hotfix, html,
-init, merge, pr, prune, release, review, triage, walkthrough) have no auto counterpart
+init, merge, pr, prune, release, review, triage, walkthrough, converge) have no auto counterpart
 and stay hand-maintained.
 
 **GREEN and REFACTOR Ponytail discipline.** The canonical `auto/green.md` prompt uses
@@ -657,7 +663,7 @@ The framework prevents total autonomy drift by enforcing non-bypassable verifica
 [Meso /plan → /tasks]  (GATE 2 REMOVED: auto-advance into Micro)  ──> [micro run --all]
                                   │
                                   ▼
-[Micro complete]    ──> ( GATE 3: Final Merge Audit ) ──> [review / walkthrough]
+[Micro complete]    ──> [optional /deviate-converge → Micro if gaps …] ──> ( GATE 3: Final Merge Audit ) ──> [review / walkthrough]
 ```
 
 The remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
@@ -668,8 +674,8 @@ The remaining HITL gates are Gate 1 and Gate 3 (Gate 2 was removed).
 * **Gate 2: Acceptance & Task Review (REMOVED)**
     * Was: post-`/deviate-tasks`, pre-micro approval enforced via `deviate meso approve` recording `hitl_gate_2_*_sha256` hashes of `plan.md` and `tasks.md` against the active issue. Micro failed closed on missing (`HITL_GATE_2_APPROVAL_REQUIRED`) or stale (`HITL_GATE_2_APPROVAL_STALE`) approval.
     * Rationale for removal: the system never blocks on human approval. Plan and Tasks still commit their authored artifacts to the worktree for out-of-band review, but execution auto-advances into Micro.
-* **Gate 3: Final Merge Audit (After micro, via `deviate review` / `deviate walkthrough`)**
-    * *Trigger:* The operator (or agent) runs the optional `review` / `walkthrough` packs after micro. Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped).
+* **Gate 3: Final Merge Audit (After micro — and after optional Converge is clean — via `deviate review` / `deviate walkthrough`)**
+    * *Trigger:* The operator (or agent) runs the optional `review` / `walkthrough` packs after micro (and after `/deviate-converge` is clean when that pack is in play). Coworker path is one issue = one PR, often `--profile fast` (JUDGE skipped). Converge is not a hard Gate 3 prerequisite.
     * *Action:* `/deviate-walkthrough` emits a ≤6-line cover sheet (look 0 or preamble) then the four-look map for THIS issue/PR. `/deviate-review` comments only (stdout and/or GitHub `COMMENT`): named-check checklist + test-weakening + this-issue cross-task drift. A brief with no named checks emits exactly `brief incomplete`. Unclaimed plan-AC tokens are comment input via `uncovered`. Neither command applies, commits, `REQUEST_CHANGES`, or merges.
 
 ---

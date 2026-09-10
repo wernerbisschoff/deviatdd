@@ -76,7 +76,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   manual overlay (pre/post-script lifecycle steps, rich handover manifest,
   `<context><user_input>` block) is appended from the reduced
   `commands/deviate-{phase}.md` source. `auto/{phase}.md` is the single source of
-  truth; the 12 commands-only prompts (adhoc, constitution, e2e,
+  truth; the 13 commands-only prompts (adhoc, constitution, converge, e2e,
   hotfix, html, init, merge, pr, prune, review, triage,
   walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
   pins the identical-middle invariant across all 11 phases (see section 2).
@@ -91,7 +91,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   manual overlay (pre/post-script lifecycle steps, rich handover manifest,
   `<context><user_input>` block) is appended from the reduced
   `commands/deviate-{phase}.md` source. `auto/{phase}.md` is the single source of
-  truth; the 12 commands-only prompts (adhoc, constitution, e2e,
+  truth; the 13 commands-only prompts (adhoc, constitution, converge, e2e,
   hotfix, html, init, merge, pr, prune, review, triage,
   walkthrough) have no auto counterpart and stay hand-maintained. A drift guard
   pins the identical-middle invariant across all 11 phases (see section 2).
@@ -143,7 +143,7 @@ scripts. All commands are registered in `src/deviate/cli/__init__.py` using Type
   optional command packs for scripts. Default layer packs are the three execution layers
   (`macro` + `meso` + `micro`, including `/deviate-init`). On a TTY, omitted `--packs`
   shows a Rich checkbox list (one pack per row: `product`, `merge`, `pr`, `review`, `walkthrough`,
-  `html`, `hotfix`, `triage`, `prune`, `e2e`). Space toggles; Enter confirms; default is
+  `converge`, `html`, `hotfix`, `triage`, `prune`, `e2e`). Space toggles; Enter confirms; default is
   nothing selected (execution layers only). The slash-separated `Prompt.ask` list is
   not used. Non-interactive sessions skip the prompt and install default-only.
   `--packs all-optional` includes every individual extra. Pack picks are not written
@@ -644,9 +644,9 @@ Validates plan.md exists, is non-empty, and contains a valid Acceptance Contract
 
 Validates tasks.md exists and is non-empty, commits it, and transitions session to IDLE. There is no human-approval step between Tasks and Micro — the system auto-advances. Tasks map work to `AC-PLAN-NNN` scenario IDs.
 
-#### `deviate run [--issue] [--force]`
+#### `deviate run [--issue] [--force] [--converge]`
 
-Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain the task queue. There is no human-approval step between meso and micro — the system never blocks on human approval. The former Micro-related flags (`--profile`, `--no-judge`, `--no-refactor`, `--agent`, `--json`) are removed; use them on `deviate micro run` directly if you only want to drain pending tasks.
+Runs setup → Plan → Tasks and chains into `deviate micro run --all` to drain the task queue. There is no human-approval step between meso and micro — the system never blocks on human approval. When the optional `converge` pack is installed, or `--converge` is passed, a drained queue continues into Converge (`CONVERGE_READY` handoff or a clean `CONVERGED`); appended gap tasks re-enter Micro until clean. Walkthrough, review, and PR stay outside this loop. The former Micro-related flags (`--profile`, `--no-judge`, `--no-refactor`, `--agent`, `--json`) are removed; use them on `deviate micro run` directly if you only want to drain pending tasks. `--converge` is opt-in and does not run when the pack is absent unless the flag is passed.
 
 #### `deviate tasks <issue-id>` (Legacy)
 
@@ -993,21 +993,22 @@ uses the same `_resolve_task_context` selector as the other micro pres.
 
 ### 5. Automated Pipeline Orchestration
 
-#### `deviate run` (Meso → Micro Chain)
+#### `deviate run` (Meso → Micro → optional Converge)
 
 * **Source:** `src/deviate/cli/__init__.py` (top-level `run_command`)
-* **Description:** Canonical "go do the next thing" entry point. Runs `deviate meso run` end-to-end (SPECIFY setup → PLAN → TASKS) and then **chains** into `deviate micro run --all` to drain the task queue. There is no human-approval step between meso and micro — the system auto-advances. Discovers the next unblocked BACKLOG issue, claims it (creating the per-issue worktree), runs the meso pipeline in the worktree, then dispatches the micro drain. Internally:
+* **Description:** Canonical "go do the next thing" entry point. Runs `deviate meso run` end-to-end (SPECIFY setup → PLAN → TASKS) and then **chains** into `deviate micro run --all` to drain the task queue. There is no human-approval step between meso and micro — the system auto-advances. Discovers the next unblocked BACKLOG issue, claims it (creating the per-issue worktree), runs the meso pipeline in the worktree, then dispatches the micro drain. When the optional `converge` pack is installed (`deviate-converge` slash/skill present) or `--converge` is passed, a drained queue runs the Converge tail: readiness check, then `CONVERGE_READY` (slash/agent assesses; `deviate converge post` appends) or `CONVERGED`. If Converge appends PENDING tasks, Micro drains again until clean. Walkthrough, review, and `/deviate-pr` stay outside this loop. Internally:
   1. Calls `_meso_run(issue_id=...)` from `src/deviate/cli/meso.py`, which returns the created worktree path on success (`str(worktree_path)`).
-  2. `chdir`s into that worktree, updates `.deviate/session.json` to record the handoff.
-  3. Invokes `_run_all(root, console)` from `src/deviate/cli/micro.py` against the worktree, draining every PENDING task for the active issue.
+  2. Invokes `_run_all(root, console)` from `src/deviate/cli/micro.py` against the worktree, draining every PENDING task for the active issue (empty queue is success, not a skip of Converge).
+  3. When Converge is in play, calls `_run_converge_pass` (`src/deviate/cli/converge.py`); `appended` re-enters the drain, `converged` prints `CONVERGED`, `handoff` prints `CONVERGE_READY` plus the pre contract, leftover PENDING prints `CONVERGE_NOT_READY`.
 * **Input Parameters:**
   * `--issue <ISS_ID>` (Target a specific BACKLOG issue; e.g. `002-001` for new work, `ISS-019` for grandfathered ids. Default: next unblocked.)
   * `--force` (Bypass `blocked_by` pre-flight guards; forwarded to meso)
   * `--local` (Claim locally only: create worktree, write ledger, commit; skip remote check and `git push`. Distinct from `--no-setup`. Omitted flag honors `claim_remote` config. Forwarded to `_meso_run`.)
+  * `--converge` (Force the post-micro Converge tail even if the pack is not installed in this worktree.)
   * `--model <id>` (Override default model for RED/GREEN/REFACTOR/EXECUTE phases;
     resolution: phase-specific config &gt; CLI `--model` &gt; default config &gt; backend native;
     JUDGE is excluded from CLI override to preserve model tiering)
-* **Exit Codes:** 0 on meso + micro success; 1 if meso reports failure (`RUN_NO_WORKTREE` / `RUN_WORKTREE_MISSING`).
+* **Exit Codes:** 0 on meso + micro success (and Converge clean/handoff); 1 if meso reports failure (`RUN_NO_WORKTREE` / `RUN_WORKTREE_MISSING`) or Converge is not ready (`CONVERGE_NOT_READY`).
 * **Replaces:** The old task-dispatch surface. The per-task and `--all` dispatches live at `deviate micro run <task-id>` and `deviate micro run --all`; the former `--profile` / `--no-judge` / `--no-refactor` / `--agent` / `--json` flags were removed from `deviate run` and remain available on `deviate micro run`.
 
 #### `deviate micro run [task-id]` / `deviate micro run --all`
@@ -1658,6 +1659,25 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   * `status` (Positional: CLEAN or FLAGGED)
 * **Output Artifacts:** JSON contract with `status`, `phase`, `timestamp`.
 
+---
+
+#### `deviate converge pre`
+
+* **Source:** `src/deviate/cli/converge.py` / `src/deviate/core/converge.py`
+* **Description:** Issue-scoped present-state contract for the opt-in Converge pack (same class as `pr` / `review` / `walkthrough`; not in default setup). Emits this issue's brief, `plan.md`, `tasks.md`, filled constitution MUST path, and in-scope code paths from plan/task files. Does **not** read epic explore, leftover research, or epic PRD/design/data-model unless this brief names those paths. Present-state only — no git history or branch-diff. Missing brief, plan, or tasks, or a non-empty Micro queue, exits non-zero with `CONVERGE_NOT_READY` and an actionable message. Unfilled constitution templates (`> TBD` / `${PLACEHOLDER}`) omit `constitution_path`.
+* **Output Artifacts:** JSON contract with `status`, `issue_id`, `issue_brief_path`, `plan_path`, `tasks_path`, `in_scope_paths`, `pending_task_ids`, optional `constitution_path`, `timestamp`.
+* **Token Budget:** L_max ≤ 500ms on a typical issue; one issue per invocation.
+
+#### `deviate converge post [<findings-json>]`
+
+* **Source:** `src/deviate/cli/converge.py`
+* **Description:** Mechanical append-only writer. Empty / omitted findings leave `tasks.md` byte-unchanged and report `CONVERGED` (no empty Convergence header). On gaps, append one `## Phase N: Convergence` section (N = max existing phase + 1) and matching PENDING `TSK-{issue}-{nn}` rows via `append_task_record`. Never rewrite, renumber, or delete existing tasks; never edit `plan.md`, the issue brief, constitution, or application code. Taxonomy is `missing` | `partial` | `contradicts` | `unrequested` with a source-ref. Constitution MUST violations are CRITICAL and ordered first. `unrequested` only appends a review/justify/remove task. Ledger append failure prints `LEDGER_APPEND_FAILED` and does not write `tasks.md`.
+* **Input Parameters:**
+  * `findings` (Optional JSON object `{findings:[...]}` or a JSON list. Omitted = clean no-op.)
+* **Output Artifacts:** JSON with `status` (`CONVERGED` | `APPENDED`), `task_ids` / numeric `phase` when appended.
+
+The `/deviate-converge` slash command guides the agent to assess and call `pre` / `post`. The `deviatdd` skill drives `deviate run` until happy/converged; walkthrough, review, and PR stay outside that loop.
+
 ### 8. (Removed — Context Sync)
 
 The `deviate context` concept was evaluated and removed. Reasoning:
@@ -1771,7 +1791,7 @@ src/deviate/
 │   │   ├── red.md, green.md, judge.md, refactor.md, plan.md, execute.md
 │   │   └── (11 overlapping phases above)
 │   ├── governance/           # claudemd_seed.md, agents_seed.md
-│   └── commands/             # 23 DeviaTDD slash commands (flat *.md): 11 derive their body from auto/{phase}.md + a manual overlay ({execute, explore, green, judge, plan, prd, red, refactor, research, shard, tasks}); 12 hand-maintained commands-only prompts (adhoc, constitution, e2e, hotfix, html, init, merge, pr, prune, review, triage, walkthrough)
+│   └── commands/             # 24 DeviaTDD slash commands (flat *.md): 11 derive their body from auto/{phase}.md + a manual overlay ({execute, explore, green, judge, plan, prd, red, refactor, research, shard, tasks}); 13 hand-maintained commands-only prompts (adhoc, constitution, converge, e2e, hotfix, html, init, merge, pr, prune, review, triage, walkthrough)
     ├── config.py             # DeviateConfig, SessionState, TransitionViolationError, _MACRO_TRANSITION_MAP
     └── ledger.py             # IssueRecord, TaskRecord, append_issue_transition, append_task_transition
 ```
@@ -1826,6 +1846,7 @@ and are installed to `.{agent}/commands/<name>.md` per workspace (or `.pi/prompt
 | **[REMOVED]** | --- | --- | --- | HITL Gate 2 (post-Tasks `deviate meso approve` approval) was removed. The system never blocks on human approval; `deviate run` chains meso into micro end-to-end. Plan and Tasks still commit authored artifacts to the worktree, but the human can review them on their own schedule without gating execution. |
 | `/deviate-plan` | Localized Researcher / Contract Author | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/plan.md` | `deviate plan pre/post` | 5 steps: read issue (intent + outlines), scan current codebase, analyze prior issues, author authoritative `## Acceptance Contract` with `AC-PLAN-NNN` Given/When/Then scenarios (Source Outline, Upstream Traceability, Current-Code Evidence), commit. The contract is authoritative for Tasks, RED, and JUDGE. |
 | `/deviate-tasks` | Technical Lead | `specs/{FEATURE_SLUG}/{ORDINAL}-{slug}/tasks.md` | `deviate tasks pre/post` | 6 steps: consume issue intent + authoritative `plan.md` Acceptance Contract, decompose into `AC-PLAN-NNN`-aligned tasks, assign execution modes (`Verification_Batch` is locked to `execution_mode: IMMEDIATE` / EXECUTE — never TDD), stamp every TDD task **Test Strategy** `unit` | `integration` | `e2e` (default `unit`; migration / live-DB AC → `integration`; Verification is that layer plus cheaper existing rungs — never `pytest tests/` for a unit task), emit a closing sweep only when a rung exists (user-facing + e2e → `[E2E]` Verification_Batch with the full existing ladder; else if integ exists → `[VERIFY]` unit-if-exists + integ; else no extra sweep — never empty e2e files, never require integ), encode DAG deps, halt on `PLAN_ACCEPTANCE_CONTRACT_MISSING`/`INVALID` (no legacy issue Gherkin fallback), commit. After Tasks, `deviate run` chains directly into `deviate micro run --all` — no human-approval step. |
+| `/deviate-converge` | Converge assessor (optional `converge` pack) | this issue `tasks.md` + `tasks.jsonl` (append-only on gaps) | `deviate converge pre/post` | After this issue's Micro drain and before PR: present-state vs this brief/AO, `plan.md` AC-PLAN, tasks, filled constitution MUST, in-scope code. MUST NOT read epic explore / leftover research / epic PRD unless the brief names those paths. Gaps append `## Phase N: Convergence` + PENDING `TSK-*` via `append_task_record`. Clean = byte-unchanged `tasks.md`, report CONVERGED. Taxonomy `missing|partial|contradicts|unrequested`. Not a substitute for JUDGE, walkthrough, or review. |
 | `/deviate-walkthrough` | Four-Look Map | (none — conversation only) | `deviate walkthrough pre/post` | ≤6-line cover (intent, deviations, evidence, ops/ADR/data-flow) as look 0 or preamble, then 4 looks: brief + plan AC lines, test hunks, production-hunk→named-check claims, check command. HITL `ask` after the cover and per look. Must not approve, hide hunks, skip a look, or auto-edit. No `closeout.md`. |
 | `/deviate-review` | Gate 3 PR Reviewer | advisory `.deviate/review/reports/` (never staged) | `deviate review pre/post` (`--apply` opt-in) | Default: comments only (stdout and/or GitHub `COMMENT`). Named-check checklist + test-weakening + this-issue cross-task drift. `brief incomplete` when named checks are missing. No always-on apply; no `REQUEST_CHANGES`; no merge. `--apply` may land CRITICAL-only fixes (security / data loss / broken build / named-check fail with a concrete FIX) and commit only if a CRITICAL fix landed. |
 | `/deviate-html` | HTML Author (manual, on-demand) | (none — consumes existing `.md` files) | `deviate html <phase>` *(for `prd`, `deviate html prd --bucket <slug>` targets a specific epic when more than one owns a `prd.md`; `--force` overwrites an existing `.html`)* | 5 steps: read phase `.md`, emit starter scaffold via `deviate html`, author HTML body section-by-section using the full HTML surface (diagrams, tables, callouts — no markdown→HTML auto-translation), validate lockstep with the source markdown (FR/AC tokens), commit `.html` alongside the `.md` per STEP_5. **Manual-only** — phase prompts (`/deviate-prd`, `/deviate-plan`, `/deviate-research`) carry an optional pointer but never auto-invoke this command. The user decides when to ship the HTML counterpart (typically end-of-session, or per-phase immediately after the markdown lands). |

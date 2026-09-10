@@ -1380,6 +1380,7 @@ class TestInstallDeviatddSkill:
             "/deviate-hotfix",
             "/deviate-prune",
             "/deviate-inspect",
+            "/deviate-converge",
         ):
             assert cmd in body, (
                 f"Dispatcher missing reference to {cmd} - every "
@@ -1406,14 +1407,14 @@ class TestInstallDeviatddSkill:
         assert fm.get("category") == "deviatdd-tooling", (
             f"category mismatch: got {fm.get('category')!r}"
         )
-        assert fm.get("version") == "3.0.0", (
+        assert fm.get("version") == "3.1.0", (
             f"version mismatch: got {fm.get('version')!r}"
         )
         for instruction in (
-            "deviate meso run",
+            "deviate run",
             "MESO_ALREADY_COMPLETE",
             "MESO_PLAN_INVALID",
-            "deviate micro run",
+            "CONVERGED",
         ):
             assert instruction in body
 

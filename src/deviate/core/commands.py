@@ -54,6 +54,7 @@ OPTIONAL_PACKS: dict[str, tuple[str, ...]] = {
     "pr": ("deviate-pr",),
     "review": ("deviate-review",),
     "walkthrough": ("deviate-walkthrough",),
+    "converge": ("deviate-converge",),
     "html": ("deviate-html",),
     "hotfix": ("deviate-hotfix",),
     "triage": ("deviate-triage",),
@@ -162,8 +163,8 @@ def _resolve_core_dir() -> Path | None:
 # The 11 phases with a canonical ``auto/{phase}.md`` core. The manual
 # slash-command body is derived from this core plus a per-phase manual
 # overlay at install time — there is no hand-maintained duplicate middle
-# file to drift from the auto semantics. The 15 commands-only prompts
-# (adhoc, constitution, e2e, hotfix, html, init, merge, pr, prune,
+# file to drift from the auto semantics. The 13 commands-only prompts
+# (adhoc, constitution, converge, e2e, hotfix, html, init, merge, pr, prune,
 # review, triage, walkthrough) have no auto counterpart and stay
 # hand-maintained.
 _OVERLAPPING_PHASES = frozenset(
