@@ -49,6 +49,8 @@ ARTIFACT_VALIDATORS: dict[str, list[str]] = {
 
 _ROW_CAP_WARNINGS: dict[str, int] = {"File Registry": 12, "Risk Register": 4}
 _FR_OPTIONAL_SUBFIELDS = ("Preconditions", "State Transition", "Exception")
+_DATA_FLOW_LOCAL_ONLY = re.compile(r"None\s*[—–\-]+\s*local-only", re.IGNORECASE)
+_DATA_FLOW_OUTBOUND = re.compile(r"outbound integrations", re.IGNORECASE)
 
 
 def _substance_errors(content: str, required: list[str]) -> list[str]:
@@ -72,6 +74,32 @@ def _row_cap_warnings(content: str, required: list[str]) -> list[str]:
         if len(rows) > cap:
             warnings.append(f"{section} has {len(rows)} rows, over cap of {cap}")
     return warnings
+
+
+def _has_fenced_sequence_diagram(body: str) -> bool:
+    return "```" in body and "sequenceDiagram" in body
+
+
+def _data_flow_runtime_errors(content: str) -> list[str]:
+    """Mechanical floor for data-model ``## Data Flow`` request-flow substance.
+
+    Empty or missing sections stay with the existing heading / empty-body
+    checks. A non-empty body must show a fenced ``sequenceDiagram`` or an
+    explicit local-only marker, and an Outbound integrations heading/table
+    or the same marker. No provider-name matching.
+    """
+    body = extract_section_body(content, "Data Flow")
+    if body is None or not body.strip():
+        return []
+    local_only = _DATA_FLOW_LOCAL_ONLY.search(body) is not None
+    errors: list[str] = []
+    if not local_only and not _has_fenced_sequence_diagram(body):
+        errors.append("Data Flow: missing sequenceDiagram or None — local-only")
+    if not local_only and _DATA_FLOW_OUTBOUND.search(body) is None:
+        errors.append(
+            "Data Flow: missing Outbound integrations or None — local-only"
+        )
+    return errors
 
 
 def _fr_subfield_errors(content: str) -> list[str]:
@@ -106,6 +134,8 @@ def validate_artifact(content: str | None, artifact_type: str) -> ValidationResu
             _substance_errors(content, [s for s in required if s not in missing])
         )
         warnings.extend(_row_cap_warnings(content, required))
+        if artifact_type == "data_model" and "Data Flow" not in missing:
+            errors.extend(_data_flow_runtime_errors(content))
     return ValidationResult(passed=len(errors) == 0, errors=errors, warnings=warnings)
 
 
