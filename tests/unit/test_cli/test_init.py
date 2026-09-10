@@ -1462,7 +1462,7 @@ class TestInstallDeviatddSkill:
         for instruction in (
             "### Step 3: Unblock or escalate",
             "Retry limit",
-            "No automatic retry",
+            "One retry, then one inline drive",
             "same harness signature affects two tasks",
             "Do not skip a task by editing `tasks.jsonl`",
             "Failure ownership is unclear",
