@@ -100,6 +100,6 @@ class TestNoDownstreamFlowRefs:
 class TestConstitutionRecordsOptionalProductLayer:
     def test_constitution_says_optional_product(self) -> None:
         text = _CONSTITUTION.read_text(encoding="utf-8")
-        assert "Version: 0.11.0" in text
+        assert "Version: 0.12.0" in text
         assert "Optional Product Layer" in text
         assert "There is no Product layer" not in text
