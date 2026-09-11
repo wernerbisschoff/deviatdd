@@ -60,6 +60,12 @@
 
 ---
 
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-006 requires all callers import directly from src/deviate/cli/micro/ submodules with zero bare shim imports remaining.
+    - Evidence: The rejected test required def/class statements for Typer app instances that exist as assignments, which no verbatim-preserving edit can satisfy.
+    - Correction: Author tests/unit/test_micro/test_micro_import_targets.py to check bare shim import absence and submodule import resolution via importlib resolution rather than def/class source text.
+    - Verification: Run uv run pytest tests/unit/test_micro -q and expect a failure caused by existing shim imports, not by app object definition style.
+    - Boundary: Change tests only. Do not edit production code or expand the acceptance contract.
 ## Phase 3: Parity gate and shim deletion
 **Goal**: Prove post-move parity and remove the shim in its own commit
 
