@@ -868,3 +868,13 @@
 - **Acceptance Outline**:
   1. AC-ADHOC-059-01 / AO-059-01: A missing `red_commit_sha` on `revert_green` returns a distinct harness failure containing `head_sha` and `recovery_ref` when available.
   2. AC-ADHOC-059-02 / AO-059-02: The runner never falls back to `HEAD~1`, silently retries, or discards rollback evidence; the skill reports `DEVIATDD_BUG` and recommends `/deviate-green` after evidence preservation.
+
+## FR-ADHOC-060: Complete JUDGE revert_red rollback when the mise reset task is missing
+- **Description**: When JUDGE requests `revert_red` and the project defines no `mise run reset` task, the micro runner completes the git rollback and preserves RED commit evidence instead of crashing with `EnvNotReadyError` mid-rollback.
+- **Preconditions**: `deviate micro run` has a JUDGE rejection with `next_action` `revert_red` on an integration/e2e `test_strategy` task in a project without a `[tasks.reset]` entry.
+- **Inputs/Outputs**: Input — JUDGE `revert_red` verdict, `head_sha`, `reset_to`, `recovery_ref`, orphan RED commit. Output — completed git reset to `reset_to`, preserved RED row plus recovery evidence, and a distinct ENV precondition report for the missing reset hook.
+- **User Stories**:
+  1. US-060-01: As a DeviaTDD operator, I want a JUDGE revert_red rollback to finish and keep RED evidence even when my project has no reset task so a missing hook does not lose work
+- **Acceptance Outline**:
+  1. AC-ADHOC-060-01 / AO-060-01: A `revert_red` rollback with no `mise run reset` task completes the git reset and preserves the orphan RED commit evidence without raising mid-rollback
+  2. AC-ADHOC-060-02 / AO-060-02: The missing reset hook is reported as a distinct ENV precondition with `head_sha`, `reset_to`, and `recovery_ref`; the RED ledger row is not lost and the next RED/GREEN is gated until the hook exists
