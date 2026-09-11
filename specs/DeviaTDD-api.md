@@ -931,6 +931,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
   before/after to detect regression. **Regression gate:** a non-zero post-polish test result fails
   the phase. On regression, restores via `git restore .` and halts.
   Commits with `refactor({scope}): REFACTOR phase - code cleanup`.
+  Writes `COMPLETED` to `tasks.jsonl` before committing; no ledger write follows the commit.
+  The shared kernel and manual command report `COMMIT_FAILED` if uncommitted files remain.
+  Manual commit failures exit non-zero, without `REFACTOR_POST_OK` or `NOTHING_CHANGED`.
 
 #### Acceptance gates (RED checkpoint, GREEN gate, REFACTOR gate)
 

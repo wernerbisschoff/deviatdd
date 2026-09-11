@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from contextlib import chdir
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from tests.conftest import _git_env
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord
 
@@ -144,3 +146,83 @@ def test_refactor_post_kernel_gate_failure_writes_no_completed(
         ledger = Path("specs") / "001-007" / "tasks.jsonl"
         rows = ledger.read_text(encoding="utf-8")
     assert "COMPLETED" not in rows
+
+
+@pytest.mark.parametrize("entrypoint", ["kernel", "manual", "manual-tests"])
+@pytest.mark.parametrize("reject_commit", [False, True])
+def test_refactor_post_commits_ledger_or_reports_failure(
+    tmp_git_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entrypoint: str,
+    reject_commit: bool,
+):
+    import deviate.cli.micro as micro
+
+    _seed(tmp_git_repo)
+    (tmp_git_repo / ".gitignore").write_text(".deviate/\n")
+    monkeypatch.setattr(
+        micro,
+        "_test_command_candidates",
+        lambda root: ["pytest"] if entrypoint == "manual-tests" else [],
+    )
+    monkeypatch.setattr(
+        micro,
+        "_run_pytest",
+        lambda root: subprocess.CompletedProcess([], 0, stdout="1 passed", stderr=""),
+    )
+    if reject_commit:
+        hooks = tmp_git_repo / ".git" / "hooks"
+        hook = hooks / "pre-commit"
+        hook.write_text("#!/bin/sh\necho 'commit rejected' >&2\nexit 1\n")
+        hook.chmod(0o755)
+        subprocess.run(
+            ["git", "config", "core.hooksPath", str(hooks)],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+        )
+
+    with chdir(tmp_git_repo):
+        if entrypoint == "kernel":
+            if reject_commit:
+                with pytest.raises(micro.KernelError) as exc:
+                    micro._refactor_post_kernel(task_id="TSK-001-05", root=tmp_git_repo)
+                assert exc.value.token == "COMMIT_FAILED"
+            else:
+                outcome = micro._refactor_post_kernel(
+                    task_id="TSK-001-05", root=tmp_git_repo
+                )
+                assert outcome.token == "REFACTOR_POST_OK"
+        else:
+            result = runner.invoke(cli, ["refactor", "post"])
+            if reject_commit:
+                assert result.exit_code != 0, result.output
+                assert "COMMIT_FAILED" in result.output
+                assert "REFACTOR_POST_OK" not in result.output
+                assert "NOTHING_CHANGED" not in result.output
+            else:
+                assert result.exit_code == 0, result.output
+                assert "REFACTOR_POST_OK" in result.output
+
+    ledger = tmp_git_repo / "specs/001-007/tasks.jsonl"
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+    assert sum(row["status"] == "COMPLETED" for row in rows) == 1
+    if not reject_commit:
+        committed = subprocess.run(
+            ["git", "show", "HEAD:specs/001-007/tasks.jsonl"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert committed.stdout == ledger.read_text()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_git_repo,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert not status.stdout.strip()

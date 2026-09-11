@@ -334,6 +334,7 @@ to invoke, but model selection is delegated to the calling environment.
 * **REFACTOR (The Polish Gate):**
     * **Action:** If the Judge accepts the work, the workspace unlocks for an isolated run to polish readability.
     * **Regression gate:** a non-zero post-polish test result fails the phase. On regression, the CLI restores via `git restore .` and halts; tests stay unmodified.
+    * **Commit gate:** REFACTOR writes `COMPLETED` before committing and performs no subsequent ledger write. The shared post kernel checks for uncommitted files and raises `COMMIT_FAILED` if any remain. Manual post commands also exit non-zero on commit failure instead of reporting success or `NOTHING_CHANGED`.
     * **RED checkpoint:** when the suite passes, RED completes with a warning advisory (`RedHandoffAdvisory`) handed to GREEN; the warning does not block GREEN start and RED never rejects a passing test.
     * **GREEN gate with JUDGE routing:** a failing suite routes to JUDGE via `train_feedback`; the RED warning advisory does not block GREEN start.
 

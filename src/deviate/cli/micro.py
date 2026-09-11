@@ -7982,11 +7982,14 @@ def _refactor_post_kernel(
     session = session.force_transition_to("IDLE")
     session.save(session_path)
     scope = _build_scope(issue_id, task_uuid)
-    with contextlib.redirect_stdout(io.StringIO()):
-        _commit_phase(
-            f"refactor({scope}): REFACTOR phase \u2014 code cleanup",
-            work,
-        )
+    _commit_phase(
+        f"refactor({scope}): REFACTOR phase \u2014 code cleanup",
+        work,
+    )
+    try:
+        _verify_clean_worktree(work, "REFACTOR", task_uuid)
+    except PhaseFailedError as exc:
+        raise KernelError("COMMIT_FAILED", str(exc)) from exc
     return KernelOutcome(token="REFACTOR_POST_OK")
 
 
@@ -9611,12 +9614,13 @@ def refactor_post() -> None:
     )
     if committed:
         console.print("[green]REFACTOR_POST_OK[/]")
-        task_record = green_task[0]
-        _append_status_transition(task_record, "COMPLETED", green_task[1])
         console.print(f"  [bold green]COMPLETED[/] {task_uuid}")
-        session = session.force_transition_to("IDLE")
-        session.save(session_path)
     else:
+        try:
+            _verify_clean_worktree(root, "REFACTOR", task_uuid)
+        except PhaseFailedError as exc:
+            console.print(f"[red]COMMIT_FAILED[/] {exc}")
+            raise typer.Exit(code=1) from exc
         console.print("[yellow]NOTHING_CHANGED[/]")
     raise typer.Exit(code=0)
 
