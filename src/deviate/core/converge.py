@@ -239,15 +239,15 @@ def build_pre_contract(root: Path) -> tuple[dict[str, Any], int]:
         "status": "READY",
         "readiness": "ready",
         "issue_id": issue_id,
-        "issue_brief_path": str(brief.resolve()),
-        "plan_path": str(plan.resolve()),
-        "tasks_path": str(tasks.resolve()),
+        "issue_brief_path": str(brief.relative_to(root)),
+        "plan_path": str(plan.relative_to(root)),
+        "tasks_path": str(tasks.relative_to(root)),
         "in_scope_paths": extract_in_scope_paths(plan_text, tasks_text, brief_text),
         "pending_task_ids": [],
     }
     const_path = root / "specs" / "constitution.md"
     if constitution_is_filled(const_path):
-        contract["constitution_path"] = str(const_path.resolve())
+        contract["constitution_path"] = str(const_path.relative_to(root))
     from datetime import datetime, timezone
 
     contract["timestamp"] = datetime.now(timezone.utc).isoformat()
