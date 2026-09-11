@@ -72,7 +72,9 @@ Per-phase overrides: `.deviate/config.toml` → `[models]` → `default` + phase
 
 ### Git Isolation Principle
 
-Every task loop runs on a clean branch/worktree. Commits happen at phase boundaries. **Never delete a branch unless the user explicitly requests it.**
+Manual changes: work on `main` unless the user requests a branch or worktree.
+Automated task loops: use an isolated branch/worktree and commit at phase boundaries.
+Never delete a branch unless the user explicitly requests it.
 
 
 ### Session Continuity
