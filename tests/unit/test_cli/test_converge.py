@@ -12,6 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from deviate.cli import cli
+from deviate.core.converge import ConvergenceFinding, apply_findings
 from deviate.core.commands import OPTIONAL_PACKS, commands_for_packs
 from deviate.state.config import SessionState
 from tests.conftest import _git_env
@@ -489,6 +490,40 @@ class TestConvergePost:
         assert result.exit_code != 0
         assert "LEDGER_APPEND_FAILED" in result.stdout
         assert tasks.read_bytes() == before
+
+    @pytest.mark.behavioral
+    def test_apply_findings_appends_each_pending_record_in_critical_order(
+        self, tmp_git_repo: Path
+    ) -> None:
+        _seed_issue(tmp_git_repo, filled_constitution=True)
+        calls: list[tuple[str, str]] = []
+        findings = [
+            ConvergenceFinding(
+                taxonomy="partial",
+                source_ref="AC-PLAN-001",
+                summary="ordinary gap",
+            ),
+            ConvergenceFinding(
+                taxonomy="contradicts",
+                source_ref="constitution MUST",
+                summary="critical gap",
+                severity="CRITICAL",
+            ),
+        ]
+
+        def append(record, ledger_path):
+            calls.append((record.id, record.description))
+            return True
+
+        result = apply_findings(tmp_git_repo, findings, append_record=append)
+
+        assert result.status == "APPENDED"
+        assert [task_id for task_id, _ in calls] == [
+            "TSK-058-02",
+            "TSK-058-03",
+        ]
+        assert calls[0][1].startswith("contradicts constitution MUST")
+        assert calls[1][1].startswith("partial AC-PLAN-001")
 
 
 class TestConvergePrompt:
