@@ -1409,3 +1409,140 @@ class TestStaleRejectionRecovery:
             assert recovered.judge_rejected is False, (
                 "stale judge_rejected must not block the recovered run"
             )
+
+
+class TestRevertRedMissingResetReport:
+    """TSK-060-02 RED: missing reset surfaces ENV precondition with recovery."""
+
+    @pytest.mark.behavioral
+    def test_revert_red_missing_reset_surfaces_env_with_recovery_details(
+        self, tmp_git_repo: Path
+    ):
+        from io import StringIO as _SIO
+        from deviate.cli.micro import EnvNotReadyError, _apply_judge_verdict
+        from deviate.state.config import SessionState as _SS
+        from rich.console import Console as _Console
+        from tests.unit.test_micro.test_rollback_env_reset import (
+            _seed_rollback_workspace,
+            _violation,
+        )
+
+        task, ledger, pre_red, red_sha = _seed_rollback_workspace(
+            tmp_git_repo, test_strategy="integration", reset=False
+        )
+        head_before = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = _SS.load(session_path)
+        buf = _SIO()
+        with chdir(tmp_git_repo):
+            with patch(
+                "deviate.cli.micro._execute_test_command",
+                return_value=subprocess.CompletedProcess([], 0, "ok", ""),
+            ):
+                with pytest.raises(EnvNotReadyError) as caught:
+                    _apply_judge_verdict(
+                        task,
+                        ledger,
+                        session,
+                        session_path,
+                        _Console(file=buf, force_terminal=False, width=200),
+                        _violation("revert_red"),
+                        injected_diff="diff --git a/wallet.py b/wallet.py\n",
+                    )
+        text = str(caught.value)
+        assert "ENV_NOT_READY" in text
+        assert "head_sha" in text
+        assert "reset_to" in text
+        assert "recovery_ref" in text
+        assert head_before[:7] in text or head_before in text
+        now = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tmp_git_repo,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
+            check=True,
+        ).stdout.strip()
+        assert now == pre_red
+        assert "revert_red" in ledger.read_text(encoding="utf-8")
+
+    @pytest.mark.behavioral
+    def test_revert_red_nonzero_reset_still_env_not_ready(self, tmp_git_repo: Path):
+        from io import StringIO as _SIO
+        from deviate.cli.micro import EnvNotReadyError, _apply_judge_verdict
+        from deviate.state.config import SessionState as _SS
+        from rich.console import Console as _Console
+        from tests.unit.test_micro.test_rollback_env_reset import (
+            _seed_rollback_workspace,
+            _violation,
+        )
+
+        task, ledger, _pre, _red = _seed_rollback_workspace(
+            tmp_git_repo, test_strategy="integration", reset=True
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = _SS.load(session_path)
+        err = "Can't locate revision identified by 'c6f1a2b3c4d5'"
+
+        def _fail(command: str, cwd: Path, **kw: object):
+            return subprocess.CompletedProcess(["mise", "run", "reset"], 1, "", err)
+
+        buf = _SIO()
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.micro._execute_test_command", side_effect=_fail):
+                with pytest.raises(EnvNotReadyError) as caught:
+                    _apply_judge_verdict(
+                        task,
+                        ledger,
+                        session,
+                        session_path,
+                        _Console(file=buf, force_terminal=False, width=200),
+                        _violation("revert_red"),
+                        injected_diff="diff --git a/wallet.py b/wallet.py\n",
+                    )
+        assert "ENV_NOT_READY" in str(caught.value)
+        assert err in str(caught.value)
+
+    @pytest.mark.behavioral
+    def test_unit_revert_red_skips_reset_hook(self, tmp_git_repo: Path):
+        from io import StringIO as _SIO
+        from deviate.cli.micro import _apply_judge_verdict
+        from deviate.state.config import SessionState as _SS
+        from rich.console import Console as _Console
+        from tests.unit.test_micro.test_rollback_env_reset import (
+            _seed_rollback_workspace,
+            _violation,
+        )
+
+        task, ledger, _pre, _red = _seed_rollback_workspace(
+            tmp_git_repo, test_strategy="unit", reset=False
+        )
+        session_path = tmp_git_repo / ".deviate" / "session.json"
+        session = _SS.load(session_path)
+        calls: list[str] = []
+
+        def _fake(command: str, cwd: Path, **kw: object):
+            calls.append(command)
+            return subprocess.CompletedProcess(command.split(), 0, "ok", "")
+
+        buf = _SIO()
+        with chdir(tmp_git_repo):
+            with patch("deviate.cli.micro._execute_test_command", side_effect=_fake):
+                out = _apply_judge_verdict(
+                    task,
+                    ledger,
+                    session,
+                    session_path,
+                    _Console(file=buf, force_terminal=False, width=200),
+                    _violation("revert_red"),
+                    injected_diff="diff --git a/wallet.py b/wallet.py\n",
+                )
+        assert calls == []
+        assert out.pending_judge_action == "revert_red"
