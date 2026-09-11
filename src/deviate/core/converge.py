@@ -188,7 +188,6 @@ def build_pre_contract(root: Path) -> tuple[dict[str, Any], int]:
     brief = resolve_issue_brief_path(root, issue_id)
     plan = resolve_issue_plan_path(root, issue_id)
     tasks = resolve_issue_tasks_path(root, issue_id)
-    pending = pending_task_ids(root, issue_id)
 
     if brief is None:
         return (
@@ -217,6 +216,7 @@ def build_pre_contract(root: Path) -> tuple[dict[str, Any], int]:
             },
             1,
         )
+    pending = pending_task_ids(root, issue_id)
     if pending:
         return (
             {
