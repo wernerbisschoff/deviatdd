@@ -14,7 +14,12 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from deviate.cli import cli
-from deviate.cli.micro import _find_test_files, _run_single
+from deviate.cli.micro import (
+    PhaseFailedError,
+    _apply_judge_verdict,
+    _find_test_files,
+    _run_single,
+)
 from deviate.core.agent import HandoverManifest
 from deviate.state.config import SessionState
 from deviate.state.ledger import TaskRecord, append_task_transition
@@ -1409,3 +1414,59 @@ class TestStaleRejectionRecovery:
             assert recovered.judge_rejected is False, (
                 "stale judge_rejected must not block the recovered run"
             )
+
+
+@pytest.mark.behavioral
+@pytest.mark.parametrize(
+    ("head_sha", "recovery_ref"),
+    [
+        ("green-head-sha", "recovery/ref"),
+        ("", ""),
+    ],
+)
+def test_missing_red_boundary_reports_evidence_and_stops_advancement(
+    head_sha: str,
+    recovery_ref: str,
+    tmp_git_repo: Path,
+) -> None:
+    """A missing RED boundary keeps evidence and stops unsafe JUDGE progress."""
+    ledger_path = tmp_git_repo / "tasks.jsonl"
+    session_path = tmp_git_repo / "session.json"
+    task = {
+        "id": "TSK-059-02",
+        "head_sha": head_sha,
+        "recovery_ref": recovery_ref,
+    }
+    session = SessionState()
+    manifest = HandoverManifest(
+        phase="JUDGE",
+        status="SUCCESS",
+        task_id="TSK-059-02",
+        verdict="COMPLIANCE_VIOLATION",
+        next_action="revert_green",
+        rationale="rollback boundary is missing",
+    )
+    console = Console(file=StringIO())
+
+    with (
+        patch("deviate.cli.micro._commit_judge_feedback_and_advance") as advance,
+        chdir(tmp_git_repo),
+        pytest.raises(PhaseFailedError) as raised,
+    ):
+        _apply_judge_verdict(
+            task,
+            ledger_path,
+            session,
+            session_path,
+            console,
+            manifest,
+            injected_diff="",
+        )
+
+    message = str(raised.value)
+    assert "DEVIATDD_BUG" in message
+    assert f'head_sha="{head_sha}"' in message
+    assert f'recovery_ref="{recovery_ref}"' in message
+    assert "/deviate-green" in message
+    assert "HEAD~1" not in message
+    advance.assert_not_called()
