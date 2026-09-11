@@ -996,7 +996,7 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
     return preferred
 
 
-_TERMINAL_STATUSES = {"COMPLETED", "FAILED"}
+_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CHECKPOINT_FAILED"}
 _ALREADY_DONE_STATUSES = {"COMPLETED"}
 
 
@@ -1130,6 +1130,12 @@ def _find_all_pending_tasks(
         _log(f"  tasks_md: {tasks_md}")
         if tasks_md is not None:
             _process_one_tasks_md(tasks_md, issue_id)
+        else:
+            for fallback_md in sorted(root.glob("specs/**/tasks.md")):
+                md_issue_id = _resolve_md_issue_id(fallback_md)
+                if md_issue_id and md_issue_id != issue_id:
+                    continue
+                _process_one_tasks_md(fallback_md, issue_id)
     else:
         for tasks_md in sorted(root.glob("specs/**/tasks.md")):
             md_issue_id = _resolve_md_issue_id(tasks_md)
@@ -6459,6 +6465,7 @@ def _append_checkpoint_row(
     *,
     classification: str = "",
     rationale: str = "",
+    evidence: dict | None = None,
 ) -> None:
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     row: dict[str, object] = {
@@ -6477,12 +6484,14 @@ def _append_checkpoint_row(
     if text:
         row["judge_feedback"] = text
         row["rationale"] = text
+    if evidence is not None:
+        row["evidence"] = evidence
     with ledger_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
 
 
 def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> str:
-    """Append CHECKPOINT_FAILED with classification plus rationale; return code."""
+    """Append COMPLETED with evidence on pass, CHECKPOINT_FAILED on fail."""
     results = handover.get("results")
     if not results:
         _append_checkpoint_row(
@@ -6494,16 +6503,29 @@ def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> 
         )
         return "PREFLIGHT_EMPTY_RESULTS"
     ok, reason = validate_checkpoint_proof(handover)
-    code = "CHECKPOINT_PROOF_INVALID" if not ok else "CHECKPOINT_FAILED"
-    text = reason or str(handover.get("status", "FAIL"))
-    _append_checkpoint_row(
-        task,
-        "CHECKPOINT_FAILED",
-        ledger_path,
-        classification=code,
-        rationale=text,
+    if not ok:
+        _append_checkpoint_row(
+            task,
+            "CHECKPOINT_FAILED",
+            ledger_path,
+            classification="CHECKPOINT_PROOF_INVALID",
+            rationale=reason,
+        )
+        return "CHECKPOINT_PROOF_INVALID"
+    criteria = (
+        handover.get("criterion_coverage") or handover.get("declared_criteria") or []
     )
-    return code
+    raw_evidence = handover.get("evidence") or []
+    items = [{"ac": c} for c in criteria] or [{"ac": "checkpoint-proof"}]
+    if (
+        raw_evidence
+        and isinstance(raw_evidence[0], dict)
+        and raw_evidence[0].get("observed")
+    ):
+        items[0] = {**items[0], "test_quote": str(raw_evidence[0]["observed"])}
+    bundle = TaskEvidenceBundle.model_validate({"items": items})
+    _append_checkpoint_row(task, "COMPLETED", ledger_path, evidence=bundle.model_dump())
+    return "COMPLETED"
 
 
 def _render_checkpoint_prompt(task: dict) -> str:
