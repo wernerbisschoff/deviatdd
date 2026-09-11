@@ -133,6 +133,12 @@
     - **Edge Cases**: Report not-ready state before a Micro drain and never make Converge a mandatory Gate 3 prerequisite.
   - **Dependency**: TSK-058-05
 
+  - **Judge Feedback**: The next RED attempt must:
+    - Requirement: AC-PLAN-006 requires the optional Converge loop after Micro drain and before walkthrough, review, and PR.
+    - Evidence: The diff contains no RED-authored tests for runner handoff, repeated Micro drain, clean termination, or phase ordering.
+    - Correction: Add sociable unit tests in tests/unit/test_cli/test_converge.py that exercise run_command and assert selected or installed Converge handoff, repeated Micro execution after appended tasks, clean-loop termination, and walkthrough/review/PR execution outside the loop.
+    - Verification: Run the stamped unit file and confirm the new tests fail because the required runner behavior is absent, not because of collection or syntax errors.
+    - Boundary: Change tests only. Keep the scope limited to tests/unit/test_cli/test_converge.py.
 ## Phase 5: Full application verification
 **Goal**: Verify the complete Converge application surface after all slices pass.
 
