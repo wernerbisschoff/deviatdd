@@ -131,7 +131,10 @@ def test_red_phase_routes_compile_error_to_green(tmp_git_repo: Path):
 @pytest.mark.behavioral
 def test_red_phase_routes_exit_zero_to_advisory(tmp_git_repo: Path):
     adjudicate = _drive_red(tmp_git_repo, _proc(0, stdout="1 passed"))
-    adjudicate.assert_not_called()
+    # The kernel shares the RedMustPassError guard through the helper in
+    # dry_run mode; the runner itself takes no JUDGE adjudication route.
+    assert adjudicate.call_count >= 1
+    assert all(c.kwargs.get("dry_run") is True for c in adjudicate.call_args_list)
 
 
 @pytest.mark.behavioral
