@@ -226,13 +226,16 @@ class TestConvergePre:
         dumped = json.dumps(contract)
         assert "explore.md" not in dumped
 
+    @pytest.mark.behavioral
     def test_pre_missing_brief_is_not_ready(self, tmp_git_repo: Path) -> None:
         with chdir(tmp_git_repo):
             result = runner.invoke(cli, ["converge", "pre"])
 
         assert result.exit_code != 0
+        assert "CONVERGE_NOT_READY" in result.stdout
         assert "brief" in result.stdout.lower()
 
+    @pytest.mark.behavioral
     def test_pre_missing_plan_is_not_ready(self, tmp_git_repo: Path) -> None:
         _seed_issue(tmp_git_repo, with_plan=False)
 
@@ -240,8 +243,10 @@ class TestConvergePre:
             result = runner.invoke(cli, ["converge", "pre"])
 
         assert result.exit_code != 0
+        assert "CONVERGE_NOT_READY" in result.stdout
         assert "plan" in result.stdout.lower()
 
+    @pytest.mark.behavioral
     def test_pre_missing_tasks_is_not_ready(self, tmp_git_repo: Path) -> None:
         _seed_issue(tmp_git_repo, with_tasks=False)
 
@@ -249,8 +254,10 @@ class TestConvergePre:
             result = runner.invoke(cli, ["converge", "pre"])
 
         assert result.exit_code != 0
+        assert "CONVERGE_NOT_READY" in result.stdout
         assert "tasks" in result.stdout.lower()
 
+    @pytest.mark.behavioral
     def test_pre_pending_queue_is_not_ready(self, tmp_git_repo: Path) -> None:
         _seed_issue(tmp_git_repo, pending=True)
 
