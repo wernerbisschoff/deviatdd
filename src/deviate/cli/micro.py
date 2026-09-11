@@ -6452,7 +6452,13 @@ def validate_checkpoint_proof(handover: dict) -> tuple[bool, str]:
 
 
 def _append_checkpoint_row(
-    task: dict, status: str, ledger_path: Path, reason: str = ""
+    task: dict,
+    status: str,
+    ledger_path: Path,
+    reason: str = "",
+    *,
+    classification: str = "",
+    rationale: str = "",
 ) -> None:
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     row: dict[str, object] = {
@@ -6464,11 +6470,40 @@ def _append_checkpoint_row(
     }
     if task.get("task_type"):
         row["task_type"] = task["task_type"]
-    if reason:
-        row["judge_feedback"] = reason
-        row["classification"] = reason
+    code = classification or reason
+    text = rationale or reason
+    if code:
+        row["classification"] = code
+    if text:
+        row["judge_feedback"] = text
+        row["rationale"] = text
     with ledger_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
+
+
+def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> str:
+    """Append CHECKPOINT_FAILED with classification plus rationale; return code."""
+    results = handover.get("results")
+    if not results:
+        _append_checkpoint_row(
+            task,
+            "CHECKPOINT_FAILED",
+            ledger_path,
+            classification="PREFLIGHT_EMPTY_RESULTS",
+            rationale="preflight produced empty results",
+        )
+        return "PREFLIGHT_EMPTY_RESULTS"
+    ok, reason = validate_checkpoint_proof(handover)
+    code = "CHECKPOINT_PROOF_INVALID" if not ok else "CHECKPOINT_FAILED"
+    text = reason or str(handover.get("status", "FAIL"))
+    _append_checkpoint_row(
+        task,
+        "CHECKPOINT_FAILED",
+        ledger_path,
+        classification=code,
+        rationale=text,
+    )
+    return code
 
 
 def _render_checkpoint_prompt(task: dict) -> str:
