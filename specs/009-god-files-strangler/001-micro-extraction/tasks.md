@@ -72,6 +72,12 @@
     - Correction: Author tests/unit/test_micro/test_micro_import_targets.py to scan all src/deviate/cli/micro/*.py submodules for bare from deviate.cli.micro import lines and fail when found, plus keep caller bare-import and submodule-resolution checks via importlib.
     - Verification: Run uv run pytest tests/unit/test_micro -q and expect a failure caused by shim-dependent submodules, not by setup or collection errors.
     - Boundary: Change tests only. Do not edit production code or expand the acceptance contract.
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: AC-PLAN-006 requires callers import directly from src/deviate/cli/micro/ submodules where the canonical objects are defined, with zero bare shim imports remaining.
+    - Evidence: The rejected GREEN kept all logic in deviate.cli.micro.__init__ and used empty stub files plus runtime binding and __module__ rewriting to pass the resolution check.
+    - Correction: Move or define _find_all_pending_tasks in src/deviate/cli/micro/pending.py, existing_verification_suites in src/deviate/cli/micro/suites.py, and _run_all plus app objects in src/deviate/cli/micro/surface.py, then update src/deviate/cli/__init__.py, src/deviate/core/converge.py, and src/deviate/cli/meso.py to import from those submodules without mutating __module__.
+    - Verification: Run uv run pytest tests/unit/test_micro -q and expect the import-target tests to pass from real submodule definitions; confirm grep for bare shim imports stays clean.
+    - Boundary: Keep the RED tests unchanged. Do not edit tests, expand the acceptance contract, or address the unrelated test_init SKILL troubleshooting failure.
 ## Phase 3: Parity gate and shim deletion
 **Goal**: Prove post-move parity and remove the shim in its own commit
 
