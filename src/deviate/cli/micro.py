@@ -6411,6 +6411,57 @@ class RedPhaseError(Exception):
     pass
 
 
+def _load_checkpoint_template() -> str:
+    try:
+        path = importlib.resources.files("deviate.prompts.auto").joinpath(
+            "checkpoint.md"
+        )
+        return path.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, TypeError):
+        fallback = Path("src/deviate/prompts/auto/checkpoint.md")
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
+        return "checkpoint verification: task issue contract commands worktree doc capabilities"
+
+
+def _append_checkpoint_row(
+    task: dict, status: str, ledger_path: Path, reason: str = ""
+) -> None:
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    row: dict[str, object] = {
+        "id": task.get("id", "?"),
+        "issue_id": task.get("issue_id", ""),
+        "description": task.get("description", ""),
+        "status": status,
+        "execution_mode": task.get("execution_mode", "IMMEDIATE"),
+    }
+    if task.get("task_type"):
+        row["task_type"] = task["task_type"]
+    if reason:
+        row["judge_feedback"] = reason
+        row["classification"] = reason
+    with ledger_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+
+
+def _render_checkpoint_prompt(task: dict) -> str:
+    template = _load_checkpoint_template()
+    context = json.dumps(
+        {
+            "task": task,
+            "issue": task.get("issue_id", ""),
+            "contract": task.get("contract", ""),
+            "commands": task.get("commands", []),
+            "worktree": task.get("worktree", str(Path.cwd())),
+            "doc": task.get("doc", ""),
+            "capabilities": task.get("capabilities", []),
+        },
+        indent=2,
+        default=str,
+    )
+    return f"{template}\n\ntask: {context}\nissue: {context}\ncontract: {context}\ncommands: {context}\nworktree: {context}\ndoc: {context}\ncapabilities: {context}"
+
+
 def _run_checkpoint_phase(
     task: dict,
     ledger_path: Path,
@@ -6418,8 +6469,16 @@ def _run_checkpoint_phase(
     agent: str | None = None,
     monitor: OrchestrationMonitor | None = None,
 ) -> None:
-    """Checkpoint entrypoint for Verification_Batch tasks (full impl in later slice)."""
-    return None
+    _append_checkpoint_row(task, "CHECKPOINT_STARTED", ledger_path)
+    prompt = _render_checkpoint_prompt(task)
+    backend = AgentBackend()
+    model = resolve_model_for_phase("checkpoint", Path.cwd(), backend=agent)
+    try:
+        backend.invoke(prompt, model=model)
+    except Exception as exc:
+        kind = type(exc).__name__ or "AGENT_ERROR"
+        _append_checkpoint_row(task, "CHECKPOINT_FAILED", ledger_path, reason=kind)
+        return
 
 
 def _dispatch_task(
