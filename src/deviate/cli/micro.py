@@ -6459,7 +6459,16 @@ def _render_checkpoint_prompt(task: dict) -> str:
         indent=2,
         default=str,
     )
-    return f"{template}\n\ntask: {context}\nissue: {context}\ncontract: {context}\ncommands: {context}\nworktree: {context}\ndoc: {context}\ncapabilities: {context}"
+    fields = (
+        "task",
+        "issue",
+        "contract",
+        "commands",
+        "worktree",
+        "doc",
+        "capabilities",
+    )
+    return template + "\n\n" + "\n".join(f"{name}: {context}" for name in fields)
 
 
 def _run_checkpoint_phase(
