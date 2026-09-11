@@ -6481,7 +6481,11 @@ def _run_checkpoint_phase(
     _append_checkpoint_row(task, "CHECKPOINT_STARTED", ledger_path)
     prompt = _render_checkpoint_prompt(task)
     backend = AgentBackend()
-    model = resolve_model_for_phase("checkpoint", Path.cwd(), backend=agent)
+    _cfg = _load_deviate_config_toml(Path.cwd())
+    _models = _cfg.get("models", {}) if isinstance(_cfg, dict) else {}
+    model = resolve_phase_model(
+        "checkpoint", _models if isinstance(_models, dict) else {}
+    )
     try:
         backend.invoke(prompt, model=model)
     except Exception as exc:
