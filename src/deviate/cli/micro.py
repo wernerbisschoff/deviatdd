@@ -6435,11 +6435,11 @@ def validate_checkpoint_proof(handover: dict) -> tuple[bool, str]:
     missing = [c for c in declared if c not in reported]
     if missing:
         return False, f"missing command report: {missing[0]}"
-    declared_c = handover.get("declared_criteria") or []
+    declared_criteria = handover.get("declared_criteria") or []
     covered = set(handover.get("criterion_coverage") or [])
-    missing_c = [c for c in declared_c if c not in covered]
-    if missing_c:
-        return False, f"missing criterion coverage: {missing_c[0]}"
+    missing_criteria = [c for c in declared_criteria if c not in covered]
+    if missing_criteria:
+        return False, f"missing criterion coverage: {missing_criteria[0]}"
     if str(handover.get("status", "")).upper() == "PASS":
         if (handover.get("exit_code", 0) or 0) != 0:
             return False, "nonzero exit on PASS"
