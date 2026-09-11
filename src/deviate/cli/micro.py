@@ -996,7 +996,7 @@ def _find_task_record(root: Path, task_id: str) -> tuple[dict, Path] | None:
     return preferred
 
 
-_TERMINAL_STATUSES = {"COMPLETED", "FAILED"}
+_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CHECKPOINT_FAILED"}
 _ALREADY_DONE_STATUSES = {"COMPLETED"}
 
 
@@ -1114,6 +1114,8 @@ def _find_all_pending_tasks(
                 "status": "PENDING",
                 "execution_mode": mode,
             }
+            if task_type:
+                pending["task_type"] = task_type
             if test_strategy:
                 pending["test_strategy"] = test_strategy
             results.append(
@@ -1128,6 +1130,12 @@ def _find_all_pending_tasks(
         _log(f"  tasks_md: {tasks_md}")
         if tasks_md is not None:
             _process_one_tasks_md(tasks_md, issue_id)
+        else:
+            for fallback_md in sorted(root.glob("specs/**/tasks.md")):
+                md_issue_id = _resolve_md_issue_id(fallback_md)
+                if md_issue_id and md_issue_id != issue_id:
+                    continue
+                _process_one_tasks_md(fallback_md, issue_id)
     else:
         for tasks_md in sorted(root.glob("specs/**/tasks.md")):
             md_issue_id = _resolve_md_issue_id(tasks_md)
@@ -6410,6 +6418,163 @@ class RedPhaseError(Exception):
     pass
 
 
+def _load_checkpoint_template() -> str:
+    try:
+        path = importlib.resources.files("deviate.prompts.auto").joinpath(
+            "checkpoint.md"
+        )
+        return path.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, TypeError):
+        fallback = Path("src/deviate/prompts/auto/checkpoint.md")
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
+        return "checkpoint verification: task issue contract commands worktree doc capabilities"
+
+
+def validate_checkpoint_proof(handover: dict) -> tuple[bool, str]:
+    """Reject partial checkpoint proof; ``(ok, reason)`` gates COMPLETED."""
+    results = handover.get("results")
+    if "results" in handover and not results:
+        return False, "preflight produced empty results"
+    declared = handover.get("declared_commands") or []
+    reports = handover.get("command_reports") or []
+    reported = {(r.get("command") if isinstance(r, dict) else r) for r in reports}
+    missing = [c for c in declared if c not in reported]
+    if missing:
+        return False, f"missing command report: {missing[0]}"
+    declared_criteria = handover.get("declared_criteria") or []
+    covered = set(handover.get("criterion_coverage") or [])
+    missing_criteria = [c for c in declared_criteria if c not in covered]
+    if missing_criteria:
+        return False, f"missing criterion coverage: {missing_criteria[0]}"
+    if str(handover.get("status", "")).upper() == "PASS":
+        if (handover.get("exit_code", 0) or 0) != 0:
+            return False, "nonzero exit on PASS"
+        for r in reports:
+            if isinstance(r, dict) and (r.get("exit_code", 0) or 0) != 0:
+                return False, f"nonzero exit on PASS: {r.get('command', '?')}"
+    if not handover.get("evidence"):
+        return False, "empty evidence"
+    return True, ""
+
+
+def _append_checkpoint_row(
+    task: dict,
+    status: str,
+    ledger_path: Path,
+    reason: str = "",
+    *,
+    classification: str = "",
+    rationale: str = "",
+    evidence: dict | None = None,
+) -> None:
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    row: dict[str, object] = {
+        "id": task.get("id", "?"),
+        "issue_id": task.get("issue_id", ""),
+        "description": task.get("description", ""),
+        "status": status,
+        "execution_mode": task.get("execution_mode", "IMMEDIATE"),
+    }
+    if task.get("task_type"):
+        row["task_type"] = task["task_type"]
+    code = classification or reason
+    text = rationale or reason
+    if code:
+        row["classification"] = code
+    if text:
+        row["judge_feedback"] = text
+        row["rationale"] = text
+    if evidence is not None:
+        row["evidence"] = evidence
+    with ledger_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+
+
+def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> str:
+    """Append COMPLETED with evidence on pass, CHECKPOINT_FAILED on fail."""
+    code = text = ""
+    if not handover.get("results"):
+        code, text = "PREFLIGHT_EMPTY_RESULTS", "preflight produced empty results"
+    else:
+        ok, reason = validate_checkpoint_proof(handover)
+        if not ok:
+            code, text = "CHECKPOINT_PROOF_INVALID", reason
+    if code:
+        _append_checkpoint_row(
+            task,
+            "CHECKPOINT_FAILED",
+            ledger_path,
+            classification=code,
+            rationale=text,
+        )
+        return code
+    criteria = (
+        handover.get("criterion_coverage") or handover.get("declared_criteria") or []
+    )
+    raw_evidence = handover.get("evidence") or []
+    items = [{"ac": c} for c in criteria] or [{"ac": "checkpoint-proof"}]
+    if (
+        raw_evidence
+        and isinstance(raw_evidence[0], dict)
+        and raw_evidence[0].get("observed")
+    ):
+        items[0] = {**items[0], "test_quote": str(raw_evidence[0]["observed"])}
+    bundle = TaskEvidenceBundle.model_validate({"items": items})
+    _append_checkpoint_row(task, "COMPLETED", ledger_path, evidence=bundle.model_dump())
+    return "COMPLETED"
+
+
+def _render_checkpoint_prompt(task: dict) -> str:
+    template = _load_checkpoint_template()
+    context = json.dumps(
+        {
+            "task": task,
+            "issue": task.get("issue_id", ""),
+            "contract": task.get("contract", ""),
+            "commands": task.get("commands", []),
+            "worktree": task.get("worktree", str(Path.cwd())),
+            "doc": task.get("doc", ""),
+            "capabilities": task.get("capabilities", []),
+        },
+        indent=2,
+        default=str,
+    )
+    fields = (
+        "task",
+        "issue",
+        "contract",
+        "commands",
+        "worktree",
+        "doc",
+        "capabilities",
+    )
+    return template + "\n\n" + "\n".join(f"{name}: {context}" for name in fields)
+
+
+def _run_checkpoint_phase(
+    task: dict,
+    ledger_path: Path,
+    c: Console,
+    agent: str | None = None,
+    monitor: OrchestrationMonitor | None = None,
+) -> None:
+    _append_checkpoint_row(task, "CHECKPOINT_STARTED", ledger_path)
+    prompt = _render_checkpoint_prompt(task)
+    backend = AgentBackend()
+    _cfg = _load_deviate_config_toml(Path.cwd())
+    _models = _cfg.get("models", {}) if isinstance(_cfg, dict) else {}
+    model = resolve_phase_model(
+        "checkpoint", _models if isinstance(_models, dict) else {}
+    )
+    try:
+        backend.invoke(prompt, model=model)
+    except Exception as exc:
+        kind = type(exc).__name__ or "AGENT_ERROR"
+        _append_checkpoint_row(task, "CHECKPOINT_FAILED", ledger_path, reason=kind)
+        return
+
+
 def _dispatch_task(
     task: dict,
     ledger_path: Path,
@@ -6423,8 +6588,10 @@ def _dispatch_task(
 ) -> None:
     global _review_task_id
     _review_task_id = task.get("id", "?")
+    if task.get("task_type") == "Verification_Batch":
+        _run_checkpoint_phase(task, ledger_path, c, agent=agent, monitor=monitor)
+        return
     mode = task.get("execution_mode", "TDD")
-
     if mode == "TDD" and batch_mode:
         description = task.get("description", "")
         if "Failing task" in description:

@@ -144,6 +144,7 @@ def generate_jsonl_from_md(tasks_md: Path, issue_id: str) -> list[TaskRecord]:
             ),
             test_strategy=block.test_strategy,
             criteria_entries=block.criteria_entries,
+            task_type=block.task_type,
         )
         for block in blocks
     ]
@@ -162,6 +163,7 @@ def _build_task_record(
     execution_mode: str,
     criteria_entries: list[str] | None = None,
     test_strategy: str | None = None,
+    task_type: str | None = None,
 ) -> TaskRecord:
     links: list[CriterionLink] | None = None
     if criteria_entries:
@@ -172,6 +174,7 @@ def _build_task_record(
         description=description or "",
         status="PENDING",
         execution_mode=execution_mode,
+        task_type=task_type,
         test_strategy=test_strategy,  # type: ignore[arg-type]
         acceptance_criteria=links,
     )

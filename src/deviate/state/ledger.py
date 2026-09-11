@@ -156,8 +156,11 @@ class TaskRecord(BaseModel):
         "REFACTOR",
         "COMPLETED",
         "FAILED",
+        "CHECKPOINT_STARTED",
+        "CHECKPOINT_FAILED",
     ] = "PENDING"
     execution_mode: Literal["TDD", "DIRECT", "EXECUTE", "E2E", "IMMEDIATE"] = "TDD"
+    task_type: str | None = None
     test_strategy: Literal["unit", "integration", "e2e"] | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -169,6 +172,8 @@ class TaskRecord(BaseModel):
     head_sha: str | None = None
     reset_to: str | None = None
     recovery_ref: str | None = None
+    classification: str | None = None
+    rationale: str | None = None
     model_config = {"extra": "forbid"}
 
     @field_validator("id")
@@ -293,6 +298,10 @@ def _task_record_json(record: TaskRecord) -> str:
         exclude.add("reset_to")
     if not record.recovery_ref:
         exclude.add("recovery_ref")
+    if not record.classification:
+        exclude.add("classification")
+    if not record.rationale:
+        exclude.add("rationale")
     return record.model_dump_json(exclude=exclude)
 
 
