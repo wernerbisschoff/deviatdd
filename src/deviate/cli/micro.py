@@ -6424,6 +6424,33 @@ def _load_checkpoint_template() -> str:
         return "checkpoint verification: task issue contract commands worktree doc capabilities"
 
 
+def validate_checkpoint_proof(handover: dict) -> tuple[bool, str]:
+    """Reject partial checkpoint proof; ``(ok, reason)`` gates COMPLETED."""
+    results = handover.get("results")
+    if "results" in handover and not results:
+        return False, "preflight produced empty results"
+    declared = handover.get("declared_commands") or []
+    reports = handover.get("command_reports") or []
+    reported = {(r.get("command") if isinstance(r, dict) else r) for r in reports}
+    missing = [c for c in declared if c not in reported]
+    if missing:
+        return False, f"missing command report: {missing[0]}"
+    declared_c = handover.get("declared_criteria") or []
+    covered = set(handover.get("criterion_coverage") or [])
+    missing_c = [c for c in declared_c if c not in covered]
+    if missing_c:
+        return False, f"missing criterion coverage: {missing_c[0]}"
+    if str(handover.get("status", "")).upper() == "PASS":
+        if (handover.get("exit_code", 0) or 0) != 0:
+            return False, "nonzero exit on PASS"
+        for r in reports:
+            if isinstance(r, dict) and (r.get("exit_code", 0) or 0) != 0:
+                return False, f"nonzero exit on PASS: {r.get('command', '?')}"
+    if not handover.get("evidence"):
+        return False, "empty evidence"
+    return True, ""
+
+
 def _append_checkpoint_row(
     task: dict, status: str, ledger_path: Path, reason: str = ""
 ) -> None:
