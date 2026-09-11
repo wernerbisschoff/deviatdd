@@ -6492,26 +6492,22 @@ def _append_checkpoint_row(
 
 def record_checkpoint_verdict(task: dict, handover: dict, ledger_path: Path) -> str:
     """Append COMPLETED with evidence on pass, CHECKPOINT_FAILED on fail."""
-    results = handover.get("results")
-    if not results:
+    code = text = ""
+    if not handover.get("results"):
+        code, text = "PREFLIGHT_EMPTY_RESULTS", "preflight produced empty results"
+    else:
+        ok, reason = validate_checkpoint_proof(handover)
+        if not ok:
+            code, text = "CHECKPOINT_PROOF_INVALID", reason
+    if code:
         _append_checkpoint_row(
             task,
             "CHECKPOINT_FAILED",
             ledger_path,
-            classification="PREFLIGHT_EMPTY_RESULTS",
-            rationale="preflight produced empty results",
+            classification=code,
+            rationale=text,
         )
-        return "PREFLIGHT_EMPTY_RESULTS"
-    ok, reason = validate_checkpoint_proof(handover)
-    if not ok:
-        _append_checkpoint_row(
-            task,
-            "CHECKPOINT_FAILED",
-            ledger_path,
-            classification="CHECKPOINT_PROOF_INVALID",
-            rationale=reason,
-        )
-        return "CHECKPOINT_PROOF_INVALID"
+        return code
     criteria = (
         handover.get("criterion_coverage") or handover.get("declared_criteria") or []
     )
