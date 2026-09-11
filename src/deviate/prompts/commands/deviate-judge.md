@@ -35,6 +35,14 @@ with `ac: "AC-PLAN-NNN"` (plan-owned Gherkin — not `AO-*`, not bare
 `AC-NN`) plus `test_path` / `test_quote` / `impl_path` / `impl_quote`.
 Do not emit string evidence items.
 
+Classify the original RED tests with top-level `red_baseline_integrity: PASS | FAIL | null`.
+Inspect the tests at `.deviate/session.json` → `red_commit_sha` with read-only Git commands.
+GREEN changing valid RED tests remains `evaluation.test_integrity: FAIL`; set `red_baseline_integrity: PASS`.
+Select `revert_green` (discard GREEN only, keep RED) and address the next GREEN. GREEN must not edit tests.
+Defective original RED tests require `red_baseline_integrity: FAIL`, `revert_red` (discard RED+GREEN), and feedback for the next RED.
+If both phases are defective, select `FAIL`. Use null for an unavailable or unverified RED baseline.
+Omitted or null classification preserves legacy routing. Mechanical and test-defect overrides remain unchanged.
+
 ```yaml
 phase: "JUDGE"
 status: "PASS"
@@ -42,6 +50,7 @@ task_id: "{TASK_ID}"
 next_phase: "IDLE"
 next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
+red_baseline_integrity: "PASS" | "FAIL" | null
 evidence:
   - ac: "AC-PLAN-001"
     test_path: "tests/example.py"

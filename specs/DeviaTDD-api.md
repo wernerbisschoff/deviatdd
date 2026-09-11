@@ -1251,8 +1251,9 @@ uses the same `_resolve_task_context` selector as the other micro pres.
     as GREEN/RED train feedback. After GREEN PASS (empty `session.failure_kind`),
     a `COMPLIANCE_VIOLATION` with structured Test Integrity
     (`violations[].category` matching Test Integrity / `Test Integrity Violation`,
-    and/or `evaluation.test_integrity: FAIL`) is coerced to `revert_red`
-    even when `next_action` is omitted or `revert_green`. An honest-test
+    and/or `evaluation.test_integrity: FAIL`) uses `red_baseline_integrity` to select rollback scope.
+    `PASS` retains RED with `revert_green`; `FAIL`, omitted, or null classification selects `revert_red`.
+    An honest-test
     implementation/scope gap (`test_integrity: PASS`, Spec Non-Compliance)
     stays `revert_green`. Mechanical overlay is not coerced by Test Integrity.
     The runner parses `train_feedback` to detect a refactor-only note (and to
@@ -2033,8 +2034,17 @@ truth for the override (`test_defect` / `no_failing_test` on a violation map to
 (`failure_kind` empty / not `mechanical`), a `COMPLIANCE_VIOLATION` with
 structured Test Integrity (`violations[].category` matching Test Integrity,
 including `Test Integrity Violation`, and/or `evaluation.test_integrity: FAIL`)
-also forces `revert_red` even when the agent omitted `next_action` or set
-`revert_green`. Honest-test implementation/scope gaps stay `revert_green`.
+uses optional top-level `red_baseline_integrity: PASS | FAIL | null` to select rollback scope.
+`PASS` means the original RED tests are valid: discard GREEN only and retry GREEN (`revert_green`).
+`FAIL` means the original RED tests are defective: discard RED+GREEN and retry RED (`revert_red`).
+A baseline `FAIL` is itself a test-integrity signal, even without `evaluation.test_integrity: FAIL`.
+Omitted or null classification preserves legacy routing to `revert_red` on integrity failures.
+Invalid values produce manifest validation errors before rollback.
+GREEN test tampering still requires `evaluation.test_integrity: FAIL`; baseline `PASS` does not permit a compliance pass.
+JUDGE verifies the original tests at `session.red_commit_sha` before declaring baseline `PASS`.
+JUDGE uses null when that baseline is unavailable or unverified.
+The verdicts record includes `red_baseline_integrity`. Feedback addresses the phase selected after rollback.
+Honest-test implementation/scope gaps stay `revert_green`.
 Mechanical overlay keeps the agent's three-way choice. The runner does not
 parse `train_feedback` for routing. `_run_tdd_cycle` honours
 `pending_judge_action == "revert_red"` (set by JUDGE or the override) by

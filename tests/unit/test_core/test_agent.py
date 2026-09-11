@@ -157,7 +157,7 @@ class TestHandoverManifestModel:
         assert reloaded.files == ["src/watcher.py", "src/main.py"]
 
     def test_handover_manifest_keeps_existing_failure_kind_and_fields(self):
-        """GH-154 AC-7: no new failure_kind literals or HandoverManifest fields."""
+        """Pin manifest fields and GH-154 failure kinds."""
         from typing import Literal, Union, get_args, get_origin
 
         from deviate.core.agent import HandoverManifest
@@ -173,6 +173,7 @@ class TestHandoverManifestModel:
             "failure_kind",
             "next_phase",
             "next_action",
+            "red_baseline_integrity",
             "files",
             "evidence",
             "parse_errors",

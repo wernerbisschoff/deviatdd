@@ -80,6 +80,7 @@ class HandoverManifest(BaseModel):
             "proceed_to_refactor_no_diff",
         ]
     ] = None
+    red_baseline_integrity: Literal["PASS", "FAIL"] | None = None
     files: list[str] | None = None
     evidence: list[EvidenceItem] = Field(default_factory=list)
     parse_errors: list[str] = []

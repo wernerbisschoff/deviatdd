@@ -114,6 +114,8 @@ def _evaluation_test_integrity_fail(evaluation: object) -> bool:
 
 def manifest_signals_test_integrity(manifest: HandoverManifest) -> bool:
     """Return true when the manifest declares failed test integrity."""
+    if manifest.red_baseline_integrity == "FAIL":
+        return True
     if _evaluation_test_integrity_fail(_manifest_field(manifest, "evaluation")):
         return True
     if str(_manifest_field(manifest, "test_integrity") or "").strip().upper() == "FAIL":
@@ -235,7 +237,11 @@ def coerce_judge_action(
         and failure_kind not in {"mechanical", "test_defect", "no_failing_test"}
         and manifest_signals_test_integrity(manifest)
     ):
-        return "revert_red"
+        return (
+            "revert_green"
+            if manifest.red_baseline_integrity == "PASS"
+            else "revert_red"
+        )
     next_action = getattr(manifest, "next_action", None)
     if next_action is not None:
         next_action = JUDGE_REVERT_ACTION_ALIASES.get(next_action, next_action)

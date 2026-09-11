@@ -430,6 +430,30 @@ def reject_then_pass_steps(task_id: str, *, ac: str) -> list[CycleStep]:
     ]
 
 
+def green_test_tampering_steps(task_id: str, *, ac: str) -> list[CycleStep]:
+    steps = reject_then_pass_steps(task_id, ac=ac)
+    steps[1] = CycleStep(
+        phase="GREEN",
+        handover=green_handover_yaml(task_id),
+        files={
+            **green_files(task_id),
+            _test_rel(task_id): "def test_fake():\n    assert True\n",
+        },
+    )
+    steps[2] = CycleStep(
+        phase="JUDGE",
+        handover=(
+            judge_fail_yaml(
+                task_id,
+                train_feedback="The next GREEN attempt must: implement without editing retained RED tests.",
+            )
+            + "red_baseline_integrity: PASS\n"
+            + "evaluation:\n  test_integrity: FAIL\n"
+        ),
+    )
+    return steps
+
+
 def two_revert_green_then_pass_steps(task_id: str, *, ac: str) -> list[CycleStep]:
     """Two consecutive ``revert_green`` JUDGE rejects, then pass + REFACTOR."""
     return [

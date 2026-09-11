@@ -3501,6 +3501,7 @@ def _append_judge_verdict_record(
         "feedback_source": feedback_source,
         "violations": _violation_categories(manifest),
         "test_integrity": _evaluation_test_integrity_value(manifest),
+        "red_baseline_integrity": manifest.red_baseline_integrity,
         "failure_kind": session.failure_kind or "",
         "streak": streak,
         "loop": loop,

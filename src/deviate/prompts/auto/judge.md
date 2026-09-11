@@ -108,8 +108,13 @@ The runner removes the rejected commit set before the next agent runs.
 
 - **COMPLIANCE_PASS (no Category of Violations)** → `next_action: continue_refactor` or `skip_refactor` (or `proceed_to_refactor_no_diff` for empty GREEN). A `REFACTOR NOTE:` is optional advice for REFACTOR; it is not a reason to revert. Unused imports, compiler warnings, and style nits are `REFACTOR NOTE:` + `COMPLIANCE_PASS` + `continue_refactor` — never `COMPLIANCE_VIOLATION`. Do not emit `revert_red` / `revert_green` on a pass.
 - **Test is honest; implementation/scope is wrong** → `next_action: revert_green` (discard GREEN, keep RED). `train_feedback` addresses the next GREEN (`The next GREEN attempt must:`). Typical categories: Spec Non-Compliance, No-Shortcut, Scope, Security, Constitution — with `test_integrity: PASS`.
-- **Test is wrong, weak, filename-only, or does not actually validate the task AC (Test Integrity)** → `next_action: revert_red` (discard RED+GREEN). `train_feedback` addresses the next RED (`The next RED attempt must:`). Set `test_integrity: FAIL` and/or category `Test Integrity Violation`.
+- **Original RED test is wrong (Test Integrity)** → `next_action: revert_red` (discard RED+GREEN). Set `red_baseline_integrity: FAIL`. `train_feedback` addresses the next RED (`The next RED attempt must:`).
+- **GREEN changed valid RED tests** → `next_action: revert_green` (discard GREEN, keep RED). Set `red_baseline_integrity: PASS` and `evaluation.test_integrity: FAIL`. Address the next GREEN. The runner restores RED; GREEN must not edit tests.
 - Forward routes (`continue_refactor` / `skip_refactor` / `proceed_to_refactor_no_diff`) are unchanged.
+
+**`red_baseline_integrity` classifies original RED tests.** Inspect them at `.deviate/session.json` → `red_commit_sha` using read-only Git commands.
+Use `FAIL` for weak or irrelevant RED assertions, even if GREEN also changed tests.
+Use null for unavailable or unverified baselines; null or omission preserves legacy routing.
 
 Mechanical / `test_defect` / `no_failing_test` overlay rows below keep their documented three-way (or single-outcome) choice.
 
@@ -143,6 +148,7 @@ status: "FAILURE"  # mirrors verdict: VIOLATION → "FAILURE", PASS → "PASS"
 task_id: "{TASK_ID}"
 next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
+red_baseline_integrity: "PASS" | "FAIL" | null
 evidence:
   - ac: "AC-PLAN-001"
     test_path: "tests/example.py"
@@ -183,6 +189,7 @@ status: "PASS"  # mirrors verdict: PASS → "PASS", VIOLATION → "FAILURE"
 task_id: "{TASK_ID}"
 next_action: "revert_red" | "revert_green" | "continue_refactor" | "skip_refactor" | "proceed_to_refactor_no_diff"
 verdict: "COMPLIANCE_PASS" | "COMPLIANCE_VIOLATION"
+red_baseline_integrity: "PASS" | "FAIL" | null
 evidence:
   - ac: "AC-PLAN-001"
     test_path: "tests/example.py"
