@@ -151,6 +151,12 @@
     - Correction: Update `src/deviate/cli/__init__.py` to use the established downstream phase interfaces directly, or raise a named diagnostic when one is unavailable. Keep all three phases outside the Converge loop.
     - Verification: Run `mise unit` and confirm the runner records Micro, Converge, repeated Micro, clean Converge, walkthrough, review, and PR in that order.
     - Boundary: Preserve the RED test and optional Converge behavior. Do not modify tests, ledgers, or unrelated phase workflows.
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: AC-PLAN-006 requires a clean Converge loop followed by walkthrough, review, and PR.
+    - Evidence: The added downstream hooks only execute console.print and therefore do not run the required workflows.
+    - Correction: Update src/deviate/cli/__init__.py to call the established walkthrough, review, and PR interfaces directly. Preserve the existing ordering and keep these phases outside the loop.
+    - Verification: Run mise unit and confirm the runner records Micro, Converge, repeated Micro, clean Converge, walkthrough, review, and PR in order.
+    - Boundary: Preserve the RED test and optional Converge behavior. Do not modify tests, ledgers, or unrelated phase workflows.
 ## Phase 5: Full application verification
 **Goal**: Verify the complete Converge application surface after all slices pass.
 
