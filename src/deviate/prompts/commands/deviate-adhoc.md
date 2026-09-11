@@ -48,7 +48,7 @@ The ad-hoc issue describes implementation of requested application behavior in a
 
 2.5. **Existing Explore Check**: Check whether an explore.md already exists for this problem description in either the post-research location (numbered epic dir) or the pre-research staging location:
     - Derive a kebab-case slug from the user's description. **First**, check for `specs/{NNN}-<slug>/explore.md` (the post-research location — `deviate research pre` moves explore.md into the numbered epic dir). If found, read it in full, use it as the primary discovery context, and **skip** the Lightweight Discovery Pass (step 3). Note in the Discovery Audit: `"Explore context consumed from specs/{NNN}-<slug>/explore.md"`.
-    - If not found in the numbered dir, **fall back** to `specs/explore/<slug>.md` (the pre-research staging location). If found, consume it the same way and note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md (pre-research staging)"`.
+    - If not found in the numbered dir, **fall back** to `specs/explore/<slug>.md` (the pre-research staging location). If found, consume it the same way and note in the Discovery Audit: `"Explore context consumed from specs/explore/<slug>.md (pre-research staging)"`. Then `git rm` that staging file — the new issue file is now the record, and `deviate adhoc post` commits the deletion alongside it. Never leave a consumed file in `specs/explore/`.
     - If not found: proceed to step 3 (Lightweight Discovery Pass) as normal.
 
 3. **Lightweight Discovery Pass**: Skip this step if an existing explore.md was consumed in step 2.5. Otherwise, explore the codebase to ground the issue:

@@ -556,8 +556,11 @@ Every `pre` subcommand accepts `--json` (emit JSON contract to stdout) and `--qu
 
 * **Source:** `src/deviate/cli/adhoc.py`
 * **Description:** Validates the issue markdown, appends a condensed FR entry to
-  `specs/adhoc/prd.md`, registers the issue in `specs/issues.jsonl` with an `ADH-{NNN}`
-  identifier, runs pre-commit hooks, and commits.
+`specs/adhoc/prd.md`, registers the issue in `specs/issues.jsonl` with an `ADH-{NNN}`
+identifier, runs pre-commit hooks, and commits. A staging `specs/explore/<slug>.md`
+consumed as discovery context is `git rm`-ed by the agent before post, so the
+deletion commits alongside the issue and `specs/explore/` stays empty (mirrors
+the `research pre` move; numbered-epic `explore.md` files are never touched).
 
 ---
 
