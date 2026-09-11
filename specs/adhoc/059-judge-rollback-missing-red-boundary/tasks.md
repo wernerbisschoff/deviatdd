@@ -63,6 +63,12 @@
 
 ---
 
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: TSK-059-03 requires clean exits from `mise unit`, `mise integration`, `mise e2e`, and `mise check`.
+    - Evidence: The task ledger records TSK-059-03 as RED and provides no successful command results.
+    - Correction: Run all four commands and record their clean exit results in the task evidence.
+    - Verification: Confirm each command exits with code 0.
+    - Boundary: Preserve the completed rollback implementation and existing tests. Do not expand the acceptance contract.
 ## Implementation Strategy (Merge Conflict Boundaries only — Execution Order, Dependency Chains, and Risk Hotspots duplicate task Dependencies and the plan Risk Assessment)
 **Merge Conflict Boundaries**:
 - `src/deviate/cli/micro.py`
