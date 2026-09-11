@@ -63,6 +63,12 @@
     - **Green**: Add readiness validation to `pre` and return the named diagnostic before agent handoff or writes. GREEN cannot edit tests.
     - **Edge Cases**: Report one deterministic prerequisite diagnostic per unavailable condition and retain relative paths.
 
+  - **Judge Feedback**: The next GREEN attempt must:
+    - Requirement: AC-PLAN-003 requires readiness rejection for missing artifacts and pending Micro records.
+    - Evidence: GREEN changed no implementation file; only the ledger transition changed.
+    - Correction: Implement readiness validation in src/deviate/cli/converge.py and src/deviate/core/converge.py. Return one deterministic CONVERGE_NOT_READY diagnostic for each unavailable condition.
+    - Verification: Run mise unit; expect the missing brief, plan, tasks, and pending queue tests to pass with non-zero results.
+    - Boundary: Preserve the RED tests and restrict changes to the assigned implementation files.
 ## Phase 3: Append-only findings
 **Goal**: Classify findings and append Convergence tasks without changing prior state.
 
