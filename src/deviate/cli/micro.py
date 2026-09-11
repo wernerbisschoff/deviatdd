@@ -2955,6 +2955,17 @@ def _maybe_reset_isolated_env(root: Path, task: dict | None) -> None:
         raise EnvNotReadyError(f"ENV_NOT_READY: mise run reset failed{detail}")
 
 
+def _reset_isolated_env_revert_red(root: Path, task: dict | None, c: Console) -> None:
+    """Reset env after revert_red; gate re-entry when hook is missing."""
+    try:
+        _maybe_reset_isolated_env(root, task)
+    except EnvNotReadyError as e:
+        if "not defined" not in str(e):
+            raise
+        _log_run("ENV_RESET_MISSING", error=str(e)[:500])
+        c.print(f"  [yellow]ENV_NOT_READY[/] {e}")
+
+
 def _preserve_agent_work(
     root: Path,
     *,
@@ -4693,7 +4704,7 @@ def _apply_judge_verdict(
                         task_id=tid,
                         attempt=rollback_attempts,
                     )
-                    _maybe_reset_isolated_env(root, task)
+                    _reset_isolated_env_revert_red(root, task, c)
                 elif session.red_commit_sha:
                     # No pre-RED anchor, but ``session.red_commit_sha`` is
                     # known — fall back to that explicit boundary so the
@@ -4707,7 +4718,7 @@ def _apply_judge_verdict(
                         task_id=tid,
                         attempt=rollback_attempts,
                     )
-                    _maybe_reset_isolated_env(root, task)
+                    _reset_isolated_env_revert_red(root, task, c)
                 elif red_baseline is not None:
                     # RED-adjudication path: no RED commit exists to roll
                     # back. Discard only the files this RED attempt produced
